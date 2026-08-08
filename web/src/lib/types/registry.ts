@@ -9,6 +9,15 @@
 
 // ── Registry ────────────────────────────────────────────────────────
 
+/** GET /registry/resolve: canonical identity for a UUID or namespace/slug reference. */
+export interface RegistryResolution {
+	id: string;
+	type: string;
+	namespace: string;
+	slug: string;
+	qualified_name: string;
+}
+
 export interface RegistryItem {
 	id: string;
 	name: string;
@@ -50,6 +59,9 @@ export type LeaderboardWindow = "24h" | "7d" | "30d" | "all";
 export interface ComponentLeaderboardItem {
 	id: string;
 	name: string;
+	namespace?: string;
+	slug?: string;
+	qualified_name?: string;
 	component_type: string;
 	description: string;
 	download_count: number;

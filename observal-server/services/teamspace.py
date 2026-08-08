@@ -117,8 +117,9 @@ def can_review(entity, scope: ReviewScope) -> bool:
     reviewers, plus admins, may act on it, which is what keeps private titles away
     from a global reviewer who is not in the team. A public item is the global
     catalog: only a global reviewer and above may act on it, so a team owner cannot
-    walk a listing out of their own namespace into everyone's registry. That is the
-    same escalation team_role_self_publishes closes at publish time.
+    walk a listing out of their own namespace into everyone's registry. Reviewing
+    their OWN submission is allowed — team publishes never auto-approve, so
+    self-approval is the recorded decision that replaces the old silent skip.
 
     A private item with no teamspace is a personal listing. Nobody holds a team
     role over it, so it stays admin-only.
@@ -136,18 +137,18 @@ async def user_team_ids(db: AsyncSession, user_id: uuid.UUID) -> list[uuid.UUID]
     return list(rows.scalars().all())
 
 
-def team_role_self_publishes(membership: TeamMembership | None, visibility: str) -> bool:
-    """Whether a team role alone clears review, for a listing of this visibility.
+def team_visible_to(team: Team, membership: TeamMembership | None, user: User) -> bool:
+    """Whether this caller may see this teamspace at all.
 
-    Team roles are self-service: a team owner can promote any member to owner, so
-    letting a team role auto-approve a PUBLIC listing would be a privilege escalation
-    path straight into the global catalog. Public listings published from a team
-    namespace therefore still go through the global review queue. Team-visibility
-    publishing stays self-service because the result is only visible to that team.
+    Public teamspaces are visible to every signed-in user. A private one is
+    visible only to its members and to global reviewers, admins, and
+    super_admins — hidden precisely from other plain users, like a private
+    GitHub org. Callers that fail this get 404, never 403, so a private
+    handle's existence is not confirmed.
     """
-    if visibility != "team":
-        return False
-    return membership is not None and membership.role in (TeamRole.owner, TeamRole.reviewer)
+    if not team.is_private:
+        return True
+    return membership is not None or is_global_reviewer(user)
 
 
 @dataclass(frozen=True)
@@ -196,40 +197,41 @@ async def resolve_publish_target(
     if not membership and not is_admin(user):
         raise HTTPException(status_code=403, detail="You are not a member of this teamspace")
 
-    auto_approve = is_global_reviewer(user) or team_role_self_publishes(membership, target_visibility)
+    # NOTHING published into a teamspace auto-approves. Every submission enters
+    # the review queue; team owners and team reviewers may then explicitly
+    # approve — including their own submissions — so every release carries a
+    # recorded reviewed_by decision instead of a silent skip.
     return PublishTarget(
         namespace=team.handle,
         slug=slugify(name),
         team_id=team.id,
         visibility=target_visibility,
         owner=team.handle,
-        auto_approve=auto_approve,
+        auto_approve=False,
     )
 
 
 async def publish_auto_approves_for_entity(entity, user: User, db: AsyncSession) -> bool:
     """Return whether this actor can publish an already saved team item without review.
 
-    The entity carries its own visibility, so a public listing sitting in a team
-    namespace is held for global review even when the submitter is a team owner or
-    team reviewer. See team_role_self_publishes for why.
+    Always False: teamspace publishing never auto-approves. Team owners and
+    team reviewers clear their own queue explicitly (self-approval is allowed),
+    so approval is a recorded decision rather than a side effect of publishing.
+    The helper survives so every publish path keeps one policy chokepoint.
     """
-    if getattr(entity, "team_id", None) is None:
-        return False
-    membership = await team_membership(db, entity.team_id, user.id)
-    visibility = "team" if entity.is_private else "public"
-    return is_global_reviewer(user) or team_role_self_publishes(membership, visibility)
+    del entity, user, db
+    return False
 
 
 async def review_publication_to_public(entity, user: User, db: AsyncSession, *, was_private: bool) -> bool:
     """Send a listing back to the review queue when it becomes publicly visible.
 
     Turning a team-private listing public publishes it into the global registry, so
-    it has to clear global review. Without this, the auto-approval rule in
-    team_role_self_publishes is trivially bypassed in two steps: publish as team
-    visibility, which a team owner or team reviewer approves for themselves because
-    only their own teamspace can see it, then flip the same approved row to public
-    and reach every user without a reviewer ever seeing it.
+    it has to clear global review. Without this, team review is trivially
+    bypassed in two steps: publish as team visibility, which a team owner or
+    team reviewer approves for themselves because only their own teamspace can
+    see it, then flip the same approved row to public and reach every user
+    without a global reviewer ever seeing it.
 
     Only a global reviewer, admin, or super_admin keeps an approved status through
     the transition, because they already hold the authority the queue represents.

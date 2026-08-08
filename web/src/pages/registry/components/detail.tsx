@@ -6,7 +6,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 
-import { Link, useParams, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import { Star, ArrowLeft, History, Loader2, ArrowDownToLine, Archive, ArchiveRestore, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
@@ -29,7 +29,7 @@ import { hasMinRole } from "@/hooks/use-role-guard";
 import type { RegistryType } from "@/lib/api";
 import type { FeedbackItem, RegistryItem, ComponentVersionSummary } from "@/lib/types";
 import { compactNumber } from "@/lib/utils";
-import { registryIdentity } from "@/lib/registry-name";
+import { canonicalRouteParts, registryIdentity } from "@/lib/registry-name";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ReviewForm } from "@/components/registry/review-form";
@@ -37,6 +37,7 @@ import { VersionDropdown } from "@/components/registry/version-dropdown";
 import { ComponentEditForm } from "@/components/registry/component-edit-form";
 import { ComponentInstallCommand } from "@/components/registry/component-install-command";
 import { RegistryName } from "@/components/registry/registry-name";
+import { ShareLinkButton } from "@/components/registry/share-link-button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -102,10 +103,22 @@ function ArchivedComponentBanner({ item, type, canRestore }: { item: RegistryIte
   );
 }
 
-export default function ComponentDetailPage() {
-  const { componentId: id } = useParams({ from: "/_authed/components/$componentId" });
-  const { type: typeParam } = useSearch({ from: "/_authed/components/$componentId" });
-  const type = (typeParam ?? "mcps") as RegistryType;
+export default function ComponentDetailPage({
+  componentId,
+  componentType,
+}: {
+  componentId?: string;
+  componentType?: RegistryType;
+} = {}) {
+  // Rendered from two routes: the canonical /components/$type/$namespace/$slug
+  // route passes the resolved UUID and type as props; the legacy
+  // /components/$componentId route supplies the id as a path param and the
+  // type as a query param.
+  const params = useParams({ strict: false }) as { componentId?: string };
+  const search = useSearch({ strict: false }) as { type?: string };
+  const id = componentId ?? params.componentId ?? "";
+  const type = (componentType ?? search.type ?? "mcps") as RegistryType;
+  const navigate = useNavigate();
   const singularType = type === "sandboxes" ? "sandbox" : type.replace(/s$/, "");
   const { data: item, isLoading, isError, error, refetch } = useRegistryItem(type, id);
   const { data: feedbackItems, refetch: refetchFeedback } = useFeedback(singularType, id);
@@ -175,6 +188,27 @@ export default function ComponentDetailPage() {
   const identity = registryIdentity(item, id.slice(0, 8));
   const componentName = identity.name;
   const componentRef = identity.qualified;
+  // Canonical shareable path from the explicit columns only, and only when the
+  // namespace/slug actually resolve server-side (legacy verbatim-username
+  // namespaces do not).
+  const canonicalParts = canonicalRouteParts(item?.namespace, item?.slug);
+  const canonicalComponentPath = canonicalParts
+    ? `/components/${type}/${canonicalParts.namespace}/${canonicalParts.slug}`
+    : undefined;
+
+  // Legacy /components/<uuid>?type= entry: swap the address bar to the
+  // shareable URL only for approved components. /registry/resolve returns
+  // approved-or-owned only, so redirecting a reviewer/admin viewing a pending
+  // component would strand them on a 404; their UUID URL keeps working.
+  const componentApproved = (item?.status as string | undefined) === "approved";
+  useEffect(() => {
+    if (componentId || !canonicalParts || !componentApproved) return;
+    navigate({
+      to: "/components/$type/$namespace/$slug",
+      params: { type, ...canonicalParts },
+      replace: true,
+    });
+  }, [componentId, type, canonicalParts, componentApproved, navigate]);
 
   function applyVisibility(visibility: "public" | "team") {
     updateVisibility.mutate(
@@ -225,6 +259,13 @@ export default function ComponentDetailPage() {
               <span className="text-xs">Back</span>
             </Link>
           </Button>
+        }
+        actionButtonsRight={
+          item ? (
+            <ShareLinkButton
+              path={canonicalComponentPath ?? `/components/${id}?type=${type}`}
+            />
+          ) : undefined
         }
       />
       <div className="p-6 w-full mx-auto space-y-6">

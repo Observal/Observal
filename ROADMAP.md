@@ -39,7 +39,7 @@ Priority is explicit and is not inferred from list position.
 
 ## How to use this roadmap
 
-Stages express dependency order, not release commitments. The three lanes can advance in parallel once their dependencies hold. Before implementation, split each initiative into a focused epic with small, reviewable pull requests; reuse the linked contracts, preserve the stated boundaries, and close the initiative only when its outcome-based completion signal is true.
+Stages express dependency order, not release commitments. The three lanes can advance in parallel once their dependencies hold. Before implementation, define the initiative's scope and dependencies, reuse the linked contracts, preserve the stated boundaries, and close the initiative only when its outcome-based completion signal is true. Keep tightly coupled changes together when splitting them would leave incomplete workflows or unstable intermediate contracts.
 
 ## Lane 1: Observability
 
@@ -246,11 +246,11 @@ Reuse the installed lockfile inventory and outdated comparison to show a periodi
 
 #### Teamspace creation and membership approvals, P0
 
-**Status:** In progress. [PR #1619](https://github.com/Observal/Observal/pull/1619) added teamspaces and direct membership management, and [PR #1640](https://github.com/Observal/Observal/pull/1640) added team publishing. Request and approval workflows remain.
+**Status:** In progress. [PR #1619](https://github.com/Observal/Observal/pull/1619) added teamspaces and direct membership management, and [PR #1640](https://github.com/Observal/Observal/pull/1640) added team publishing. Membership request and approval workflows remain.
 
-Admins approve or reject teamspace creation; team owners approve or reject membership requests. Persist requester, reviewer, decision, reason, and timestamps in Inbox and history. Keep owner-driven direct member addition. Add an admin dynamic-setting toggle to auto-approve teamspace creation for installations that do not require central approval.
+Any signed-in user can create a teamspace and becomes its initial owner. Teamspace creation is immediate and audited; it does not require admin approval. Team owners approve or reject membership requests, with requester, reviewer, decision, reason, and timestamps persisted in Inbox and history. Keep owner-driven direct member addition.
 
-**Complete when:** both approval flows work in web and CLI, auto-approved creation is still audited, rejected requests cannot create membership or reserve ownership, and the last-owner protections remain intact.
+**Complete when:** immediate teamspace creation works in web and CLI and is audited, membership approval works in web and CLI, rejected requests cannot create membership, and the last-owner protections remain intact.
 
 #### Teamspace share-to-join, P0
 
@@ -302,6 +302,16 @@ Diagnose the complete stack across supported deployments and local harnesses. Cl
 
 **Complete when:** seeded trials cover deployment, authentication, database, ingest, hook and extension, attribution, and registry failures, and the skill demonstrates root-cause recovery without unsafe guesses.
 
+#### Post-upgrade changelog and frontend tour, P2
+
+**Status:** Planned.
+
+After an Observal release is installed, show the relevant changelog in both the web frontend and CLI. The CLI presents release notes after a successful update, while the web frontend detects a deployment version change and shows the notes once per user with a permanent way to reopen them. Both surfaces use the same versioned release-note source so their descriptions do not drift.
+
+The web frontend also offers an optional guided tour that spotlights where new features are located. Tours are frontend-only, user-initiated or explicitly accepted, skippable, and role-aware so they never point users to controls they cannot access.
+
+**Complete when:** a successful server or CLI update shows the correct version's changelog, dismissed notes remain available on demand, and users can launch or skip a role-appropriate frontend tour that identifies the released features without blocking normal navigation.
+
 ### Stage 3: Distribution and verified trust
 
 #### Google OSS-Fuzz integration, P1
@@ -352,6 +362,7 @@ The following are explicitly outside this roadmap's intended implementation:
 - Teamspace sharing uses the canonical teamspace page, sign-in return, and an explicit membership request; the link itself never grants access.
 - Marketplace import never masquerades as local authorship or grants publisher leaderboard credit.
 - Server lifecycle work does not introduce arbitrary remote shell execution.
+- Frontend tours are optional guidance and never block normal navigation or run in the CLI.
 - Stages communicate dependency order, not delivery dates.
 
 ## Existing implementation to build on

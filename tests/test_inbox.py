@@ -861,6 +861,51 @@ async def test_component_links_name_their_type(sessions):
 
 
 @pytest.mark.asyncio
+async def test_registry_actions_use_canonical_urls(sessions):
+    expected = {
+        "mcp": "mcps",
+        "skill": "skills",
+        "hook": "hooks",
+        "prompt": "prompts",
+        "sandbox": "sandboxes",
+    }
+    async with sessions() as db:
+        user = await _user(db)
+        agent = await delivery.deliver_one(
+            db,
+            kind=InboxKind.review_approved,
+            user_id=user.id,
+            subject=_subject(type="agent", namespace="acme", slug="reviewer"),
+        )
+        assert agent.action_url == "/agents/acme/reviewer"
+
+        for singular, plural in expected.items():
+            item = await delivery.deliver_one(
+                db,
+                kind=InboxKind.review_approved,
+                user_id=user.id,
+                subject=_subject(type=singular, namespace="acme", slug=f"{singular}-tool"),
+            )
+            assert item.action_url == f"/components/{plural}/acme/{singular}-tool"
+        await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_registry_actions_keep_uuid_fallback_for_legacy_namespaces(sessions):
+    async with sessions() as db:
+        user = await _user(db)
+        subject = _subject(type="skill", namespace="Legacy_User", slug="helper")
+        item = await delivery.deliver_one(
+            db,
+            kind=InboxKind.review_approved,
+            user_id=user.id,
+            subject=subject,
+        )
+        await db.commit()
+        assert item.action_url == f"/components/{subject.id}?type=skills"
+
+
+@pytest.mark.asyncio
 async def test_review_links_open_the_tab_holding_the_item(sessions):
     """The review queue opens on the agents tab by default.
 

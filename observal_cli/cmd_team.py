@@ -18,19 +18,8 @@ team_app.add_typer(members_app, name="members")
 
 
 def _resolve_team_id(team: str) -> str:
-    """Accept a UUID or a team handle; resolve to a UUID via the all-teams list."""
-    import uuid as _uuid
-
-    try:
-        _uuid.UUID(team)
-        return team
-    except ValueError:
-        pass
-    teams = client.get("/api/v1/teams/all")
-    for row in teams:
-        if row.get("handle") == team.lower():
-            return str(row["id"])
-    raise typer.BadParameter(f"No teamspace with handle '{team}'", param_hint="team")
+    """Accept a UUID or a team handle; resolve through the shared client helper."""
+    return client.resolve_team_id(team)
 
 
 @team_app.command("list")
@@ -109,27 +98,56 @@ def create_team(
     name: str = typer.Argument(help="Teamspace display name."),
     handle: str = typer.Option(None, "--handle", "-h", help="Namespace handle (derived from name if omitted)."),
     description: str = typer.Option(None, "--description", "-d", help="Teamspace description."),
+    visibility: str = typer.Option("public", "--visibility", "-v", help="Visibility: public | private."),
 ):
-    """Create a teamspace. Requires reviewer role or above. You become the owner.
+    """Create a teamspace. Any signed-in user can; you become the owner.
 
     The handle is reserved across users and teams, so it must not collide with
-    an existing username or team handle.
+    an existing username or team handle. A private teamspace is hidden from
+    users who are not members (admins and global reviewers still see it).
 
     Examples:
 
         observal team create 'Platform Tools' --handle platform-tools --description 'Internal tooling'
 
-        observal team create 'SRE' -h sre -d 'Site reliability'
+        observal team create 'SRE' -h sre -d 'Site reliability' --visibility private
     """
-    body: dict = {"name": name}
+    if visibility not in ("public", "private"):
+        raise typer.BadParameter("visibility must be 'public' or 'private'", param_hint="visibility")
+    body: dict = {"name": name, "visibility": visibility}
     if handle:
         body["handle"] = handle
     if description:
         body["description"] = description
     resp = client.post("/api/v1/teams", json_data=body)
     rprint(
-        f"[green]Created teamspace:[/green] {resp.get('name')} ([dim]{resp.get('handle')}[/dim]) id={resp.get('id')}"
+        f"[green]Created teamspace:[/green] {resp.get('name')} ([dim]{resp.get('handle')}[/dim]) "
+        f"{resp.get('visibility', 'public')} id={resp.get('id')}"
     )
+
+
+@team_app.command("visibility")
+def set_visibility(
+    team: str = typer.Argument(help="Team UUID or handle."),
+    visibility: str = typer.Argument(help="public | private"),
+):
+    """Change a teamspace's visibility. Team owners, team reviewers, and deployment admins.
+
+    A private teamspace is hidden from users who are not members; members,
+    admins, and global reviewers keep seeing it. Listings keep their own
+    visibility and are unaffected.
+
+    Examples:
+
+        observal team visibility platform-tools private
+
+        observal team visibility sre public
+    """
+    if visibility not in ("public", "private"):
+        raise typer.BadParameter("visibility must be 'public' or 'private'", param_hint="visibility")
+    team_id = _resolve_team_id(team)
+    resp = client.patch(f"/api/v1/teams/{team_id}/visibility", json_data={"visibility": visibility})
+    rprint(f"[green]Teamspace is now {resp.get('visibility')}.[/green]")
 
 
 @team_app.command("delete")
@@ -194,6 +212,119 @@ def list_members(
     for m in rows:
         table.add_row((m.get("username") and f"@{m['username']}") or "-", m.get("email", ""), m.get("role", ""))
     rprint(table)
+
+
+@team_app.command("request-join")
+def request_join(
+    team: str = typer.Argument(help="Team UUID or handle."),
+    message: str = typer.Option(None, "--message", "-m", help="Optional note shown to the owners."),
+):
+    """Request member access to a teamspace. An owner must approve before you join.
+
+    Examples:
+
+        observal team request-join platform-tools
+
+        observal team request-join sre --message 'I maintain the pager rotation'
+    """
+    team_id = _resolve_team_id(team)
+    body: dict = {}
+    if message:
+        body["message"] = message
+    resp = client.post(f"/api/v1/teams/{team_id}/join-requests", json_data=body)
+    rprint(f"[green]Join request sent.[/green] status={resp.get('status')} id={resp.get('id')}")
+    rprint("[dim]A team owner will approve or reject it; the decision lands in your inbox.[/dim]")
+
+
+@team_app.command("requests")
+def list_join_requests(
+    team: str = typer.Argument(help="Team UUID or handle."),
+    status: str = typer.Option(None, "--status", "-s", help="Filter: pending | approved | rejected | cancelled."),
+    output: str = typer.Option("table", "--output", "-o", help="Output format: table | json"),
+):
+    """List a teamspace's join requests and decisions. Owner or admin only.
+
+    Examples:
+
+        observal team requests platform-tools
+
+        observal team requests sre --status pending --output json
+    """
+    team_id = _resolve_team_id(team)
+    params = {"status": status} if status else None
+    rows = client.get(f"/api/v1/teams/{team_id}/join-requests", params=params)
+    if output == "json":
+        output_json(rows)
+        return
+    if not rows:
+        rprint("[dim]No join requests.[/dim]")
+        return
+    table = Table(title="Join requests")
+    table.add_column("user", style="cyan")
+    table.add_column("status", style="green")
+    table.add_column("message", style="dim")
+    table.add_column("decided by", style="dim")
+    table.add_column("reason", style="dim")
+    for r in rows:
+        table.add_row(
+            (r.get("username") and f"@{r['username']}") or r.get("email", ""),
+            r.get("status", ""),
+            r.get("message") or "-",
+            (r.get("decided_by_username") and f"@{r['decided_by_username']}") or "-",
+            r.get("decision_reason") or "-",
+        )
+    rprint(table)
+
+
+def _find_pending_request(team_id: str, user: str) -> dict:
+    rows = client.get(f"/api/v1/teams/{team_id}/join-requests", params={"status": "pending"})
+    needle = user.lstrip("@").lower()
+    for r in rows:
+        if (r.get("username") or "").lower() == needle or (r.get("email") or "").lower() == needle:
+            return r
+    raise typer.BadParameter(f"No pending join request from '{user}'", param_hint="user")
+
+
+@team_app.command("approve")
+def approve_join_request(
+    team: str = typer.Argument(help="Team UUID or handle."),
+    user: str = typer.Argument(help="Email or @username of the requester."),
+):
+    """Approve a pending join request. Owner or admin only. Grants member role.
+
+    Examples:
+
+        observal team approve platform-tools @alice
+
+        observal team approve sre bob@example.com
+    """
+    team_id = _resolve_team_id(team)
+    req = _find_pending_request(team_id, user)
+    resp = client.post(f"/api/v1/teams/{team_id}/join-requests/{req['id']}/approve")
+    rprint(f"[green]Approved.[/green] {user} is now a member ({resp.get('status')}).")
+
+
+@team_app.command("reject")
+def reject_join_request(
+    team: str = typer.Argument(help="Team UUID or handle."),
+    user: str = typer.Argument(help="Email or @username of the requester."),
+    reason: str = typer.Option(None, "--reason", "-r", help="Optional reason shown to the requester."),
+):
+    """Reject a pending join request. Owner or admin only.
+
+    Examples:
+
+        observal team reject platform-tools @alice --reason 'Use the sre teamspace instead'
+
+        observal team reject sre bob@example.com
+    """
+    team_id = _resolve_team_id(team)
+    req = _find_pending_request(team_id, user)
+    body: dict = {}
+    if reason:
+        body["reason"] = reason
+    resp = client.post(f"/api/v1/teams/{team_id}/join-requests/{req['id']}/reject", json_data=body)
+    rprint(f"[yellow]Rejected.[/yellow] {user}'s request is {resp.get('status')}.")
 
 
 @members_app.command("add")

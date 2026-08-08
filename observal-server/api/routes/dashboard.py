@@ -149,6 +149,8 @@ async def top_agents(
             AgentDownloadRecord.agent_id,
             func.count(AgentDownloadRecord.id).label("cnt"),
             Agent.name,
+            Agent.namespace,
+            Agent.slug,
             AgentVersion.description,
             Agent.owner,
             AgentVersion.version,
@@ -160,7 +162,13 @@ async def top_agents(
     stmt = apply_visibility_filter(stmt, Agent, current_user)
     stmt = (
         stmt.group_by(
-            AgentDownloadRecord.agent_id, Agent.name, AgentVersion.description, Agent.owner, AgentVersion.version
+            AgentDownloadRecord.agent_id,
+            Agent.name,
+            Agent.namespace,
+            Agent.slug,
+            AgentVersion.description,
+            Agent.owner,
+            AgentVersion.version,
         )
         .order_by(func.count(AgentDownloadRecord.id).desc())
         .limit(limit)
@@ -183,6 +191,9 @@ async def top_agents(
         TopAgentItem(
             id=row.agent_id,
             name=row.name,
+            namespace=row.namespace,
+            slug=row.slug,
+            qualified_name=f"{row.namespace}/{row.slug}",
             description=row.description or "",
             owner=row.owner or "",
             version=row.version or "",
@@ -207,6 +218,8 @@ async def agent_leaderboard(
             AgentDownloadRecord.agent_id,
             func.count(AgentDownloadRecord.id).label("cnt"),
             Agent.name,
+            Agent.namespace,
+            Agent.slug,
             AgentVersion.description,
             Agent.owner,
             AgentVersion.version,
@@ -225,6 +238,8 @@ async def agent_leaderboard(
     group_cols = [
         AgentDownloadRecord.agent_id,
         Agent.name,
+        Agent.namespace,
+        Agent.slug,
         AgentVersion.description,
         Agent.owner,
         AgentVersion.version,
@@ -284,6 +299,9 @@ async def agent_leaderboard(
             LeaderboardItem(
                 id=a.id,
                 name=a.name,
+                namespace=a.namespace,
+                slug=a.slug,
+                qualified_name=a.qualified_name,
                 description=a.description or "",
                 owner=a.owner or "",
                 version=a.version or "",
@@ -301,6 +319,9 @@ async def agent_leaderboard(
         LeaderboardItem(
             id=row.agent_id,
             name=row.name,
+            namespace=row.namespace,
+            slug=row.slug,
+            qualified_name=f"{row.namespace}/{row.slug}",
             description=row.description or "",
             owner=row.owner or "",
             version=row.version or "",
@@ -342,6 +363,8 @@ async def component_leaderboard(
                 AgentComponent.component_id,
                 func.count(func.distinct(AgentDownloadRecord.id)).label("cnt"),
                 listing_model.name,
+                listing_model.namespace,
+                listing_model.slug,
                 version_model.description,
                 listing_model.submitted_by,
             )
@@ -367,7 +390,12 @@ async def component_leaderboard(
             stmt = stmt.where(AgentDownloadRecord.installed_at >= dt.now(UTC) - timedelta(days=days))
         stmt = (
             stmt.group_by(
-                AgentComponent.component_id, listing_model.name, version_model.description, listing_model.submitted_by
+                AgentComponent.component_id,
+                listing_model.name,
+                listing_model.namespace,
+                listing_model.slug,
+                version_model.description,
+                listing_model.submitted_by,
             )
             .order_by(func.count(func.distinct(AgentDownloadRecord.id)).desc())
             .limit(limit)
@@ -381,6 +409,9 @@ async def component_leaderboard(
                 ComponentLeaderboardItem(
                     id=r.component_id,
                     name=r.name,
+                    namespace=r.namespace,
+                    slug=r.slug,
+                    qualified_name=f"{r.namespace}/{r.slug}",
                     component_type=type_label,
                     description=r.description or "",
                     download_count=r.cnt,
@@ -429,7 +460,14 @@ async def component_leaderboard(
             if len(all_items) >= limit:
                 break
             extra_stmt = (
-                select(listing_model.id, listing_model.name, version_model.description, listing_model.submitted_by)
+                select(
+                    listing_model.id,
+                    listing_model.name,
+                    listing_model.namespace,
+                    listing_model.slug,
+                    version_model.description,
+                    listing_model.submitted_by,
+                )
                 .join(version_model, listing_model.latest_version_id == version_model.id)
                 .where(version_model.status == ListingStatus.approved, listing_model.id.notin_(existing_ids))
             )
@@ -449,6 +487,9 @@ async def component_leaderboard(
                     ComponentLeaderboardItem(
                         id=r.id,
                         name=r.name,
+                        namespace=r.namespace,
+                        slug=r.slug,
+                        qualified_name=f"{r.namespace}/{r.slug}",
                         component_type=type_label,
                         description=r.description or "",
                         download_count=0,

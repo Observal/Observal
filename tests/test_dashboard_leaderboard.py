@@ -87,6 +87,21 @@ async def test_component_leaderboard_ignores_downloads_from_deleted_agents():
     assert all("agents.deleted_at IS NULL" in _sql(stmt) for stmt in download_queries)
 
 
+async def test_leaderboards_select_canonical_identity_columns():
+    agents_db = _CaptureDb()
+    await top_agents(limit=6, db=agents_db, current_user=None)
+    agent_sql = _sql(agents_db.statements[0])
+    assert "agents.namespace" in agent_sql
+    assert "agents.slug" in agent_sql
+
+    components_db = _CaptureDb()
+    await component_leaderboard(window="all", limit=20, user=None, db=components_db, current_user=None)
+    for table, stmt in zip(_LISTING_TABLES, _download_queries(components_db), strict=True):
+        sql = _sql(stmt)
+        assert f"{table}.namespace" in sql
+        assert f"{table}.slug" in sql
+
+
 # ── Visibility scoping (Feature 3: team_id is the only privacy axis) ──────────
 
 

@@ -181,6 +181,123 @@ async def on_review_decided(
     return len(items)
 
 
+def _team_subject(team) -> Subject:
+    """A teamspace as an inbox subject.
+
+    ``team_id`` and ``is_private`` are carried so read-time visibility can
+    re-check membership. This matters for ``team_join_requested``, which goes
+    only to owners: if a private team's owner is later removed, the membership
+    re-check must stop their inbox from continuing to surface that team's join
+    requests and decision activity. The requester's own ``team_join_decided``
+    notice is unaffected because that kind sets ``recheck_visibility=False`` and
+    is exempt from the re-check regardless of what the subject carries — so a
+    rejected requester still reads their decision even though they are not a
+    member. For a public team ``is_private`` is False, so the snapshot check
+    passes for everyone and nothing is hidden.
+    """
+    return Subject(
+        type="team",
+        id=getattr(team, "id", None),
+        name=getattr(team, "name", "") or "",
+        handle=getattr(team, "handle", None),
+        team_id=getattr(team, "id", None),
+        is_private=bool(getattr(team, "is_private", False)),
+    )
+
+
+async def on_team_join_requested(
+    db: AsyncSession,
+    team,
+    *,
+    requester_id: uuid.UUID,
+    message: str | None = None,
+) -> int:
+    """Someone asked to join a teamspace: tell every owner.
+
+    The requester is the actor, so ``skip_actor`` keeps their own request out of
+    their inbox even if they are somehow also an owner.
+    """
+    subject = _team_subject(team)
+    owners = await recipients.team_owners(db, team.id)
+    items = await deliver(
+        db,
+        kind=InboxKind.team_join_requested,
+        recipients=owners,
+        subject=subject,
+        actor_id=requester_id,
+        body=message,
+        context={"requester_id": str(requester_id)},
+    )
+    optic.debug("inbox: team_join_requested for team {} -> {} item(s)", team.id, len(items))
+    return len(items)
+
+
+async def on_team_join_decided(
+    db: AsyncSession,
+    team,
+    *,
+    request_id: uuid.UUID,
+    requester_id: uuid.UUID,
+    approved: bool,
+    actor_id: uuid.UUID | None,
+    reason: str | None = None,
+) -> int:
+    """An owner decided a join request: tell the requester, clear the owners.
+
+    The decision closes the ``team_join_requested`` copy in EVERY owner's
+    inbox, not only the deciding owner's, exactly like a review decision
+    empties the review queue for all of its reviewers.
+    """
+    subject = _team_subject(team)
+    decision = "approved" if approved else "rejected"
+    items = await deliver(
+        db,
+        kind=InboxKind.team_join_decided,
+        recipients=[requester_id],
+        subject=subject,
+        actor_id=actor_id,
+        body=reason,
+        context={"request_id": str(request_id), "decision": decision},
+        # The requester asked for this decision; deliver even if an admin
+        # somehow decides their own request.
+        skip_actor=False,
+    )
+
+    request_key = spec_for(InboxKind.team_join_requested).dedupe(subject, {"requester_id": str(requester_id)})[:255]
+    cleared = await resolve_matching(
+        db,
+        kind=InboxKind.team_join_requested,
+        dedupe_key=request_key,
+        detail=f"Join request {decision}",
+        actor_id=actor_id,
+    )
+    if cleared:
+        optic.debug("inbox: cleared {} open team_join_requested item(s) for key {}", cleared, request_key)
+    return len(items)
+
+
+async def on_team_join_cancelled(
+    db: AsyncSession,
+    team,
+    *,
+    requester_id: uuid.UUID,
+) -> int:
+    """The requester withdrew: clear the owners' open request items.
+
+    No decision notice is owed to anyone — the requester acted, and the fact
+    the owners were asked to act on has stopped being true.
+    """
+    subject = _team_subject(team)
+    request_key = spec_for(InboxKind.team_join_requested).dedupe(subject, {"requester_id": str(requester_id)})[:255]
+    return await resolve_matching(
+        db,
+        kind=InboxKind.team_join_requested,
+        dedupe_key=request_key,
+        detail="Join request withdrawn",
+        actor_id=requester_id,
+    )
+
+
 async def on_insight_ready(
     db: AsyncSession,
     report,

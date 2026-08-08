@@ -7,7 +7,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from models.user import UserRole
 from services.registry_namespace import validate_namespace
@@ -41,6 +41,12 @@ class InitRequest(BaseModel):
         return _validate_username(v)
 
 
+class InvitePreviewRequest(BaseModel):
+    # POST body rather than a path/query token so it never lands in access or
+    # audit logs, which record URLs.
+    token: str = Field(max_length=128)
+
+
 class LoginRequest(BaseModel):
     email: str
     password: str
@@ -56,6 +62,9 @@ class RegisterRequest(BaseModel):
     name: str
     username: str | None = None
     password: str
+    # A valid admin-minted invite token bypasses the self-registration gate.
+    # It authorizes account creation only; the created role is always `user`.
+    invite_token: str | None = None
 
     @field_validator("email", mode="before")
     @classmethod

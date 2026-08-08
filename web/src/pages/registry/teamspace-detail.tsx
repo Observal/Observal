@@ -1,14 +1,17 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useState } from "react";
 import {
 	ArrowLeft,
 	Bot,
 	Building2,
+	Check,
 	ClipboardCheck,
+	Clock,
 	Loader2,
 	Lock,
 	LogOut,
@@ -16,13 +19,16 @@ import {
 	Puzzle,
 	ShieldCheck,
 	Terminal,
+	Ticket,
 	Trash2,
 	UserPlus,
 	Users,
+	X,
 } from "lucide-react";
 import { PageHeader } from "@/components/layouts/page-header";
 import { AgentCard } from "@/components/registry/agent-card";
 import { ComponentCard } from "@/components/registry/component-card";
+import { SubmitComponentDialog } from "@/components/registry/submit-component-dialog";
 import { StatusBadge } from "@/components/registry/status-badge";
 import { ReviewDetailSheet } from "@/components/review/review-detail-sheet";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -46,21 +52,31 @@ import { Label } from "@/components/ui/label";
 import { PickerSelect } from "@/components/ui/picker-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { ShareLinkButton } from "@/components/registry/share-link-button";
 import {
+	useCancelJoinRequest,
+	useComponentSaveDraft,
+	useComponentSubmit,
+	useDecideJoinRequest,
 	useDeleteTeam,
+	useJoinRequests,
 	useLeaveTeam,
+	useMyJoinRequests,
 	useRegistryList,
 	useRemoveTeamMember,
+	useRequestJoin,
 	useReviewAction,
 	useTeamByHandle,
 	useTeamMembers,
 	useTeamReviewQueue,
+	useUpdateTeamVisibility,
 	useUpsertTeamMember,
 } from "@/hooks/use-api";
 import { hasMinRole } from "@/hooks/use-role-guard";
-import { getUserRole, type RegistryType } from "@/lib/api";
-import type { RegistryItem, ReviewItem, Team, TeamMember, TeamRole } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { useDeploymentConfig } from "@/hooks/use-deployment-config";
+import { admin, getUserRole, type RegistryType } from "@/lib/api";
+import type { RegistryItem, ReviewItem, Team, TeamJoinRequest, TeamMember, TeamRole } from "@/lib/types";
+import { cn, copyToClipboard } from "@/lib/utils";
 
 const ROLE_OPTIONS = [
 	{ value: "member", label: "Member" },
@@ -249,7 +265,7 @@ function MembersTab({ team }: { team: Team }) {
 			<EmptyState
 				icon={ShieldCheck}
 				title="Membership required"
-				description="This teamspace is discoverable, but its member roster is only visible to members and administrators."
+				description="This teamspace is discoverable, but its member roster is only visible to members and administrators. Use Request to join in the header to ask for access."
 			/>
 		);
 	}
@@ -515,6 +531,338 @@ function ReviewTab({
 	);
 }
 
+/**
+ * Global-admin shortcut: mint an invite-to-Observal link that lands a brand
+ * new person on this teamspace page after account creation — where they still
+ * have to Request to join.
+ */
+function TeamInviteLinkButton({ handle }: { handle: string }) {
+	const { ssoOnly } = useDeploymentConfig();
+	const mint = useMutation({
+		mutationFn: () => admin.createInvite({ next_path: `/teamspaces/${handle}` }),
+		onSuccess: async (data) => {
+			try {
+				await copyToClipboard(data.url);
+				toast.success("Invite link copied — new users land on this teamspace after sign-up");
+			} catch {
+				toast.error("Invite created, but the link could not be copied. Find it in Users → Invite links.");
+			}
+		},
+		onError: (err: Error) => toast.error(err.message || "Failed to create the invite"),
+	});
+	// Invite links create password accounts, which the server refuses on
+	// SSO-only deployments; hide the shortcut there rather than offer a 400.
+	if (ssoOnly || !hasMinRole(getUserRole(), "admin")) return null;
+	return (
+		<Button variant="outline" size="sm" onClick={() => mint.mutate()} disabled={mint.isPending}>
+			<Ticket className="mr-1.5 h-3.5 w-3.5" /> Invite link
+		</Button>
+	);
+}
+
+/**
+ * Public/private toggle, GitHub-style. Team owners and team reviewers hold it
+ * (plus global admins). Going private hides the teamspace from non-member
+ * plain users everywhere; members, admins, and global reviewers keep access.
+ */
+function VisibilityControl({ team }: { team: Team }) {
+	const canChange =
+		team.role === "owner" || team.role === "reviewer" || hasMinRole(getUserRole(), "admin");
+	const updateVisibility = useUpdateTeamVisibility(team.id);
+	if (!canChange) return null;
+	const isPrivate = team.visibility === "private";
+	return (
+		<Button
+			variant="outline"
+			size="sm"
+			onClick={() => updateVisibility.mutate(isPrivate ? "public" : "private")}
+			disabled={updateVisibility.isPending}
+			title={
+				isPrivate
+					? "Make this teamspace discoverable by every signed-in user"
+					: "Hide this teamspace from users who are not members"
+			}
+		>
+			{updateVisibility.isPending ? (
+				<Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+			) : (
+				<Lock className="mr-1.5 h-3.5 w-3.5" />
+			)}
+			{isPrivate ? "Make public" : "Make private"}
+		</Button>
+	);
+}
+
+function requesterLabel(request: TeamJoinRequest): string {
+	return request.username ? `@${request.username}` : (request.email ?? "Unknown user");
+}
+
+/**
+ * Header control for signed-in non-members: request member access, see the
+ * pending state, or withdraw. The shared link that brought someone here never
+ * grants access — this explicit request plus an owner's approval is the only
+ * path onto the roster.
+ */
+function JoinRequestControl({ team }: { team: Team }) {
+	const isAdmin = hasMinRole(getUserRole(), "admin");
+	const eligible = !team.role && !isAdmin;
+	const { data: mine = [] } = useMyJoinRequests(team.id, eligible);
+	const requestJoin = useRequestJoin(team.id);
+	const cancelRequest = useCancelJoinRequest(team.id);
+	const [open, setOpen] = useState(false);
+	const [message, setMessage] = useState("");
+
+	if (!eligible) return null;
+	const pending = mine.find((request) => request.status === "pending");
+
+	if (pending) {
+		return (
+			<div className="flex items-center gap-2">
+				<Badge variant="outline" className="gap-1 px-2 py-1 text-[11px]">
+					<Clock className="h-3 w-3" />
+					Request pending
+				</Badge>
+				<Button
+					variant="outline"
+					size="sm"
+					onClick={() => cancelRequest.mutate(pending.id)}
+					disabled={cancelRequest.isPending}
+				>
+					Withdraw
+				</Button>
+			</div>
+		);
+	}
+
+	return (
+		<>
+			<Button
+				size="sm"
+				className="bg-primary-accent text-primary-foreground hover:bg-primary-accent/90"
+				onClick={() => setOpen(true)}
+			>
+				<UserPlus className="mr-1.5 h-3.5 w-3.5" /> Request to join
+			</Button>
+			<Dialog open={open} onOpenChange={setOpen}>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Request to join {team.name}</DialogTitle>
+					</DialogHeader>
+					<div className="space-y-2">
+						<Label htmlFor="join-request-message">Message (optional)</Label>
+						<Textarea
+							id="join-request-message"
+							value={message}
+							onChange={(event) => setMessage(event.target.value)}
+							rows={3}
+							maxLength={500}
+							placeholder="Tell the owners why you want to join"
+						/>
+						<p className="text-xs text-muted-foreground">
+							You are asking for member access. A team owner approves or rejects the request; the decision
+							arrives in your inbox.
+						</p>
+					</div>
+					<DialogFooter>
+						<Button variant="outline" onClick={() => setOpen(false)}>
+							Cancel
+						</Button>
+						<Button
+							disabled={requestJoin.isPending}
+							onClick={() =>
+								requestJoin.mutate(
+									message.trim() ? { message: message.trim() } : {},
+									{
+										onSuccess: () => {
+											setOpen(false);
+											setMessage("");
+										},
+									},
+								)
+							}
+						>
+							{requestJoin.isPending ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+							Send request
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+		</>
+	);
+}
+
+/**
+ * Join requests with approve/reject actions and decision history rendered
+ * straight from the request rows. This sits beside the listing Review tab but
+ * serves a different audience: owners and global admins only, while listing
+ * review includes team reviewers.
+ */
+function JoinRequestsTab({
+	team,
+	requests,
+	isLoading,
+	isError,
+	errorMessage,
+	onRetry,
+}: {
+	team: Team;
+	requests: TeamJoinRequest[];
+	isLoading: boolean;
+	isError: boolean;
+	errorMessage?: string;
+	onRetry: () => void;
+}) {
+	const decide = useDecideJoinRequest(team.id);
+	const [rejectTarget, setRejectTarget] = useState<TeamJoinRequest | null>(null);
+	const [reason, setReason] = useState("");
+
+	if (isLoading) return <TableSkeleton rows={3} cols={3} />;
+	if (isError) return <ErrorState message={errorMessage} onRetry={onRetry} />;
+
+	const pending = requests.filter((request) => request.status === "pending");
+	const decided = requests.filter((request) => request.status !== "pending");
+
+	return (
+		<div className="space-y-6">
+			{pending.length === 0 ? (
+				<EmptyState
+					icon={ClipboardCheck}
+					title="No pending join requests"
+					description="When someone opens this teamspace from a shared link and asks to join, their request lands here for owners to decide."
+				/>
+			) : (
+				<div className="divide-y divide-border/70 overflow-hidden rounded-lg border border-border/80">
+					{pending.map((request) => (
+						<div key={request.id} className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start">
+							<div className="min-w-0 flex-1">
+								<div className="flex flex-wrap items-center gap-2">
+									<p className="truncate text-sm font-medium">{requesterLabel(request)}</p>
+									{request.name && <span className="text-xs text-muted-foreground">{request.name}</span>}
+									{request.created_at && (
+										<span className="text-[11px] text-muted-foreground">
+											{new Date(request.created_at).toLocaleDateString()}
+										</span>
+									)}
+								</div>
+								{request.message && (
+									<p className="mt-1 max-w-2xl text-xs leading-5 text-muted-foreground">“{request.message}”</p>
+								)}
+								<p className="mt-1.5 text-[11px] text-muted-foreground">
+									Approval grants <span className="font-medium">member</span> access. Roles are changed from the
+									Members tab.
+								</p>
+							</div>
+							<div className="flex shrink-0 items-center gap-2">
+								<Button
+									size="sm"
+									className="h-8 bg-primary-accent text-xs text-primary-foreground hover:bg-primary-accent/90"
+									onClick={() => decide.mutate({ requestId: request.id, approve: true })}
+									disabled={decide.isPending}
+								>
+									<Check className="mr-1 h-3.5 w-3.5" /> Approve
+								</Button>
+								<Button
+									size="sm"
+									variant="outline"
+									className="h-8 text-xs"
+									onClick={() => {
+										setReason("");
+										setRejectTarget(request);
+									}}
+									disabled={decide.isPending}
+								>
+									<X className="mr-1 h-3.5 w-3.5" /> Reject
+								</Button>
+							</div>
+						</div>
+					))}
+				</div>
+			)}
+
+			{decided.length > 0 && (
+				<div>
+					<h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+						Decision history
+					</h3>
+					<div className="divide-y divide-border/70 overflow-hidden rounded-lg border border-border/80">
+						{decided.map((request) => (
+							<div key={request.id} className="flex flex-col gap-1 px-4 py-3 text-xs sm:flex-row sm:items-center sm:justify-between">
+								<div className="flex min-w-0 flex-wrap items-center gap-2">
+									<span className="truncate font-medium text-foreground">{requesterLabel(request)}</span>
+									<Badge
+										variant="outline"
+										className={cn(
+											"px-1.5 py-0 text-[10px] capitalize",
+											request.status === "approved" && "border-success/40 text-success",
+											request.status === "rejected" && "border-destructive/40 text-destructive",
+										)}
+									>
+										{request.status}
+									</Badge>
+									{request.decision_reason && (
+										<span className="truncate text-muted-foreground">— {request.decision_reason}</span>
+									)}
+								</div>
+								<div className="shrink-0 text-muted-foreground">
+									{request.decided_by_username && <span>by @{request.decided_by_username} </span>}
+									{request.decided_at && <span>{new Date(request.decided_at).toLocaleDateString()}</span>}
+								</div>
+							</div>
+						))}
+					</div>
+				</div>
+			)}
+
+			<Dialog
+				open={!!rejectTarget}
+				onOpenChange={(open) => {
+					if (!open) setRejectTarget(null);
+				}}
+			>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Reject {rejectTarget ? requesterLabel(rejectTarget) : "request"}?</DialogTitle>
+					</DialogHeader>
+					<div className="space-y-2">
+						<Label htmlFor="join-reject-reason">Reason (optional)</Label>
+						<Textarea
+							id="join-reject-reason"
+							value={reason}
+							onChange={(event) => setReason(event.target.value)}
+							rows={3}
+							maxLength={500}
+							placeholder="Shown to the requester with the decision"
+						/>
+						<p className="text-xs text-muted-foreground">
+							The requester is notified in their inbox and may request again later.
+						</p>
+					</div>
+					<DialogFooter>
+						<Button variant="outline" onClick={() => setRejectTarget(null)}>
+							Cancel
+						</Button>
+						<Button
+							variant="destructive"
+							disabled={decide.isPending}
+							onClick={() => {
+								if (!rejectTarget) return;
+								decide.mutate({
+									requestId: rejectTarget.id,
+									approve: false,
+									reason: reason.trim() || undefined,
+								});
+								setRejectTarget(null);
+							}}
+						>
+							Reject request
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+		</div>
+	);
+}
+
 export default function TeamspaceDetailPage() {
 	const { handle } = useParams({ from: "/_authed/teamspaces/$handle" });
 	const { tab, type } = useSearch({ from: "/_authed/teamspaces/$handle" });
@@ -523,19 +871,30 @@ export default function TeamspaceDetailPage() {
 	const leaveTeam = useLeaveTeam();
 	const deleteTeam = useDeleteTeam();
 	const [deleteOpen, setDeleteOpen] = useState(false);
+	const [componentDialogOpen, setComponentDialogOpen] = useState(false);
 
 	const canReview = team?.role ? REVIEWING_TEAM_ROLES.includes(team.role) : false;
 	const reviewQueue = useTeamReviewQueue(team?.id, canReview);
 	const reviewItems = reviewQueue.data ?? [];
+
+	// Membership requests are owners-and-admins only — a narrower audience than
+	// the listing Review tab, which team reviewers also see.
+	const canManageRequests = team?.role === "owner" || hasMinRole(getUserRole(), "admin");
+	const joinRequestsQuery = useJoinRequests(team?.id, canManageRequests);
+	const joinRequests = joinRequestsQuery.data ?? [];
+	const pendingJoinCount = joinRequests.filter((request) => request.status === "pending").length;
 
 	const tabs = [
 		{ value: "agents", label: "Agents" },
 		{ value: "components", label: "Components" },
 		{ value: "members", label: "Members" },
 		...(canReview ? [{ value: "review", label: "Review" }] : []),
+		...(canManageRequests ? [{ value: "join-requests", label: "Join requests" }] : []),
 	];
 	const activeTab = tabs.some((entry) => entry.value === tab) ? tab! : "agents";
 	const activeType: RegistryType = type ?? "mcps";
+	const submitComponent = useComponentSubmit(activeType);
+	const saveComponentDraft = useComponentSaveDraft(activeType);
 
 	function goto(next: { tab?: string; type?: RegistryType }) {
 		navigate({
@@ -625,6 +984,14 @@ export default function TeamspaceDetailPage() {
 									<Badge variant="outline" className="px-1.5 py-0 text-[11px] font-medium capitalize">
 										{team.role ?? "discoverable"}
 									</Badge>
+									{team.visibility === "private" && (
+										<Badge
+											variant="outline"
+											className="gap-1 border-primary-accent/40 px-1.5 py-0 text-[11px] font-medium text-primary-accent"
+										>
+											<Lock className="h-3 w-3" /> Private
+										</Badge>
+									)}
 									{team.member_count != null && <span>{team.member_count} members</span>}
 								</div>
 								{team.description && (
@@ -633,6 +1000,10 @@ export default function TeamspaceDetailPage() {
 							</div>
 						</div>
 						<div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+							<ShareLinkButton path={`/teamspaces/${team.handle}`} />
+							<VisibilityControl team={team} />
+							<TeamInviteLinkButton handle={team.handle} />
+							<JoinRequestControl team={team} />
 							{isMember && (
 								<Button
 									variant="outline"
@@ -652,18 +1023,38 @@ export default function TeamspaceDetailPage() {
 					</header>
 
 					<Tabs value={activeTab} onValueChange={(value) => goto({ tab: value })} className="mt-6">
-						<TabsList>
-							{tabs.map((entry) => (
-								<TabsTrigger key={entry.value} value={entry.value}>
-									{entry.label}
-									{entry.value === "review" && reviewItems.length > 0 && (
-										<span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary-accent px-1 text-[10px] font-semibold text-primary-foreground">
-											{reviewItems.length}
-										</span>
-									)}
-								</TabsTrigger>
-							))}
-						</TabsList>
+						<div className="flex items-center justify-between gap-3">
+							<TabsList>
+								{tabs.map((entry) => (
+									<TabsTrigger key={entry.value} value={entry.value}>
+										{entry.label}
+										{entry.value === "review" && reviewItems.length > 0 && (
+											<span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary-accent px-1 text-[10px] font-semibold text-primary-foreground">
+												{reviewItems.length}
+											</span>
+										)}
+										{entry.value === "join-requests" && pendingJoinCount > 0 && (
+											<span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary-accent px-1 text-[10px] font-semibold text-primary-foreground">
+												{pendingJoinCount}
+											</span>
+										)}
+									</TabsTrigger>
+								))}
+							</TabsList>
+
+							{isMember && activeTab === "agents" && (
+								<Button asChild size="sm">
+									<Link to="/agents/builder" search={{ team: team.id }}>
+										<Bot /> Build agent
+									</Link>
+								</Button>
+							)}
+							{isMember && activeTab === "components" && (
+								<Button size="sm" onClick={() => setComponentDialogOpen(true)}>
+									<Plus /> Create component
+								</Button>
+							)}
+						</div>
 
 						<TabsContent value="agents" className="mt-5">
 							<AgentsTab team={team} />
@@ -685,6 +1076,18 @@ export default function TeamspaceDetailPage() {
 								/>
 							</TabsContent>
 						)}
+						{canManageRequests && (
+							<TabsContent value="join-requests" className="mt-5">
+								<JoinRequestsTab
+									team={team}
+									requests={joinRequests}
+									isLoading={joinRequestsQuery.isLoading}
+									isError={joinRequestsQuery.isError}
+									errorMessage={joinRequestsQuery.error?.message}
+									onRetry={() => joinRequestsQuery.refetch()}
+								/>
+							</TabsContent>
+						)}
 					</Tabs>
 
 					<footer className="mt-6 flex flex-col gap-3 rounded-lg border border-border/80 bg-card/70 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
@@ -703,6 +1106,22 @@ export default function TeamspaceDetailPage() {
 					</footer>
 				</div>
 			</main>
+
+			<SubmitComponentDialog
+				key={`${team.id}-${activeType}`}
+				open={componentDialogOpen}
+				onOpenChange={setComponentDialogOpen}
+				type={activeType}
+				fixedTeamId={team.id}
+				onSubmit={(body) =>
+					submitComponent.mutate(body, { onSuccess: () => setComponentDialogOpen(false) })
+				}
+				onSaveDraft={(body) =>
+					saveComponentDraft.mutate(body, { onSuccess: () => setComponentDialogOpen(false) })
+				}
+				isSubmitting={submitComponent.isPending}
+				isSavingDraft={saveComponentDraft.isPending}
+			/>
 
 			<AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
 				<AlertDialogContent>

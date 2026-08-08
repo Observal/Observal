@@ -46,6 +46,7 @@ from ._router import router
 from .helpers import (
     _agent_to_response,
     _load_agent,
+    _resolve_component_identities,
     _resolve_component_names,
     _resolve_component_statuses,
     _validate_mcp_ids,
@@ -576,6 +577,7 @@ async def get_agent(
     if perm == "none":
         raise HTTPException(status_code=403, detail="Insufficient permissions to view this agent")
     name_map = await _resolve_component_names(agent.components, db)
+    identity_map = await _resolve_component_identities(agent.components, db)
     status_map = await _resolve_component_statuses(agent.components, db)
     user_row = (await db.execute(select(User.email, User.username).where(User.id == agent.created_by))).first()
     return _agent_to_response(
@@ -585,6 +587,7 @@ async def get_agent(
         created_by_username=user_row[1] if user_row else None,
         user_permission=perm,
         status_map=status_map,
+        identity_map=identity_map,
     )
 
 

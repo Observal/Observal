@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { PickerSelect } from "@/components/ui/picker-select";
 import { PageHeader } from "@/components/layouts/page-header";
+import { InviteLinksCard } from "@/components/admin/invite-links-card";
 import { TableSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -205,6 +206,7 @@ export default function UsersPage() {
         }
       />
       <div className="p-6 w-full mx-auto space-y-4">
+        {!ssoOnly && <InviteLinksCard />}
         {isLoading ? (
           <TableSkeleton rows={5} cols={4} />
         ) : isError ? (

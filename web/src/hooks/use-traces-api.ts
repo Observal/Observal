@@ -39,6 +39,23 @@ export function useRegistryItem(type: RegistryType, id: string | undefined) {
   });
 }
 
+/**
+ * Resolve a canonical `namespace/slug` (or UUID) reference to its registry
+ * identity. Backs the shareable /agents/{ns}/{slug} and
+ * /components/{type}/{ns}/{slug} routes; a 404 means the reference does not
+ * exist or is not visible to the caller, so it is not retried.
+ */
+export function useRegistryResolve(type: RegistryType, identifier: string | undefined) {
+  return useQuery({
+    queryKey: ["registry-resolve", type, identifier],
+    enabled: !!identifier,
+    queryFn: () => registry.resolveIdentifier(type, identifier!),
+    staleTime: 5 * 60 * 1000,
+    retry: (failureCount, error) =>
+      (error as Error & { status?: number }).status === 404 ? false : failureCount < 2,
+  });
+}
+
 export function useRegistryMetrics(type: RegistryType, id: string | undefined) {
   return useQuery({
     queryKey: ["registry", type, id, "metrics"],

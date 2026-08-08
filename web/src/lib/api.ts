@@ -70,7 +70,12 @@ import type {
 	ExecTimeToValueResponse,
 	ExecAIInsightsResponse,
 	UserSearchResult,
+	AdminInvite,
+	AdminInviteCreated,
+	RegistryResolution,
 	Team,
+	TeamJoinRequest,
+	TeamJoinRequestStatus,
 	TeamMember,
 	TeamMemberUpsertBody,
 	TeamRole,
@@ -83,6 +88,7 @@ import type {
 	InboxFilters,
 	InboxState,
 } from "./types";
+import { sessionExpiredLoginUrl } from "./safe-next";
 
 const API = "/api/v1";
 
@@ -277,7 +283,7 @@ async function request<T = unknown>(
 			// Real rejection: session is truly expired
 			clearSession();
 			if (typeof window !== "undefined") {
-				window.location.href = "/login?reason=session_expired";
+				window.location.href = sessionExpiredLoginUrl();
 				return new Promise<T>(() => {});
 			}
 			throw new Error("Session expired");
@@ -382,7 +388,12 @@ export const auth = {
 			"/auth/login",
 			body,
 		),
-	register: (body: { email: string; name: string; username?: string; password: string }) =>
+	invitePreview: (token: string) =>
+		post<{ valid: boolean; invited_by: string | null; next_path: string | null }>(
+			"/auth/invite/preview",
+			{ token },
+		),
+	register: (body: { email: string; name: string; username?: string; password: string; invite_token?: string }) =>
 		post<AuthResponse>("/auth/register", body),
 	whoami: () =>
 		get<{
@@ -417,6 +428,16 @@ export type RegistryType =
 	| "prompts"
 	| "sandboxes";
 
+// GET /registry/resolve takes the singular form of each registry type.
+const SINGULAR_REGISTRY_TYPE: Record<RegistryType, string> = {
+	agents: "agent",
+	mcps: "mcp",
+	skills: "skill",
+	hooks: "hook",
+	prompts: "prompt",
+	sandboxes: "sandbox",
+};
+
 export const registry = {
 	list: (type: RegistryType, params?: Record<string, string>) => {
 		const qs = params ? `?${new URLSearchParams(params)}` : "";
@@ -431,6 +452,11 @@ export const registry = {
 	metrics: (type: RegistryType, id: string) =>
 		get<unknown>(`/${type}/${id}/metrics`),
 	resolve: (id: string) => get<unknown>(`/agents/${id}/resolve`),
+	// Canonical `namespace/slug` (or UUID) → registry identity, for shareable URLs.
+	resolveIdentifier: (type: RegistryType, identifier: string) =>
+		get<RegistryResolution>(
+			`/registry/resolve?type=${SINGULAR_REGISTRY_TYPE[type]}&identifier=${encodeURIComponent(identifier)}`,
+		),
 	manifest: (id: string) =>
 		get<Record<string, unknown>>(`/agents/${id}/manifest`),
 	downloads: (id: string) =>
@@ -568,10 +594,14 @@ export const teams = {
 	list: () => get<Team[]>("/teams"),
 	listAll: () => get<Team[]>("/teams/all"),
 	get: (id: string) => get<Team>(`/teams/${id}`),
-	create: (body: { name: string; handle?: string; description?: string }) =>
+	byHandle: (handle: string) => get<Team>(`/teams/by-handle/${encodeURIComponent(handle)}`),
+	create: (body: { name: string; handle?: string; description?: string; visibility?: "public" | "private" }) =>
 		post<Team>("/teams", body),
+	claimPersonal: () => post<Team>("/teams/claim-personal"),
 	update: (id: string, body: TeamUpdateBody) =>
 		put<Team>(`/teams/${id}`, body),
+	updateVisibility: (id: string, visibility: "public" | "private") =>
+		patch<Team>(`/teams/${id}/visibility`, { visibility }),
 	delete: (id: string) => del(`/teams/${id}`),
 	members: (id: string) => get<TeamMember[]>(`/teams/${id}/members`),
 	upsertMember: (
@@ -580,6 +610,19 @@ export const teams = {
 	) => post<TeamMember>(`/teams/${id}/members`, body),
 	removeMember: (id: string, userId: string) => del(`/teams/${id}/members/${userId}`),
 	leave: (id: string) => post(`/teams/${id}/leave`),
+	// Membership join requests: a shared teamspace link leads to an explicit
+	// request; only an owner's approval changes the roster.
+	requestJoin: (id: string, body: { message?: string }) =>
+		post<TeamJoinRequest>(`/teams/${id}/join-requests`, body),
+	joinRequests: (id: string, status?: TeamJoinRequestStatus) =>
+		get<TeamJoinRequest[]>(`/teams/${id}/join-requests${status ? `?status=${status}` : ""}`),
+	myJoinRequests: (id: string) => get<TeamJoinRequest[]>(`/teams/${id}/join-requests/mine`),
+	approveJoinRequest: (id: string, requestId: string) =>
+		post<TeamJoinRequest>(`/teams/${id}/join-requests/${requestId}/approve`),
+	rejectJoinRequest: (id: string, requestId: string, body?: { reason?: string }) =>
+		post<TeamJoinRequest>(`/teams/${id}/join-requests/${requestId}/reject`, body ?? {}),
+	cancelJoinRequest: (id: string, requestId: string) =>
+		del(`/teams/${id}/join-requests/${requestId}`),
 };
 
 // ── Dashboard ───────────────────────────────────────────────────────
@@ -666,6 +709,10 @@ export const feedback = {
 export const admin = {
 	settings: () =>
 		get<AdminSetting[] | Record<string, string>>("/admin/settings"),
+	invites: () => get<AdminInvite[]>("/admin/invites"),
+	createInvite: (body: { expires_in_days?: number; max_uses?: number | null; next_path?: string }) =>
+		post<AdminInviteCreated>("/admin/invites", body),
+	revokeInvite: (id: string) => post<AdminInvite>(`/admin/invites/${id}/revoke`),
 	settingsSchema: () => get<AdminSettingSection[]>("/admin/settings/schema"),
 	updateSetting: (key: string, body: unknown) =>
 		put<unknown>(`/admin/settings/${key}`, body),

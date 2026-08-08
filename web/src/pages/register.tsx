@@ -6,6 +6,7 @@ import { Link, useRouter, useSearch } from "@tanstack/react-router";
 import { ArrowRight, CheckCircle2, Eye, EyeOff, Loader2, ShieldCheck, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { auth, setTokens, setUserRole, setUserName, setUserEmail, setUserUsername, setUserAvatar } from "@/lib/api";
+import { safeNext } from "@/lib/safe-next";
 import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +26,37 @@ function passwordIsStrong(password: string) {
 function RegisterContent() {
   const router = useRouter();
   const searchParams = useSearch({ from: "/(auth)/register" });
-  const { selfRegistrationEnabled, brandingAppName, brandingLogo, brandingWordmark, loading: configLoading } = useDeploymentConfig();
+  const { selfRegistrationEnabled, ssoOnly, brandingAppName, brandingLogo, brandingWordmark, loading: configLoading } = useDeploymentConfig();
+  // Signed-in visitors are redirected by the effect below; rendering nothing in
+  // the meantime avoids flashing the form at someone who cannot use it.
+  const [alreadyAuthed] = useState(
+    () => typeof window !== "undefined" && !!sessionStorage.getItem("observal_access_token"),
+  );
+  // An admin-minted invite link (?invite=) can open registration even when
+  // self-registration is off. null = no token; undefined = still checking.
+  const inviteToken = searchParams.invite;
+  const [invitePreview, setInvitePreview] = useState<
+    { valid: boolean; invited_by: string | null } | null | undefined
+  >(inviteToken ? undefined : null);
+  useEffect(() => {
+    if (!inviteToken) {
+      setInvitePreview(null);
+      return;
+    }
+    let cancelled = false;
+    auth
+      .invitePreview(inviteToken)
+      .then((preview) => {
+        if (!cancelled) setInvitePreview(preview);
+      })
+      .catch(() => {
+        if (!cancelled) setInvitePreview({ valid: false, invited_by: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [inviteToken]);
+  const inviteValid = !!invitePreview?.valid;
   const appName = brandingAppName || "Observal";
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -42,8 +73,9 @@ function RegisterContent() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const hasToken = !!sessionStorage.getItem("observal_access_token");
-    if (hasToken) router.navigate({ to: "/", replace: true });
-  }, [router]);
+    // Already signed in: honor a shared-link `next` instead of always going home.
+    if (hasToken) window.location.replace(safeNext(searchParams.next));
+  }, [router, searchParams.next]);
 
   async function handleRegister() {
     setError("");
@@ -63,6 +95,7 @@ function RegisterContent() {
         name,
         username: username.trim() || undefined,
         password,
+        invite_token: inviteToken || undefined,
       });
       setTokens(res.access_token, res.refresh_token);
       setUserRole(res.user.role);
@@ -71,8 +104,7 @@ function RegisterContent() {
       if (res.user.username) setUserUsername(res.user.username);
       if (res.user.avatar_url) setUserAvatar(res.user.avatar_url);
       toast.success("Account created");
-      const nextPath = searchParams.next;
-      window.location.replace(nextPath && nextPath.startsWith("/") ? nextPath : "/");
+      window.location.replace(safeNext(searchParams.next));
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Registration failed";
       setError(msg);
@@ -82,7 +114,11 @@ function RegisterContent() {
     }
   }
 
-  if (configLoading) {
+  if (alreadyAuthed) {
+    return null;
+  }
+
+  if (configLoading || (inviteToken && invitePreview === undefined)) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-surface-sunken p-6">
         <div className="flex items-center gap-3 rounded-lg border bg-card px-4 py-3 text-sm text-muted-foreground shadow-sm">
@@ -93,14 +129,29 @@ function RegisterContent() {
     );
   }
 
-  if (!selfRegistrationEnabled) {
+  // A valid invite opens the form even when self-registration is off. An
+  // invalid one falls through to the closed screen with a specific message.
+  // SSO-only deployments never show the form: accounts come from the identity
+  // provider, and the register API refuses password sign-up there regardless
+  // of the self-registration setting.
+  if (ssoOnly || (!selfRegistrationEnabled && !inviteValid)) {
     return (
       <div className="flex min-h-dvh items-center justify-center bg-surface-sunken p-6">
         <div className="w-full max-w-md rounded-lg border bg-card p-8 text-center shadow-sm">
           <ShieldCheck className="mx-auto h-10 w-10 text-muted-foreground" />
-          <h1 className="mt-4 text-2xl font-semibold tracking-tight">Registration is closed</h1>
+          <h1 className="mt-4 text-2xl font-semibold tracking-tight">
+            {ssoOnly
+              ? "Registration is closed"
+              : inviteToken
+                ? "This invite link is no longer valid"
+                : "Registration is closed"}
+          </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Ask your admin for access, or sign in if you already have an account.
+            {ssoOnly
+              ? "This server uses SSO sign-in. Your account is created automatically the first time you sign in with your identity provider."
+              : inviteToken
+                ? "It may have expired, been revoked, or reached its use limit. Ask whoever shared it for a new link."
+                : "Ask your admin for access, or sign in if you already have an account."}
           </p>
           <Button asChild className="mt-6 w-full">
             <Link to="/login">Back to sign in</Link>
@@ -150,6 +201,14 @@ function RegisterContent() {
               )}
               <h2 className="text-2xl font-semibold tracking-tight">Create your account</h2>
               <p className="text-sm text-muted-foreground">You will start with standard user permissions.</p>
+              {inviteValid && (
+                <p className="mt-1 inline-flex items-center gap-1.5 rounded-md border border-primary-accent/30 bg-primary-accent/10 px-2 py-1 text-xs text-primary-accent">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  {invitePreview?.invited_by
+                    ? `Invited by ${invitePreview.invited_by}`
+                    : "You are joining with an invite link"}
+                </p>
+              )}
             </div>
 
             <form
@@ -249,7 +308,17 @@ function RegisterContent() {
                 </div>
               )}
 
-              <Button type="submit" disabled={loading || configLoading || !selfRegistrationEnabled || !passwordStrong || !passwordsMatch} className="w-full">
+              <Button
+                type="submit"
+                disabled={
+                  loading ||
+                  configLoading ||
+                  (!selfRegistrationEnabled && !inviteValid) ||
+                  !passwordStrong ||
+                  !passwordsMatch
+                }
+                className="w-full"
+              >
                 {loading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (

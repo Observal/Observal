@@ -21,6 +21,7 @@ import { RegistryName } from "@/components/registry/registry-name";
 import { TableSkeleton } from "@/components/shared/skeleton-layouts";
 import { EmptyState } from "@/components/shared/empty-state";
 import { useLeaderboard, useComponentLeaderboard } from "@/hooks/use-api";
+import { registryItemPath } from "@/lib/registry-name";
 import { compactNumber } from "@/lib/utils";
 import type { LeaderboardWindow } from "@/lib/types";
 
@@ -203,7 +204,7 @@ export default function LeaderboardPage() {
                     {leaderboard.map((item, i) => (
                       <Link
                         key={item.id}
-                        to="/agents/$agentId" params={{ agentId: item.id }}
+                        to={registryItemPath(item, "agents", item.id)}
                         className="flex items-center gap-4 rounded-md px-3 py-3 transition-colors hover:bg-accent/40 group"
                       >
                         <span className={`w-8 text-right font-mono font-semibold ${i < 3 ? "text-foreground" : "text-muted-foreground"}`}>
@@ -339,9 +340,7 @@ export default function LeaderboardPage() {
                     {rankedComponents.map((item, i) => (
                       <Link
                         key={item.id}
-                        to="/components/$componentId"
-                        params={{ componentId: item.id }}
-                        search={{ type: componentRouteType(item.component_type) }}
+                        to={registryItemPath(item, componentRouteType(item.component_type), item.id)}
                         className="flex items-center gap-4 rounded-md px-3 py-3 transition-colors hover:bg-accent/40 group"
                       >
                         <span className={`w-8 text-right font-mono font-semibold ${i < 3 ? "text-foreground" : "text-muted-foreground"}`}>

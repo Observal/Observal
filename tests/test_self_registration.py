@@ -32,6 +32,7 @@ def _db_override():
 
     db = MagicMock()
     db.commit = AsyncMock()
+    db.flush = AsyncMock()
     db.rollback = AsyncMock()
     # Handle reservation queries users.username and teams.handle; both free.
     db.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=lambda: None))

@@ -37,7 +37,9 @@ import { Route as AuthedAdminDiagnosticsRouteImport } from './routes/_authed/_ad
 import { Route as AuthedAdminDashboardRouteImport } from './routes/_authed/_admin/dashboard'
 import { Route as AuthedAdminAuditLogRouteImport } from './routes/_authed/_admin/audit-log'
 import { Route as AuthedUserTracesIndexRouteImport } from './routes/_authed/_user/traces/index'
+import { Route as AuthedAgentsNamespaceSlugRouteImport } from './routes/_authed/agents/$namespace.$slug'
 import { Route as AuthedUserTracesTraceIdRouteImport } from './routes/_authed/_user/traces/$traceId'
+import { Route as AuthedComponentsTypeNamespaceSlugRouteImport } from './routes/_authed/components/$type.$namespace.$slug'
 import { Route as AuthedAgentsAgentIdInsightsReportIdRouteImport } from './routes/_authed/agents/$agentId/insights/$reportId'
 
 const AuthedRoute = AuthedRouteImport.update({
@@ -179,11 +181,23 @@ const AuthedUserTracesIndexRoute = AuthedUserTracesIndexRouteImport.update({
   path: '/traces/',
   getParentRoute: () => AuthedUserRoute,
 } as any)
+const AuthedAgentsNamespaceSlugRoute =
+  AuthedAgentsNamespaceSlugRouteImport.update({
+    id: '/agents/$namespace/$slug',
+    path: '/agents/$namespace/$slug',
+    getParentRoute: () => AuthedRoute,
+  } as any)
 const AuthedUserTracesTraceIdRoute = AuthedUserTracesTraceIdRouteImport.update({
   id: '/traces/$traceId',
   path: '/traces/$traceId',
   getParentRoute: () => AuthedUserRoute,
 } as any)
+const AuthedComponentsTypeNamespaceSlugRoute =
+  AuthedComponentsTypeNamespaceSlugRouteImport.update({
+    id: '/components/$type/$namespace/$slug',
+    path: '/components/$type/$namespace/$slug',
+    getParentRoute: () => AuthedRoute,
+  } as any)
 const AuthedAgentsAgentIdInsightsReportIdRoute =
   AuthedAgentsAgentIdInsightsReportIdRouteImport.update({
     id: '/insights/$reportId',
@@ -217,8 +231,10 @@ export interface FileRoutesByFullPath {
   '/components/': typeof AuthedComponentsIndexRoute
   '/wiki/': typeof AuthedWikiIndexRoute
   '/traces/$traceId': typeof AuthedUserTracesTraceIdRoute
+  '/agents/$namespace/$slug': typeof AuthedAgentsNamespaceSlugRoute
   '/traces/': typeof AuthedUserTracesIndexRoute
   '/agents/$agentId/insights/$reportId': typeof AuthedAgentsAgentIdInsightsReportIdRoute
+  '/components/$type/$namespace/$slug': typeof AuthedComponentsTypeNamespaceSlugRoute
 }
 export interface FileRoutesByTo {
   '/device': typeof authDeviceRoute
@@ -246,8 +262,10 @@ export interface FileRoutesByTo {
   '/components': typeof AuthedComponentsIndexRoute
   '/wiki': typeof AuthedWikiIndexRoute
   '/traces/$traceId': typeof AuthedUserTracesTraceIdRoute
+  '/agents/$namespace/$slug': typeof AuthedAgentsNamespaceSlugRoute
   '/traces': typeof AuthedUserTracesIndexRoute
   '/agents/$agentId/insights/$reportId': typeof AuthedAgentsAgentIdInsightsReportIdRoute
+  '/components/$type/$namespace/$slug': typeof AuthedComponentsTypeNamespaceSlugRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -279,8 +297,10 @@ export interface FileRoutesById {
   '/_authed/components/': typeof AuthedComponentsIndexRoute
   '/_authed/wiki/': typeof AuthedWikiIndexRoute
   '/_authed/_user/traces/$traceId': typeof AuthedUserTracesTraceIdRoute
+  '/_authed/agents/$namespace/$slug': typeof AuthedAgentsNamespaceSlugRoute
   '/_authed/_user/traces/': typeof AuthedUserTracesIndexRoute
   '/_authed/agents/$agentId/insights/$reportId': typeof AuthedAgentsAgentIdInsightsReportIdRoute
+  '/_authed/components/$type/$namespace/$slug': typeof AuthedComponentsTypeNamespaceSlugRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -310,8 +330,10 @@ export interface FileRouteTypes {
     | '/components/'
     | '/wiki/'
     | '/traces/$traceId'
+    | '/agents/$namespace/$slug'
     | '/traces/'
     | '/agents/$agentId/insights/$reportId'
+    | '/components/$type/$namespace/$slug'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/device'
@@ -339,8 +361,10 @@ export interface FileRouteTypes {
     | '/components'
     | '/wiki'
     | '/traces/$traceId'
+    | '/agents/$namespace/$slug'
     | '/traces'
     | '/agents/$agentId/insights/$reportId'
+    | '/components/$type/$namespace/$slug'
   id:
     | '__root__'
     | '/_authed'
@@ -371,8 +395,10 @@ export interface FileRouteTypes {
     | '/_authed/components/'
     | '/_authed/wiki/'
     | '/_authed/_user/traces/$traceId'
+    | '/_authed/agents/$namespace/$slug'
     | '/_authed/_user/traces/'
     | '/_authed/agents/$agentId/insights/$reportId'
+    | '/_authed/components/$type/$namespace/$slug'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -580,12 +606,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedUserTracesIndexRouteImport
       parentRoute: typeof AuthedUserRoute
     }
+    '/_authed/agents/$namespace/$slug': {
+      id: '/_authed/agents/$namespace/$slug'
+      path: '/agents/$namespace/$slug'
+      fullPath: '/agents/$namespace/$slug'
+      preLoaderRoute: typeof AuthedAgentsNamespaceSlugRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/_user/traces/$traceId': {
       id: '/_authed/_user/traces/$traceId'
       path: '/traces/$traceId'
       fullPath: '/traces/$traceId'
       preLoaderRoute: typeof AuthedUserTracesTraceIdRouteImport
       parentRoute: typeof AuthedUserRoute
+    }
+    '/_authed/components/$type/$namespace/$slug': {
+      id: '/_authed/components/$type/$namespace/$slug'
+      path: '/components/$type/$namespace/$slug'
+      fullPath: '/components/$type/$namespace/$slug'
+      preLoaderRoute: typeof AuthedComponentsTypeNamespaceSlugRouteImport
+      parentRoute: typeof AuthedRoute
     }
     '/_authed/agents/$agentId/insights/$reportId': {
       id: '/_authed/agents/$agentId/insights/$reportId'
@@ -677,6 +717,8 @@ interface AuthedRouteChildren {
   AuthedAgentsIndexRoute: typeof AuthedAgentsIndexRoute
   AuthedComponentsIndexRoute: typeof AuthedComponentsIndexRoute
   AuthedWikiIndexRoute: typeof AuthedWikiIndexRoute
+  AuthedAgentsNamespaceSlugRoute: typeof AuthedAgentsNamespaceSlugRoute
+  AuthedComponentsTypeNamespaceSlugRoute: typeof AuthedComponentsTypeNamespaceSlugRoute
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
@@ -692,6 +734,9 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedAgentsIndexRoute: AuthedAgentsIndexRoute,
   AuthedComponentsIndexRoute: AuthedComponentsIndexRoute,
   AuthedWikiIndexRoute: AuthedWikiIndexRoute,
+  AuthedAgentsNamespaceSlugRoute: AuthedAgentsNamespaceSlugRoute,
+  AuthedComponentsTypeNamespaceSlugRoute:
+    AuthedComponentsTypeNamespaceSlugRoute,
 }
 
 const AuthedRouteWithChildren =

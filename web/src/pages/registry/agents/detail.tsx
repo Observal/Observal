@@ -57,7 +57,8 @@ import type {
 } from "@/lib/types";
 import { PullCommand } from "@/components/registry/pull-command";
 import { RegistryName } from "@/components/registry/registry-name";
-import { registryIdentity, type QualifiedIdentity } from "@/lib/registry-name";
+import { ShareLinkButton } from "@/components/registry/share-link-button";
+import { canonicalRouteParts, registryIdentity, registryItemPath, type QualifiedIdentity } from "@/lib/registry-name";
 import { VersionDropdown } from "@/components/registry/version-dropdown";
 import { StatusBadge } from "@/components/registry/status-badge";
 import { HarnessBadges } from "@/components/registry/harness-badges";
@@ -209,6 +210,9 @@ interface ComponentLink {
   component_type?: string;
   component_id?: string;
   mcp_id?: string;
+  namespace?: string;
+  slug?: string;
+  qualified_name?: string;
   resolved_version?: string;
   status?: string;
 }
@@ -358,9 +362,11 @@ function AgentVersionContents({
                         return componentId ? (
                           <Link
                             key={`${componentType.value}-${componentId}-${index}`}
-                            to="/components/$componentId"
-                            params={{ componentId }}
-                            search={{ type: componentType.value }}
+                            to={
+                              component.status === "approved"
+                                ? registryItemPath(component, componentType.value, componentId)
+                                : `/components/${componentId}?type=${componentType.value}`
+                            }
                           >
                             {row}
                           </Link>
@@ -618,8 +624,12 @@ function InsightsTab({ agentId, agentVersion }: { agentId: string; agentVersion?
 }
 
 
-export default function AgentDetailPage() {
-  const { agentId: id } = useParams({ from: "/_authed/agents/$agentId" });
+export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) {
+  // Rendered from two routes: the canonical /agents/$namespace/$slug route
+  // passes the resolved UUID as a prop; the legacy /agents/$agentId route
+  // supplies it as a path param.
+  const params = useParams({ strict: false }) as { agentId?: string };
+  const id = agentId ?? params.agentId ?? "";
   const navigate = useNavigate();
   const {
     data: agent,
@@ -715,8 +725,33 @@ export default function AgentDetailPage() {
   const agentIdentity = registryIdentity(a as QualifiedIdentity | undefined, id.slice(0, 8));
   const agentName = agentIdentity.name;
   const agentRef = agentIdentity.qualified;
+  // Canonical shareable path from the explicit columns only, and only when the
+  // namespace/slug actually resolve server-side (legacy verbatim-username
+  // namespaces do not).
+  const canonicalParts = canonicalRouteParts(
+    (a as QualifiedIdentity | undefined)?.namespace,
+    (a as QualifiedIdentity | undefined)?.slug,
+  );
+  const canonicalAgentPath = canonicalParts
+    ? `/agents/${canonicalParts.namespace}/${canonicalParts.slug}`
+    : undefined;
   const totalDownloads = downloadData?.total ?? a?.download_count;
   const uniqueUsers = downloadData?.unique_users;
+
+  // Legacy /agents/<uuid> entry: once the payload reveals a canonical identity,
+  // swap the address bar to the shareable URL — but ONLY for approved agents.
+  // The canonical /registry/resolve route only returns approved-or-owned
+  // agents, so redirecting a reviewer/admin/co-author viewing a pending agent
+  // would strand them on a 404. Their UUID URL keeps working.
+  const agentApproved = (a?.status as string | undefined) === "approved";
+  useEffect(() => {
+    if (agentId || !canonicalParts || !agentApproved) return;
+    navigate({
+      to: "/agents/$namespace/$slug",
+      params: canonicalParts,
+      replace: true,
+    });
+  }, [agentId, canonicalParts, agentApproved, navigate]);
   const archivedComponents = components.filter((component) => component.status === "archived");
   const avgRating = feedbackSummary?.average_rating;
   const totalReviews = feedbackSummary?.total_reviews ?? 0;
@@ -757,6 +792,9 @@ export default function AgentDetailPage() {
           { label: "Agents", href: "/agents" },
           { label: isLoading ? "..." : agentName },
         ]}
+        actionButtonsRight={
+          a ? <ShareLinkButton path={canonicalAgentPath ?? `/agents/${id}`} /> : undefined
+        }
       />
 
       <div className="p-6 lg:p-8 w-full">

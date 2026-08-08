@@ -58,12 +58,19 @@ class EventType(str, Enum):
     CANARY_CREATED = "admin.canary.created"
     CANARY_DELETED = "admin.canary.deleted"
     INVITE_CREATED = "admin.invite.created"
+    INVITE_REDEEMED = "admin.invite.redeemed"
+    INVITE_REVOKED = "admin.invite.revoked"
     ALERT_RULE_CHANGED = "admin.alert_rule.changed"
     ADMIN_PASSWORD_RESET = "admin.password_reset"
 
     # Review
     REVIEW_APPROVED = "review.approved"
     REVIEW_REJECTED = "review.rejected"
+
+    # Teamspaces
+    TEAM_JOIN_REQUESTED = "team.join.requested"
+    TEAM_JOIN_DECIDED = "team.join.decided"
+    TEAM_VISIBILITY_CHANGED = "team.visibility.changed"
 
     # Agent security
     INJECTION_DETECTED = "agent.injection_detected"

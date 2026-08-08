@@ -103,9 +103,11 @@ def _agent_to_response(
     created_by_username: str | None = None,
     user_permission: str | None = None,
     status_map: dict[str, str] | None = None,
+    identity_map: dict[str, tuple[str, str]] | None = None,
 ) -> AgentResponse:
     name_map = name_map or {}
     status_map = status_map or {}
+    identity_map = identity_map or {}
     # Build mcp_links from components with component_type='mcp' (backwards compat)
     mcp_components = [c for c in agent.components if c.component_type == "mcp"]
     mcp_links = [
@@ -117,18 +119,24 @@ def _agent_to_response(
         for comp in mcp_components
     ]
     # Build full component_links for all types
-    component_links = [
-        ComponentLinkResponse(
-            component_type=comp.component_type,
-            component_id=comp.component_id,
-            component_name=name_map.get(str(comp.component_id), ""),
-            version_ref=comp.resolved_version,
-            order=comp.order_index,
-            config_override=comp.config_override,
-            status=status_map.get(str(comp.component_id)),
+    component_links = []
+    for comp in agent.components:
+        component_id = str(comp.component_id)
+        identity = identity_map.get(component_id)
+        component_links.append(
+            ComponentLinkResponse(
+                component_type=comp.component_type,
+                component_id=comp.component_id,
+                component_name=name_map.get(component_id, ""),
+                namespace=identity[0] if identity else "",
+                slug=identity[1] if identity else "",
+                qualified_name=f"{identity[0]}/{identity[1]}" if identity else "",
+                version_ref=comp.resolved_version,
+                order=comp.order_index,
+                config_override=comp.config_override,
+                status=status_map.get(component_id),
+            )
         )
-        for comp in agent.components
-    ]
     # Build agent_dict from table columns plus version-delegate properties.
     agent_dict = {c.key: getattr(agent, c.key) for c in Agent.__table__.columns}
     for field in (
@@ -197,6 +205,27 @@ async def _resolve_component_names(components: list, db: AsyncSession) -> dict[s
         for row in rows:
             name_map[str(row[0])] = row[1]
     return name_map
+
+
+async def _resolve_component_identities(components: list, db: AsyncSession) -> dict[str, tuple[str, str]]:
+    """Batch-resolve component IDs to canonical namespace and slug pairs."""
+    if not components:
+        return {}
+    from services.agent_resolver import _LISTING_MODELS
+
+    by_type: dict[str, list[uuid.UUID]] = {}
+    for comp in components:
+        by_type.setdefault(comp.component_type, []).append(comp.component_id)
+
+    identity_map: dict[str, tuple[str, str]] = {}
+    for comp_type, ids in by_type.items():
+        model = _LISTING_MODELS.get(comp_type)
+        if not model:
+            continue
+        rows = (await db.execute(select(model.id, model.namespace, model.slug).where(model.id.in_(ids)))).all()
+        for component_id, namespace, slug in rows:
+            identity_map[str(component_id)] = (namespace, slug)
+    return identity_map
 
 
 async def _resolve_component_statuses(components: list, db: AsyncSession) -> dict[str, str]:

@@ -23,6 +23,7 @@ from models.insight_meta_cache import InsightMetaCache
 from models.insight_report import InsightReport, InsightReportStatus
 from models.insight_session_facets import InsightSessionFacets
 from models.insight_session_meta import InsightSessionMeta
+from models.invite import Invite, InviteRedemption
 from models.mcp import ListingStatus, McpDownload, McpListing, McpValidationResult
 from models.migration_job import MigrationJob, MigrationOperation, MigrationScope, MigrationStatus
 from models.prompt import PromptDownload, PromptListing
@@ -31,7 +32,7 @@ from models.sandbox import SandboxDownload, SandboxListing
 from models.scim_token import ScimToken
 from models.skill import SkillDownload, SkillListing
 from models.submission import Submission
-from models.team import Team, TeamMembership, TeamRole
+from models.team import Team, TeamJoinRequestStatus, TeamMembership, TeamMembershipRequest, TeamRole
 from models.user import User, UserRole
 from models.user_group import UserGroup
 from models.user_profile import RecommendationFeedback, UserWorkProfile
@@ -62,6 +63,8 @@ __all__ = [
     "InsightReportStatus",
     "InsightSessionFacets",
     "InsightSessionMeta",
+    "Invite",
+    "InviteRedemption",
     "ListingStatus",
     "McpDownload",
     "McpListing",
@@ -81,7 +84,9 @@ __all__ = [
     "SkillListing",
     "Submission",
     "Team",
+    "TeamJoinRequestStatus",
     "TeamMembership",
+    "TeamMembershipRequest",
     "TeamRole",
     "User",
     "UserGroup",

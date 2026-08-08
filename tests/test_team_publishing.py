@@ -1,13 +1,13 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Team publishing auto-approval rules (Feature 3).
+"""Team publishing review rules.
 
-Team owners and team reviewers clear the review queue for TEAM-visibility listings
-only. Publishing a PUBLIC listing out of a team namespace still goes through global
-review, because team roles are self-service and would otherwise be a privilege
-escalation path into the global catalog. Global reviewers, admins and super_admins
-keep auto-approval for every visibility.
+NOTHING auto-approves anymore. Every publish — team-visibility or public, from
+any role up to super_admin — enters the review queue as pending, so each
+release carries a recorded reviewed_by decision. Team owners and team
+reviewers clear their own team queue explicitly (self-approval is allowed);
+public listings still clear global review.
 """
 
 from __future__ import annotations
@@ -87,19 +87,22 @@ def _app_with(router, user, db):
 
 
 # (label, user role, team role or None, visibility, expected auto approval)
+# Every row expects False: team publishing never auto-approves, for anyone.
+# The rows are kept distinct so a regression that re-introduces auto-approval
+# for one role shows up as that row's failure, not a generic one.
 MATRIX = [
     ("team-owner-public", UserRole.user, TeamRole.owner, "public", False),
-    ("team-owner-team", UserRole.user, TeamRole.owner, "team", True),
+    ("team-owner-team", UserRole.user, TeamRole.owner, "team", False),
     ("team-reviewer-public", UserRole.user, TeamRole.reviewer, "public", False),
-    ("team-reviewer-team", UserRole.user, TeamRole.reviewer, "team", True),
+    ("team-reviewer-team", UserRole.user, TeamRole.reviewer, "team", False),
     ("team-member-public", UserRole.user, TeamRole.member, "public", False),
     ("team-member-team", UserRole.user, TeamRole.member, "team", False),
-    ("global-reviewer-member-public", UserRole.reviewer, TeamRole.member, "public", True),
-    ("global-reviewer-member-team", UserRole.reviewer, TeamRole.member, "team", True),
-    ("admin-public", UserRole.admin, None, "public", True),
-    ("admin-team", UserRole.admin, None, "team", True),
-    ("super-admin-public", UserRole.super_admin, None, "public", True),
-    ("super-admin-team", UserRole.super_admin, None, "team", True),
+    ("global-reviewer-member-public", UserRole.reviewer, TeamRole.member, "public", False),
+    ("global-reviewer-member-team", UserRole.reviewer, TeamRole.member, "team", False),
+    ("admin-public", UserRole.admin, None, "public", False),
+    ("admin-team", UserRole.admin, None, "team", False),
+    ("super-admin-public", UserRole.super_admin, None, "public", False),
+    ("super-admin-team", UserRole.super_admin, None, "team", False),
 ]
 
 MATRIX_PARAMS = [pytest.param(*row[1:], id=row[0]) for row in MATRIX]
@@ -153,7 +156,8 @@ class TestResolvePublishTargetAutoApprove:
         db.get = AsyncMock(return_value=SimpleNamespace(id=team_id, handle="platform-tools"))
 
         target = await resolve_publish_target(db, _user(role), "Internal Tool", team_id=team_id, visibility="team")
-        assert (target.namespace, target.visibility, target.auto_approve) == ("platform-tools", "team", True)
+        # They can publish cross-team, but even admins do not skip review.
+        assert (target.namespace, target.visibility, target.auto_approve) == ("platform-tools", "team", False)
 
     @pytest.mark.asyncio
     async def test_personal_public_listing_never_auto_approves(self):
@@ -243,11 +247,13 @@ class TestSkillSubmitStatus:
         assert version.reviewed_at is None
 
     @pytest.mark.asyncio
-    async def test_team_owner_team_is_approved(self):
+    async def test_team_owner_team_stays_pending(self):
+        """A team owner's own team-visibility publish waits for an explicit
+        (possibly self-) approval instead of skipping review."""
         listing, version = await self._submit(_user(), TeamRole.owner, "team")
         assert listing.is_private is True
-        assert version.status == ListingStatus.approved
-        assert version.reviewed_by is not None
+        assert version.status == ListingStatus.pending
+        assert version.reviewed_by is None
 
     @pytest.mark.asyncio
     async def test_team_reviewer_public_stays_pending(self):
@@ -255,10 +261,10 @@ class TestSkillSubmitStatus:
         assert version.status == ListingStatus.pending
 
     @pytest.mark.asyncio
-    async def test_global_reviewer_public_is_approved(self):
+    async def test_global_reviewer_public_stays_pending(self):
         _listing, version = await self._submit(_user(UserRole.reviewer), TeamRole.member, "public")
-        assert version.status == ListingStatus.approved
-        assert version.reviewed_by is not None
+        assert version.status == ListingStatus.pending
+        assert version.reviewed_by is None
 
 
 class TestAgentSubmitStatus:
@@ -308,10 +314,10 @@ class TestAgentSubmitStatus:
         assert agent.latest_version.reviewed_by is None
 
     @pytest.mark.asyncio
-    async def test_team_owner_team_agent_is_approved(self):
+    async def test_team_owner_team_agent_stays_pending(self):
         agent = await self._submit(_user(), TeamRole.owner, is_private=True)
-        assert agent.status == AgentStatus.approved
-        assert agent.latest_version.reviewed_by is not None
+        assert agent.status == AgentStatus.pending
+        assert agent.latest_version.reviewed_by is None
 
     @pytest.mark.asyncio
     async def test_team_reviewer_public_agent_stays_pending(self):
@@ -324,6 +330,6 @@ class TestAgentSubmitStatus:
         assert agent.status == AgentStatus.pending
 
     @pytest.mark.asyncio
-    async def test_admin_public_agent_is_approved(self):
+    async def test_admin_public_agent_stays_pending(self):
         agent = await self._submit(_user(UserRole.admin), None, is_private=False)
-        assert agent.status == AgentStatus.approved
+        assert agent.status == AgentStatus.pending

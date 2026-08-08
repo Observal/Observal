@@ -22,6 +22,29 @@ export const NAMESPACE_RULE_TEXT =
 	"Namespaces must be 3-32 characters using lowercase letters, numbers, " +
 	"hyphens, and dots, and must start and end with a letter or number";
 
+// Server slug charset, from services/registry_namespace.py SLUG_RE.
+const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
+
+/**
+ * The canonical `/namespace/slug` path segments, but only when both resolve
+ * server-side. Migration 016 backfilled some namespaces verbatim from legacy
+ * usernames (uppercase, underscores, spaces, or under 3 chars), and the
+ * `/registry/resolve` endpoint lowercases and validates before matching — so a
+ * card linking `/agents/John_Smith/tool` would 404. Returning null for those
+ * keeps the caller on the always-working UUID route.
+ */
+export function canonicalRouteParts(
+	namespace: string | null | undefined,
+	slug: string | null | undefined,
+): { namespace: string; slug: string } | null {
+	const ns = namespace?.trim();
+	const sl = slug?.trim();
+	if (ns && sl && NAMESPACE_RE.test(ns) && SLUG_RE.test(sl)) {
+		return { namespace: ns, slug: sl };
+	}
+	return null;
+}
+
 export interface SlugifyRegistryTextOptions {
 	allowUnderscore?: boolean;
 	maxLength?: number;
@@ -117,4 +140,44 @@ export function qualifiedName(item: QualifiedIdentity | null | undefined, fallba
 export function registryNameWithHandle(item: QualifiedIdentity | null | undefined, fallbackName = ""): string {
 	const { name, handle } = registryIdentity(item, fallbackName);
 	return handle ? `${name} @${handle}` : name;
+}
+
+export type RegistryRouteType =
+	| "agent"
+	| "agents"
+	| "mcp"
+	| "mcps"
+	| "skill"
+	| "skills"
+	| "hook"
+	| "hooks"
+	| "prompt"
+	| "prompts"
+	| "sandbox"
+	| "sandboxes";
+
+const COMPONENT_ROUTE_TYPE: Record<Exclude<RegistryRouteType, "agent" | "agents">, string> = {
+	mcp: "mcps",
+	mcps: "mcps",
+	skill: "skills",
+	skills: "skills",
+	hook: "hooks",
+	hooks: "hooks",
+	prompt: "prompts",
+	prompts: "prompts",
+	sandbox: "sandboxes",
+	sandboxes: "sandboxes",
+};
+
+/** Canonical web path when possible, otherwise the always-resolvable UUID path. */
+export function registryItemPath(item: QualifiedIdentity | null | undefined, type: RegistryRouteType, id: string): string {
+	const identity = registryIdentity(item);
+	const parts = canonicalRouteParts(identity.handle, identity.name);
+	if (type === "agent" || type === "agents") {
+		return parts ? `/agents/${parts.namespace}/${parts.slug}` : `/agents/${id}`;
+	}
+	const plural = COMPONENT_ROUTE_TYPE[type];
+	return parts
+		? `/components/${plural}/${parts.namespace}/${parts.slug}`
+		: `/components/${id}?type=${plural}`;
 }

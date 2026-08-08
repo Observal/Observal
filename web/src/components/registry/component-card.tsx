@@ -6,6 +6,7 @@ import { Link } from "@tanstack/react-router";
 import { GitBranch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { RegistryName } from "@/components/registry/registry-name";
+import { canonicalRouteParts } from "@/lib/registry-name";
 import type { RegistryType } from "@/lib/api";
 
 interface ComponentCardProps {
@@ -43,17 +44,20 @@ export function ComponentCard({
   git_url,
   className,
 }: ComponentCardProps) {
-  return (
-    <Link
-      to="/components/$componentId" params={{ componentId: id }} search={{ type }}
-      className={[
-        "group block border border-border bg-card p-4 rounded-md",
-        "transition-all duration-200 ease-out",
-        "hover:-translate-y-0.5 hover:border-foreground/20 hover:bg-accent/40",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        className ?? "",
-      ].join(" ")}
-    >
+  const cardClassName = [
+    "group block border border-border bg-card p-4 rounded-md",
+    "transition-all duration-200 ease-out",
+    "hover:-translate-y-0.5 hover:border-foreground/20 hover:bg-accent/40",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    className ?? "",
+  ].join(" ");
+  // Prefer the canonical shareable URL; fall back to the UUID route for
+  // payloads that predate namespace/slug, or whose namespace is a legacy
+  // verbatim username the canonical route cannot resolve.
+  const canonical = canonicalRouteParts(namespace, slug);
+
+  const body = (
+    <>
       <div className="flex items-start justify-between gap-2">
         <RegistryName
           item={{ name, namespace, slug, qualified_name }}
@@ -90,6 +94,28 @@ export function ComponentCard({
           </span>
         )}
       </div>
+    </>
+  );
+
+  if (canonical) {
+    return (
+      <Link
+        to="/components/$type/$namespace/$slug"
+        params={{ type, ...canonical }}
+        className={cardClassName}
+      >
+        {body}
+      </Link>
+    );
+  }
+  return (
+    <Link
+      to="/components/$componentId"
+      params={{ componentId: id }}
+      search={{ type }}
+      className={cardClassName}
+    >
+      {body}
     </Link>
   );
 }

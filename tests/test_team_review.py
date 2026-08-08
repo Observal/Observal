@@ -422,6 +422,38 @@ async def test_team_private_item_is_not_approved_without_a_review_role(who):
 
 
 @pytest.mark.asyncio
+async def test_team_owner_approves_their_own_submission():
+    """Self-approval is deliberate policy, not an oversight.
+
+    Team publishing never auto-approves anymore, so a team owner's (or team
+    reviewer's) own publish sits pending until someone with review capability
+    acts — and that someone may be the submitter. The decision is then a
+    recorded reviewed_by rather than the silent skip auto-approval used to be.
+    """
+    async with _sessions() as sessions:
+        seed = await _seed(sessions)
+        async with sessions() as session:
+            own = _mcp("owners-own", team_id=seed.team_id, is_private=True, submitted_by=seed.team_owner.id)
+            session.add(own)
+            await session.flush()
+            version = _mcp_version(own, released_by=seed.team_owner.id)
+            session.add(version)
+            await session.flush()
+            own.latest_version_id = version.id
+            await session.commit()
+            own_id, version_id = own.id, version.id
+
+        response = await _approve(sessions, seed.team_owner, own_id)
+        assert response.status_code == 200
+        assert response.json()["status"] == ListingStatus.approved.value
+
+        async with sessions() as session:
+            version_row = await session.get(McpVersion, version_id)
+            assert version_row.status == ListingStatus.approved
+            assert version_row.reviewed_by == seed.team_owner.id
+
+
+@pytest.mark.asyncio
 async def test_global_reviewer_cannot_approve_a_team_private_item():
     async with _sessions() as sessions:
         seed = await _seed(sessions)

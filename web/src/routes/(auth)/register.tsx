@@ -9,6 +9,7 @@ const RegisterPage = lazy(() => import("@/pages/register"));
 
 export type RegisterSearch = {
   next?: string;
+  invite?: string;
 };
 
 function RegisterRoute() {
@@ -26,5 +27,6 @@ export const Route = createFileRoute("/(auth)/register")({
   component: RegisterRoute,
   validateSearch: (search: Record<string, unknown>): RegisterSearch => ({
     next: (search.next as string) || undefined,
+    invite: (search.invite as string) || undefined,
   }),
 });

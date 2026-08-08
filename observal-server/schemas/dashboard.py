@@ -32,6 +32,9 @@ class TopItem(BaseModel):
 class TopAgentItem(BaseModel):
     id: uuid.UUID
     name: str
+    namespace: str = ""
+    slug: str = ""
+    qualified_name: str = ""
     description: str = ""
     owner: str = ""
     created_by_username: str | None = None
@@ -50,6 +53,9 @@ class LeaderboardItem(TopAgentItem):
 class ComponentLeaderboardItem(BaseModel):
     id: uuid.UUID
     name: str
+    namespace: str = ""
+    slug: str = ""
+    qualified_name: str = ""
     component_type: str
     description: str = ""
     download_count: int = 0

@@ -952,6 +952,9 @@ class TestComponentLinkResponseInAgentResponse:
         link = ComponentLinkResponse(
             component_type="skill",
             component_id=cid,
+            namespace="acme",
+            slug="reviewer",
+            qualified_name="acme/reviewer",
             version_ref="2.0",
             order=1,
             config_override={"key": "val"},
@@ -959,6 +962,7 @@ class TestComponentLinkResponseInAgentResponse:
         data = link.model_dump()
         assert data["component_type"] == "skill"
         assert data["component_id"] == cid
+        assert data["qualified_name"] == "acme/reviewer"
         assert data["config_override"] == {"key": "val"}
         assert data["status"] is None
 

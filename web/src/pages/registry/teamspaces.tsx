@@ -3,7 +3,7 @@
 
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Building2, ChevronRight, Loader2, Plus, RefreshCw, Search, Users } from "lucide-react";
+import { Building2, ChevronRight, Loader2, Lock, Plus, RefreshCw, Search, Users } from "lucide-react";
 import { PageHeader } from "@/components/layouts/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
@@ -11,9 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { hasMinRole } from "@/hooks/use-role-guard";
-import { useAllTeams, useCreateTeam, useTeams } from "@/hooks/use-api";
-import { getUserRole } from "@/lib/api";
+import { useAllTeams, useClaimPersonalTeamspace, useCreateTeam, useTeams } from "@/hooks/use-api";
 import { slugifyRegistryText } from "@/lib/registry-name";
 import type { Team } from "@/lib/types";
 
@@ -38,7 +36,12 @@ function TeamspaceCard({ team }: { team: Team }) {
 				</div>
 				<div className="min-w-0 flex-1">
 					<p className="truncate text-sm font-semibold leading-tight">{team.name}</p>
-					<p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{team.handle}</p>
+					<p className="mt-0.5 flex items-center gap-1 truncate font-mono text-[11px] text-muted-foreground">
+						{team.handle}
+						{team.visibility === "private" && (
+							<Lock className="h-3 w-3 shrink-0" role="img" aria-label="Private teamspace" />
+						)}
+					</p>
 				</div>
 				<ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5" />
 			</div>
@@ -66,29 +69,39 @@ function CreatePanel({
 	onCreated,
 	onCancel,
 	firstTeamspace = false,
+	personalClaimed,
 }: {
 	onCreated: () => void;
 	onCancel?: () => void;
 	firstTeamspace?: boolean;
+	personalClaimed: boolean;
 }) {
 	const createTeam = useCreateTeam();
+	const claimPersonal = useClaimPersonalTeamspace();
 	const [name, setName] = useState("");
 	const [handle, setHandle] = useState("");
 	const [handleEdited, setHandleEdited] = useState(false);
 	const [description, setDescription] = useState("");
+	const [visibility, setVisibility] = useState<"public" | "private">("public");
 	const generatedHandle = slugifyHandle(name);
 	const submittedHandle = handleEdited ? slugifyHandle(handle) : generatedHandle;
 	const previewHandle = submittedHandle || "team";
 
 	function submit() {
 		createTeam.mutate(
-			{ name: name.trim(), handle: submittedHandle || undefined, description: description.trim() || undefined },
+			{
+				name: name.trim(),
+				handle: submittedHandle || undefined,
+				description: description.trim() || undefined,
+				visibility,
+			},
 			{
 				onSuccess: () => {
 					setName("");
 					setHandle("");
 					setHandleEdited(false);
 					setDescription("");
+					setVisibility("public");
 					onCreated();
 				},
 			},
@@ -203,6 +216,45 @@ function CreatePanel({
 							</p>
 						</div>
 						<div className="space-y-2 md:col-span-2">
+							<Label id="team-visibility-label">Visibility</Label>
+							<div
+								role="radiogroup"
+								aria-labelledby="team-visibility-label"
+								className="grid gap-2 sm:grid-cols-2"
+							>
+								{(
+									[
+										{
+											value: "public" as const,
+											title: "Public",
+											blurb: "Discoverable by every signed-in user; anyone can request to join.",
+										},
+										{
+											value: "private" as const,
+											title: "Private",
+											blurb: "Hidden from non-members. Admins and global reviewers still see it.",
+										},
+									]
+								).map((option) => (
+									<button
+										key={option.value}
+										type="button"
+										role="radio"
+										aria-checked={visibility === option.value}
+										onClick={() => setVisibility(option.value)}
+										className={`rounded-md border p-3 text-left transition-colors ${
+											visibility === option.value
+												? "border-primary-accent bg-primary-accent/5"
+												: "border-border/80 hover:border-foreground/20"
+										}`}
+									>
+										<p className="text-sm font-medium">{option.title}</p>
+										<p className="mt-1 text-xs leading-5 text-muted-foreground">{option.blurb}</p>
+									</button>
+								))}
+							</div>
+						</div>
+						<div className="space-y-2 md:col-span-2">
 							<Label htmlFor="team-description">
 								Description <span className="font-normal text-muted-foreground">(optional)</span>
 							</Label>
@@ -218,14 +270,32 @@ function CreatePanel({
 					</div>
 					<footer className="flex flex-col gap-3 border-t border-border/70 px-6 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-8">
 						<p className="text-xs leading-5 text-muted-foreground">You can manage members and roles after creation.</p>
-						<Button
-							type="submit"
-							className="bg-primary-accent px-5 text-primary-foreground hover:bg-primary-accent/90"
-							disabled={!name.trim() || createTeam.isPending}
-						>
-							{createTeam.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-							Create teamspace
-						</Button>
+						<div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+							{!personalClaimed && (
+								<Button
+									type="button"
+									variant="outline"
+									disabled={claimPersonal.isPending}
+									onClick={() => claimPersonal.mutate(undefined, { onSuccess: () => onCreated() })}
+									title="One click creates a private teamspace of your own, named after you and hidden from other users"
+								>
+									{claimPersonal.isPending ? (
+										<Loader2 className="h-4 w-4 animate-spin" />
+									) : (
+										<Lock className="h-4 w-4" />
+									)}
+									Claim your private teamspace
+								</Button>
+							)}
+							<Button
+								type="submit"
+								className="bg-primary-accent px-5 text-primary-foreground hover:bg-primary-accent/90"
+								disabled={!name.trim() || createTeam.isPending}
+							>
+								{createTeam.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+								Create teamspace
+							</Button>
+						</div>
 					</footer>
 				</form>
 			</div>
@@ -236,7 +306,6 @@ function CreatePanel({
 export default function TeamspacesPage() {
 	const { data: teams = [], isLoading: isTeamsLoading } = useTeams();
 	const { data: allTeams = [], isLoading: isAllTeamsLoading } = useAllTeams();
-	const canCreate = hasMinRole(getUserRole(), "reviewer");
 	const [showCreate, setShowCreate] = useState(false);
 	const [teamQuery, setTeamQuery] = useState("");
 
@@ -246,7 +315,10 @@ export default function TeamspacesPage() {
 	const filteredTeams = browse.filter(
 		(team) => !query || team.name.toLowerCase().includes(query) || team.handle.toLowerCase().includes(query),
 	);
-	const firstTeamspace = !isLoading && browse.length === 0 && canCreate;
+	// Any signed-in user can create a teamspace, so the first-run panel needs
+	// no role gate.
+	const firstTeamspace = !isLoading && browse.length === 0;
+	const personalClaimed = teams.some((team) => team.is_personal);
 	const listTitle = teams.length > 0 ? "Your teamspaces" : "Discover teamspaces";
 
 	return (
@@ -257,6 +329,7 @@ export default function TeamspacesPage() {
 					{showCreate || firstTeamspace ? (
 						<CreatePanel
 							firstTeamspace={firstTeamspace}
+							personalClaimed={personalClaimed}
 							onCreated={() => setShowCreate(false)}
 							onCancel={firstTeamspace ? undefined : () => setShowCreate(false)}
 						/>
@@ -283,17 +356,15 @@ export default function TeamspacesPage() {
 											/>
 										</div>
 									)}
-									{canCreate && (
-										<Button
-											type="button"
-											variant="outline"
-											size="sm"
-											className="h-9 shrink-0 border-primary-accent/30 hover:border-primary-accent/60 hover:bg-primary-accent/10"
-											onClick={() => setShowCreate(true)}
-										>
-											<Plus className="mr-1.5 h-3.5 w-3.5 text-primary-accent" /> New teamspace
-										</Button>
-									)}
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										className="h-9 shrink-0 border-primary-accent/30 hover:border-primary-accent/60 hover:bg-primary-accent/10"
+										onClick={() => setShowCreate(true)}
+									>
+										<Plus className="mr-1.5 h-3.5 w-3.5 text-primary-accent" /> New teamspace
+									</Button>
 								</div>
 							</header>
 
@@ -308,11 +379,7 @@ export default function TeamspacesPage() {
 									<EmptyState
 										icon={Users}
 										title="No teamspaces to browse"
-										description={
-											canCreate
-												? "Create the first teamspace to give your team a shared publishing namespace."
-												: "There are no discoverable teamspaces yet. Ask an owner to add you to one."
-										}
+										description="Create the first teamspace to give your team a shared publishing namespace."
 									/>
 								) : filteredTeams.length === 0 ? (
 									<EmptyState

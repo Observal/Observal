@@ -8,7 +8,7 @@
 import logging
 import time
 import uuid
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import quote, urlparse, urlunparse
 
 import httpx
 import typer
@@ -268,11 +268,34 @@ def canonical_name(item: dict) -> str:
 
 
 def resolve_team_id(reference: str) -> str:
-    """Resolve a team UUID or handle using the authenticated team list."""
+    """Resolve a team UUID or handle via GET /teams/by-handle.
+
+    Falls back to scanning the authenticated team list when the by-handle
+    lookup fails for any reason — a missing team, an older server that
+    predates the route, or a transport error. The fallback goes through
+    ``get()``, which owns the user-facing error handling for a server that is
+    genuinely unreachable.
+    """
     value = reference.strip().lstrip("@").lower()
     try:
         return str(uuid.UUID(value))
     except ValueError:
+        pass
+    try:
+        base, headers = _client()
+        # Encode the raw CLI input so a reference containing "/" or ".." can
+        # never change which endpoint receives the caller's bearer token.
+        r = _request_with_retry("get", f"{base}/api/v1/teams/by-handle/{quote(value, safe='')}", headers)
+        return str(r.json()["id"])
+    except (typer.Exit, KeyboardInterrupt):
+        # Control flow, not a lookup failure. `_client()` runs version
+        # enforcement, which hard-exits on a server/CLI mismatch; swallowing
+        # that Exit would let the command run on against an incompatible server.
+        raise
+    except Exception:
+        # The by-handle lookup is an optimization. Any real failure (HTTP error,
+        # transport failure, incomplete config) falls through to the scan below,
+        # which goes through get() and owns the user-facing error handling.
         pass
     teams = get("/api/v1/teams/all")
     for team in teams:
