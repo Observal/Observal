@@ -18,7 +18,7 @@ Deploy Observal as a distributed, highly available stack on AWS or GCP using Ter
 | **Failover** | Manual (reboot / redeploy) | Automatic (managed services handle it) |
 | **Scaling** | Vertical (bigger VM) | Horizontal (add more containers) |
 | **Backups** | Cron + S3 | Automated (RDS snapshots, systemd timers, S3 lifecycle) |
-| **Secrets** | `.env` file on disk | SSM Parameter Store / Secret Manager (encrypted, auditable) |
+| **Secrets** | Server-package files, or direct `.env` values for source Compose | SSM Parameter Store / Secret Manager (encrypted, auditable) |
 | **Logging** | `docker compose logs` | CloudWatch / Cloud Logging (centralized, retained, searchable) |
 | **Time to deploy** | 10 minutes | 20–30 minutes |
 

@@ -9,6 +9,8 @@
 Everything you need to get Observal running locally for development or self-hosted production.
 
 > **Full operator docs** live at [observal.gitbook.io](https://observal.gitbook.io/observal) ([`/docs`](docs/) in this repo). This file covers the fastest path from zero to a working stack.
+>
+> The steps below use the source Compose stack for development. The one-line server-package installer instead generates restricted files under `secrets/`, stores only `NAME_FILE` paths in `.env`, and binds published ports to loopback. The same install command runs guided setup with a terminal or safe defaults without one, so CI and coding agents need no special flag. See [Configuration](docs/self-hosting/configuration.md#secret-files) for the packaged layout and rotation rules.
 
 ---
 
@@ -34,7 +36,7 @@ cp .env.example .env
 
 `.env.example` ships with working defaults; you don't need to edit anything for local development. Demo accounts (`super@demo.example` / `super-changeme`, etc.) are seeded automatically on first start.
 
-> **Before a real deployment:** change `SECRET_KEY`, `POSTGRES_PASSWORD`, `CLICKHOUSE_PASSWORD`, and unset all `DEMO_*` variables. See the [Self-hosting overview](docs/self-hosting/README.md), [Configuration](docs/self-hosting/configuration.md), [Databases](docs/self-hosting/databases.md), and [Upgrades](docs/self-hosting/upgrades.md).
+> **Before a real deployment from source:** change `SECRET_KEY`, `POSTGRES_PASSWORD`, `CLICKHOUSE_PASSWORD`, and unset all `DEMO_*` variables. Server-package installs generate these credentials as files automatically. See the [Self-hosting overview](docs/self-hosting/README.md), [Configuration](docs/self-hosting/configuration.md), [Databases](docs/self-hosting/databases.md), and [Upgrades](docs/self-hosting/upgrades.md).
 
 ---
 

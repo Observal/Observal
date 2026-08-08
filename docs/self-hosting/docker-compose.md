@@ -15,7 +15,7 @@ cd Observal
 cp .env.example .env
 ```
 
-The `.env.example` ships with working defaults for every setting, including demo account credentials. You do not need to edit it for local development.
+The `.env.example` ships with working direct-value defaults for local source development, including demo account credentials. You do not need to edit it for local development. Production server-package installs use generated files under `secrets/` instead; see [Configuration](configuration.md#secret-files).
 
 > [!NOTE]
 > You need Docker Engine ≥ 24.0 with Compose v2 (`docker compose`, not `docker-compose`). Homebrew's Docker formula is outdated. Install [Docker Desktop](https://docs.docker.com/get-docker/) or use your distro's upstream packages. Verify with `docker version` and `docker compose version`.

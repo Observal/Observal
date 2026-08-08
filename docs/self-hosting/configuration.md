@@ -7,17 +7,19 @@ Boot-time infrastructure settings live in `.env`. Credentials can use dedicated 
 
 ## Required for production
 
-Override these before going live:
+Source deployments must override these before going live. Server-package setup generates the secret values and file references automatically:
 
 | Variable               | Default                        | Why change                                                                                                                         |
 | ---------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `SECRET_KEY`           | `change-me-to-a-random-string` | Session signing key. Generate a real one before production. |
-| `POSTGRES_PASSWORD`    | `postgres`                     | Default password is not secure.                                                                                                    |
-| `CLICKHOUSE_PASSWORD`  | `clickhouse`                   | Same.                                                                                                                              |
+| `SECRET_KEY` or `SECRET_KEY_FILE` | `change-me-to-a-random-string` | Application encryption secret. Use a random value of at least 32 characters. |
+| `POSTGRES_PASSWORD` or `POSTGRES_PASSWORD_FILE` | `postgres` | PostgreSQL bootstrap credential. |
+| `CLICKHOUSE_PASSWORD` or generated hashed user config | `clickhouse` | ClickHouse credential. |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000`        | Scope to your real frontend origin(s). Configure as `deployment.cors_origins` in Admin Settings.                                   |
 | `deployment.frontend_url` | `http://localhost:3000`     | Used for OAuth redirects and email links. Configure in Admin Settings.                                                             |
 
-The server-package installer generates these credentials in an operator-owned `secrets/` directory with read access limited to the configured container service group. Existing deployments can keep direct environment values.
+The server-package installer generates these credentials in an operator-owned `secrets/` directory. Directories use mode `0750`, files use mode `0640`, and `OBSERVAL_SECRET_GID` grants the containers read access through the operator's group. Existing deployments can keep direct environment values.
+
+With a terminal, setup prompts for the frontend URL, bind address, and observability profile. Without a terminal, the same installer selects `http://localhost:3000`, loopback binding, and no optional observability stack. It prints the initial super-admin email, generated password, and password-file path after the first successful startup. Existing headless installations preserve their configuration rather than replacing it.
 
 ## Secret files
 
@@ -38,7 +40,7 @@ File-backed dynamic settings are marked externally managed in the admin API. The
 
 Supported file-backed boot credentials include `DATABASE_URL`, `CLICKHOUSE_URL`, `REDIS_URL`, `SECRET_KEY`, `OLD_SECRET_KEY`, `JWT_KEY_PASSWORD`, `GIT_CLONE_TOKEN`, and every `DEMO_*_PASSWORD`. SSO environment imports support the same form, including OAuth client secrets, Google and GitHub OAuth secrets, the insights provider key, SAML certificates, and the SAML key-encryption password. CLI tokens support `OBSERVAL_ACCESS_TOKEN_FILE`, `OBSERVAL_API_KEY_FILE`, and `OBSERVAL_TOKEN_FILE`.
 
-PostgreSQL containers use `POSTGRES_PASSWORD_FILE`. The server package generates a hashed ClickHouse user configuration instead of putting its database password in `.env`.
+PostgreSQL containers use `POSTGRES_PASSWORD_FILE`. The server package generates a hashed ClickHouse user configuration instead of putting its database password in `.env`. Service-specific subdirectories expose only the PostgreSQL password to PostgreSQL, the ClickHouse health credential to ClickHouse, and the Grafana and ClickHouse datasource credentials to Grafana.
 
 ## SSO-only mode
 
@@ -49,7 +51,7 @@ Set `deployment.sso_only=true` in **Admin → SSO** when you want IdP-only acces
 
 Seeded on first startup _only_ when no users exist:
 
-```
+```dotenv
 DEMO_SUPER_ADMIN_EMAIL=super@demo.example
 DEMO_SUPER_ADMIN_PASSWORD=super-changeme
 DEMO_ADMIN_EMAIL=admin@demo.example
@@ -66,10 +68,20 @@ DEMO_USER_PASSWORD=user-changeme
 
 ## Database connections
 
-```
+Source deployments may use direct values:
+
+```dotenv
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@observal-db:5432/observal
 CLICKHOUSE_URL=clickhouse://default:clickhouse@observal-clickhouse:8123/observal
 REDIS_URL=redis://observal-redis:6379
+```
+
+Server-package installs use file references instead:
+
+```dotenv
+DATABASE_URL_FILE=/run/secrets/database_url
+CLICKHOUSE_URL_FILE=/run/secrets/clickhouse_url
+REDIS_URL_FILE=/run/secrets/redis_url
 ```
 
 Inside Docker Compose, hostnames resolve via the `observal-net` bridge (e.g. `observal-db`). Outside Docker (e.g. CLI running on host against dockerized DBs), use `localhost:<port>`.

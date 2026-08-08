@@ -7,6 +7,8 @@
 
 Run Observal entirely on your own infrastructure. No SaaS, no egress, every byte of telemetry stays inside your network.
 
+For a packaged single-node install, `install-server.sh` generates restricted credential files under `secrets/`, records their `NAME_FILE` paths in `.env`, and binds host ports to loopback. It prompts when a terminal is available and applies the same safe defaults automatically in headless CI or agent environments. The source Compose path remains available for development and accepts direct `.env` values.
+
 ## Architecture at a glance
 
 ```mermaid
@@ -87,13 +89,13 @@ Choose the deployment model that fits your team:
 
 Before putting Observal in front of real users:
 
-1. **Generate a real `SECRET_KEY`**: `python3 -c "import secrets; print(secrets.token_urlsafe(32))"`.
-2. **Set strong Postgres and ClickHouse passwords**: not the `.env.example` defaults.
+1. **Protect `SECRET_KEY`**: server-package setup generates it in `secrets/`; source deployments must set a strong direct value or `SECRET_KEY_FILE`.
+2. **Protect database passwords**: server-package setup generates restricted PostgreSQL and ClickHouse credential files; source deployments must replace the `.env.example` defaults.
 3. **Scope `CORS_ALLOWED_ORIGINS`** to your real frontend host.
 4. **Configure SSO** in **Admin → SSO**, including `deployment.sso_only` if you want SSO-only login.
 5. **Tune rate limits** (`RATE_LIMIT_AUTH`, `RATE_LIMIT_AUTH_STRICT`).
 6. **Set `DATA_RETENTION_DAYS`** to match your retention policy (default 90 days).
 7. **Back up the JWT key volume** (`apidata`): losing it invalidates every session.
-8. **Remove demo accounts**: unset `DEMO_*` env vars before the first startup in a real environment.
+8. **Remove demo accounts**: remove `DEMO_*` variables and generated demo password files before a real deployment, then delete any already-seeded demo users.
 
 Each of these is covered in the linked deep-dive below. Start with [Requirements](requirements.md).

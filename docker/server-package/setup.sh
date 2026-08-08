@@ -20,7 +20,7 @@ die() {
 prompt_with_default() {
     local var_name="$1" prompt_text="$2" default="$3" value
     printf '%s [%s]: ' "$prompt_text" "$default"
-    read -r value
+    read -r value || value=""
     printf -v "$var_name" '%s' "${value:-$default}"
 }
 
@@ -52,7 +52,8 @@ existing_or_generated_secret() {
 }
 
 env_value() {
-    sed -n "s/^$1=//p" "$ENV_FILE" 2>/dev/null | tail -1
+    [ -f "$ENV_FILE" ] || return 0
+    sed -n "s/^$1=//p" "$ENV_FILE" | tail -1
 }
 
 sha256() {
@@ -78,7 +79,7 @@ if [ -f "$ENV_FILE" ]; then
     fi
     warn "Existing configuration found at $ENV_FILE"
     printf 'Replace it with a new configuration? [y/N]: '
-    read -r confirm
+    read -r confirm || confirm=""
     if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
         info "Kept the existing configuration and bind address $previous_bind"
         exit 0
@@ -109,6 +110,14 @@ POSTGRES_PASSWORD=$(existing_or_generated_secret postgres/postgres_password POST
 CLICKHOUSE_PASSWORD=$(existing_or_generated_secret clickhouse/clickhouse_password CLICKHOUSE_PASSWORD)
 SECRET_KEY=$(existing_or_generated_secret secret_key SECRET_KEY)
 JWT_KEY_PASSWORD=$(existing_or_generated_secret jwt_key_password JWT_KEY_PASSWORD)
+DEMO_SUPER_ADMIN_EMAIL=$(env_value DEMO_SUPER_ADMIN_EMAIL)
+DEMO_SUPER_ADMIN_EMAIL="${DEMO_SUPER_ADMIN_EMAIL:-super@demo.example}"
+DEMO_ADMIN_EMAIL=$(env_value DEMO_ADMIN_EMAIL)
+DEMO_ADMIN_EMAIL="${DEMO_ADMIN_EMAIL:-admin@demo.example}"
+DEMO_REVIEWER_EMAIL=$(env_value DEMO_REVIEWER_EMAIL)
+DEMO_REVIEWER_EMAIL="${DEMO_REVIEWER_EMAIL:-reviewer@demo.example}"
+DEMO_USER_EMAIL=$(env_value DEMO_USER_EMAIL)
+DEMO_USER_EMAIL="${DEMO_USER_EMAIL:-user@demo.example}"
 DEMO_SUPER_ADMIN_PASSWORD=$(existing_or_generated_secret demo_super_admin_password DEMO_SUPER_ADMIN_PASSWORD)
 DEMO_ADMIN_PASSWORD=$(existing_or_generated_secret demo_admin_password DEMO_ADMIN_PASSWORD)
 DEMO_REVIEWER_PASSWORD=$(existing_or_generated_secret demo_reviewer_password DEMO_REVIEWER_PASSWORD)
@@ -161,6 +170,10 @@ OBSERVAL_BIND_ADDRESS=$OBSERVAL_BIND_ADDRESS
 OBSERVAL_SECRET_GID=$SECRET_GID
 FRONTEND_URL=$FRONTEND_URL
 CORS_ALLOWED_ORIGINS=$FRONTEND_URL
+DEMO_SUPER_ADMIN_EMAIL=$DEMO_SUPER_ADMIN_EMAIL
+DEMO_ADMIN_EMAIL=$DEMO_ADMIN_EMAIL
+DEMO_REVIEWER_EMAIL=$DEMO_REVIEWER_EMAIL
+DEMO_USER_EMAIL=$DEMO_USER_EMAIL
 EOF
 chmod 600 "$ENV_FILE"
 
@@ -193,7 +206,10 @@ info "Observal is running"
 info "Dashboard: $FRONTEND_URL"
 info "HTTP bind address: $OBSERVAL_BIND_ADDRESS"
 info "Config: $ENV_FILE"
-printf '\nInitial administrator:\n  Email: super@demo.example\n  Password: %s\n' "$DEMO_SUPER_ADMIN_PASSWORD"
+printf '\nInitial administrator:\n  Email: %s\n  Password: %s\n  Password file: %s\n' \
+    "$DEMO_SUPER_ADMIN_EMAIL" \
+    "$DEMO_SUPER_ADMIN_PASSWORD" \
+    "$SECRETS_DIR/demo_super_admin_password"
 printf 'Change this password after the first login.\n'
 if [ "$OBSERVABILITY_STACK" = "grafana" ]; then
     printf '\nGrafana administrator:\n  User: admin\n  Password: %s\n' "$GRAFANA_ADMIN_PASSWORD"

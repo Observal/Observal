@@ -160,6 +160,10 @@ fi
 
 # ── Run setup ───────────────────────────────────────────────
 
-info "Running guided setup..."
-OBSERVAL_INSTALL_DIR="$INSTALL_DIR" \
-    bash "$INSTALL_DIR/setup.sh" </dev/tty
+if ( : </dev/tty ) 2>/dev/null; then
+    info "Running guided setup..."
+    OBSERVAL_INSTALL_DIR="$INSTALL_DIR" bash "$INSTALL_DIR/setup.sh" </dev/tty
+else
+    info "No terminal detected; using safe setup defaults..."
+    OBSERVAL_INSTALL_DIR="$INSTALL_DIR" bash "$INSTALL_DIR/setup.sh" </dev/null
+fi

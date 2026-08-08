@@ -19,6 +19,12 @@ This pulls new Docker images, backs up your database, recreates containers, and 
 
 See [`observal server upgrade`](../cli/server.md#observal-server-upgrade) for full details.
 
+### Server-package upgrades
+
+If you installed with `install-server.sh`, rerun the installer for the target release. Setup detects the existing `.env`. Choose the default **No** response when asked to replace configuration so custom values and existing direct credentials remain unchanged. The upgrade records the prior bind address when an older install has no `OBSERVAL_BIND_ADDRESS` setting.
+
+Back up `.env`, `secrets/`, and the `apidata` and `pgdata` volumes first. Choosing **Yes** intentionally rebuilds the general configuration from the new template; core application, PostgreSQL, ClickHouse, Grafana, and demo credentials are preserved or migrated into restricted files, but unrelated custom environment entries must be reapplied.
+
 ## Before a manual upgrade
 
 1. **Back up `pgdata`** and **`apidata`**. See [Backup and restore](backup-and-restore.md). Backing up `chdata` is nice-to-have; losing telemetry is painful but not catastrophic.

@@ -98,7 +98,7 @@ Observal has two parts: a **server** (API + web UI + databases) you self-host, a
 curl -fsSL https://raw.githubusercontent.com/Observal/Observal/main/install-server.sh | bash
 ```
 
-This downloads a Docker Compose package, generates operator-owned secret files with restricted container-group access, binds published ports to loopback by default, pulls container images from GHCR, and starts the stack.
+This downloads a Docker Compose package, generates operator-owned secret files with restricted container-group access, binds published ports to loopback by default, pulls container images from GHCR, and starts the stack. With a terminal it runs guided setup; without a terminal the same command applies safe defaults automatically.
 
 Deployment docs are linked directly from this README:
 

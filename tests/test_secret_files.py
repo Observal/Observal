@@ -196,7 +196,7 @@ def _package_fixture(tmp_path):
     return install, env
 
 
-def test_server_package_new_install_generates_owner_only_secrets(tmp_path):
+def test_server_package_new_install_generates_restricted_secrets(tmp_path):
     install, env = _package_fixture(tmp_path)
     result = subprocess.run(
         ["bash", str(install / "setup.sh")],
@@ -215,6 +215,32 @@ def test_server_package_new_install_generates_owner_only_secrets(tmp_path):
     assert "password_sha256_hex" in (install / "clickhouse/users.d/generated-password.xml").read_text()
     assert "Grafana administrator" in result.stdout
     assert (install / "secrets/grafana/grafana_admin_password").read_text() in result.stdout
+    assert "Password file:" in result.stdout
+
+
+def test_server_package_headless_setup_uses_safe_defaults(tmp_path):
+    install, env = _package_fixture(tmp_path)
+    result = subprocess.run(
+        ["bash", str(install / "setup.sh")],
+        input="",
+        text=True,
+        env=env,
+        check=True,
+        capture_output=True,
+    )
+
+    generated_env = (install / ".env").read_text()
+    assert "OBSERVAL_BIND_ADDRESS=127.0.0.1" in generated_env
+    assert "FRONTEND_URL=http://localhost:3000" in generated_env
+    assert "DEMO_SUPER_ADMIN_EMAIL=super@demo.example" in generated_env
+    assert "Password file:" in result.stdout
+
+
+def test_installer_selects_tty_or_safe_headless_input():
+    installer = (Path(__file__).resolve().parent.parent / "install-server.sh").read_text()
+    assert "if ( : </dev/tty )" in installer
+    assert 'bash "$INSTALL_DIR/setup.sh" </dev/tty' in installer
+    assert 'bash "$INSTALL_DIR/setup.sh" </dev/null' in installer
 
 
 def test_server_package_upgrade_preserves_legacy_public_bind(tmp_path):
@@ -244,6 +270,7 @@ def test_server_package_replacement_preserves_existing_credentials(tmp_path):
         "POSTGRES_PASSWORD=existing-postgres\n"
         "CLICKHOUSE_PASSWORD=existing-clickhouse\n"
         "GRAFANA_ADMIN_PASSWORD=existing-grafana\n"
+        "DEMO_SUPER_ADMIN_EMAIL=owner@example.com\n"
     )
 
     subprocess.run(
@@ -261,3 +288,4 @@ def test_server_package_replacement_preserves_existing_credentials(tmp_path):
     assert (install / "secrets/grafana/clickhouse_password").read_text() == "existing-clickhouse"
     assert (install / "secrets/grafana/grafana_admin_password").read_text() == "existing-grafana"
     assert "existing-postgres" in (install / "secrets/database_url").read_text()
+    assert "DEMO_SUPER_ADMIN_EMAIL=owner@example.com" in (install / ".env").read_text()

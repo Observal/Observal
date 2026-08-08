@@ -63,6 +63,7 @@ For the **CLI** (developer machines, not the server):
 * **Inbound**: the server package routes the UI, API, and session telemetry through nginx on port `8000`.
 * **Between services**: the private `observal-net` bridge handles application traffic.
 * **Host bindings**: new server-package installs bind nginx, the direct web port, PostgreSQL, ClickHouse, Redis, Prometheus, and Grafana to `127.0.0.1` by default.
+* **Secret access**: server-package setup records the operator's group as `OBSERVAL_SECRET_GID`; only that group is added to containers that need their service-specific files.
 
 ## TLS / HTTPS
 

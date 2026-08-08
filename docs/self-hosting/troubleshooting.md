@@ -124,7 +124,14 @@ docker compose -f docker/docker-compose.yml exec observal-api \
   printenv CLICKHOUSE_URL
 ```
 
-Default inside Docker: `clickhouse://default:clickhouse@observal-clickhouse:8123/observal`. Mismatches typically happen after you change `CLICKHOUSE_PASSWORD` without updating the URL.
+The source Compose default is `clickhouse://default:clickhouse@observal-clickhouse:8123/observal`. Mismatches typically happen after changing `CLICKHOUSE_PASSWORD` without updating the URL.
+
+Server-package installs use `CLICKHOUSE_URL_FILE=/run/secrets/clickhouse_url`, a hashed ClickHouse user configuration, and a separate health-check password file. Confirm the file is mounted without printing it:
+
+```bash
+docker compose exec observal-api test -r /run/secrets/clickhouse_url
+docker compose exec observal-clickhouse test -r /run/secrets/clickhouse_password
+```
 
 Verify ClickHouse itself:
 
