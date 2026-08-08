@@ -290,6 +290,10 @@ class HarnessAdapter(Protocol):
         """Return whether network drain must run outside the hook process."""
         ...
 
+    def aged_recovery_final(self) -> bool:
+        """Return whether aged session recovery should finalize the source."""
+        ...
+
     def is_session_final(self, event: dict[str, Any]) -> bool:
         """Return whether a hook payload marks its session final."""
         ...

@@ -92,25 +92,14 @@ def read_kiro_session_cwd(session_jsonl: Path | None) -> str:
 
 
 def resolve_session_id(event: dict, home: Path | None = None) -> str:
-    """Return the session_id for a Kiro hook event.
+    """Return a non-empty session ID supplied explicitly by a Kiro hook event.
 
-    Kiro sends ``session_id`` on userPromptSubmit / agentSpawn, but NOT on stop.
-    For stop events, falls back to the value persisted by a previous hook in
-    ~/.observal/.kiro-session.
+    Identity-less events are intentionally left unresolved because a shared
+    fallback cannot safely correlate concurrent Kiro sessions.
     """
-    session_id = event.get("session_id", "")
-    if session_id:
-        return session_id
-    if home is None:
-        home = Path.home()
-    session_file = home / ".observal" / ".kiro-session"
-    try:
-        if session_file.exists():
-            cached = json.loads(session_file.read_text())
-            session_id = cached.get("session_id", "")
-    except Exception:
-        pass
-    return session_id
+    del home  # Kept for call-site compatibility.
+    session_id = event.get("session_id")
+    return session_id.strip() if isinstance(session_id, str) else ""
 
 
 def read_kiro_credits(session_id: str, home: Path | None = None) -> float | None:

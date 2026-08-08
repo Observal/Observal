@@ -150,6 +150,10 @@ class BaseAdapter:
         """Return whether the harness requires detached network delivery."""
         return False
 
+    def aged_recovery_final(self) -> bool:
+        """Finalize aged session sources by default."""
+        return True
+
     def is_session_final(self, event: dict[str, Any]) -> bool:
         """Recognize common final lifecycle event names."""
         event_name = str(

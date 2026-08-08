@@ -47,9 +47,6 @@ class KiroAdapter(BaseAdapter):
         if not session_id:
             return None
         home = home or Path.home()
-        state_dir = home / ".observal"
-        state_dir.mkdir(parents=True, exist_ok=True)
-        (state_dir / ".kiro-session").write_text(json.dumps({"session_id": session_id}))
         path = find_kiro_jsonl(session_id, home=home)
         if path is None:
             return None
@@ -106,6 +103,10 @@ class KiroAdapter(BaseAdapter):
         if entry is None:
             return None, None
         return entry.get("id"), entry.get("version")
+
+    def aged_recovery_final(self) -> bool:
+        """Keep quiet Kiro sessions recoverable while they may be permission-paused."""
+        return False
 
     def session_extra_fields(
         self,

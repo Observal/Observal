@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixes
 
+- require explicit Kiro session identity and keep aged recovery non-final
 - keep intentional CLI downgrades pinned when targeting legacy releases ([#1672](https://github.com/Observal/Observal/pull/1672))
 
 ## [1.11.0] - 2026-08-02
