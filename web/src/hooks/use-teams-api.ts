@@ -137,7 +137,8 @@ export function useUpsertTeamMember(teamId?: string) {
 		mutationFn: (body: TeamMemberUpsertBody) =>
 			teams.upsertMember(teamId || "", body),
 		onSuccess: () => {
-			qc.invalidateQueries({ queryKey: ["teams", teamId, "members"] });
+			// Broad prefix: the header's by-handle member count must move too.
+			qc.invalidateQueries({ queryKey: ["teams"] });
 			toast.success("Team member saved");
 		},
 		onError: (err: Error) => toast.error(err.message || "Failed to save member"),
@@ -149,7 +150,8 @@ export function useRemoveTeamMember(teamId?: string) {
 	return useMutation({
 		mutationFn: (userId: string) => teams.removeMember(teamId || "", userId),
 		onSuccess: () => {
-			qc.invalidateQueries({ queryKey: ["teams", teamId, "members"] });
+			// Broad prefix: the header's by-handle member count must move too.
+			qc.invalidateQueries({ queryKey: ["teams"] });
 			toast.success("Member removed");
 		},
 		onError: (err: Error) => toast.error(err.message || "Failed to remove member"),
@@ -202,8 +204,9 @@ export function useDecideJoinRequest(teamId?: string) {
 				? teams.approveJoinRequest(teamId || "", requestId)
 				: teams.rejectJoinRequest(teamId || "", requestId, reason ? { reason } : undefined),
 		onSuccess: (_data, vars) => {
-			qc.invalidateQueries({ queryKey: JOIN_REQUESTS_KEY(teamId) });
-			qc.invalidateQueries({ queryKey: ["teams", teamId, "members"] });
+			// The broad prefix also refreshes the by-handle query behind the page
+			// header, so the member count moves the moment the roster does.
+			qc.invalidateQueries({ queryKey: ["teams"] });
 			toast.success(vars.approve ? "Request approved — member added" : "Request rejected");
 		},
 		onError: (err: Error) => toast.error(err.message || "Failed to decide the request"),
