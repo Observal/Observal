@@ -248,7 +248,7 @@ timestamps). Decisions additionally emit a security event
 - On request creation: deliver `team_join_requested` to `recipients.team_owners(db, team_id)`
   with the dedupe key already specced on the inbox branch
   (`team_join_requested:{team_id}:{requester_id}`), `action_required=True`,
-  `action_url=/teamspaces/{handle}?tab=review-queue`.
+  `action_url=/teamspaces/{handle}?tab=join-requests`.
 
 Join requests grant **member** role only — role upgrades stay owner-initiated
 (`POST /teams/{id}/members`). Approval never bypasses last-owner or role logic because it only
@@ -260,7 +260,7 @@ ever inserts `member`.
   required" dead end (:247-255) with a **Request to join** button (+ optional message). After
   requesting: "Request pending" state with Cancel. On rejection the state clears (the decision
   arrives via Inbox).
-- **New "Review queue" tab** on the teamspace detail page, alongside Agents / Components /
+- **New "Join requests" tab** on the teamspace detail page, alongside Agents / Components /
   Members / Review. Visible only to team owners and global admins (same gate as member
   management, `canManageMembers` at :225); other visitors never see the tab. It shows:
   - **Pending join requests** — requester (avatar, name, username), optional message,
@@ -269,13 +269,10 @@ ever inserts `member`.
   - **Decision history** — past request rows (requester, decision, decided-by, reason,
     timestamps), rendered straight from `team_membership_requests`; no separate history store.
   - The `tab` search param on `/teamspaces/$handle` (`teamspaces.$handle.tsx:19-22`) gains a
-    `review-queue` value so Inbox `action_url`s land directly on the tab.
-  - Naming note: the existing **Review** tab (listing/version submissions, owner|reviewer
-    visibility) sits next to this one. Product decision: membership requests get their own
-    tab rather than a section inside Review or Members — the two queues have different
-    audiences (Review includes team reviewers; Review queue is owners/admins only) and
-    different objects. Keep the labels distinct ("Review" vs "Review queue") and revisit only
-    if users confuse them.
+    `join-requests` value so Inbox `action_url`s land directly on the tab.
+  - Naming note: the existing **Review** tab covers listing and version submissions. Membership
+    requests use their own **Join requests** tab because the audiences differ: Review includes
+    team reviewers, while Join requests is restricted to owners and admins.
 - **Share button** (from Phase 1) on the teamspace header copies `/teamspaces/{handle}`.
 - **Teamspaces list empty state** (`teamspaces.tsx`): creation is open to every signed-in
   user (scope addition 2 below), so the empty state simply invites creation: "Create the
@@ -293,8 +290,8 @@ from #1669.
 invariants untouched, transactional inbox delivery (assert item exists iff membership exists),
 non-member vs member vs owner authorization matrix; e2e extending
 `tests/e2e/teamspace-review.spec.ts`: signed-out user opens `/teamspaces/{handle}` → login →
-back on the page → request → owner approves from the Review queue tab → roster changes;
-tab-visibility checks (member and non-member never see the Review queue tab, owner sees the
+back on the page → request → owner approves from the Join requests tab → roster changes;
+tab-visibility checks (member and non-member never see the Join requests tab, owner sees the
 pending-count badge).
 
 **Done when (roadmap signal):** the return path survives sign-in, expired sessions don't lose
@@ -387,7 +384,7 @@ Phases 1 and 3 can proceed in parallel once 0 lands.
 | B | `GET /teams/by-handle/{handle}` + web/CLI switch to it | S |
 | C | Canonical agent/component routes, legacy redirects, link producers, Share button, notFound page, 401-contract tests | M |
 | D | `team_membership_requests` migration + API + inbox wiring (after #1669) | M |
-| E | Join-request web UI (Review queue tab + non-member request flow) + CLI commands + e2e | M |
+| E | Join-request web UI (Join requests tab + non-member request flow) + CLI commands + e2e | M |
 | F | Invites migration + API + register integration + settings key | M |
 | G | Invites admin UI + register flow + teamspace "create invite link" | S/M |
 | H | Post-#1669 follow-up: `_registry_url` emits canonical URLs | XS |

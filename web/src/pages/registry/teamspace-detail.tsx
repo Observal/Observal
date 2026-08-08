@@ -689,12 +689,12 @@ function JoinRequestControl({ team }: { team: Team }) {
 }
 
 /**
- * The membership Review queue: pending join requests with approve/reject, and
- * the decision history rendered straight from the request rows. Sits beside
- * the listing Review tab but serves a different audience — owners and global
- * admins only, while listing review includes team reviewers.
+ * Join requests with approve/reject actions and decision history rendered
+ * straight from the request rows. This sits beside the listing Review tab but
+ * serves a different audience: owners and global admins only, while listing
+ * review includes team reviewers.
  */
-function ReviewQueueTab({
+function JoinRequestsTab({
 	team,
 	requests,
 	isLoading,
@@ -885,7 +885,7 @@ export default function TeamspaceDetailPage() {
 		{ value: "components", label: "Components" },
 		{ value: "members", label: "Members" },
 		...(canReview ? [{ value: "review", label: "Review" }] : []),
-		...(canManageRequests ? [{ value: "review-queue", label: "Review queue" }] : []),
+		...(canManageRequests ? [{ value: "join-requests", label: "Join requests" }] : []),
 	];
 	const activeTab = tabs.some((entry) => entry.value === tab) ? tab! : "agents";
 	const activeType: RegistryType = type ?? "mcps";
@@ -1026,7 +1026,7 @@ export default function TeamspaceDetailPage() {
 											{reviewItems.length}
 										</span>
 									)}
-									{entry.value === "review-queue" && pendingJoinCount > 0 && (
+									{entry.value === "join-requests" && pendingJoinCount > 0 && (
 										<span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary-accent px-1 text-[10px] font-semibold text-primary-foreground">
 											{pendingJoinCount}
 										</span>
@@ -1056,8 +1056,8 @@ export default function TeamspaceDetailPage() {
 							</TabsContent>
 						)}
 						{canManageRequests && (
-							<TabsContent value="review-queue" className="mt-5">
-								<ReviewQueueTab
+							<TabsContent value="join-requests" className="mt-5">
+								<JoinRequestsTab
 									team={team}
 									requests={joinRequests}
 									isLoading={joinRequestsQuery.isLoading}

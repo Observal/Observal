@@ -217,9 +217,9 @@ SPECS: dict[InboxKind, KindSpec] = {
         action_required=True,
         title=lambda s, c: f"Join request for {_label(s)}",
         dedupe=lambda s, c: f"team_join_requested:{s.id}:{c.get('requester_id', '-')}",
-        # Owners act on requests in the teamspace's Review queue tab, not on the
-        # teamspace landing page.
-        url=lambda s: f"/teamspaces/{s.handle}?tab=review-queue" if s.handle else "/teamspaces",
+        # Owners act on requests in the teamspace's Join requests tab, not on
+        # the teamspace landing page.
+        url=lambda s: f"/teamspaces/{s.handle}?tab=join-requests" if s.handle else "/teamspaces",
     ),
     InboxKind.team_join_decided: KindSpec(
         kind=InboxKind.team_join_decided,

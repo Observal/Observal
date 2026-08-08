@@ -629,7 +629,7 @@ async def leave_team(
 #
 # A shared /teamspaces/{handle} link never grants access. It leads here: the
 # recipient explicitly requests member access, owners (or admins) approve or
-# reject from the teamspace's Review queue, and only the approval writes a
+# reject from the teamspace's Join requests tab, and only the approval writes a
 # membership row. The request row itself is the audit record — requester,
 # reviewer, decision, reason, and timestamps.
 

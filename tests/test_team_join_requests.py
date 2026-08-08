@@ -144,7 +144,7 @@ async def test_request_creates_pending_row_and_notifies_owners_only(sessions):
     items = await _inbox_rows(sessions, InboxKind.team_join_requested)
     assert {item.user_id for item in items} == {owner.id, second_owner.id}
     assert all(item.action_required for item in items)
-    assert all(item.action_url == f"/teamspaces/{team.handle}?tab=review-queue" for item in items)
+    assert all(item.action_url == f"/teamspaces/{team.handle}?tab=join-requests" for item in items)
     # The member is not an owner and the requester never notifies themselves.
     assert member.id not in {item.user_id for item in items}
     assert outsider.id not in {item.user_id for item in items}

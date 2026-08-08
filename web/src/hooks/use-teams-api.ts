@@ -158,7 +158,7 @@ export function useRemoveTeamMember(teamId?: string) {
 	});
 }
 
-/** Every join request for a teamspace — the owner's Review queue and its history. */
+/** Every join request for a teamspace, including pending requests and decision history. */
 export function useJoinRequests(teamId: string | undefined, enabled = true) {
 	return useQuery({
 		queryKey: JOIN_REQUESTS_KEY(teamId),
