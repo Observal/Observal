@@ -226,5 +226,5 @@ Every command available in the installed CLI. This block is generated from the T
 - `observal team request-join`: Request member access to a teamspace. An owner must approve before you join.
 - `observal team requests`: List a teamspace's join requests and decisions. Owner or admin only.
 - `observal team show`: Show teamspace detail and members.
-- `observal team visibility`: Change a teamspace's visibility. Team owners and reviewers only.
+- `observal team visibility`: Change a teamspace's visibility. Team owners, team reviewers, and deployment admins.
 <!-- END AUTO-GENERATED COMMAND REFERENCE -->

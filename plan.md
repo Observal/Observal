@@ -33,9 +33,9 @@ Roadmap boundaries this plan preserves:
 
 - The shared link **never grants access directly** — membership always goes through an explicit
   request and owner approval.
-- Anonymous access to protected routes gets a sign-in challenge carrying the return URL; a
-  signed-in non-member requesting team-private content gets **401 with no resource payload**
-  (no existence leak).
+- Anonymous access to protected routes gets a 401 sign-in challenge carrying the return URL; a
+  signed-in non-member requesting hidden content gets **404, indistinguishable from absent**
+  (no existence leak — see Phase 1 item 2 for why 404 won over the roadmap's 401 suggestion).
 - No email delivery. Invites are link-channel only; notifications go to terminal + Inbox.
 - Marketplace/authorship semantics untouched.
 
@@ -150,16 +150,15 @@ sign-in, on every auth method, and nothing off-origin can ever be a redirect tar
    already enumerable to every signed-in user via `GET /teams/all` (`teams.py:90`), so
    returning name/handle/description/member_count to a signed-in non-member leaks nothing new.
    Anonymous → 401 (standard `require_role(user)`).
-2. **401-no-payload contract for team-private detail.** Roadmap: signed-in non-members
-   requesting team-private agents/components get HTTP 401 with no resource payload. Today
-   component detail returns 404 (`mcp.py:292-311`) and agent detail 404s via visibility check.
-   Add this as an explicit, tested contract decision in this epic — either keep 404 everywhere
-   (also non-leaking, current behavior) or move to the roadmap's 401. **Recommendation: follow
-   the roadmap's 401-with-empty-body**, because the web app uses 401 as its sign-in-challenge
-   trigger and this keeps "not signed in" and "not a member" indistinguishable to a link
-   recipient. Whichever way, agents and components must agree (today `GET /agents/{id}`
-   requires auth while component detail is optional-auth — `agent/crud.py:560` vs
-   `mcp.py:296`).
+2. **Hidden-content status contract (DECIDED: 404).** The roadmap floated 401-no-payload
+   for signed-in non-members requesting team-private content; the implementation keeps the
+   codebase's existing 404 everywhere instead, and the same contract now covers private
+   teamspaces. The split that shipped: an **anonymous** caller gets HTTP 401 (the sign-in
+   challenge, which the web app turns into a login redirect carrying the return URL); a
+   **signed-in** caller who may not see something gets HTTP 404, indistinguishable from the
+   thing not existing. 404 was chosen over 401 because the web client treats 401 as session
+   expiry — clearing tokens and bouncing to login — which would loop a signed-in non-member,
+   and 404 leaks nothing either.
 
 ### Web
 
@@ -214,7 +213,7 @@ Depends on: Phase 0 (return path), Phase 1 items 1+6 (by-handle endpoint, Share 
 New table `team_membership_requests` (alembic `024_team_membership_requests.py`, assuming inbox
 takes 023):
 
-```
+```text
 id UUID PK
 team_id UUID FK teams.id ON DELETE CASCADE
 user_id UUID FK users.id ON DELETE CASCADE
@@ -278,8 +277,9 @@ ever inserts `member`.
     different objects. Keep the labels distinct ("Review" vs "Review queue") and revisit only
     if users confuse them.
 - **Share button** (from Phase 1) on the teamspace header copies `/teamspaces/{handle}`.
-- **Teamspaces list empty state** (`teamspaces.tsx:314`): "Ask an owner to add you" becomes
-  "Open a teamspace to request to join, or ask an owner for a link."
+- **Teamspaces list empty state** (`teamspaces.tsx`): creation is open to every signed-in
+  user (scope addition 2 below), so the empty state simply invites creation: "Create the
+  first teamspace to give your team a shared publishing namespace."
 
 ### CLI
 
@@ -318,7 +318,7 @@ only — **no email sending**, per the roadmap's notification boundary.
 
 Table `invites` (alembic `025_invites.py`):
 
-```
+```text
 id UUID PK
 token_hash VARCHAR(64) UNIQUE      -- sha256 of a secrets.token_urlsafe(32); plaintext shown once
 invited_by UUID FK users.id
@@ -400,9 +400,10 @@ Each PR keeps the repo's conventions: SPDX headers (`reuse lint`), `ruff` + `pnp
 
 - Open redirect: one shared `next` validator client-side, `_is_safe_next` server-side; both
   reject absolute URLs, `//`, and `\`. Every new consumer goes through them.
-- No existence leaks: by-handle and detail endpoints return identical 401 (or 404 — see Phase 1
-  item 2 decision) for "hidden" and "absent"; invite preview returns only validity; inbox items
-  for revoked-membership subjects stay omitted (matches #1669's visibility model).
+- No existence leaks: by-handle and detail endpoints return identical 404 for "hidden" and
+  "absent" (anonymous callers get the 401 sign-in challenge instead); invite preview returns
+  only validity; inbox items for revoked-membership subjects stay omitted (matches #1669's
+  visibility model).
 - Tokens: generated with `secrets.token_urlsafe(32)`, stored hashed (sha256), compared
   constant-time, shown exactly once, never logged, always expiring, always revocable.
 - Every state change (join request, decision, invite create/redeem/revoke) emits a security
@@ -435,8 +436,8 @@ Each PR keeps the repo's conventions: SPDX headers (`reuse lint`), `ruff` + `pnp
 
 ## Open questions (defaults chosen, flag if you disagree)
 
-1. **401 vs 404 for hidden content** — plan follows the roadmap's 401-no-payload; current code
-   404s. (Phase 1, item 2.)
+1. **401 vs 404 for hidden content** — RESOLVED: 404 for signed-in callers, 401 sign-in
+   challenge for anonymous ones. (Phase 1, item 2 has the reasoning.)
 2. **Invite creation audience** — admin-only in v1; the roadmap is silent on invites entirely.
 3. **What a signed-in non-member sees on a teamspace page** — name, handle, description, member
    count, and the Request button; no roster, no listings. Consistent with `GET /teams/all`

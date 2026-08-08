@@ -131,7 +131,7 @@ def set_visibility(
     team: str = typer.Argument(help="Team UUID or handle."),
     visibility: str = typer.Argument(help="public | private"),
 ):
-    """Change a teamspace's visibility. Team owners and reviewers only.
+    """Change a teamspace's visibility. Team owners, team reviewers, and deployment admins.
 
     A private teamspace is hidden from users who are not members; members,
     admins, and global reviewers keep seeing it. Listings keep their own
