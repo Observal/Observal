@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useAllTeams, useCreateTeam, useTeams } from "@/hooks/use-api";
+import { useAllTeams, useClaimPersonalTeamspace, useCreateTeam, useTeams } from "@/hooks/use-api";
 import { slugifyRegistryText } from "@/lib/registry-name";
 import type { Team } from "@/lib/types";
 
@@ -73,6 +73,7 @@ function CreatePanel({
 	firstTeamspace?: boolean;
 }) {
 	const createTeam = useCreateTeam();
+	const claimPersonal = useClaimPersonalTeamspace();
 	const [name, setName] = useState("");
 	const [handle, setHandle] = useState("");
 	const [handleEdited, setHandleEdited] = useState(false);
@@ -265,14 +266,32 @@ function CreatePanel({
 					</div>
 					<footer className="flex flex-col gap-3 border-t border-border/70 px-6 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-8">
 						<p className="text-xs leading-5 text-muted-foreground">You can manage members and roles after creation.</p>
-						<Button
-							type="submit"
-							className="bg-primary-accent px-5 text-primary-foreground hover:bg-primary-accent/90"
-							disabled={!name.trim() || createTeam.isPending}
-						>
-							{createTeam.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-							Create teamspace
-						</Button>
+						<div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+							{firstTeamspace && (
+								<Button
+									type="button"
+									variant="outline"
+									disabled={claimPersonal.isPending}
+									onClick={() => claimPersonal.mutate(undefined, { onSuccess: () => onCreated() })}
+									title="One click creates a private teamspace of your own, named after you and hidden from other users"
+								>
+									{claimPersonal.isPending ? (
+										<Loader2 className="h-4 w-4 animate-spin" />
+									) : (
+										<Lock className="h-4 w-4" />
+									)}
+									Claim your private teamspace
+								</Button>
+							)}
+							<Button
+								type="submit"
+								className="bg-primary-accent px-5 text-primary-foreground hover:bg-primary-accent/90"
+								disabled={!name.trim() || createTeam.isPending}
+							>
+								{createTeam.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+								Create teamspace
+							</Button>
+						</div>
 					</footer>
 				</form>
 			</div>

@@ -602,6 +602,7 @@ export const teams = {
 	byHandle: (handle: string) => get<Team>(`/teams/by-handle/${encodeURIComponent(handle)}`),
 	create: (body: { name: string; handle?: string; description?: string; visibility?: "public" | "private" }) =>
 		post<Team>("/teams", body),
+	claimPersonal: () => post<Team>("/teams/claim-personal"),
 	update: (id: string, body: TeamUpdateBody) =>
 		put<Team>(`/teams/${id}`, body),
 	updateVisibility: (id: string, visibility: "public" | "private") =>

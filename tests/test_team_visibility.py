@@ -202,6 +202,59 @@ async def test_outsider_gets_404_not_403_on_a_private_team(sessions):
     assert response.status_code == 404
 
 
+# ── Personal private teamspace claim ─────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_claim_creates_a_private_owned_teamspace_and_is_idempotent(sessions):
+    async with sessions() as db:
+        user = await _user(db)
+        stranger = await _user(db)
+        await db.commit()
+
+    async with _client(sessions, user) as (client, _):
+        first = await client.post("/api/v1/teams/claim-personal")
+        again = await client.post("/api/v1/teams/claim-personal")
+    assert first.status_code == 200, first.text
+    body = first.json()
+    assert body["visibility"] == "private"
+    assert body["role"] == "owner"
+    assert body["handle"].startswith(user.username)
+    # Claiming twice hands back the same teamspace, no duplicate.
+    assert again.status_code == 200
+    assert again.json()["id"] == body["id"]
+
+    # Private by default means hidden from other plain users.
+    async with _client(sessions, stranger) as (client, _):
+        listing = await client.get("/api/v1/teams/all")
+    assert body["handle"] not in {t["handle"] for t in listing.json()}
+
+
+@pytest.mark.asyncio
+async def test_claim_falls_back_when_the_derived_handle_is_taken(sessions):
+    async with sessions() as db:
+        user = await _user(db)
+        squatter = await _user(db)
+        taken = Team(
+            id=uuid.uuid4(),
+            name="Squatted",
+            handle=f"{user.username}-team",
+            created_by=squatter.id,
+        )
+        db.add(taken)
+        await db.flush()
+        db.add(TeamMembership(team_id=taken.id, user_id=squatter.id, role=TeamRole.owner))
+        await db.commit()
+
+    async with _client(sessions, user) as (client, _):
+        response = await client.post("/api/v1/teams/claim-personal")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["handle"] != f"{user.username}-team"
+    assert body["handle"].startswith(user.username[:20])
+    assert body["role"] == "owner"
+
+
 @pytest.mark.asyncio
 async def test_going_private_then_public_round_trips_discovery(sessions):
     async with sessions() as db:

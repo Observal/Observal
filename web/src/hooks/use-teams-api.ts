@@ -76,6 +76,18 @@ export function useCreateTeam() {
 	});
 }
 
+export function useClaimPersonalTeamspace() {
+	const qc = useQueryClient();
+	return useMutation({
+		mutationFn: teams.claimPersonal,
+		onSuccess: (team) => {
+			qc.invalidateQueries({ queryKey: ["teams"] });
+			toast.success(`${team.name} is yours — private and ready to publish into`);
+		},
+		onError: (err: Error) => toast.error(err.message || "Failed to claim your teamspace"),
+	});
+}
+
 export function useUpdateTeam() {
 	const qc = useQueryClient();
 	return useMutation({

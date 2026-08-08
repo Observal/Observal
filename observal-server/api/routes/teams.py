@@ -32,6 +32,7 @@ from services.teamspace import (
     is_admin,
     is_global_reviewer,
     reserve_handle,
+    slugify_handle,
     team_membership,
     team_visible_to,
 )
@@ -259,6 +260,80 @@ async def create_team(
         member_count=1,
         created_at=team.created_at,
     )
+
+
+@router.post("/claim-personal", response_model=TeamResponse)
+async def claim_personal_teamspace(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    """Create — or return — the caller's personal private teamspace.
+
+    One click on the empty teamspaces page gives every user a private space of
+    their own, named after them and hidden from other plain users like any
+    private teamspace. Idempotent: claiming again returns the already-claimed
+    teamspace instead of erroring or duplicating. The handle derives from the
+    username with a ``-team`` suffix (a bare username is already reserved as
+    the user's own personal listing namespace), falling back to numbered
+    variants if someone else took the derived handle first.
+    """
+    display = (current_user.name or current_user.username or "My").strip()
+    base = slugify_handle(f"{current_user.username or 'personal'}-team")
+    candidates = [base] + [f"{base[:29]}-{i}" for i in range(1, 6)]
+
+    for candidate in candidates:
+        existing = (await db.execute(select(Team).where(Team.handle == candidate))).scalar_one_or_none()
+        if existing is not None:
+            membership = await team_membership(db, existing.id, current_user.id)
+            if membership is not None and membership.role == TeamRole.owner:
+                # Already claimed: hand the same teamspace back.
+                member_count = await db.scalar(
+                    select(func.count(TeamMembership.id)).where(TeamMembership.team_id == existing.id)
+                )
+                return TeamResponse(
+                    id=existing.id,
+                    name=existing.name,
+                    handle=existing.handle,
+                    description=existing.description,
+                    visibility=existing.visibility,
+                    role=_role_value(TeamRole.owner),
+                    member_count=int(member_count or 0),
+                    created_at=existing.created_at,
+                )
+            continue  # someone else's teamspace; try the next candidate
+
+        try:
+            handle = await reserve_handle(db, candidate)
+        except ValueError:
+            continue
+        team = Team(
+            name=f"{display}'s Teamspace",
+            handle=handle,
+            description="Your private teamspace for drafts and personal publishing.",
+            is_private=True,
+            created_by=current_user.id,
+        )
+        db.add(team)
+        try:
+            await db.flush()
+            db.add(TeamMembership(team_id=team.id, user_id=current_user.id, role=TeamRole.owner))
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            continue  # lost a race for this handle; try the next candidate
+        await db.refresh(team)
+        return TeamResponse(
+            id=team.id,
+            name=team.name,
+            handle=team.handle,
+            description=team.description,
+            visibility=team.visibility,
+            role=_role_value(TeamRole.owner),
+            member_count=1,
+            created_at=team.created_at,
+        )
+
+    raise HTTPException(status_code=409, detail="Could not find a free handle for your personal teamspace")
 
 
 @router.put("/{team_id}", response_model=TeamResponse)
