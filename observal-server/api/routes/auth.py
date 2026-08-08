@@ -353,7 +353,7 @@ async def _redeemable_invite(db: AsyncSession, token: str, *, for_update: bool) 
     return invite
 
 
-@router.post("/invite/preview")
+@router.post("/invite/preview", dependencies=[Depends(require_password_auth)])
 @limiter.limit("30/minute")
 async def invite_preview(request: Request, req: InvitePreviewRequest, db: AsyncSession = Depends(get_db)):
     """Whether an invite token is redeemable, for the register page.
@@ -361,6 +361,8 @@ async def invite_preview(request: Request, req: InvitePreviewRequest, db: AsyncS
     Anonymous by design — the recipient has no account yet. Every invalid
     state (unknown, expired, revoked, exhausted, feature disabled) returns the
     identical shape so the endpoint is no oracle beyond validity itself.
+    Carries the same require_password_auth gate as /register: in SSO-only
+    mode a preview must not say "valid" about a registration that would 403.
     """
     del request  # required by the rate limiter decorator
     invite = await _redeemable_invite(db, req.token, for_update=False)

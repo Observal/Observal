@@ -8,7 +8,7 @@
 import logging
 import time
 import uuid
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import quote, urlparse, urlunparse
 
 import httpx
 import typer
@@ -271,24 +271,27 @@ def resolve_team_id(reference: str) -> str:
     """Resolve a team UUID or handle via GET /teams/by-handle.
 
     Falls back to scanning the authenticated team list when the by-handle
-    lookup answers with an HTTP error, which covers both a missing team and an
-    older server that predates the route.
+    lookup fails for any reason — a missing team, an older server that
+    predates the route, or a transport error. The fallback goes through
+    ``get()``, which owns the user-facing error handling for a server that is
+    genuinely unreachable.
     """
     value = reference.strip().lstrip("@").lower()
     try:
         return str(uuid.UUID(value))
     except ValueError:
         pass
-    base, headers = _client()
     try:
-        r = _request_with_retry("get", f"{base}/api/v1/teams/by-handle/{value}", headers)
+        base, headers = _client()
+        # Encode the raw CLI input so a reference containing "/" or ".." can
+        # never change which endpoint receives the caller's bearer token.
+        r = _request_with_retry("get", f"{base}/api/v1/teams/by-handle/{quote(value, safe='')}", headers)
         return str(r.json()["id"])
-    except httpx.HTTPStatusError:
+    except Exception:
+        # The by-handle lookup is an optimization. Whatever went wrong (HTTP
+        # error, transport failure, incomplete config), the scan below goes
+        # through get(), which owns the user-facing error handling.
         pass
-    except httpx.ReadTimeout:
-        _handle_timeout("/api/v1/teams/by-handle")
-    except httpx.ConnectError:
-        _handle_connect()
     teams = get("/api/v1/teams/all")
     for team in teams:
         if str(team.get("handle", "")).lower() == value:

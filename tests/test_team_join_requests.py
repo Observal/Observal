@@ -357,6 +357,40 @@ async def test_owner_sees_queue_and_requester_sees_mine(sessions):
 
 
 @pytest.mark.asyncio
+async def test_invalid_status_filter_is_422(sessions):
+    owner, _second, _member, _outsider, team = await _seed(sessions)
+    async with _client(sessions, owner) as (client, _):
+        response = await client.get(f"/api/v1/teams/{team.id}/join-requests", params={"status": "bogus"})
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_non_member_deployment_admin_can_decide(sessions):
+    _owner, _second, _member, outsider, team = await _seed(sessions)
+    request_id = await _pending_request(sessions, team, outsider)
+    async with sessions() as db:
+        admin = await _user(db, role=UserRole.admin)
+        await db.commit()
+
+    async with _client(sessions, admin) as (client, _):
+        listing = await client.get(f"/api/v1/teams/{team.id}/join-requests")
+        approve = await client.post(f"/api/v1/teams/{team.id}/join-requests/{request_id}/approve")
+    assert listing.status_code == 200
+    assert approve.status_code == 200
+    assert approve.json()["status"] == "approved"
+
+    async with sessions() as db:
+        membership = (
+            await db.execute(
+                select(TeamMembership).where(TeamMembership.team_id == team.id, TeamMembership.user_id == outsider.id)
+            )
+        ).scalar_one()
+        assert membership.role == TeamRole.member
+        row = (await db.execute(select(TeamMembershipRequest))).scalar_one()
+        assert row.decided_by == admin.id
+
+
+@pytest.mark.asyncio
 async def test_by_handle_resolves_role_and_member_count(sessions):
     owner, _second, _member, outsider, team = await _seed(sessions)
 

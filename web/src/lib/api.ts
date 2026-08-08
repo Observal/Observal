@@ -70,6 +70,9 @@ import type {
 	ExecTimeToValueResponse,
 	ExecAIInsightsResponse,
 	UserSearchResult,
+	AdminInvite,
+	AdminInviteCreated,
+	RegistryResolution,
 	Team,
 	TeamJoinRequest,
 	TeamJoinRequestStatus,
@@ -435,14 +438,6 @@ const SINGULAR_REGISTRY_TYPE: Record<RegistryType, string> = {
 	sandboxes: "sandbox",
 };
 
-export interface RegistryResolution {
-	id: string;
-	type: string;
-	namespace: string;
-	slug: string;
-	qualified_name: string;
-}
-
 export const registry = {
 	list: (type: RegistryType, params?: Record<string, string>) => {
 		const qs = params ? `?${new URLSearchParams(params)}` : "";
@@ -711,23 +706,6 @@ export const feedback = {
 };
 
 // ── Admin ───────────────────────────────────────────────────────────
-export interface AdminInvite {
-	id: string;
-	invited_by_username?: string | null;
-	max_uses?: number | null;
-	use_count: number;
-	next_path?: string | null;
-	expires_at: string;
-	revoked_at?: string | null;
-	created_at?: string | null;
-	state: "active" | "expired" | "revoked" | "exhausted";
-}
-
-export interface AdminInviteCreated extends AdminInvite {
-	token: string;
-	url: string;
-}
-
 export const admin = {
 	settings: () =>
 		get<AdminSetting[] | Record<string, string>>("/admin/settings"),

@@ -667,7 +667,8 @@ class TestDraftSubmit:
 
 
 class TestTeamDraftSubmit:
-    """Team owners and team reviewers publish without review; members do not."""
+    """Team publishing never auto-approves: every submit waits for an explicit
+    (possibly self-) approval, so each release records a reviewed_by decision."""
 
     @staticmethod
     def _submit_team_draft(user, membership):
@@ -686,8 +687,8 @@ class TestTeamDraftSubmit:
     @patch("api.routes.agent.draft.emit_registry_event")
     @patch("api.routes.agent.draft._resolve_component_names")
     @patch("api.routes.agent.draft._load_agent")
-    async def test_team_owner_auto_approves(self, mock_load, mock_resolve, mock_emit):
-        """A team owner submitting a team draft publishes it immediately."""
+    async def test_team_owner_goes_to_pending(self, mock_load, mock_resolve, mock_emit):
+        """A team owner's own submit waits for an explicit (self-) approval."""
         user = _user()
         agent, db = self._submit_team_draft(user, _membership(TeamRole.owner))
         app, db, _ = _app_with(user=user, db=db)
@@ -698,18 +699,18 @@ class TestTeamDraftSubmit:
             r = await ac.post(f"/api/v1/agents/{agent.id}/submit")
 
         assert r.status_code == 200
-        assert r.json()["status"] == "approved"
-        assert agent.status == AgentStatus.approved
-        assert agent.latest_version.reviewed_by == user.id
-        assert isinstance(agent.latest_version.reviewed_at, datetime)
+        assert r.json()["status"] == "pending"
+        assert agent.status == AgentStatus.pending
+        assert agent.latest_version.reviewed_by is None
+        assert agent.latest_version.reviewed_at is None
 
     @pytest.mark.asyncio
     @patch("services.agent_snapshot.build_yaml_snapshot", new=AsyncMock(return_value="snapshot"))
     @patch("api.routes.agent.draft.emit_registry_event")
     @patch("api.routes.agent.draft._resolve_component_names")
     @patch("api.routes.agent.draft._load_agent")
-    async def test_team_reviewer_auto_approves(self, mock_load, mock_resolve, mock_emit):
-        """A team reviewer submitting a team draft publishes it immediately."""
+    async def test_team_reviewer_goes_to_pending(self, mock_load, mock_resolve, mock_emit):
+        """A team reviewer's submit also enters the queue instead of skipping it."""
         user = _user()
         agent, db = self._submit_team_draft(user, _membership(TeamRole.reviewer))
         app, db, _ = _app_with(user=user, db=db)
@@ -720,10 +721,10 @@ class TestTeamDraftSubmit:
             r = await ac.post(f"/api/v1/agents/{agent.id}/submit")
 
         assert r.status_code == 200
-        assert r.json()["status"] == "approved"
-        assert agent.status == AgentStatus.approved
-        assert agent.latest_version.reviewed_by == user.id
-        assert isinstance(agent.latest_version.reviewed_at, datetime)
+        assert r.json()["status"] == "pending"
+        assert agent.status == AgentStatus.pending
+        assert agent.latest_version.reviewed_by is None
+        assert agent.latest_version.reviewed_at is None
 
     @pytest.mark.asyncio
     @patch("services.agent_snapshot.build_yaml_snapshot", new=AsyncMock(return_value="snapshot"))
@@ -752,8 +753,9 @@ class TestTeamDraftSubmit:
     @patch("api.routes.agent.draft.emit_registry_event")
     @patch("api.routes.agent.draft._resolve_component_names")
     @patch("api.routes.agent.draft._load_agent")
-    async def test_global_reviewer_auto_approves_without_membership(self, mock_load, mock_resolve, mock_emit):
-        """A global reviewer publishes a team draft even with no membership row."""
+    async def test_global_reviewer_goes_to_pending_too(self, mock_load, mock_resolve, mock_emit):
+        """Even a global reviewer's team submit enters the queue; approval is a
+        separate recorded action."""
         user = _user(role=UserRole.reviewer)
         agent, db = self._submit_team_draft(user, None)
         app, db, _ = _app_with(user=user, db=db)
@@ -764,9 +766,9 @@ class TestTeamDraftSubmit:
             r = await ac.post(f"/api/v1/agents/{agent.id}/submit")
 
         assert r.status_code == 200
-        assert r.json()["status"] == "approved"
-        assert agent.status == AgentStatus.approved
-        assert agent.latest_version.reviewed_by == user.id
+        assert r.json()["status"] == "pending"
+        assert agent.status == AgentStatus.pending
+        assert agent.latest_version.reviewed_by is None
 
 
 # ═══════════════════════════════════════════════════════════

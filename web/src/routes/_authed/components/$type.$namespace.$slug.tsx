@@ -4,8 +4,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { lazy } from "react";
 import type { RegistryType } from "@/lib/api";
-import { useRegistryResolve } from "@/hooks/use-traces-api";
+import { useRegistryResolve } from "@/hooks/use-api";
 import { DetailSkeleton } from "@/components/shared/skeleton-layouts";
+import { ErrorState } from "@/components/shared/error-state";
 import { NotFoundState } from "@/components/shared/not-found-state";
 
 const ComponentDetail = lazy(() => import("@/pages/registry/components/detail"));
@@ -29,6 +30,7 @@ function CanonicalComponentRoute() {
     valid ? (type as RegistryType) : "mcps",
     valid ? `${namespace}/${slug}` : undefined,
   );
+  const status = (resolve.error as (Error & { status?: number }) | null)?.status;
 
   if (!valid) {
     return <NotFoundState title="Component not found" />;
@@ -37,6 +39,13 @@ function CanonicalComponentRoute() {
     return (
       <div className="p-6 w-full">
         <DetailSkeleton />
+      </div>
+    );
+  }
+  if (resolve.isError && status !== 404) {
+    return (
+      <div className="p-6 w-full">
+        <ErrorState message={resolve.error?.message} onRetry={() => resolve.refetch()} />
       </div>
     );
   }

@@ -279,7 +279,9 @@ async def claim_personal_teamspace(
     """
     display = (current_user.name or current_user.username or "My").strip()
     base = slugify_handle(f"{current_user.username or 'personal'}-team")
-    candidates = [base] + [f"{base[:29]}-{i}" for i in range(1, 6)]
+    # Fallbacks are re-normalized: truncating base can leave a trailing hyphen,
+    # and "name--1" would fail validation and skip a perfectly free slot.
+    candidates = [base] + [slugify_handle(f"{base[:29].rstrip('-')}-{i}") for i in range(1, 6)]
 
     for candidate in candidates:
         existing = (await db.execute(select(Team).where(Team.handle == candidate))).scalar_one_or_none()
@@ -320,7 +322,28 @@ async def claim_personal_teamspace(
             await db.commit()
         except IntegrityError:
             await db.rollback()
-            continue  # lost a race for this handle; try the next candidate
+            # Lost a race for this handle. The winner may be this same caller
+            # in a parallel request, so re-read before moving on — otherwise
+            # two concurrent claims could mint base AND base-1, breaking the
+            # endpoint's idempotency promise.
+            existing = (await db.execute(select(Team).where(Team.handle == candidate))).scalar_one_or_none()
+            if existing is not None:
+                membership = await team_membership(db, existing.id, current_user.id)
+                if membership is not None and membership.role == TeamRole.owner:
+                    member_count = await db.scalar(
+                        select(func.count(TeamMembership.id)).where(TeamMembership.team_id == existing.id)
+                    )
+                    return TeamResponse(
+                        id=existing.id,
+                        name=existing.name,
+                        handle=existing.handle,
+                        description=existing.description,
+                        visibility=existing.visibility,
+                        role=_role_value(TeamRole.owner),
+                        member_count=int(member_count or 0),
+                        created_at=existing.created_at,
+                    )
+            continue
         await db.refresh(team)
         return TeamResponse(
             id=team.id,
@@ -692,8 +715,12 @@ async def my_join_requests(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    """The caller's own requests for this teamspace, newest first."""
-    await _load_team(db, team_id)
+    """The caller's own requests for this teamspace, newest first.
+
+    Uses the visibility gate like every other route here: a private teamspace
+    the caller cannot see answers 404 rather than an empty 200.
+    """
+    await _load_visible_team(db, team_id, current_user)
     rows = (
         (
             await db.execute(

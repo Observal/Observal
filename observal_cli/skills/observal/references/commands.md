@@ -217,9 +217,14 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal team members add`: Add or update a team member. Owner or admin only.
   - `observal team members list`: List members of a teamspace.
   - `observal team members remove`: Remove a team member. Owner or admin only. The last owner cannot be removed.
-- `observal team create`: Create a teamspace. Requires reviewer role or above. You become the owner.
+- `observal team approve`: Approve a pending join request. Owner or admin only. Grants member role.
+- `observal team create`: Create a teamspace. Any signed-in user can; you become the owner.
 - `observal team delete`: Delete a teamspace. Owner or admin only. This cannot be undone.
 - `observal team leave`: Leave a teamspace. The last owner cannot leave; transfer ownership first.
 - `observal team list`: List teamspaces you belong to (or all with --all).
+- `observal team reject`: Reject a pending join request. Owner or admin only.
+- `observal team request-join`: Request member access to a teamspace. An owner must approve before you join.
+- `observal team requests`: List a teamspace's join requests and decisions. Owner or admin only.
 - `observal team show`: Show teamspace detail and members.
+- `observal team visibility`: Change a teamspace's visibility. Team owners and reviewers only.
 <!-- END AUTO-GENERATED COMMAND REFERENCE -->

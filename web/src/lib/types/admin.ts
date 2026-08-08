@@ -646,3 +646,23 @@ export interface MigrationDownloadToken {
 	token: string;
 	expires_at: string;
 }
+
+// ── Invite links ────────────────────────────────────────────────────
+
+export interface AdminInvite {
+	id: string;
+	invited_by_username?: string | null;
+	max_uses?: number | null;
+	use_count: number;
+	next_path?: string | null;
+	expires_at: string;
+	revoked_at?: string | null;
+	created_at?: string | null;
+	state: "active" | "expired" | "revoked" | "exhausted";
+}
+
+/** Mint response: the only place the plaintext token and URL ever appear. */
+export interface AdminInviteCreated extends AdminInvite {
+	token: string;
+	url: string;
+}

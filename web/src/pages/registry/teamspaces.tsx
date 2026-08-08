@@ -38,7 +38,9 @@ function TeamspaceCard({ team }: { team: Team }) {
 					<p className="truncate text-sm font-semibold leading-tight">{team.name}</p>
 					<p className="mt-0.5 flex items-center gap-1 truncate font-mono text-[11px] text-muted-foreground">
 						{team.handle}
-						{team.visibility === "private" && <Lock className="h-3 w-3 shrink-0" aria-label="Private teamspace" />}
+						{team.visibility === "private" && (
+							<Lock className="h-3 w-3 shrink-0" role="img" aria-label="Private teamspace" />
+						)}
 					</p>
 				</div>
 				<ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5" />
@@ -267,22 +269,22 @@ function CreatePanel({
 					<footer className="flex flex-col gap-3 border-t border-border/70 px-6 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-8">
 						<p className="text-xs leading-5 text-muted-foreground">You can manage members and roles after creation.</p>
 						<div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-							{firstTeamspace && (
-								<Button
-									type="button"
-									variant="outline"
-									disabled={claimPersonal.isPending}
-									onClick={() => claimPersonal.mutate(undefined, { onSuccess: () => onCreated() })}
-									title="One click creates a private teamspace of your own, named after you and hidden from other users"
-								>
-									{claimPersonal.isPending ? (
-										<Loader2 className="h-4 w-4 animate-spin" />
-									) : (
-										<Lock className="h-4 w-4" />
-									)}
-									Claim your private teamspace
-								</Button>
-							)}
+							{/* Claiming is idempotent, so the button is safe to show whenever
+							    the panel is open, not only on the first-run empty state. */}
+							<Button
+								type="button"
+								variant="outline"
+								disabled={claimPersonal.isPending}
+								onClick={() => claimPersonal.mutate(undefined, { onSuccess: () => onCreated() })}
+								title="One click creates a private teamspace of your own, named after you and hidden from other users"
+							>
+								{claimPersonal.isPending ? (
+									<Loader2 className="h-4 w-4 animate-spin" />
+								) : (
+									<Lock className="h-4 w-4" />
+								)}
+								Claim your private teamspace
+							</Button>
 							<Button
 								type="submit"
 								className="bg-primary-accent px-5 text-primary-foreground hover:bg-primary-accent/90"
@@ -302,8 +304,6 @@ function CreatePanel({
 export default function TeamspacesPage() {
 	const { data: teams = [], isLoading: isTeamsLoading } = useTeams();
 	const { data: allTeams = [], isLoading: isAllTeamsLoading } = useAllTeams();
-	// Any signed-in user can create a teamspace; they become its owner.
-	const canCreate = true;
 	const [showCreate, setShowCreate] = useState(false);
 	const [teamQuery, setTeamQuery] = useState("");
 
@@ -313,7 +313,9 @@ export default function TeamspacesPage() {
 	const filteredTeams = browse.filter(
 		(team) => !query || team.name.toLowerCase().includes(query) || team.handle.toLowerCase().includes(query),
 	);
-	const firstTeamspace = !isLoading && browse.length === 0 && canCreate;
+	// Any signed-in user can create a teamspace, so the first-run panel needs
+	// no role gate.
+	const firstTeamspace = !isLoading && browse.length === 0;
 	const listTitle = teams.length > 0 ? "Your teamspaces" : "Discover teamspaces";
 
 	return (
@@ -350,17 +352,15 @@ export default function TeamspacesPage() {
 											/>
 										</div>
 									)}
-									{canCreate && (
-										<Button
-											type="button"
-											variant="outline"
-											size="sm"
-											className="h-9 shrink-0 border-primary-accent/30 hover:border-primary-accent/60 hover:bg-primary-accent/10"
-											onClick={() => setShowCreate(true)}
-										>
-											<Plus className="mr-1.5 h-3.5 w-3.5 text-primary-accent" /> New teamspace
-										</Button>
-									)}
+									<Button
+										type="button"
+										variant="outline"
+										size="sm"
+										className="h-9 shrink-0 border-primary-accent/30 hover:border-primary-accent/60 hover:bg-primary-accent/10"
+										onClick={() => setShowCreate(true)}
+									>
+										<Plus className="mr-1.5 h-3.5 w-3.5 text-primary-accent" /> New teamspace
+									</Button>
 								</div>
 							</header>
 
@@ -375,11 +375,7 @@ export default function TeamspacesPage() {
 									<EmptyState
 										icon={Users}
 										title="No teamspaces to browse"
-										description={
-											canCreate
-												? "Create the first teamspace to give your team a shared publishing namespace."
-												: "There are no discoverable teamspaces yet. Open one from a shared link to request to join, or ask an owner for one."
-										}
+										description="Create the first teamspace to give your team a shared publishing namespace."
 									/>
 								) : filteredTeams.length === 0 ? (
 									<EmptyState

@@ -9,6 +9,15 @@
 
 // ── Registry ────────────────────────────────────────────────────────
 
+/** GET /registry/resolve: canonical identity for a UUID or namespace/slug reference. */
+export interface RegistryResolution {
+	id: string;
+	type: string;
+	namespace: string;
+	slug: string;
+	qualified_name: string;
+}
+
 export interface RegistryItem {
 	id: string;
 	name: string;

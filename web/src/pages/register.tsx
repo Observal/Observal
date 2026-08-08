@@ -290,7 +290,17 @@ function RegisterContent() {
                 </div>
               )}
 
-              <Button type="submit" disabled={loading || configLoading || !selfRegistrationEnabled || !passwordStrong || !passwordsMatch} className="w-full">
+              <Button
+                type="submit"
+                disabled={
+                  loading ||
+                  configLoading ||
+                  (!selfRegistrationEnabled && !inviteValid) ||
+                  !passwordStrong ||
+                  !passwordsMatch
+                }
+                className="w-full"
+              >
                 {loading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
