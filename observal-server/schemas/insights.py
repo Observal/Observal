@@ -75,7 +75,42 @@ class InsightReportResponse(BaseModel):
     previous_report_id: uuid.UUID | None = None
     aggregated_data: dict | None = None
     report_version: int = 3
+    # Persisted analysis (previously discarded each run). Nullable: old
+    # reports predate the columns, and a run may produce neither.
+    version_impact: dict | None = None
+    registry_offer: dict | None = None
     # Self-learn fields
     applied_at: datetime | None = None
     applied_items: dict | None = None
     model_config = {"from_attributes": True}
+
+
+class RecommendedAddition(BaseModel):
+    """A single public registry component recommended for an agent.
+
+    Drawn from an insight report's ``registry_offer`` — the deterministic
+    shortlist of approved, visible components the agent does not yet use but
+    might benefit from based on observed usage. Contains only public component
+    references; no session telemetry is exposed.
+    """
+
+    type: str
+    id: str
+    qualified_name: str
+    name: str
+    description: str | None = None
+    category: str | None = None
+
+
+class RecommendedAdditionsResponse(BaseModel):
+    """Evidence-backed add-on recommendations for an agent.
+
+    Empty ``items`` means either no insight report exists for the agent, the
+    report's registry offer is empty, or the feature was disabled at generation
+    time. Callers should simply hide the rail rather than treat it as an error.
+    """
+
+    agent_id: uuid.UUID
+    items: list[RecommendedAddition] = []
+    source_report_id: uuid.UUID | None = None
+    generated_at: datetime | None = None

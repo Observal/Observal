@@ -317,6 +317,23 @@ export interface InsightAppliedItems {
 	prompts: { id: string; name: string; description: string; type: string }[];
 }
 
+export interface RecommendedAddition {
+	/** Component type singular ("skill", "hook", "mcp", "prompt", "sandbox"). */
+	type: string;
+	id: string;
+	qualified_name: string;
+	name: string;
+	description?: string | null;
+	category?: string | null;
+}
+
+export interface RecommendedAdditionsResponse {
+	agent_id: string;
+	items: RecommendedAddition[];
+	source_report_id: string | null;
+	generated_at: string | null;
+}
+
 // ── Telemetry ───────────────────────────────────────────────────────
 
 export interface TelemetryStatus {

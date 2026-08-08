@@ -57,6 +57,7 @@ import type {
 } from "@/lib/types";
 import { PullCommand } from "@/components/registry/pull-command";
 import { RegistryName } from "@/components/registry/registry-name";
+import { AgentRecommendedAdditions } from "@/components/registry/agent-recommended-additions";
 import { registryIdentity, type QualifiedIdentity } from "@/lib/registry-name";
 import { VersionDropdown } from "@/components/registry/version-dropdown";
 import { StatusBadge } from "@/components/registry/status-badge";
@@ -951,6 +952,8 @@ export default function AgentDetailPage() {
                       No additional details provided for this agent.
                     </p>
                   )}
+
+                  <AgentRecommendedAdditions agentId={id} />
                 </TabsContent>
 
                 <TabsContent value="components" className="mt-6">
