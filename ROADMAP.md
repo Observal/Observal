@@ -302,6 +302,16 @@ Diagnose the complete stack across supported deployments and local harnesses. Cl
 
 **Complete when:** seeded trials cover deployment, authentication, database, ingest, hook and extension, attribution, and registry failures, and the skill demonstrates root-cause recovery without unsafe guesses.
 
+#### Post-upgrade changelog and frontend tour, P2
+
+**Status:** Planned.
+
+After an Observal release is installed, show the relevant changelog in both the web frontend and CLI. The CLI presents release notes after a successful update, while the web frontend detects a deployment version change and shows the notes once per user with a permanent way to reopen them. Both surfaces use the same versioned release-note source so their descriptions do not drift.
+
+The web frontend also offers an optional guided tour that spotlights where new features are located. Tours are frontend-only, user-initiated or explicitly accepted, skippable, and role-aware so they never point users to controls they cannot access.
+
+**Complete when:** a successful server or CLI update shows the correct version's changelog, dismissed notes remain available on demand, and users can launch or skip a role-appropriate frontend tour that identifies the released features without blocking normal navigation.
+
 ### Stage 3: Distribution and verified trust
 
 #### Google OSS-Fuzz integration, P1
@@ -352,6 +362,7 @@ The following are explicitly outside this roadmap's intended implementation:
 - Teamspace sharing uses the canonical teamspace page, sign-in return, and an explicit membership request; the link itself never grants access.
 - Marketplace import never masquerades as local authorship or grants publisher leaderboard credit.
 - Server lifecycle work does not introduce arbitrary remote shell execution.
+- Frontend tours are optional guidance and never block normal navigation or run in the CLI.
 - Stages communicate dependency order, not delivery dates.
 
 ## Existing implementation to build on
