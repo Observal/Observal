@@ -39,7 +39,7 @@ Priority is explicit and is not inferred from list position.
 
 ## How to use this roadmap
 
-Stages express dependency order, not release commitments. The three lanes can advance in parallel once their dependencies hold. Before implementation, split each initiative into a focused epic with small, reviewable pull requests; reuse the linked contracts, preserve the stated boundaries, and close the initiative only when its outcome-based completion signal is true.
+Stages express dependency order, not release commitments. The three lanes can advance in parallel once their dependencies hold. Before implementation, define the initiative's scope and dependencies, reuse the linked contracts, preserve the stated boundaries, and close the initiative only when its outcome-based completion signal is true. Keep tightly coupled changes together when splitting them would leave incomplete workflows or unstable intermediate contracts.
 
 ## Lane 1: Observability
 
@@ -246,11 +246,11 @@ Reuse the installed lockfile inventory and outdated comparison to show a periodi
 
 #### Teamspace creation and membership approvals, P0
 
-**Status:** In progress. [PR #1619](https://github.com/Observal/Observal/pull/1619) added teamspaces and direct membership management, and [PR #1640](https://github.com/Observal/Observal/pull/1640) added team publishing. Request and approval workflows remain.
+**Status:** In progress. [PR #1619](https://github.com/Observal/Observal/pull/1619) added teamspaces and direct membership management, and [PR #1640](https://github.com/Observal/Observal/pull/1640) added team publishing. Membership request and approval workflows remain.
 
-Admins approve or reject teamspace creation; team owners approve or reject membership requests. Persist requester, reviewer, decision, reason, and timestamps in Inbox and history. Keep owner-driven direct member addition. Add an admin dynamic-setting toggle to auto-approve teamspace creation for installations that do not require central approval.
+Any signed-in user can create a teamspace and becomes its initial owner. Teamspace creation is immediate and audited; it does not require admin approval. Team owners approve or reject membership requests, with requester, reviewer, decision, reason, and timestamps persisted in Inbox and history. Keep owner-driven direct member addition.
 
-**Complete when:** both approval flows work in web and CLI, auto-approved creation is still audited, rejected requests cannot create membership or reserve ownership, and the last-owner protections remain intact.
+**Complete when:** immediate teamspace creation works in web and CLI and is audited, membership approval works in web and CLI, rejected requests cannot create membership, and the last-owner protections remain intact.
 
 #### Teamspace share-to-join, P0
 
