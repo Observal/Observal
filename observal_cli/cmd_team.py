@@ -98,27 +98,56 @@ def create_team(
     name: str = typer.Argument(help="Teamspace display name."),
     handle: str = typer.Option(None, "--handle", "-h", help="Namespace handle (derived from name if omitted)."),
     description: str = typer.Option(None, "--description", "-d", help="Teamspace description."),
+    visibility: str = typer.Option("public", "--visibility", "-v", help="Visibility: public | private."),
 ):
-    """Create a teamspace. Requires reviewer role or above. You become the owner.
+    """Create a teamspace. Any signed-in user can; you become the owner.
 
     The handle is reserved across users and teams, so it must not collide with
-    an existing username or team handle.
+    an existing username or team handle. A private teamspace is hidden from
+    users who are not members (admins and global reviewers still see it).
 
     Examples:
 
         observal team create 'Platform Tools' --handle platform-tools --description 'Internal tooling'
 
-        observal team create 'SRE' -h sre -d 'Site reliability'
+        observal team create 'SRE' -h sre -d 'Site reliability' --visibility private
     """
-    body: dict = {"name": name}
+    if visibility not in ("public", "private"):
+        raise typer.BadParameter("visibility must be 'public' or 'private'", param_hint="visibility")
+    body: dict = {"name": name, "visibility": visibility}
     if handle:
         body["handle"] = handle
     if description:
         body["description"] = description
     resp = client.post("/api/v1/teams", json_data=body)
     rprint(
-        f"[green]Created teamspace:[/green] {resp.get('name')} ([dim]{resp.get('handle')}[/dim]) id={resp.get('id')}"
+        f"[green]Created teamspace:[/green] {resp.get('name')} ([dim]{resp.get('handle')}[/dim]) "
+        f"{resp.get('visibility', 'public')} id={resp.get('id')}"
     )
+
+
+@team_app.command("visibility")
+def set_visibility(
+    team: str = typer.Argument(help="Team UUID or handle."),
+    visibility: str = typer.Argument(help="public | private"),
+):
+    """Change a teamspace's visibility. Team owners and reviewers only.
+
+    A private teamspace is hidden from users who are not members; members,
+    admins, and global reviewers keep seeing it. Listings keep their own
+    visibility and are unaffected.
+
+    Examples:
+
+        observal team visibility platform-tools private
+
+        observal team visibility sre public
+    """
+    if visibility not in ("public", "private"):
+        raise typer.BadParameter("visibility must be 'public' or 'private'", param_hint="visibility")
+    team_id = _resolve_team_id(team)
+    resp = client.patch(f"/api/v1/teams/{team_id}/visibility", json_data={"visibility": visibility})
+    rprint(f"[green]Teamspace is now {resp.get('visibility')}.[/green]")
 
 
 @team_app.command("delete")

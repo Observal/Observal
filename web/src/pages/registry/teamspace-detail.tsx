@@ -66,6 +66,7 @@ import {
 	useTeamByHandle,
 	useTeamMembers,
 	useTeamReviewQueue,
+	useUpdateTeamVisibility,
 	useUpsertTeamMember,
 } from "@/hooks/use-api";
 import { hasMinRole } from "@/hooks/use-role-guard";
@@ -553,6 +554,39 @@ function TeamInviteLinkButton({ handle }: { handle: string }) {
 	);
 }
 
+/**
+ * Public/private toggle, GitHub-style. Team owners and team reviewers hold it
+ * (plus global admins). Going private hides the teamspace from non-member
+ * plain users everywhere; members, admins, and global reviewers keep access.
+ */
+function VisibilityControl({ team }: { team: Team }) {
+	const canChange =
+		team.role === "owner" || team.role === "reviewer" || hasMinRole(getUserRole(), "admin");
+	const updateVisibility = useUpdateTeamVisibility(team.id);
+	if (!canChange) return null;
+	const isPrivate = team.visibility === "private";
+	return (
+		<Button
+			variant="outline"
+			size="sm"
+			onClick={() => updateVisibility.mutate(isPrivate ? "public" : "private")}
+			disabled={updateVisibility.isPending}
+			title={
+				isPrivate
+					? "Make this teamspace discoverable by every signed-in user"
+					: "Hide this teamspace from users who are not members"
+			}
+		>
+			{updateVisibility.isPending ? (
+				<Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+			) : (
+				<Lock className="mr-1.5 h-3.5 w-3.5" />
+			)}
+			{isPrivate ? "Make public" : "Make private"}
+		</Button>
+	);
+}
+
 function requesterLabel(request: TeamJoinRequest): string {
 	return request.username ? `@${request.username}` : (request.email ?? "Unknown user");
 }
@@ -941,6 +975,14 @@ export default function TeamspaceDetailPage() {
 									<Badge variant="outline" className="px-1.5 py-0 text-[11px] font-medium capitalize">
 										{team.role ?? "discoverable"}
 									</Badge>
+									{team.visibility === "private" && (
+										<Badge
+											variant="outline"
+											className="gap-1 border-primary-accent/40 px-1.5 py-0 text-[11px] font-medium text-primary-accent"
+										>
+											<Lock className="h-3 w-3" /> Private
+										</Badge>
+									)}
 									{team.member_count != null && <span>{team.member_count} members</span>}
 								</div>
 								{team.description && (
@@ -950,6 +992,7 @@ export default function TeamspaceDetailPage() {
 						</div>
 						<div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
 							<ShareLinkButton path={`/teamspaces/${team.handle}`} />
+							<VisibilityControl team={team} />
 							<TeamInviteLinkButton handle={team.handle} />
 							<JoinRequestControl team={team} />
 							{isMember && (

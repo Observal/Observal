@@ -120,7 +120,7 @@ async def _request_rows(sessions, team_id):
 
 async def _inbox_rows(sessions, kind: InboxKind):
     async with sessions() as db:
-        return ((await db.execute(select(InboxItem).where(InboxItem.kind == kind))).scalars().all())
+        return (await db.execute(select(InboxItem).where(InboxItem.kind == kind))).scalars().all()
 
 
 # ── Requesting ───────────────────────────────────────────────────────
@@ -195,9 +195,7 @@ async def test_owner_approval_grants_member_and_clears_owner_items(sessions):
     async with sessions() as db:
         membership = (
             await db.execute(
-                select(TeamMembership).where(
-                    TeamMembership.team_id == team.id, TeamMembership.user_id == outsider.id
-                )
+                select(TeamMembership).where(TeamMembership.team_id == team.id, TeamMembership.user_id == outsider.id)
             )
         ).scalar_one()
         assert membership.role == TeamRole.member
@@ -228,9 +226,7 @@ async def test_plain_member_cannot_decide(sessions):
     async with sessions() as db:
         membership = (
             await db.execute(
-                select(TeamMembership).where(
-                    TeamMembership.team_id == team.id, TeamMembership.user_id == outsider.id
-                )
+                select(TeamMembership).where(TeamMembership.team_id == team.id, TeamMembership.user_id == outsider.id)
             )
         ).scalar_one_or_none()
         assert membership is None
@@ -260,9 +256,7 @@ async def test_reject_records_reason_and_allows_rerequest(sessions):
     async with sessions() as db:
         membership = (
             await db.execute(
-                select(TeamMembership).where(
-                    TeamMembership.team_id == team.id, TeamMembership.user_id == outsider.id
-                )
+                select(TeamMembership).where(TeamMembership.team_id == team.id, TeamMembership.user_id == outsider.id)
             )
         ).scalar_one_or_none()
         assert membership is None

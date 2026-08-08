@@ -70,6 +70,7 @@ class EventType(str, Enum):
     # Teamspaces
     TEAM_JOIN_REQUESTED = "team.join.requested"
     TEAM_JOIN_DECIDED = "team.join.decided"
+    TEAM_VISIBILITY_CHANGED = "team.visibility.changed"
 
     # Agent security
     INJECTION_DETECTED = "agent.injection_detected"

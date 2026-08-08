@@ -600,10 +600,12 @@ export const teams = {
 	listAll: () => get<Team[]>("/teams/all"),
 	get: (id: string) => get<Team>(`/teams/${id}`),
 	byHandle: (handle: string) => get<Team>(`/teams/by-handle/${encodeURIComponent(handle)}`),
-	create: (body: { name: string; handle?: string; description?: string }) =>
+	create: (body: { name: string; handle?: string; description?: string; visibility?: "public" | "private" }) =>
 		post<Team>("/teams", body),
 	update: (id: string, body: TeamUpdateBody) =>
 		put<Team>(`/teams/${id}`, body),
+	updateVisibility: (id: string, visibility: "public" | "private") =>
+		patch<Team>(`/teams/${id}/visibility`, { visibility }),
 	delete: (id: string) => del(`/teams/${id}`),
 	members: (id: string) => get<TeamMember[]>(`/teams/${id}/members`),
 	upsertMember: (

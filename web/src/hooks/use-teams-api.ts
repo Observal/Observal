@@ -90,6 +90,23 @@ export function useUpdateTeam() {
 	});
 }
 
+export function useUpdateTeamVisibility(teamId?: string) {
+	const qc = useQueryClient();
+	return useMutation({
+		mutationFn: (visibility: "public" | "private") =>
+			teams.updateVisibility(teamId || "", visibility),
+		onSuccess: (data) => {
+			qc.invalidateQueries({ queryKey: ["teams"] });
+			toast.success(
+				data.visibility === "private"
+					? "Teamspace is now private — hidden from non-members"
+					: "Teamspace is now public",
+			);
+		},
+		onError: (err: Error) => toast.error(err.message || "Failed to change visibility"),
+	});
+}
+
 export function useDeleteTeam() {
 	const qc = useQueryClient();
 	return useMutation({

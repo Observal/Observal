@@ -5,7 +5,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -22,10 +22,19 @@ from schemas.team import (
     TeamMemberUpsertRequest,
     TeamResponse,
     TeamUpdateRequest,
+    TeamVisibilityUpdateRequest,
 )
 from services.inbox import sources as inbox_sources
 from services.security_events import EventType, SecurityEvent, Severity, emit_security_event
-from services.teamspace import count_owners, is_admin, reserve_handle, team_membership
+from services.teamspace import (
+    REVIEWING_TEAM_ROLES,
+    count_owners,
+    is_admin,
+    is_global_reviewer,
+    reserve_handle,
+    team_membership,
+    team_visible_to,
+)
 
 router = APIRouter(prefix="/api/v1/teams", tags=["teams"])
 
@@ -39,6 +48,19 @@ def _role_value(role) -> str | None:
 async def _load_team(db: AsyncSession, team_id: uuid.UUID) -> Team:
     team = await db.get(Team, team_id)
     if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+    return team
+
+
+async def _load_visible_team(db: AsyncSession, team_id: uuid.UUID, user: User) -> Team:
+    """Load a team the caller may see, answering 404 (never 403) when hidden.
+
+    A private teamspace is indistinguishable from a nonexistent one for plain
+    users outside it; members and global reviewers/admins see it normally.
+    """
+    team = await _load_team(db, team_id)
+    membership = await team_membership(db, team.id, user.id)
+    if not team_visible_to(team, membership, user):
         raise HTTPException(status_code=404, detail="Team not found")
     return team
 
@@ -87,6 +109,7 @@ async def my_teams(
             name=team.name,
             handle=team.handle,
             description=team.description,
+            visibility=team.visibility,
             role=_role_value(role),
             created_at=team.created_at,
         )
@@ -107,20 +130,24 @@ async def all_teams(
     my_roles = (
         select(TeamMembership.team_id, TeamMembership.role).where(TeamMembership.user_id == current_user.id).subquery()
     )
-    rows = (
-        await db.execute(
-            select(Team, func.coalesce(member_counts.c.count, 0), my_roles.c.role)
-            .outerjoin(member_counts, member_counts.c.team_id == Team.id)
-            .outerjoin(my_roles, my_roles.c.team_id == Team.id)
-            .order_by(Team.name)
-        )
-    ).all()
+    stmt = (
+        select(Team, func.coalesce(member_counts.c.count, 0), my_roles.c.role)
+        .outerjoin(member_counts, member_counts.c.team_id == Team.id)
+        .outerjoin(my_roles, my_roles.c.team_id == Team.id)
+        .order_by(Team.name)
+    )
+    # Private teamspaces are hidden from plain users who are not members;
+    # global reviewers, admins, and super_admins see everything.
+    if not is_global_reviewer(current_user):
+        stmt = stmt.where(or_(Team.is_private == False, my_roles.c.role.is_not(None)))  # noqa: E712
+    rows = (await db.execute(stmt)).all()
     return [
         TeamResponse(
             id=team.id,
             name=team.name,
             handle=team.handle,
             description=team.description,
+            visibility=team.visibility,
             role=_role_value(role),
             member_count=int(count) if count is not None else 0,
             created_at=team.created_at,
@@ -137,9 +164,10 @@ async def team_by_handle(
 ):
     """Resolve a teamspace by its canonical handle for /teamspaces/{handle} pages.
 
-    Any signed-in user may resolve any handle: every team is already enumerable
-    through GET /teams/all with name, handle, and member count, so this endpoint
-    reveals nothing new. Anonymous callers get the standard 401 sign-in
+    Public teamspaces resolve for any signed-in user — they are already
+    enumerable through GET /teams/all. Private ones resolve only for members
+    and global reviewers/admins and otherwise answer 404, exactly like a
+    handle that does not exist. Anonymous callers get the standard 401 sign-in
     challenge from require_role, which the web app turns into a login redirect
     that returns to the requested page.
     """
@@ -147,10 +175,13 @@ async def team_by_handle(
     team = (await db.execute(select(Team).where(Team.handle == normalized))).scalar_one_or_none()
     if not team:
         raise HTTPException(status_code=404, detail="Teamspace not found")
+    membership = await team_membership(db, team.id, current_user.id)
+    if not team_visible_to(team, membership, current_user):
+        # A hidden teamspace answers exactly like a missing one.
+        raise HTTPException(status_code=404, detail="Teamspace not found")
     if is_admin(current_user):
         role = _role_value(TeamRole.owner)
     else:
-        membership = await team_membership(db, team.id, current_user.id)
         role = _role_value(membership.role) if membership else None
     member_count = await db.scalar(select(func.count(TeamMembership.id)).where(TeamMembership.team_id == team.id))
     return TeamResponse(
@@ -158,6 +189,7 @@ async def team_by_handle(
         name=team.name,
         handle=team.handle,
         description=team.description,
+        visibility=team.visibility,
         role=role,
         member_count=int(member_count or 0),
         created_at=team.created_at,
@@ -170,7 +202,7 @@ async def team_detail(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
-    team = await _load_team(db, team_id)
+    team = await _load_visible_team(db, team_id, current_user)
     role = None
     if not is_admin(current_user):
         membership = await team_membership(db, team.id, current_user.id)
@@ -182,6 +214,7 @@ async def team_detail(
         name=team.name,
         handle=team.handle,
         description=team.description,
+        visibility=team.visibility,
         role=role,
         created_at=team.created_at,
     )
@@ -191,15 +224,22 @@ async def team_detail(
 async def create_team(
     req: TeamCreateRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.reviewer)),
+    current_user: User = Depends(require_role(UserRole.user)),
 ):
+    """Create a teamspace. Any signed-in user may; the creator becomes its owner."""
     raw_handle = req.handle or req.name
     try:
         handle = await reserve_handle(db, raw_handle)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-    team = Team(name=req.name.strip(), handle=handle, description=req.description, created_by=current_user.id)
+    team = Team(
+        name=req.name.strip(),
+        handle=handle,
+        description=req.description,
+        is_private=req.visibility == "private",
+        created_by=current_user.id,
+    )
     db.add(team)
     try:
         await db.flush()
@@ -214,6 +254,7 @@ async def create_team(
         name=team.name,
         handle=team.handle,
         description=team.description,
+        visibility=team.visibility,
         role=_role_value(TeamRole.owner),
         member_count=1,
         created_at=team.created_at,
@@ -239,7 +280,65 @@ async def update_team(
         name=team.name,
         handle=team.handle,
         description=team.description,
+        visibility=team.visibility,
         role=_role_value(TeamRole.owner),
+        created_at=team.created_at,
+    )
+
+
+@router.patch("/{team_id}/visibility", response_model=TeamResponse)
+async def update_team_visibility(
+    team_id: uuid.UUID,
+    req: TeamVisibilityUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    """Flip a teamspace between public and private, GitHub-style.
+
+    Team owners and team reviewers hold this control (plus deployment admins).
+    Going private hides the teamspace from plain non-member users everywhere —
+    discovery, by-handle resolution, and join requests — while members and
+    global reviewers/admins keep seeing it. Listings keep their own visibility:
+    a public listing published from the teamspace stays in the public catalog.
+    """
+    team = await _load_team(db, team_id)
+    membership = await team_membership(db, team.id, current_user.id)
+    allowed = is_admin(current_user) or (membership is not None and membership.role in REVIEWING_TEAM_ROLES)
+    if not allowed:
+        # Members and outsiders both land here; a plain non-member of a private
+        # team gets 404 elsewhere, so keep this 403 for members only.
+        if membership is None and not team_visible_to(team, membership, current_user):
+            raise HTTPException(status_code=404, detail="Team not found")
+        raise HTTPException(status_code=403, detail="Only team owners and reviewers can change visibility")
+
+    changed = team.is_private != (req.visibility == "private")
+    team.is_private = req.visibility == "private"
+    await db.commit()
+    await db.refresh(team)
+    if changed:
+        await emit_security_event(
+            SecurityEvent(
+                event_type=EventType.TEAM_VISIBILITY_CHANGED,
+                severity=Severity.INFO,
+                outcome="success",
+                actor_id=str(current_user.id),
+                actor_email=current_user.email,
+                actor_role=current_user.role.value,
+                target_id=str(team.id),
+                target_type="team",
+                detail=f"Teamspace '{team.handle}' is now {team.visibility}",
+            )
+        )
+    role = (
+        _role_value(TeamRole.owner) if is_admin(current_user) else _role_value(membership.role) if membership else None
+    )
+    return TeamResponse(
+        id=team.id,
+        name=team.name,
+        handle=team.handle,
+        description=team.description,
+        visibility=team.visibility,
+        role=role,
         created_at=team.created_at,
     )
 
@@ -488,7 +587,8 @@ async def create_join_request(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     """Ask for member access to a teamspace. Owners decide; the link never does."""
-    team = await _load_team(db, team_id)
+    # A private teamspace cannot be requested by someone who cannot see it.
+    team = await _load_visible_team(db, team_id, current_user)
     membership = await team_membership(db, team.id, current_user.id)
     if membership:
         raise HTTPException(status_code=409, detail="You are already a member of this teamspace")

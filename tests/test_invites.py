@@ -148,9 +148,7 @@ async def test_minting_requires_the_kill_switch_and_admin(sessions):
     assert forbidden.status_code == 403
 
     async with _client(sessions, actor=admin) as (client, _):
-        minted = await client.post(
-            "/api/v1/admin/invites", json={"max_uses": 5, "next_path": "/teamspaces/acme"}
-        )
+        minted = await client.post("/api/v1/admin/invites", json={"max_uses": 5, "next_path": "/teamspaces/acme"})
     assert minted.status_code == 201
     body = minted.json()
     assert body["state"] == "active"

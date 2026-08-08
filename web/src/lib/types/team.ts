@@ -5,11 +5,14 @@
 
 export type TeamRole = "owner" | "reviewer" | "member";
 
+export type TeamVisibility = "public" | "private";
+
 export interface Team {
 	id: string;
 	name: string;
 	handle: string;
 	description?: string | null;
+	visibility?: TeamVisibility;
 	role?: TeamRole | null;
 	member_count?: number | null;
 	created_at?: string;

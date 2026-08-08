@@ -3,7 +3,7 @@
 
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Building2, ChevronRight, Loader2, Plus, RefreshCw, Search, Users } from "lucide-react";
+import { Building2, ChevronRight, Loader2, Lock, Plus, RefreshCw, Search, Users } from "lucide-react";
 import { PageHeader } from "@/components/layouts/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
@@ -11,9 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { hasMinRole } from "@/hooks/use-role-guard";
 import { useAllTeams, useCreateTeam, useTeams } from "@/hooks/use-api";
-import { getUserRole } from "@/lib/api";
 import { slugifyRegistryText } from "@/lib/registry-name";
 import type { Team } from "@/lib/types";
 
@@ -38,7 +36,10 @@ function TeamspaceCard({ team }: { team: Team }) {
 				</div>
 				<div className="min-w-0 flex-1">
 					<p className="truncate text-sm font-semibold leading-tight">{team.name}</p>
-					<p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{team.handle}</p>
+					<p className="mt-0.5 flex items-center gap-1 truncate font-mono text-[11px] text-muted-foreground">
+						{team.handle}
+						{team.visibility === "private" && <Lock className="h-3 w-3 shrink-0" aria-label="Private teamspace" />}
+					</p>
 				</div>
 				<ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5" />
 			</div>
@@ -76,19 +77,26 @@ function CreatePanel({
 	const [handle, setHandle] = useState("");
 	const [handleEdited, setHandleEdited] = useState(false);
 	const [description, setDescription] = useState("");
+	const [visibility, setVisibility] = useState<"public" | "private">("public");
 	const generatedHandle = slugifyHandle(name);
 	const submittedHandle = handleEdited ? slugifyHandle(handle) : generatedHandle;
 	const previewHandle = submittedHandle || "team";
 
 	function submit() {
 		createTeam.mutate(
-			{ name: name.trim(), handle: submittedHandle || undefined, description: description.trim() || undefined },
+			{
+				name: name.trim(),
+				handle: submittedHandle || undefined,
+				description: description.trim() || undefined,
+				visibility,
+			},
 			{
 				onSuccess: () => {
 					setName("");
 					setHandle("");
 					setHandleEdited(false);
 					setDescription("");
+					setVisibility("public");
 					onCreated();
 				},
 			},
@@ -203,6 +211,45 @@ function CreatePanel({
 							</p>
 						</div>
 						<div className="space-y-2 md:col-span-2">
+							<Label id="team-visibility-label">Visibility</Label>
+							<div
+								role="radiogroup"
+								aria-labelledby="team-visibility-label"
+								className="grid gap-2 sm:grid-cols-2"
+							>
+								{(
+									[
+										{
+											value: "public" as const,
+											title: "Public",
+											blurb: "Discoverable by every signed-in user; anyone can request to join.",
+										},
+										{
+											value: "private" as const,
+											title: "Private",
+											blurb: "Hidden from non-members. Admins and global reviewers still see it.",
+										},
+									]
+								).map((option) => (
+									<button
+										key={option.value}
+										type="button"
+										role="radio"
+										aria-checked={visibility === option.value}
+										onClick={() => setVisibility(option.value)}
+										className={`rounded-md border p-3 text-left transition-colors ${
+											visibility === option.value
+												? "border-primary-accent bg-primary-accent/5"
+												: "border-border/80 hover:border-foreground/20"
+										}`}
+									>
+										<p className="text-sm font-medium">{option.title}</p>
+										<p className="mt-1 text-xs leading-5 text-muted-foreground">{option.blurb}</p>
+									</button>
+								))}
+							</div>
+						</div>
+						<div className="space-y-2 md:col-span-2">
 							<Label htmlFor="team-description">
 								Description <span className="font-normal text-muted-foreground">(optional)</span>
 							</Label>
@@ -236,7 +283,8 @@ function CreatePanel({
 export default function TeamspacesPage() {
 	const { data: teams = [], isLoading: isTeamsLoading } = useTeams();
 	const { data: allTeams = [], isLoading: isAllTeamsLoading } = useAllTeams();
-	const canCreate = hasMinRole(getUserRole(), "reviewer");
+	// Any signed-in user can create a teamspace; they become its owner.
+	const canCreate = true;
 	const [showCreate, setShowCreate] = useState(false);
 	const [teamQuery, setTeamQuery] = useState("");
 

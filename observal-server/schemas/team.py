@@ -3,6 +3,7 @@
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -13,6 +14,7 @@ class TeamCreateRequest(BaseModel):
     name: str
     handle: str | None = None
     description: str | None = None
+    visibility: Literal["public", "private"] = "public"
 
 
 class TeamUpdateRequest(BaseModel):
@@ -20,11 +22,16 @@ class TeamUpdateRequest(BaseModel):
     description: str | None = None
 
 
+class TeamVisibilityUpdateRequest(BaseModel):
+    visibility: Literal["public", "private"]
+
+
 class TeamResponse(BaseModel):
     id: uuid.UUID
     name: str
     handle: str
     description: str | None = None
+    visibility: str = "public"
     role: str | None = None
     member_count: int | None = None
     created_at: datetime | None = None
