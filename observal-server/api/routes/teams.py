@@ -122,6 +122,41 @@ async def all_teams(
     ]
 
 
+@router.get("/by-handle/{handle}", response_model=TeamResponse)
+async def team_by_handle(
+    handle: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    """Resolve a teamspace by its canonical handle for /teamspaces/{handle} pages.
+
+    Any signed-in user may resolve any handle: every team is already enumerable
+    through GET /teams/all with name, handle, and member count, so this endpoint
+    reveals nothing new. Anonymous callers get the standard 401 sign-in
+    challenge from require_role, which the web app turns into a login redirect
+    that returns to the requested page.
+    """
+    normalized = handle.strip().lstrip("@").lower()
+    team = (await db.execute(select(Team).where(Team.handle == normalized))).scalar_one_or_none()
+    if not team:
+        raise HTTPException(status_code=404, detail="Teamspace not found")
+    if is_admin(current_user):
+        role = _role_value(TeamRole.owner)
+    else:
+        membership = await team_membership(db, team.id, current_user.id)
+        role = _role_value(membership.role) if membership else None
+    member_count = await db.scalar(select(func.count(TeamMembership.id)).where(TeamMembership.team_id == team.id))
+    return TeamResponse(
+        id=team.id,
+        name=team.name,
+        handle=team.handle,
+        description=team.description,
+        role=role,
+        member_count=int(member_count or 0),
+        created_at=team.created_at,
+    )
+
+
 @router.get("/{team_id}", response_model=TeamResponse)
 async def team_detail(
     team_id: uuid.UUID,

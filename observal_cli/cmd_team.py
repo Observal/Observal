@@ -18,19 +18,8 @@ team_app.add_typer(members_app, name="members")
 
 
 def _resolve_team_id(team: str) -> str:
-    """Accept a UUID or a team handle; resolve to a UUID via the all-teams list."""
-    import uuid as _uuid
-
-    try:
-        _uuid.UUID(team)
-        return team
-    except ValueError:
-        pass
-    teams = client.get("/api/v1/teams/all")
-    for row in teams:
-        if row.get("handle") == team.lower():
-            return str(row["id"])
-    raise typer.BadParameter(f"No teamspace with handle '{team}'", param_hint="team")
+    """Accept a UUID or a team handle; resolve through the shared client helper."""
+    return client.resolve_team_id(team)
 
 
 @team_app.command("list")

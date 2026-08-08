@@ -6,7 +6,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 
-import { Link, useParams, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
 import { Star, ArrowLeft, History, Loader2, ArrowDownToLine, Archive, ArchiveRestore, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
@@ -37,6 +37,7 @@ import { VersionDropdown } from "@/components/registry/version-dropdown";
 import { ComponentEditForm } from "@/components/registry/component-edit-form";
 import { ComponentInstallCommand } from "@/components/registry/component-install-command";
 import { RegistryName } from "@/components/registry/registry-name";
+import { ShareLinkButton } from "@/components/registry/share-link-button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -102,10 +103,22 @@ function ArchivedComponentBanner({ item, type, canRestore }: { item: RegistryIte
   );
 }
 
-export default function ComponentDetailPage() {
-  const { componentId: id } = useParams({ from: "/_authed/components/$componentId" });
-  const { type: typeParam } = useSearch({ from: "/_authed/components/$componentId" });
-  const type = (typeParam ?? "mcps") as RegistryType;
+export default function ComponentDetailPage({
+  componentId,
+  componentType,
+}: {
+  componentId?: string;
+  componentType?: RegistryType;
+} = {}) {
+  // Rendered from two routes: the canonical /components/$type/$namespace/$slug
+  // route passes the resolved UUID and type as props; the legacy
+  // /components/$componentId route supplies the id as a path param and the
+  // type as a query param.
+  const params = useParams({ strict: false }) as { componentId?: string };
+  const search = useSearch({ strict: false }) as { type?: string };
+  const id = componentId ?? params.componentId ?? "";
+  const type = (componentType ?? search.type ?? "mcps") as RegistryType;
+  const navigate = useNavigate();
   const singularType = type === "sandboxes" ? "sandbox" : type.replace(/s$/, "");
   const { data: item, isLoading, isError, error, refetch } = useRegistryItem(type, id);
   const { data: feedbackItems, refetch: refetchFeedback } = useFeedback(singularType, id);
@@ -175,6 +188,23 @@ export default function ComponentDetailPage() {
   const identity = registryIdentity(item, id.slice(0, 8));
   const componentName = identity.name;
   const componentRef = identity.qualified;
+  // Canonical shareable path from the explicit columns only — registryIdentity's
+  // name fallback can be a display name, which is not a valid slug.
+  const canonicalNs = item?.namespace?.trim() || undefined;
+  const canonicalSlug = item?.slug?.trim() || undefined;
+  const canonicalComponentPath =
+    canonicalNs && canonicalSlug ? `/components/${type}/${canonicalNs}/${canonicalSlug}` : undefined;
+
+  // Legacy /components/<uuid>?type= entry: once the payload reveals the
+  // canonical identity, swap the address bar to the shareable URL.
+  useEffect(() => {
+    if (componentId || !canonicalNs || !canonicalSlug) return;
+    navigate({
+      to: "/components/$type/$namespace/$slug",
+      params: { type, namespace: canonicalNs, slug: canonicalSlug },
+      replace: true,
+    });
+  }, [componentId, type, canonicalNs, canonicalSlug, navigate]);
 
   function applyVisibility(visibility: "public" | "team") {
     updateVisibility.mutate(
@@ -225,6 +255,13 @@ export default function ComponentDetailPage() {
               <span className="text-xs">Back</span>
             </Link>
           </Button>
+        }
+        actionButtonsRight={
+          item ? (
+            <ShareLinkButton
+              path={canonicalComponentPath ?? `/components/${id}?type=${type}`}
+            />
+          ) : undefined
         }
       />
       <div className="p-6 w-full mx-auto space-y-6">

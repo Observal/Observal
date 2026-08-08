@@ -57,6 +57,7 @@ import type {
 } from "@/lib/types";
 import { PullCommand } from "@/components/registry/pull-command";
 import { RegistryName } from "@/components/registry/registry-name";
+import { ShareLinkButton } from "@/components/registry/share-link-button";
 import { registryIdentity, type QualifiedIdentity } from "@/lib/registry-name";
 import { VersionDropdown } from "@/components/registry/version-dropdown";
 import { StatusBadge } from "@/components/registry/status-badge";
@@ -618,8 +619,12 @@ function InsightsTab({ agentId, agentVersion }: { agentId: string; agentVersion?
 }
 
 
-export default function AgentDetailPage() {
-  const { agentId: id } = useParams({ from: "/_authed/agents/$agentId" });
+export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) {
+  // Rendered from two routes: the canonical /agents/$namespace/$slug route
+  // passes the resolved UUID as a prop; the legacy /agents/$agentId route
+  // supplies it as a path param.
+  const params = useParams({ strict: false }) as { agentId?: string };
+  const id = agentId ?? params.agentId ?? "";
   const navigate = useNavigate();
   const {
     data: agent,
@@ -715,8 +720,25 @@ export default function AgentDetailPage() {
   const agentIdentity = registryIdentity(a as QualifiedIdentity | undefined, id.slice(0, 8));
   const agentName = agentIdentity.name;
   const agentRef = agentIdentity.qualified;
+  // Canonical shareable path from the explicit columns only — registryIdentity's
+  // name fallback can be a display name, which is not a valid slug.
+  const canonicalNs = (a as QualifiedIdentity | undefined)?.namespace?.trim() || undefined;
+  const canonicalSlug = (a as QualifiedIdentity | undefined)?.slug?.trim() || undefined;
+  const canonicalAgentPath =
+    canonicalNs && canonicalSlug ? `/agents/${canonicalNs}/${canonicalSlug}` : undefined;
   const totalDownloads = downloadData?.total ?? a?.download_count;
   const uniqueUsers = downloadData?.unique_users;
+
+  // Legacy /agents/<uuid> entry: once the payload reveals the canonical
+  // identity, swap the address bar to the shareable URL.
+  useEffect(() => {
+    if (agentId || !canonicalNs || !canonicalSlug) return;
+    navigate({
+      to: "/agents/$namespace/$slug",
+      params: { namespace: canonicalNs, slug: canonicalSlug },
+      replace: true,
+    });
+  }, [agentId, canonicalNs, canonicalSlug, navigate]);
   const archivedComponents = components.filter((component) => component.status === "archived");
   const avgRating = feedbackSummary?.average_rating;
   const totalReviews = feedbackSummary?.total_reviews ?? 0;
@@ -757,6 +779,9 @@ export default function AgentDetailPage() {
           { label: "Agents", href: "/agents" },
           { label: isLoading ? "..." : agentName },
         ]}
+        actionButtonsRight={
+          a ? <ShareLinkButton path={canonicalAgentPath ?? `/agents/${id}`} /> : undefined
+        }
       />
 
       <div className="p-6 lg:p-8 w-full">

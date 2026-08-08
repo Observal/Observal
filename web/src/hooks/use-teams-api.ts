@@ -26,23 +26,31 @@ export function useTeam(id?: string) {
 }
 
 /**
- * Resolve a teamspace from the handle in the URL.
+ * Resolve a teamspace from the handle in the URL via GET /teams/by-handle.
  *
- * `/teams/all` is the only listing that carries every discoverable teamspace
- * together with the caller's own role in it, so handle resolution runs off that
- * one query instead of guessing an id. `notFound` is reported explicitly so the
- * detail page can say the handle is wrong instead of rendering a blank shell.
+ * Server-side resolution replaces the old client-side filter over `/teams/all`
+ * so a shared /teamspaces/{handle} link resolves in one request and a wrong
+ * handle is a definite 404 rather than "not in my discoverable list".
+ * `notFound` is reported explicitly so the detail page can say the handle is
+ * wrong instead of rendering a blank shell.
  */
 export function useTeamByHandle(handle: string | undefined) {
-	const query = useAllTeams();
-	const team = handle ? query.data?.find((item) => item.handle === handle) : undefined;
+	const query = useQuery({
+		queryKey: ["teams", "by-handle", handle],
+		queryFn: () => teams.byHandle(handle!),
+		enabled: !!handle,
+		staleTime: TEAMS_STALE_MS,
+		retry: (failureCount, error) =>
+			(error as Error & { status?: number }).status === 404 ? false : failureCount < 2,
+	});
+	const notFound = (query.error as (Error & { status?: number }) | null)?.status === 404;
 	return {
-		team,
+		team: query.data,
 		isLoading: query.isLoading,
-		isError: query.isError,
+		isError: query.isError && !notFound,
 		error: query.error,
 		refetch: query.refetch,
-		notFound: !query.isLoading && !query.isError && !team,
+		notFound,
 	};
 }
 

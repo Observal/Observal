@@ -43,17 +43,20 @@ export function ComponentCard({
   git_url,
   className,
 }: ComponentCardProps) {
-  return (
-    <Link
-      to="/components/$componentId" params={{ componentId: id }} search={{ type }}
-      className={[
-        "group block border border-border bg-card p-4 rounded-md",
-        "transition-all duration-200 ease-out",
-        "hover:-translate-y-0.5 hover:border-foreground/20 hover:bg-accent/40",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        className ?? "",
-      ].join(" ")}
-    >
+  const cardClassName = [
+    "group block border border-border bg-card p-4 rounded-md",
+    "transition-all duration-200 ease-out",
+    "hover:-translate-y-0.5 hover:border-foreground/20 hover:bg-accent/40",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    className ?? "",
+  ].join(" ");
+  // Prefer the canonical shareable URL; fall back to the UUID route for
+  // payloads that predate namespace/slug (that route redirects to canonical).
+  const canonicalNs = namespace?.trim();
+  const canonicalSlug = slug?.trim();
+
+  const body = (
+    <>
       <div className="flex items-start justify-between gap-2">
         <RegistryName
           item={{ name, namespace, slug, qualified_name }}
@@ -90,6 +93,28 @@ export function ComponentCard({
           </span>
         )}
       </div>
+    </>
+  );
+
+  if (canonicalNs && canonicalSlug) {
+    return (
+      <Link
+        to="/components/$type/$namespace/$slug"
+        params={{ type, namespace: canonicalNs, slug: canonicalSlug }}
+        className={cardClassName}
+      >
+        {body}
+      </Link>
+    );
+  }
+  return (
+    <Link
+      to="/components/$componentId"
+      params={{ componentId: id }}
+      search={{ type }}
+      className={cardClassName}
+    >
+      {body}
     </Link>
   );
 }

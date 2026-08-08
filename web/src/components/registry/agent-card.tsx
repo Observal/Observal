@@ -48,17 +48,20 @@ export function AgentCard({
   inferred_supported_harnesses,
   className,
 }: AgentCardProps) {
-  return (
-    <Link
-      to="/agents/$agentId" params={{ agentId: id }}
-      className={[
-        "group flex h-full min-h-60 flex-col rounded-md border border-border bg-card p-4",
-        "transition-all duration-200 ease-out",
-        "hover:-translate-y-0.5 hover:border-foreground/20 hover:bg-accent/40",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        className ?? "",
-      ].join(" ")}
-    >
+  const cardClassName = [
+    "group flex h-full min-h-60 flex-col rounded-md border border-border bg-card p-4",
+    "transition-all duration-200 ease-out",
+    "hover:-translate-y-0.5 hover:border-foreground/20 hover:bg-accent/40",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    className ?? "",
+  ].join(" ");
+  // Prefer the canonical shareable URL; fall back to the UUID route for
+  // payloads that predate namespace/slug (that route redirects to canonical).
+  const canonicalNs = namespace?.trim();
+  const canonicalSlug = slug?.trim();
+
+  const body = (
+    <>
       <div className="flex items-start justify-between gap-3">
         <RegistryName
           item={{ name, namespace, slug, qualified_name }}
@@ -112,6 +115,23 @@ export function AgentCard({
         max={3}
         className="mt-2"
       />
+    </>
+  );
+
+  if (canonicalNs && canonicalSlug) {
+    return (
+      <Link
+        to="/agents/$namespace/$slug"
+        params={{ namespace: canonicalNs, slug: canonicalSlug }}
+        className={cardClassName}
+      >
+        {body}
+      </Link>
+    );
+  }
+  return (
+    <Link to="/agents/$agentId" params={{ agentId: id }} className={cardClassName}>
+      {body}
     </Link>
   );
 }
