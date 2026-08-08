@@ -9,6 +9,7 @@ import { ArrowDownToLine, Puzzle, Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { HarnessBadges } from "@/components/registry/harness-badges";
 import { RegistryName } from "@/components/registry/registry-name";
+import { canonicalRouteParts } from "@/lib/registry-name";
 import { compactNumber } from "@/lib/utils";
 
 interface AgentCardProps {
@@ -56,9 +57,9 @@ export function AgentCard({
     className ?? "",
   ].join(" ");
   // Prefer the canonical shareable URL; fall back to the UUID route for
-  // payloads that predate namespace/slug (that route redirects to canonical).
-  const canonicalNs = namespace?.trim();
-  const canonicalSlug = slug?.trim();
+  // payloads that predate namespace/slug, or whose namespace is a legacy
+  // verbatim username the canonical route cannot resolve.
+  const canonical = canonicalRouteParts(namespace, slug);
 
   const body = (
     <>
@@ -118,13 +119,9 @@ export function AgentCard({
     </>
   );
 
-  if (canonicalNs && canonicalSlug) {
+  if (canonical) {
     return (
-      <Link
-        to="/agents/$namespace/$slug"
-        params={{ namespace: canonicalNs, slug: canonicalSlug }}
-        className={cardClassName}
-      >
+      <Link to="/agents/$namespace/$slug" params={canonical} className={cardClassName}>
         {body}
       </Link>
     );

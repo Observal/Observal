@@ -29,7 +29,7 @@ import { hasMinRole } from "@/hooks/use-role-guard";
 import type { RegistryType } from "@/lib/api";
 import type { FeedbackItem, RegistryItem, ComponentVersionSummary } from "@/lib/types";
 import { compactNumber } from "@/lib/utils";
-import { registryIdentity } from "@/lib/registry-name";
+import { canonicalRouteParts, registryIdentity } from "@/lib/registry-name";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ReviewForm } from "@/components/registry/review-form";
@@ -188,23 +188,27 @@ export default function ComponentDetailPage({
   const identity = registryIdentity(item, id.slice(0, 8));
   const componentName = identity.name;
   const componentRef = identity.qualified;
-  // Canonical shareable path from the explicit columns only — registryIdentity's
-  // name fallback can be a display name, which is not a valid slug.
-  const canonicalNs = item?.namespace?.trim() || undefined;
-  const canonicalSlug = item?.slug?.trim() || undefined;
-  const canonicalComponentPath =
-    canonicalNs && canonicalSlug ? `/components/${type}/${canonicalNs}/${canonicalSlug}` : undefined;
+  // Canonical shareable path from the explicit columns only, and only when the
+  // namespace/slug actually resolve server-side (legacy verbatim-username
+  // namespaces do not).
+  const canonicalParts = canonicalRouteParts(item?.namespace, item?.slug);
+  const canonicalComponentPath = canonicalParts
+    ? `/components/${type}/${canonicalParts.namespace}/${canonicalParts.slug}`
+    : undefined;
 
-  // Legacy /components/<uuid>?type= entry: once the payload reveals the
-  // canonical identity, swap the address bar to the shareable URL.
+  // Legacy /components/<uuid>?type= entry: swap the address bar to the
+  // shareable URL only for approved components. /registry/resolve returns
+  // approved-or-owned only, so redirecting a reviewer/admin viewing a pending
+  // component would strand them on a 404; their UUID URL keeps working.
+  const componentApproved = (item?.status as string | undefined) === "approved";
   useEffect(() => {
-    if (componentId || !canonicalNs || !canonicalSlug) return;
+    if (componentId || !canonicalParts || !componentApproved) return;
     navigate({
       to: "/components/$type/$namespace/$slug",
-      params: { type, namespace: canonicalNs, slug: canonicalSlug },
+      params: { type, ...canonicalParts },
       replace: true,
     });
-  }, [componentId, type, canonicalNs, canonicalSlug, navigate]);
+  }, [componentId, type, canonicalParts, componentApproved, navigate]);
 
   function applyVisibility(visibility: "public" | "team") {
     updateVisibility.mutate(

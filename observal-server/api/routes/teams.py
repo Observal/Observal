@@ -72,6 +72,11 @@ async def _require_owner_or_admin(db: AsyncSession, team_id: uuid.UUID, user: Us
         return team
     membership = await team_membership(db, team_id, user.id)
     if not membership or membership.role != TeamRole.owner:
+        # A non-member of a PRIVATE team must not learn it exists: answer 404,
+        # exactly like a missing team, rather than a 403 that confirms it. A
+        # public team is openly listed, so 403 there leaks nothing.
+        if not team_visible_to(team, membership, user):
+            raise HTTPException(status_code=404, detail="Team not found")
         raise HTTPException(status_code=403, detail="Only team owners can manage this team")
     return team
 
@@ -531,6 +536,10 @@ async def list_team_members(
     if not is_admin(current_user):
         membership = await team_membership(db, team.id, current_user.id)
         if not membership:
+            # 404 for a private team the caller cannot see (no existence leak);
+            # 403 for a public one, whose existence is already open.
+            if not team_visible_to(team, membership, current_user):
+                raise HTTPException(status_code=404, detail="Team not found")
             raise HTTPException(status_code=403, detail="Only team members can view the roster")
     rows = (
         await db.execute(
@@ -647,15 +656,21 @@ def _join_request_response(
     )
 
 
-async def _load_join_request(db: AsyncSession, team_id: uuid.UUID, request_id: uuid.UUID) -> TeamMembershipRequest:
-    row = (
-        await db.execute(
-            select(TeamMembershipRequest).where(
-                TeamMembershipRequest.id == request_id,
-                TeamMembershipRequest.team_id == team_id,
-            )
-        )
-    ).scalar_one_or_none()
+async def _load_join_request(
+    db: AsyncSession, team_id: uuid.UUID, request_id: uuid.UUID, *, for_update: bool = False
+) -> TeamMembershipRequest:
+    stmt = select(TeamMembershipRequest).where(
+        TeamMembershipRequest.id == request_id,
+        TeamMembershipRequest.team_id == team_id,
+    )
+    if for_update:
+        # A decision reads status, then writes it and (on approval) a membership
+        # row. Without the row lock, a concurrent approve+reject/cancel both pass
+        # the in-memory `status == pending` guard and the later commit overwrites
+        # the earlier one — leaving a member whose audit row says rejected, or a
+        # 500 from the duplicate-membership constraint. Serialize the decision.
+        stmt = stmt.with_for_update()
+    row = (await db.execute(stmt)).scalar_one_or_none()
     if not row:
         raise HTTPException(status_code=404, detail="Join request not found")
     return row
@@ -770,7 +785,7 @@ async def approve_join_request(
 ):
     """Approve a pending request: the one path a request can become membership."""
     team = await _require_owner_or_admin(db, team_id, current_user)
-    row = await _load_join_request(db, team.id, request_id)
+    row = await _load_join_request(db, team.id, request_id, for_update=True)
     if row.status != TeamJoinRequestStatus.pending:
         raise HTTPException(status_code=409, detail=f"Request already {row.status.value}")
 
@@ -809,7 +824,7 @@ async def reject_join_request(
 ):
     """Reject a pending request. The requester may ask again later."""
     team = await _require_owner_or_admin(db, team_id, current_user)
-    row = await _load_join_request(db, team.id, request_id)
+    row = await _load_join_request(db, team.id, request_id, for_update=True)
     if row.status != TeamJoinRequestStatus.pending:
         raise HTTPException(status_code=409, detail=f"Request already {row.status.value}")
 
@@ -844,7 +859,7 @@ async def cancel_join_request(
 ):
     """Withdraw your own pending request. Owners reject; requesters cancel."""
     team = await _load_team(db, team_id)
-    row = await _load_join_request(db, team.id, request_id)
+    row = await _load_join_request(db, team.id, request_id, for_update=True)
     if row.user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Only the requester can withdraw a request")
     if row.status != TeamJoinRequestStatus.pending:

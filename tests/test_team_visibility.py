@@ -256,6 +256,49 @@ async def test_claim_falls_back_when_the_derived_handle_is_taken(sessions):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "method,path_suffix",
+    [
+        ("get", "/join-requests"),
+        ("get", "/members"),
+        ("post", "/join-requests"),
+    ],
+)
+async def test_private_team_owner_gated_routes_answer_404_not_403(sessions, method, path_suffix):
+    """A non-member holding a private team's UUID must not tell hidden from
+    absent: owner/member-gated routes answer 404, exactly like a missing team,
+    never a 403 that confirms the team exists."""
+    _owner, _rev, _member, outsider, _gr, _admin, team = await _seed(sessions)
+    async with _client(sessions, outsider) as (client, _):
+        caller = getattr(client, method)
+        resp = await (
+            caller(f"/api/v1/teams/{team.id}{path_suffix}", json={})
+            if method == "post"
+            else caller(f"/api/v1/teams/{team.id}{path_suffix}")
+        )
+    assert resp.status_code == 404, f"{method} {path_suffix} leaked existence with {resp.status_code}"
+
+
+@pytest.mark.asyncio
+async def test_public_team_owner_routes_still_403_for_non_members(sessions):
+    """A public team is openly listed, so 403 there is correct and leaks nothing
+    — only private teams switch to 404."""
+    async with sessions() as db:
+        owner = await _user(db)
+        outsider = await _user(db)
+        team = Team(id=uuid.uuid4(), name="Open", handle=f"open-{uuid.uuid4().hex[:8]}", created_by=owner.id)
+        db.add(team)
+        await db.flush()
+        db.add(TeamMembership(team_id=team.id, user_id=owner.id, role=TeamRole.owner))
+        await db.commit()
+    async with _client(sessions, outsider) as (client, _):
+        members = await client.get(f"/api/v1/teams/{team.id}/members")
+        queue = await client.get(f"/api/v1/teams/{team.id}/join-requests")
+    assert members.status_code == 403
+    assert queue.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_going_private_then_public_round_trips_discovery(sessions):
     async with sessions() as db:
         owner = await _user(db)

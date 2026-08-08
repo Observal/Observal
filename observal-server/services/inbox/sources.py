@@ -184,18 +184,24 @@ async def on_review_decided(
 def _team_subject(team) -> Subject:
     """A teamspace as an inbox subject.
 
-    ``team_id`` is deliberately left None: join-request items are addressed to
-    owners (and the decision to the requester) individually, and the requester
-    of a rejected request is not a member, so a membership re-check against the
-    team would hide their own decision. ``is_private`` stays False because a
-    teamspace's name, handle, and existence are already visible to every
-    signed-in user via GET /teams/all.
+    ``team_id`` and ``is_private`` are carried so read-time visibility can
+    re-check membership. This matters for ``team_join_requested``, which goes
+    only to owners: if a private team's owner is later removed, the membership
+    re-check must stop their inbox from continuing to surface that team's join
+    requests and decision activity. The requester's own ``team_join_decided``
+    notice is unaffected because that kind sets ``recheck_visibility=False`` and
+    is exempt from the re-check regardless of what the subject carries — so a
+    rejected requester still reads their decision even though they are not a
+    member. For a public team ``is_private`` is False, so the snapshot check
+    passes for everyone and nothing is hidden.
     """
     return Subject(
         type="team",
         id=getattr(team, "id", None),
         name=getattr(team, "name", "") or "",
         handle=getattr(team, "handle", None),
+        team_id=getattr(team, "id", None),
+        is_private=bool(getattr(team, "is_private", False)),
     )
 
 

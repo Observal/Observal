@@ -391,6 +391,39 @@ async def test_non_member_deployment_admin_can_decide(sessions):
 
 
 @pytest.mark.asyncio
+async def test_deciding_the_same_request_twice_never_double_grants(sessions):
+    """The second decision on an already-decided request is a clean 409, never a
+    duplicate membership (500) or an approved-membership-with-rejected-audit.
+
+    The row lock in _load_join_request serializes concurrent decisions; this
+    sequential test pins the post-lock invariant that the guard enforces."""
+    owner, _second, _member, outsider, team = await _seed(sessions)
+    request_id = await _pending_request(sessions, team, outsider)
+    async with _client(sessions, owner) as (client, _):
+        approve = await client.post(f"/api/v1/teams/{team.id}/join-requests/{request_id}/approve")
+        reject = await client.post(f"/api/v1/teams/{team.id}/join-requests/{request_id}/reject", json={})
+        approve_again = await client.post(f"/api/v1/teams/{team.id}/join-requests/{request_id}/approve")
+    assert approve.status_code == 200
+    assert reject.status_code == 409  # already approved, not overwritten
+    assert approve_again.status_code == 409
+    async with sessions() as db:
+        memberships = (
+            (
+                await db.execute(
+                    select(TeamMembership).where(
+                        TeamMembership.team_id == team.id, TeamMembership.user_id == outsider.id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(memberships) == 1  # no duplicate-membership IntegrityError
+        row = (await db.execute(select(TeamMembershipRequest))).scalar_one()
+        assert row.status == TeamJoinRequestStatus.approved  # audit matches reality
+
+
+@pytest.mark.asyncio
 async def test_by_handle_resolves_role_and_member_count(sessions):
     owner, _second, _member, outsider, team = await _seed(sessions)
 

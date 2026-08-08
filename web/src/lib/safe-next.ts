@@ -6,13 +6,22 @@
  * observal-server/api/routes/auth.py: a safe return path is relative-only —
  * a single leading "/", never "//" (protocol-relative), never a backslash.
  * Both sides must agree or a crafted `next` becomes an open redirect.
+ *
+ * Control characters are rejected outright: the browser's URL parser strips
+ * tabs, newlines, and carriage returns *before* resolving, so `/%0A/evil.com`
+ * decodes to `/\n/evil.com` (which passes the naive checks) and then collapses
+ * to `//evil.com` at navigation time — a protocol-relative open redirect.
  */
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/;
+
 export function isSafeNext(path: string | null | undefined): path is string {
   return (
     typeof path === "string" &&
     path.startsWith("/") &&
     !path.startsWith("//") &&
-    !path.includes("\\")
+    !path.includes("\\") &&
+    !CONTROL_CHARS.test(path)
   );
 }
 

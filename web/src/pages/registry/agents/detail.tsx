@@ -58,7 +58,7 @@ import type {
 import { PullCommand } from "@/components/registry/pull-command";
 import { RegistryName } from "@/components/registry/registry-name";
 import { ShareLinkButton } from "@/components/registry/share-link-button";
-import { registryIdentity, type QualifiedIdentity } from "@/lib/registry-name";
+import { canonicalRouteParts, registryIdentity, type QualifiedIdentity } from "@/lib/registry-name";
 import { VersionDropdown } from "@/components/registry/version-dropdown";
 import { StatusBadge } from "@/components/registry/status-badge";
 import { HarnessBadges } from "@/components/registry/harness-badges";
@@ -720,25 +720,33 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
   const agentIdentity = registryIdentity(a as QualifiedIdentity | undefined, id.slice(0, 8));
   const agentName = agentIdentity.name;
   const agentRef = agentIdentity.qualified;
-  // Canonical shareable path from the explicit columns only — registryIdentity's
-  // name fallback can be a display name, which is not a valid slug.
-  const canonicalNs = (a as QualifiedIdentity | undefined)?.namespace?.trim() || undefined;
-  const canonicalSlug = (a as QualifiedIdentity | undefined)?.slug?.trim() || undefined;
-  const canonicalAgentPath =
-    canonicalNs && canonicalSlug ? `/agents/${canonicalNs}/${canonicalSlug}` : undefined;
+  // Canonical shareable path from the explicit columns only, and only when the
+  // namespace/slug actually resolve server-side (legacy verbatim-username
+  // namespaces do not).
+  const canonicalParts = canonicalRouteParts(
+    (a as QualifiedIdentity | undefined)?.namespace,
+    (a as QualifiedIdentity | undefined)?.slug,
+  );
+  const canonicalAgentPath = canonicalParts
+    ? `/agents/${canonicalParts.namespace}/${canonicalParts.slug}`
+    : undefined;
   const totalDownloads = downloadData?.total ?? a?.download_count;
   const uniqueUsers = downloadData?.unique_users;
 
-  // Legacy /agents/<uuid> entry: once the payload reveals the canonical
-  // identity, swap the address bar to the shareable URL.
+  // Legacy /agents/<uuid> entry: once the payload reveals a canonical identity,
+  // swap the address bar to the shareable URL — but ONLY for approved agents.
+  // The canonical /registry/resolve route only returns approved-or-owned
+  // agents, so redirecting a reviewer/admin/co-author viewing a pending agent
+  // would strand them on a 404. Their UUID URL keeps working.
+  const agentApproved = (a?.status as string | undefined) === "approved";
   useEffect(() => {
-    if (agentId || !canonicalNs || !canonicalSlug) return;
+    if (agentId || !canonicalParts || !agentApproved) return;
     navigate({
       to: "/agents/$namespace/$slug",
-      params: { namespace: canonicalNs, slug: canonicalSlug },
+      params: canonicalParts,
       replace: true,
     });
-  }, [agentId, canonicalNs, canonicalSlug, navigate]);
+  }, [agentId, canonicalParts, agentApproved, navigate]);
   const archivedComponents = components.filter((component) => component.status === "archived");
   const avgRating = feedbackSummary?.average_rating;
   const totalReviews = feedbackSummary?.total_reviews ?? 0;

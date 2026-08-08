@@ -212,7 +212,16 @@ def _github_allowed_orgs() -> set[str]:
 
 
 def _is_safe_next(next_path: str | None) -> bool:
-    return bool(next_path and next_path.startswith("/") and not next_path.startswith("//") and "\\" not in next_path)
+    # Reject control characters (tab, newline, CR, ...) as well: a browser
+    # strips them before resolving the URL, so "/\n/evil.com" collapses to a
+    # protocol-relative "//evil.com" open redirect that the naive checks miss.
+    return bool(
+        next_path
+        and next_path.startswith("/")
+        and not next_path.startswith("//")
+        and "\\" not in next_path
+        and not any(ord(c) < 0x20 or 0x7F <= ord(c) <= 0x9F for c in next_path)
+    )
 
 
 async def _start_oauth_flow(

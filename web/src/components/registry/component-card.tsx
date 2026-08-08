@@ -6,6 +6,7 @@ import { Link } from "@tanstack/react-router";
 import { GitBranch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { RegistryName } from "@/components/registry/registry-name";
+import { canonicalRouteParts } from "@/lib/registry-name";
 import type { RegistryType } from "@/lib/api";
 
 interface ComponentCardProps {
@@ -51,9 +52,9 @@ export function ComponentCard({
     className ?? "",
   ].join(" ");
   // Prefer the canonical shareable URL; fall back to the UUID route for
-  // payloads that predate namespace/slug (that route redirects to canonical).
-  const canonicalNs = namespace?.trim();
-  const canonicalSlug = slug?.trim();
+  // payloads that predate namespace/slug, or whose namespace is a legacy
+  // verbatim username the canonical route cannot resolve.
+  const canonical = canonicalRouteParts(namespace, slug);
 
   const body = (
     <>
@@ -96,11 +97,11 @@ export function ComponentCard({
     </>
   );
 
-  if (canonicalNs && canonicalSlug) {
+  if (canonical) {
     return (
       <Link
         to="/components/$type/$namespace/$slug"
-        params={{ type, namespace: canonicalNs, slug: canonicalSlug }}
+        params={{ type, ...canonical }}
         className={cardClassName}
       >
         {body}

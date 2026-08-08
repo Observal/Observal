@@ -70,6 +70,7 @@ import {
 	useUpsertTeamMember,
 } from "@/hooks/use-api";
 import { hasMinRole } from "@/hooks/use-role-guard";
+import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 import { admin, getUserRole, type RegistryType } from "@/lib/api";
 import type { RegistryItem, ReviewItem, Team, TeamJoinRequest, TeamMember, TeamRole } from "@/lib/types";
 import { cn, copyToClipboard } from "@/lib/utils";
@@ -533,6 +534,7 @@ function ReviewTab({
  * have to Request to join.
  */
 function TeamInviteLinkButton({ handle }: { handle: string }) {
+	const { ssoOnly } = useDeploymentConfig();
 	const mint = useMutation({
 		mutationFn: () => admin.createInvite({ next_path: `/teamspaces/${handle}` }),
 		onSuccess: async (data) => {
@@ -545,7 +547,9 @@ function TeamInviteLinkButton({ handle }: { handle: string }) {
 		},
 		onError: (err: Error) => toast.error(err.message || "Failed to create the invite"),
 	});
-	if (!hasMinRole(getUserRole(), "admin")) return null;
+	// Invite links create password accounts, which the server refuses on
+	// SSO-only deployments; hide the shortcut there rather than offer a 400.
+	if (ssoOnly || !hasMinRole(getUserRole(), "admin")) return null;
 	return (
 		<Button variant="outline" size="sm" onClick={() => mint.mutate()} disabled={mint.isPending}>
 			<Ticket className="mr-1.5 h-3.5 w-3.5" /> Invite link

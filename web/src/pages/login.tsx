@@ -162,7 +162,12 @@ function LoginContent() {
     const reason = searchParams.reason;
     if (reason === "session_expired") {
       toast.info("Your session has expired. Please sign in again.");
-      window.history.replaceState({}, "", "/login");
+      // Strip only `reason` from the URL, preserving `next` so sign-in still
+      // returns the user to the page the expiry interrupted. Rewriting to a
+      // bare "/login" here would drop `next` — TanStack re-parses the location
+      // that replaceState sets, so the router's search state would lose it too.
+      const preserved = searchParams.next && isSafeNext(searchParams.next) ? `/login?next=${encodeURIComponent(searchParams.next)}` : "/login";
+      window.history.replaceState({}, "", preserved);
     }
   }, [searchParams]);
 

@@ -287,10 +287,15 @@ def resolve_team_id(reference: str) -> str:
         # never change which endpoint receives the caller's bearer token.
         r = _request_with_retry("get", f"{base}/api/v1/teams/by-handle/{quote(value, safe='')}", headers)
         return str(r.json()["id"])
+    except (typer.Exit, KeyboardInterrupt):
+        # Control flow, not a lookup failure. `_client()` runs version
+        # enforcement, which hard-exits on a server/CLI mismatch; swallowing
+        # that Exit would let the command run on against an incompatible server.
+        raise
     except Exception:
-        # The by-handle lookup is an optimization. Whatever went wrong (HTTP
-        # error, transport failure, incomplete config), the scan below goes
-        # through get(), which owns the user-facing error handling.
+        # The by-handle lookup is an optimization. Any real failure (HTTP error,
+        # transport failure, incomplete config) falls through to the scan below,
+        # which goes through get() and owns the user-facing error handling.
         pass
     teams = get("/api/v1/teams/all")
     for team in teams:
