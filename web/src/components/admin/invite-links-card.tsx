@@ -24,8 +24,7 @@ const STATE_STYLES: Record<AdminInvite["state"], string> = {
 /**
  * Admin-minted invite links. An invite authorizes account creation only —
  * never membership or an elevated role — and its plaintext URL is shown
- * exactly once here, at mint time. Requires the auth.invite_links_enabled
- * setting; the create call answers 403 with a pointer when it is off.
+ * exactly once here, at mint time.
  */
 export function InviteLinksCard() {
   const qc = useQueryClient();
@@ -88,8 +87,7 @@ export function InviteLinksCard() {
         <div className="h-10 animate-pulse rounded-md bg-muted/60" />
       ) : invites.length === 0 ? (
         <p className="py-2 text-xs text-muted-foreground">
-          No invites yet. Minting one requires the <code className="font-mono">auth.invite_links_enabled</code>{" "}
-          setting.
+          No invites yet. Mint one to let someone create an account.
         </p>
       ) : (
         <div className="divide-y divide-border/70 rounded-md border border-border/80">

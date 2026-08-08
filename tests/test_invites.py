@@ -4,10 +4,9 @@
 """Invite links: minting, preview, redemption, and every way a token dies.
 
 An invite authorizes account creation only, while self-registration stays off.
-These tests pin the boundaries: admin-only minting behind the
-auth.invite_links_enabled kill switch, hashed-at-rest tokens, expiry,
-revocation, max-uses exhaustion, an oracle-free preview, and redemption that
-is atomic with the created account.
+These tests pin the boundaries: admin-only minting, hashed-at-rest tokens,
+expiry, revocation, max-uses exhaustion, an oracle-free preview, and
+redemption that is atomic with the created account.
 """
 
 from __future__ import annotations
@@ -42,10 +41,9 @@ _TABLES = [
 
 _STRONG_PASSWORD = "Str0ng!Passw0rd"
 
-# Kill switch on, self-registration off, password auth allowed — the exact
-# deployment shape invites exist for. Individual tests override keys.
+# Self-registration off, password auth allowed — the exact deployment shape
+# invites exist for. Individual tests override keys.
 _DEFAULT_SETTINGS = {
-    "auth.invite_links_enabled": True,
     "auth.self_registration_enabled": False,
     "deployment.sso_only": False,
 }
@@ -132,16 +130,11 @@ def _register_body(token: str | None = None) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_minting_requires_the_kill_switch_and_admin(sessions):
+async def test_minting_requires_admin(sessions):
     async with sessions() as db:
         admin = await _user(db, role=UserRole.admin)
         plain = await _user(db, role=UserRole.user)
         await db.commit()
-
-    async with _client(sessions, actor=admin, settings={"auth.invite_links_enabled": False}) as (client, _):
-        disabled = await client.post("/api/v1/admin/invites", json={})
-    assert disabled.status_code == 403
-    assert "disabled" in disabled.json()["detail"]
 
     async with _client(sessions, actor=plain) as (client, _):
         forbidden = await client.post("/api/v1/admin/invites", json={})
@@ -186,12 +179,8 @@ async def test_preview_is_oracle_free(sessions):
     assert valid.json()["valid"] is True
     assert valid.json()["invited_by"] == admin.name
 
-    # Unknown, revoked, and disabled all answer the identical shape.
+    # Unknown and revoked answer the identical shape.
     assert unknown.json() == {"valid": False, "invited_by": None, "next_path": None}
-
-    async with _client(sessions, settings={"auth.invite_links_enabled": False}) as (client, _):
-        killed = await client.post("/api/v1/auth/invite/preview", json={"token": token})
-    assert killed.json() == {"valid": False, "invited_by": None, "next_path": None}
 
 
 # ── Redemption ───────────────────────────────────────────────────────

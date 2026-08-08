@@ -530,8 +530,7 @@ function ReviewTab({
 /**
  * Global-admin shortcut: mint an invite-to-Observal link that lands a brand
  * new person on this teamspace page after account creation — where they still
- * have to Request to join. Requires auth.invite_links_enabled; the server
- * answers 403 with a pointer when it is off.
+ * have to Request to join.
  */
 function TeamInviteLinkButton({ handle }: { handle: string }) {
 	const mint = useMutation({

@@ -328,14 +328,11 @@ async def _redeemable_invite(db: AsyncSession, token: str, *, for_update: bool) 
     """The invite this token names, if it can still be redeemed.
 
     Returns None — one indistinguishable answer — for unknown, revoked,
-    expired, and exhausted tokens, and whenever the auth.invite_links_enabled
-    kill switch is off. Lookup is by SHA-256 of the token, so the database
-    never stores redeemable plaintext. ``for_update`` row-locks the invite so
-    two concurrent redemptions of a max_uses=1 link cannot both pass the
-    use-count check on Postgres.
+    expired, and exhausted tokens. Lookup is by SHA-256 of the token, so the
+    database never stores redeemable plaintext. ``for_update`` row-locks the
+    invite so two concurrent redemptions of a max_uses=1 link cannot both pass
+    the use-count check on Postgres.
     """
-    if not await ds.get_bool("auth.invite_links_enabled"):
-        return None
     token_hash = hashlib.sha256(token.encode()).hexdigest()
     stmt = select(Invite).where(Invite.token_hash == token_hash)
     if for_update:

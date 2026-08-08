@@ -5,9 +5,8 @@
 
 An invite authorizes account creation only — never membership, content, or an
 elevated role. The plaintext token is returned exactly once at mint time; only
-its SHA-256 lives in the database. The dynamic setting
-``auth.invite_links_enabled`` gates minting AND redemption, so turning it off
-kills every outstanding link at once.
+its SHA-256 lives in the database. Individual links are controlled through
+expiry, max uses, and revocation; minting stays admin-only.
 """
 
 import hashlib
@@ -109,12 +108,6 @@ async def create_invite(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Mint an invite link. The token in the response is shown exactly once."""
-    if not await ds.get_bool("auth.invite_links_enabled"):
-        raise HTTPException(
-            status_code=403,
-            detail="Invite links are disabled. Enable auth.invite_links_enabled in admin settings first.",
-        )
-
     next_path = (req.next_path or "").strip() or None
     if next_path and not _is_safe_next(next_path):
         raise HTTPException(status_code=422, detail="next_path must be a relative path starting with /")
