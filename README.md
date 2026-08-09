@@ -34,6 +34,7 @@
   <a href="https://artifacthub.io/packages/search?repo=observal"><img src="https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/observal" alt="Artifact Hub"></a>
   <a href="https://cla-assistant.io/Observal/Observal"><img src="https://cla-assistant.io/readme/badge/Observal/Observal" alt="CLA assistant" /></a>
   <a href="https://scorecard.dev/viewer/?uri=github.com/Observal/Observal"><img src="https://api.scorecard.dev/projects/github.com/Observal/Observal/badge" alt="OpenSSF Scorecard"></a>
+  <a href="https://codecov.io/gh/Observal/Observal"><img src="https://codecov.io/gh/Observal/Observal/graph/badge.svg?branch=main" alt="Codecov"></a>
 </p>
 
 > If you find Observal useful, please consider giving it a star. It helps others discover the project and keeps development going.
