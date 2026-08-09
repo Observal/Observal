@@ -1,0 +1,779 @@
+# SPDX-FileCopyrightText: 2026 Observal Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+"""Deterministic behavioral coverage for the insights CLI boundary."""
+
+from __future__ import annotations
+
+import time
+from contextlib import contextmanager
+from dataclasses import dataclass
+from functools import partial
+from types import SimpleNamespace
+from unittest.mock import MagicMock, call
+
+import pytest
+import typer
+from typer.testing import CliRunner
+
+from observal_cli import cmd_insights as insights
+
+AGENT_ID = "c6185803-8c32-4c39-b347-78f8281e306e"
+REPORT_ID = "be5aa083-d84a-49e7-8a35-b37b3e687780"
+runner = CliRunner()
+
+
+@dataclass
+class FakePanel:
+    content: object
+    title: str
+    border_style: str
+    expand: bool
+
+
+class FakeTable:
+    def __init__(self, **options):
+        self.options = options
+        self.columns: list[tuple[str, dict]] = []
+        self.rows: list[tuple[str, ...]] = []
+
+    def add_column(self, name: str, **options) -> None:
+        self.columns.append((name, options))
+
+    def add_row(self, *values: str) -> None:
+        self.rows.append(values)
+
+
+class FakeConsole:
+    def __init__(self) -> None:
+        self.renderables: list[object] = []
+
+    def print(self, renderable: object) -> None:
+        self.renderables.append(renderable)
+
+
+def _blocked(name: str) -> MagicMock:
+    def fail(*args, **kwargs):
+        raise AssertionError(f"unmocked boundary: {name}, args={args}, kwargs={kwargs}")
+
+    return MagicMock(side_effect=fail)
+
+
+def _returns(boundary: MagicMock, value) -> MagicMock:
+    boundary.side_effect = None
+    boundary.return_value = value
+    return boundary
+
+
+@pytest.fixture
+def cli(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+    prints: list[tuple[tuple[object, ...], dict]] = []
+    json_values: list[object] = []
+    spinner_messages: list[str] = []
+    tables: list[FakeTable] = []
+    console = FakeConsole()
+
+    client_get = _blocked("client.get")
+    client_post = _blocked("client.post")
+    resolve = _blocked("client.resolve_registry_reference")
+    confirm = _blocked("typer.confirm")
+    monkeypatch.setattr(insights.client, "get", client_get)
+    monkeypatch.setattr(insights.client, "post", client_post)
+    monkeypatch.setattr(insights.client, "resolve_registry_reference", resolve)
+    monkeypatch.setattr(insights.typer, "confirm", confirm)
+
+    @contextmanager
+    def fake_spinner(message: str):
+        spinner_messages.append(message)
+        yield
+
+    def fake_table(**options) -> FakeTable:
+        table = FakeTable(**options)
+        tables.append(table)
+        return table
+
+    monkeypatch.setattr(insights, "spinner", fake_spinner)
+    monkeypatch.setattr(insights, "Table", fake_table)
+    monkeypatch.setattr(insights, "Panel", FakePanel)
+    monkeypatch.setattr(insights, "console", console)
+    monkeypatch.setattr(insights, "rprint", lambda *values, **options: prints.append((values, options)))
+    monkeypatch.setattr(insights, "output_json", json_values.append)
+    monkeypatch.setattr(insights, "status_badge", lambda status: f"<{status}>")
+    monkeypatch.setattr(insights, "relative_time", lambda value: f"relative:{value}")
+    monkeypatch.setattr(insights, "_registry_name_cache", None)
+
+    def messages() -> list[str]:
+        return [" ".join(str(value) for value in values) for values, _options in prints]
+
+    return SimpleNamespace(
+        client_get=client_get,
+        client_post=client_post,
+        resolve=resolve,
+        confirm=confirm,
+        console=console,
+        json=json_values,
+        messages=messages,
+        prints=prints,
+        spinners=spinner_messages,
+        tables=tables,
+    )
+
+
+def _completed_report(**overrides) -> dict:
+    report = {
+        "id": REPORT_ID,
+        "agent_id": AGENT_ID,
+        "status": "completed",
+        "period_start": "2026-05-17T00:00:00Z",
+        "period_end": "2026-05-31T00:00:00Z",
+        "sessions_analyzed": 42,
+        "llm_model_used": "analysis-model",
+        "narrative": {},
+    }
+    report.update(overrides)
+    return report
+
+
+def test_list_table_resolves_agent_and_renders_exact_rows(cli):
+    reports = [
+        {
+            "id": "report-one",
+            "status": "completed",
+            "agent_version": "2.0.0",
+            "period_start": "2026-05-01T00:00:00Z",
+            "period_end": "2026-05-14T00:00:00Z",
+            "sessions_analyzed": 12,
+            "completed_at": "2026-05-15T00:00:00Z",
+        },
+        {
+            "id": "report-two",
+            "status": "pending",
+            "period_start": "2026-05-15T00:00:00Z",
+            "period_end": "2026-05-28T00:00:00Z",
+        },
+    ]
+    _returns(cli.resolve, "owner/agent")
+    cli.client_get.side_effect = [{"id": AGENT_ID}, reports]
+
+    assert insights.insights_list("@agent", "table") is None
+
+    cli.resolve.assert_called_once_with("agent", "@agent")
+    assert cli.client_get.call_args_list == [
+        call("/api/v1/agents/owner/agent"),
+        call(f"/api/v1/agents/{AGENT_ID}/insights/reports"),
+    ]
+    assert cli.spinners == ["Fetching insight reports..."]
+    assert len(cli.tables) == 1
+    table = cli.tables[0]
+    assert table.options == {"title": "Insight Reports (2)", "show_lines": False, "padding": (0, 1)}
+    assert table.columns == [
+        ("#", {"style": "dim", "width": 3}),
+        ("Status", {}),
+        ("Version", {}),
+        ("Period", {}),
+        ("Sessions", {"justify": "right"}),
+        ("Completed", {}),
+    ]
+    assert table.rows == [
+        ("1", "<completed>", "2.0.0", "2026-05-01 → 2026-05-14", "12", "relative:2026-05-15T00:00:00Z"),
+        ("2", "<pending>", "-", "2026-05-15 → 2026-05-28", "0", "relative:None"),
+    ]
+    assert cli.console.renderables == [table]
+    assert cli.messages() == [
+        "",
+        "[dim]Open latest completed: [cyan]observal ops insights show @agent[/cyan][/dim]",
+        "[dim]Open row 1: [cyan]observal ops insights show @agent 1[/cyan][/dim]",
+    ]
+
+
+def test_list_json_and_empty_table_have_distinct_output(cli):
+    _returns(cli.resolve, "agent")
+    cli.client_get.side_effect = [{"id": AGENT_ID}, [{"id": REPORT_ID}], {"id": AGENT_ID}, []]
+
+    insights.insights_list("agent", "json")
+    insights.insights_list("agent", "table")
+
+    assert cli.json == [[{"id": REPORT_ID}]]
+    assert cli.messages() == ["[dim]No insight reports found.[/dim]"]
+    assert cli.tables == []
+    assert cli.console.renderables == []
+    assert cli.spinners == ["Fetching insight reports...", "Fetching insight reports..."]
+
+
+def test_select_report_defaults_to_first_when_none_completed(cli):
+    reports = [{"id": "first", "status": "failed"}, {"id": "second", "status": "running"}]
+
+    assert insights._select_report_id(reports, None) == "first"
+    assert insights._select_report_id(reports, "latest") == "first"
+    assert insights._select_report_id(reports, "2") == "second"
+    assert insights._select_report_id(reports, "SEC") == "second"
+    assert cli.messages() == []
+
+
+@pytest.mark.parametrize(
+    ("reports", "report_ref", "expected"),
+    [
+        ([], None, ["[dim]No insight reports found.[/dim]"]),
+        (
+            [{"id": "one"}, {"id": "two"}],
+            "3",
+            ["[red]Report row 3 is out of range.[/red]", "[dim]Choose a row from 1 to 2.[/dim]"],
+        ),
+        (
+            [{"id": "abc-one"}, {"id": "abc-two"}],
+            "abc",
+            [
+                "[red]Report prefix 'abc' is ambiguous.[/red]",
+                "[dim]Use the row number from `observal ops insights list <agent>` instead.[/dim]",
+            ],
+        ),
+        (
+            [{"id": "abc-one"}],
+            "missing",
+            [
+                "[red]Report 'missing' was not found for this agent.[/red]",
+                "[dim]Use the row number from `observal ops insights list <agent>` instead.[/dim]",
+            ],
+        ),
+    ],
+)
+def test_select_report_validation_exits_without_side_effects(cli, reports, report_ref, expected):
+    with pytest.raises(typer.Exit) as raised:
+        insights._select_report_id(reports, report_ref)
+
+    assert raised.value.exit_code == 1
+    assert cli.messages() == expected
+    cli.client_get.assert_not_called()
+    cli.client_post.assert_not_called()
+    cli.confirm.assert_not_called()
+
+
+def test_show_non_completed_report_renders_status_progress_and_error(cli, monkeypatch):
+    report = {
+        "status": "failed",
+        "progress_phase": "writing_sections",
+        "progress_percent": 37,
+        "progress_message": "Three sections generated",
+        "error_message": "Provider rejected the request",
+    }
+    resolve_report = MagicMock(return_value=report)
+    monkeypatch.setattr(insights, "_resolve_report_for_show", resolve_report)
+
+    assert insights.insights_show("agent", "latest", "table", None) is None
+
+    resolve_report.assert_called_once_with("agent", "latest")
+    assert cli.spinners == ["Fetching report..."]
+    assert cli.messages() == [
+        "  Status: <failed>",
+        "  Phase: [cyan]writing sections[/cyan] (37%)",
+        "  [dim]Three sections generated[/dim]",
+        "  [red]Error:[/red] Provider rejected the request",
+    ]
+    assert cli.console.renderables == []
+
+
+def test_show_json_bypasses_malformed_narrative_and_rendering(cli, monkeypatch):
+    report = _completed_report(narrative=["not", "a", "mapping"])
+    resolve_report = MagicMock(return_value=report)
+    render_section = MagicMock()
+    monkeypatch.setattr(insights, "_resolve_report_for_show", resolve_report)
+    monkeypatch.setattr(insights, "_render_section", render_section)
+
+    insights.insights_show("agent", "abc", "json", "suggestions")
+
+    assert cli.json == [report]
+    assert cli.messages() == []
+    render_section.assert_not_called()
+
+
+def test_show_rejects_unknown_section_with_available_names(cli, monkeypatch):
+    report = _completed_report(narrative={"at_a_glance": {}, "suggestions": {}})
+    monkeypatch.setattr(insights, "_resolve_report_for_show", MagicMock(return_value=report))
+
+    with pytest.raises(typer.Exit) as raised:
+        insights.insights_show("agent", None, "table", "missing")
+
+    assert raised.value.exit_code == 1
+    assert cli.messages() == [
+        "[red]Section 'missing' not found.[/red]",
+        "[dim]Available: at_a_glance, suggestions[/dim]",
+    ]
+
+
+def test_show_completed_header_orders_sections_and_registry_note(cli, monkeypatch):
+    registry_match = {"enabled": True, "offered": 2, "reused": 0}
+    report = _completed_report(
+        agent_version="2.1.0",
+        comparison_agent_version="2.0.0",
+        metrics={"rich": {"cache_hit_rate_pct": 75, "cache_tokens_saved": 900}},
+        narrative={
+            "suggestions": {"features_to_try": []},
+            "at_a_glance": {"health": "healthy"},
+            "registry_match": registry_match,
+            "unrecognized": {"narrative": "not rendered"},
+        },
+    )
+    render_section = MagicMock()
+    render_note = MagicMock()
+    monkeypatch.setattr(insights, "_resolve_report_for_show", MagicMock(return_value=report))
+    monkeypatch.setattr(insights, "_render_section", render_section)
+    monkeypatch.setattr(insights, "_render_registry_match_note", render_note)
+
+    insights.insights_show("agent", None, "table", None)
+
+    assert cli.messages() == [
+        "",
+        "  [bold]Insight Report[/bold]  v2.1.0  2026-05-17 → 2026-05-31",
+        "  Sessions: 42  Model: analysis-model  Compared to: v2.0.0",
+        "  Cache: 75% hit rate, 900 tokens saved",
+        "",
+    ]
+    assert render_section.call_args_list == [
+        call("at_a_glance", {"health": "healthy"}),
+        call("suggestions", {"features_to_try": []}),
+    ]
+    render_note.assert_called_once_with(registry_match)
+
+
+def test_section_renderers_cover_optional_report_content(cli):
+    insights._render_section("empty", None)
+    assert cli.console.renderables == []
+
+    insights._render_section("legacy_section", {"narrative": "Legacy narrative"})
+    insights._render_at_a_glance(
+        "At a Glance",
+        {
+            "health": "unrated",
+            "whats_working": "Fast edits",
+            "whats_hindering": "Retries",
+            "quick_win": "Cache reads",
+            "ambitious_workflows": "Release automation",
+        },
+    )
+    before_empty_area = len(cli.console.renderables)
+    insights._render_what_they_work_on("Work", {"areas": []})
+    assert len(cli.console.renderables) == before_empty_area
+    insights._render_usage_patterns(
+        "Usage",
+        {
+            "narrative": "Steady use",
+            "session_profile": {"avg_duration_minutes": 8, "avg_tool_calls": 4, "avg_prompts": 3},
+            "tool_distribution": [
+                {"tool": "Read", "calls": 5, "error_rate": 0.0},
+                {"tool": "Edit", "calls": 4, "error_rate": 0.05},
+                {"tool": "Bash", "calls": 3, "error_rate": 0.2},
+            ],
+        },
+    )
+    insights._render_friction(
+        "Friction",
+        {
+            "intro": "Some friction",
+            "categories": [
+                {
+                    "title": "Retries",
+                    "severity": "unexpected",
+                    "description": "Commands repeat",
+                    "examples": ["retry one"],
+                    "impact": "Longer sessions",
+                }
+            ],
+        },
+    )
+    insights._render_suggestions(
+        "Suggestions",
+        {
+            "config_additions": [{"addition": "Run checks", "why": "Reliability", "where": "prompt"}],
+            "features_to_try": [
+                {
+                    "feature": "Skill",
+                    "name": "review",
+                    "one_liner": "Review changes",
+                    "why_for_you": "Many edits",
+                }
+            ],
+            "usage_patterns": [
+                {
+                    "title": "Verify",
+                    "suggestion": "Run tests",
+                    "detail": "Before completion",
+                    "copyable_prompt": "Run the tests",
+                }
+            ],
+        },
+    )
+    insights._render_cost(
+        "Cost",
+        {
+            "summary": "Costs are stable",
+            "metrics": {"total_cost_usd": 1.25, "cost_per_session": 0.125, "cache_efficiency_pct": 80},
+            "opportunities": [{"title": "Cache", "description": "Reuse context", "estimated_savings": "$3 monthly"}],
+        },
+    )
+    insights._render_regression("Regression", {"has_previous_data": False})
+    insights._render_regression(
+        "Regression",
+        {
+            "has_previous_data": True,
+            "summary": "Mixed changes",
+            "changes": [
+                {
+                    "metric": "errors",
+                    "direction": "degraded",
+                    "previous_value": 1,
+                    "current_value": 2,
+                    "significance": "high",
+                },
+                {"metric": "latency", "direction": "unexpected", "previous_value": 4, "current_value": 4},
+            ],
+        },
+    )
+    insights._render_horizon(
+        "Horizon",
+        {
+            "intro": "Next steps",
+            "opportunities": [{"title": "Automate", "whats_possible": "More", "how_to_try": "Pilot"}],
+        },
+    )
+    insights._render_version_comparison(
+        "Versions",
+        {
+            "summary": "Version improved",
+            "confidence": "high",
+            "changes": [
+                {
+                    "metric": "success",
+                    "direction": "up",
+                    "prior_value": 70,
+                    "current_value": 90,
+                    "attribution": "Prompt update",
+                    "evidence": "Ten sessions",
+                }
+            ],
+        },
+    )
+
+    panel_text = "\n".join(
+        str(renderable.content) for renderable in cli.console.renderables if isinstance(renderable, FakePanel)
+    )
+    for expected in (
+        "Legacy narrative",
+        "Retries",
+        "Release automation",
+        "Avg duration",
+        "Some friction",
+        "Longer sessions",
+        "Costs are stable",
+        "$3 monthly",
+        "Mixed changes",
+        "Next steps",
+        "Confidence: high",
+        "Attribution: Prompt update",
+    ):
+        assert expected in panel_text
+    assert any(isinstance(renderable, FakeTable) for renderable in cli.console.renderables)
+    assert "No previous data for comparison" in "\n".join(cli.messages())
+    assert insights._reuse_ref("not a mapping") is None
+
+
+def test_reuse_renderer_falls_back_to_personal_reason_and_default_type(cli, monkeypatch):
+    monkeypatch.setattr(insights, "_registry_name_cache", "Acme")
+
+    insights._render_reuse_feature(
+        {"one_liner": "Review every diff", "why_for_you": "Frequent reviews"},
+        {"id": "skill-id", "name": "review-skill"},
+    )
+
+    assert cli.messages() == [
+        "    [green]✔ ALREADY IN ACME[/green]  [dim](skill)[/dim]",
+        "      [bold]review-skill[/bold]",
+        "      Review every diff",
+        "      [dim]Frequent reviews[/dim]",
+        "      [cyan]observal registry skill show review-skill --output json[/cyan]",
+        "      [dim]Attach to an agent: observal agent add skill skill-id[/dim]",
+    ]
+    cli.client_get.assert_not_called()
+
+
+def test_generate_posts_exact_period_versions_and_renders_summary(cli):
+    _returns(cli.resolve, "owner/agent")
+    cli.client_get.side_effect = [{"available": True}, {"id": AGENT_ID}]
+    response = {
+        "id": REPORT_ID,
+        "status": "pending",
+        "agent_version": "2.0.0",
+        "comparison_agent_version": "1.9.0",
+        "period_start": "2026-05-01T00:00:00Z",
+        "period_end": "2026-05-31T00:00:00Z",
+        "progress_phase": "queued_for_worker",
+        "progress_percent": 5,
+    }
+    _returns(cli.client_post, response)
+
+    assert insights.insights_generate("@agent", 30, "2.0.0", "1.9.0", "table", False) is None
+
+    assert cli.client_get.call_args_list == [
+        call("/api/v1/insights/status"),
+        call("/api/v1/agents/owner/agent"),
+    ]
+    cli.resolve.assert_called_once_with("agent", "@agent")
+    cli.client_post.assert_called_once_with(
+        f"/api/v1/agents/{AGENT_ID}/insights/reports",
+        {"period_days": 30, "agent_version": "2.0.0", "comparison_agent_version": "1.9.0"},
+    )
+    assert cli.spinners == ["Checking insights configuration...", "Generating insight report..."]
+    assert cli.messages() == [
+        "[green]✓ Report queued[/green] (status: <pending>)",
+        f"  ID: [dim]{REPORT_ID}[/dim]",
+        "  Version: v2.0.0",
+        "  Compare: v1.9.0",
+        "  Period: 2026-05-01 → 2026-05-31",
+        "  Phase: queued for worker (5%)",
+        "[dim]  Run `observal ops insights show <agent>` when complete.[/dim]",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("status", "reason"),
+    [
+        ({"available": False, "reason": "No provider credentials"}, "No provider credentials"),
+        ({}, "Insights is not configured."),
+    ],
+)
+def test_generate_unavailable_exits_before_agent_resolution_or_post(cli, status, reason):
+    _returns(cli.client_get, status)
+
+    with pytest.raises(typer.Exit) as raised:
+        insights.insights_generate("agent", 14, None, None, "table", False)
+
+    assert raised.value.exit_code == 1
+    cli.client_get.assert_called_once_with("/api/v1/insights/status")
+    cli.resolve.assert_not_called()
+    cli.client_post.assert_not_called()
+    cli.confirm.assert_not_called()
+    assert cli.messages() == [
+        f"[red]✗ Insights not available:[/red] {reason}",
+        "",
+        "  Configure with:",
+        "    [cyan]observal admin set insights.model_sections anthropic/claude-3-5-sonnet-20241022[/cyan]",
+        "    [cyan]observal admin set insights.api_key <your-api-key>[/cyan]",
+        "",
+        "  [dim]Any LiteLLM-compatible model string works (OpenAI, Anthropic, Bedrock, Gemini, Ollama).[/dim]",
+        "  [dim]See: https://docs.litellm.ai/docs/providers[/dim]",
+    ]
+
+
+def test_generate_json_ignores_wait_and_returns_initial_response(cli, monkeypatch):
+    report = {"id": REPORT_ID, "status": "pending"}
+    _returns(cli.client_get, {"available": True})
+    _returns(cli.client_post, report)
+    resolve_agent = MagicMock(return_value=AGENT_ID)
+    sleep = MagicMock()
+    monkeypatch.setattr(insights, "_resolve_agent_id", resolve_agent)
+    monkeypatch.setattr(time, "sleep", sleep)
+
+    insights.insights_generate("agent", 7, None, None, "json", True)
+
+    resolve_agent.assert_called_once_with("agent")
+    cli.client_post.assert_called_once_with(
+        f"/api/v1/agents/{AGENT_ID}/insights/reports",
+        {"period_days": 7},
+    )
+    assert cli.client_get.call_args_list == [call("/api/v1/insights/status")]
+    assert cli.json == [report]
+    assert cli.messages() == []
+    sleep.assert_not_called()
+
+
+@pytest.mark.parametrize("terminal_status", ["completed", "failed"])
+def test_generate_wait_polls_progress_until_terminal_status(cli, monkeypatch, terminal_status):
+    initial = {
+        "id": REPORT_ID,
+        "status": "pending",
+        "period_start": "2026-05-01T00:00:00Z",
+        "period_end": "2026-05-14T00:00:00Z",
+    }
+    terminal = {
+        **initial,
+        "status": terminal_status,
+        "agent_version": "2.0.0",
+        "progress_phase": "writing_report",
+        "progress_percent": 100,
+    }
+    cli.client_get.side_effect = [
+        {"available": True},
+        {"status": "running", "progress_phase": "collecting_data", "progress_percent": 20},
+        {"progress_percent": 40},
+        terminal,
+    ]
+    _returns(cli.client_post, initial)
+    monkeypatch.setattr(insights, "_resolve_agent_id", MagicMock(return_value=AGENT_ID))
+    sleep = MagicMock()
+    monkeypatch.setattr(time, "sleep", sleep)
+
+    insights.insights_generate("agent", 14, None, None, "table", True)
+
+    poll_path = f"/api/v1/agents/{AGENT_ID}/insights/reports/{REPORT_ID}"
+    assert cli.client_get.call_args_list == [
+        call("/api/v1/insights/status"),
+        call(poll_path),
+        call(poll_path),
+        call(poll_path),
+    ]
+    assert sleep.call_args_list == [call(3), call(3)]
+    assert cli.prints[:4] == [
+        (("\r  <running> collecting data (20%)",), {"end": ""}),
+        (("\r  <pending> queued (40%)",), {"end": ""}),
+        ((f"\r  <{terminal_status}> writing report (100%)",), {"end": ""}),
+        ((), {}),
+    ]
+    assert cli.messages()[4:] == [
+        f"[green]✓ Report queued[/green] (status: <{terminal_status}>)",
+        f"  ID: [dim]{REPORT_ID}[/dim]",
+        "  Version: v2.0.0",
+        "  Period: 2026-05-01 → 2026-05-14",
+        "  Phase: writing report (100%)",
+        "[dim]  Run `observal ops insights show <agent>` when complete.[/dim]",
+    ]
+
+
+def test_generate_wait_exhaustion_polls_120_times_and_returns_initial_state(cli, monkeypatch):
+    initial = {
+        "id": REPORT_ID,
+        "status": "pending",
+        "period_start": "2026-05-01T00:00:00Z",
+        "period_end": "2026-05-14T00:00:00Z",
+    }
+    poll_path = f"/api/v1/agents/{AGENT_ID}/insights/reports/{REPORT_ID}"
+
+    def get(path: str):
+        if path == "/api/v1/insights/status":
+            return {"available": True}
+        if path == poll_path:
+            return {"status": "running", "progress_phase": "generating", "progress_percent": 50}
+        raise AssertionError(f"unexpected path: {path}")
+
+    cli.client_get.side_effect = get
+    _returns(cli.client_post, initial)
+    monkeypatch.setattr(insights, "_resolve_agent_id", MagicMock(return_value=AGENT_ID))
+    sleep = MagicMock()
+    monkeypatch.setattr(time, "sleep", sleep)
+
+    insights.insights_generate("agent", 14, None, None, "table", True)
+
+    assert cli.client_get.call_args_list == [call("/api/v1/insights/status"), *[call(poll_path)] * 120]
+    assert sleep.call_args_list == [call(3)] * 120
+    assert cli.messages()[-4:] == [
+        "[green]✓ Report queued[/green] (status: <pending>)",
+        f"  ID: [dim]{REPORT_ID}[/dim]",
+        "  Period: 2026-05-01 → 2026-05-14",
+        "[dim]  Run `observal ops insights show <agent>` when complete.[/dim]",
+    ]
+    assert not any("timed out" in message.lower() for message in cli.messages())
+
+
+def test_generate_wait_keyboard_interrupt_propagates_without_success(cli, monkeypatch):
+    initial = {"id": REPORT_ID, "status": "pending"}
+    cli.client_get.side_effect = [{"available": True}, {"status": "running", "progress_percent": 10}]
+    _returns(cli.client_post, initial)
+    monkeypatch.setattr(insights, "_resolve_agent_id", MagicMock(return_value=AGENT_ID))
+    sleep = MagicMock(side_effect=KeyboardInterrupt)
+    monkeypatch.setattr(time, "sleep", sleep)
+
+    with pytest.raises(KeyboardInterrupt):
+        insights.insights_generate("agent", 14, None, None, "table", True)
+
+    sleep.assert_called_once_with(3)
+    assert cli.messages() == ["\r  <running> running (10%)"]
+    assert not any("Report queued" in message for message in cli.messages())
+
+
+@pytest.mark.parametrize("command", ["list", "show", "generate"])
+def test_client_http_exit_propagates_without_command_success(cli, monkeypatch, command):
+    failure = typer.Exit(1)
+    if command == "list":
+        monkeypatch.setattr(insights, "_resolve_agent_id", MagicMock(return_value=AGENT_ID))
+        cli.client_get.side_effect = failure
+        invoke = partial(insights.insights_list, "agent", "table")
+    elif command == "show":
+        monkeypatch.setattr(insights, "_resolve_report_for_show", MagicMock(side_effect=failure))
+        invoke = partial(insights.insights_show, "agent", None, "table", None)
+    else:
+        cli.client_get.side_effect = failure
+        invoke = partial(insights.insights_generate, "agent", 14, None, None, "table", False)
+
+    with pytest.raises(typer.Exit) as raised:
+        invoke()
+
+    assert raised.value is failure
+    assert cli.messages() == []
+    assert cli.json == []
+    assert cli.console.renderables == []
+    cli.client_post.assert_not_called()
+
+
+def test_malformed_responses_fail_loudly_at_the_owning_boundary(cli, monkeypatch):
+    monkeypatch.setattr(insights, "_resolve_agent_id", MagicMock(return_value=AGENT_ID))
+    _returns(
+        cli.client_get,
+        [{"status": "completed", "period_start": None, "period_end": "2026-05-01T00:00:00Z"}],
+    )
+    with pytest.raises(TypeError):
+        insights.insights_list("agent", "table")
+    assert cli.console.renderables == []
+
+    cli.client_get.reset_mock()
+    monkeypatch.setattr(
+        insights,
+        "_resolve_report_for_show",
+        MagicMock(return_value=_completed_report(narrative=["invalid"])),
+    )
+    with pytest.raises(AttributeError):
+        insights.insights_show("agent", None, "table", None)
+
+    cli.client_get.reset_mock()
+    _returns(cli.client_get, None)
+    with pytest.raises(AttributeError):
+        insights.insights_generate("agent", 14, None, None, "table", False)
+    cli.client_post.assert_not_called()
+
+
+def test_poll_timeout_error_propagates_without_sleep_or_final_output(cli, monkeypatch):
+    failure = TimeoutError("poll timed out")
+    cli.client_get.side_effect = [{"available": True}, failure]
+    _returns(cli.client_post, {"id": REPORT_ID, "status": "pending"})
+    monkeypatch.setattr(insights, "_resolve_agent_id", MagicMock(return_value=AGENT_ID))
+    sleep = MagicMock()
+    monkeypatch.setattr(time, "sleep", sleep)
+
+    with pytest.raises(TimeoutError) as raised:
+        insights.insights_generate("agent", 14, None, None, "table", True)
+
+    assert raised.value is failure
+    sleep.assert_not_called()
+    assert cli.messages() == []
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["generate", "agent", "--period", "not-an-integer"],
+        ["list"],
+        ["show"],
+    ],
+)
+def test_typer_validation_rejects_bad_arguments_before_any_side_effect(cli, arguments):
+    result = runner.invoke(insights.insights_app, arguments)
+
+    assert result.exit_code == 2
+    cli.client_get.assert_not_called()
+    cli.client_post.assert_not_called()
+    cli.resolve.assert_not_called()
+    cli.confirm.assert_not_called()
+
+
+def test_insights_app_registers_only_current_commands():
+    result = runner.invoke(insights.insights_app, ["--help"])
+
+    assert result.exit_code == 0, result.output
+    assert all(command in result.output for command in ("generate", "list", "show"))
