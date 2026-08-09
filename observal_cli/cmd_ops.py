@@ -1203,15 +1203,15 @@ def admin_audit_log_export(
 
     qs = f"?{urlencode(params)}" if params else ""
     with spinner("Exporting audit log..."):
-        data = client.get(f"/api/v1/admin/audit-log/export{qs}")
+        data = client.get_text(f"/api/v1/admin/audit-log/export{qs}", content_type="text/csv")
 
     if file:
         from pathlib import Path
 
-        Path(file).write_text(data if isinstance(data, str) else str(data))
+        Path(file).write_text(data)
         rprint(f"[green]Audit log exported to {file}[/green]")
     else:
-        rprint(data if isinstance(data, str) else str(data))
+        rprint(data)
 
 
 # ── Trace Privacy ───────────────────────────────────────

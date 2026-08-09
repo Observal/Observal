@@ -154,19 +154,19 @@ def test_execute_preserves_installer_failure_and_skips_verification(monkeypatch:
         (
             "_install_via_uv",
             "upgrade",
-            "Upgradeing to v2.4.1...",
+            "Upgrading to v2.4.1...",
             ["uv", "tool", "install", "observal-cli==2.4.1", f"{LONG_OPTION}force"],
         ),
         (
             "_install_via_pipx",
             "downgrade",
-            "Downgradeing to v2.4.1...",
+            "Downgrading to v2.4.1...",
             ["pipx", "install", "observal-cli==2.4.1", f"{LONG_OPTION}force"],
         ),
         (
             "_install_via_pip",
             "upgrade",
-            "Upgradeing to v2.4.1...",
+            "Upgrading to v2.4.1...",
             ["/venv/bin/python", "-m", "pip", "install", "observal-cli==2.4.1", f"{LONG_OPTION}quiet"],
         ),
     ],
@@ -259,8 +259,8 @@ def test_package_installer_boundary_exceptions_propagate_unchanged(
 
     assert error.value is failure
     assert spinner.events == [
-        ("spinner enter", "Upgradeing to v2.4.1..."),
-        ("spinner exit", "Upgradeing to v2.4.1..."),
+        ("spinner enter", "Upgrading to v2.4.1..."),
+        ("spinner exit", "Upgrading to v2.4.1..."),
     ]
     assert messages == []
 

@@ -835,7 +835,14 @@ def agent_init(
             rprint("[red]Error:[/red] --name, --description, and --prompt or --prompt-file are required")
             raise typer.Exit(1)
         raw_name = name
-        prompt_text = prompt or Path(prompt_file).read_text(encoding="utf-8")
+        if prompt_file:
+            prompt_path = Path(prompt_file)
+            if not prompt_path.exists():
+                rprint(f"[red]Error:[/red] Prompt file not found: {prompt_file}")
+                raise typer.Exit(1)
+            prompt_text = prompt_path.read_text(encoding="utf-8")
+        else:
+            prompt_text = prompt or ""
         harnesses = supported_harnesses or list(VALID_HARNESSES)
         bad_harnesses = [h for h in harnesses if h not in VALID_HARNESSES]
         if bad_harnesses:

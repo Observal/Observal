@@ -252,11 +252,14 @@ class OpenCodeAdapter(BaseAdapter):
                 content = agent_profile.read_text(errors="ignore")
                 name = agent_profile.stem
                 description = self._extract_frontmatter_field(content, "description") or ""
+                model = self._extract_frontmatter_field(content, "model") or ""
                 agents.append(
                     DiscoveredAgent(
                         name=name,
-                        description=description,
-                        source=source,
+                        description=description or f"Agent: {name}",
+                        model_name=model,
+                        prompt=content,
+                        source_file=str(agent_profile),
                     )
                 )
             except OSError:

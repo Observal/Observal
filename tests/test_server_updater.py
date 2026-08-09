@@ -493,7 +493,8 @@ def test_update_installs_when_current_binary_and_checksums_are_missing(
     assert not runtime.backup.exists()
     copy.assert_not_called()
     verify.assert_not_called()
-    assert "[blue]==>[/blue] Verified checksum" in runtime.console.messages
+    assert "[yellow]==>[/yellow] Checksum unavailable; skipping verification" in runtime.console.messages
+    assert "[blue]==>[/blue] Verified checksum" not in runtime.console.messages
 
 
 def test_checksum_failure_preserves_binary_cache_and_skips_backup(

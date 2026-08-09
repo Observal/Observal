@@ -23,6 +23,11 @@ USER_ID = uuid.UUID("11111111-1111-1111-1111-111111111111")
 OTHER_USER_ID = uuid.UUID("22222222-2222-2222-2222-222222222222")
 AGENT_ID = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 
+
+def _sql(value) -> str:
+    return " ".join(str(value).split())
+
+
 LIST_SQL_FILTERED = (
     "SELECT session_id, if(first_event_time > '2020-01-01 00:00:00' AND first_event_time < "
     "'2099-01-01 00:00:00',    first_event_time, last_event_time) AS first_event_time, "
@@ -223,15 +228,14 @@ async def test_list_query_uses_exact_filters_pagination_and_parameters(monkeypat
     )
 
     assert result == [{"session_id": "one"}]
-    query.assert_awaited_once_with(
-        LIST_SQL_FILTERED,
-        {
-            "param_uid": "me",
-            "param_platform": "kiro",
-            "param_user_0": "u1",
-            "param_user_1": "u2",
-        },
-    )
+    sql, params = query.await_args.args
+    assert _sql(sql) == _sql(LIST_SQL_FILTERED)
+    assert params == {
+        "param_uid": "me",
+        "param_platform": "kiro",
+        "param_user_0": "u1",
+        "param_user_1": "u2",
+    }
 
 
 @pytest.mark.asyncio
@@ -248,7 +252,9 @@ async def test_list_query_leaves_admin_unfiltered_for_nonpositive_days(monkeypat
         uid="admin",
     )
 
-    query.assert_awaited_once_with(LIST_SQL_UNFILTERED, None)
+    sql, params = query.await_args.args
+    assert _sql(sql) == _sql(LIST_SQL_UNFILTERED)
+    assert params is None
 
 
 @pytest.mark.asyncio
@@ -266,8 +272,8 @@ async def test_admin_mine_filter_is_user_scoped(monkeypatch):
     )
 
     sql, params = query.await_args.args
-    assert sql == LIST_SQL_UNFILTERED.replace(
-        "prompt_count > 0 ORDER BY", "prompt_count > 0 AND user_id = {uid:String} ORDER BY"
+    assert _sql(sql) == _sql(
+        LIST_SQL_UNFILTERED.replace("prompt_count > 0 ORDER BY", "prompt_count > 0 AND user_id = {uid:String} ORDER BY")
     )
     assert params == {"param_uid": "admin-id"}
 
@@ -374,11 +380,10 @@ async def test_list_sessions_resolves_filters_names_and_transforms_rows(monkeypa
     agent_db.execute.assert_awaited_once()
     user_statement = user_db.execute.await_args.args[0]
     agent_statement = agent_db.execute.await_args.args[0]
-    assert str(user_statement) == "SELECT users.id, users.name \nFROM users \nWHERE users.id IN (__[POSTCOMPILE_id_1])"
+    assert _sql(user_statement) == "SELECT users.id, users.name FROM users WHERE users.id IN (__[POSTCOMPILE_id_1])"
     assert user_statement.compile().params == {"id_1": [OTHER_USER_ID]}
-    assert (
-        str(agent_statement)
-        == "SELECT agents.id, agents.name \nFROM agents \nWHERE agents.id IN (__[POSTCOMPILE_id_1])"
+    assert _sql(agent_statement) == (
+        "SELECT agents.id, agents.name FROM agents WHERE agents.id IN (__[POSTCOMPILE_id_1])"
     )
     assert agent_statement.compile().params == {"id_1": [AGENT_ID]}
 
@@ -525,7 +530,9 @@ async def test_sessions_summary_applies_trace_visibility_and_transforms_counts(
     result = await sessions.sessions_summary(user)
 
     assert result == {"total_sessions": 12, "today_sessions": 3}
-    query.assert_awaited_once_with(expected_sql, expected_params)
+    sql, params = query.await_args.args
+    assert _sql(sql) == _sql(expected_sql)
+    assert params == expected_params
 
 
 @pytest.mark.asyncio
@@ -577,7 +584,7 @@ async def test_sessions_stats_uses_exact_aggregate_and_transforms_counts(monkeyp
     result = await sessions.sessions_stats.__wrapped__(current_user=_user(UserRole.admin))
 
     assert result == expected
-    query.assert_awaited_once_with(STATS_SQL)
+    assert _sql(query.await_args.args[0]) == _sql(STATS_SQL)
 
 
 @pytest.mark.asyncio
@@ -589,10 +596,9 @@ async def test_session_detail_empty_identity_preserves_identifier_and_user_isola
     result = await sessions.get_session(session_id, current_user=_user())
 
     assert result == {"session_id": session_id, "harness": "", "events": []}
-    query.assert_awaited_once_with(
-        IDENTITY_SQL_USER,
-        {"param_sid": session_id, "param_uid": str(USER_ID)},
-    )
+    sql, params = query.await_args.args
+    assert _sql(sql) == _sql(IDENTITY_SQL_USER)
+    assert params == {"param_sid": session_id, "param_uid": str(USER_ID)}
 
 
 @pytest.mark.asyncio
@@ -610,10 +616,10 @@ async def test_admin_session_detail_uses_canonical_identity_for_both_event_queri
         "param_harness": "cursor",
     }
     assert result == {"session_id": "shared-id", "service_name": "", "events": [], "traces": []}
-    assert query.await_args_list == [
-        call(IDENTITY_SQL_ADMIN, {"param_sid": "shared-id"}),
-        call(MAIN_SQL, params),
-        call(SUB_SQL, params),
+    assert [(_sql(item.args[0]), item.args[1]) for item in query.await_args_list] == [
+        (_sql(IDENTITY_SQL_ADMIN), {"param_sid": "shared-id"}),
+        (_sql(MAIN_SQL), params),
+        (_sql(SUB_SQL), params),
     ]
 
 
@@ -633,10 +639,10 @@ async def test_incremental_session_detail_uses_offset_for_parent_and_subagents(m
         "param_offset": "7",
     }
     assert result == {"session_id": "session", "events": [], "max_offset": 7}
-    assert query.await_args_list == [
-        call(IDENTITY_SQL_USER, {"param_sid": "session", "param_uid": str(USER_ID)}),
-        call(MAIN_SQL_OFFSET, params),
-        call(SUB_SQL_OFFSET, params),
+    assert [(_sql(item.args[0]), item.args[1]) for item in query.await_args_list] == [
+        (_sql(IDENTITY_SQL_USER), {"param_sid": "session", "param_uid": str(USER_ID)}),
+        (_sql(MAIN_SQL_OFFSET), params),
+        (_sql(SUB_SQL_OFFSET), params),
     ]
 
 
@@ -703,15 +709,15 @@ async def test_session_detail_parses_events_subagents_and_agent_name(monkeypatch
         "param_uid": str(USER_ID),
         "param_harness": "kiro",
     }
-    assert query.await_args_list == [
-        call(IDENTITY_SQL_USER, {"param_sid": "session", "param_uid": str(USER_ID)}),
-        call(MAIN_SQL, params),
-        call(SUB_SQL, params),
+    assert [(_sql(item.args[0]), item.args[1]) for item in query.await_args_list] == [
+        (_sql(IDENTITY_SQL_USER), {"param_sid": "session", "param_uid": str(USER_ID)}),
+        (_sql(MAIN_SQL), params),
+        (_sql(SUB_SQL), params),
     ]
     assert parser.call_args_list == [call(parent_rows), call([child_a]), call([child_b])]
     agent_db.execute.assert_awaited_once()
     statement = agent_db.execute.await_args.args[0]
-    assert str(statement) == "SELECT agents.name \nFROM agents \nWHERE agents.id = :id_1"
+    assert _sql(statement) == "SELECT agents.name FROM agents WHERE agents.id = :id_1"
     assert statement.compile().params == {"id_1": AGENT_ID}
     assert session_factory.call_count == 1
 

@@ -542,6 +542,9 @@ def migrate_agent_markers() -> int:
         return 0
 
     data = _empty_lockfile()
+    registry_url = current_registry_url()
+    registry = {"server_url": registry_url, "harnesses": {}}
+    data["registries"][registry_url] = registry
     seen: set[str] = set()  # Deduplicate by (agent_id, directory)
 
     for project_dir, marker_data in markers_found:
@@ -558,7 +561,7 @@ def migrate_agent_markers() -> int:
         # We don't know which harness was used, default to claude-code
         # (the marker was primarily written by claude-code hooks)
         harness = "claude-code"
-        harness_section = _ensure_harness(data, harness)
+        harness_section = _ensure_harness(registry, harness)
 
         harness_section["agents"].append(
             {

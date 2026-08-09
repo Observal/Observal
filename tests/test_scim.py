@@ -784,25 +784,31 @@ class TestPatchOperation:
         assert scim._apply_patch_op(user, "replace", path, None) is None
         assert user.email == "new@example.test"
 
-    @pytest.mark.parametrize("inactive", [False, "false", "FALSE", 0, 1])
-    def test_active_path_deactivates_and_clears_password(self, inactive):
+    def test_active_path_deactivates_and_clears_password(self):
         user = _user(auth_provider="saml")
 
-        assert scim._apply_patch_op(user, "replace", "active", inactive) is None
+        assert scim._apply_patch_op(user, "replace", "active", False) is None
         assert user.auth_provider == "deactivated"
         assert user.password_hash is None
 
-    @pytest.mark.parametrize("active", [True, "true", "TRUE"])
-    def test_active_path_reactivates_only_deactivated_users(self, active):
+    def test_active_path_reactivates_only_deactivated_users(self):
         deactivated = _user(auth_provider="deactivated", password_hash=None)
         already_active = _user(auth_provider="local")
 
-        assert scim._apply_patch_op(deactivated, "replace", "active", active) is None
+        assert scim._apply_patch_op(deactivated, "replace", "active", True) is None
         assert deactivated.auth_provider == "scim"
         assert deactivated.password_hash is None
-        assert scim._apply_patch_op(already_active, "replace", "active", active) is None
+        assert scim._apply_patch_op(already_active, "replace", "active", True) is None
         assert already_active.auth_provider == "local"
         assert already_active.password_hash == "stored-password-hash"
+
+    @pytest.mark.parametrize("value", ["false", "TRUE", 0, 1, None, [], {}])
+    def test_active_path_rejects_non_boolean_values_without_mutation(self, value):
+        user = _user(auth_provider="saml")
+        before = vars(user).copy()
+
+        assert scim._apply_patch_op(user, "replace", "active", value) == "active must be a boolean"
+        assert vars(user) == before
 
 
 class TestUserPatch:
@@ -846,6 +852,7 @@ class TestUserPatch:
             ({}, "Unsupported op: "),
             ({"op": "remove", "path": "displayName"}, "Cannot remove required attributes"),
             ({"op": "replace", "path": "unknown", "value": "x"}, "Unknown path: unknown"),
+            ({"op": "replace", "path": "active", "value": 1}, "active must be a boolean"),
         ],
     )
     async def test_patch_invalid_operation_returns_exact_scim_400_without_commit(self, operation, detail, app, client):
@@ -877,7 +884,7 @@ class TestUserPatch:
                     {"op": "replace", "path": "name.givenName", "value": "Alicia"},
                     {"op": "add", "path": "name.familyName", "value": "Changed"},
                     {"op": "replace", "path": 'emails[type eq "work"].value', "value": "NEW@EXAMPLE.TEST"},
-                    {"op": "replace", "path": "active", "value": "false"},
+                    {"op": "replace", "path": "active", "value": False},
                 ],
             },
         )

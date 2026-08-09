@@ -338,7 +338,9 @@ def _apply_patch_op(user: User, op: str, path: str | None, value: object) -> str
         if new_email:
             user.email = new_email
     elif normalised == "active":
-        is_active = value if isinstance(value, bool) else str(value).lower() == "true"
+        if not isinstance(value, bool):
+            return "active must be a boolean"
+        is_active = value
         if not is_active and user.auth_provider != "deactivated":
             user.password_hash = None
             user.auth_provider = "deactivated"

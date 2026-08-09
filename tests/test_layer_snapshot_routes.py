@@ -169,14 +169,11 @@ async def test_upload_serializes_redacted_manifest_and_inserts_exact_row_in_orde
         events.append(f"redact {value}")
         return "safe content"
 
-    serialized = "serialized manifest"
-    serializer = MagicMock(side_effect=lambda value: events.append("serialize manifest") or serialized)
     query_mock = AsyncMock(side_effect=query)
     insert_mock = AsyncMock(side_effect=insert)
     monkeypatch.setattr("services.clickhouse.client._query", query_mock)
     monkeypatch.setattr("services.clickhouse.insert.insert_layer_snapshot", insert_mock)
     monkeypatch.setattr("services.secrets_redactor.redact_secrets", redact)
-    monkeypatch.setattr(json, "dumps", serializer)
 
     payload = layer_snapshot.LayerSnapshotRequest.model_validate(
         {
@@ -213,45 +210,43 @@ async def test_upload_serializes_redacted_manifest_and_inserts_exact_row_in_orde
         "check status",
         "decode result",
         "redact token=secret-value",
-        "serialize manifest",
         "insert snapshot",
     ]
-    serializer.assert_called_once_with(
-        {
-            "harnesses": {
-                "cursor": [
-                    _file(
-                        "user:mcp.json",
-                        "sha256-file-a",
-                        17,
-                        content="safe content",
-                    )
-                ],
-                "kiro": [
-                    _file(
-                        "user:agents/reviewer.json",
-                        "sha256-file-b",
-                        4,
-                        source="observal",
-                    )
-                ],
-            },
-            "lockfile_hash": LOCK_HASH,
-            "pinned_versions": {"agents": [{"id": "agent-1", "version": "1.2.3"}]},
-            "drift": {"is_canonical": False, "drifted_files": [{"path": "user:mcp.json"}]},
-        }
-    )
+    expected_manifest = {
+        "harnesses": {
+            "cursor": [
+                _file(
+                    "user:mcp.json",
+                    "sha256-file-a",
+                    17,
+                    content="safe content",
+                )
+            ],
+            "kiro": [
+                _file(
+                    "user:agents/reviewer.json",
+                    "sha256-file-b",
+                    4,
+                    source="observal",
+                )
+            ],
+        },
+        "lockfile_hash": LOCK_HASH,
+        "pinned_versions": {"agents": [{"id": "agent-1", "version": "1.2.3"}]},
+        "drift": {"is_canonical": False, "drifted_files": [{"path": "user:mcp.json"}]},
+    }
     assert query_mock.await_args.args[1] == {
         "param_project_id": DEFAULT_PROJECT_ID,
         "param_hash": HASH_A,
     }
     assert _compact(query_mock.await_args.args[0]) == _compact(_CHECK_SQL)
-    assert insert_mock.await_args.args[0] == {
+    stored = dict(insert_mock.await_args.args[0])
+    assert json.loads(stored.pop("content")) == expected_manifest
+    assert stored == {
         "hash": HASH_A,
         "project_id": DEFAULT_PROJECT_ID,
         "user_id": str(USER_ID),
         "harness": "cursor,kiro",
-        "content": serialized,
         "file_count": 2,
         "total_size": 21,
         "lockfile_hash": LOCK_HASH,
@@ -327,25 +322,20 @@ async def test_duplicate_check_failure_falls_through_to_insert(boundaries):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("harnesses", "detail"),
+    ("file_count", "content_size", "detail"),
     [
-        (
-            {"cursor": [layer_snapshot.LayerFile(path=f"file-{index}", hash="h", size=0) for index in range(201)]},
-            "Snapshot exceeds 200 file limit (201 files)",
-        ),
-        (
-            {
-                "cursor": [
-                    layer_snapshot.LayerFile(path=f"file-{index}", hash="h", size=0, content="x" * 500_000)
-                    for index in range(11)
-                ]
-            },
-            "Snapshot exceeds 5MB total content limit",
-        ),
+        (201, 0, "Snapshot exceeds 200 file limit (201 files)"),
+        (11, 500_000, "Snapshot exceeds 5MB total content limit"),
     ],
     ids=["file-count", "total-content"],
 )
-async def test_upload_caps_fail_before_any_service_call(boundaries, harnesses, detail):
+async def test_upload_caps_fail_before_any_service_call(boundaries, file_count, content_size, detail):
+    harnesses = {
+        "cursor": [
+            layer_snapshot.LayerFile(path=f"file-{index}", hash="h", size=0, content="x" * content_size)
+            for index in range(file_count)
+        ]
+    }
     request = layer_snapshot.LayerSnapshotRequest(hash=HASH_A, harnesses=harnesses)
 
     with pytest.raises(HTTPException) as exc:
@@ -688,22 +678,24 @@ async def test_diff_database_and_content_failures_return_500(monkeypatch, failur
 
 @pytest.mark.asyncio
 async def test_pin_baseline_serializes_exact_marker_and_query(monkeypatch):
-    serializer = MagicMock(return_value="serialized baseline")
     query = AsyncMock(return_value=SimpleNamespace())
-    monkeypatch.setattr(json, "dumps", serializer)
     monkeypatch.setattr("services.clickhouse.client._query", query)
     request = layer_snapshot.BaselinePinRequest(agent_id="agent-123", layer_hash=HASH_A)
 
     response = await inspect.unwrap(layer_snapshot.pin_baseline)(request, SimpleNamespace(), _user())
 
     assert response.model_dump() == {"agent_id": "agent-123", "layer_hash": HASH_A, "pinned": True}
-    serializer.assert_called_once_with({"agent_id": "agent-123", "baseline": True, "pinned_hash": HASH_A})
     assert _compact(query.await_args.args[0]) == _compact(_BASELINE_SQL)
-    assert query.await_args.args[1] == {
+    params = dict(query.await_args.args[1])
+    assert json.loads(params.pop("param_content")) == {
+        "agent_id": "agent-123",
+        "baseline": True,
+        "pinned_hash": HASH_A,
+    }
+    assert params == {
         "param_hash": "baseline:agent-123",
         "param_project_id": DEFAULT_PROJECT_ID,
         "param_user_id": str(USER_ID),
-        "param_content": "serialized baseline",
     }
 
 

@@ -970,8 +970,9 @@ def test_marker_migration_deduplicates_projects_and_cleans_valid_markers(isolate
 
     persisted = raw_lockfile(isolated_lockfile)
     assert persisted["lock_version"] == 2
-    assert persisted["registries"] == {}
-    agents = persisted["harnesses"]["claude-code"]["agents"]
+    registry = persisted["registries"][lockfile.current_registry_url()]
+    assert registry["server_url"] == isolated_lockfile.server_url
+    agents = registry["harnesses"]["claude-code"]["agents"]
     by_directory = {entry["directory"]: entry for entry in agents}
     assert set(by_directory) == {str(first_project.resolve()), str(second_project.resolve())}
     assert by_directory[str(first_project.resolve())] == {

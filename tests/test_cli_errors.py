@@ -711,6 +711,41 @@ def test_http_wrappers_construct_authenticated_requests(monkeypatch, method):
     enforce.assert_called_once_with("https://registry.example.test")
 
 
+def test_get_text_returns_validated_raw_response(monkeypatch):
+    response = _response(200, text="a,b\n1,2\n", headers={"Content-Type": "text/csv; charset=utf-8"})
+    request = MagicMock(return_value=response)
+    monkeypatch.setattr(
+        client,
+        "_client",
+        lambda: ("https://registry.example.test", {"Authorization": "Bearer fake-access-token"}),
+    )
+    monkeypatch.setattr(client, "_request_with_retry", request)
+
+    result = client.get_text("/api/v1/admin/audit-log/export", content_type="text/csv")
+
+    assert result == "a,b\n1,2\n"
+    request.assert_called_once_with(
+        "get",
+        "https://registry.example.test/api/v1/admin/audit-log/export",
+        {"Authorization": "Bearer fake-access-token"},
+        params=None,
+    )
+
+
+def test_get_text_rejects_unexpected_content_type(monkeypatch):
+    response = _response(200, data={"detail": "not csv"}, headers={"Content-Type": "application/json"})
+    monkeypatch.setattr(client, "_client", lambda: ("https://registry.example.test", {}))
+    monkeypatch.setattr(client, "_request_with_retry", MagicMock(return_value=response))
+    printed = []
+    monkeypatch.setattr(client, "rprint", lambda message: printed.append(str(message)))
+
+    with pytest.raises(typer.Exit) as error:
+        client.get_text("/api/v1/admin/audit-log/export", content_type="text/csv")
+
+    assert error.value.exit_code == 1
+    assert printed == ["[red]Unexpected response content type:[/red] application/json"]
+
+
 def test_get_with_headers_normalizes_pagination_headers(monkeypatch):
     response = _response(
         200,
@@ -761,14 +796,14 @@ def test_empty_post_and_delete_responses_return_empty_dict(monkeypatch, method, 
 
 
 def _invoke_wrapper(name: str):
-    if name in {"get", "get_with_headers"}:
+    if name in {"get", "get_text", "get_with_headers"}:
         return getattr(client, name)("/api/v1/items", params={"page": 1})
     if name == "delete":
         return client.delete("/api/v1/items/id")
     return getattr(client, name)("/api/v1/items/id", json_data={"name": "example"})
 
 
-@pytest.mark.parametrize("wrapper", ["get", "get_with_headers", "post", "put", "patch", "delete"])
+@pytest.mark.parametrize("wrapper", ["get", "get_text", "get_with_headers", "post", "put", "patch", "delete"])
 @pytest.mark.parametrize("failure", ["status", "timeout", "connection"])
 def test_wrappers_route_transport_failures_to_user_facing_handlers(monkeypatch, wrapper, failure):
     response = _response(400, data={"detail": "invalid"})
@@ -790,7 +825,7 @@ def test_wrappers_route_transport_failures_to_user_facing_handlers(monkeypatch, 
     with pytest.raises(typer.Exit):
         _invoke_wrapper(wrapper)
 
-    path = "/api/v1/items" if wrapper in {"get", "get_with_headers"} else "/api/v1/items/id"
+    path = "/api/v1/items" if wrapper in {"get", "get_text", "get_with_headers"} else "/api/v1/items/id"
     if failure == "status":
         handle_error.assert_called_once_with(status_error, path)
         handle_timeout.assert_not_called()
@@ -862,7 +897,14 @@ def test_team_uuid_is_returned_without_lookup(monkeypatch):
     get.assert_not_called()
 
 
-def test_team_handle_lookup_is_trimmed_and_case_insensitive(monkeypatch):
+@pytest.mark.parametrize(
+    ("reference", "encoded_handle"),
+    [
+        ("  @PLATFORM-tools ", "platform-tools"),
+        ("@../admin/secrets", "..%2Fadmin%2Fsecrets"),
+    ],
+)
+def test_team_handle_lookup_is_normalized_and_path_safe(monkeypatch, reference, encoded_handle):
     headers = {"Authorization": "Bearer test-token"}
     request = MagicMock(return_value=_response(200, data={"id": 42}))
     fallback = MagicMock()
@@ -870,10 +912,10 @@ def test_team_handle_lookup_is_trimmed_and_case_insensitive(monkeypatch):
     monkeypatch.setattr(client, "_request_with_retry", request)
     monkeypatch.setattr(client, "get", fallback)
 
-    assert client.resolve_team_id("  @PLATFORM-tools ") == "42"
+    assert client.resolve_team_id(reference) == "42"
     request.assert_called_once_with(
         "get",
-        "https://registry.example.test/api/v1/teams/by-handle/platform-tools",
+        f"https://registry.example.test/api/v1/teams/by-handle/{encoded_handle}",
         headers,
     )
     fallback.assert_not_called()
@@ -984,7 +1026,7 @@ def test_registered_agent_policy_uses_bearer_header(monkeypatch):
         httpx.ConnectError("unavailable"),
     ],
 )
-def test_registered_agent_policy_fails_closed_to_disabled(monkeypatch, outcome):
+def test_registered_agent_policy_defaults_to_disabled_on_error(monkeypatch, outcome):
     get = MagicMock()
     if isinstance(outcome, Exception):
         get.side_effect = outcome

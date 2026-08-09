@@ -1006,8 +1006,8 @@ async def test_purge_clears_removed_and_missing_artifacts_but_keeps_failed_remov
     monkeypatch.setattr(migration, "async_session", factory)
     monkeypatch.setattr(migration, "datetime", FrozenDateTime)
     monkeypatch.setattr(migration.ds, "get_int", get_ttl)
-    monkeypatch.setattr(migration, "os", SimpleNamespace(path=SimpleNamespace(isdir=isdir)))
-    monkeypatch.setattr(migration, "shutil", SimpleNamespace(rmtree=rmtree))
+    monkeypatch.setattr(migration.os.path, "isdir", isdir)
+    monkeypatch.setattr(migration.shutil, "rmtree", rmtree)
     monkeypatch.setattr(migration.optic, "warning", warning)
     object_storage = MagicMock()
 

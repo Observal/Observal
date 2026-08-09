@@ -165,6 +165,8 @@ def load_config(home: Path | None = None) -> dict | None:
         data = json.loads(cfg_file.read_text())
     except Exception:
         return None
+    if not isinstance(data, dict):
+        return None
     server_url = data.get("server_url", "").strip()
     access_token = data.get("api_key", "").strip() or data.get("access_token", "").strip()
     if not server_url or not access_token:

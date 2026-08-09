@@ -194,11 +194,13 @@ def update(*, version: str | None = None) -> bool:
 
         # Verify checksum
         checksums = _fetch_checksums(version)
-        if checksums and not _verify_binary(tmp_path, checksums, artifact_name):
-            tmp_path.unlink(missing_ok=True)
-            return False
-
-        console.print("[blue]==>[/blue] Verified checksum")
+        if checksums:
+            if not _verify_binary(tmp_path, checksums, artifact_name):
+                tmp_path.unlink(missing_ok=True)
+                return False
+            console.print("[blue]==>[/blue] Verified checksum")
+        else:
+            console.print("[yellow]==>[/yellow] Checksum unavailable; skipping verification")
 
         # Backup current binary
         current_binary = _get_binary_path()

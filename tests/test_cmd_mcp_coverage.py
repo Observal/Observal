@@ -481,24 +481,40 @@ def test_git_analysis_falls_back_to_server(monkeypatch):
     assert "client_analysis" not in calls[1][1]
 
 
-def test_git_analysis_handles_local_and_remote_failure(monkeypatch):
+def test_git_analysis_handles_local_and_remote_failure(monkeypatch, capsys):
     analyze = Mock(side_effect=OSError("clone failed"))
     monkeypatch.setattr(mcp, "analyze_local", analyze)
     monkeypatch.setattr(mcp.config, "load", Mock(return_value={"username": "alice"}))
     monkeypatch.setattr(mcp.client, "add_publish_target", Mock())
+    submitted = []
 
     def post(path, payload):
         if path.endswith("/analyze"):
             raise SystemExit(1)
+        submitted.append(payload)
         return {"id": "manual", "status": "pending"}
 
     monkeypatch.setattr(mcp.client, "post", post)
 
     mcp._submit_impl("https://github.com/acme/unavailable", "manual", "general", True)
 
+    assert len(submitted) == 1
+    assert submitted[0]["name"] == "manual"
+    assert submitted[0]["git_url"] == "https://github.com/acme/unavailable"
+    assert submitted[0]["category"] == "general"
+    assert "Could not analyze repo. Fill in details manually." in capsys.readouterr().out
+
     analyze.side_effect = None
     analyze.return_value = {"error": "parse failed"}
     mcp._submit_impl("https://github.com/acme/unavailable", "manual", "general", True)
+
+    assert len(submitted) == 2
+    assert submitted[1]["name"] == "manual"
+    assert submitted[1]["git_url"] == "https://github.com/acme/unavailable"
+    assert submitted[1]["category"] == "general"
+    output = capsys.readouterr().out
+    assert "Local analysis issue: parse failed" in output
+    assert "Server analysis also failed. Fill in details manually." in output
 
 
 @pytest.mark.parametrize(

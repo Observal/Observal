@@ -538,13 +538,12 @@ def test_load_config_expands_home_trims_values_and_prefers_api_key(tmp_path: Pat
     assert base.load_config(tmp_path) is None
 
 
-def test_load_config_rejects_an_unsupported_top_level_shape_loudly(tmp_path: Path):
+def test_load_config_rejects_an_unsupported_top_level_shape_softly(tmp_path: Path):
     config_path = tmp_path / ".observal" / "config.json"
     config_path.parent.mkdir()
     config_path.write_text("[]")
 
-    with pytest.raises(AttributeError, match="get"):
-        base.load_config(tmp_path)
+    assert base.load_config(tmp_path) is None
 
 
 def test_refresh_access_token_updates_the_config_and_tolerates_persist_failure(tmp_path: Path, monkeypatch):

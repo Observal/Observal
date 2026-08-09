@@ -559,7 +559,10 @@ class TestListAndDetail:
         assert [row.qualified_name for row in rows] == ["alice/review-skill"]
         assert response.headers["X-Total-Count"] == "9"
         assert search.call_count == 2
-        assert search.call_args_list[0].args == ("claude", [search.call_args_list[0].args[1][0]])
+        target_query, target_fields = search.call_args_list[0].args
+        assert target_query == "claude"
+        assert len(target_fields) == 1
+        assert str(target_fields[0]) == "CAST(skill_versions.target_agents AS VARCHAR)"
         assert search.call_args_list[1].kwargs["name_field"] is SkillListing.name
         scope.assert_called_once_with(
             scope.call_args.args[0],

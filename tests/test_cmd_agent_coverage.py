@@ -733,7 +733,7 @@ def test_agent_init_flag_validation(tmp_path, extra, message):
     assert message.lower() in result.output.lower()
 
 
-def test_agent_init_missing_prompt_file_surfaces_filesystem_failure(tmp_path):
+def test_agent_init_missing_prompt_file_reports_actionable_error(tmp_path):
     result = _invoke(
         "init",
         "--dir",
@@ -746,7 +746,8 @@ def test_agent_init_missing_prompt_file_surfaces_filesystem_failure(tmp_path):
         str(tmp_path / "missing.md"),
     )
     assert result.exit_code == 1
-    assert isinstance(result.exception, FileNotFoundError)
+    assert "Prompt file not found" in result.output
+    assert "missing.md" in result.output.replace("\n", "")
 
 
 def test_agent_add_scans_existing_non_duplicate_components(tmp_path):
@@ -927,7 +928,15 @@ def test_agent_publish_tty_selects_suggested_bump(tmp_path, monkeypatch):
     monkeypatch.setattr(agent, "select_one", Mock(side_effect=lambda _label, choices, **_kwargs: choices[1]))
     monkeypatch.setattr(sys, "stdin", SimpleNamespace(isatty=lambda: True))
 
-    agent.agent_publish(str(tmp_path), True, False, None, None, None, None)
+    agent.agent_publish(
+        directory=str(tmp_path),
+        update=True,
+        draft=False,
+        submit=None,
+        bump=None,
+        team=None,
+        visibility=None,
+    )
 
     payload = put.call_args.args[1]
     assert payload["version_bump_type"] == "minor"
@@ -940,7 +949,15 @@ def test_agent_publish_tty_selects_suggested_bump(tmp_path, monkeypatch):
     put.reset_mock()
     monkeypatch.setattr(agent, "select_one", Mock(side_effect=lambda _label, choices, **_kwargs: choices[-1]))
 
-    agent.agent_publish(str(tmp_path), True, False, None, None, None, None)
+    agent.agent_publish(
+        directory=str(tmp_path),
+        update=True,
+        draft=False,
+        submit=None,
+        bump=None,
+        team=None,
+        visibility=None,
+    )
 
     keep_payload = put.call_args.args[1]
     assert keep_payload["version"] == "1.2.3"
@@ -960,7 +977,15 @@ def test_agent_publish_tty_uses_yaml_version_when_suggestions_fail(tmp_path, mon
     monkeypatch.setattr(agent.client, "put", put)
     monkeypatch.setattr(sys, "stdin", SimpleNamespace(isatty=lambda: True))
 
-    agent.agent_publish(str(tmp_path), True, False, None, None, None, None)
+    agent.agent_publish(
+        directory=str(tmp_path),
+        update=True,
+        draft=False,
+        submit=None,
+        bump=None,
+        team=None,
+        visibility=None,
+    )
 
     payload = put.call_args.args[1]
     assert payload["version"] == "1.2.3"
@@ -1110,7 +1135,7 @@ def test_agent_co_author_commands_render_and_preserve_http_boundaries(monkeypatc
 
     assert listed.exit_code == added.exit_code == removed.exit_code == 0
     assert "dev@example.test" in listed.output
-    assert "no" in listed.output
+    assert any(cell.strip() == "no" for line in listed.output.splitlines() for cell in line.split("│"))
     assert "Added co-author" in added.output
     assert "Co-author removed" in removed.output
     get.assert_called_once_with("/agents/agent-1/co-authors")

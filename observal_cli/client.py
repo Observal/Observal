@@ -330,6 +330,25 @@ def get(path: str, params: dict | None = None) -> dict:
         _handle_connect()
 
 
+def get_text(path: str, params: dict | None = None, *, content_type: str | None = None) -> str:
+    """GET a text response, optionally enforcing its media type."""
+    optic.trace("path={}, params={}, content_type={}", path, params, content_type)
+    base, headers = _client()
+    try:
+        response = _request_with_retry("get", f"{base}{path}", headers, params=params)
+        actual_content_type = response.headers.get("content-type", "").lower()
+        if content_type and content_type.lower() not in actual_content_type:
+            rprint(f"[red]Unexpected response content type:[/red] {actual_content_type or 'missing'}")
+            raise typer.Exit(1)
+        return response.text
+    except httpx.HTTPStatusError as exc:
+        _handle_error(exc, path)
+    except httpx.ReadTimeout:
+        _handle_timeout(path)
+    except httpx.ConnectError:
+        _handle_connect()
+
+
 def get_with_headers(path: str, params: dict | None = None) -> tuple[dict, dict[str, str]]:
     """Like ``get()``, but also returns the response headers (lowercased keys).
 

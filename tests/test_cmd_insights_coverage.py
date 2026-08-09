@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, call
 
 import pytest
 import typer
+from typer.main import get_command
 from typer.testing import CliRunner
 
 from observal_cli import cmd_insights as insights
@@ -773,7 +774,4 @@ def test_typer_validation_rejects_bad_arguments_before_any_side_effect(cli, argu
 
 
 def test_insights_app_registers_only_current_commands():
-    result = runner.invoke(insights.insights_app, ["--help"])
-
-    assert result.exit_code == 0, result.output
-    assert all(command in result.output for command in ("generate", "list", "show"))
+    assert sorted(get_command(insights.insights_app).commands) == ["generate", "list", "show"]

@@ -171,6 +171,15 @@ class TokenHttpClient:
         return type(self).outcome
 
 
+@pytest.fixture(autouse=True)
+def _reset_token_http_client():
+    TokenHttpClient.outcome = None
+    TokenHttpClient.calls = []
+    yield
+    TokenHttpClient.outcome = None
+    TokenHttpClient.calls = []
+
+
 def _e2e_session(**overrides):
     session = {
         "session_id": "session_123",

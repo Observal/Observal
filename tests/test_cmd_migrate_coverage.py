@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Observal Contributors
 # SPDX-License-Identifier: Apache-2.0
 
 """Behavioral coverage for the migration CLI boundary."""
@@ -289,10 +289,13 @@ def test_export_surfaces_parent_creation_failure(tmp_path, monkeypatch, cli):
     export_pg = AsyncMock()
     monkeypatch.setattr(migrate, "export_pg", export_pg)
 
-    with pytest.raises(FileExistsError):
+    with pytest.raises(typer.Exit) as exc:
         migrate.export_cmd("postgresql://source.example/observal", str(parent_file / "archive.tar.gz"))
 
+    _assert_exit_one(exc)
     export_pg.assert_not_awaited()
+    assert "Cannot create output directory" in cli.text()
+    assert str(parent_file) in cli.text()
 
 
 def test_import_validates_archive_delegates_and_renders_accounting(tmp_path, monkeypatch, cli):

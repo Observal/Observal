@@ -809,18 +809,18 @@ def test_registry_direct_install_writes_content_script_and_project_links(tmp_pat
     link.assert_called_once_with(project, expected, "review-helper")
 
 
-def test_registry_direct_install_validates_content_and_script_path(tmp_path, monkeypatch, capsys):
+def test_registry_direct_install_rejects_missing_content(tmp_path, capsys):
     destination = tmp_path / "direct"
-    assert (
-        skill.install_skill_registry_direct(
-            name="empty",
-            skill_md_content=None,
-            dest=destination,
-        )
-        is None
-    )
+
+    result = skill.install_skill_registry_direct(name="empty", skill_md_content=None, dest=destination)
+
+    assert result is None
     assert not destination.exists()
     assert "No SKILL.md content" in capsys.readouterr().out
+
+
+def test_registry_direct_install_rejects_unsafe_script_filename(tmp_path, capsys):
+    destination = tmp_path / "direct"
 
     result = skill.install_skill_registry_direct(
         name="unsafe-script",
@@ -829,44 +829,53 @@ def test_registry_direct_install_validates_content_and_script_path(tmp_path, mon
         script_filename="../escape.sh",
         dest=destination,
     )
+
     assert result == destination
     assert (destination / "SKILL.md").exists()
     assert not (destination / "escape.sh").exists()
     assert "Unsafe script filename" in capsys.readouterr().out
 
-    user_destination = tmp_path / "user-direct"
-    user_dest = Mock(return_value=user_destination)
+
+def test_registry_direct_install_uses_user_destination(tmp_path, monkeypatch):
+    destination = tmp_path / "user-direct"
+    user_dest = Mock(return_value=destination)
     monkeypatch.setattr(skill, "_user_skill_dest", user_dest)
-    assert (
-        skill.install_skill_registry_direct(
-            name="User Direct",
-            skill_md_content="# User",
-            ide="pi",
-        )
-        == user_destination
+
+    result = skill.install_skill_registry_direct(
+        name="User Direct",
+        skill_md_content="# User",
+        ide="pi",
     )
+
+    assert result == destination
     user_dest.assert_called_once_with("pi", "user-direct")
 
-    plain_script_destination = tmp_path / "plain-script"
+
+def test_registry_direct_install_keeps_plain_scripts_non_executable(tmp_path):
+    destination = tmp_path / "plain-script"
+
     skill.install_skill_registry_direct(
         name="Plain Script",
         skill_md_content="# Plain",
         script_content="data",
         script_filename="notes.txt",
-        dest=plain_script_destination,
+        dest=destination,
     )
-    assert not os.stat(plain_script_destination / "scripts/notes.txt").st_mode & 0o111
 
+    assert not os.stat(destination / "scripts/notes.txt").st_mode & 0o111
+
+
+def test_registry_direct_install_rejects_unsafe_skill_name(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(skill, "_sanitize_name", Mock(return_value="../escape"))
-    assert (
-        skill.install_skill_registry_direct(
-            name="ignored",
-            skill_md_content="# Unsafe",
-            scope="project",
-            cwd=tmp_path / "project",
-        )
-        is None
+
+    result = skill.install_skill_registry_direct(
+        name="ignored",
+        skill_md_content="# Unsafe",
+        scope="project",
+        cwd=tmp_path / "project",
     )
+
+    assert result is None
     assert "Unsafe skill name" in capsys.readouterr().out
 
 
@@ -1155,7 +1164,7 @@ def test_skill_co_author_commands_render_and_preserve_http_boundaries(monkeypatc
 
     assert all(result.exit_code == 0 for result in (listed, empty, email_added, username_added, removed))
     assert "dev@example.com" in listed.output
-    assert "no" in listed.output
+    assert any(cell.strip() == "no" for line in listed.output.splitlines() for cell in line.split("│"))
     assert "No co-authors" in empty.output
     assert "Added co-author" in email_added.output
     assert "Co-author removed" in removed.output

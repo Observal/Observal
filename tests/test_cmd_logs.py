@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Observal Contributors
 # SPDX-License-Identifier: Apache-2.0
 
 """Behavioral coverage for the local and remote log viewer."""
@@ -139,7 +139,7 @@ def _allow_remote(boundaries: SimpleNamespace, response: StreamResponse) -> None
     boundaries.stream.return_value = response
 
 
-def _assert_remote_request(boundaries: SimpleNamespace, *, level: str, params: dict[str, str]) -> None:
+def _assert_remote_request(boundaries: SimpleNamespace, *, params: dict[str, str]) -> None:
     boundaries.stream.assert_called_once_with(
         "GET",
         "https://registry.example.test/api/v1/admin/logs/stream",
@@ -249,7 +249,7 @@ def test_remote_stream_builds_exact_authenticated_request_and_finishes_cleanly(
     )
 
     assert result is None
-    _assert_remote_request(boundaries, level=level, params=expected_params)
+    _assert_remote_request(boundaries, params=expected_params)
     assert response.enter_count == 1
     assert response.iter_count == 1
     assert response.exits == [(None, None)]

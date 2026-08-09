@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Observal Contributors
 # SPDX-License-Identifier: Apache-2.0
 
 """Behavioral tests for the operations, admin, trace, and self CLI commands."""
@@ -55,7 +55,7 @@ def cli(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     monkeypatch.setattr(ops, "password_input", blocked("password_input"))
     monkeypatch.setattr(ops.typer, "confirm", blocked("confirm"))
     monkeypatch.setattr(ops.time, "sleep", blocked("sleep"))
-    for method in ("get", "post", "put", "delete"):
+    for method in ("get", "get_text", "post", "put", "delete"):
         monkeypatch.setattr(ops.client, method, blocked(f"client.{method}"))
 
     return SimpleNamespace(
@@ -71,6 +71,13 @@ def render(renderable: object) -> str:
     stream = StringIO()
     Console(file=stream, color_system=None, width=180).print(renderable)
     return stream.getvalue()
+
+
+def raises(error: BaseException):
+    def fail(*_args, **_kwargs):
+        raise error
+
+    return fail
 
 
 def test_review_list_filters_caches_and_renders_rows(cli, monkeypatch):
@@ -264,7 +271,7 @@ def test_telemetry_status_tolerates_unavailable_local_stats(cli, monkeypatch):
     from observal_cli import telemetry_buffer
 
     monkeypatch.setattr(ops.client, "get", lambda path: {})
-    monkeypatch.setattr(telemetry_buffer, "stats", lambda: (_ for _ in ()).throw(OSError("unavailable")))
+    monkeypatch.setattr(telemetry_buffer, "stats", raises(OSError("unavailable")))
 
     ops.telemetry_status()
 
@@ -357,7 +364,7 @@ def test_metrics_renders_mcp_metrics_and_supports_json(cli, monkeypatch):
 
 def test_metrics_watch_refreshes_until_interrupted(cli, monkeypatch):
     monkeypatch.setattr(ops.client, "get", lambda path: {"total_calls": 1})
-    monkeypatch.setattr(ops.time, "sleep", lambda seconds: (_ for _ in ()).throw(KeyboardInterrupt()))
+    monkeypatch.setattr(ops.time, "sleep", raises(KeyboardInterrupt()))
 
     ops._metrics_impl("mcp-id", "mcp", "table", True)
 
@@ -421,7 +428,7 @@ def test_resolve_listing_id_looks_up_non_uuid_names(cli, monkeypatch, listing_ty
 
 
 def test_resolve_listing_id_reports_lookup_failures(cli, monkeypatch):
-    monkeypatch.setattr(ops.client, "get", lambda path: (_ for _ in ()).throw(RuntimeError("missing")))
+    monkeypatch.setattr(ops.client, "get", raises(RuntimeError("missing")))
 
     with pytest.raises(typer.Exit) as exc_info:
         ops._resolve_listing_id("missing", "prompt")
@@ -945,21 +952,30 @@ def test_admin_audit_log_supports_json_and_empty_results(cli, monkeypatch):
 
 
 def test_admin_audit_log_export_prints_or_writes_csv(cli, monkeypatch):
-    responses = iter(["a,b\n1,2\n", {"fallback": True}])
+    responses = iter(["a,b\n1,2\n", "a,b\n3,4\n"])
     calls = []
     writes = []
-    monkeypatch.setattr(ops.client, "get", lambda path: calls.append(path) or next(responses))
-    monkeypatch.setattr(Path, "write_text", lambda self, data: writes.append((str(self), data)))
+
+    def get_text(path, *, content_type):
+        calls.append((path, content_type))
+        return next(responses)
+
+    monkeypatch.setattr(ops.client, "get_text", get_text)
+    monkeypatch.setattr(
+        Path,
+        "write_text",
+        lambda self, data, *args, **kwargs: writes.append((str(self), data)),
+    )
 
     ops.admin_audit_log_export("login", "alice@example.test", None)
     ops.admin_audit_log_export(None, None, "audit.csv")
 
     assert calls == [
-        "/api/v1/admin/audit-log/export?action=login&actor_email=alice%40example.test",
-        "/api/v1/admin/audit-log/export",
+        ("/api/v1/admin/audit-log/export?action=login&actor_email=alice%40example.test", "text/csv"),
+        ("/api/v1/admin/audit-log/export", "text/csv"),
     ]
     assert "a,b\n1,2\n" in cli.lines
-    assert writes == [("audit.csv", "{'fallback': True}")]
+    assert writes == [("audit.csv", "a,b\n3,4\n")]
     assert "Audit log exported to audit.csv" in cli.text()
 
 
@@ -1310,7 +1326,7 @@ def test_upgrade_reports_lock_contention(cli, monkeypatch):
 
     monkeypatch.setattr(version_check, "get_current_version", lambda: "1.0.0")
     monkeypatch.setattr(install_detector, "detect", lambda: install_info())
-    monkeypatch.setattr(upgrade_lock, "acquire_lock", lambda scope: (_ for _ in ()).throw(UpgradeLockError("busy")))
+    monkeypatch.setattr(upgrade_lock, "acquire_lock", raises(UpgradeLockError("busy")))
 
     with pytest.raises(typer.Exit) as exc_info:
         ops.upgrade("1.1.0", False, True)
@@ -1424,7 +1440,7 @@ def test_downgrade_reports_lock_contention(cli, monkeypatch):
 
     monkeypatch.setattr(version_check, "get_current_version", lambda: "2.0.0")
     monkeypatch.setattr(install_detector, "detect", lambda: install_info())
-    monkeypatch.setattr(upgrade_lock, "acquire_lock", lambda scope: (_ for _ in ()).throw(UpgradeLockError("busy")))
+    monkeypatch.setattr(upgrade_lock, "acquire_lock", raises(UpgradeLockError("busy")))
 
     with pytest.raises(typer.Exit) as exc_info:
         ops.downgrade("1.10.4", False, True)

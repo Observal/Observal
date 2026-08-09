@@ -172,7 +172,11 @@ def export_cmd(
         rprint("[dim]  Choose a different path or remove the existing file.[/dim]")
         raise typer.Exit(1)
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        rprint(f"[red]Cannot create output directory:[/red] {output_path.parent}")
+        raise typer.Exit(1) from exc
 
     rprint(f"[bold]Exporting to:[/bold] {output_path}")
 

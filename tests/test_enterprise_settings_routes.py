@@ -198,7 +198,9 @@ async def test_system_warnings_returns_exact_weak_key_and_demo_warnings(monkeypa
         {
             "level": "warning",
             "code": "demo_accounts_active",
-            "message": "3 demo account(s) are still active. Remove them or change their passwords before going to production.",
+            "message": (
+                "3 demo account(s) are still active. Remove them or change their passwords before going to production."
+            ),
         },
     ]
 
@@ -851,7 +853,11 @@ async def test_purge_database_failure_propagates_without_commit_or_success_event
         (
             "model identifier is invalid",
             "bedrock/us.anthropic.claude",
-            "Model ID is not available in your region. Ensure the Base URL region matches where the model is enabled. Cross-region models use prefixes like us./eu./apac. (e.g., bedrock/us.anthropic.claude-sonnet-4-6-v1).",
+            (
+                "Model ID is not available in your region. Ensure the Base URL region matches where the model is "
+                "enabled. Cross-region models use prefixes like us./eu./apac. "
+                "(e.g., bedrock/us.anthropic.claude-sonnet-4-6-v1)."
+            ),
         ),
         ("model_not_found", "openai/missing", "Model ID not recognized. Verify the format: provider/model-name"),
         ("authentication failed", "anthropic/claude", "Invalid API key. Get one at console.anthropic.com"),

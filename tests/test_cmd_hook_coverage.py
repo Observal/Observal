@@ -918,7 +918,7 @@ def test_hook_co_author_commands_render_and_preserve_http_boundaries(monkeypatch
 
     assert all(result.exit_code == 0 for result in (listed, empty, added, removed))
     assert "dev@example.com" in listed.output
-    assert "no" in listed.output
+    assert any(cell.strip() == "no" for line in listed.output.splitlines() for cell in line.split("│"))
     assert "No co-authors" in empty.output
     assert "Added co-author" in added.output
     assert "Co-author removed" in removed.output

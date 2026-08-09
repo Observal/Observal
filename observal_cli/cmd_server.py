@@ -583,7 +583,12 @@ def server_upgrade(
         if not healthy:
             console.print("[red]Health check failed! Rolling back...[/red]")
             _update_env_version(compose_dir, current)
-            subprocess.run(["docker", "compose", "up", "-d"], cwd=compose_dir, capture_output=True)
+            subprocess.run(
+                ["docker", "compose", "up", "-d"],
+                cwd=compose_dir,
+                capture_output=True,
+                timeout=300,
+            )
             raise typer.Exit(1)
 
         console.print(f"[green]✓ Upgraded to v{target}[/green]")

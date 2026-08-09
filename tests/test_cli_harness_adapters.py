@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -450,10 +449,6 @@ class TestOpenCodeAdapter:
     def _records(items):
         return [vars(item) for item in items]
 
-    @staticmethod
-    def _fake_agent(**fields):
-        return SimpleNamespace(**fields)
-
     def test_adapter_owned_metadata_and_capability_gates(self, tmp_path, monkeypatch):
         from observal_cli.harness.base import _check_feature
         from observal_cli.harness.opencode import OpenCodeAdapter
@@ -510,7 +505,6 @@ class TestOpenCodeAdapter:
         import observal_cli.harness.opencode as opencode_module
 
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
-        monkeypatch.setattr(opencode_module, "DiscoveredAgent", self._fake_agent)
         root = tmp_path / ".config" / "opencode"
         root.mkdir(parents=True)
         (root / "opencode.jsonc").write_text(
@@ -602,7 +596,13 @@ class TestOpenCodeAdapter:
             }
         ]
         assert self._records(result.agents) == [
-            {"name": "reviewer", "description": "Reviews code", "source": "opencode:global"}
+            {
+                "name": "reviewer",
+                "description": "Reviews code",
+                "model_name": "",
+                "prompt": "---\ndescription: Reviews code\n---\nReview carefully.",
+                "source_file": str(agent),
+            }
         ]
         assert self._records(result.hooks) == [
             {
@@ -619,7 +619,6 @@ class TestOpenCodeAdapter:
     def test_scan_project_uses_root_config_and_project_component_directory(self, tmp_path, monkeypatch):
         import observal_cli.harness.opencode as opencode_module
 
-        monkeypatch.setattr(opencode_module, "DiscoveredAgent", self._fake_agent)
         (tmp_path / "opencode.json").write_text(
             json.dumps({"mcp": {"project-server": {"command": "python", "args": ["server.py"]}}})
         )
@@ -658,7 +657,13 @@ class TestOpenCodeAdapter:
             }
         ]
         assert self._records(result.agents) == [
-            {"name": "builder", "description": "Builds projects", "source": "opencode:project"}
+            {
+                "name": "builder",
+                "description": "Builds projects",
+                "model_name": "",
+                "prompt": "---\ndescription: Builds projects\n---\n",
+                "source_file": str(agent),
+            }
         ]
         assert [(hook.name, hook.source) for hook in result.hooks] == [("project-plugin", "opencode:project")]
 
@@ -769,7 +774,6 @@ class TestOpenCodeAdapter:
     def test_component_and_config_symlinks_are_followed(self, tmp_path, monkeypatch):
         import observal_cli.harness.opencode as opencode_module
 
-        monkeypatch.setattr(opencode_module, "DiscoveredAgent", self._fake_agent)
         root = tmp_path / ".config" / "opencode"
         root.mkdir(parents=True)
         targets = tmp_path / "targets"
@@ -809,15 +813,23 @@ class TestOpenCodeAdapter:
         assert [item.name for item in result.hooks] == ["linked-plugin"]
         assert adapter.detect_hooks(root) == "installed"
 
-    def test_agent_discovery_exposes_shared_record_contract_mismatch(self, tmp_path):
+    def test_agent_discovery_returns_the_shared_record_contract(self, tmp_path):
         from observal_cli.harness.opencode import OpenCodeAdapter
 
         agent = tmp_path / ".opencode" / "agents" / "reviewer.md"
         agent.parent.mkdir(parents=True)
-        agent.write_text("---\ndescription: Reviews code\n---\n")
+        content = "---\ndescription: Reviews code\nmodel: claude-sonnet\n---\nReview carefully."
+        agent.write_text(content)
 
-        with pytest.raises(TypeError, match="unexpected keyword argument 'source'"):
-            OpenCodeAdapter().scan_project(tmp_path)
+        assert self._records(OpenCodeAdapter().scan_project(tmp_path).agents) == [
+            {
+                "name": "reviewer",
+                "description": "Reviews code",
+                "model_name": "claude-sonnet",
+                "prompt": content,
+                "source_file": str(agent),
+            }
+        ]
 
     def test_component_read_errors_are_isolated(self, tmp_path, monkeypatch):
         import observal_cli.harness.opencode as opencode_module
@@ -839,7 +851,6 @@ class TestOpenCodeAdapter:
             return original_read_text(path, *args, **kwargs)
 
         monkeypatch.setattr(Path, "read_text", raise_for_components)
-        monkeypatch.setattr(opencode_module, "DiscoveredAgent", self._fake_agent)
         adapter = opencode_module.OpenCodeAdapter()
 
         assert adapter._parse_opencode_config(config, "scope").mcps == []

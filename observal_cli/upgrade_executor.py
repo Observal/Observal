@@ -56,7 +56,7 @@ def execute(install_info: InstallInfo, target_version: str, direction: str, spin
 
 
 def _install_via_uv(target_version: str, direction: str, spinner) -> None:
-    with spinner(f"{direction.capitalize()}ing to v{target_version}..."):
+    with spinner(f"{direction.removesuffix('e').capitalize()}ing to v{target_version}..."):
         result = subprocess.run(
             ["uv", "tool", "install", f"observal-cli=={target_version}", "--force"],
             capture_output=True,
@@ -69,7 +69,7 @@ def _install_via_uv(target_version: str, direction: str, spinner) -> None:
 
 
 def _install_via_pipx(target_version: str, direction: str, spinner) -> None:
-    with spinner(f"{direction.capitalize()}ing to v{target_version}..."):
+    with spinner(f"{direction.removesuffix('e').capitalize()}ing to v{target_version}..."):
         result = subprocess.run(
             ["pipx", "install", f"observal-cli=={target_version}", "--force"],
             capture_output=True,
@@ -84,7 +84,7 @@ def _install_via_pipx(target_version: str, direction: str, spinner) -> None:
 def _install_via_pip(target_version: str, direction: str, spinner) -> None:
     # Uses sys.executable to target the current Python environment. If the CLI
     # is installed via uv or pipx, those paths are used instead.
-    with spinner(f"{direction.capitalize()}ing to v{target_version}..."):
+    with spinner(f"{direction.removesuffix('e').capitalize()}ing to v{target_version}..."):
         result = subprocess.run(
             [sys.executable, "-m", "pip", "install", f"observal-cli=={target_version}", "--quiet"],
             capture_output=True,

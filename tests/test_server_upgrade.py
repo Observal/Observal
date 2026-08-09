@@ -942,6 +942,7 @@ class TestServerUpgrade:
             ["docker", "compose", "up", "-d"],
             cwd=prepared.compose,
             capture_output=True,
+            timeout=300,
         )
         assert (prepared.compose / ".env").read_text() == "OBSERVAL_VERSION=1.0.0\n"
         prepared.release.assert_called_once_with(isolated_boundaries.tmp / "server.lock")

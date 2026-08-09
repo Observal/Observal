@@ -573,41 +573,26 @@ async def test_update_role_commits_refreshes_and_emits_exact_event(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("request_role", "user_id", "actor", "database", "status", "detail", "query_count"),
+    ("request_role", "user_id", "actor_role", "status", "detail", "query_count"),
     [
         (
             "operator",
             TARGET_ID,
-            _actor(),
-            _db(),
+            UserRole.admin,
             422,
             "Invalid role. Must be one of: ['super_admin', 'admin', 'reviewer', 'user']",
             0,
         ),
-        (
-            "super_admin",
-            TARGET_ID,
-            _actor(),
-            _db(),
-            403,
-            "Cannot assign a role higher than your own",
-            0,
-        ),
-        (
-            "reviewer",
-            ADMIN_ID,
-            _actor(),
-            _db(),
-            400,
-            "Cannot change your own role",
-            0,
-        ),
-        ("user", TARGET_ID, _actor(), _db(_one(None)), 404, "User not found", 1),
+        ("super_admin", TARGET_ID, UserRole.admin, 403, "Cannot assign a role higher than your own", 0),
+        ("reviewer", ADMIN_ID, UserRole.admin, 400, "Cannot change your own role", 0),
+        ("user", TARGET_ID, UserRole.admin, 404, "User not found", 1),
     ],
 )
 async def test_update_role_validation_failures_are_exact_and_side_effect_free(
-    monkeypatch, request_role, user_id, actor, database, status, detail, query_count
+    monkeypatch, request_role, user_id, actor_role, status, detail, query_count
 ):
+    actor = _actor(actor_role)
+    database = _db(_one(None)) if query_count else _db()
     emit = AsyncMock()
     monkeypatch.setattr(users, "emit_security_event", emit)
 
@@ -977,15 +962,16 @@ async def test_reset_password_event_failure_is_after_password_persistence(monkey
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("target", "admin_count"),
+    ("target_role", "admin_count"),
     [
-        (_target(role=UserRole.user), MagicMock()),
-        (_target(role=UserRole.admin), 2),
-        (_target(role=UserRole.super_admin), None),
+        (UserRole.user, None),
+        (UserRole.admin, 2),
+        (UserRole.super_admin, None),
     ],
 )
-async def test_delete_user_success_orders_event_before_delete_and_commit(monkeypatch, target, admin_count):
+async def test_delete_user_success_orders_event_before_delete_and_commit(monkeypatch, target_role, admin_count):
     order = []
+    target = _target(role=target_role)
     database = _db(_one(target))
     if target.role in (UserRole.admin, UserRole.super_admin):
         database.scalar.return_value = admin_count
