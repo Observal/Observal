@@ -835,25 +835,29 @@ def test_fetch_endpoints_returns_discovery_document(monkeypatch: pytest.MonkeyPa
     get.assert_called_once_with(f"{SERVER_URL}/api/v1/config/endpoints", timeout=5)
 
 
-@pytest.mark.parametrize("result", [_response(404, {}), RuntimeError("offline")])
-def test_fetch_endpoints_fails_closed(
-    result: object,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    get = MagicMock(side_effect=result if isinstance(result, Exception) else None)
-    if not isinstance(result, Exception):
-        get.return_value = result
+def test_fetch_endpoints_fails_closed_for_404(monkeypatch: pytest.MonkeyPatch) -> None:
+    get = MagicMock(return_value=_response(404, {}))
+    monkeypatch.setattr(auth.httpx, "get", get)
+
+    assert auth._fetch_endpoints(SERVER_URL) == {}
+
+
+def test_fetch_endpoints_fails_closed_when_offline(monkeypatch: pytest.MonkeyPatch) -> None:
+    get = MagicMock(side_effect=RuntimeError("offline"))
     monkeypatch.setattr(auth.httpx, "get", get)
 
     assert auth._fetch_endpoints(SERVER_URL) == {}
 
 
 def test_password_login_saves_tokens_and_profile(monkeypatch: pytest.MonkeyPatch, printed: list[str]) -> None:
-    post = MagicMock(return_value=_response(200, _login_payload()))
+    response = MagicMock()
+    response.json.return_value = _login_payload()
+    post = MagicMock(return_value=response)
     save = MagicMock()
+    fetch_endpoints = MagicMock(return_value={"web": "https://app.example.test"})
     setup = MagicMock()
     monkeypatch.setattr(auth.httpx, "post", post)
-    monkeypatch.setattr(auth, "_fetch_endpoints", lambda _url: {"web": "https://app.example.test"})
+    monkeypatch.setattr(auth, "_fetch_endpoints", fetch_endpoints)
     monkeypatch.setattr(auth.config, "save", save)
     monkeypatch.setattr(auth, "_post_login_setup", setup)
 
@@ -864,6 +868,8 @@ def test_password_login_saves_tokens_and_profile(monkeypatch: pytest.MonkeyPatch
         json={"email": "ada", "password": VALID_PASSWORD},
         timeout=30,
     )
+    response.raise_for_status.assert_called_once_with()
+    fetch_endpoints.assert_called_once_with(SERVER_URL)
     save.assert_called_once_with(
         {
             "server_url": SERVER_URL,
