@@ -32,6 +32,12 @@ ACCESS_TOKEN = "test-access-token-value"
 REFRESH_TOKEN = "test-refresh-token-value"
 VALID_PASSWORD = "ValidPassword1!"
 _MISSING = object()
+_HARNESS_DIRS = {
+    "_configure_cursor": ".cursor",
+    "_configure_kiro": ".kiro",
+    "_configure_codex": ".codex",
+    "_configure_claude_code": ".claude",
+}
 
 
 def _response(
@@ -44,6 +50,25 @@ def _response(
     if data is not _MISSING:
         return httpx.Response(status_code, json=data, request=request)
     return httpx.Response(status_code, text=text or "", request=request)
+
+
+def _responder(result: object) -> MagicMock:
+    """Return a mock that raises exceptions and returns ordinary responses."""
+    if isinstance(result, Exception):
+        return MagicMock(side_effect=result)
+    return MagicMock(return_value=result)
+
+
+def _install_harness(function_name: str, home: Path) -> None:
+    directory = _HARNESS_DIRS.get(function_name)
+    if directory:
+        (home / directory).mkdir(exist_ok=True)
+    if function_name == "_configure_copilot":
+        (home / ".vscode" / "extensions" / "github.copilot-1.0.0").mkdir(parents=True)
+    if function_name == "_configure_opencode":
+        binary = home / ".opencode" / "bin" / "opencode"
+        binary.parent.mkdir(parents=True)
+        binary.write_text("")
 
 
 def _user(**overrides: str) -> dict[str, str]:
@@ -198,9 +223,7 @@ def test_version_check_allows_unavailable_or_compatible_server(
     import observal_cli.version_check as version_check
 
     monkeypatch.setattr(version_check, "get_current_version", lambda: "1.2.3")
-    get = MagicMock(side_effect=server_response if isinstance(server_response, Exception) else None)
-    if not isinstance(server_response, Exception):
-        get.return_value = server_response
+    get = _responder(server_response)
     monkeypatch.setattr(auth.httpx, "get", get)
 
     auth._ensure_cli_matches_server(SERVER_URL)
@@ -624,7 +647,14 @@ def test_whoami_json_delegates_to_safe_json_renderer(monkeypatch: pytest.MonkeyP
 
 @pytest.mark.parametrize(
     ("ok", "latency", "expected"),
-    [(True, 42.0, "[green]ok"), (True, 500.0, "[yellow]ok"), (True, 1500.0, "[red]ok"), (False, 0.0, "unreachable")],
+    [
+        (True, 42.0, "[green]ok"),
+        (True, 200.0, "[yellow]ok"),
+        (True, 500.0, "[yellow]ok"),
+        (True, 1000.0, "[red]ok"),
+        (True, 1500.0, "[red]ok"),
+        (False, 0.0, "unreachable"),
+    ],
 )
 def test_status_reports_health_and_auth_state(
     ok: bool,
@@ -1540,21 +1570,7 @@ def test_harness_configurators_respect_decline(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    directory = {
-        "_configure_cursor": ".cursor",
-        "_configure_kiro": ".kiro",
-        "_configure_codex": ".codex",
-        "_configure_claude_code": ".claude",
-    }.get(function_name)
-    if directory:
-        (tmp_path / directory).mkdir()
-    if function_name == "_configure_copilot":
-        extension = tmp_path / ".vscode" / "extensions" / "github.copilot-1.0.0"
-        extension.mkdir(parents=True)
-    if function_name == "_configure_opencode":
-        binary = tmp_path / ".opencode" / "bin" / "opencode"
-        binary.parent.mkdir(parents=True)
-        binary.write_text("")
+    _install_harness(function_name, tmp_path)
 
     patch_doctor = MagicMock()
     monkeypatch.setattr(auth.Path, "home", lambda: tmp_path)
@@ -1714,12 +1730,7 @@ def test_silent_harness_configurators_contain_prompt_errors(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    if function_name == "_configure_copilot":
-        (tmp_path / ".vscode" / "extensions" / "github.copilot-1.0.0").mkdir(parents=True)
-    if function_name == "_configure_opencode":
-        binary = tmp_path / ".opencode" / "bin" / "opencode"
-        binary.parent.mkdir(parents=True)
-        binary.write_text("")
+    _install_harness(function_name, tmp_path)
     monkeypatch.setattr(auth.Path, "home", lambda: tmp_path)
     monkeypatch.setattr(
         auth.shutil,
@@ -1761,9 +1772,7 @@ def test_fetch_hooks_token_uses_authenticated_endpoint_with_safe_fallback(
     expected: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    post = MagicMock(side_effect=result if isinstance(result, Exception) else None)
-    if not isinstance(result, Exception):
-        post.return_value = result
+    post = _responder(result)
     monkeypatch.setattr(auth.httpx, "post", post)
 
     assert auth._fetch_hooks_token(f"{SERVER_URL}/", ACCESS_TOKEN) == expected
