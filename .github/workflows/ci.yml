@@ -192,7 +192,10 @@ jobs:
         with:
           files: observal-server/coverage.xml
           token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
+          slug: Observal/Observal
+          disable_search: true
+          # Fork pull requests cannot access repository secrets, so Codecov authenticates those tokenlessly.
+          fail_ci_if_error: ${{ github.event_name != 'pull_request' || !github.event.pull_request.head.repo.fork }}
 
 # ── Job 4: Next.js lint + typecheck ───────────────────────────────────────────
   web-lint:
