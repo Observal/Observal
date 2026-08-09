@@ -1,0 +1,855 @@
+# SPDX-FileCopyrightText: 2026 Observal Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+"""Behavioral coverage for the teamspace CLI boundary."""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+from unittest.mock import Mock, call
+
+import pytest
+import typer
+from typer.testing import CliRunner
+
+import observal_cli.cmd_team as team
+
+TEAM_ID = "11111111-1111-1111-1111-111111111111"
+OTHER_TEAM_ID = "22222222-2222-2222-2222-222222222222"
+INVITE_ID = "33333333-3333-3333-3333-333333333333"
+REQUEST_ID = "44444444-4444-4444-4444-444444444444"
+
+runner = CliRunner()
+
+
+class FakeTable:
+    """Capture table structure without depending on terminal width or color."""
+
+    def __init__(self, *, title: str):
+        self.title = title
+        self.columns: list[tuple[str, dict]] = []
+        self.rows: list[tuple[str, ...]] = []
+
+    def add_column(self, name: str, **options) -> None:
+        self.columns.append((name, options))
+
+    def add_row(self, *values: str) -> None:
+        self.rows.append(values)
+
+
+def _blocked(name: str) -> Mock:
+    def fail(*args, **kwargs):
+        raise AssertionError(f"unmocked boundary: {name}, args={args}, kwargs={kwargs}")
+
+    return Mock(side_effect=fail)
+
+
+def _returns(boundary: Mock, value) -> Mock:
+    boundary.side_effect = None
+    boundary.return_value = value
+    return boundary
+
+
+@pytest.fixture
+def cli(monkeypatch: pytest.MonkeyPatch):
+    """Mock client, config, prompt, and rendering boundaries."""
+    rendered: list[object] = []
+    json_values: list[object] = []
+    tables: list[FakeTable] = []
+
+    client_boundaries = {
+        name: _blocked(f"client.{name}") for name in ("get", "post", "patch", "delete", "resolve_team_id")
+    }
+    for name, boundary in client_boundaries.items():
+        monkeypatch.setattr(team.client, name, boundary)
+
+    config_boundaries = {name: _blocked(f"config.{name}") for name in ("load", "get_or_exit", "resolve_alias")}
+    for name, boundary in config_boundaries.items():
+        monkeypatch.setattr(team.client.config, name, boundary)
+
+    confirm = _blocked("typer.confirm")
+    monkeypatch.setattr(team.typer, "confirm", confirm)
+    monkeypatch.setattr(team, "rprint", lambda value: rendered.append(value))
+    monkeypatch.setattr(team, "output_json", json_values.append)
+
+    def make_table(*, title: str) -> FakeTable:
+        table = FakeTable(title=title)
+        tables.append(table)
+        return table
+
+    monkeypatch.setattr(team, "Table", make_table)
+
+    context = SimpleNamespace(
+        client=SimpleNamespace(**client_boundaries),
+        config=SimpleNamespace(**config_boundaries),
+        confirm=confirm,
+        rendered=rendered,
+        json=json_values,
+        tables=tables,
+    )
+    yield context
+
+    for boundary in config_boundaries.values():
+        boundary.assert_not_called()
+
+
+def _resolve(cli, team_id: str = TEAM_ID) -> Mock:
+    return _returns(cli.client.resolve_team_id, team_id)
+
+
+def test_list_table_renders_personal_and_public_teamspaces_exactly(cli):
+    rows = [
+        {
+            "id": TEAM_ID,
+            "name": "Alice's Teamspace",
+            "handle": "alice-team",
+            "is_personal": True,
+            "role": "owner",
+            "member_count": None,
+        },
+        {
+            "id": OTHER_TEAM_ID,
+            "name": "Platform Tools",
+            "handle": "platform-tools",
+            "is_personal": False,
+            "role": None,
+            "member_count": 0,
+        },
+    ]
+    get = _returns(cli.client.get, rows)
+
+    team.list_teams(output="table", all_teams=False)
+
+    get.assert_called_once_with("/api/v1/teams")
+    assert cli.json == []
+    assert len(cli.tables) == 1
+    table = cli.tables[0]
+    assert table.title == "Teamspaces"
+    assert table.columns == [
+        ("name", {"style": "cyan"}),
+        ("handle", {"style": "green"}),
+        ("role", {"style": "dim"}),
+        ("members", {"style": "dim"}),
+    ]
+    assert table.rows == [
+        ("Alice's Teamspace", "alice-team", "owner", "-"),
+        ("Platform Tools", "platform-tools", "-", "0"),
+    ]
+    assert cli.rendered == [table]
+
+
+def test_list_all_json_and_empty_output_use_exact_boundaries(cli):
+    rows = [{"id": TEAM_ID, "name": "Platform", "handle": "platform"}]
+    get = _returns(cli.client.get, rows)
+
+    team.list_teams(output="json", all_teams=True)
+
+    get.assert_called_once_with("/api/v1/teams/all")
+    assert cli.json == [rows]
+    assert cli.rendered == []
+    assert cli.tables == []
+
+    get.reset_mock()
+    get.return_value = []
+    cli.json.clear()
+    team.list_teams(output="table", all_teams=False)
+
+    get.assert_called_once_with("/api/v1/teams")
+    assert cli.json == []
+    assert cli.rendered == ["[dim]No teamspaces.[/dim]"]
+    assert cli.tables == []
+
+
+def test_show_handle_renders_detail_description_and_member_fallbacks(cli):
+    detail = {
+        "id": TEAM_ID,
+        "name": "Platform Tools",
+        "handle": "platform-tools",
+        "description": "Internal tooling",
+        "role": "owner",
+    }
+    members = [
+        {"id": "user-1", "username": "alice", "email": "alice@example.test", "role": "owner"},
+        {"id": "user-2", "username": None, "email": "bob@example.test", "role": "reviewer"},
+    ]
+    resolve = _resolve(cli)
+    get = cli.client.get
+    get.side_effect = [detail, members]
+
+    team.show_team("@Platform-Tools", output="table")
+
+    resolve.assert_called_once_with("@Platform-Tools")
+    assert get.call_args_list == [
+        call(f"/api/v1/teams/{TEAM_ID}"),
+        call(f"/api/v1/teams/{TEAM_ID}/members"),
+    ]
+    table = cli.tables[0]
+    assert table.title == "Members"
+    assert table.columns == [("user", {"style": "cyan"}), ("role", {"style": "green"})]
+    assert table.rows == [("@alice", "owner"), ("bob@example.test", "reviewer")]
+    assert cli.rendered == [
+        "[cyan]Platform Tools[/cyan]  [dim]platform-tools[/dim]",
+        "[dim]Internal tooling[/dim]",
+        "your role: [green]owner[/green]",
+        table,
+    ]
+
+
+def test_show_uuid_json_preserves_personal_teamspace_and_members(cli):
+    detail = {
+        "id": TEAM_ID,
+        "name": "Alice's Teamspace",
+        "handle": "alice-team",
+        "description": None,
+        "visibility": "private",
+        "is_personal": True,
+        "role": None,
+    }
+    members = [{"id": "user-1", "email": "alice@example.test", "username": "alice", "role": "owner"}]
+    resolve = _resolve(cli)
+    get = cli.client.get
+    get.side_effect = [detail, members]
+
+    team.show_team(TEAM_ID, output="json")
+
+    resolve.assert_called_once_with(TEAM_ID)
+    assert get.call_args_list == [
+        call(f"/api/v1/teams/{TEAM_ID}"),
+        call(f"/api/v1/teams/{TEAM_ID}/members"),
+    ]
+    assert cli.json == [{"team": detail, "members": members}]
+    assert cli.rendered == []
+    assert cli.tables == []
+
+
+def test_show_without_description_uses_role_fallback(cli):
+    detail = {"name": "Platform", "handle": "platform", "description": None, "role": None}
+    _resolve(cli)
+    cli.client.get.side_effect = [detail, []]
+
+    team.show_team("platform", output="table")
+
+    table = cli.tables[0]
+    assert table.rows == []
+    assert cli.rendered == [
+        "[cyan]Platform[/cyan]  [dim]platform[/dim]",
+        "your role: [green]-[/green]",
+        table,
+    ]
+
+
+def test_create_sends_full_and_minimal_payloads_with_exact_plain_output(cli):
+    post = _returns(
+        cli.client.post,
+        {
+            "id": TEAM_ID,
+            "name": "Platform Tools",
+            "handle": "platform-tools",
+            "visibility": "private",
+        },
+    )
+
+    team.create_team("Platform Tools", "platform-tools", "Internal tooling", "private")
+
+    post.assert_called_once_with(
+        "/api/v1/teams",
+        json_data={
+            "name": "Platform Tools",
+            "visibility": "private",
+            "handle": "platform-tools",
+            "description": "Internal tooling",
+        },
+    )
+    assert cli.rendered == [
+        f"[green]Created teamspace:[/green] Platform Tools ([dim]platform-tools[/dim]) private id={TEAM_ID}"
+    ]
+
+    post.reset_mock()
+    post.return_value = {"id": OTHER_TEAM_ID, "name": "SRE", "handle": "sre"}
+    cli.rendered.clear()
+    team.create_team("SRE", None, None, "public")
+
+    post.assert_called_once_with("/api/v1/teams", json_data={"name": "SRE", "visibility": "public"})
+    assert cli.rendered == [f"[green]Created teamspace:[/green] SRE ([dim]sre[/dim]) public id={OTHER_TEAM_ID}"]
+
+
+@pytest.mark.parametrize("command", ["create", "visibility"])
+def test_visibility_validation_is_local_and_exact(cli, command):
+    if command == "create":
+        result = runner.invoke(team.team_app, ["create", "Platform", "--visibility", "secret"])
+    else:
+        result = runner.invoke(team.team_app, ["visibility", "platform", "secret"])
+
+    assert result.exit_code == 2
+    assert "Invalid value for visibility: visibility must be 'public' or 'private'" in result.output
+    cli.client.resolve_team_id.assert_not_called()
+    cli.client.post.assert_not_called()
+    cli.client.patch.assert_not_called()
+
+
+def test_visibility_update_resolves_handle_and_patches_exact_payload(cli):
+    resolve = _resolve(cli)
+    patch = _returns(cli.client.patch, {"visibility": "private"})
+
+    team.set_visibility("platform-tools", "private")
+
+    resolve.assert_called_once_with("platform-tools")
+    patch.assert_called_once_with(
+        f"/api/v1/teams/{TEAM_ID}/visibility",
+        json_data={"visibility": "private"},
+    )
+    assert cli.rendered == ["[green]Teamspace is now private.[/green]"]
+
+
+def test_delete_cancellation_stops_before_http_mutation(cli):
+    resolve = _resolve(cli)
+    cli.confirm.side_effect = None
+    cli.confirm.return_value = False
+
+    with pytest.raises(typer.Abort):
+        team.delete_team("platform-tools", yes=False)
+
+    resolve.assert_called_once_with("platform-tools")
+    cli.confirm.assert_called_once_with("Delete teamspace 'platform-tools'? This cannot be undone.")
+    cli.client.delete.assert_not_called()
+    assert cli.rendered == []
+
+
+def test_delete_confirmation_and_yes_bypass_have_exact_behavior(cli):
+    resolve = _resolve(cli)
+    delete = _returns(cli.client.delete, {})
+    cli.confirm.side_effect = None
+    cli.confirm.return_value = True
+
+    team.delete_team("platform-tools", yes=False)
+
+    cli.confirm.assert_called_once_with("Delete teamspace 'platform-tools'? This cannot be undone.")
+    delete.assert_called_once_with(f"/api/v1/teams/{TEAM_ID}")
+    assert cli.rendered == ["[green]Teamspace deleted.[/green]"]
+
+    resolve.reset_mock()
+    delete.reset_mock()
+    cli.confirm.reset_mock()
+    cli.rendered.clear()
+    team.delete_team(TEAM_ID, yes=True)
+
+    resolve.assert_called_once_with(TEAM_ID)
+    cli.confirm.assert_not_called()
+    delete.assert_called_once_with(f"/api/v1/teams/{TEAM_ID}")
+    assert cli.rendered == ["[green]Teamspace deleted.[/green]"]
+
+
+def test_leave_posts_exact_endpoint_and_plain_output(cli):
+    resolve = _resolve(cli)
+    post = _returns(cli.client.post, {})
+
+    team.leave_team("platform-tools")
+
+    resolve.assert_called_once_with("platform-tools")
+    post.assert_called_once_with(f"/api/v1/teams/{TEAM_ID}/leave")
+    assert cli.rendered == ["[green]Left teamspace.[/green]"]
+
+
+def test_member_list_table_and_json_outputs_are_exact(cli):
+    rows = [
+        {"id": "user-1", "username": "alice", "email": "alice@example.test", "role": "owner"},
+        {"id": "user-2", "username": None, "email": "bob@example.test", "role": "member"},
+    ]
+    resolve = _resolve(cli)
+    get = _returns(cli.client.get, rows)
+
+    team.list_members("platform-tools", output="table")
+
+    resolve.assert_called_once_with("platform-tools")
+    get.assert_called_once_with(f"/api/v1/teams/{TEAM_ID}/members")
+    table = cli.tables[0]
+    assert table.title == "Members"
+    assert table.columns == [
+        ("user", {"style": "cyan"}),
+        ("email", {"style": "dim"}),
+        ("role", {"style": "green"}),
+    ]
+    assert table.rows == [
+        ("@alice", "alice@example.test", "owner"),
+        ("-", "bob@example.test", "member"),
+    ]
+    assert cli.rendered == [table]
+
+    resolve.reset_mock()
+    get.reset_mock()
+    cli.rendered.clear()
+    cli.tables.clear()
+    team.list_members(TEAM_ID, output="json")
+
+    resolve.assert_called_once_with(TEAM_ID)
+    get.assert_called_once_with(f"/api/v1/teams/{TEAM_ID}/members")
+    assert cli.json == [rows]
+    assert cli.rendered == []
+    assert cli.tables == []
+
+
+def test_invite_create_sends_optional_fields_only_when_supplied(cli):
+    resolve = _resolve(cli)
+    post = _returns(cli.client.post, {"url": "https://example.test/team-invites/token-one"})
+
+    team.create_invite("platform-tools", "Hiring", 30, 5)
+
+    resolve.assert_called_once_with("platform-tools")
+    post.assert_called_once_with(
+        f"/api/v1/teams/{TEAM_ID}/invites",
+        json_data={"expires_in_days": 30, "name": "Hiring", "max_uses": 5},
+    )
+    assert cli.rendered == ["https://example.test/team-invites/token-one"]
+
+    resolve.reset_mock()
+    post.reset_mock()
+    post.return_value = {"url": "https://example.test/team-invites/token-two"}
+    cli.rendered.clear()
+    team.create_invite(TEAM_ID, None, 7, None)
+
+    resolve.assert_called_once_with(TEAM_ID)
+    post.assert_called_once_with(f"/api/v1/teams/{TEAM_ID}/invites", json_data={"expires_in_days": 7})
+    assert cli.rendered == ["https://example.test/team-invites/token-two"]
+
+
+@pytest.mark.parametrize(
+    ("options", "message"),
+    [
+        (["--expires-days", "0"], "0 is not in the range 1<=x<=365"),
+        (["--expires-days", "366"], "366 is not in the range 1<=x<=365"),
+        (["--max-uses", "0"], "0 is not in the range x>=1"),
+    ],
+)
+def test_invite_numeric_validation_cancels_before_resolution(cli, options, message):
+    result = runner.invoke(team.team_app, ["invite", "create", "platform", *options])
+
+    assert result.exit_code == 2
+    assert message in result.output
+    cli.client.resolve_team_id.assert_not_called()
+    cli.client.post.assert_not_called()
+
+
+def test_invite_list_table_formats_bounded_and_unbounded_usage(cli):
+    rows = [
+        {
+            "id": INVITE_ID,
+            "name": "Hiring",
+            "state": "active",
+            "use_count": 2,
+            "max_uses": 5,
+            "expires_at": "2026-12-31T00:00:00Z",
+            "invited_by_username": "alice",
+        },
+        {
+            "id": "invite-two",
+            "name": "",
+            "state": "revoked",
+            "max_uses": None,
+            "expires_at": "2026-11-30T00:00:00Z",
+            "invited_by_username": None,
+        },
+    ]
+    resolve = _resolve(cli)
+    get = _returns(cli.client.get, rows)
+
+    team.list_invites("platform-tools", output="table")
+
+    resolve.assert_called_once_with("platform-tools")
+    get.assert_called_once_with(f"/api/v1/teams/{TEAM_ID}/invites")
+    table = cli.tables[0]
+    assert table.title == "Private-team invite links"
+    assert table.columns == [
+        ("id", {"style": "dim"}),
+        ("name", {}),
+        ("state", {"style": "green"}),
+        ("uses", {}),
+        ("expires", {}),
+        ("created by", {}),
+    ]
+    assert table.rows == [
+        (INVITE_ID, "Hiring", "active", "2 / 5", "2026-12-31T00:00:00Z", "alice"),
+        ("invite-two", "", "revoked", "0", "2026-11-30T00:00:00Z", "-"),
+    ]
+    assert cli.rendered == [table]
+
+
+def test_invite_list_json_and_empty_output_are_exact(cli):
+    rows = [{"id": INVITE_ID, "state": "active"}]
+    _resolve(cli)
+    get = _returns(cli.client.get, rows)
+
+    team.list_invites(TEAM_ID, output="json")
+
+    assert cli.json == [rows]
+    assert cli.rendered == []
+    assert cli.tables == []
+
+    get.return_value = []
+    cli.json.clear()
+    team.list_invites(TEAM_ID, output="table")
+
+    assert cli.json == []
+    assert cli.rendered == ["[dim]No invite links.[/dim]"]
+    assert cli.tables == []
+
+
+def test_invite_revoke_posts_exact_endpoint_and_state(cli):
+    resolve = _resolve(cli)
+    post = _returns(cli.client.post, {"state": "revoked"})
+
+    team.revoke_invite("platform-tools", INVITE_ID)
+
+    resolve.assert_called_once_with("platform-tools")
+    post.assert_called_once_with(f"/api/v1/teams/{TEAM_ID}/invites/{INVITE_ID}/revoke")
+    assert cli.rendered == ["[green]Invite revoked.[/green]"]
+
+
+def test_join_request_creation_with_and_without_message_is_exact(cli):
+    resolve = _resolve(cli)
+    post = _returns(cli.client.post, {"id": REQUEST_ID, "status": "pending"})
+
+    team.request_join("platform-tools", "I maintain pager duty")
+
+    resolve.assert_called_once_with("platform-tools")
+    post.assert_called_once_with(
+        f"/api/v1/teams/{TEAM_ID}/join-requests",
+        json_data={"message": "I maintain pager duty"},
+    )
+    assert cli.rendered == [
+        f"[green]Join request sent.[/green] status=pending id={REQUEST_ID}",
+        "[dim]A team owner will approve or reject it; the decision lands in your inbox.[/dim]",
+    ]
+
+    resolve.reset_mock()
+    post.reset_mock()
+    cli.rendered.clear()
+    team.request_join(TEAM_ID, None)
+
+    resolve.assert_called_once_with(TEAM_ID)
+    post.assert_called_once_with(f"/api/v1/teams/{TEAM_ID}/join-requests", json_data={})
+    assert cli.rendered == [
+        f"[green]Join request sent.[/green] status=pending id={REQUEST_ID}",
+        "[dim]A team owner will approve or reject it; the decision lands in your inbox.[/dim]",
+    ]
+
+
+def test_join_request_table_formats_requesters_decisions_and_fallbacks(cli):
+    rows = [
+        {
+            "id": REQUEST_ID,
+            "username": "bob",
+            "email": "bob@example.test",
+            "status": "rejected",
+            "message": "Please add me",
+            "decided_by_username": "alice",
+            "decision_reason": "Use SRE",
+        },
+        {
+            "id": "request-two",
+            "username": None,
+            "email": "carol@example.test",
+            "status": "pending",
+            "message": None,
+            "decided_by_username": None,
+            "decision_reason": None,
+        },
+    ]
+    resolve = _resolve(cli)
+    get = _returns(cli.client.get, rows)
+
+    team.list_join_requests("platform-tools", status="pending", output="table")
+
+    resolve.assert_called_once_with("platform-tools")
+    get.assert_called_once_with(
+        f"/api/v1/teams/{TEAM_ID}/join-requests",
+        params={"status": "pending"},
+    )
+    table = cli.tables[0]
+    assert table.title == "Join requests"
+    assert table.columns == [
+        ("user", {"style": "cyan"}),
+        ("status", {"style": "green"}),
+        ("message", {"style": "dim"}),
+        ("decided by", {"style": "dim"}),
+        ("reason", {"style": "dim"}),
+    ]
+    assert table.rows == [
+        ("@bob", "rejected", "Please add me", "@alice", "Use SRE"),
+        ("carol@example.test", "pending", "-", "-", "-"),
+    ]
+    assert cli.rendered == [table]
+
+
+def test_join_request_json_and_empty_outputs_forward_unfiltered_params(cli):
+    rows = [{"id": REQUEST_ID, "status": "approved"}]
+    _resolve(cli)
+    get = _returns(cli.client.get, rows)
+
+    team.list_join_requests(TEAM_ID, status=None, output="json")
+
+    get.assert_called_once_with(f"/api/v1/teams/{TEAM_ID}/join-requests", params=None)
+    assert cli.json == [rows]
+    assert cli.rendered == []
+
+    get.reset_mock()
+    get.return_value = []
+    cli.json.clear()
+    team.list_join_requests(TEAM_ID, status=None, output="table")
+
+    get.assert_called_once_with(f"/api/v1/teams/{TEAM_ID}/join-requests", params=None)
+    assert cli.json == []
+    assert cli.rendered == ["[dim]No join requests.[/dim]"]
+    assert cli.tables == []
+
+
+def test_approve_resolves_pending_username_case_insensitively(cli):
+    resolve = _resolve(cli)
+    get = _returns(
+        cli.client.get,
+        [
+            {"id": REQUEST_ID, "username": "Alice", "email": "alice@example.test", "status": "pending"},
+            {"id": "other", "username": "bob", "email": "bob@example.test", "status": "pending"},
+        ],
+    )
+    post = _returns(cli.client.post, {"status": "approved"})
+
+    team.approve_join_request("platform-tools", "@ALICE")
+
+    resolve.assert_called_once_with("platform-tools")
+    get.assert_called_once_with(
+        f"/api/v1/teams/{TEAM_ID}/join-requests",
+        params={"status": "pending"},
+    )
+    post.assert_called_once_with(f"/api/v1/teams/{TEAM_ID}/join-requests/{REQUEST_ID}/approve")
+    assert cli.rendered == ["[green]Approved.[/green] @ALICE is now a member (approved)."]
+
+
+@pytest.mark.parametrize(("reason", "payload"), [("Not yet", {"reason": "Not yet"}), (None, {})])
+def test_reject_matches_email_and_sends_optional_reason(cli, reason, payload):
+    _resolve(cli)
+    _returns(
+        cli.client.get,
+        [{"id": REQUEST_ID, "username": "alice", "email": "User@Example.Test", "status": "pending"}],
+    )
+    post = _returns(cli.client.post, {"status": "rejected"})
+
+    team.reject_join_request("platform-tools", "user@example.test", reason)
+
+    post.assert_called_once_with(
+        f"/api/v1/teams/{TEAM_ID}/join-requests/{REQUEST_ID}/reject",
+        json_data=payload,
+    )
+    assert cli.rendered == ["[yellow]Rejected.[/yellow] user@example.test's request is rejected."]
+
+
+def test_missing_pending_request_is_a_parameter_error_and_never_decides(cli):
+    _resolve(cli)
+    _returns(
+        cli.client.get,
+        [{"id": "other", "username": None, "email": "other@example.test", "status": "pending"}],
+    )
+
+    with pytest.raises(typer.BadParameter) as raised:
+        team.approve_join_request("platform-tools", "@missing")
+
+    assert str(raised.value) == "No pending join request from '@missing'"
+    assert raised.value.param_hint == "user"
+    cli.client.post.assert_not_called()
+    assert cli.rendered == []
+
+
+@pytest.mark.parametrize(
+    ("user", "role", "payload", "response", "message"),
+    [
+        (
+            "Alice@Example.Test",
+            "reviewer",
+            {"role": "reviewer", "email": "alice@example.test"},
+            {"email": "alice@example.test", "role": "reviewer"},
+            "[green]Member saved:[/green] alice@example.test as reviewer",
+        ),
+        (
+            "@Bob",
+            "owner",
+            {"role": "owner", "username": "Bob"},
+            {"email": "bob@example.test", "role": "owner"},
+            "[green]Member saved:[/green] bob@example.test as owner",
+        ),
+        (
+            "carol",
+            "member",
+            {"role": "member", "username": "carol"},
+            {"role": "member"},
+            "[green]Member saved:[/green] carol as member",
+        ),
+    ],
+)
+def test_member_add_and_role_updates_send_exact_identity_payload(cli, user, role, payload, response, message):
+    resolve = _resolve(cli)
+    post = _returns(cli.client.post, response)
+
+    team.add_member("platform-tools", user, role)
+
+    resolve.assert_called_once_with("platform-tools")
+    post.assert_called_once_with(f"/api/v1/teams/{TEAM_ID}/members", json_data=payload)
+    assert cli.rendered == [message]
+
+
+def test_member_remove_cancellation_is_side_effect_free(cli):
+    resolve = _resolve(cli)
+    get = _returns(
+        cli.client.get,
+        [{"id": "user-1", "username": "bob", "email": "bob@example.test", "role": "member"}],
+    )
+    cli.confirm.side_effect = None
+    cli.confirm.return_value = False
+
+    with pytest.raises(typer.Abort):
+        team.remove_member("platform-tools", "@bob", yes=False)
+
+    resolve.assert_called_once_with("platform-tools")
+    get.assert_called_once_with(f"/api/v1/teams/{TEAM_ID}/members")
+    cli.confirm.assert_called_once_with("Remove @bob from this team?")
+    cli.client.delete.assert_not_called()
+    assert cli.rendered == []
+
+
+def test_member_remove_matches_email_case_insensitively_and_deletes_exact_id(cli):
+    _resolve(cli)
+    _returns(
+        cli.client.get,
+        [
+            {"id": "user-1", "username": "alice", "email": "alice@example.test", "role": "owner"},
+            {"id": "user-2", "username": "bob", "email": "Bob@Example.Test", "role": "member"},
+        ],
+    )
+    delete = _returns(cli.client.delete, {})
+
+    team.remove_member("platform-tools", "bob@example.test", yes=True)
+
+    cli.confirm.assert_not_called()
+    delete.assert_called_once_with(f"/api/v1/teams/{TEAM_ID}/members/user-2")
+    assert cli.rendered == ["[green]Member removed.[/green]"]
+
+
+def test_member_remove_rejects_unknown_user_before_prompt_or_delete(cli):
+    _resolve(cli)
+    _returns(
+        cli.client.get,
+        [{"id": "user-1", "username": None, "email": "alice@example.test", "role": "owner"}],
+    )
+
+    with pytest.raises(typer.BadParameter) as raised:
+        team.remove_member("platform-tools", "@missing", yes=False)
+
+    assert str(raised.value) == "Member '@missing' not found in this team"
+    assert raised.value.param_hint == "user"
+    cli.confirm.assert_not_called()
+    cli.client.delete.assert_not_called()
+    assert cli.rendered == []
+
+
+def test_list_http_failure_propagates_without_rendering(cli):
+    failure = typer.Exit(1)
+    cli.client.get.side_effect = failure
+
+    with pytest.raises(typer.Exit) as raised:
+        team.list_teams(output="table", all_teams=False)
+
+    assert raised.value is failure
+    cli.client.get.assert_called_once_with("/api/v1/teams")
+    assert cli.rendered == []
+    assert cli.json == []
+    assert cli.tables == []
+
+
+def test_show_second_http_failure_is_atomic(cli):
+    failure = typer.Exit(1)
+    _resolve(cli)
+    cli.client.get.side_effect = [{"name": "Platform", "handle": "platform", "role": "owner"}, failure]
+
+    with pytest.raises(typer.Exit) as raised:
+        team.show_team("platform", output="table")
+
+    assert raised.value is failure
+    assert cli.client.get.call_args_list == [
+        call(f"/api/v1/teams/{TEAM_ID}"),
+        call(f"/api/v1/teams/{TEAM_ID}/members"),
+    ]
+    assert cli.rendered == []
+    assert cli.tables == []
+
+
+@pytest.mark.parametrize(
+    ("method", "invoke", "expected"),
+    [
+        (
+            "post",
+            lambda: team.create_team("Platform", None, None, "public"),
+            call("/api/v1/teams", json_data={"name": "Platform", "visibility": "public"}),
+        ),
+        (
+            "patch",
+            lambda: team.set_visibility("platform", "private"),
+            call(f"/api/v1/teams/{TEAM_ID}/visibility", json_data={"visibility": "private"}),
+        ),
+        (
+            "delete",
+            lambda: team.delete_team("platform", yes=True),
+            call(f"/api/v1/teams/{TEAM_ID}"),
+        ),
+        (
+            "post",
+            lambda: team.leave_team("platform"),
+            call(f"/api/v1/teams/{TEAM_ID}/leave"),
+        ),
+        (
+            "post",
+            lambda: team.create_invite("platform", None, 7, None),
+            call(f"/api/v1/teams/{TEAM_ID}/invites", json_data={"expires_in_days": 7}),
+        ),
+        (
+            "post",
+            lambda: team.revoke_invite("platform", INVITE_ID),
+            call(f"/api/v1/teams/{TEAM_ID}/invites/{INVITE_ID}/revoke"),
+        ),
+        (
+            "post",
+            lambda: team.request_join("platform", None),
+            call(f"/api/v1/teams/{TEAM_ID}/join-requests", json_data={}),
+        ),
+        (
+            "post",
+            lambda: team.add_member("platform", "@alice", "member"),
+            call(f"/api/v1/teams/{TEAM_ID}/members", json_data={"role": "member", "username": "alice"}),
+        ),
+    ],
+    ids=("create", "visibility", "delete", "leave", "invite-create", "invite-revoke", "join", "member-add"),
+)
+def test_http_mutation_failures_never_render_success(cli, method, invoke, expected):
+    _resolve(cli)
+    failure = typer.Exit(1)
+    boundary = getattr(cli.client, method)
+    boundary.side_effect = failure
+
+    with pytest.raises(typer.Exit) as raised:
+        invoke()
+
+    assert raised.value is failure
+    assert boundary.call_args == expected
+    assert cli.rendered == []
+    assert cli.json == []
+    assert cli.tables == []
+
+
+def test_resolution_failure_stops_before_http_and_rendering(cli):
+    failure = typer.Exit(1)
+    cli.client.resolve_team_id.side_effect = failure
+
+    with pytest.raises(typer.Exit) as raised:
+        team.leave_team("missing")
+
+    assert raised.value is failure
+    cli.client.resolve_team_id.assert_called_once_with("missing")
+    cli.client.post.assert_not_called()
+    assert cli.rendered == []
