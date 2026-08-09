@@ -18,6 +18,7 @@
 #     • test (3.11)
 #     • test (3.12)
 #     • test (3.13)
+#     • test (3.14)
 #     • web-lint
 #     • docker-build
 #     • dependency-audit
@@ -143,7 +144,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
 
     steps:
       - name: Skip if no Python changes
