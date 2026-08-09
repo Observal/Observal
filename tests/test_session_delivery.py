@@ -4,16 +4,14 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+import re
+from pathlib import Path
 
 import pytest
 
 from observal_cli import telemetry_buffer
 from observal_cli.harness import SessionSource
 from observal_cli.sessions import base
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 def config() -> dict:
@@ -450,3 +448,562 @@ def test_outbox_is_drained_before_new_source_batch(tmp_path: Path, monkeypatch):
         post=acknowledge,
     )
     assert order == ["older", "new"]
+
+
+def _install_http_transport(monkeypatch, handler) -> None:
+    import httpx
+
+    client_class = httpx.Client
+    transport = httpx.MockTransport(handler)
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: client_class(transport=transport, **kwargs))
+
+
+def test_cursor_state_defaults_to_home_and_validates_entries(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    base.write_cursor("session", 10, 2, finalized=True)
+    base.write_cursor("session", 20, 3)
+    assert base.read_cursor_status("session") == (20, 3, True, True)
+
+    base.write_cursor("session", 5, 1, preserve_finalized=False)
+    assert base.read_cursor_status("session") == (5, 1, False, True)
+
+    state_file = tmp_path / ".observal" / "sync_state.json"
+    state_file.write_text(json.dumps({"session": {"offset": -1, "line_count": 1}}))
+    assert base.read_cursor_status("session") == (0, 0, False, False)
+
+    state_file.write_text("not-json")
+    assert base.read_cursor_status("session") == (0, 0, False, False)
+
+
+def test_jsonl_readers_handle_symlinks_corruption_offsets_and_partial_records(tmp_path: Path):
+    source = tmp_path / "source.jsonl"
+    source.write_bytes(b'{"ok":1}\r\nnot-json\n\xff\npartial')
+    link = tmp_path / "linked.jsonl"
+    link.symlink_to(source)
+
+    assert base.read_new_records(link, 0) == (['{"ok":1}', "not-json", "�"], [10, 19, 21], 21)
+    assert base.read_new_lines(link, 10) == (["not-json", "�"], 11)
+
+    empty = tmp_path / "empty.jsonl"
+    empty.write_bytes(b"")
+    assert base.read_new_records(empty, 0) == ([], [], 0)
+
+    partial = tmp_path / "partial.jsonl"
+    partial.write_text("unfinished")
+    assert base.read_new_records(partial, 0) == ([], [], 0)
+
+    with pytest.raises(FileNotFoundError):
+        base.read_new_records(tmp_path / "missing.jsonl", 0)
+
+
+def test_session_hash_uses_complete_nonempty_records(tmp_path: Path):
+    source = tmp_path / "session.jsonl"
+    source.write_text('{"a":1}\n\nnot-json\ntrailing')
+
+    assert base.hash_session_source(source) == (
+        "43e55b074ecfbeee48dc828e6c4b0eb5648f73ce319f71fd4391c50673220364",
+        2,
+    )
+
+
+def test_load_config_expands_home_trims_values_and_prefers_api_key(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    config_path = tmp_path / ".observal" / "config.json"
+    config_path.parent.mkdir()
+    config_path.write_text(
+        json.dumps(
+            {
+                "server_url": " https://server.example/ ",
+                "api_key": " long-token ",
+                "access_token": "short-token",
+                "refresh_token": " refresh ",
+                "user_id": 42,
+            }
+        )
+    )
+
+    assert base.load_config() == {
+        "server_url": "https://server.example/",
+        "access_token": "long-token",
+        "refresh_token": "refresh",
+        "user_id": "42",
+        "_config_path": str(config_path),
+    }
+
+    assert base.load_config(tmp_path / "missing-home") is None
+    config_path.write_text("not-json")
+    assert base.load_config(tmp_path) is None
+    config_path.write_text(json.dumps({"server_url": "https://server.example", "access_token": ""}))
+    assert base.load_config(tmp_path) is None
+
+
+def test_load_config_rejects_an_unsupported_top_level_shape_loudly(tmp_path: Path):
+    config_path = tmp_path / ".observal" / "config.json"
+    config_path.parent.mkdir()
+    config_path.write_text("[]")
+
+    with pytest.raises(AttributeError, match="get"):
+        base.load_config(tmp_path)
+
+
+def test_refresh_access_token_updates_the_config_and_tolerates_persist_failure(tmp_path: Path, monkeypatch):
+    import httpx
+
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json={"access_token": "fresh", "refresh_token": "rotated"})
+
+    _install_http_transport(monkeypatch, handler)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({"access_token": "old", "refresh_token": "refresh"}))
+
+    assert base._refresh_access_token("https://server.example/", "refresh", str(config_path)) == "fresh"
+    assert json.loads(config_path.read_text()) == {"access_token": "fresh", "refresh_token": "rotated"}
+    assert requests[0].url == httpx.URL("https://server.example/api/v1/auth/token/refresh")
+    assert json.loads(requests[0].content) == {"refresh_token": "refresh"}
+
+    assert base._refresh_access_token("https://server.example", "refresh", str(tmp_path / "missing.json")) == "fresh"
+
+
+@pytest.mark.parametrize("failure", ["rejected", "missing-token", "offline"])
+def test_refresh_access_token_failures_are_soft(monkeypatch, failure: str):
+    import httpx
+
+    def handler(request):
+        if failure == "offline":
+            raise httpx.ConnectError("offline", request=request)
+        if failure == "rejected":
+            return httpx.Response(503)
+        return httpx.Response(200, json={})
+
+    _install_http_transport(monkeypatch, handler)
+
+    assert base._refresh_access_token("https://server.example", "refresh", "/missing") is None
+
+
+def test_post_to_server_refreshes_once_and_returns_the_exact_acknowledgement(monkeypatch):
+    import httpx
+
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(401)
+        return httpx.Response(200, json={"acknowledged_line": 3, "acknowledged_offset": 99})
+
+    _install_http_transport(monkeypatch, handler)
+    refreshes = []
+    monkeypatch.setattr(
+        base,
+        "_refresh_access_token",
+        lambda server, token, path: refreshes.append((server, token, path)) or "fresh-token",
+    )
+    config_data = {"refresh_token": "refresh", "_config_path": "/config.json"}
+    payload = {"session_id": "session-long-id", "lines": ["one", "two"]}
+
+    assert base.post_to_server_ack("https://server.example/", "old-token", payload, config=config_data) == {
+        "acknowledged_line": 3,
+        "acknowledged_offset": 99,
+    }
+    assert refreshes == [("https://server.example/", "refresh", "/config.json")]
+    assert config_data["access_token"] == "fresh-token"
+    assert [request.headers["Authorization"] for request in requests] == ["Bearer old-token", "Bearer fresh-token"]
+    assert all(request.url == httpx.URL("https://server.example/api/v1/ingest/session") for request in requests)
+
+
+@pytest.mark.parametrize("failure", ["rejected", "invalid-ack", "offline"])
+def test_post_to_server_transient_and_malformed_responses_are_soft(monkeypatch, failure: str):
+    import httpx
+
+    def handler(request):
+        if failure == "offline":
+            raise httpx.ConnectError("offline", request=request)
+        if failure == "rejected":
+            return httpx.Response(503)
+        return httpx.Response(200, json={"acknowledged_line": "zero"})
+
+    _install_http_transport(monkeypatch, handler)
+
+    assert base.post_to_server_ack("https://server.example", "token", {"session_id": "session", "lines": []}) is None
+
+
+def test_get_server_checkpoint_refreshes_and_preserves_source_identity(tmp_path: Path, monkeypatch):
+    import httpx
+
+    source = SessionSource("cursor", "child", tmp_path / "child.jsonl")
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(401)
+        return httpx.Response(200, json={"acknowledged_line": 4, "acknowledged_offset": 80})
+
+    _install_http_transport(monkeypatch, handler)
+    monkeypatch.setattr(base, "_refresh_access_token", lambda *_args: "fresh-token")
+    config_data = {
+        "server_url": "https://server.example/",
+        "access_token": "old-token",
+        "refresh_token": "refresh",
+        "_config_path": "/config.json",
+    }
+
+    assert base.get_server_checkpoint(source, config_data) == {"acknowledged_line": 4, "acknowledged_offset": 80}
+    assert config_data["access_token"] == "fresh-token"
+    assert [request.url.params for request in requests] == [
+        httpx.QueryParams({"session_id": "child", "harness": "cursor"}),
+        httpx.QueryParams({"session_id": "child", "harness": "cursor"}),
+    ]
+    assert [request.headers["Authorization"] for request in requests] == ["Bearer old-token", "Bearer fresh-token"]
+
+
+@pytest.mark.parametrize("failure", ["rejected", "invalid-ack", "offline"])
+def test_get_server_checkpoint_failures_are_soft(tmp_path: Path, monkeypatch, failure: str):
+    import httpx
+
+    def handler(request):
+        if failure == "offline":
+            raise httpx.ConnectError("offline", request=request)
+        if failure == "rejected":
+            return httpx.Response(503)
+        return httpx.Response(200, json={"acknowledged_line": "four"})
+
+    _install_http_transport(monkeypatch, handler)
+    source = SessionSource("kiro", "session", tmp_path / "session.jsonl")
+
+    assert base.get_server_checkpoint(source, {"server_url": "https://server", "access_token": "token"}) is None
+
+
+def test_get_server_checkpoint_requires_server_and_token(tmp_path: Path):
+    source = SessionSource("kiro", "session", tmp_path / "session.jsonl")
+
+    assert base.get_server_checkpoint(source, {}) is None
+    assert base.get_server_checkpoint(source, {"server_url": "https://server"}) is None
+
+
+def test_checkpoint_offsets_and_recovery_fallbacks_are_exact(tmp_path: Path):
+    source_path = tmp_path / "session.jsonl"
+    source_path.write_bytes(b"one\n\ntwo\n")
+
+    assert base._checkpoint_byte_offset(source_path, 0, 0) == 0
+    assert base._checkpoint_byte_offset(source_path, 1, 1) is None
+    assert base._checkpoint_byte_offset(source_path, 99, 0) is None
+    assert base._checkpoint_byte_offset(tmp_path / "missing.jsonl", 1, 0) is None
+
+    base.write_cursor("custom-key", 4, 1, home=tmp_path)
+    source = SessionSource("claude-code", "session", source_path, cursor_key="custom-key")
+    assert base.recover_cursor_from_server(source, config(), home=tmp_path, fetch=lambda *_args: None) == (4, 1)
+    assert base.recover_cursor_from_server(SessionSource("claude-code", "session"), config(), home=tmp_path) is None
+
+
+def test_drain_outbox_rejects_incomplete_configuration_and_partial_acknowledgement(tmp_path: Path):
+    db = tmp_path / "outbox.db"
+    assert base.drain_outbox({}, home=tmp_path, db_path=db) is False
+
+    telemetry_buffer.enqueue(
+        {
+            "harness": "claude-code",
+            "session_id": "session",
+            "lines": ["one"],
+            "start_offset": 0,
+            "end_byte_offsets": [4],
+        },
+        destination="http://server",
+        user_id="user",
+        db_path=db,
+    )
+
+    assert not base.drain_outbox(
+        config(),
+        home=tmp_path,
+        db_path=db,
+        post=lambda *_args: {"acknowledged_line": -1, "acknowledged_offset": 0},
+    )
+    pending = telemetry_buffer.pending(destination="http://server", user_id="user", db_path=db)
+    assert [(item.session_id, item.start_line, item.end_line) for item in pending] == [("session", 0, 0)]
+    assert base.read_cursor("session", home=tmp_path) == (0, 0)
+
+
+def test_drain_session_source_rejects_missing_inputs_and_failed_recovery(tmp_path: Path, monkeypatch):
+    disable_payload_metadata(monkeypatch)
+    source_path = tmp_path / "session.jsonl"
+    source_path.write_text("{}\n")
+    db = tmp_path / "outbox.db"
+
+    assert not base.drain_session_source(
+        SessionSource("claude-code", "session"),
+        config(),
+        hook_event="Reconcile",
+        db_path=db,
+    )
+    assert not base.drain_session_source(
+        SessionSource("claude-code", "session", source_path),
+        {"server_url": "", "user_id": "user"},
+        hook_event="Reconcile",
+        db_path=db,
+    )
+    assert not base.drain_session_source(
+        SessionSource("claude-code", "session", source_path),
+        config(),
+        hook_event="Reconcile",
+        recover_from_server=True,
+        checkpoint_fetch=lambda *_args: {"acknowledged_line": 9, "acknowledged_offset": 999},
+        home=tmp_path,
+        db_path=db,
+    )
+    assert "server checkpoint does not match local source" in (tmp_path / ".observal" / "sync.log").read_text()
+
+
+def test_blank_only_source_is_a_successful_spool_noop(tmp_path: Path, monkeypatch):
+    disable_payload_metadata(monkeypatch)
+    source_path = tmp_path / "blank.jsonl"
+    source_path.write_text("\n \n")
+    db = tmp_path / "outbox.db"
+
+    assert base.drain_session_source(
+        SessionSource("claude-code", "blank", source_path),
+        config(),
+        hook_event="Reconcile",
+        spool_only=True,
+        home=tmp_path,
+        db_path=db,
+    )
+    assert telemetry_buffer.pending(destination="http://server", user_id="user", db_path=db) == []
+    assert base.read_cursor("blank", home=tmp_path) == (0, 0)
+
+
+def test_empty_final_source_replays_once_after_an_integrity_repair(tmp_path: Path, monkeypatch):
+    disable_payload_metadata(monkeypatch)
+    source_path = tmp_path / "empty.jsonl"
+    source_path.write_text("")
+    db = tmp_path / "outbox.db"
+    acknowledgements = [
+        {"acknowledged_line": -1, "acknowledged_offset": 0, "repair_from_line": 0},
+        {"acknowledged_line": -1, "acknowledged_offset": 0},
+    ]
+
+    assert base.drain_session_source(
+        SessionSource("claude-code", "empty", source_path),
+        config(),
+        hook_event="Stop",
+        final=True,
+        home=tmp_path,
+        db_path=db,
+        post=lambda *_args: acknowledgements.pop(0),
+    )
+    assert acknowledgements == []
+    assert base.read_cursor_state("empty", home=tmp_path) == (0, 0, True)
+    assert telemetry_buffer.pending(destination="http://server", user_id="user", db_path=db) == []
+
+
+def test_build_payload_caches_layer_metadata_and_evicts_it_on_stop(monkeypatch):
+    base._layer_hash_cache.clear()
+    hashes = []
+    monkeypatch.setattr(base, "_resolve_agent", lambda *_args, **_kwargs: ("agent-id", "1.2.3"))
+    monkeypatch.setattr(
+        base,
+        "_compute_layer_hash_safe",
+        lambda cwd, harness: hashes.append((cwd, harness)) or "layer-hash",
+    )
+
+    payload = base.build_payload(
+        "session",
+        ["one"],
+        2,
+        "UserPromptSubmit",
+        2,
+        cwd="/repo",
+        parent_session_id="parent",
+        harness="cursor",
+    )
+    assert payload == {
+        "session_id": "session",
+        "harness": "claude-code",
+        "agent_id": "agent-id",
+        "agent_version": "1.2.3",
+        "layer_hash": "layer-hash",
+        "lines": ["one"],
+        "start_offset": 2,
+        "hook_event": "UserPromptSubmit",
+        "parent_session_id": "parent",
+    }
+
+    base.build_payload("session", ["two"], 3, "UserPromptSubmit", 3, cwd="/repo")
+    stopped = base.build_payload("session", ["three"], 4, "Stop", 4, new_offset=90, cwd="/repo")
+    assert stopped["total_line_count"] == 5
+    assert stopped["total_offset"] == 90
+    assert stopped["final"] is True
+    assert hashes == [("/repo", "claude-code")]
+    assert "session" not in base._layer_hash_cache
+
+
+def test_layer_hash_and_canonical_checks_are_fail_soft(monkeypatch):
+    from observal_cli import layer, lockfile
+
+    hash_calls = []
+    monkeypatch.setattr(
+        layer,
+        "compute_layer_hash",
+        lambda **kwargs: hash_calls.append(kwargs) or "layer-hash",
+    )
+    assert base._compute_layer_hash_safe("/repo", "cursor") == "layer-hash"
+    assert hash_calls == [{"harness": None, "project_dir": "/repo"}]
+
+    monkeypatch.setattr(layer, "compute_layer_hash", lambda **_kwargs: (_ for _ in ()).throw(OSError("broken")))
+    assert base._compute_layer_hash_safe("", "cursor") is None
+
+    manifests = []
+    drift_calls = []
+    monkeypatch.setattr(lockfile, "read_registry_lockfile", lambda: (Path("lock.json"), {"lock_version": 2}))
+    monkeypatch.setattr(layer, "_detect_active_harnesses", lambda: ["claude-code", "kiro"])
+    monkeypatch.setattr(
+        layer,
+        "build_layer_manifest",
+        lambda harness, include_content: manifests.append((harness, include_content)) or [harness],
+    )
+    monkeypatch.setattr(
+        layer,
+        "_compute_drift",
+        lambda lock, current: drift_calls.append((lock, current)) or {"is_canonical": False},
+    )
+
+    assert base._is_layer_canonical() is False
+    assert manifests == [("claude-code", False), ("kiro", False)]
+    assert drift_calls == [
+        (
+            {"lock_version": 2},
+            {"claude-code": ["claude-code"], "kiro": ["kiro"]},
+        )
+    ]
+
+    monkeypatch.setattr(lockfile, "read_registry_lockfile", lambda: (_ for _ in ()).throw(OSError("broken")))
+    assert base._is_layer_canonical() is None
+
+
+def test_layer_snapshot_upload_skips_unchanged_and_saves_success(tmp_path: Path, monkeypatch):
+    import httpx
+
+    from observal_cli import layer
+
+    decisions = iter([False, True])
+    builds = []
+    saved = []
+    requests = []
+    monkeypatch.setattr(layer, "needs_upload", lambda layer_hash: next(decisions))
+    monkeypatch.setattr(
+        layer,
+        "build_upload_payload",
+        lambda harness, project_dir: builds.append((harness, project_dir)) or {"hash": "layer-hash"},
+    )
+    monkeypatch.setattr(layer, "save_local_snapshot", saved.append)
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(201)
+
+    _install_http_transport(monkeypatch, handler)
+
+    base._maybe_upload_layer_snapshot("https://server.example", "token", "layer-hash", "cursor", "/repo")
+    assert requests == []
+
+    base._maybe_upload_layer_snapshot("https://server.example/", "token", "layer-hash", "cursor", "/repo")
+    assert builds == [("cursor", "/repo")]
+    assert saved == [{"hash": "layer-hash"}]
+    assert requests[0].url == httpx.URL("https://server.example/api/v1/layer-snapshots")
+    assert requests[0].headers["Authorization"] == "Bearer token"
+    assert json.loads(requests[0].content) == {"hash": "layer-hash"}
+
+
+@pytest.mark.parametrize("failure", ["rejected", "offline"])
+def test_layer_snapshot_upload_failures_are_soft(monkeypatch, failure: str):
+    import httpx
+
+    from observal_cli import layer
+
+    monkeypatch.setattr(layer, "needs_upload", lambda _layer_hash: True)
+    monkeypatch.setattr(layer, "build_upload_payload", lambda *_args, **_kwargs: {"hash": "layer-hash"})
+    monkeypatch.setattr(layer, "save_local_snapshot", lambda _payload: pytest.fail("failed upload was saved"))
+
+    def handler(request):
+        if failure == "offline":
+            raise httpx.ConnectError("offline", request=request)
+        return httpx.Response(503)
+
+    _install_http_transport(monkeypatch, handler)
+
+    base._maybe_upload_layer_snapshot("https://server", "token", "layer-hash", "cursor", "")
+
+
+def test_explicit_identity_adapters_do_not_fall_back_without_an_agent_id(monkeypatch):
+    from observal_cli import harness
+
+    class ExplicitIdentityAdapter:
+        @staticmethod
+        def requires_explicit_agent_id() -> bool:
+            return True
+
+    monkeypatch.setattr(harness, "ensure_loaded", lambda: None)
+    monkeypatch.setattr(harness, "get_adapter", lambda _harness: ExplicitIdentityAdapter())
+    monkeypatch.delenv("OBSERVAL_AGENT_ID", raising=False)
+    monkeypatch.delenv("OBSERVAL_AGENT_NAME", raising=False)
+
+    assert base._resolve_agent("/repo", [], None, harness="strict") == (None, None)
+
+
+def test_lockfile_lookup_helpers_cover_success_fallback_and_errors(monkeypatch):
+    from observal_cli import lockfile
+    from observal_shared import harness_registry
+
+    calls = []
+    entry = {"id": "agent-id", "name": "agent", "version": "1.0.0", "scope": "project"}
+    monkeypatch.setattr(
+        lockfile,
+        "get_agent_by_id",
+        lambda agent_id, harness=None: calls.append((agent_id, harness)) or entry,
+    )
+    assert base._lookup_lockfile_agent_by_id("agent-id", harness="cursor") is entry
+    assert calls == [("agent-id", "cursor")]
+
+    monkeypatch.setattr(lockfile, "get_agent_by_id", lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("bad")))
+    assert base._lookup_lockfile_agent_by_id("missing") is None
+
+    first = entry | {"directory": "/first"}
+    second = entry | {"id": "second", "directory": "/second"}
+    data = {"harnesses": {"cursor": {"agents": [first, second]}}}
+    monkeypatch.setattr(lockfile, "read_registry_lockfile", lambda: (Path("lock.json"), data))
+    monkeypatch.setattr(harness_registry, "get_valid_harnesses", lambda: ["cursor"])
+
+    assert base._lookup_lockfile_agent("/second") is second
+    assert base._lookup_lockfile_agent("/different", agent_name="agent") is first
+
+    monkeypatch.setattr(lockfile, "read_registry_lockfile", lambda: (_ for _ in ()).throw(OSError("bad")))
+    assert base._lookup_lockfile_agent("/repo") is None
+
+
+def test_agent_setting_lines_skip_irrelevant_and_malformed_json():
+    lines = [
+        "{}",
+        "agent-setting is not json",
+        json.dumps({"type": "other", "agent-setting": "ignored"}),
+        json.dumps({"type": "agent-setting", "agentName": "selected-agent"}),
+    ]
+
+    assert base._parse_agent_from_lines(lines) == "selected-agent"
+    assert base._parse_agent_from_lines([json.dumps({"type": "agent-setting"})]) is None
+
+
+def test_log_error_uses_default_home_and_never_masks_the_original_failure(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+    base.log_error("delivery failed")
+
+    line = (tmp_path / ".observal" / "sync.log").read_text()
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2} delivery failed\n", line)
+
+    not_a_directory = tmp_path / "file"
+    not_a_directory.write_text("content")
+    base.log_error("ignored", home=not_a_directory)
