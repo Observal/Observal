@@ -7,7 +7,6 @@
 Produces a single-file executable containing the main CLI and sandbox runner support.
 """
 
-import sys
 from pathlib import Path
 
 block_cipher = None
@@ -72,7 +71,7 @@ exe = EXE(
     name="observal",
     debug=False,
     bootloader_ignore_signals=False,
-    strip=sys.platform != "win32",
+    strip=False,
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
