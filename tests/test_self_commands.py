@@ -207,8 +207,10 @@ class TestSelfDowngrade:
 
         result = runner.invoke(_get_app(), ["self", "downgrade", "--version", "1.1.0", "--force"])
 
-        assert isinstance(result.exception, RuntimeError)
-        assert str(result.exception) == "install failed"
+        assert isinstance(result.exception, SystemExit)
+        assert result.exit_code == 1
+        assert "Error (unexpected)" in result.output
+        assert "Run observal self downgrade" in result.output
         assert save_calls == [{"auto_update": False}, {"auto_update": True}]
         assert "could not restore auto-update setting" in result.output
         assert "permission denied" in result.output

@@ -463,7 +463,8 @@ def test_list_empty_rejects_plain_and_renders_table(monkeypatch):
 
     assert empty.exit_code == table.exit_code == 0
     assert plain.exit_code == 2
-    assert "is not one of 'table', 'json'" in plain.output
+    assert "Error" in plain.output
+    assert "plain" in plain.output
     assert "No skills found" in empty.output
     assert "Skills (1)" in table.output
     assert "@alice" in table.output
@@ -483,7 +484,8 @@ def test_my_empty_json_rejects_plain_and_renders_table(monkeypatch):
 
     assert empty.exit_code == as_json.exit_code == table.exit_code == 0
     assert plain.exit_code == 2
-    assert "is not one of 'table', 'json'" in plain.output
+    assert "Error" in plain.output
+    assert "plain" in plain.output
     assert "You have no skills" in empty.output
     assert json.loads(as_json.output) == [item]
     assert "My Skills (1)" in table.output
@@ -527,8 +529,9 @@ def test_show_surfaces_http_failure(monkeypatch):
     result = runner.invoke(app, ["registry", "skill", "show", "missing"])
 
     assert result.exit_code == 1
-    assert isinstance(result.exception, RuntimeError)
-    assert str(result.exception) == "registry offline"
+    assert isinstance(result.exception, SystemExit)
+    assert "Error (unexpected)" in result.output
+    assert "Run observal registry skill show" in result.output
 
 
 def test_sparse_clone_copies_requested_source_without_real_git(tmp_path, monkeypatch):
@@ -776,7 +779,9 @@ def test_install_command_surfaces_listing_failure(monkeypatch):
     )
 
     assert result.exit_code == 1
-    assert str(result.exception) == "lookup failed"
+    assert isinstance(result.exception, SystemExit)
+    assert "Error (unexpected)" in result.output
+    assert "Run observal registry skill install" in result.output
     post.assert_not_called()
 
 

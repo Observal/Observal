@@ -13,6 +13,7 @@ import shutil
 import tomllib
 from pathlib import Path
 
+from observal_cli.errors import ErrorCategory, fail
 from observal_shared.secrets import resolve_secret
 
 logger = logging.getLogger(__name__)
@@ -217,13 +218,13 @@ def get_timeout() -> int:
 def get_or_exit() -> dict:
     cfg = load()
     if not cfg.get("server_url") or not cfg.get("access_token"):
-        import typer
-        from rich import print as rprint
-
-        rprint(
-            "[red]Not configured.[/red] Run [bold]observal auth login[/bold] or set the [bold]OBSERVAL_TOKEN[/bold] / [bold]OBSERVAL_ACCESS_TOKEN[/bold] environment variable."
+        fail(
+            ErrorCategory.AUTH,
+            "Not configured. Observal authentication is required.",
+            operation="Load authenticated CLI configuration",
+            resource=str(CONFIG_FILE),
+            remediation="Run observal auth login or set OBSERVAL_TOKEN or OBSERVAL_ACCESS_TOKEN.",
         )
-        raise typer.Exit(1)
     return cfg
 
 

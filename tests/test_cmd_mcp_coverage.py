@@ -687,7 +687,8 @@ def test_my_mcp_outputs_reject_plain_and_empty_state(monkeypatch):
 
     assert empty.exit_code == as_json.exit_code == table.exit_code == 0
     assert plain.exit_code == 2
-    assert "is not one of 'table', 'json'" in plain.output
+    assert "Error" in plain.output
+    assert "plain" in plain.output
     assert "You have no MCP servers" in empty.output
     assert json.loads(as_json.output)[0]["id"] == "mcp-1"
     assert "My MCPs" in table.output

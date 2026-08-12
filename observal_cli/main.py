@@ -26,6 +26,7 @@ if os.path.isdir(_shared) and _shared not in sys.path:
 import typer
 
 from observal_cli.cmd_auth import version_callback
+from observal_cli.errors import ErrorHandlingGroup
 
 
 def _check_package_conflict() -> None:
@@ -68,6 +69,7 @@ def _version_option(value: bool):
 
 app = typer.Typer(
     name="observal",
+    cls=ErrorHandlingGroup,
     help=(
         "Observal: MCP Server & Agent Registry CLI\n\n"
         "Examples:\n"

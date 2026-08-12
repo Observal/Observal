@@ -472,7 +472,8 @@ def test_list_filters_json_empty_rejects_plain_and_renders_table(monkeypatch):
 
     assert all(result.exit_code == 0 for result in (as_json, empty, table))
     assert plain.exit_code == 2
-    assert "is not one of 'table', 'json'" in plain.output
+    assert "Error" in plain.output
+    assert "plain" in plain.output
     assert json.loads(as_json.output) == [item]
     assert "No hooks found" in empty.output
     assert "Hooks (1)" in table.output
@@ -496,8 +497,9 @@ def test_list_surfaces_http_failure(monkeypatch):
     result = runner.invoke(app, ["registry", "hook", "list"])
 
     assert result.exit_code == 1
-    assert isinstance(result.exception, RuntimeError)
-    assert str(result.exception) == "registry offline"
+    assert isinstance(result.exception, SystemExit)
+    assert "Error (unexpected)" in result.output
+    assert "Run observal registry hook list" in result.output
 
 
 def test_show_renders_optional_metadata_and_json(monkeypatch):
@@ -536,7 +538,9 @@ def test_show_surfaces_http_failure(monkeypatch):
     result = runner.invoke(app, ["registry", "hook", "show", "missing"])
 
     assert result.exit_code == 1
-    assert str(result.exception) == "lookup failed"
+    assert isinstance(result.exception, SystemExit)
+    assert "Error (unexpected)" in result.output
+    assert "Run observal registry hook show" in result.output
 
 
 def test_install_raw_preserves_server_result_and_skips_writes(tmp_path, monkeypatch):
@@ -730,7 +734,9 @@ def test_install_surfaces_generation_failure_without_writing(tmp_path, monkeypat
     )
 
     assert result.exit_code == 1
-    assert str(result.exception) == "generation failed"
+    assert isinstance(result.exception, SystemExit)
+    assert "Error (unexpected)" in result.output
+    assert "Run observal registry hook install" in result.output
     assert not project.exists()
 
 

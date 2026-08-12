@@ -472,7 +472,8 @@ def test_agent_list_json_rejects_plain_and_handles_empty_pages(monkeypatch):
 
     plain = _invoke("list", "--output", "plain")
     assert plain.exit_code == 2
-    assert "is not one of 'table', 'json'" in plain.output
+    assert "Error" in plain.output
+    assert "plain" in plain.output
 
     get_with_headers.return_value = ([], {"x-total-count": "0"})
     empty = _invoke("list")
@@ -526,7 +527,8 @@ def test_agent_my_empty_json_rejects_plain_and_renders_table(monkeypatch, _isola
 
     plain = _invoke("my", "--output", "plain")
     assert plain.exit_code == 2
-    assert "is not one of 'table', 'json'" in plain.output
+    assert "Error" in plain.output
+    assert "plain" in plain.output
 
     table = _invoke("my")
     assert table.exit_code == 0, table.output

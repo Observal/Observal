@@ -13,12 +13,11 @@ from urllib.parse import quote, urlparse, urlunparse
 import httpx
 import typer
 from loguru import logger as optic
-from rich import print as rprint
-from rich.console import Console
 
 from observal_cli import config
+from observal_cli.error_context import caller_context
+from observal_cli.errors import CliError, ErrorCategory, fail
 
-console = Console(stderr=True)
 logger = logging.getLogger(__name__)
 
 # Cached server version for the process lifetime
@@ -75,85 +74,149 @@ def _enforce_version_once(server_url: str) -> None:
     check_version_compatibility(server_url)
 
 
-def _handle_error(e: httpx.HTTPStatusError, path: str = ""):
-    """Handle HTTP errors with actionable messages."""
-    optic.trace("e={}, path={}", e, path)
-    ct = e.response.headers.get("content-type", "")
-    if "application/json" in ct:
-        try:
-            detail = e.response.json().get("detail", e.response.text)
-        except (ValueError, UnicodeDecodeError):
-            detail = e.response.text
-    else:
-        detail = e.response.text
-    code = e.response.status_code
+def _request_id(response: httpx.Response) -> str | None:
+    return next(
+        (value for key, value in response.headers.items() if key.lower() in {"x-request-id", "request-id"}),
+        None,
+    )
 
-    path_info = f" ({path})" if path else ""
+
+def _safe_detail(response: httpx.Response) -> str | None:
+    if "application/json" not in response.headers.get("content-type", "").lower():
+        return response.text.strip()[:500] or None
+    try:
+        data = response.json()
+    except (ValueError, UnicodeDecodeError):
+        return response.text.strip()[:500] or None
+    detail = data.get("detail") if isinstance(data, dict) else None
+    return detail.strip()[:500] if isinstance(detail, str) and detail.strip() else None
+
+
+def _browse_remediation(path: str) -> str:
+    parts = path.strip("/").split("/")
+    type_plural = parts[2] if len(parts) > 2 else "mcps"
+    if type_plural.endswith("xes"):
+        type_singular = type_plural[:-2]
+    elif type_plural.endswith("s"):
+        type_singular = type_plural[:-1]
+    else:
+        type_singular = type_plural
+    if len(parts) > 3 and parts[2] == "insights" and parts[3] == "agents":
+        browse_cmd = "observal agent list"
+    else:
+        browse_cmd = "observal agent list" if type_singular == "agent" else f"observal registry {type_singular} list"
+    return f"Check the identifier or run {browse_cmd} to browse available resources."
+
+
+def _handle_error(
+    error: httpx.HTTPStatusError,
+    path: str = "",
+    *,
+    operation: str | None = None,
+    resource: str | None = None,
+) -> None:
+    """Convert an HTTP status into the stable CLI error contract."""
+    optic.trace("error={}, path={}", error, path)
+    response = error.response
+    code = response.status_code
+    detail = _safe_detail(response)
+    context = {
+        "operation": operation or f"Request {path or 'server resource'}",
+        "resource": resource or path or "Observal server",
+        "request_id": _request_id(response),
+        "http_status": code,
+        "detail": repr(error),
+    }
 
     if code == 401:
-        rprint(f"[red]Authentication failed{path_info}.[/red]")
-        rprint("[dim]  Run [bold]observal auth login[/bold] to re-authenticate.[/dim]")
-    elif code == 403:
-        rprint(f"[red]Permission denied{path_info}.[/red]")
-        if detail:
-            rprint(f"[dim]  {detail}[/dim]")
-        else:
-            rprint("[dim]  You do not have permission to perform this action.[/dim]")
-    elif code == 404:
-        rprint(f"[red]Not found{path_info}.[/red]")
-        # Extract component type from API path (e.g. /api/v1/hooks/abc -> hook)
-        parts = path.strip("/").split("/")
-        type_plural = parts[2] if len(parts) > 2 else "mcps"
-        if type_plural.endswith("xes"):
-            type_singular = type_plural[:-2]  # sandboxes -> sandbox
-        elif type_plural.endswith("s"):
-            type_singular = type_plural[:-1]  # mcps -> mcp, skills -> skill
-        else:
-            type_singular = type_plural
-        if len(parts) > 3 and parts[2] == "insights" and parts[3] == "agents":
-            browse_cmd = "observal agent list"
-        else:
-            # 'agent' is a top-level subcommand, not nested under 'registry'
-            browse_cmd = (
-                "observal agent list" if type_singular == "agent" else f"observal registry {type_singular} list"
-            )
-        rprint(f"[dim]  Check that the resource ID is correct, or use [bold]{browse_cmd}[/bold] to browse.[/dim]")
-    elif code == 426:
-        rprint(f"[red]Version mismatch{path_info}.[/red]")
-        if detail:
-            rprint(f"[dim]  {detail}[/dim]")
-    elif code == 429:
-        rprint(f"[red]Rate limited{path_info}.[/red]")
-        retry_after = e.response.headers.get("Retry-After", "a few seconds")
-        rprint(f"[dim]  Try again in {retry_after}.[/dim]")
-    elif code >= 500:
-        rprint(f"[red]Server error {code}{path_info}.[/red]")
-        rprint("[dim]  Check server logs or run [bold]observal doctor[/bold] for diagnostics.[/dim]")
-    else:
-        rprint(f"[red]Error {code}{path_info}:[/red] {detail}")
+        fail(
+            ErrorCategory.AUTH,
+            "Authentication failed.",
+            remediation="Run observal auth login to authenticate again.",
+            **context,
+        )
+    if code == 403:
+        fail(
+            ErrorCategory.PERMISSION,
+            detail or "You do not have permission to perform this operation.",
+            remediation="Ask an administrator or resource owner for the required access.",
+            **context,
+        )
+    if code == 404:
+        fail(
+            ErrorCategory.NOT_FOUND,
+            detail or "The requested resource was not found.",
+            remediation=_browse_remediation(path),
+            **context,
+        )
+    if code == 409:
+        fail(
+            ErrorCategory.CONFLICT,
+            detail or "The requested change conflicts with current state.",
+            remediation="Refresh the resource state and retry the operation.",
+            **context,
+        )
+    if code == 426:
+        fail(
+            ErrorCategory.VERSION,
+            detail or "The CLI and server versions are incompatible.",
+            remediation="Install the CLI version required by the server.",
+            **context,
+        )
+    if code == 429:
+        retry_after = response.headers.get("Retry-After", "a few seconds")
+        fail(
+            ErrorCategory.RATE_LIMIT,
+            "The server rate limit was reached.",
+            remediation=f"Retry in {retry_after}.",
+            **context,
+        )
+    if code >= 500:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            f"The server returned HTTP {code}.",
+            remediation="Check server health and logs, then run observal doctor.",
+            **context,
+        )
+    fail(
+        ErrorCategory.VALIDATION,
+        detail or f"The server rejected the request with HTTP {code}.",
+        remediation="Correct the request input and retry.",
+        **context,
+    )
 
-    raise typer.Exit(code=1)
+
+def _handle_connect(*, operation: str | None = None, resource: str | None = None, detail: str | None = None) -> None:
+    """Convert a connection failure into the stable CLI error contract."""
+    server_url = config.load().get("server_url", "not set")
+    fail(
+        ErrorCategory.UNAVAILABLE,
+        "Cannot reach the Observal server.",
+        operation=operation or "Connect to Observal",
+        resource=resource or f"server {server_url}",
+        remediation="Check the server URL and service health, then run observal doctor.",
+        detail=detail,
+    )
 
 
-def _handle_connect():
-    """Handle connection errors."""
-    cfg = config.load()
-    server_url = cfg.get("server_url", "not set")
-    rprint("[red]Connection failed.[/red] Cannot reach the Observal server.")
-    rprint(f"[dim]  Server URL: {server_url}[/dim]")
-    rprint("[dim]  Is the server running? Try [bold]observal doctor[/bold] to diagnose.[/dim]")
-    raise typer.Exit(code=1)
-
-
-def _handle_timeout(path: str = ""):
-    """Handle request timeout."""
+def _handle_timeout(
+    path: str = "",
+    *,
+    operation: str | None = None,
+    resource: str | None = None,
+    detail: str | None = None,
+) -> None:
+    """Convert a timeout into the stable CLI error contract."""
     optic.trace("path={}", path)
     timeout = config.get_timeout()
-    path_info = f" ({path})" if path else ""
-    rprint(f"[red]Request timed out{path_info}.[/red]")
-    rprint(f"[dim]  Timeout: {timeout}s. Increase with [bold]OBSERVAL_TIMEOUT[/bold] env var or config.[/dim]")
-    rprint("[dim]  Check server health with [bold]observal doctor[/bold].[/dim]")
-    raise typer.Exit(code=1)
+    fail(
+        ErrorCategory.UNAVAILABLE,
+        f"The request timed out after {timeout} seconds.",
+        operation=operation or f"Request {path or 'server resource'}",
+        resource=resource or path or "Observal server",
+        remediation="Increase OBSERVAL_TIMEOUT if appropriate and check server health with observal doctor.",
+        detail=detail,
+    )
 
 
 def _try_refresh_token() -> bool:
@@ -287,7 +350,7 @@ def resolve_team_id(reference: str) -> str:
         # never change which endpoint receives the caller's bearer token.
         r = _request_with_retry("get", f"{base}/api/v1/teams/by-handle/{quote(value, safe='')}", headers)
         return str(r.json()["id"])
-    except (typer.Exit, KeyboardInterrupt):
+    except (CliError, typer.Exit, KeyboardInterrupt):
         # Control flow, not a lookup failure. `_client()` runs version
         # enforcement, which hard-exits on a server/CLI mismatch; swallowing
         # that Exit would let the command run on against an incompatible server.
@@ -316,119 +379,193 @@ def add_publish_target(payload: dict, team: str | None, visibility: str | None) 
         payload["team_id"] = resolve_team_id(team)
 
 
-def get(path: str, params: dict | None = None) -> dict:
-    optic.trace("path={}, params={}", path, params)
+def _request(
+    method: str,
+    path: str,
+    *,
+    operation: str,
+    resource: str,
+    params: dict | None = None,
+    json_data: dict | None = None,
+) -> httpx.Response:
     base, headers = _client()
+    request_kwargs: dict = {}
+    if params is not None:
+        request_kwargs["params"] = params
+    if json_data is not None:
+        request_kwargs["json"] = json_data
     try:
-        r = _request_with_retry("get", f"{base}{path}", headers, params=params)
-        return r.json()
-    except httpx.HTTPStatusError as e:
-        _handle_error(e, path)
-    except httpx.ReadTimeout:
-        _handle_timeout(path)
-    except httpx.ConnectError:
-        _handle_connect()
+        return _request_with_retry(method, f"{base}{path}", headers, **request_kwargs)
+    except httpx.HTTPStatusError as error:
+        _handle_error(error, path, operation=operation, resource=resource)
+    except (httpx.ReadTimeout, httpx.ConnectTimeout) as error:
+        _handle_timeout(path, operation=operation, resource=resource, detail=repr(error))
+    except httpx.ConnectError as error:
+        _handle_connect(operation=operation, resource=resource, detail=repr(error))
 
 
-def get_text(path: str, params: dict | None = None, *, content_type: str | None = None) -> str:
+def _json_response(response: httpx.Response, *, operation: str, resource: str, allow_empty: bool = False) -> dict:
+    if allow_empty and (response.status_code == 204 or not response.content):
+        return {}
+    try:
+        return response.json()
+    except (ValueError, UnicodeDecodeError) as error:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            "The server returned an invalid JSON response.",
+            operation=operation,
+            resource=resource,
+            remediation="Check server health and version compatibility, then retry.",
+            request_id=_request_id(response),
+            http_status=response.status_code,
+            detail=repr(error),
+        )
+
+
+def _error_context(
+    operation: str | None,
+    resource: str | None,
+    *,
+    default_operation: str,
+    default_resource: str,
+) -> tuple[str, str]:
+    audited_operation, audited_resource = caller_context(default_operation, default_resource)
+    return operation or audited_operation, resource or audited_resource
+
+
+def get(
+    path: str,
+    params: dict | None = None,
+    *,
+    operation: str | None = None,
+    resource: str | None = None,
+) -> dict:
+    optic.trace("path={}, params={}", path, params)
+    operation, resource = _error_context(
+        operation,
+        resource,
+        default_operation=f"Fetch {path}",
+        default_resource=path,
+    )
+    response = _request("get", path, operation=operation, resource=resource, params=params)
+    return _json_response(response, operation=operation, resource=resource)
+
+
+def get_text(
+    path: str,
+    params: dict | None = None,
+    *,
+    content_type: str | None = None,
+    operation: str | None = None,
+    resource: str | None = None,
+) -> str:
     """GET a text response, optionally enforcing its media type."""
     optic.trace("path={}, params={}, content_type={}", path, params, content_type)
-    base, headers = _client()
-    try:
-        response = _request_with_retry("get", f"{base}{path}", headers, params=params)
-        actual_content_type = response.headers.get("content-type", "").lower()
-        if content_type and content_type.lower() not in actual_content_type:
-            rprint(f"[red]Unexpected response content type:[/red] {actual_content_type or 'missing'}")
-            raise typer.Exit(1)
-        return response.text
-    except httpx.HTTPStatusError as exc:
-        _handle_error(exc, path)
-    except httpx.ReadTimeout:
-        _handle_timeout(path)
-    except httpx.ConnectError:
-        _handle_connect()
+    operation, resource = _error_context(
+        operation,
+        resource,
+        default_operation=f"Fetch {path}",
+        default_resource=path,
+    )
+    response = _request("get", path, operation=operation, resource=resource, params=params)
+    actual_content_type = response.headers.get("content-type", "").lower()
+    if content_type and content_type.lower() not in actual_content_type:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            f"The server returned content type {actual_content_type or 'missing'} instead of {content_type}.",
+            operation=operation,
+            resource=resource,
+            remediation="Check server health and version compatibility, then retry.",
+            request_id=_request_id(response),
+            http_status=response.status_code,
+        )
+    return response.text
 
 
-def get_with_headers(path: str, params: dict | None = None) -> tuple[dict, dict[str, str]]:
-    """Like ``get()``, but also returns the response headers (lowercased keys).
-
-    Useful for paginated endpoints that return the page count via headers like
-    ``X-Total-Count``.
-    """
+def get_with_headers(
+    path: str,
+    params: dict | None = None,
+    *,
+    operation: str | None = None,
+    resource: str | None = None,
+) -> tuple[dict, dict[str, str]]:
+    """Like ``get()``, but also returns response headers with lowercase keys."""
     optic.trace("path={}, params={}", path, params)
-    base, headers = _client()
-    try:
-        r = _request_with_retry("get", f"{base}{path}", headers, params=params)
-        # Normalize header keys to lowercase for case-insensitive lookup
-        resp_headers = {k.lower(): v for k, v in r.headers.items()}
-        return r.json(), resp_headers
-    except httpx.HTTPStatusError as e:
-        _handle_error(e, path)
-    except httpx.ReadTimeout:
-        _handle_timeout(path)
-    except httpx.ConnectError:
-        _handle_connect()
+    operation, resource = _error_context(
+        operation,
+        resource,
+        default_operation=f"Fetch {path}",
+        default_resource=path,
+    )
+    response = _request("get", path, operation=operation, resource=resource, params=params)
+    headers = {key.lower(): value for key, value in response.headers.items()}
+    return _json_response(response, operation=operation, resource=resource), headers
 
 
-def post(path: str, json_data: dict | None = None) -> dict:
+def post(
+    path: str,
+    json_data: dict | None = None,
+    *,
+    operation: str | None = None,
+    resource: str | None = None,
+) -> dict:
     optic.trace("path={}, json_data={}", path, json_data)
-    base, headers = _client()
-    try:
-        r = _request_with_retry("post", f"{base}{path}", headers, json=json_data)
-        # Some endpoints answer 204 No Content; decoding that as JSON raises.
-        if r.status_code == 204 or not r.content:
-            return {}
-        return r.json()
-    except httpx.HTTPStatusError as e:
-        _handle_error(e, path)
-    except httpx.ReadTimeout:
-        _handle_timeout(path)
-    except httpx.ConnectError:
-        _handle_connect()
+    operation, resource = _error_context(
+        operation,
+        resource,
+        default_operation=f"Create or act on {path}",
+        default_resource=path,
+    )
+    response = _request("post", path, operation=operation, resource=resource, json_data=json_data)
+    return _json_response(response, operation=operation, resource=resource, allow_empty=True)
 
 
-def put(path: str, json_data: dict | None = None) -> dict:
+def put(
+    path: str,
+    json_data: dict | None = None,
+    *,
+    operation: str | None = None,
+    resource: str | None = None,
+) -> dict:
     optic.trace("path={}, json_data={}", path, json_data)
-    base, headers = _client()
-    try:
-        r = _request_with_retry("put", f"{base}{path}", headers, json=json_data)
-        return r.json()
-    except httpx.HTTPStatusError as e:
-        _handle_error(e, path)
-    except httpx.ReadTimeout:
-        _handle_timeout(path)
-    except httpx.ConnectError:
-        _handle_connect()
+    operation, resource = _error_context(
+        operation,
+        resource,
+        default_operation=f"Replace {path}",
+        default_resource=path,
+    )
+    response = _request("put", path, operation=operation, resource=resource, json_data=json_data)
+    return _json_response(response, operation=operation, resource=resource)
 
 
-def patch(path: str, json_data: dict | None = None) -> dict:
+def patch(
+    path: str,
+    json_data: dict | None = None,
+    *,
+    operation: str | None = None,
+    resource: str | None = None,
+) -> dict:
     optic.trace("path={}, json_data={}", path, json_data)
-    base, headers = _client()
-    try:
-        r = _request_with_retry("patch", f"{base}{path}", headers, json=json_data)
-        return r.json()
-    except httpx.HTTPStatusError as e:
-        _handle_error(e, path)
-    except httpx.ReadTimeout:
-        _handle_timeout(path)
-    except httpx.ConnectError:
-        _handle_connect()
+    operation, resource = _error_context(
+        operation,
+        resource,
+        default_operation=f"Update {path}",
+        default_resource=path,
+    )
+    response = _request("patch", path, operation=operation, resource=resource, json_data=json_data)
+    return _json_response(response, operation=operation, resource=resource)
 
 
-def delete(path: str) -> dict:
+def delete(path: str, *, operation: str | None = None, resource: str | None = None) -> dict:
     optic.trace("path={}", path)
-    base, headers = _client()
-    try:
-        r = _request_with_retry("delete", f"{base}{path}", headers)
-        if r.status_code == 204 or not r.content:
-            return {}
-        return r.json()
-    except httpx.HTTPStatusError as e:
-        _handle_error(e, path)
-    except httpx.ReadTimeout:
-        _handle_timeout(path)
-    except httpx.ConnectError:
-        _handle_connect()
+    operation, resource = _error_context(
+        operation,
+        resource,
+        default_operation=f"Delete {path}",
+        default_resource=path,
+    )
+    response = _request("delete", path, operation=operation, resource=resource)
+    return _json_response(response, operation=operation, resource=resource, allow_empty=True)
 
 
 def get_registered_agents_only() -> bool:

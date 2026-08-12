@@ -285,7 +285,8 @@ class TestAuthWhoami:
         result = runner.invoke(app, ["auth", "whoami", "--output", "plain"])
 
         assert result.exit_code == 2
-        assert "is not one of 'table', 'json'" in result.output
+        assert "Error" in result.output
+        assert "plain" in result.output
 
     def test_whoami_unset_username_is_handled(self) -> None:
         """A user without a username should still render cleanly."""

@@ -5,18 +5,25 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.metadata
+import json
 import os
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, call, patch
 
-import click
 import httpx
 import pytest
 import typer
+from click import Group
+from typer.testing import CliRunner
 
 from observal_cli import client
+from observal_cli.error_context import OPERATION_LABELS, RESOURCE_LABELS
+from observal_cli.errors import CliError, ErrorCategory, ErrorHandlingGroup, ExitCode, _uses_json_output, emit_error
+from observal_cli.main import app
 
 _MISSING = object()
 
@@ -92,39 +99,35 @@ def test_get_timeout_config_override():
         assert get_timeout() == 45
 
 
-def test_handle_error_401():
-    """401 error shows auth login hint."""
-    import httpx
+def test_handle_error_builds_categorized_failure():
+    response = _response(401, data={"detail": "secret authentication detail"})
+    error = httpx.HTTPStatusError("", request=response.request, response=response)
 
-    from observal_cli.client import _handle_error
+    with pytest.raises(CliError) as raised:
+        client._handle_error(
+            error,
+            "/api/v1/test",
+            operation="Authenticate test user",
+            resource="test account",
+        )
 
-    response = MagicMock()
-    response.status_code = 401
-    response.headers = {"content-type": "application/json"}
-    response.json.return_value = {"detail": "Invalid credentials"}
-    response.text = "Invalid credentials"
-
-    error = httpx.HTTPStatusError("", request=MagicMock(), response=response)
-
-    with pytest.raises((SystemExit, click.exceptions.Exit)):
-        _handle_error(error, "/api/v1/test")
+    assert raised.value.category is ErrorCategory.AUTH
+    assert raised.value.contract_exit_code == ExitCode.AUTH
+    assert raised.value.operation == "Authenticate test user"
+    assert raised.value.resource == "test account"
+    assert "secret authentication detail" not in raised.value.message
 
 
-def test_handle_error_includes_path():
-    """Error messages include the request path."""
-    import httpx
+def test_handle_error_preserves_request_id_and_http_status():
+    response = _response(503, text="Internal error", headers={"X-Request-ID": "request-123"})
+    error = httpx.HTTPStatusError("", request=response.request, response=response)
 
-    from observal_cli.client import _handle_error
+    with pytest.raises(CliError) as raised:
+        client._handle_error(error, "/api/v1/agents", operation="List agents", resource="agent registry")
 
-    response = MagicMock()
-    response.status_code = 500
-    response.headers = {"content-type": "text/plain"}
-    response.text = "Internal error"
-
-    error = httpx.HTTPStatusError("", request=MagicMock(), response=response)
-
-    with pytest.raises((SystemExit, click.exceptions.Exit)):
-        _handle_error(error, "/api/v1/agents")
+    assert raised.value.category is ErrorCategory.UNAVAILABLE
+    assert raised.value.http_status == 503
+    assert raised.value.request_id == "request-123"
 
 
 def test_config_save_sets_permissions(tmp_path):
@@ -249,218 +252,235 @@ def test_version_enforcement_without_subcommand_still_checks(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("status", "data", "text", "headers", "path", "expected", "excluded"),
+    ("status", "expected_category", "expected_code"),
     [
-        pytest.param(
-            401,
-            {"detail": "fake-sensitive-detail"},
-            None,
-            {},
-            "/api/v1/items",
-            ("Authentication failed", "observal auth login"),
-            ("fake-sensitive-detail",),
-            id="authentication",
-        ),
-        pytest.param(
-            403,
-            {"detail": "Team membership required"},
-            None,
-            {},
-            "/api/v1/items",
-            ("Permission denied", "Team membership required"),
-            (),
-            id="permission-structured-json",
-        ),
-        pytest.param(
-            403,
-            {"detail": ""},
-            None,
-            {},
-            "/api/v1/items",
-            ("You do not have permission",),
-            (),
-            id="permission-without-detail",
-        ),
-        pytest.param(
-            404,
-            {"detail": "missing"},
-            None,
-            {},
-            "/api/v1/sandboxes/id",
-            ("Not found", "observal registry sandbox list"),
-            (),
-            id="sandbox-not-found",
-        ),
-        pytest.param(
-            404,
-            {"detail": "missing"},
-            None,
-            {},
-            "/api/v1/agents/id",
-            ("Not found", "observal agent list"),
-            (),
-            id="agent-not-found",
-        ),
-        pytest.param(
-            404,
-            {"detail": "missing"},
-            None,
-            {},
-            "/api/v1/insights/agents/id",
-            ("Not found", "observal agent list"),
-            (),
-            id="agent-insight-not-found",
-        ),
-        pytest.param(
-            404,
-            {"detail": "missing"},
-            None,
-            {},
-            "/api/v1/info/id",
-            ("Not found", "observal registry info list"),
-            (),
-            id="unpluralized-resource-not-found",
-        ),
-        pytest.param(
-            426,
-            {"detail": "Install the matching CLI"},
-            None,
-            {},
-            "/api/v1/items",
-            ("Version mismatch", "Install the matching CLI"),
-            (),
-            id="version-mismatch",
-        ),
-        pytest.param(
-            426,
-            {"detail": ""},
-            None,
-            {},
-            "/api/v1/items",
-            ("Version mismatch",),
-            (),
-            id="version-mismatch-without-detail",
-        ),
-        pytest.param(
-            429,
-            _MISSING,
-            "slow down",
-            {"content-type": "text/plain", "Retry-After": "12 seconds"},
-            "/api/v1/items",
-            ("Rate limited", "Try again in 12 seconds"),
-            (),
-            id="rate-limit-text",
-        ),
-        pytest.param(
-            503,
-            _MISSING,
-            "unavailable",
-            {"content-type": "text/plain"},
-            "/api/v1/items",
-            ("Server error 503", "observal doctor"),
-            (),
-            id="server-error-text",
-        ),
-        pytest.param(
-            400,
-            _MISSING,
-            "plain failure",
-            {"content-type": "text/plain"},
-            "",
-            ("Error 400", "plain failure"),
-            (),
-            id="unstructured-text",
-        ),
-        pytest.param(
-            422,
-            _MISSING,
-            "{broken-json",
-            {"content-type": "application/json"},
-            "/api/v1/items",
-            ("Error 422", "{broken-json"),
-            (),
-            id="malformed-json",
-        ),
+        (401, ErrorCategory.AUTH, ExitCode.AUTH),
+        (403, ErrorCategory.PERMISSION, ExitCode.PERMISSION),
+        (404, ErrorCategory.NOT_FOUND, ExitCode.NOT_FOUND),
+        (409, ErrorCategory.CONFLICT, ExitCode.CONFLICT),
+        (422, ErrorCategory.VALIDATION, ExitCode.VALIDATION),
+        (426, ErrorCategory.VERSION, ExitCode.VERSION),
+        (429, ErrorCategory.RATE_LIMIT, ExitCode.RATE_LIMIT),
+        (503, ErrorCategory.UNAVAILABLE, ExitCode.UNAVAILABLE),
     ],
 )
-def test_http_errors_are_actionable_and_redacted(
-    monkeypatch,
-    status,
-    data,
-    text,
-    headers,
-    path,
-    expected,
-    excluded,
-):
-    printed = []
-    monkeypatch.setattr(client, "rprint", lambda message: printed.append(str(message)))
-    response = _response(status, data=data, text=text, headers=headers)
+def test_http_statuses_map_to_stable_categories(status, expected_category, expected_code):
+    response = _response(
+        status,
+        data={"detail": "safe cause"},
+        headers={"X-Request-ID": "request-123", "Retry-After": "12"},
+    )
     error = httpx.HTTPStatusError("request failed", request=response.request, response=response)
 
-    with pytest.raises(typer.Exit) as raised:
-        client._handle_error(error, path)
+    with pytest.raises(CliError) as raised:
+        client._handle_error(
+            error,
+            "/api/v1/items/id",
+            operation="Update item",
+            resource="item id",
+        )
 
-    assert raised.value.exit_code == 1
-    output = "\n".join(printed)
-    assert all(value in output for value in expected)
-    assert all(value not in output for value in excluded)
+    assert raised.value.category is expected_category
+    assert raised.value.contract_exit_code == expected_code
+    assert raised.value.operation == "Update item"
+    assert raised.value.resource == "item id"
+    assert raised.value.request_id == "request-123"
+    assert raised.value.http_status == status
+    assert raised.value.remediation
 
 
-def test_rate_limit_without_header_uses_general_guidance(monkeypatch):
-    printed = []
-    monkeypatch.setattr(client, "rprint", lambda message: printed.append(str(message)))
-    response = _response(429, data={"detail": "later"})
+def test_not_found_has_browse_remediation():
+    response = _response(404, data={"detail": "missing"})
     error = httpx.HTTPStatusError("request failed", request=response.request, response=response)
 
-    with pytest.raises(typer.Exit):
-        client._handle_error(error)
+    with pytest.raises(CliError) as raised:
+        client._handle_error(error, "/api/v1/sandboxes/id", operation="Show sandbox", resource="sandbox id")
 
-    assert "a few seconds" in "\n".join(printed)
+    assert "observal registry sandbox list" in raised.value.remediation
 
 
-def test_connection_failure_shows_server_without_token(monkeypatch):
-    printed = []
+def test_rate_limit_uses_retry_after_header():
+    response = _response(429, text="slow down", headers={"Retry-After": "12 seconds"})
+    error = httpx.HTTPStatusError("request failed", request=response.request, response=response)
+
+    with pytest.raises(CliError) as raised:
+        client._handle_error(error, operation="List items", resource="registry items")
+
+    assert raised.value.category is ErrorCategory.RATE_LIMIT
+    assert raised.value.remediation == "Retry in 12 seconds."
+
+
+def test_connection_failure_is_unavailable_without_token(monkeypatch):
     monkeypatch.setattr(
         client.config,
         "load",
         lambda: {"server_url": "https://registry.example.test", "access_token": "fake-secret-token"},
     )
-    monkeypatch.setattr(client, "rprint", lambda message: printed.append(str(message)))
 
-    with pytest.raises(typer.Exit) as error:
-        client._handle_connect()
+    with pytest.raises(CliError) as raised:
+        client._handle_connect(operation="List items", resource="registry items", detail="connection refused")
 
-    output = "\n".join(printed)
-    assert error.value.exit_code == 1
-    assert "Connection failed" in output
-    assert "https://registry.example.test" in output
-    assert "fake-secret-token" not in output
+    assert raised.value.category is ErrorCategory.UNAVAILABLE
+    assert raised.value.contract_exit_code == ExitCode.UNAVAILABLE
+    assert "fake-secret-token" not in repr(raised.value)
 
 
 def test_connection_failure_handles_missing_server(monkeypatch):
-    printed = []
     monkeypatch.setattr(client.config, "load", lambda: {})
-    monkeypatch.setattr(client, "rprint", lambda message: printed.append(str(message)))
 
-    with pytest.raises(typer.Exit):
+    with pytest.raises(CliError) as raised:
         client._handle_connect()
 
-    assert "Server URL: not set" in "\n".join(printed)
+    assert raised.value.resource == "server not set"
 
 
-def test_timeout_failure_shows_path_and_configured_timeout(monkeypatch):
-    printed = []
+def test_timeout_failure_includes_context(monkeypatch):
     monkeypatch.setattr(client.config, "get_timeout", lambda: 17)
-    monkeypatch.setattr(client, "rprint", lambda message: printed.append(str(message)))
 
-    with pytest.raises(typer.Exit) as error:
-        client._handle_timeout("/api/v1/items")
+    with pytest.raises(CliError) as raised:
+        client._handle_timeout(
+            "/api/v1/items",
+            operation="List items",
+            resource="registry items",
+            detail="slow request",
+        )
 
-    output = "\n".join(printed)
-    assert error.value.exit_code == 1
-    assert "Request timed out (/api/v1/items)" in output
-    assert "Timeout: 17s" in output
+    assert raised.value.category is ErrorCategory.UNAVAILABLE
+    assert raised.value.contract_exit_code == ExitCode.UNAVAILABLE
+    assert raised.value.message == "The request timed out after 17 seconds."
+    assert raised.value.operation == "List items"
+    assert raised.value.resource == "registry items"
+
+
+def test_error_renderer_emits_json_to_stderr(capsys):
+    error = CliError(
+        ErrorCategory.NOT_FOUND,
+        "Item was not found.",
+        operation="Show item",
+        resource="item 123",
+        remediation="List available items.",
+        request_id="request-123",
+        http_status=404,
+        detail="internal detail",
+    )
+
+    emit_error(error, json_mode=True, debug=False)
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    payload = json.loads(captured.err)
+    assert payload == {
+        "error": {
+            "category": "not_found",
+            "message": "Item was not found.",
+            "operation": "Show item",
+            "exit_code": 5,
+            "resource": "item 123",
+            "remediation": "List available items.",
+            "request_id": "request-123",
+            "http_status": 404,
+        }
+    }
+
+
+def test_error_renderer_exposes_detail_only_in_debug(capsys):
+    error = CliError(ErrorCategory.UNEXPECTED, "Failed.", operation="Test", detail="internal detail")
+
+    emit_error(error, json_mode=True, debug=True)
+
+    payload = json.loads(capsys.readouterr().err)
+    assert payload["error"]["detail"] == "internal detail"
+
+
+def test_json_error_mode_distinguishes_format_from_file_destination():
+    from typer.main import get_command
+
+    root = get_command(app)
+    assert _uses_json_output(root, ("agent", "show", "reviewer", "--output", "json")) is True
+    assert _uses_json_output(root, ("doctor", "support", "bundle", "--output", "json")) is False
+
+
+def test_root_boundary_emits_json_usage_error_to_stderr():
+    result = CliRunner().invoke(app, ["agent", "show", "--output", "json"])
+
+    assert result.exit_code == ExitCode.USAGE
+    assert result.stdout == ""
+    payload = json.loads(result.stderr)
+    assert payload["error"]["category"] == "usage"
+    assert payload["error"]["operation"] == "Run observal agent show"
+
+
+def test_missing_authentication_uses_stable_json_contract(monkeypatch):
+    monkeypatch.setattr(client.config, "load", lambda: {})
+
+    result = CliRunner().invoke(app, ["auth", "whoami", "--output", "json"])
+
+    assert result.exit_code == ExitCode.AUTH
+    assert result.stdout == ""
+    payload = json.loads(result.stderr)["error"]
+    assert payload["category"] == "authentication"
+    assert payload["operation"] == "Load authenticated CLI configuration"
+
+
+def test_command_api_failure_uses_audited_context(monkeypatch):
+    response = _response(404, data={"detail": "Agent not found"}, headers={"X-Request-ID": "request-456"})
+    status_error = httpx.HTTPStatusError("missing", request=response.request, response=response)
+    monkeypatch.setattr(client, "_client", lambda: ("https://registry.example.test", {}))
+    monkeypatch.setattr(client, "_request_with_retry", MagicMock(side_effect=status_error))
+
+    result = CliRunner().invoke(app, ["agent", "show", "reviewer", "--output", "json"])
+
+    assert result.exit_code == ExitCode.NOT_FOUND
+    assert result.stdout == ""
+    payload = json.loads(result.stderr)["error"]
+    assert payload["operation"] == "Show agent"
+    assert payload["resource"] == "agent registry"
+    assert payload["request_id"] == "request-456"
+
+
+def test_all_cli_api_calls_have_custom_error_context():
+    methods = {"get", "get_text", "get_with_headers", "post", "put", "patch", "delete"}
+    missing = []
+    cli_root = Path(__file__).resolve().parents[1] / "observal_cli"
+    paths = [*cli_root.glob("cmd_*.py"), cli_root / "lockfile_reconcile.py"]
+    for path in paths:
+        tree = ast.parse(path.read_text())
+        parents = {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
+        for node in ast.walk(tree):
+            if not (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id in {"client", "_client"}
+                and node.func.attr in methods
+            ):
+                continue
+            current = node
+            while current in parents and not isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                current = parents[current]
+            function = current.name if isinstance(current, (ast.FunctionDef, ast.AsyncFunctionDef)) else ""
+            if function not in OPERATION_LABELS or path.name not in RESOURCE_LABELS:
+                missing.append(f"{path}:{node.lineno}")
+    assert missing == []
+
+
+def test_root_group_enforces_error_contract_for_all_commands():
+    from typer.main import get_command
+
+    root = get_command(app)
+    assert isinstance(root, ErrorHandlingGroup)
+
+    executable = []
+
+    def walk(command):
+        if not isinstance(command, Group) or command.invoke_without_command:
+            executable.append(command)
+        if isinstance(command, Group):
+            for child in command.commands.values():
+                walk(child)
+
+    walk(root)
+    assert len(executable) == 189
 
 
 @pytest.mark.parametrize(
@@ -728,7 +748,6 @@ def test_get_text_returns_validated_raw_response(monkeypatch):
         "get",
         "https://registry.example.test/api/v1/admin/audit-log/export",
         {"Authorization": "Bearer fake-access-token"},
-        params=None,
     )
 
 
@@ -736,14 +755,19 @@ def test_get_text_rejects_unexpected_content_type(monkeypatch):
     response = _response(200, data={"detail": "not csv"}, headers={"Content-Type": "application/json"})
     monkeypatch.setattr(client, "_client", lambda: ("https://registry.example.test", {}))
     monkeypatch.setattr(client, "_request_with_retry", MagicMock(return_value=response))
-    printed = []
-    monkeypatch.setattr(client, "rprint", lambda message: printed.append(str(message)))
 
-    with pytest.raises(typer.Exit) as error:
-        client.get_text("/api/v1/admin/audit-log/export", content_type="text/csv")
+    with pytest.raises(CliError) as raised:
+        client.get_text(
+            "/api/v1/admin/audit-log/export",
+            content_type="text/csv",
+            operation="Export audit log",
+            resource="audit log",
+        )
 
-    assert error.value.exit_code == 1
-    assert printed == ["[red]Unexpected response content type:[/red] application/json"]
+    assert raised.value.category is ErrorCategory.UNAVAILABLE
+    assert raised.value.contract_exit_code == ExitCode.UNAVAILABLE
+    assert raised.value.operation == "Export audit log"
+    assert raised.value.resource == "audit log"
 
 
 def test_get_with_headers_normalizes_pagination_headers(monkeypatch):
@@ -804,8 +828,15 @@ def _invoke_wrapper(name: str):
 
 
 @pytest.mark.parametrize("wrapper", ["get", "get_text", "get_with_headers", "post", "put", "patch", "delete"])
-@pytest.mark.parametrize("failure", ["status", "timeout", "connection"])
-def test_wrappers_route_transport_failures_to_user_facing_handlers(monkeypatch, wrapper, failure):
+@pytest.mark.parametrize(
+    ("failure", "expected_category"),
+    [
+        ("status", ErrorCategory.VALIDATION),
+        ("timeout", ErrorCategory.UNAVAILABLE),
+        ("connection", ErrorCategory.UNAVAILABLE),
+    ],
+)
+def test_wrappers_convert_transport_failures(monkeypatch, wrapper, failure, expected_category):
     response = _response(400, data={"detail": "invalid"})
     status_error = httpx.HTTPStatusError("invalid", request=response.request, response=response)
     exception = {
@@ -815,29 +846,13 @@ def test_wrappers_route_transport_failures_to_user_facing_handlers(monkeypatch, 
     }[failure]
     monkeypatch.setattr(client, "_client", lambda: ("https://registry.example.test", {}))
     monkeypatch.setattr(client, "_request_with_retry", MagicMock(side_effect=exception))
-    handle_error = MagicMock(side_effect=typer.Exit(1))
-    handle_timeout = MagicMock(side_effect=typer.Exit(1))
-    handle_connect = MagicMock(side_effect=typer.Exit(1))
-    monkeypatch.setattr(client, "_handle_error", handle_error)
-    monkeypatch.setattr(client, "_handle_timeout", handle_timeout)
-    monkeypatch.setattr(client, "_handle_connect", handle_connect)
 
-    with pytest.raises(typer.Exit):
+    with pytest.raises(CliError) as raised:
         _invoke_wrapper(wrapper)
 
-    path = "/api/v1/items" if wrapper in {"get", "get_text", "get_with_headers"} else "/api/v1/items/id"
-    if failure == "status":
-        handle_error.assert_called_once_with(status_error, path)
-        handle_timeout.assert_not_called()
-        handle_connect.assert_not_called()
-    elif failure == "timeout":
-        handle_timeout.assert_called_once_with(path)
-        handle_error.assert_not_called()
-        handle_connect.assert_not_called()
-    else:
-        handle_connect.assert_called_once_with()
-        handle_error.assert_not_called()
-        handle_timeout.assert_not_called()
+    assert raised.value.category is expected_category
+    assert raised.value.operation
+    assert raised.value.resource
 
 
 @pytest.mark.parametrize(

@@ -49,13 +49,38 @@ Any subcommand accepts these.
 
 Consistent across all commands:
 
-| Code | Meaning                                     |
-| ---- | ------------------------------------------- |
-| 0    | Success                                     |
-| 1    | General error (network, auth, validation)   |
-| 2    | Usage error (bad flags, unknown subcommand) |
-| 3    | Not found (agent, MCP, user, etc.)          |
-| 4    | Permission denied (RBAC role too low)       |
+| Code | Meaning                                      |
+| ---- | -------------------------------------------- |
+| 0    | Success                                      |
+| 1    | Unexpected or uncategorized failure          |
+| 2    | Usage error                                  |
+| 3    | Authentication required or failed            |
+| 4    | Permission denied                            |
+| 5    | Resource not found                           |
+| 6    | Conflict with current state                  |
+| 7    | Validation failure                           |
+| 8    | Rate limit reached                           |
+| 9    | Network, service, or dependency unavailable  |
+| 10   | CLI and server version mismatch              |
+
+Errors identify the failed operation, resource, remediation, and server request ID when available. Internal details appear only with `--debug`.
+
+When JSON output is selected, errors are written to stderr as one JSON object and stdout remains clean:
+
+```json
+{
+  "error": {
+    "category": "not_found",
+    "message": "The requested resource was not found.",
+    "operation": "Show agent",
+    "resource": "agent registry",
+    "remediation": "Check the identifier or list available agents.",
+    "request_id": "01J...",
+    "http_status": 404,
+    "exit_code": 5
+  }
+}
+```
 
 ## Non-interactive mode
 
