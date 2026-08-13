@@ -397,7 +397,7 @@ Keep property-based tests deterministic and focused. If a failing example reveal
 
 ## Fuzzing
 
-Property tests cover invariants you can name. Fuzzing covers the ones you cannot: Observal is fuzzed continuously by [Google OSS-Fuzz](https://google.github.io/oss-fuzz/), and the Atheris targets live in `fuzz/`.
+Property tests cover invariants you can name. Fuzzing covers the ones you cannot: the Atheris targets live in `fuzz/`, and the project is being submitted to [Google OSS-Fuzz](https://google.github.io/oss-fuzz/) for continuous fuzzing.
 
 Reach for a fuzz target instead of a property test when the boundary takes untrusted bytes and the interesting failures are crashes rather than wrong answers. Session transcripts, the ingest classifiers, and both redaction layers are covered today.
 

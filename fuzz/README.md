@@ -3,7 +3,9 @@
 
 # Fuzzing
 
-Observal is fuzzed continuously by [Google OSS-Fuzz](https://google.github.io/oss-fuzz/).
+Observal is fuzzed with [Atheris](https://github.com/google/atheris) and is being
+submitted to [Google OSS-Fuzz](https://google.github.io/oss-fuzz/) for continuous
+fuzzing; the upstream project is not live yet.
 The fuzz targets live here so they are versioned alongside the code they
 exercise; OSS-Fuzz only stores the three-file project configuration, which is
 mirrored under `fuzz/oss-fuzz/`.
