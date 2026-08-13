@@ -17,9 +17,6 @@
 # limitations under the License.
 #
 ################################################################################
-#
-# SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
-# SPDX-License-Identifier: Apache-2.0
 
 # The fuzz targets import directly from the checkout. PyInstaller needs each
 # source root and the model catalogue used by observal_shared.

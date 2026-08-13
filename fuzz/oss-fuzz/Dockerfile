@@ -16,9 +16,6 @@
 # limitations under the License.
 #
 ################################################################################
-#
-# SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
-# SPDX-License-Identifier: Apache-2.0
 
 FROM gcr.io/oss-fuzz-base/base-builder-python:latest@sha256:6b2b3a7e4a2da50de47f94925cffbe34747e1aae4f33d7f07ba6c681dd648b23
 
