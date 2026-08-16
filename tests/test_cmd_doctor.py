@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Annie Chiang <anniechiang.yn@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn>
 # SPDX-License-Identifier: Apache-2.0
 
 """Tests for observal_cli.cmd_doctor helpers."""
@@ -7,15 +8,13 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 import typer
 from typer.testing import CliRunner
 
-if TYPE_CHECKING:
-    from pathlib import Path
 from observal_cli.cmd_doctor import (
     _check_antigravity,
     _check_claude_code,
@@ -261,6 +260,19 @@ class TestChecks:
         missing = _check_observal_skill_missing()
 
         assert "Pi" in missing
+
+    def test_shared_observal_skill_satisfies_codex_and_pi(self, tmp_path: Path):
+        (tmp_path / ".codex").mkdir()
+        (tmp_path / ".pi").mkdir()
+        source = Path(__file__).parents[1] / "observal_cli/skills/observal/SKILL.md"
+        shared = tmp_path / ".agents/skills/observal/SKILL.md"
+        shared.parent.mkdir(parents=True)
+        shared.write_bytes(source.read_bytes())
+
+        missing = _check_observal_skill_missing()
+
+        assert "Codex" not in missing
+        assert "Pi" not in missing
 
 
 class TestPatchFunctions:

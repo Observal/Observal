@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Observal Contributors
+# SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn>
 # SPDX-License-Identifier: Apache-2.0
 
 """Hash-based synchronization coverage for bundled Observal skills."""
@@ -9,12 +10,11 @@ import json
 import shutil
 from typing import TYPE_CHECKING
 
+import pytest
 from typer.testing import CliRunner
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import pytest
 
 from observal_cli import skill_installer
 from observal_shared.harness_registry import HARNESS_REGISTRY
@@ -109,6 +109,120 @@ def test_every_detected_harness_syncs_all_skill_trees_and_migrates_antigravity(
     drift.write_text("stale", encoding="utf-8")
     skill_installer.sync_observal_skills()
     assert not drift.exists()
+
+
+def _use_test_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    bundled = tmp_path / "bundled"
+    for name in skill_installer._SKILL_DIRS:
+        _write_skill(bundled, name)
+    monkeypatch.setattr(skill_installer, "_SKILLS_BASE", bundled)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    return bundled
+
+
+def test_pi_only_installs_native_bundled_skills(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    bundled = _use_test_bundle(tmp_path, monkeypatch)
+    (tmp_path / ".pi").mkdir()
+
+    skill_installer.install_observal_skill()
+
+    for name in skill_installer._SKILL_DIRS:
+        assert skill_installer._directory_hash(tmp_path / ".pi/agent/skills" / name) == skill_installer._directory_hash(
+            bundled / name
+        )
+        assert not (tmp_path / ".agents/skills" / name).exists()
+
+
+def test_codex_only_installs_shared_skills_without_antigravity(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    bundled = _use_test_bundle(tmp_path, monkeypatch)
+    (tmp_path / ".codex").mkdir()
+
+    skill_installer.install_observal_skill()
+
+    for name in skill_installer._SKILL_DIRS:
+        assert skill_installer._directory_hash(tmp_path / ".agents/skills" / name) == skill_installer._directory_hash(
+            bundled / name
+        )
+    assert not (tmp_path / ".pi/agent/skills").exists()
+    assert not (tmp_path / ".gemini/antigravity-cli").exists()
+
+
+def test_codex_and_pi_share_skills_and_remove_matching_native_copy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    bundled = _use_test_bundle(tmp_path, monkeypatch)
+    (tmp_path / ".codex").mkdir()
+    (tmp_path / ".pi").mkdir()
+    native = tmp_path / ".pi/agent/skills/observal/SKILL.md"
+    native.parent.mkdir(parents=True)
+    native.write_bytes((bundled / "observal/SKILL.md").read_bytes())
+
+    skill_installer.install_observal_skill()
+    shared_inode = (tmp_path / ".agents/skills/observal").stat().st_ino
+    skill_installer.install_observal_skill()
+
+    assert (tmp_path / ".agents/skills/observal").stat().st_ino == shared_inode
+    for name in skill_installer._SKILL_DIRS:
+        assert skill_installer._directory_hash(tmp_path / ".agents/skills" / name) == skill_installer._directory_hash(
+            bundled / name
+        )
+        assert not (tmp_path / ".pi/agent/skills" / name).exists()
+
+
+def test_pi_reuses_an_existing_shared_copy_without_codex(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    bundled = _use_test_bundle(tmp_path, monkeypatch)
+    (tmp_path / ".pi").mkdir()
+    shared = tmp_path / ".agents/skills/observal/SKILL.md"
+    shared.parent.mkdir(parents=True)
+    shared.write_bytes((bundled / "observal/SKILL.md").read_bytes())
+
+    skill_installer.install_observal_skill()
+
+    assert skill_installer._directory_hash(shared.parent) == skill_installer._directory_hash(bundled / "observal")
+    assert not (tmp_path / ".pi/agent/skills/observal").exists()
+
+
+def test_divergent_native_copy_and_unrelated_skill_are_preserved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    _use_test_bundle(tmp_path, monkeypatch)
+    (tmp_path / ".codex").mkdir()
+    (tmp_path / ".pi").mkdir()
+    native = tmp_path / ".pi/agent/skills/observal/SKILL.md"
+    native.parent.mkdir(parents=True)
+    native.write_text("user customization", encoding="utf-8")
+    unrelated = tmp_path / ".pi/agent/skills/custom/SKILL.md"
+    unrelated.parent.mkdir(parents=True)
+    unrelated.write_text("custom skill", encoding="utf-8")
+
+    skill_installer.install_observal_skill()
+
+    assert native.read_text(encoding="utf-8") == "user customization"
+    assert unrelated.read_text(encoding="utf-8") == "custom skill"
+    output = capsys.readouterr().out
+    assert "Preserved divergent bundled skill copy" in output
+    assert str(native) in "".join(output.split())
+
+
+def test_failed_shared_sync_keeps_matching_native_copy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    bundled = _use_test_bundle(tmp_path, monkeypatch)
+    (tmp_path / ".codex").mkdir()
+    (tmp_path / ".pi").mkdir()
+    native = tmp_path / ".pi/agent/skills/observal/SKILL.md"
+    native.parent.mkdir(parents=True)
+    native.write_bytes((bundled / "observal/SKILL.md").read_bytes())
+    shared_dir = tmp_path / ".agents/skills/observal"
+    original_replace = skill_installer._replace_directory
+
+    def fail_shared_sync(source: Path, target: Path) -> None:
+        if target == shared_dir:
+            raise OSError("permission denied")
+        original_replace(source, target)
+
+    monkeypatch.setattr(skill_installer, "_replace_directory", fail_shared_sync)
+
+    with pytest.raises(OSError, match="permission denied"):
+        skill_installer.install_observal_skill()
+
+    assert native.is_file()
 
 
 def test_startup_sync_does_not_install_into_an_unmanaged_harness(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

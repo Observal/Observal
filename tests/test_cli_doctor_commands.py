@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 0xSHSH <156781261+0xSHSH@users.noreply.github.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn>
 # SPDX-License-Identifier: Apache-2.0
 
 """Behavioral coverage for the doctor CLI commands and untested state branches."""
@@ -212,7 +213,11 @@ class TestConfigAndSkillDiagnosis:
         (tmp_path / ".kiro").mkdir()
         registry = {
             "unsupported": {"display_name": "Unsupported", "config_dir": ".unsupported", "skills": {}},
-            "kiro": {"display_name": "Kiro", "config_dir": ".kiro", "skills": {}},
+            "kiro": {
+                "display_name": "Kiro",
+                "config_dir": ".kiro",
+                "skills": {"user": "~/.kiro/skills/{name}/SKILL.md"},
+            },
             "absent": {
                 "display_name": "Absent",
                 "config_dir": ".absent",

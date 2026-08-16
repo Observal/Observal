@@ -6,6 +6,7 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn>
 # SPDX-License-Identifier: Apache-2.0
 
 """observal doctor: diagnose and patch harness settings for Observal session telemetry.
@@ -230,31 +231,9 @@ def doctor(
 
 def _check_observal_skill_missing() -> list[str]:
     """Return list of harness display names where the observal skill is not installed."""
-    from observal_shared.harness_registry import HARNESS_REGISTRY
+    from observal_cli.skill_installer import missing_observal_skill_harnesses
 
-    skill_source = Path(__file__).parent / "skills" / "observal" / "SKILL.md"
-    if not skill_source.exists():
-        return []
-
-    _extra_user_paths: dict[str, str] = {"kiro": "~/.kiro/skills/{name}/SKILL.md"}
-    missing: list[str] = []
-
-    for harness, spec in HARNESS_REGISTRY.items():
-        skill_spec = spec.get("skills") or {}
-        user_path = skill_spec.get("user") or _extra_user_paths.get(harness)
-        if not user_path:
-            continue
-
-        resolved = user_path.replace("{name}", "observal")
-        dest = Path(resolved.replace("~", str(Path.home())))
-        ide_config_dir = Path.home() / spec.get("config_dir", "")
-        if not ide_config_dir.exists():
-            continue
-
-        if not dest.exists():
-            missing.append(spec["display_name"])
-
-    return missing
+    return missing_observal_skill_harnesses()
 
 
 def _check_observal_config(issues: list, warnings: list):

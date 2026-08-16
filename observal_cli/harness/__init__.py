@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn>
 # SPDX-License-Identifier: Apache-2.0
 
 """CLI-side harness adapter protocol, registry, and orchestrator.
@@ -12,6 +13,7 @@ from __future__ import annotations
 
 from observal_cli.harness.protocol import (
     METHOD_FEATURE_MAP,
+    BundledSkillPlan,
     DiscoveredAgent,
     DiscoveredHook,
     DiscoveredMcp,
@@ -26,6 +28,7 @@ from observal_shared.harness_registry import HARNESS_REGISTRY
 
 __all__ = [
     "METHOD_FEATURE_MAP",
+    "BundledSkillPlan",
     "DiscoveredAgent",
     "DiscoveredHook",
     "DiscoveredMcp",
@@ -56,6 +59,7 @@ def register_adapter(adapter: HarnessAdapter) -> None:
         "harness_name",
         "scan_home",
         "is_installed",
+        "plan_bundled_skill_install",
         "scan_project",
         "get_hook_spec",
         "generate_hook_config",
