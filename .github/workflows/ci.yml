@@ -275,10 +275,11 @@ jobs:
         run: |
           docker run --rm \
             -v "$PWD:/work:ro" \
-            ghcr.io/yannh/kubeconform:v0.6.7 \
+            ghcr.io/yannh/kubeconform@sha256:0925177fb05b44ce18574076141b5c3d83235e1904d3f952182ac99ddc45762c \
             -strict \
             -summary \
             -kubernetes-version 1.27.0 \
+            -schema-location 'https://raw.githubusercontent.com/yannh/kubernetes-json-schema/c8f4e61c63bc529749125ac566bccc6986e08d45/{{.NormalizedKubernetesVersion}}-standalone-strict/{{.ResourceKind}}{{.KindSuffix}}.json' \
             /work/chart-dist/rendered.yaml
 
       - name: Verify packaged chart appVersion image tags
