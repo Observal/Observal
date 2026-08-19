@@ -266,7 +266,21 @@ jobs:
 
       - name: Render chart
         if: needs.changes.outputs.helm == 'true'
-        run: helm template observal infra/helm/observal --namespace observal
+        run: |
+          mkdir -p chart-dist
+          helm template observal infra/helm/observal --namespace observal > chart-dist/rendered.yaml
+
+      - name: Validate rendered manifests
+        if: needs.changes.outputs.helm == 'true'
+        run: |
+          docker run --rm \
+            -v "$PWD:/work:ro" \
+            ghcr.io/yannh/kubeconform@sha256:0925177fb05b44ce18574076141b5c3d83235e1904d3f952182ac99ddc45762c \
+            -strict \
+            -summary \
+            -kubernetes-version 1.27.0 \
+            -schema-location 'https://raw.githubusercontent.com/yannh/kubernetes-json-schema/c8f4e61c63bc529749125ac566bccc6986e08d45/{{.NormalizedKubernetesVersion}}-standalone-strict/{{.ResourceKind}}{{.KindSuffix}}.json' \
+            /work/chart-dist/rendered.yaml
 
       - name: Verify packaged chart appVersion image tags
         if: needs.changes.outputs.helm == 'true'
