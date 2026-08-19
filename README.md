@@ -22,7 +22,7 @@
  ╚═════╝ ╚═════╝ ╚══════╝╚══════╝╚═╝  ╚═╝  ╚═══╝  ╚═╝  ╚═╝╚══════╝
 </pre>
 
-**Observal is the control plane and system of record for internal AI components**
+**Observal is self-hosted registry for your coding agent extensions with a built in insight engine.** Setup Observal, define the scope and share your Skills, MCPs and Agents with your peers.
 
 <p>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License"></a>
