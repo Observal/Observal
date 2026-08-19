@@ -11,6 +11,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Features
+
+- add the `observal-sdlc` skill documenting the contribution lifecycle (fork workflow, branch naming, conventional commits, SPDX, tests, issue and PR templates, AI policy, CLA, and review gates)
+
 ## [1.12.1] - 2026-08-09
 
 ### Fixes

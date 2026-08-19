@@ -46,6 +46,7 @@ ALL_SKILL_PATHS = [
     SKILLS_DIR / "observal-ops" / "SKILL.md",
     SKILLS_DIR / "observal-admin" / "SKILL.md",
     SKILLS_DIR / "observal-advanced" / "SKILL.md",
+    SKILLS_DIR / "observal-sdlc" / "SKILL.md",
 ]
 ALL_SKILL_MARKDOWN_PATHS = sorted(path for skill_path in ALL_SKILL_PATHS for path in skill_path.parent.rglob("*.md"))
 

@@ -32,6 +32,7 @@ _SKILL_DIRS = (
     "observal-ops",
     "observal-admin",
     "observal-advanced",
+    "observal-sdlc",
 )
 _SKILLS_BASE = Path(__file__).parent / "skills"
 
