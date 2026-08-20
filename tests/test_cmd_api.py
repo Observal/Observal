@@ -42,11 +42,23 @@ def test_get_preserves_raw_api_array_json(api_call):
     api_call.assert_called_once_with(
         "GET",
         "/api/v1/teams",
-        params={"limit": "10"},
+        params=[("limit", "10")],
         json_data=None,
         operation="Call Observal API",
         resource="Observal API endpoint",
     )
+
+
+def test_repeated_query_parameters_preserve_order_and_values(api_call):
+    _allow(api_call, {"ok": True})
+
+    result = runner.invoke(
+        api_app,
+        ["GET", "/api/v1/items", "--param", "tag=a", "--param", "tag=b", "--output", "json"],
+    )
+
+    assert result.exit_code == 0
+    assert api_call.call_args.kwargs["params"] == [("tag", "a"), ("tag", "b")]
 
 
 def test_post_reads_json_file_and_returns_direct_object(tmp_path, api_call):
@@ -66,6 +78,43 @@ def test_post_reads_json_file_and_returns_direct_object(tmp_path, api_call):
         "/api/v1/teams",
         params=None,
         json_data={"name": "Platform"},
+        operation="Call Observal API",
+        resource="Observal API endpoint",
+    )
+
+
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [
+        ('[{"name":"one"}]', [{"name": "one"}]),
+        ('"plain"', "plain"),
+        ("42", 42),
+        ("true", True),
+    ],
+)
+def test_post_accepts_any_non_null_json_file_value(tmp_path, api_call, content, expected):
+    body = tmp_path / "body.json"
+    body.write_text(content, encoding="utf-8")
+    _allow(api_call, {"ok": True})
+
+    result = runner.invoke(api_app, ["POST", "/api/v1/items", "--from-file", str(body), "--output", "json"])
+
+    assert result.exit_code == 0
+    assert api_call.call_args.kwargs["json_data"] == expected
+
+
+def test_post_can_send_explicit_json_null(api_call):
+    _allow(api_call, {"ok": True})
+
+    result = runner.invoke(api_app, ["POST", "/api/v1/items", "--output", "json"], input="null")
+
+    assert result.exit_code == 0
+    api_call.assert_called_once_with(
+        "POST",
+        "/api/v1/items",
+        params=None,
+        json_data=None,
+        send_json=True,
         operation="Call Observal API",
         resource="Observal API endpoint",
     )
@@ -111,6 +160,8 @@ def test_default_output_renders_generic_table(api_call, monkeypatch: pytest.Monk
         ["TRACE", "/api/v1/teams"],
         ["GET", "https://evil.example/api/v1/teams"],
         ["GET", "/api/v1/../health"],
+        ["GET", "/api/v1/%252e%252e/health"],
+        ["GET", "/api/v1/teams%253Fadmin=true"],
         ["GET", "/api/v1/teams", "--param", "broken"],
     ],
 )
@@ -140,6 +191,13 @@ def test_get_rejects_request_body(tmp_path, api_call):
     body.write_text("{}", encoding="utf-8")
 
     result = runner.invoke(api_app, ["GET", "/api/v1/teams", "--from-file", str(body)])
+
+    assert result.exit_code == 7
+    api_call.assert_not_called()
+
+
+def test_get_rejects_explicit_null_body(api_call):
+    result = runner.invoke(api_app, ["GET", "/api/v1/teams"], input="null")
 
     assert result.exit_code == 7
     api_call.assert_not_called()

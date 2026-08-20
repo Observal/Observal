@@ -149,8 +149,9 @@ Never include tokens, passwords, API keys, authorization headers, secret payload
 | 8 | Rate limit reached |
 | 9 | Network, service, or dependency unavailable |
 | 10 | CLI and server version mismatch |
+| 11 | Batch completed with one or more item errors |
 
-When JSON formatting is selected, errors go to stderr as one JSON object and stdout stays clean. File-destination options named `output` do not activate JSON error rendering.
+When JSON formatting is selected, errors go to stderr as one JSON object and stdout stays clean. Safe repair data belongs in `error.result`; internal diagnostics remain debug-only. Finite partial batches keep one result document on stdout, set `partial: true`, and exit 11. File-destination options named `output` do not activate JSON error rendering.
 
 ## 5. Preserve non-interactive and side-effect safety
 
@@ -189,6 +190,7 @@ At minimum, cover:
 - Invalid output modes are rejected as usage errors.
 - API failures produce the expected category, exit code, operation, resource, remediation, and request ID.
 - JSON failures produce zero stdout bytes and one JSON object on stderr.
+- Partial batches preserve per-item JSON, set `partial: true`, and exit 11.
 - Debug-only detail is absent by default.
 - Confirmation, dry-run, idempotence, file writes, and secret handling when applicable.
 

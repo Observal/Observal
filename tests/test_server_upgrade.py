@@ -126,6 +126,12 @@ def test_start_json_is_finite_and_suppresses_nested_output(isolated, monkeypatch
     monkeypatch.setattr(isolated.updater, "check_for_update", MagicMock())
     service = MagicMock()
     service.is_running.return_value = False
+    service.status.return_value = {
+        "postgres": "running",
+        "clickhouse": "running",
+        "redis": "running",
+        "api": "running",
+    }
     service.start_all.side_effect = lambda **_kwargs: print("nested human progress")
     factory = MagicMock(return_value=service)
     monkeypatch.setattr(isolated.orchestrator, "Orchestrator", factory)
@@ -141,6 +147,12 @@ def test_start_json_is_finite_and_suppresses_nested_output(isolated, monkeypatch
         "port": 8000,
         "background": True,
         "used_fallback_port": False,
+        "services": [
+            {"service": "postgres", "status": "running"},
+            {"service": "clickhouse", "status": "running"},
+            {"service": "redis", "status": "running"},
+            {"service": "api", "status": "running"},
+        ],
     }
     assert "nested human progress" not in result.stdout
     service.start_all.assert_called_once_with(foreground=False)
@@ -171,6 +183,10 @@ def test_start_reports_explicit_port_conflict(monkeypatch: pytest.MonkeyPatch) -
 def test_restart_and_stop_json(isolated, monkeypatch: pytest.MonkeyPatch) -> None:
     service = MagicMock()
     service.is_running.return_value = True
+    service.status.side_effect = [
+        {"postgres": "running", "clickhouse": "running", "redis": "running", "api": "running"},
+        {"postgres": "stopped", "clickhouse": "stopped", "redis": "stopped", "api": "stopped"},
+    ]
     monkeypatch.setattr(isolated.orchestrator, "Orchestrator", MagicMock(return_value=service))
 
     restarted = runner.invoke(app, ["server", "restart", "--background", "--output", "json"])
@@ -180,6 +196,58 @@ def test_restart_and_stop_json(isolated, monkeypatch: pytest.MonkeyPatch) -> Non
     assert json.loads(stopped.stdout)["status"] == "stopped"
     service.stop_all.assert_called()
     service.start_all.assert_called_once_with(foreground=False)
+
+
+def test_lifecycle_commands_fail_when_final_state_is_not_verified(isolated, monkeypatch: pytest.MonkeyPatch) -> None:
+    service = MagicMock()
+    service.is_running.return_value = False
+    service.status.return_value = {
+        "postgres": "running",
+        "clickhouse": "running",
+        "redis": "running",
+        "api": "stopped",
+    }
+    monkeypatch.setattr(socket, "socket", SocketFactory([True]))
+    monkeypatch.setattr(isolated.deps, "all_installed", MagicMock(return_value=True))
+    monkeypatch.setattr(isolated.updater, "check_for_update", MagicMock())
+    monkeypatch.setattr(isolated.orchestrator, "Orchestrator", MagicMock(return_value=service))
+
+    result = runner.invoke(app, ["server", "start", "--background", "--output", "json"])
+
+    assert result.exit_code == 9
+    assert result.stdout == ""
+    error = json.loads(result.stderr)["error"]
+    assert error["result"]["expected"] == "running"
+    assert error["result"]["services"][-1] == {"service": "api", "status": "stopped"}
+
+
+def test_stop_fails_when_any_service_remains_running(isolated, monkeypatch: pytest.MonkeyPatch) -> None:
+    service = MagicMock()
+    service.status.return_value = {
+        "postgres": "stopped",
+        "clickhouse": "stopped",
+        "redis": "running",
+        "api": "stopped",
+    }
+    monkeypatch.setattr(isolated.orchestrator, "Orchestrator", MagicMock(return_value=service))
+
+    result = runner.invoke(app, ["server", "stop", "--output", "json"])
+
+    assert result.exit_code == 9
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["error"]["result"]["expected"] == "stopped"
+
+
+def test_lifecycle_rejects_incomplete_status_response(isolated, monkeypatch: pytest.MonkeyPatch) -> None:
+    service = MagicMock()
+    service.status.return_value = {"api": "running"}
+    monkeypatch.setattr(isolated.orchestrator, "Orchestrator", MagicMock(return_value=service))
+
+    result = runner.invoke(app, ["server", "stop", "--output", "json"])
+
+    assert result.exit_code == 9
+    assert result.stdout == ""
+    assert "incomplete" in json.loads(result.stderr)["error"]["message"]
 
 
 def test_status_json_can_report_unhealthy(isolated, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1127,6 +1127,145 @@ def test_submit_json_is_clean_and_returns_server_result(monkeypatch):
     assert json.loads(result.stdout) == {"id": "mcp-1", "name": "search", "status": "pending"}
 
 
+@pytest.mark.parametrize(
+    "requirements",
+    ["not-a-list", ["not-an-object"], [{}], [{"name": ""}]],
+)
+def test_install_json_rejects_malformed_server_requirements(monkeypatch, requirements):
+    listing = _registry_item(environment_variables=requirements)
+    monkeypatch.setattr(mcp.client, "resolve_registry_reference", Mock(return_value="resolved"))
+    monkeypatch.setattr(mcp.client, "get", Mock(return_value=listing))
+    post = Mock()
+    monkeypatch.setattr(mcp.client, "post", post)
+
+    result = runner.invoke(
+        app,
+        [
+            "registry",
+            "mcp",
+            "install",
+            "alice/search",
+            "--harness",
+            "cursor",
+            "--no-prompt",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 9
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["error"]["result"]["invalid_input_kind"] == "environment_variable"
+    post.assert_not_called()
+
+
+def test_install_json_missing_required_values_returns_needs_input_without_mutation(monkeypatch):
+    listing = _registry_item(
+        environment_variables=[{"name": "API_KEY", "required": True}],
+        headers=[{"name": "Authorization", "required": True}],
+    )
+    monkeypatch.setattr(mcp.client, "resolve_registry_reference", Mock(return_value="resolved"))
+    monkeypatch.setattr(mcp.client, "get", Mock(return_value=listing))
+    post = Mock()
+    monkeypatch.setattr(mcp.client, "post", post)
+
+    result = runner.invoke(
+        app,
+        [
+            "registry",
+            "mcp",
+            "install",
+            "alice/search",
+            "--harness",
+            "cursor",
+            "--no-prompt",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 7
+    assert result.stdout == ""
+    error = json.loads(result.stderr)["error"]
+    assert error["result"] == {
+        "needs_input": True,
+        "inputs": [
+            {"kind": "environment_variable", "name": "API_KEY"},
+            {"kind": "header", "name": "Authorization"},
+        ],
+    }
+    assert "fake-secret-value" not in result.stderr
+    post.assert_not_called()
+
+
+def test_install_json_accepts_all_required_values_without_echoing_them(monkeypatch):
+    listing = _registry_item(
+        environment_variables=[{"name": "API_KEY", "required": True}],
+        headers=[{"name": "Authorization", "required": True}],
+    )
+    response = {"config_snippet": {"mcpServers": {"search": {"command": "npx"}}}}
+    monkeypatch.setattr(mcp.client, "resolve_registry_reference", Mock(return_value="resolved"))
+    monkeypatch.setattr(mcp.client, "get", Mock(return_value=listing))
+    post = Mock(return_value=response)
+    monkeypatch.setattr(mcp.client, "post", post)
+    monkeypatch.setattr(lockfile, "local_registry_name", Mock(return_value="search"))
+
+    result = runner.invoke(
+        app,
+        [
+            "registry",
+            "mcp",
+            "install",
+            "alice/search",
+            "--harness",
+            "cursor",
+            "--env",
+            "API_KEY=fake-secret-value",
+            "--header",
+            "Authorization=Bearer fake-secret-value",
+            "--no-prompt",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == response
+    assert "fake-secret-value" not in result.stdout
+    assert post.call_args.args[1]["env_values"] == {"API_KEY": "fake-secret-value"}
+    assert post.call_args.args[1]["header_values"] == {"Authorization": "Bearer fake-secret-value"}
+
+
+def test_install_json_allows_missing_optional_values(monkeypatch):
+    listing = _registry_item(
+        environment_variables=[{"name": "OPTIONAL", "required": False}],
+        headers=[{"name": "X-Optional", "required": False}],
+    )
+    response = {"config_snippet": {"mcpServers": {"search": {}}}}
+    monkeypatch.setattr(mcp.client, "resolve_registry_reference", Mock(return_value="resolved"))
+    monkeypatch.setattr(mcp.client, "get", Mock(return_value=listing))
+    monkeypatch.setattr(mcp.client, "post", Mock(return_value=response))
+    monkeypatch.setattr(lockfile, "local_registry_name", Mock(return_value="search"))
+
+    result = runner.invoke(
+        app,
+        [
+            "registry",
+            "mcp",
+            "install",
+            "alice/search",
+            "--harness",
+            "cursor",
+            "--no-prompt",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == response
+
+
 def test_install_json_returns_operation_result_without_lockfile_write(monkeypatch):
     listing = _registry_item()
     response = {"config_snippet": {"mcpServers": {"search": {"command": "npx"}}}, "warnings": []}
@@ -1139,7 +1278,17 @@ def test_install_json_returns_operation_result_without_lockfile_write(monkeypatc
 
     result = runner.invoke(
         app,
-        ["registry", "mcp", "install", "alice/search", "--harness", "cursor", "--output", "json"],
+        [
+            "registry",
+            "mcp",
+            "install",
+            "alice/search",
+            "--harness",
+            "cursor",
+            "--no-prompt",
+            "--output",
+            "json",
+        ],
     )
 
     assert result.exit_code == 0, result.stderr
@@ -1170,6 +1319,7 @@ def test_edit_json_is_noninteractive_and_returns_server_result(monkeypatch):
         ["install", "alice/search", "--harness", "unknown"],
         ["install", "alice/search", "--harness", "cursor", "--env", "MISSING_SEPARATOR"],
         ["install", "alice/search", "--harness", "cursor", "--raw", "--output", "json"],
+        ["install", "alice/search", "--harness", "cursor", "--output", "json"],
     ],
 )
 def test_mcp_validation_uses_stable_exit_code(arguments, monkeypatch):

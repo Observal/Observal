@@ -1073,6 +1073,24 @@ def _show_impl(mcp_id, output):
             rprint(f"  {icon} {esc(v['stage'])}: {esc(v.get('details', '') or 'passed')}")
 
 
+def _install_input_definitions(listing: dict, field: str, kind: str) -> list[dict]:
+    """Validate server-provided input metadata before using it in machine workflows."""
+    definitions = listing.get(field) or []
+    if not isinstance(definitions, list) or any(
+        not isinstance(item, dict) or not isinstance(item.get("name"), str) or not item["name"].strip()
+        for item in definitions
+    ):
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            "The server returned invalid MCP installation requirements.",
+            operation="Install MCP server",
+            resource=listing.get("qualified_name") or listing.get("name") or "MCP server",
+            remediation="Check server compatibility and retry.",
+            result={"invalid_input_kind": kind},
+        )
+    return definitions
+
+
 def _install_impl(
     mcp_id,
     harness,
@@ -1094,6 +1112,8 @@ def _install_impl(
     fetch_context = nullcontext() if machine_output else spinner("Fetching server details...")
     with fetch_context:
         listing = client.get(f"/api/v1/mcps/{resolved}")
+    env_var_list = _install_input_definitions(listing, "environment_variables", "environment_variable")
+    header_list = _install_input_definitions(listing, "headers", "header")
 
     # Build env overrides from --env flags and --env-file
     _env_from_flags: dict[str, str] = dict(env_overrides) if env_overrides else {}
@@ -1119,7 +1139,26 @@ def _install_impl(
     skip_prompts = machine_output or no_prompt
 
     env_values: dict[str, str] = {}
-    env_var_list = listing.get("environment_variables") or []
+    if output == "json":
+        missing_inputs = [
+            {"kind": "environment_variable", "name": ev["name"]}
+            for ev in env_var_list
+            if ev.get("required", True) and not _env_from_flags.get(ev["name"])
+        ]
+        missing_inputs.extend(
+            {"kind": "header", "name": header["name"]}
+            for header in header_list
+            if header.get("required", True) and not _header_from_flags.get(header["name"])
+        )
+        if missing_inputs:
+            fail(
+                ErrorCategory.VALIDATION,
+                "MCP installation requires values that are unavailable in non-interactive mode.",
+                operation="Install MCP server",
+                resource=listing.get("qualified_name") or listing.get("name") or resolved,
+                remediation="Provide non-secret values explicitly; for credentials, use interactive table mode.",
+                result={"needs_input": True, "inputs": missing_inputs},
+            )
     if env_var_list and not skip_prompts:
         required = [ev for ev in env_var_list if ev.get("required", True)]
         optional = [ev for ev in env_var_list if not ev.get("required", True)]
@@ -1156,7 +1195,6 @@ def _install_impl(
 
     # Prompt for headers (SSE/HTTP servers with auth)
     header_values: dict[str, str] = {}
-    header_list = listing.get("headers") or []
     if header_list and not skip_prompts:
         required_headers = [h for h in header_list if h.get("required", True)]
         optional_headers = [h for h in header_list if not h.get("required", True)]
@@ -1519,6 +1557,14 @@ def install(
             )
     env_overrides = _parse_assignments(env, "environment variable")
     header_overrides = _parse_assignments(header, "header")
+    if output == "json" and not no_prompt:
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON mode cannot prompt for MCP installation values.",
+            operation="Install MCP server",
+            resource="MCP installation",
+            remediation="Add --no-prompt and provide every required value, or use interactive table mode.",
+        )
     _install_impl(
         mcp_id,
         harness,
