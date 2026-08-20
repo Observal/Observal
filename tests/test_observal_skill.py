@@ -403,7 +403,8 @@ class TestAgentBehaviorContracts:
 
     def test_local_fallback_requires_an_explicit_failure(self):
         text = (SKILLS_DIR / "observal-advanced/references/recovery-workflows.md").read_text(encoding="utf-8")
-        assert "`Connection failed` or `Not configured`" in text
+        assert "`error.category: unavailable` with exit code `9`" in text
+        assert "`Load authenticated CLI configuration` and exit code `3`" in text
         assert "user confirms" in text
         assert '"tools":["read"]' in text
         assert 'tools` to `["*"]` only after separate confirmation' in text

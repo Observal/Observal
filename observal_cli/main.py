@@ -30,7 +30,7 @@ from observal_cli.errors import ErrorHandlingGroup
 
 
 def _check_package_conflict() -> None:
-    """Warn if the legacy 'observal' package is installed alongside 'observal-cli'."""
+    """Reject the legacy 'observal' package through the shared error contract."""
     from importlib.metadata import PackageNotFoundError, metadata
 
     try:
@@ -38,25 +38,19 @@ def _check_package_conflict() -> None:
     except PackageNotFoundError:
         return
 
-    # If we get here, a package literally named "observal" exists.
-    # Check it's not just our own package under a different dist name.
-    pkg_name = meta.get("Name", "")
-    if pkg_name.lower() == "observal-cli":
+    if meta.get("Name", "").lower() == "observal-cli":
         return
 
-    from rich import print as rprint
+    from observal_cli.errors import ErrorCategory, fail
 
-    rprint(
-        "[bold yellow]⚠ Package conflict detected:[/bold yellow] "
-        "Both [bold]observal[/bold] and [bold]observal-cli[/bold] are installed.\n"
-        "  The legacy [dim]observal[/dim] package is no longer maintained and conflicts with the CLI.\n"
-        "  Please uninstall it:\n\n"
-        "    [cyan]uv pip uninstall observal[/cyan]    [dim]# or: pip uninstall observal[/dim]\n"
+    fail(
+        ErrorCategory.CONFLICT,
+        "The legacy observal package conflicts with observal-cli.",
+        operation="Start Observal CLI",
+        resource="installed Python packages",
+        remediation="Run `uv pip uninstall observal` or `pip uninstall observal`, then retry.",
     )
-    sys.exit(1)
 
-
-_check_package_conflict()
 
 # ── Version callback for --version flag ───────────────────
 
@@ -100,6 +94,7 @@ def main(
     from observal_cli.optic import setup_optic
 
     setup_optic(debug=debug, verbose=verbose)
+    _check_package_conflict()
 
     if debug:
         logging.basicConfig(level=logging.DEBUG, format="%(levelname)s %(name)s: %(message)s")
@@ -117,17 +112,27 @@ def _migrate_legacy_mcp_configs() -> None:
     from rich import print as rprint
 
     from observal_cli.config import migrate_shimmed_mcp_configs
+    from observal_cli.errors import ErrorCategory, fail, machine_output_requested
 
     try:
         migrated = migrate_shimmed_mcp_configs()
-    except RuntimeError as exc:
-        rprint(f"[red]MCP config migration failed:[/red] {exc}")
-        raise typer.Exit(1) from exc
+    except RuntimeError as error:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            "Legacy MCP configuration migration failed.",
+            operation="Migrate legacy MCP configuration",
+            resource="local harness configuration",
+            remediation="Run with --debug, repair the reported configuration, and retry.",
+            detail=repr(error),
+        )
 
-    if migrated:
-        rprint(f"[green]Migrated {len(migrated)} legacy MCP config file(s) to direct commands.[/green]")
+    if migrated and not machine_output_requested():
+        rprint(
+            f"[green]Migrated {len(migrated)} legacy MCP config file(s) to direct commands.[/green]",
+            file=sys.stderr,
+        )
         for path in migrated:
-            rprint(f"  [dim]{path}[/dim]")
+            rprint(f"  [dim]{path}[/dim]", file=sys.stderr)
 
 
 def _sync_bundled_skills() -> None:
@@ -160,8 +165,19 @@ def _try_lockfile_migration() -> None:
             return
         if not LOCKFILE_PATH.exists():
             migrate_agent_markers()
-    except Exception:
-        pass  # Never crash the CLI for migration
+    except Exception as error:
+        from loguru import logger as optic
+
+        from observal_cli.errors import emit_warning
+
+        optic.warning("legacy agent-marker migration failed: error_type={}", type(error).__name__)
+        emit_warning(
+            "local_state_migration",
+            "Legacy installation state could not be migrated.",
+            operation="Migrate legacy installation state",
+            remediation="Run `observal doctor` before relying on installed-state data.",
+            detail=repr(error),
+        )
 
 
 # ── Register command groups ──────────────────────────────
@@ -298,6 +314,10 @@ def _show_update_banner() -> None:
 
     if not (_sys.stdout.isatty() and _sys.stderr.isatty()):
         return
+    from observal_cli.errors import machine_output_requested
+
+    if machine_output_requested(_sys.argv[1:]):
+        return
     if len(_sys.argv) > 1 and _sys.argv[1] in ("self", "server"):
         return
     if os.environ.get("CI") or os.environ.get("OBSERVAL_NO_UPDATE_CHECK"):
@@ -317,15 +337,19 @@ def _show_update_banner() -> None:
         if update.direction == "downgrade":
             _rprint(
                 f"\n[yellow]CLI v{update.current} is ahead of server v{update.latest}.[/yellow]\n"
-                f"  Downgrade to match: [bold cyan]{downgrade_command(update.latest)}[/bold cyan]"
+                f"  Downgrade to match: [bold cyan]{downgrade_command(update.latest)}[/bold cyan]",
+                file=_sys.stderr,
             )
         else:
             _rprint(
                 f"\n[green]Update available: v{update.current} \u2192 v{update.latest}[/green]\n"
-                f"  Run: [bold cyan]{upgrade_command(update.latest)}[/bold cyan]"
+                f"  Run: [bold cyan]{upgrade_command(update.latest)}[/bold cyan]",
+                file=_sys.stderr,
             )
-    except Exception:
-        pass  # Never crash the CLI for a version check
+    except Exception as error:
+        from loguru import logger as optic
+
+        optic.debug("CLI update check failed: error_type={}", type(error).__name__)
 
 
 # Register update banner as atexit handler so it runs via any entry point

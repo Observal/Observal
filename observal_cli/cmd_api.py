@@ -15,16 +15,28 @@ from rich import print as rprint
 from rich.table import Table
 
 from observal_cli import client
-from observal_cli.errors import ErrorCategory, fail, load_json_object
+from observal_cli.errors import ErrorCategory, fail, load_json_value
 from observal_cli.render import OutputMode, esc, output_json
 
 _METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
+_NO_BODY = object()
 
 
 def _api_path(value: str) -> str:
     path = "/" + value.strip().lstrip("/")
-    decoded = unquote(path)
-    if not path.startswith("/api/v1/") or "?" in path or "#" in path or ".." in decoded.split("/"):
+    decoded = path
+    while True:
+        expanded = unquote(decoded)
+        if expanded == decoded:
+            break
+        decoded = expanded
+    if (
+        not path.startswith("/api/v1/")
+        or not decoded.startswith("/api/v1/")
+        or "?" in decoded
+        or "#" in decoded
+        or ".." in decoded.split("/")
+    ):
         fail(
             ErrorCategory.VALIDATION,
             "API path must be a canonical /api/v1 endpoint without a query string.",
@@ -35,10 +47,10 @@ def _api_path(value: str) -> str:
     return path
 
 
-def _params(values: list[str] | None) -> dict[str, str] | None:
+def _params(values: list[str] | None) -> list[tuple[str, str]] | None:
     if not values:
         return None
-    result: dict[str, str] = {}
+    result: list[tuple[str, str]] = []
     for value in values:
         key, separator, item = value.partition("=")
         if not separator or not key:
@@ -49,16 +61,16 @@ def _params(values: list[str] | None) -> dict[str, str] | None:
                 resource="API query parameters",
                 remediation="Use --param KEY=VALUE for every query parameter.",
             )
-        result[key] = item
+        result.append((key, item))
     return result
 
 
-def _stdin_body() -> dict[str, Any] | None:
+def _stdin_body() -> Any:
     if sys.stdin.isatty():
-        return None
+        return _NO_BODY
     content = sys.stdin.read().strip()
     if not content:
-        return None
+        return _NO_BODY
     try:
         payload = json.loads(content)
     except json.JSONDecodeError as error:
@@ -67,16 +79,8 @@ def _stdin_body() -> dict[str, Any] | None:
             "API standard input is not valid JSON.",
             operation="Call Observal API",
             resource="API request body",
-            remediation="Pipe one JSON object or use --from-file.",
+            remediation="Pipe one valid JSON value or use --from-file.",
             detail=repr(error),
-        )
-    if not isinstance(payload, dict):
-        fail(
-            ErrorCategory.VALIDATION,
-            "API request body must be a JSON object.",
-            operation="Call Observal API",
-            resource="API request body",
-            remediation="Wrap request fields in a JSON object.",
         )
     return payload
 
@@ -105,7 +109,7 @@ def _render_response(response: Any) -> None:
 def api_request(
     method: str = typer.Argument(help="HTTP method: GET, POST, PUT, PATCH, or DELETE."),
     path: str = typer.Argument(help="Relative /api/v1 endpoint path."),
-    from_file: str | None = typer.Option(None, "--from-file", "-f", help="Read a JSON object request body."),
+    from_file: str | None = typer.Option(None, "--from-file", "-f", help="Read a JSON request body."),
     param: list[str] | None = typer.Option(None, "--param", help="Query parameter as KEY=VALUE; repeatable."),
     output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json."),
 ):
@@ -131,11 +135,11 @@ def api_request(
     endpoint = _api_path(path)
     query = _params(param)
     body = (
-        load_json_object(from_file, operation="Call Observal API", noun="API request file")
+        load_json_value(from_file, operation="Call Observal API", noun="API request file")
         if from_file
         else _stdin_body()
     )
-    if method == "GET" and body is not None:
+    if method == "GET" and body is not _NO_BODY:
         fail(
             ErrorCategory.VALIDATION,
             "GET does not accept a request body in this command.",
@@ -144,14 +148,15 @@ def api_request(
             remediation="Remove the body or choose POST, PUT, PATCH, or DELETE.",
         )
 
-    response = client.request_json(
-        method,
-        endpoint,
-        params=query,
-        json_data=body,
-        operation="Call Observal API",
-        resource="Observal API endpoint",
-    )
+    request_options: dict[str, Any] = {
+        "params": query,
+        "json_data": None if body is _NO_BODY else body,
+        "operation": "Call Observal API",
+        "resource": "Observal API endpoint",
+    }
+    if body is None:
+        request_options["send_json"] = True
+    response = client.request_json(method, endpoint, **request_options)
 
     if output == "json":
         output_json(response, raw=True)

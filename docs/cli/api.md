@@ -9,18 +9,18 @@ Call an authenticated JSON endpoint when no dedicated high-level command exists.
 
 ```bash
 observal api GET /api/v1/teams --output json
-observal api GET /api/v1/agents --param limit=10 --param page=2 --output json
+observal api GET /api/v1/agents --param tag=review --param tag=security --output json
 observal api POST /api/v1/teams --from-file team.json --output json
 cat team.json | observal api POST /api/v1/teams --output json
 ```
 
-Methods are `GET`, `POST`, `PUT`, `PATCH`, and `DELETE`. Paths must be canonical relative `/api/v1/` paths. Full URLs, traversal segments, fragments, and inline query strings are rejected. Use repeatable `--param KEY=VALUE` options for query parameters.
+Methods are `GET`, `POST`, `PUT`, `PATCH`, and `DELETE`. Paths must be canonical relative `/api/v1/` paths. Full URLs, encoded or plain traversal segments, fragments, and inline query strings are rejected. Use repeatable `--param KEY=VALUE` options for query parameters; repeated keys preserve their original order.
 
 The command uses the configured bearer token. It does not accept arbitrary authorization headers, so it cannot forward credentials to another host.
 
 ## Request bodies
 
-`POST`, `PUT`, `PATCH`, and `DELETE` accept one JSON object from `--from-file` or standard input. A file takes precedence when both are present. `GET` rejects request bodies.
+`POST`, `PUT`, `PATCH`, and `DELETE` accept any single JSON value from `--from-file` or standard input: objects, arrays, strings, numbers, booleans, and explicit `null`. A file takes precedence when both are present. `GET` rejects every request body, including `null`.
 
 ## Output
 

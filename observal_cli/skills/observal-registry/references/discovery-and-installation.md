@@ -79,7 +79,7 @@ Use raw output only when the user explicitly asks for a config snippet or raw re
 observal registry mcp install NAMESPACE/SLUG --harness claude-code --raw
 ```
 
-Never combine raw and JSON modes. Never print supplied environment or header values.
+Never combine raw and JSON modes. JSON MCP installation requires `--no-prompt`; missing required values return a nonzero `error.result.needs_input` response before install generation. Raw mode is the only template workflow that may intentionally contain placeholders. Never print supplied environment or header values.
 
 ## Verification
 
