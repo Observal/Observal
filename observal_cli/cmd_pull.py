@@ -162,7 +162,9 @@ def _mcp_spec(listing_id: str, version: str | None, cache: dict | None) -> dict:
 
 
 def _component_input_definitions(listing: dict, field: str, kind: str, component: str) -> list[dict]:
-    definitions = listing.get(field) or []
+    definitions = listing.get(field, [])
+    if definitions is None:
+        definitions = []
     if not isinstance(definitions, list) or any(
         not isinstance(item, dict) or not isinstance(item.get("name"), str) or not item["name"].strip()
         for item in definitions
@@ -224,7 +226,7 @@ def _collect_mcp_env_vars(
             for ev in required + optional:
                 if ev["name"] in _overrides:
                     mcp_env[ev["name"]] = _overrides[ev["name"]]
-                elif ev in required and missing_inputs is not None:
+                elif ev.get("required", True) and missing_inputs is not None:
                     missing_inputs.append({"kind": "environment_variable", "name": ev["name"], "component": mcp_name})
         else:
             if required:
@@ -295,7 +297,7 @@ def _collect_mcp_headers(
             for h in required + optional:
                 if h["name"] in _overrides:
                     mcp_hdrs[h["name"]] = _overrides[h["name"]]
-                elif h in required and missing_inputs is not None:
+                elif h.get("required", True) and missing_inputs is not None:
                     missing_inputs.append({"kind": "header", "name": h["name"], "component": mcp_name})
         else:
             if required:
@@ -750,6 +752,10 @@ def _pull_failure_result(
         ]
     result.update(state)
     return result
+
+
+def _valid_setup_command(command: object) -> bool:
+    return isinstance(command, list) and bool(command) and all(isinstance(argument, str) for argument in command)
 
 
 def _parse_assignments(values: list[str] | None, label: str) -> dict[str, str]:
@@ -1392,7 +1398,6 @@ def register_pull(app: typer.Typer):
             if dry_run:
                 written.append((str(p), "would write"))
             else:
-                existed = p.exists()
                 status = tracked_write(p, hf["content"])
                 written.append((str(p), status))
                 if hf.get("executable"):
@@ -1410,7 +1415,6 @@ def register_pull(app: typer.Typer):
                             detail=repr(error),
                             result=_pull_failure_result(written, "mark_hook_executable", failed_path=str(p)),
                         )
-                written[-1] = (str(p), "updated" if existed else "created")
 
         # ── prompt_files (native Copilot .github/prompts/*.prompt.md) ─
         for pf in snippet.get("prompt_files") or []:
@@ -1531,7 +1535,7 @@ def register_pull(app: typer.Typer):
         setup_cmds = snippet.get("mcp_setup_commands") or []
         if setup_cmds and not dry_run:
             for command in setup_cmds:
-                if not isinstance(command, list) or not command or not all(isinstance(arg, str) for arg in command):
+                if not _valid_setup_command(command):
                     setup_results.append({"command": [], "status": "failed", "return_code": None})
                     setup_failures.append("invalid setup command")
                     continue
@@ -1555,7 +1559,7 @@ def register_pull(app: typer.Typer):
                     setup_failures.append(f"{command[0]} exited with code {process.returncode}")
         elif setup_cmds:
             for command in setup_cmds:
-                if not isinstance(command, list) or not command or not all(isinstance(arg, str) for arg in command):
+                if not _valid_setup_command(command):
                     setup_results.append({"command": [], "status": "failed", "return_code": None})
                     setup_failures.append("invalid setup command")
                 else:

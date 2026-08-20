@@ -1075,7 +1075,9 @@ def _show_impl(mcp_id, output):
 
 def _install_input_definitions(listing: dict, field: str, kind: str) -> list[dict]:
     """Validate server-provided input metadata before using it in machine workflows."""
-    definitions = listing.get(field) or []
+    definitions = listing.get(field, [])
+    if definitions is None:
+        definitions = []
     if not isinstance(definitions, list) or any(
         not isinstance(item, dict) or not isinstance(item.get("name"), str) or not item["name"].strip()
         for item in definitions

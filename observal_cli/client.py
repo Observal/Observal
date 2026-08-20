@@ -269,6 +269,7 @@ def _request_with_retry(
     *,
     params: _QueryParams | None = None,
     json: object | None = None,
+    send_json: bool = False,
 ) -> httpx.Response:
     """Execute HTTP with transient retries for GET requests only.
 
@@ -280,10 +281,15 @@ def _request_with_retry(
     timeout = config.get_timeout()
     func = getattr(httpx, method)
 
-    kwargs: dict = {"headers": headers, "timeout": timeout}
+    request_headers = headers
+    kwargs: dict = {"headers": request_headers, "timeout": timeout}
     if params is not None:
         kwargs["params"] = params
-    if json is not None:
+    if send_json and json is None:
+        request_headers = {**headers, "Content-Type": "application/json"}
+        kwargs["headers"] = request_headers
+        kwargs["content"] = b"null"
+    elif json is not None:
         kwargs["json"] = json
 
     safe_url = urlunparse(urlparse(url)._replace(netloc=urlparse(url).hostname or ""))
@@ -298,7 +304,8 @@ def _request_with_retry(
             # Update headers with new token and retry
             cfg = config.load()
             headers["Authorization"] = f"Bearer {cfg['access_token']}"
-            kwargs["headers"] = headers
+            request_headers["Authorization"] = headers["Authorization"]
+            kwargs["headers"] = request_headers
             optic.debug("token refreshed, retrying")
             continue
 
@@ -414,6 +421,8 @@ def _request(
         request_kwargs["params"] = params
     if json_data is not None or send_json:
         request_kwargs["json"] = json_data
+    if send_json:
+        request_kwargs["send_json"] = True
     try:
         return _request_with_retry(method, f"{base}{path}", headers, **request_kwargs)
     except httpx.HTTPStatusError as error:

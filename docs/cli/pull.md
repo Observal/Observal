@@ -137,7 +137,7 @@ Pull performs these steps:
 9. Record the installed Agent and component versions in the Registry-scoped lockfile and, for project-scope installs, in `observal.lock`.
 10. Refresh the local layer snapshot and active-Agent state.
 
-Failed skill installation or MCP setup prevents installation metadata from being recorded. A lockfile write failure is reported as exit code 9 instead of claiming success. Failures after filesystem changes include safe partial state under `error.result`, including the stage, written file statuses, setup executable status, and tracking state. Setup arguments and secret values are omitted. A layer-snapshot failure is returned as a visible warning because the generated harness installation remains usable.
+Failed skill installation or MCP setup prevents installation metadata from being recorded. Setup commands have a 60-second timeout; a timeout is reported as a setup failure with exit code 9. A lockfile write failure is also reported as exit code 9 instead of claiming success. Failures after filesystem changes include safe partial state under `error.result`, including the stage, written file statuses, setup executable status, and tracking state. Setup arguments and secret values are omitted. A layer-snapshot failure is returned as a visible warning because the generated harness installation remains usable.
 
 ## JSON result
 

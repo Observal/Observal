@@ -103,6 +103,30 @@ def test_post_accepts_any_non_null_json_file_value(tmp_path, api_call, content, 
     assert api_call.call_args.kwargs["json_data"] == expected
 
 
+def test_client_retry_layer_preserves_explicit_json_null(monkeypatch):
+    response = Mock(status_code=200, headers={})
+    post = Mock(return_value=response)
+    monkeypatch.setattr(api.client.httpx, "post", post)
+    monkeypatch.setattr(api.client.config, "get_timeout", lambda: 17)
+
+    assert (
+        api.client._request_with_retry(
+            "post",
+            "https://registry.example.test/api/v1/items",
+            {},
+            json=None,
+            send_json=True,
+        )
+        is response
+    )
+    post.assert_called_once_with(
+        "https://registry.example.test/api/v1/items",
+        headers={"Content-Type": "application/json"},
+        timeout=17,
+        content=b"null",
+    )
+
+
 def test_post_can_send_explicit_json_null(api_call):
     _allow(api_call, {"ok": True})
 

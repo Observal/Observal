@@ -61,7 +61,13 @@ def _verified_service_states(orchestrator, *, running: bool, operation: str) -> 
             remediation="Run `observal server status --output json` and inspect the server logs.",
             detail=repr(error),
         )
+    expected = "running" if running else "stopped"
     expected_services = {"postgres", "clickhouse", "redis", "api"}
+    states = (
+        [{"service": service, "status": status} for service, status in statuses.items()]
+        if isinstance(statuses, dict)
+        else []
+    )
     if not isinstance(statuses, dict) or not expected_services.issubset(statuses):
         fail(
             ErrorCategory.UNAVAILABLE,
@@ -69,15 +75,14 @@ def _verified_service_states(orchestrator, *, running: bool, operation: str) -> 
             operation=operation,
             resource="embedded services",
             remediation="Run `observal server status --output json` and inspect the server logs.",
+            result={"expected": expected, "services": states},
         )
-    states = [{"service": service, "status": status} for service, status in statuses.items()]
     verified = bool(statuses) and (
         all(status == "running" for status in statuses.values())
         if running
         else not any(status == "running" for status in statuses.values())
     )
     if not verified:
-        expected = "running" if running else "stopped"
         fail(
             ErrorCategory.UNAVAILABLE,
             f"Embedded services did not reach the expected {expected} state.",

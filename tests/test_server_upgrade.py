@@ -247,7 +247,12 @@ def test_lifecycle_rejects_incomplete_status_response(isolated, monkeypatch: pyt
 
     assert result.exit_code == 9
     assert result.stdout == ""
-    assert "incomplete" in json.loads(result.stderr)["error"]["message"]
+    error = json.loads(result.stderr)["error"]
+    assert "incomplete" in error["message"]
+    assert error["result"] == {
+        "expected": "stopped",
+        "services": [{"service": "api", "status": "running"}],
+    }
 
 
 def test_status_json_can_report_unhealthy(isolated, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -62,6 +62,15 @@ def pull_app() -> typer.Typer:
 
 
 @pytest.fixture
+def pull_app_boundary() -> typer.Typer:
+    root = typer.Typer(cls=ErrorHandlingGroup)
+    agent = typer.Typer()
+    cmd_pull.register_pull(agent)
+    root.add_typer(agent, name="agent")
+    return root
+
+
+@pytest.fixture
 def boundaries(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> SimpleNamespace:
     import observal_cli.audit as audit
     import observal_cli.cmd_skill as cmd_skill
@@ -1138,13 +1147,10 @@ def test_pull_user_scope_expands_home_for_string_hook_and_agent_files(
 
 
 def test_pull_json_rejects_malformed_server_input_requirements(
+    pull_app_boundary: typer.Typer,
     boundaries: SimpleNamespace,
     tmp_path: Path,
 ) -> None:
-    root = typer.Typer(cls=ErrorHandlingGroup)
-    agent = typer.Typer()
-    cmd_pull.register_pull(agent)
-    root.add_typer(agent, name="agent")
     detail = _agent_detail(mcp_links=[{"mcp_listing_id": "mcp-1", "mcp_name": "GitHub"}])
 
     def get(path: str):
@@ -1156,7 +1162,7 @@ def test_pull_json_rejects_malformed_server_input_requirements(
 
     boundaries.get.side_effect = get
     result = RUNNER.invoke(
-        root,
+        pull_app_boundary,
         [
             "agent",
             "pull",
@@ -1181,13 +1187,10 @@ def test_pull_json_rejects_malformed_server_input_requirements(
 
 
 def test_pull_json_missing_required_inputs_returns_needs_input_before_install(
+    pull_app_boundary: typer.Typer,
     boundaries: SimpleNamespace,
     tmp_path: Path,
 ) -> None:
-    root = typer.Typer(cls=ErrorHandlingGroup)
-    agent = typer.Typer()
-    cmd_pull.register_pull(agent)
-    root.add_typer(agent, name="agent")
     detail = _agent_detail(mcp_links=[{"mcp_listing_id": "mcp-1", "mcp_name": "GitHub"}])
 
     def get(path: str):
@@ -1206,7 +1209,7 @@ def test_pull_json_missing_required_inputs_returns_needs_input_before_install(
     boundaries.get.side_effect = get
     target = tmp_path / "project"
     result = RUNNER.invoke(
-        root,
+        pull_app_boundary,
         [
             "agent",
             "pull",
@@ -1268,13 +1271,10 @@ def test_pull_partial_skill_failure_stops_metadata_updates_without_rolling_back_
 
 
 def test_pull_json_dry_run_invalid_setup_has_no_partial_side_effects(
+    pull_app_boundary: typer.Typer,
     boundaries: SimpleNamespace,
     tmp_path: Path,
 ) -> None:
-    root = typer.Typer(cls=ErrorHandlingGroup)
-    agent = typer.Typer()
-    cmd_pull.register_pull(agent)
-    root.add_typer(agent, name="agent")
     target = tmp_path / "project"
     boundaries.post.return_value = {
         "config_snippet": {
@@ -1284,7 +1284,7 @@ def test_pull_json_dry_run_invalid_setup_has_no_partial_side_effects(
     }
 
     result = RUNNER.invoke(
-        root,
+        pull_app_boundary,
         [
             "agent",
             "pull",
@@ -1311,13 +1311,10 @@ def test_pull_json_dry_run_invalid_setup_has_no_partial_side_effects(
 
 
 def test_pull_json_skill_exception_reports_partial_state(
+    pull_app_boundary: typer.Typer,
     boundaries: SimpleNamespace,
     tmp_path: Path,
 ) -> None:
-    root = typer.Typer(cls=ErrorHandlingGroup)
-    agent = typer.Typer()
-    cmd_pull.register_pull(agent)
-    root.add_typer(agent, name="agent")
     target = tmp_path / "project"
     boundaries.direct_install.side_effect = OSError("private filesystem detail")
     boundaries.post.return_value = {
@@ -1328,7 +1325,7 @@ def test_pull_json_skill_exception_reports_partial_state(
     }
 
     result = RUNNER.invoke(
-        root,
+        pull_app_boundary,
         [
             "agent",
             "pull",
@@ -1355,14 +1352,11 @@ def test_pull_json_skill_exception_reports_partial_state(
 
 
 def test_pull_json_setup_failure_reports_secret_free_partial_state(
+    pull_app_boundary: typer.Typer,
     boundaries: SimpleNamespace,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    root = typer.Typer(cls=ErrorHandlingGroup)
-    agent = typer.Typer()
-    cmd_pull.register_pull(agent)
-    root.add_typer(agent, name="agent")
     target = tmp_path / "project"
     boundaries.post.return_value = {
         "config_snippet": {
@@ -1377,7 +1371,7 @@ def test_pull_json_setup_failure_reports_secret_free_partial_state(
     )
 
     result = RUNNER.invoke(
-        root,
+        pull_app_boundary,
         [
             "agent",
             "pull",
@@ -1435,18 +1429,15 @@ def test_pull_lockfile_failure_is_not_reported_as_success(
 
 
 def test_pull_json_lockfile_failure_reports_tracking_state(
+    pull_app_boundary: typer.Typer,
     boundaries: SimpleNamespace,
     tmp_path: Path,
 ) -> None:
-    root = typer.Typer(cls=ErrorHandlingGroup)
-    agent = typer.Typer()
-    cmd_pull.register_pull(agent)
-    root.add_typer(agent, name="agent")
     target = tmp_path / "project"
     boundaries.upsert.side_effect = OSError("private lock detail")
 
     result = RUNNER.invoke(
-        root,
+        pull_app_boundary,
         [
             "agent",
             "pull",
@@ -1704,6 +1695,45 @@ def test_pull_rejects_malformed_existing_config_without_overwrite(
     result = _invoke(pull_app, target)
 
     assert result.exit_code == 6
+    assert path.read_text() == "not-json"
+    boundaries.upsert.assert_not_called()
+
+
+def test_pull_json_write_failure_reports_failed_path(
+    pull_app_boundary: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "project"
+    path = target / "mcp.json"
+    path.parent.mkdir(parents=True)
+    path.write_text("not-json")
+    boundaries.post.return_value = {
+        "config_snippet": {"mcp_config": {"path": "mcp.json", "content": {"mcpServers": {"new": {}}}}}
+    }
+
+    result = RUNNER.invoke(
+        pull_app_boundary,
+        [
+            "agent",
+            "pull",
+            "acme/reviewer",
+            "--harness",
+            "claude-code",
+            "--dir",
+            str(target),
+            "--no-prompt",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 6
+    assert result.stdout == ""
+    state = json.loads(result.stderr)["error"]["result"]
+    assert state["stage"] == "write_files"
+    assert state["failed_path"] == str(path)
+    assert state["partial"] is False
     assert path.read_text() == "not-json"
     boundaries.upsert.assert_not_called()
 

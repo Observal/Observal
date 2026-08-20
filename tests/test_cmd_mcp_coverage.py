@@ -1128,11 +1128,23 @@ def test_submit_json_is_clean_and_returns_server_result(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "requirements",
-    ["not-a-list", ["not-an-object"], [{}], [{"name": ""}]],
+    ("field", "kind", "requirements"),
+    [
+        ("environment_variables", "environment_variable", {}),
+        ("environment_variables", "environment_variable", ""),
+        ("environment_variables", "environment_variable", False),
+        ("environment_variables", "environment_variable", 0),
+        ("environment_variables", "environment_variable", ["not-an-object"]),
+        ("environment_variables", "environment_variable", [{}]),
+        ("environment_variables", "environment_variable", [{"name": ""}]),
+        ("headers", "header", {}),
+        ("headers", "header", ""),
+        ("headers", "header", False),
+        ("headers", "header", 0),
+    ],
 )
-def test_install_json_rejects_malformed_server_requirements(monkeypatch, requirements):
-    listing = _registry_item(environment_variables=requirements)
+def test_install_json_rejects_malformed_server_requirements(monkeypatch, field, kind, requirements):
+    listing = _registry_item(**{field: requirements})
     monkeypatch.setattr(mcp.client, "resolve_registry_reference", Mock(return_value="resolved"))
     monkeypatch.setattr(mcp.client, "get", Mock(return_value=listing))
     post = Mock()
@@ -1155,7 +1167,7 @@ def test_install_json_rejects_malformed_server_requirements(monkeypatch, require
 
     assert result.exit_code == 9
     assert result.stdout == ""
-    assert json.loads(result.stderr)["error"]["result"]["invalid_input_kind"] == "environment_variable"
+    assert json.loads(result.stderr)["error"]["result"]["invalid_input_kind"] == kind
     post.assert_not_called()
 
 
@@ -1234,6 +1246,33 @@ def test_install_json_accepts_all_required_values_without_echoing_them(monkeypat
     assert "fake-secret-value" not in result.stdout
     assert post.call_args.args[1]["env_values"] == {"API_KEY": "fake-secret-value"}
     assert post.call_args.args[1]["header_values"] == {"Authorization": "Bearer fake-secret-value"}
+
+
+def test_install_json_treats_null_requirement_fields_as_empty(monkeypatch):
+    listing = _registry_item(environment_variables=None, headers=None)
+    response = {"config_snippet": {"mcpServers": {"search": {}}}}
+    monkeypatch.setattr(mcp.client, "resolve_registry_reference", Mock(return_value="resolved"))
+    monkeypatch.setattr(mcp.client, "get", Mock(return_value=listing))
+    monkeypatch.setattr(mcp.client, "post", Mock(return_value=response))
+    monkeypatch.setattr(lockfile, "local_registry_name", Mock(return_value="search"))
+
+    result = runner.invoke(
+        app,
+        [
+            "registry",
+            "mcp",
+            "install",
+            "alice/search",
+            "--harness",
+            "cursor",
+            "--no-prompt",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout) == response
 
 
 def test_install_json_allows_missing_optional_values(monkeypatch):
