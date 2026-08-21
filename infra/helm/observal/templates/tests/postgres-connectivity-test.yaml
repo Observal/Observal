@@ -1,0 +1,44 @@
+# SPDX-FileCopyrightText: 2026 Mradul <mradulpal@outlook.com>
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "observal.fullname" . }}-postgres-test
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "observal.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,after-hook-success
+spec:
+  serviceAccountName: {{ include "observal.serviceAccountName" . }}
+  containers:
+  - name: postgres-test
+    image: postgres:16-alpine
+    env:
+    - name: PGPASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: {{ include "observal.secretName" . }}
+          key: POSTGRES_PASSWORD
+    command:
+      - sh
+      - -c
+      - |
+        echo "Testing PostgresSQL connectivity..."
+        max_retries=30
+        retry_delay=2
+
+        for i in $(seq 1 $max_retries); do
+          if psql -h {{ include "observal.fullname" . }}-db -U postgres -d observal -c "SELECT 1;" > /dev/null 2>&1; then
+            echo "✓ PostgreSQL is accessible and observal database exists"
+            exit 0
+          fi
+          echo "Attempt $i/$max_retries failed, retrying in ${retry_delay}s..."
+          sleep $retry_delay
+        done
+        echo "✗ PostgreSQL failed to become accessible"
+        exit 1
+  restartPolicy: Never
