@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Mradul <mradulpal@outlook.com>
 # SPDX-License-Identifier: Apache-2.0
 
+{{- if .Values.clickhouse.enabled }}
 apiVersion: v1
 kind: Pod
 metadata:
@@ -36,3 +37,4 @@ spec:
         echo "✗ ClickHouse failed to become healthy"
         exit 1
   restartPolicy: Never
+{{- end }}

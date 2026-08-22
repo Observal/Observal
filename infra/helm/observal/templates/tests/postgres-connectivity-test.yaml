@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Mradul <mradulpal@outlook.com>
 # SPDX-License-Identifier: Apache-2.0
 
+{{- if .Values.postgresql.enabled }}
 apiVersion: v1
 kind: Pod
 metadata:
@@ -27,7 +28,7 @@ spec:
       - sh
       - -c
       - |
-        echo "Testing PostgresSQL connectivity..."
+        echo "Testing PostgreSQL connectivity..."
         max_retries=30
         retry_delay=2
 
@@ -42,3 +43,4 @@ spec:
         echo "✗ PostgreSQL failed to become accessible"
         exit 1
   restartPolicy: Never
+{{- end }}
