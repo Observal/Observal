@@ -1,0 +1,34 @@
+# SPDX-FileCopyrightText: 2026 Mradul <mradulpal@outlook.com>
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "observal.fullname" . }}-api-test
+  labels:
+    {{- include "observal.labels" . | nindent 4}}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,after-hook-success
+spec:
+  serviceAccountName: {{ include "observal.serviceAccountName" . }}
+  containers:
+  - name: api-test
+    image: curlimages/curl:latest
+    command:
+      - sh
+      - -c
+      - |
+        echo "Testing API connectivity..."
+        max_retries=30
+        for i in $(seq 1 $max_retries); do
+          if curl -f http://{{ include "observal.fullname" . }}-api:8000/health; then
+            echo "✓ API is healthy"
+            exit 0
+          fi
+          echo "Attempt $i/$max_retries failed, retrying in 2s..."
+          sleep 2
+        done
+        echo "✗ API failed to become healthy"
+        exit 1
+  restartPolicy: Never
