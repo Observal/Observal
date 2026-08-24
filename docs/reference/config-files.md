@@ -1,6 +1,7 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Config files
@@ -117,6 +118,21 @@ Each list invocation replaces this cache, including an empty result. Numeric row
 | Path | Purpose |
 | --- | --- |
 | `AGENTS.md` | Rules (rules-only integration) |
+
+### Pi
+
+| Path | Purpose |
+| --- | --- |
+| `~/.pi/agent/extensions/observal.ts` | Bundled telemetry extension, installed locally when npm isn't configured |
+| `~/.pi/agent/extensions/.observal-extension.json` | Manifest recording the CLI version the local extension was installed from |
+| `~/.pi/agent/settings.json` | Pi's own config; a `packages` entry of `npm:observal-pi[@version]` here selects the npm installation mode instead |
+
+Two mutually exclusive installation modes are supported:
+
+- **npm**: `npm:observal-pi` is configured in `~/.pi/agent/settings.json` (with or without a pinned version, and whether or not Pi has downloaded it yet). Observal never writes to `extensions/observal.ts` in this mode — `observal doctor` only reports when a pinned version is older than the installed CLI, with a `pi update npm:observal-pi` reminder.
+- **local**: no npm package is configured. `observal auth login` and `observal doctor patch` install the extension bundled with the CLI directly to `extensions/observal.ts`, recording the installed CLI version in the adjacent manifest. A later CLI upgrade refreshes both files atomically and prints a reminder to restart Pi or run `/reload`; a newer local install than the current CLI is left alone.
+
+If `extensions/observal.ts` exists without a matching manifest and its contents don't match the bundled source, Observal treats it as unmanaged and never overwrites or removes it — remove or move the file aside, then re-run `observal doctor patch --harness pi` to let Observal manage it.
 
 ## Safe writes
 
