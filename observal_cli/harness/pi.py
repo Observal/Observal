@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn>
+# SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Pi harness adapter for scanning and hook detection."""
@@ -85,8 +86,12 @@ class PiAdapter(BaseAdapter):
         )
 
     def detect_hooks(self, config_dir: Path) -> str:
-        """Check for the user-global Observal TypeScript extension."""
-        return "installed" if (config_dir / "extensions" / "observal.ts").is_file() else "missing"
+        """Check for the local Observal extension file or a configured npm:observal-pi package."""
+        from observal_cli.pi_extension import is_npm_configured
+
+        if (config_dir / "extensions" / "observal.ts").is_file() or is_npm_configured(config_dir):
+            return "installed"
+        return "missing"
 
     # ── Private helpers ───────────────────────────────────────
 
