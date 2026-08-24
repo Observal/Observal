@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 OpenAI contributors
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Behavioral tests for :mod:`observal_cli.cmd_auth`."""
@@ -1721,15 +1722,18 @@ def test_post_login_setup_installs_skills_snapshots_and_runs_doctor(
     import observal_cli.cmd_doctor as cmd_doctor
 
     install = MagicMock()
+    pi_extension = MagicMock()
     snapshot = MagicMock()
     doctor = MagicMock()
     monkeypatch.setattr(auth, "_install_observal_skill", install)
+    monkeypatch.setattr(auth, "_install_or_check_pi_extension", pi_extension)
     monkeypatch.setattr(auth, "_generate_initial_layer_snapshot", snapshot)
     monkeypatch.setattr(cmd_doctor, "doctor", doctor)
 
     auth._post_login_setup()
 
     install.assert_called_once_with()
+    pi_extension.assert_called_once_with()
     snapshot.assert_called_once_with()
     assert doctor.call_args.kwargs["yes"] is False
     assert doctor.call_args.kwargs["ctx"].invoked_subcommand is None
@@ -1744,6 +1748,7 @@ def test_post_login_setup_contains_doctor_failures(
     import observal_cli.cmd_doctor as cmd_doctor
 
     monkeypatch.setattr(auth, "_install_observal_skill", MagicMock())
+    monkeypatch.setattr(auth, "_install_or_check_pi_extension", MagicMock())
     monkeypatch.setattr(auth, "_generate_initial_layer_snapshot", MagicMock())
     monkeypatch.setattr(cmd_doctor, "doctor", MagicMock(side_effect=error))
 
@@ -1827,6 +1832,89 @@ def test_install_observal_skill_delegates_to_installer(monkeypatch: pytest.Monke
     auth._install_observal_skill()
 
     install.assert_called_once_with()
+
+
+def test_pi_extension_setup_is_silent_when_pi_not_detected(monkeypatch: pytest.MonkeyPatch, printed: list[str]) -> None:
+    import observal_cli.pi_extension as pi_extension
+
+    monkeypatch.setattr(pi_extension, "check_status", lambda: pi_extension.PiExtensionStatus(pi_extension.NOT_DETECTED))
+    install_or_refresh = MagicMock()
+    monkeypatch.setattr(pi_extension, "install_or_refresh", install_or_refresh)
+
+    auth._install_or_check_pi_extension()
+
+    install_or_refresh.assert_not_called()
+    assert printed == []
+
+
+def test_pi_extension_setup_installs_when_missing(monkeypatch: pytest.MonkeyPatch, printed: list[str]) -> None:
+    import observal_cli.pi_extension as pi_extension
+
+    status = pi_extension.PiExtensionStatus(pi_extension.NOT_INSTALLED, "not installed", action="install")
+    monkeypatch.setattr(pi_extension, "check_status", lambda: status)
+    install_or_refresh = MagicMock()
+    monkeypatch.setattr(pi_extension, "install_or_refresh", install_or_refresh)
+
+    auth._install_or_check_pi_extension()
+
+    install_or_refresh.assert_called_once_with(dry_run=False)
+    assert any("Installed the Pi telemetry extension" in message for message in printed)
+
+
+def test_pi_extension_setup_refreshes_and_prompts_reload_when_stale(
+    monkeypatch: pytest.MonkeyPatch, printed: list[str]
+) -> None:
+    import observal_cli.pi_extension as pi_extension
+
+    status = pi_extension.PiExtensionStatus(pi_extension.STALE, "stale", action="refresh")
+    monkeypatch.setattr(pi_extension, "check_status", lambda: status)
+    monkeypatch.setattr(pi_extension, "install_or_refresh", MagicMock())
+
+    auth._install_or_check_pi_extension()
+
+    output = "\n".join(printed)
+    assert "Updated the Pi telemetry extension" in output
+    assert "reload" in output.lower()
+
+
+def test_pi_extension_setup_adopts_silently(monkeypatch: pytest.MonkeyPatch, printed: list[str]) -> None:
+    import observal_cli.pi_extension as pi_extension
+
+    status = pi_extension.PiExtensionStatus(pi_extension.CURRENT, action="adopt")
+    monkeypatch.setattr(pi_extension, "check_status", lambda: status)
+    install_or_refresh = MagicMock()
+    monkeypatch.setattr(pi_extension, "install_or_refresh", install_or_refresh)
+
+    auth._install_or_check_pi_extension()
+
+    install_or_refresh.assert_called_once_with(dry_run=False)
+    assert printed == []
+
+
+def test_pi_extension_setup_reports_stale_npm_without_installing_locally(
+    monkeypatch: pytest.MonkeyPatch, printed: list[str]
+) -> None:
+    import observal_cli.pi_extension as pi_extension
+
+    status = pi_extension.PiExtensionStatus(pi_extension.NPM_STALE, "pi update npm:observal-pi")
+    monkeypatch.setattr(pi_extension, "check_status", lambda: status)
+    install_or_refresh = MagicMock()
+    monkeypatch.setattr(pi_extension, "install_or_refresh", install_or_refresh)
+
+    auth._install_or_check_pi_extension()
+
+    install_or_refresh.assert_not_called()
+    assert any("pi update npm:observal-pi" in message for message in printed)
+
+
+def test_pi_extension_setup_never_blocks_login_on_failure(monkeypatch: pytest.MonkeyPatch, printed: list[str]) -> None:
+    import observal_cli.pi_extension as pi_extension
+
+    monkeypatch.setattr(pi_extension, "check_status", MagicMock(side_effect=OSError("settings.json unreadable")))
+
+    auth._install_or_check_pi_extension()  # must not raise
+
+    assert any("Could not check the Pi telemetry extension" in message for message in printed)
 
 
 def test_run_doctor_patch_uses_isolated_subprocess_environment(
