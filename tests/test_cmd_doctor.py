@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Annie Chiang <anniechiang.yn@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn>
+# SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Tests for observal_cli.cmd_doctor helpers."""
@@ -15,6 +16,7 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
+from observal_cli import pi_extension
 from observal_cli.cmd_doctor import (
     _check_antigravity,
     _check_claude_code,
@@ -53,6 +55,11 @@ from observal_cli.cmd_doctor import (
 from observal_cli.shared.utils import is_observal_hook_entry, is_observal_matcher_group
 from observal_shared.opencode_plugin_source import OPENCODE_PLUGIN_SOURCE
 
+# Fixed regardless of what observal-cli version this test environment actually
+# resolves (which varies across invocation contexts) - keeps Pi stale/current/newer
+# comparisons deterministic.
+CLI_VERSION = "2.0.0"
+
 
 @pytest.fixture(autouse=True)
 def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -61,6 +68,7 @@ def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr("observal_cli.settings_reconciler.config.save", lambda updates: None)
     monkeypatch.setattr("observal_cli.lockfile.LOCKFILE_PATH", tmp_path / ".observal/lockfile.json")
     monkeypatch.setattr("observal_cli.lockfile._LOCKFILE_LOCK", tmp_path / ".observal/lockfile.lock")
+    monkeypatch.setattr(pi_extension, "get_current_version", lambda: CLI_VERSION)
     return tmp_path
 
 
@@ -138,6 +146,86 @@ class TestChecks:
         _check_pi([], warnings)
 
         assert any("extensions/observal.ts" in warning for warning in warnings)
+
+    def test_pi_is_silent_when_npm_package_is_current(self, tmp_path: Path):
+        write_json(tmp_path / ".pi/agent/settings.json", {"packages": [f"npm:observal-pi@{CLI_VERSION}"]})
+        warnings: list[str] = []
+
+        _check_pi([], warnings)
+
+        assert warnings == []
+        assert not (tmp_path / ".pi/agent/extensions/observal.ts").exists()
+
+    def test_pi_is_silent_when_npm_package_is_unpinned(self, tmp_path: Path):
+        write_json(tmp_path / ".pi/agent/settings.json", {"packages": ["npm:observal-pi"]})
+        warnings: list[str] = []
+
+        _check_pi([], warnings)
+
+        assert warnings == []
+        assert not (tmp_path / ".pi/agent/extensions/observal.ts").exists()
+
+    def test_pi_warns_when_pinned_npm_package_is_stale(self, tmp_path: Path):
+        write_json(tmp_path / ".pi/agent/settings.json", {"packages": ["npm:observal-pi@0.0.1"]})
+        warnings: list[str] = []
+
+        _check_pi([], warnings)
+
+        assert any("pi update npm:observal-pi" in warning for warning in warnings)
+        assert not (tmp_path / ".pi/agent/extensions/observal.ts").exists()
+
+    def test_pi_is_silent_when_local_install_is_current(self, tmp_path: Path):
+        extension = tmp_path / ".pi/agent/extensions/observal.ts"
+        extension.parent.mkdir(parents=True)
+        extension.write_text(pi_extension.extension_source(), encoding="utf-8")
+        write_json(
+            tmp_path / ".pi/agent/extensions/.observal-extension.json",
+            {"managed": True, "version": CLI_VERSION},
+        )
+        warnings: list[str] = []
+
+        _check_pi([], warnings)
+
+        assert warnings == []
+
+    def test_pi_warns_when_local_install_is_stale(self, tmp_path: Path):
+        extension = tmp_path / ".pi/agent/extensions/observal.ts"
+        extension.parent.mkdir(parents=True)
+        extension.write_text("old content", encoding="utf-8")
+        write_json(
+            tmp_path / ".pi/agent/extensions/.observal-extension.json",
+            {"managed": True, "version": "0.0.1"},
+        )
+        warnings: list[str] = []
+
+        _check_pi([], warnings)
+
+        assert any("stale" in warning for warning in warnings)
+
+    def test_pi_is_silent_when_local_install_is_newer(self, tmp_path: Path):
+        extension = tmp_path / ".pi/agent/extensions/observal.ts"
+        extension.parent.mkdir(parents=True)
+        extension.write_text("future content", encoding="utf-8")
+        write_json(
+            tmp_path / ".pi/agent/extensions/.observal-extension.json",
+            {"managed": True, "version": "9999.0.0"},
+        )
+        warnings: list[str] = []
+
+        _check_pi([], warnings)
+
+        assert warnings == []
+        assert extension.read_text(encoding="utf-8") == "future content"
+
+    def test_pi_warns_of_conflict_with_unmanaged_local_file(self, tmp_path: Path):
+        extension = tmp_path / ".pi/agent/extensions/observal.ts"
+        extension.parent.mkdir(parents=True)
+        extension.write_text("hand-written extension", encoding="utf-8")
+        warnings: list[str] = []
+
+        _check_pi([], warnings)
+
+        assert any("not managed by Observal" in warning for warning in warnings)
 
     def test_cursor_warns_when_hooks_file_missing(self, tmp_path: Path):
         (tmp_path / ".cursor").mkdir()
@@ -328,16 +416,59 @@ class TestPatchFunctions:
         assert any("hooks.session_push --harness cursor" in command for command in commands)
         assert _patch_cursor(dry_run=False) is False
 
-    def test_patch_pi_installs_direct_extension_and_removes_legacy_package(self, tmp_path: Path):
-        from observal_cli.cmd_doctor import _pi_extension_source
-
-        settings = tmp_path / ".pi/agent/settings.json"
-        write_json(settings, {"packages": ["npm:@observal/pi-insights", "npm:observal-pi"]})
+    def test_patch_pi_installs_local_extension_and_manifest(self, tmp_path: Path):
+        (tmp_path / ".pi/agent").mkdir(parents=True)
 
         assert _patch_pi(dry_run=False) is True
         extension = tmp_path / ".pi/agent/extensions/observal.ts"
-        assert extension.read_text() == _pi_extension_source()
-        assert read_json(settings)["packages"] == ["npm:@observal/pi-insights"]
+        manifest = tmp_path / ".pi/agent/extensions/.observal-extension.json"
+        assert extension.read_text() == pi_extension.extension_source()
+        assert read_json(manifest) == {"managed": True, "version": CLI_VERSION}
+        assert _patch_pi(dry_run=False) is False
+
+    def test_patch_pi_skips_local_install_when_npm_is_configured(self, tmp_path: Path):
+        settings = tmp_path / ".pi/agent/settings.json"
+        write_json(settings, {"packages": ["npm:@observal/pi-insights", "npm:observal-pi"]})
+
+        assert _patch_pi(dry_run=False) is False
+
+        assert not (tmp_path / ".pi/agent/extensions/observal.ts").exists()
+        assert read_json(settings)["packages"] == ["npm:@observal/pi-insights", "npm:observal-pi"]
+
+    def test_patch_pi_refreshes_a_stale_managed_install(self, tmp_path: Path):
+        extension = tmp_path / ".pi/agent/extensions/observal.ts"
+        extension.parent.mkdir(parents=True)
+        extension.write_text("old content", encoding="utf-8")
+        write_json(
+            tmp_path / ".pi/agent/extensions/.observal-extension.json",
+            {"managed": True, "version": "0.0.1"},
+        )
+
+        assert _patch_pi(dry_run=False) is True
+
+        assert extension.read_text() == pi_extension.extension_source()
+        manifest = read_json(tmp_path / ".pi/agent/extensions/.observal-extension.json")
+        assert manifest["version"] == CLI_VERSION
+
+    def test_patch_pi_never_overwrites_an_unmanaged_file(self, tmp_path: Path):
+        extension = tmp_path / ".pi/agent/extensions/observal.ts"
+        extension.parent.mkdir(parents=True)
+        extension.write_text("hand-written extension", encoding="utf-8")
+
+        assert _patch_pi(dry_run=False) is False
+
+        assert extension.read_text() == "hand-written extension"
+        assert not (tmp_path / ".pi/agent/extensions/.observal-extension.json").exists()
+
+    def test_patch_pi_adopts_a_pre_manifest_install_without_rewriting_content(self, tmp_path: Path):
+        extension = tmp_path / ".pi/agent/extensions/observal.ts"
+        extension.parent.mkdir(parents=True)
+        extension.write_text(pi_extension.extension_source(), encoding="utf-8")
+
+        assert _patch_pi(dry_run=False) is True
+
+        manifest = read_json(tmp_path / ".pi/agent/extensions/.observal-extension.json")
+        assert manifest == {"managed": True, "version": CLI_VERSION}
         assert _patch_pi(dry_run=False) is False
 
     def test_patch_codex_writes_hooks_and_enables_flag(self, tmp_path: Path):
@@ -477,16 +608,31 @@ class TestCleanupFunctions:
 
         assert read_json(agent_path)["hooks"]["userPromptSubmit"] == [foreign]
 
-    def test_cleanup_pi_removes_direct_extension_and_legacy_package(self, tmp_path: Path):
+    def test_cleanup_pi_removes_a_managed_install(self, tmp_path: Path):
         extension = tmp_path / ".pi/agent/extensions/observal.ts"
+        manifest = tmp_path / ".pi/agent/extensions/.observal-extension.json"
         extension.parent.mkdir(parents=True)
-        extension.write_text("extension")
-        settings = tmp_path / ".pi/agent/settings.json"
-        write_json(settings, {"packages": ["npm:observal-pi", "npm:@observal/pi-insights"]})
+        extension.write_text(pi_extension.extension_source(), encoding="utf-8")
+        write_json(manifest, {"managed": True, "version": CLI_VERSION})
 
         assert _cleanup_pi(dry_run=False) is True
         assert not extension.exists()
-        assert read_json(settings)["packages"] == ["npm:@observal/pi-insights"]
+        assert not manifest.exists()
+
+    def test_cleanup_pi_leaves_npm_registration_untouched(self, tmp_path: Path):
+        settings = tmp_path / ".pi/agent/settings.json"
+        write_json(settings, {"packages": ["npm:observal-pi", "npm:@observal/pi-insights"]})
+
+        assert _cleanup_pi(dry_run=False) is False
+        assert read_json(settings)["packages"] == ["npm:observal-pi", "npm:@observal/pi-insights"]
+
+    def test_cleanup_pi_leaves_an_unmanaged_file_untouched(self, tmp_path: Path):
+        extension = tmp_path / ".pi/agent/extensions/observal.ts"
+        extension.parent.mkdir(parents=True)
+        extension.write_text("hand-written extension", encoding="utf-8")
+
+        assert _cleanup_pi(dry_run=False) is False
+        assert extension.read_text() == "hand-written extension"
 
     def test_cleanup_cursor_preserves_foreign_hooks(self, tmp_path: Path):
         hooks_path = tmp_path / ".cursor/hooks.json"
