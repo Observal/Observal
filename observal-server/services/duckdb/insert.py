@@ -283,9 +283,7 @@ async def insert_session_checkpoint(
         "acknowledged_offset": acknowledged_offset,
         "checkpoint_version": time.time_ns(),
     }
-    resp = await asyncio.to_thread(
-        _insert, "session_checkpoints", _CHECKPOINT_COLUMNS, [row], or_replace=True
-    )
+    resp = await asyncio.to_thread(_insert, "session_checkpoints", _CHECKPOINT_COLUMNS, [row], or_replace=True)
     if resp != 1:
         raise RuntimeError("checkpoint insert affected no rows")
 
@@ -339,9 +337,7 @@ async def insert_layer_snapshot(row: dict):
     """Insert (or replace) a single layer snapshot row."""
     optic.trace("inserting layer snapshot: hash={}", row.get("hash", "?"))
     try:
-        await asyncio.to_thread(
-            _insert, "layer_snapshots", _LAYER_SNAPSHOT_COLUMNS, [row], or_replace=True
-        )
+        await asyncio.to_thread(_insert, "layer_snapshots", _LAYER_SNAPSHOT_COLUMNS, [row], or_replace=True)
     except Exception as e:
         optic.error("failed to insert layer snapshot: {}", e)
         raise

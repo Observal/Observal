@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 # DuckDB analytics store (ClickHouse replacement)
 
 Observal's analytics store is now **embedded DuckDB**. ClickHouse is removed from the

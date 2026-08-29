@@ -198,7 +198,10 @@ class TestCollectVersions:
         with patch("api.routes.support._query", new_callable=AsyncMock) as mock_query:
             mock_query.side_effect = [
                 _mock_ch_response(200, json_data={"data": [{"version()": "24.3.1"}]}),
-                _mock_ch_response(200, json_data={"data": [{"table_name": "traces"}, {"table_name": "spans"}, {"table_name": "scores"}]}),
+                _mock_ch_response(
+                    200,
+                    json_data={"data": [{"table_name": "traces"}, {"table_name": "spans"}, {"table_name": "scores"}]},
+                ),
             ]
             result = await _collect_versions(db)
 

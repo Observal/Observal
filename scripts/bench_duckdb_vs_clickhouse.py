@@ -138,9 +138,7 @@ def gen_sessions(n_sessions: int, events_per: int, seed: int = 42) -> list[dict]
             ts = base_ts + s * 60 + i
             credits += rng.uniform(0.001, 0.02)
             if etype == "user_prompt":
-                raw = json.dumps(
-                    {"type": "user", "system": SYSTEM_PROMPT, "text": " ".join(rng.choices(WORDS, k=30))}
-                )
+                raw = json.dumps({"type": "user", "system": SYSTEM_PROMPT, "text": " ".join(rng.choices(WORDS, k=30))})
             elif etype == "tool_call":
                 raw = json.dumps(
                     {"type": "tool_use", "name": "read", "schema": TOOL_SCHEMA, "input": {"path": f"/src/f{i}.py"}}
@@ -221,8 +219,7 @@ QUERIES = {
     "dashboard: sessions by harness": {
         "ch": "SELECT harness, count() AS c, sum(tool_call_count) AS tools FROM session_stats_agg FINAL "
         "GROUP BY harness",
-        "ddb": "SELECT harness, count(*) AS c, sum(tool_call_count) AS tools FROM session_stats_agg "
-        "GROUP BY harness",
+        "ddb": "SELECT harness, count(*) AS c, sum(tool_call_count) AS tools FROM session_stats_agg GROUP BY harness",
     },
     "dashboard: model token leaderboard": {
         "ch": "SELECT model, sum(input_tokens + output_tokens) AS tokens, "
@@ -379,9 +376,7 @@ def main() -> None:
         ch_r = bench(ch_run, args.iterations)
         ddb_r = bench(ddb_run, args.iterations)
         results[name] = (ch_r, ddb_r)
-        print(
-            f"  {name:<40} {ch_r['p50']:8.1f}m {ddb_r['p50']:8.1f}m {ch_r['p95']:8.1f}m {ddb_r['p95']:8.1f}m"
-        )
+        print(f"  {name:<40} {ch_r['p50']:8.1f}m {ddb_r['p50']:8.1f}m {ch_r['p95']:8.1f}m {ddb_r['p95']:8.1f}m")
 
     # ── Storage footprint ──
     _, parts = ch_exec(
