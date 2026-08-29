@@ -134,8 +134,8 @@ class TestCollectVersions:
 
         with patch("api.routes.support._query", new_callable=AsyncMock) as mock_query:
             mock_query.side_effect = [
-                _mock_ch_response(200, text="24.3.1"),
-                _mock_ch_response(200, json_data={"data": [{"name": "traces"}, {"name": "spans"}]}),
+                _mock_ch_response(200, json_data={"data": [{"version()": "24.3.1"}]}),
+                _mock_ch_response(200, json_data={"data": [{"table_name": "traces"}, {"table_name": "spans"}]}),
             ]
             result = await _collect_versions(db)
 
@@ -151,7 +151,7 @@ class TestCollectVersions:
 
         with patch("api.routes.support._query", new_callable=AsyncMock) as mock_query:
             mock_query.side_effect = [
-                _mock_ch_response(200, text="24.3.1"),
+                _mock_ch_response(200, json_data={"data": [{"version()": "24.3.1"}]}),
                 _mock_ch_response(200, json_data={"data": []}),
             ]
             result = await _collect_versions(db)
@@ -165,7 +165,7 @@ class TestCollectVersions:
 
         with patch("api.routes.support._query", new_callable=AsyncMock) as mock_query:
             mock_query.side_effect = [
-                _mock_ch_response(200, text="24.3.1"),
+                _mock_ch_response(200, json_data={"data": [{"version()": "24.3.1"}]}),
                 _mock_ch_response(200, json_data={"data": []}),
             ]
             result = await _collect_versions(db)
@@ -181,12 +181,12 @@ class TestCollectVersions:
 
         with patch("api.routes.support._query", new_callable=AsyncMock) as mock_query:
             mock_query.side_effect = [
-                _mock_ch_response(200, text="24.3.1.5"),
-                _mock_ch_response(200, json_data={"data": [{"name": "traces"}]}),
+                _mock_ch_response(200, json_data={"data": [{"version()": "24.3.1.5"}]}),
+                _mock_ch_response(200, json_data={"data": [{"table_name": "traces"}]}),
             ]
             result = await _collect_versions(db)
 
-        assert result["clickhouse_version"] == "24.3.1.5"
+        assert result["duckdb_version"] == "24.3.1.5"
 
     @pytest.mark.asyncio
     async def test_returns_clickhouse_tables(self):
@@ -197,12 +197,12 @@ class TestCollectVersions:
 
         with patch("api.routes.support._query", new_callable=AsyncMock) as mock_query:
             mock_query.side_effect = [
-                _mock_ch_response(200, text="24.3.1"),
-                _mock_ch_response(200, json_data={"data": [{"name": "traces"}, {"name": "spans"}, {"name": "scores"}]}),
+                _mock_ch_response(200, json_data={"data": [{"version()": "24.3.1"}]}),
+                _mock_ch_response(200, json_data={"data": [{"table_name": "traces"}, {"table_name": "spans"}, {"table_name": "scores"}]}),
             ]
             result = await _collect_versions(db)
 
-        assert result["clickhouse_tables"] == ["traces", "spans", "scores"]
+        assert result["duckdb_tables"] == ["traces", "spans", "scores"]
 
     @pytest.mark.asyncio
     async def test_clickhouse_error_recorded(self):
@@ -215,7 +215,7 @@ class TestCollectVersions:
             mock_query.side_effect = ConnectionError("CH unreachable")
             result = await _collect_versions(db)
 
-        assert "error" in result["clickhouse_version"]
+        assert "error" in result["duckdb_version"]
 
     @pytest.mark.asyncio
     async def test_build_hash_from_env(self):
@@ -229,7 +229,7 @@ class TestCollectVersions:
             patch.dict("os.environ", {"BUILD_HASH": "deadbeef"}),
         ):
             mock_query.side_effect = [
-                _mock_ch_response(200, text="24.3.1"),
+                _mock_ch_response(200, json_data={"data": [{"version()": "24.3.1"}]}),
                 _mock_ch_response(200, json_data={"data": []}),
             ]
             result = await _collect_versions(db)
@@ -456,11 +456,11 @@ class TestCollectAggregates:
         with patch("api.routes.support._query", new_callable=AsyncMock) as mock_query:
             mock_query.side_effect = [
                 # CH table list
-                _mock_ch_response(200, json_data={"data": [{"name": "traces"}, {"name": "spans"}]}),
+                _mock_ch_response(200, json_data={"data": [{"table_name": "traces"}, {"table_name": "spans"}]}),
                 # count for traces
-                _mock_ch_response(200, json_data={"data": [{"count()": 1000000}]}),
+                _mock_ch_response(200, json_data={"data": [{"cnt": 1000000}]}),
                 # count for spans
-                _mock_ch_response(200, json_data={"data": [{"count()": 5000000}]}),
+                _mock_ch_response(200, json_data={"data": [{"cnt": 5000000}]}),
             ]
             result = await _collect_aggregates(db)
 
@@ -480,8 +480,8 @@ class TestCollectAggregates:
 
         with patch("api.routes.support._query", new_callable=AsyncMock) as mock_query:
             mock_query.side_effect = [
-                _mock_ch_response(200, json_data={"data": [{"name": "traces"}]}),
-                _mock_ch_response(200, json_data={"data": [{"count()": 500}]}),
+                _mock_ch_response(200, json_data={"data": [{"table_name": "traces"}]}),
+                _mock_ch_response(200, json_data={"data": [{"cnt": 500}]}),
             ]
             result = await _collect_aggregates(db)
 
@@ -517,7 +517,7 @@ class TestCollectAggregates:
 
         with patch("api.routes.support._query", new_callable=AsyncMock) as mock_query:
             mock_query.side_effect = [
-                _mock_ch_response(200, json_data={"data": [{"name": "broken"}]}),
+                _mock_ch_response(200, json_data={"data": [{"table_name": "broken"}]}),
                 ConnectionError("CH query failed"),
             ]
             result = await _collect_aggregates(db)
@@ -533,7 +533,7 @@ class TestCollectAggregates:
 
         with patch("api.routes.support._query", new_callable=AsyncMock) as mock_query:
             mock_query.side_effect = [
-                _mock_ch_response(200, json_data={"data": [{"name": "Robert'; DROP TABLE--"}]}),
+                _mock_ch_response(200, json_data={"data": [{"table_name": "Robert'; DROP TABLE--"}]}),
             ]
             result = await _collect_aggregates(db)
 

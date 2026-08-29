@@ -94,13 +94,28 @@ class TestDockerCompose:
         assert "observal-redis" in compose["services"]
         assert compose["services"]["observal-redis"]["image"] == "redis:8-alpine"
 
-    def test_worker_service_exists(self):
+    def test_worker_runs_embedded_in_api(self):
+        """DuckDB port: the analytics store is embedded and single-process
+        read-write, so the arq worker runs inside the API container
+        (EMBEDDED_WORKER=true, exactly one uvicorn worker) instead of as a
+        separate service."""
         import yaml
 
         with open(COMPOSE_PATH) as f:
             compose = yaml.safe_load(f)
-        assert "observal-worker" in compose["services"]
-        assert "worker" in str(compose["services"]["observal-worker"]["command"])
+        assert "observal-worker" not in compose["services"]
+        api = compose["services"]["observal-api"]
+        assert "EMBEDDED_WORKER=true" in api["environment"]
+        assert any("DUCKDB_PATH=" in e for e in api["environment"])
+        assert "${API_WORKERS:-1}" in api["command"]
+
+    def test_no_clickhouse_service(self):
+        import yaml
+
+        with open(COMPOSE_PATH) as f:
+            compose = yaml.safe_load(f)
+        assert "observal-clickhouse" not in compose["services"]
+        assert "chdata" not in compose["volumes"]
 
     def test_redis_volume_exists(self):
         import yaml

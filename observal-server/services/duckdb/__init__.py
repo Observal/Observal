@@ -1,27 +1,29 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
-"""DEPRECATED compatibility shim. The analytics store is DuckDB now.
+"""DuckDB analytics subpackage.
 
-Re-exports every public symbol previously available from
-``services.clickhouse`` so all existing callers continue to work without
-import changes. New code must import from ``services.duckdb``.
+Replaces services.clickhouse. The legacy package remains as a thin shim that
+re-exports these symbols under the old names, so existing callers keep
+working during the transition.
 """
 
-from services.clickhouse.client import CLICKHOUSE_DB, CLICKHOUSE_HTTP, CLICKHOUSE_PASSWORD, CLICKHOUSE_USER
-from services.clickhouse.schema import _materialize_if_needed
 from services.duckdb._settings import _resource_overrides
 from services.duckdb.client import (
+    AnalyticsQueryError,
+    QueryResult,
     _get_con,
     _invalidate_cache,
     _normalize_ts,
     _now_ms,
     _query,
+    close_con,
     duckdb_health,
 )
 from services.duckdb.insert import (
     _insert_webhook_deliveries,
     insert_audit_log,
     insert_layer_snapshot,
+    insert_rows,
     insert_session_checkpoint,
     insert_session_events,
     refresh_session_summary,
@@ -41,32 +43,25 @@ from services.duckdb.schema import (
     init_duckdb,
 )
 
-# Legacy names
-clickhouse_health = duckdb_health
-init_clickhouse = init_duckdb
-run_clickhouse_migrations = run_duckdb_migrations
-_get_client = _get_con
-
 __all__ = [
-    "CLICKHOUSE_DB",
-    "CLICKHOUSE_HTTP",
-    "CLICKHOUSE_PASSWORD",
-    "CLICKHOUSE_USER",
     "DEFAULT_QUERY_SETTINGS",
     "RESOURCE_SETTINGS_MAP",
-    "_get_client",
+    "AnalyticsQueryError",
+    "QueryResult",
+    "_get_con",
     "_insert_webhook_deliveries",
     "_invalidate_cache",
-    "_materialize_if_needed",
     "_normalize_ts",
     "_now_ms",
     "_query",
     "_resource_overrides",
     "apply_resource_settings",
-    "clickhouse_health",
-    "init_clickhouse",
+    "close_con",
+    "duckdb_health",
+    "init_duckdb",
     "insert_audit_log",
     "insert_layer_snapshot",
+    "insert_rows",
     "insert_session_checkpoint",
     "insert_session_events",
     "query_existing_for_dedup",
@@ -75,5 +70,5 @@ __all__ = [
     "query_session_source_manifest",
     "query_source_records_after",
     "refresh_session_summary",
-    "run_clickhouse_migrations",
+    "run_duckdb_migrations",
 ]

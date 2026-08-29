@@ -115,9 +115,9 @@ async def detect_layer_groups(
             sum(input_tokens + output_tokens) / count() AS avg_tokens,
             -- Tool error proxy: sessions with high tool_result vs tool_call ratio
             -- (more results than calls = retries/errors)
-            countIf(tool_result_count > tool_call_count * 1.5) / count() AS tool_error_rate,
+            count(*) FILTER (WHERE tool_result_count > tool_call_count * 1.5) / count(*) AS tool_error_rate,
             -- Success proxy: sessions that complete (have a stop event) with reasonable duration
-            countIf(event_count > 5 AND prompt_count >= 1) / count() AS success_proxy
+            count(*) FILTER (WHERE event_count > 5 AND prompt_count >= 1) / count(*) AS success_proxy
         FROM session_stats_agg FINAL
         WHERE (agent_id = {agent_id:String} OR agent_id = {agent_name:String})
           AND last_event_time >= {t_start:String}

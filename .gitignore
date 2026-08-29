@@ -90,3 +90,7 @@ node_modules
 *.bak
 scripts/seed_demo.py
 .playwright-cli/
+
+# DuckDB analytics store (local dev / tests)
+*.duckdb
+*.duckdb.wal

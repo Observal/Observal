@@ -97,39 +97,24 @@ async def purge_inbox_items(ctx: dict):
         )
 
 
-async def maintain_clickhouse(ctx: dict):
-    """Periodic ClickHouse maintenance: compact parts to prevent OOM on long-running agents.
+async def maintain_duckdb(ctx: dict):
+    """Periodic DuckDB maintenance: checkpoint to flush the WAL and reclaim
+    space from deleted rows.
 
-    OPTIMIZE TABLE (without FINAL) merges small parts into larger ones.
-    This is lightweight and safe to run frequently.  Without it, a
-    month-long agent session accumulates thousands of tiny parts that
-    bloat memory during merges and FINAL queries.
+    DuckDB has no part merging (no OPTIMIZE equivalent); CHECKPOINT is the
+    analogous housekeeping operation. Deletions reclaim storage at checkpoint
+    time.
     """
-    optic.debug("maintain_clickhouse")
-    from services.clickhouse.client import _query
+    optic.debug("maintain_duckdb")
+    from services.duckdb.client import _query
 
-    tables = ["session_events", "session_stats_agg"]
-    for table in tables:
-        try:
-            await _query(f"OPTIMIZE TABLE {table}")
-        except Exception as e:
-            optic.warning("ClickHouse OPTIMIZE {} failed: {}", table, e)
-
-    # Check part health: warn before things get critical
     try:
-        resp = await _query(
-            "SELECT table, count() as parts, sum(rows) as total_rows "
-            "FROM system.parts WHERE database = currentDatabase() AND active "
-            "GROUP BY table FORMAT JSON"
-        )
-        if resp.status_code == 200:
-            for row in resp.json().get("data", []):
-                parts = int(row.get("parts", 0))
-                if parts > 300:
-                    optic.warning(
-                        "ClickHouse table {} has {} active parts, merges may be falling behind",
-                        row["table"],
-                        parts,
-                    )
+        resp = await _query("CHECKPOINT")
+        if resp.status_code >= 400:
+            optic.warning("DuckDB CHECKPOINT failed: {}", resp.text[:200])
     except Exception as e:
-        optic.debug("Part health check failed: {}", e)
+        optic.warning("DuckDB CHECKPOINT failed: {}", e)
+
+
+# Legacy alias - worker.py and tests import the old name.
+maintain_clickhouse = maintain_duckdb

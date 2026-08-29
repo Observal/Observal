@@ -453,7 +453,7 @@ async def purge_traces_and_insights(
     for table in clickhouse_tables:
         try:
             await ch_query(
-                f"ALTER TABLE {table} DELETE WHERE project_id = {{project_id:String}}",
+                f"DELETE FROM {table} WHERE project_id = {{project_id:String}}",
                 {"param_project_id": project_id},
             )
         except Exception as e:

@@ -259,7 +259,7 @@ async def sessions_summary(
     rows = await _ch_json(
         "SELECT "
         "count() AS total, "
-        "countIf(toDate(last_event_time) = today()) AS today_sessions "
+        "count(*) FILTER (WHERE last_event_time::DATE = today()) AS today_sessions "
         "FROM ( "
         "  SELECT session_id, max(last_event_time) AS last_event_time "
         "  FROM session_stats_agg FINAL "

@@ -23,8 +23,6 @@ services:
     depends_on:
       observal-db:
         condition: service_healthy
-      observal-clickhouse:
-        condition: service_healthy
       observal-redis:
         condition: service_healthy
     restart: "no"
@@ -52,7 +50,9 @@ services:
         "--port",
         "8000",
         "--workers",
-        "${API_WORKERS:-2}",
+        # DuckDB is embedded and single-process read-write: exactly one API
+        # worker, with the arq worker embedded (EMBEDDED_WORKER=true below).
+        "${API_WORKERS:-1}",
       ]
     env_file:
       - ../.env
@@ -60,6 +60,8 @@ services:
       - JWT_KEY_DIR=/data/keys
       - MIGRATION_ARTIFACT_ROOT=/data/migration_artifacts
       - SKIP_DDL_ON_STARTUP=true
+      - DUCKDB_PATH=/data/duckdb/observal.duckdb
+      - EMBEDDED_WORKER=true
       - DEMO_SUPER_ADMIN_EMAIL=${DEMO_SUPER_ADMIN_EMAIL:-super@demo.example}
       - DEMO_SUPER_ADMIN_PASSWORD=${DEMO_SUPER_ADMIN_PASSWORD:-super-changeme}
       - DEMO_ADMIN_EMAIL=${DEMO_ADMIN_EMAIL:-admin@demo.example}
@@ -130,35 +132,6 @@ services:
     networks:
       - observal-net
 
-  observal-clickhouse:
-    image: clickhouse/clickhouse-server:26.6
-    ports:
-      - "127.0.0.1:${CLICKHOUSE_HOST_PORT:-8123}:8123"
-    env_file:
-      - ../.env
-    environment:
-      CLICKHOUSE_DB: observal
-      MAX_SERVER_MEMORY_USAGE_RATIO: "0.8"
-    volumes:
-      - chdata:/var/lib/clickhouse
-      - ./clickhouse/config.d:/etc/clickhouse-server/config.d:ro
-      - ./clickhouse/users.d:/etc/clickhouse-server/users.d
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "clickhouse-client --password ${CLICKHOUSE_PASSWORD:-clickhouse} --query 'SELECT 1'",
-        ]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-    deploy:
-      resources:
-        limits:
-          memory: ${CLICKHOUSE_MEMORY_LIMIT:-2G}
-    networks:
-      - observal-net
-
   observal-redis:
     image: redis:8-alpine
     ports:
@@ -175,42 +148,6 @@ services:
       resources:
         limits:
           memory: 256M
-    networks:
-      - observal-net
-
-  observal-worker:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.api
-    image: ghcr.io/observal/observal-api:latest
-    command:
-      [
-        "/app/.venv/bin/python",
-        "-c",
-        "import asyncio; asyncio.set_event_loop(asyncio.new_event_loop()); from arq import run_worker; from worker import WorkerSettings; run_worker(WorkerSettings)",
-      ]
-    env_file:
-      - ../.env
-    environment:
-      - MIGRATION_ARTIFACT_ROOT=/data/migration_artifacts
-    volumes:
-      - apidata:/data
-    depends_on:
-      observal-init:
-        condition: service_completed_successfully
-      observal-redis:
-        condition: service_healthy
-    restart: unless-stopped
-    read_only: true
-    tmpfs:
-      - /tmp
-    security_opt:
-      - no-new-privileges:true
-    deploy:
-      replicas: ${WORKER_REPLICAS:-1}
-      resources:
-        limits:
-          memory: ${WORKER_MEMORY_LIMIT:-1536M}
     networks:
       - observal-net
 
@@ -265,7 +202,6 @@ services:
 
 volumes:
   pgdata:
-  chdata:
   redisdata:
   apidata:
 

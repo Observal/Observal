@@ -852,11 +852,11 @@ async def test_purge_continues_after_clickhouse_failure_and_deletes_postgres_row
 
     assert query.await_args_list == [
         call(
-            "ALTER TABLE session_events DELETE WHERE project_id = {project_id:String}",
+            "DELETE FROM session_events WHERE project_id = {project_id:String}",
             {"param_project_id": "default"},
         ),
         call(
-            "ALTER TABLE session_stats_agg DELETE WHERE project_id = {project_id:String}",
+            "DELETE FROM session_stats_agg WHERE project_id = {project_id:String}",
             {"param_project_id": "default"},
         ),
     ]
