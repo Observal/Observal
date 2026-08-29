@@ -5,6 +5,7 @@
 <!-- SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 DoomsCoder <vedantkakade05@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn> -->
+<!-- SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Changelog
@@ -63,6 +64,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- auto-install the bundled Pi telemetry extension during login and report stale npm or local installs (#1602)
 - add an authenticated JSON API escape hatch and mixed Registry component bulk submission
 - standardize dedicated list JSON output with `items`, `total`, `page`, and `page_size`
 - make mutation retry behavior explicit and reserve automatic transient retries for reads
