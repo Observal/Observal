@@ -12,6 +12,10 @@ runtime path: no container, no HTTP interface, no credentials.
     `FORMAT JSON`, trailing `SETTINGS`, `count()`, `now64(3)`, `toUnixTimestamp64Milli`,
     `INTERVAL {n:Type} UNIT`, `toUInt64`). Unused named params are dropped (DuckDB
     rejects them; legacy callers pass them).
+    `{name:Array(T)}` placeholders are coerced from stringified ClickHouse literals
+    (e.g. `"['a','b']"`) into real Python LIST parameters and `IN ($name)` is
+    rewritten to `= ANY($name)` — DuckDB rejects LIST params bound to `IN (?)`.
+    `QueryResult.json()` keeps the ClickHouse `rows` key alongside `data`.
   - `insert.py` — batch inserts via Arrow relations (DuckDB `executemany` and
     row-at-a-time `INSERT OR REPLACE` are both pathologically slow; the Arrow scan +
     set merge path is ~30k rows/s and preserves column DEFAULTs).

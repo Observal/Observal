@@ -114,9 +114,7 @@ def test_session_events_dedup_on_reingest(duckdb_db):
 
     resp = asyncio.run(_query("SELECT count(*) AS c FROM session_events"))
     assert resp.json()["data"][0]["c"] == 10
-    resp = asyncio.run(
-        _query("SELECT content_preview AS cp FROM session_events WHERE line_offset = 0")
-    )
+    resp = asyncio.run(_query("SELECT content_preview AS cp FROM session_events WHERE line_offset = 0"))
     assert resp.json()["data"][0]["cp"] == "v2"
 
 
@@ -209,8 +207,7 @@ def test_source_records_after_and_manifest(duckdb_db):
     )
 
     rows = [
-        _event("s1", i, source_end_offset=(i + 1) * 100, is_source_record=1 if i % 2 == 0 else 0)
-        for i in range(10)
+        _event("s1", i, source_end_offset=(i + 1) * 100, is_source_record=1 if i % 2 == 0 else 0) for i in range(10)
     ]
     asyncio.run(insert_session_events(rows))
 
@@ -279,6 +276,60 @@ def test_compat_interval_param_and_settings_clause(duckdb_db):
     )
     resp.raise_for_status()
     assert resp.json()["data"][0]["c"] == 1
+
+
+def test_compat_array_placeholder_stringified_literal(duckdb_db):
+    """Legacy callers bind {ids:Array(String)} as a stringified literal.
+
+    DuckDB would treat "['s1','s2']" as one scalar VARCHAR, so IN ($ids)
+    silently matched nothing. The compat layer must parse it back into a
+    real LIST and rewrite IN to = ANY.
+    """
+    from services.duckdb import _query, insert_session_events
+
+    asyncio.run(insert_session_events([_event("s1", 0), _event("s2", 1)]))
+    resp = asyncio.run(
+        _query(
+            "SELECT session_id FROM session_events WHERE session_id IN ({ids:Array(String)}) FORMAT JSON",
+            {"param_ids": "['s1','s2']"},
+        )
+    )
+    resp.raise_for_status()
+    assert {r["session_id"] for r in resp.json()["data"]} == {"s1", "s2"}
+
+
+def test_compat_array_placeholder_real_list(duckdb_db):
+    """New-style callers may also bind a real Python list to an Array placeholder."""
+    from services.duckdb import _query, insert_session_events
+
+    asyncio.run(insert_session_events([_event("s1", 0), _event("s2", 1)]))
+    resp = asyncio.run(
+        _query(
+            "SELECT session_id FROM session_events WHERE session_id IN ({ids:Array(String)}) FORMAT JSON",
+            {"param_ids": ["s1", "s2"]},
+        )
+    )
+    resp.raise_for_status()
+    assert {r["session_id"] for r in resp.json()["data"]} == {"s1", "s2"}
+
+
+def test_json_result_emits_rows(duckdb_db):
+    """QueryResult.json() must keep the ClickHouse FORMAT JSON `rows` key;
+    api/routes/admin/policy.py reads data.get("rows", 0) for `total`."""
+    from services.duckdb import _query
+
+    resp = asyncio.run(_query("SELECT 1 AS x UNION ALL SELECT 2"))
+    data = resp.json()
+    assert data["rows"] == len(data["data"]) == 2
+
+
+def test_query_token_usage_empty_window_is_zero(duckdb_db):
+    """DuckDB sum() over an empty window is NULL; the alert evaluator must
+    surface 0 (ClickHouse semantics) so below-threshold token_usage alerts
+    still fire on zero usage."""
+    from services.alert_evaluator import _query_token_usage
+
+    assert asyncio.run(_query_token_usage("all", "", 5)) == 0.0
 
 
 def test_unused_params_are_dropped(duckdb_db):

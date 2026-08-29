@@ -52,6 +52,11 @@ dependencies = [
     "idna>=3.15",
     "orjson>=3.10.0",
     "duckdb>=1.3.0",
+    # duckdb's Python client requires pytz to convert TIMESTAMP WITH TIME
+    # ZONE values (e.g. a bare now()/current_timestamp in SELECT) back to
+    # Python datetimes; without it every such query raises "Required module
+    # 'pytz' failed to import".
+    "pytz>=2024.1",
     "xxhash>=3.4.0",
     "pyarrow>=15.0.0",
     "observal-shared",

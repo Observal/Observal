@@ -65,7 +65,10 @@ async def _query_token_usage(target_type: str, target_id: str, lookback_minutes:
     """Query total token usage from JSONL session aggregates."""
     optic.trace("querying token usage for {} {}", target_type, target_id)
     sql = (
-        "SELECT sum(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens) AS token_usage "
+        # coalesce: DuckDB sum() over an empty window is NULL (ClickHouse
+        # returned 0), and float(None) would abort the query -> a below-
+        # threshold token_usage alert would never fire on zero usage.
+        "SELECT coalesce(sum(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens), 0) AS token_usage "
         "FROM session_stats_agg FINAL "
         # lookback arrives as a str; CAST avoids DuckDB STRING * INTERVAL errors.
         "WHERE last_event_time > now()::TIMESTAMP - (CAST($lookback AS INTEGER) * INTERVAL '1 minute')"

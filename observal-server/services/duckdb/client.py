@@ -21,6 +21,7 @@ through one process-wide connection guarded by an RLock; coroutines run
 queries via ``asyncio.to_thread`` so the event loop never blocks.
 """
 
+import ast
 import asyncio
 import os
 import re
@@ -35,6 +36,11 @@ from config import settings
 
 # Legacy ClickHouse placeholder: {name:Type} -> $name
 _PLACEHOLDER_RE = re.compile(r"\{(\w+):[A-Za-z0-9_()'\s]+\}")
+# ClickHouse Array placeholder: {name:Array(String)}. Legacy callers bind
+# stringified literals ("['a','b']") which DuckDB would treat as one scalar
+# VARCHAR. _execute parses them back into real LIST parameters and rewrites
+# IN ($name) to = ANY($name).
+_ARRAY_PLACEHOLDER_RE = re.compile(r"\{(\w+):Array\([^)]*\)\}")
 # Trailing ClickHouse clauses that have no DuckDB meaning.
 _FORMAT_JSON_RE = re.compile(r"\s+FORMAT\s+JSON(EachRow)?\s*;?\s*$", re.IGNORECASE)
 _SETTINGS_RE = re.compile(r"\s+SETTINGS\s+[\w\s=.,']+$", re.IGNORECASE)
@@ -49,9 +55,7 @@ _TO_UINT64_RE = re.compile(r"\btoUInt64\(", re.IGNORECASE)
 _COUNT_EMPTY_RE = re.compile(r"\bcount\(\s*\)", re.IGNORECASE)
 # INTERVAL $param UNIT -> ($param * INTERVAL '1 unit'); DuckDB intervals can't
 # bind parameters directly. Applied after placeholder translation.
-_INTERVAL_PARAM_RE = re.compile(
-    r"INTERVAL\s+\$(\w+)\s+(DAY|MINUTE|HOUR|SECOND|WEEK|MONTH|YEAR)S?\b", re.IGNORECASE
-)
+_INTERVAL_PARAM_RE = re.compile(r"INTERVAL\s+\$(\w+)\s+(DAY|MINUTE|HOUR|SECOND|WEEK|MONTH|YEAR)S?\b", re.IGNORECASE)
 
 _con: duckdb.DuckDBPyConnection | None = None
 _lock = threading.RLock()
@@ -96,10 +100,10 @@ class QueryResult:
 
     def json(self) -> dict:
         return {
-            "data": [
-                {k: self._json_value(v) for k, v in zip(self._columns, row, strict=True)}
-                for row in self._rows
-            ]
+            # ClickHouse FORMAT JSON emits `rows` alongside `data`; a few
+            # routes (e.g. admin policy security-events) still read it.
+            "rows": len(self._rows),
+            "data": [{k: self._json_value(v) for k, v in zip(self._columns, row, strict=True)} for row in self._rows],
         }
 
     def raise_for_status(self) -> None:
@@ -155,9 +159,7 @@ def _translate_sql(sql: str) -> str:
         sql = sql[: m.start()] + f"({inner})::UBIGINT" + sql[i:]
     sql = _PLACEHOLDER_RE.sub(r"$\1", sql)
     # CAST guards legacy callers that stringify numeric params.
-    sql = _INTERVAL_PARAM_RE.sub(
-        lambda m: f"(CAST(${m.group(1)} AS INTEGER) * INTERVAL '1 {m.group(2).lower()}')", sql
-    )
+    sql = _INTERVAL_PARAM_RE.sub(lambda m: f"(CAST(${m.group(1)} AS INTEGER) * INTERVAL '1 {m.group(2).lower()}')", sql)
     return sql
 
 
@@ -168,15 +170,75 @@ def _translate_params(params: dict | None) -> dict:
     return {k.removeprefix("param_"): v for k, v in params.items()}
 
 
+def _coerce_array_param(value: object) -> tuple[object, bool]:
+    """Return ``(value, converted)`` for an ``Array(...)`` placeholder param.
+
+    Legacy callers bind ClickHouse array literals as strings (e.g.
+    ``"['s1','s2']"``); DuckDB would treat that as one scalar VARCHAR, so
+    ``IN ($ids)`` silently matched nothing. Parse such literals back into
+    real Python lists; scalar literals are wrapped into one-element lists.
+    Anything that does not parse is passed through unchanged (and the SQL is
+    left untouched, preserving the old behaviour).
+    """
+    if isinstance(value, list):
+        return value, True
+    if isinstance(value, str):
+        try:
+            parsed = ast.literal_eval(value)
+        except (ValueError, SyntaxError, TypeError):
+            return value, False
+        if isinstance(parsed, list):
+            return parsed, True
+        if isinstance(parsed, (str, int, float)):
+            return [parsed], True
+    return value, False
+
+
+def _rewrite_in_clauses(sql: str, names: set[str]) -> str:
+    """Rewrite ``IN ($name)`` to ``= ANY($name)`` for Array placeholders.
+
+    DuckDB cannot bind a LIST parameter to ``IN (?)`` ("Unimplemented type
+    for cast") but ``= ANY(?)`` accepts lists with identical semantics;
+    ``NOT IN`` becomes ``<> ALL``.
+    """
+    for name in names:
+        sql = re.sub(
+            rf"\bNOT\s+IN\s*\(\s*\${re.escape(name)}\s*\)",
+            f"<> ALL(${name})",
+            sql,
+            flags=re.IGNORECASE,
+        )
+        sql = re.sub(
+            rf"\bIN\s*\(\s*\${re.escape(name)}\s*\)",
+            f"= ANY(${name})",
+            sql,
+            flags=re.IGNORECASE,
+        )
+    return sql
+
+
 def _execute(sql: str, params: dict | None = None) -> QueryResult:
+    array_names = set(_ARRAY_PLACEHOLDER_RE.findall(sql))
     bound_sql = _translate_sql(sql)
     bound_params = _translate_params(params)
+    # Array placeholders: coerce stringified ClickHouse array literals back to
+    # real Python lists and switch IN ($name) to = ANY($name) so DuckDB binds
+    # them as LISTs instead of one scalar VARCHAR (which silently matched
+    # nothing, losing rows with no error).
+    if array_names:
+        for name in list(array_names):
+            if name not in bound_params:
+                array_names.discard(name)
+                continue
+            bound_params[name], converted = _coerce_array_param(bound_params[name])
+            if not converted:
+                array_names.discard(name)
+        if array_names:
+            bound_sql = _rewrite_in_clauses(bound_sql, array_names)
     # DuckDB rejects named parameters that don't appear in the statement;
     # legacy callers routinely pass unused params (e.g. lookback windows for
     # stub queries). Drop anything unreferenced after translation.
-    bound_params = {
-        k: v for k, v in bound_params.items() if re.search(rf"\${re.escape(k)}\b", bound_sql)
-    }
+    bound_params = {k: v for k, v in bound_params.items() if re.search(rf"\${re.escape(k)}\b", bound_sql)}
     with _lock:
         con = _get_con()
         cur = con.execute(bound_sql, bound_params) if bound_params else con.execute(bound_sql)
@@ -205,9 +267,7 @@ async def _query(sql: str, params: dict | None = None, *, data: str | None = Non
             result = await asyncio.to_thread(_execute, sql, params)
         _elapsed = (time.perf_counter() - _t0) * 1000
         if result.status_code >= 400:
-            optic.warning(
-                "DuckDB query failed in {:.0f}ms - error preview: {}", _elapsed, result.text[:200]
-            )
+            optic.warning("DuckDB query failed in {:.0f}ms - error preview: {}", _elapsed, result.text[:200])
         else:
             optic.trace("DuckDB query OK ({:.0f}ms)", _elapsed)
         return result
