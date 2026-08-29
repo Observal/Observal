@@ -74,6 +74,7 @@ docker/clickhouse/users.d/default-user.xml
 *.tfstate.backup
 
 # Local / ephemeral
+.dirac-cache/
 .playwright-mcp/
 e2e-screenshots/
 /migration/
