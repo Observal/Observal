@@ -20,6 +20,10 @@ services:
       - ../.env
     environment:
       - JWT_KEY_DIR=/data/keys
+      # Must match observal-api's DUCKDB_PATH: this container runs the DuckDB
+      # migrations, the API starts with SKIP_DDL_ON_STARTUP=true. Without a
+      # shared path the API would boot against an unmigrated file.
+      - DUCKDB_PATH=/data/duckdb/observal.duckdb
     depends_on:
       observal-db:
         condition: service_healthy

@@ -160,11 +160,14 @@ async def detect_layer_groups(
             "layer_hash": row["layer_hash"],
             "sessions": int(row.get("sessions", 0)),
             "users": int(row.get("users", 0)),
-            "avg_prompts": round(float(row.get("avg_prompts", 0)), 1),
-            "avg_tool_calls": round(float(row.get("avg_tool_calls", 0)), 1),
-            "avg_duration_seconds": round(float(row.get("avg_duration_seconds", 0)), 0),
-            "avg_cost": round(float(row.get("avg_cost", 0)), 4),
-            "avg_tokens": int(float(row.get("avg_tokens", 0))),
+            # `or 0` guards: DuckDB aggregates are NULL over empty/NULL-only
+            # groups (ClickHouse returned 0), e.g. sessions where every event
+            # is rendered=0 leave first/last_event_time NULL.
+            "avg_prompts": round(float(row.get("avg_prompts") or 0), 1),
+            "avg_tool_calls": round(float(row.get("avg_tool_calls") or 0), 1),
+            "avg_duration_seconds": round(float(row.get("avg_duration_seconds") or 0), 0),
+            "avg_cost": round(float(row.get("avg_cost") or 0), 4),
+            "avg_tokens": int(float(row.get("avg_tokens") or 0)),
             "tool_error_rate": round(float(row.get("tool_error_rate", 0)), 3),
             "success_proxy": round(float(row.get("success_proxy", 0)), 3),
         }
