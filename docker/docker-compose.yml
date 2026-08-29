@@ -27,6 +27,8 @@ services:
         condition: service_healthy
     restart: "no"
     read_only: true
+    volumes:
+      - apidata:/data  # shared with observal-api: DuckDB file lives here
     tmpfs:
       - /tmp
     security_opt:

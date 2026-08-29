@@ -107,10 +107,10 @@ async def detect_layer_groups(
             ) AS agent_version,
             layer_hash,
             count() AS sessions,
-            uniq(user_id) AS users,
+            count(DISTINCT user_id) AS users,
             avg(prompt_count) AS avg_prompts,
             avg(tool_call_count) AS avg_tool_calls,
-            avg(toFloat64(last_event_time - first_event_time)) AS avg_duration_seconds,
+            avg((epoch_ms(last_event_time) - epoch_ms(first_event_time)) / 1000.0) AS avg_duration_seconds,
             sum(total_credits) / count() AS avg_cost,
             sum(input_tokens + output_tokens) / count() AS avg_tokens,
             -- Tool error proxy: sessions with high tool_result vs tool_call ratio

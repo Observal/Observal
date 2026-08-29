@@ -67,7 +67,8 @@ async def _query_token_usage(target_type: str, target_id: str, lookback_minutes:
     sql = (
         "SELECT sum(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens) AS token_usage "
         "FROM session_stats_agg FINAL "
-        "WHERE last_event_time > now()::TIMESTAMP - ($lookback * INTERVAL '1 minute')"
+        # lookback arrives as a str; CAST avoids DuckDB STRING * INTERVAL errors.
+        "WHERE last_event_time > now()::TIMESTAMP - (CAST($lookback AS INTEGER) * INTERVAL '1 minute')"
     )
     params: dict[str, str] = {"param_lookback": str(lookback_minutes)}
     if target_type == "agent":
