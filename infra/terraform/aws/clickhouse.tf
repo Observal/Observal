@@ -99,7 +99,7 @@ resource "aws_instance" "data_host" {
   tags = { Name = "${local.name}-data-host" }
 
   depends_on = [
-    aws_nat_gateway.main,
+    module.vpc[0],
     aws_ssm_parameter.app,
   ]
 }
@@ -114,7 +114,7 @@ resource "aws_volume_attachment" "data" {
 # ── Internal DNS so ECS tasks can reach ClickHouse and optional Grafana ────
 
 resource "aws_route53_record" "clickhouse_internal" {
-  count   = local.clickhouse_self_hosted ? 1 : 0
+  count   = local.clickhouse_self_hosted && local.should_create_vpc ? 1 : 0
   zone_id = aws_route53_zone.internal.zone_id
   name    = "clickhouse.${var.internal_dns_zone}"
   type    = "A"
@@ -123,7 +123,7 @@ resource "aws_route53_record" "clickhouse_internal" {
 }
 
 resource "aws_route53_record" "grafana_internal" {
-  count   = local.bundled_grafana_available ? 1 : 0
+  count   = local.bundled_grafana_available && local.should_create_vpc ? 1 : 0
   zone_id = aws_route53_zone.internal.zone_id
   name    = "grafana.${var.internal_dns_zone}"
   type    = "A"
