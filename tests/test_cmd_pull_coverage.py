@@ -22,6 +22,7 @@ import yaml
 from typer.testing import CliRunner
 
 import observal_cli.cmd_pull as cmd_pull
+from observal_cli.errors import ErrorHandlingGroup
 
 RUNNER = CliRunner()
 
@@ -52,6 +53,15 @@ def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 @pytest.fixture
 def pull_app() -> typer.Typer:
     root = typer.Typer()
+    agent = typer.Typer()
+    cmd_pull.register_pull(agent)
+    root.add_typer(agent, name="agent")
+    return root
+
+
+@pytest.fixture
+def pull_app_boundary() -> typer.Typer:
+    root = typer.Typer(cls=ErrorHandlingGroup)
     agent = typer.Typer()
     cmd_pull.register_pull(agent)
     root.add_typer(agent, name="agent")
@@ -942,9 +952,9 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
         sensitivity="high",
     )
     assert run.call_args_list == [
-        call(["good", "mcp", "add", "new"], capture_output=True, text=True),
-        call(["missing", "mcp", "add", "manual"], capture_output=True, text=True),
-        call(["bad", "mcp", "add", "broken"], capture_output=True, text=True),
+        call(["good", "mcp", "add", "new"], capture_output=True, text=True, timeout=60),
+        call(["missing", "mcp", "add", "manual"], capture_output=True, text=True, timeout=60),
+        call(["bad", "mcp", "add", "broken"], capture_output=True, text=True, timeout=60),
     ]
     for visible in (
         "Pulled claude-code config (10 files)",
@@ -1053,6 +1063,99 @@ def test_pull_user_scope_expands_home_for_string_hook_and_agent_files(
     boundaries.upsert.assert_called_once()
 
 
+def test_pull_json_rejects_malformed_server_input_requirements(
+    pull_app_boundary: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+) -> None:
+    detail = _agent_detail(mcp_links=[{"mcp_listing_id": "mcp-1", "mcp_name": "GitHub"}])
+
+    def get(path: str):
+        if path == "/api/v1/agents/agent-uuid":
+            return detail
+        if path == "/api/v1/mcps/mcp-1":
+            return {"environment_variables": [{"name": ""}], "headers": []}
+        raise AssertionError(path)
+
+    boundaries.get.side_effect = get
+    result = RUNNER.invoke(
+        pull_app_boundary,
+        [
+            "agent",
+            "pull",
+            "acme/reviewer",
+            "--harness",
+            "claude-code",
+            "--dir",
+            str(tmp_path / "project"),
+            "--no-prompt",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 9
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["error"]["result"] == {
+        "invalid_input_kind": "environment_variable",
+        "component": "GitHub",
+    }
+    boundaries.post.assert_not_called()
+
+
+def test_pull_json_missing_required_inputs_returns_needs_input_before_install(
+    pull_app_boundary: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+) -> None:
+    detail = _agent_detail(mcp_links=[{"mcp_listing_id": "mcp-1", "mcp_name": "GitHub"}])
+
+    def get(path: str):
+        if path == "/api/v1/agents/agent-uuid":
+            return detail
+        if path == "/api/v1/mcps/mcp-1":
+            return {
+                "environment_variables": [
+                    {"name": "API_KEY", "required": True},
+                    {"name": "REGION", "required": False},
+                ],
+                "headers": [{"name": "Authorization", "required": True}],
+            }
+        raise AssertionError(path)
+
+    boundaries.get.side_effect = get
+    target = tmp_path / "project"
+    result = RUNNER.invoke(
+        pull_app_boundary,
+        [
+            "agent",
+            "pull",
+            "acme/reviewer",
+            "--harness",
+            "claude-code",
+            "--dir",
+            str(target),
+            "--no-prompt",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 7
+    assert result.stdout == ""
+    error = json.loads(result.stderr)["error"]
+    assert error["result"] == {
+        "needs_input": True,
+        "inputs": [
+            {"kind": "environment_variable", "name": "API_KEY", "component": "GitHub"},
+            {"kind": "header", "name": "Authorization", "component": "GitHub"},
+        ],
+    }
+    boundaries.post.assert_not_called()
+    boundaries.local_name.assert_not_called()
+    assert not target.exists()
+
+
 def test_pull_partial_skill_failure_stops_metadata_updates_without_rolling_back_files(
     pull_app: typer.Typer,
     boundaries: SimpleNamespace,
@@ -1084,6 +1187,135 @@ def test_pull_partial_skill_failure_stops_metadata_updates_without_rolling_back_
     boundaries.emit.assert_not_called()
 
 
+def test_pull_json_dry_run_invalid_setup_has_no_partial_side_effects(
+    pull_app_boundary: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "project"
+    boundaries.post.return_value = {
+        "config_snippet": {
+            "agent_profile": {"path": "agent.md", "content": "agent\n"},
+            "mcp_setup_commands": [{}],
+        }
+    }
+
+    result = RUNNER.invoke(
+        pull_app_boundary,
+        [
+            "agent",
+            "pull",
+            "acme/reviewer",
+            "--harness",
+            "claude-code",
+            "--dir",
+            str(target),
+            "--dry-run",
+            "--no-prompt",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 9
+    assert result.stdout == ""
+    state = json.loads(result.stderr)["error"]["result"]
+    assert state["partial"] is False
+    assert state["dry_run"] is True
+    assert state["files"] == [{"path": str(target / "agent.md"), "status": "would write"}]
+    assert not target.exists()
+    boundaries.upsert.assert_not_called()
+
+
+def test_pull_json_skill_exception_reports_partial_state(
+    pull_app_boundary: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "project"
+    boundaries.direct_install.side_effect = OSError("private filesystem detail")
+    boundaries.post.return_value = {
+        "config_snippet": {
+            "agent_profile": {"path": "agent.md", "content": "agent\n"},
+            "skill_components": [{"name": "broken-skill", "skill_md_content": "content"}],
+        }
+    }
+
+    result = RUNNER.invoke(
+        pull_app_boundary,
+        [
+            "agent",
+            "pull",
+            "acme/reviewer",
+            "--harness",
+            "claude-code",
+            "--dir",
+            str(target),
+            "--no-prompt",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 9
+    assert result.stdout == ""
+    error = json.loads(result.stderr)["error"]
+    assert error["result"]["stage"] == "install_skills"
+    assert error["result"]["failed_skills"] == ["broken-skill"]
+    assert error["result"]["partial"] is True
+    assert "private filesystem detail" not in result.stderr
+    assert (target / "agent.md").is_file()
+    boundaries.upsert.assert_not_called()
+
+
+def test_pull_json_setup_failure_reports_secret_free_partial_state(
+    pull_app_boundary: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "project"
+    boundaries.post.return_value = {
+        "config_snippet": {
+            "agent_profile": {"path": "agent.md", "content": "agent\n"},
+            "mcp_setup_commands": [["broken", "--token", "secret-value"]],
+        }
+    }
+    monkeypatch.setattr(
+        cmd_pull.subprocess,
+        "run",
+        MagicMock(return_value=subprocess.CompletedProcess(["broken"], 2, "", "private stderr")),
+    )
+
+    result = RUNNER.invoke(
+        pull_app_boundary,
+        [
+            "agent",
+            "pull",
+            "acme/reviewer",
+            "--harness",
+            "claude-code",
+            "--dir",
+            str(target),
+            "--no-prompt",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 9
+    assert result.stdout == ""
+    error = json.loads(result.stderr)["error"]
+    partial = error["result"]
+    assert partial["partial"] is True
+    assert partial["stage"] == "run_setup_commands"
+    assert partial["files"] == [{"path": str(target / "agent.md"), "status": "created"}]
+    assert partial["setup_commands"] == [{"executable": "broken", "status": "failed", "return_code": 2}]
+    assert "secret-value" not in result.stderr
+    assert "private stderr" not in result.stderr
+    boundaries.upsert.assert_not_called()
+
+
 def test_pull_lockfile_failure_is_not_reported_as_success(
     pull_app: typer.Typer,
     boundaries: SimpleNamespace,
@@ -1111,6 +1343,41 @@ def test_pull_lockfile_failure_is_not_reported_as_success(
     boundaries.snapshot.assert_not_called()
     boundaries.adapter.persist_active_agent.assert_not_called()
     boundaries.emit.assert_not_called()
+
+
+def test_pull_json_lockfile_failure_reports_tracking_state(
+    pull_app_boundary: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "project"
+    boundaries.upsert.side_effect = OSError("private lock detail")
+
+    result = RUNNER.invoke(
+        pull_app_boundary,
+        [
+            "agent",
+            "pull",
+            "acme/reviewer",
+            "--harness",
+            "claude-code",
+            "--dir",
+            str(target),
+            "--no-prompt",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 9
+    assert result.stdout == ""
+    partial = json.loads(result.stderr)["error"]["result"]
+    assert partial["stage"] == "update_lockfile"
+    assert partial["installation_tracked"] is False
+    assert partial["active_agent_persisted"] is False
+    assert partial["partial"] is True
+    assert "private lock detail" not in result.stderr
+    boundaries.adapter.persist_active_agent.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -1345,6 +1612,45 @@ def test_pull_rejects_malformed_existing_config_without_overwrite(
     result = _invoke(pull_app, target)
 
     assert result.exit_code == 6
+    assert path.read_text() == "not-json"
+    boundaries.upsert.assert_not_called()
+
+
+def test_pull_json_write_failure_reports_failed_path(
+    pull_app_boundary: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "project"
+    path = target / "mcp.json"
+    path.parent.mkdir(parents=True)
+    path.write_text("not-json")
+    boundaries.post.return_value = {
+        "config_snippet": {"mcp_config": {"path": "mcp.json", "content": {"mcpServers": {"new": {}}}}}
+    }
+
+    result = RUNNER.invoke(
+        pull_app_boundary,
+        [
+            "agent",
+            "pull",
+            "acme/reviewer",
+            "--harness",
+            "claude-code",
+            "--dir",
+            str(target),
+            "--no-prompt",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 6
+    assert result.stdout == ""
+    state = json.loads(result.stderr)["error"]["result"]
+    assert state["stage"] == "write_files"
+    assert state["failed_path"] == str(path)
+    assert state["partial"] is False
     assert path.read_text() == "not-json"
     boundaries.upsert.assert_not_called()
 

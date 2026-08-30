@@ -349,11 +349,85 @@ def test_bulk_create_rejects_missing_file(tmp_path):
     assert "JSON file not found" in result.output
 
 
+def test_bulk_create_rejects_server_limit_and_canonical_duplicates_before_http(tmp_path, monkeypatch):
+    post = Mock()
+    monkeypatch.setattr(agent.client, "post", post)
+
+    too_many = tmp_path / "too-many.json"
+    too_many.write_text(json.dumps([{"name": f"agent-{index}"} for index in range(51)]), encoding="utf-8")
+    oversized = _invoke("bulk-create", "--from-file", str(too_many), "--dry-run")
+
+    duplicates = tmp_path / "duplicates.json"
+    duplicates.write_text(json.dumps([{"name": "Review Agent"}, {"name": "review-agent"}]), encoding="utf-8")
+    repeated = _invoke("bulk-create", "--from-file", str(duplicates), "--dry-run")
+
+    assert oversized.exit_code == 7
+    assert "at most 50" in oversized.output
+    assert repeated.exit_code == 7
+    assert "resolve to the same name" in repeated.output
+    post.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "agent_payload",
+    [
+        {"name": "___"},
+        {"name": "install"},
+        {"name": "valid", "components": "not-a-list"},
+        {"name": "valid", "components": ["not-an-object"]},
+        {"name": "valid", "components": [{"component_type": "skill"}]},
+        {"name": "valid", "version": 1},
+        {"name": "valid", "model_config_json": []},
+        {"name": "valid", "supported_harnesses": {}},
+        {"name": "valid", "supported_harnesses": [1]},
+        {"name": "valid", "external_mcps": {}},
+        {"name": "valid", "external_mcps": [1]},
+    ],
+)
+def test_bulk_create_rejects_invalid_agent_shapes_before_http(tmp_path, monkeypatch, agent_payload):
+    source = tmp_path / "invalid-agent.json"
+    source.write_text(json.dumps([agent_payload]), encoding="utf-8")
+    post = Mock()
+    monkeypatch.setattr(agent.client, "post", post)
+
+    result = _invoke("bulk-create", "--from-file", str(source), "--dry-run")
+
+    assert result.exit_code == 7
+    post.assert_not_called()
+
+
+def test_bulk_create_does_not_collapse_distinct_valid_hyphenated_names(tmp_path, monkeypatch):
+    agents = [{"name": "agent--one"}, {"name": "agent-one"}]
+    source = tmp_path / "distinct.json"
+    source.write_text(json.dumps(agents), encoding="utf-8")
+    post = Mock(return_value={"created": 2, "skipped": 0, "errors": 0, "results": []})
+    monkeypatch.setattr(agent.client, "post", post)
+
+    result = _invoke("bulk-create", "--from-file", str(source), "--dry-run", "--output", "json")
+
+    assert result.exit_code == 0
+    post.assert_called_once()
+
+
+def test_bulk_create_accepts_exactly_fifty_unique_agents(tmp_path, monkeypatch):
+    agents = [{"name": f"agent-{index}"} for index in range(50)]
+    source = tmp_path / "agents.json"
+    source.write_text(json.dumps(agents), encoding="utf-8")
+    post = Mock(return_value={"created": 50, "skipped": 0, "errors": 0, "results": []})
+    monkeypatch.setattr(agent.client, "post", post)
+
+    result = _invoke("bulk-create", "--from-file", str(source), "--dry-run", "--output", "json")
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["partial"] is False
+    post.assert_called_once_with("/api/v1/bulk/agents", {"agents": agents, "dry_run": True})
+
+
 def test_bulk_create_dry_run_renders_each_status_and_exact_payload(tmp_path, monkeypatch):
     agents = [
         {"name": "one", "version": "1.0.0", "model_name": "gpt-4o", "components": []},
         {"name": "two"},
-        {"name": "three", "components": [{"component_type": "skill"}]},
+        {"name": "three", "components": [{"component_type": "skill", "component_id": "bad-id"}]},
     ]
     source = tmp_path / "agents.json"
     source.write_text(json.dumps({"agents": agents}), encoding="utf-8")
@@ -372,7 +446,7 @@ def test_bulk_create_dry_run_renders_each_status_and_exact_payload(tmp_path, mon
 
     result = _invoke("bulk-create", "--from-file", str(source), "--dry-run")
 
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 11, result.output
     assert "Dry-run results" in result.output
     assert "created" in result.output
     assert "skipped" in result.output
@@ -407,10 +481,46 @@ def test_bulk_create_cancellation_and_creation_results(tmp_path, monkeypatch):
     }
     created = _invoke("bulk-create", "--from-file", str(source), "--yes")
 
-    assert created.exit_code == 0, created.output
+    assert created.exit_code == 11, created.output
     assert "Bulk create complete" in created.output
     assert "12345678" in created.output
     post.assert_called_once_with("/api/v1/bulk/agents", {"agents": agents, "dry_run": False})
+
+
+def test_bulk_create_partial_json_result_survives_nonzero_root_exit(tmp_path, monkeypatch):
+    import observal_cli.main as main
+
+    source = tmp_path / "agents.json"
+    source.write_text(json.dumps([{"name": "one"}, {"name": "two"}]), encoding="utf-8")
+    monkeypatch.setattr(main, "_migrate_legacy_mcp_configs", lambda: None)
+    monkeypatch.setattr(main, "_try_lockfile_migration", lambda: None)
+    monkeypatch.setattr(
+        agent.client,
+        "post",
+        Mock(
+            return_value={
+                "created": 1,
+                "skipped": 0,
+                "errors": 1,
+                "results": [
+                    {"name": "one", "status": "created", "agent_id": "agent-1"},
+                    {"name": "two", "status": "error", "error": "invalid"},
+                ],
+            }
+        ),
+    )
+
+    result = runner.invoke(
+        cli_app,
+        ["agent", "bulk-create", "--from-file", str(source), "--yes", "--output", "json"],
+    )
+
+    assert result.exit_code == 11
+    assert result.stderr == ""
+    payload = json.loads(result.stdout)
+    assert payload["partial"] is True
+    assert payload["errors"] == 1
+    assert len(payload["results"]) == 2
 
 
 def test_agent_list_table_filters_ids_and_pagination(monkeypatch, _isolated_boundaries):
@@ -1282,6 +1392,35 @@ def test_local_init_add_and_build_json_contracts(tmp_path, monkeypatch):
     assert json.loads(initialized.output)["agent"]["name"] == "reviewer"
     assert json.loads(added.output)["component"]["component_id"] == "22222222-2222-2222-2222-222222222222"
     assert json.loads(built.output)["valid"] is True
+
+
+def test_build_json_error_contains_structured_repair_result(tmp_path, monkeypatch):
+    import observal_cli.main as main
+    from observal_cli.errors import CliError, ErrorCategory
+
+    _write_agent_yaml(
+        tmp_path,
+        components=[{"component_type": "skill", "component_id": "missing-skill"}],
+    )
+    monkeypatch.setattr(main, "_migrate_legacy_mcp_configs", lambda: None)
+    monkeypatch.setattr(main, "_try_lockfile_migration", lambda: None)
+    monkeypatch.setattr(
+        agent.client,
+        "get",
+        Mock(side_effect=CliError(ErrorCategory.NOT_FOUND, "Missing.", operation="Validate agent")),
+    )
+    monkeypatch.setattr(agent.client, "post", Mock(return_value={"valid": True, "issues": []}))
+    monkeypatch.setattr(agent.client, "add_publish_target", Mock(side_effect=_publish_target))
+
+    result = runner.invoke(cli_app, ["agent", "build", "--dir", str(tmp_path), "--output", "json"])
+
+    assert result.exit_code == 7
+    assert result.stdout == ""
+    error = json.loads(result.stderr)["error"]
+    assert error["result"]["valid"] is False
+    assert error["result"]["components"] == [
+        {"type": "skill", "id": "missing-skill", "valid": False, "error": "not found"}
+    ]
 
 
 def test_publish_and_release_json_return_server_results(tmp_path, monkeypatch):

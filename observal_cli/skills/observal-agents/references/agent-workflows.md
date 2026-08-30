@@ -44,7 +44,7 @@ observal agent pull NAMESPACE/AGENT_SLUG --harness kiro --no-prompt --dir . --ou
 observal agent pull NAMESPACE/AGENT_SLUG --harness claude-code --scope project --dry-run --no-prompt --output json
 ```
 
-JSON pull requires `--no-prompt` and is appropriate only when no secret values are required. The `--env` and `--header` options expose values in shell history and process arguments, so use them only for non-secret configuration.
+JSON pull requires `--no-prompt` and is appropriate only when no secret values are required. If required values are missing, it exits nonzero with `error.result.needs_input: true` before installing anything. The `--env` and `--header` options expose values in shell history and process arguments, so use them only for non-secret configuration.
 
 For credentials or tokens, omit `--no-prompt` and JSON output, then enter values through the interactive prompts. This keeps values out of process arguments. Treat generated harness configuration as sensitive because the harness may store those values.
 
@@ -138,7 +138,7 @@ observal agent bulk-create --from-file agents.json --dry-run --output json
 observal agent bulk-create --from-file agents.json --yes --output json
 ```
 
-Verify each returned item. Do not treat a partial batch as complete.
+A file contains 1-50 agents and duplicate canonical names are rejected before the request. Verify each returned item. `errors > 0` sets `partial: true` and exits with code `11`; skips alone remain successful.
 
 ## Lifecycle and collaboration
 
@@ -157,5 +157,5 @@ Use user UUIDs returned by co-author list for removal. Verify ownership and life
 
 - 409 ambiguous name: re-list and use `qualified_name` or UUID.
 - 409 existing Agent: choose update only for in-place change, release for a new version.
-- Validation names a required YAML field: correct the source file, rebuild, and retry once.
+- Validation names a required YAML field: inspect `error.result.components` and `error.result.issues`, correct the source file, rebuild, and retry once.
 - Unavailable or not configured: stop. Load `observal-advanced` only for an explicit fallback request.

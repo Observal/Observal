@@ -50,7 +50,7 @@ Standalone binary changes require a published checksum because JSON mode does no
 
 ## Explicit local fallback
 
-Use only after the requested CLI operation returns `Connection failed` or `Not configured`, and only after the user confirms they want a local-only Agent file.
+Use only after JSON returns either `error.category: unavailable` with exit code `9`, or `error.category: authentication` with operation `Load authenticated CLI configuration` and exit code `3`. The user confirms they still want a local-only Agent file before anything is written.
 
 | Harness | User scope | Project scope |
 | --- | --- | --- |

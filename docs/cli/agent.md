@@ -85,7 +85,7 @@ observal agent bulk-create --from-file agents.json --dry-run --output json
 observal agent bulk-create --from-file agents.json --yes --output json
 ```
 
-JSON mode requires either `--dry-run` or `--yes`. It returns the direct bulk result, including per-agent statuses and summary counts.
+Input contains 1-50 agents. The CLI rejects malformed fields and duplicate canonical names before HTTP, and the server applies the same duplicate rules. JSON mode requires either `--dry-run` or `--yes`. Results include per-agent statuses, summary counts, and `partial`. Item errors set `partial: true` and exit with code 11; skips alone remain successful.
 
 ## List, my, and show
 
@@ -185,7 +185,7 @@ observal agent build --dir ./reviewer --output json
 observal agent build --dir ./reviewer --team platform --visibility team --output json
 ```
 
-Build verifies every component and validates whether private components are visible to the target owner. A successful JSON result contains `valid`, `agent`, `components`, and `issues`. Invalid composition exits with code 7 and leaves JSON stdout empty.
+Build verifies every component and validates whether private components are visible to the target owner. A successful JSON result contains `valid`, `agent`, `components`, and `issues`. Invalid composition exits with code 7 and leaves JSON stdout empty; the stderr error includes the same repairable data under `error.result`.
 
 ### Publish
 
@@ -254,6 +254,7 @@ Common Agent failures use:
 | 8 | Server rate limit |
 | 9 | Server, filesystem, lockfile, generated config, or setup dependency unavailable |
 | 10 | CLI and server version mismatch |
+| 11 | Bulk operation returned one or more item errors |
 
 ## Related
 

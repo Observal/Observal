@@ -46,7 +46,7 @@ observal server restart --background --output json
 observal server stop --output json
 ```
 
-`start` accepts `--port/-p` and `--host`. When the default API port is occupied, it tries the documented local fallback ports and reports the selected port. An explicitly selected occupied port is a conflict.
+`start` accepts `--port/-p` and `--host`. When the default API port is occupied, it tries the documented local fallback ports and reports the selected port. An explicitly selected occupied port is a conflict. Background start and restart verify all four final service states before returning success; stop verifies that none remains running. Their JSON results include the verified `services` list, and an unverified transition exits with code 9 plus observed state in `error.result`.
 
 Startup performs these steps in order:
 

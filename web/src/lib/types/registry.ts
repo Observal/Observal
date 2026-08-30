@@ -215,6 +215,7 @@ export interface BulkResult {
 	created: number;
 	skipped: number;
 	errors: number;
+	partial: boolean;
 	dry_run: boolean;
 	results: BulkResultItem[];
 }
