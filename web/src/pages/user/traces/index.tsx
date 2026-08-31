@@ -46,6 +46,7 @@ import { PageHeader } from "@/components/layouts/page-header";
 import { TableSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
+import { UsageSection } from "@/components/dashboard/usage-section";
 import type { Session } from "@/lib/types";
 
 /** Quickstart docs URL shown in the first-time empty state CTA. */
@@ -90,6 +91,20 @@ function parseSearchQuery(query: string): { text: string; filters: Record<string
 function filterTokensOnly(query: string): string {
 	const tokens = query.match(/(\w+):(?:"[^"]*"|[^\s]*)/g);
 	return tokens ? tokens.join(" ").trim() : "";
+}
+
+/**
+ * Map a `days:N` search filter onto a range bucket the usage endpoint accepts.
+ * Unparseable or absent values fall back to the endpoint default.
+ */
+function toUsageRange(days: string | undefined): string | undefined {
+	if (!days) return undefined;
+	const parsed = parseInt(days, 10);
+	if (isNaN(parsed) || parsed <= 0) return undefined;
+	if (parsed <= 1) return "24h";
+	if (parsed <= 7) return "7d";
+	if (parsed <= 30) return "30d";
+	return "90d";
 }
 
 type TracesEmptyStateKind = "first-time" | "filter" | "search" | "fallback";
@@ -432,6 +447,12 @@ export default function TracesPage() {
 	const [globalFilter, setGlobalFilter] = useState(searchParam ?? "");
 	const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 	const serverQuery = useMemo(() => parseSearchQuery(globalFilter), [globalFilter]);
+	// The usage endpoint takes a fixed range, so snap the free-form `days:` filter
+	// up to the smallest supported bucket that covers it.
+	const usageRange = useMemo(
+		() => toUsageRange(serverQuery.filters.days),
+		[serverQuery.filters.days],
+	);
 
 	const {
 		data: sessions,
@@ -603,6 +624,9 @@ export default function TracesPage() {
 								session{todaySessions !== 1 ? "s" : ""} today
 							</span>
 						</div>
+
+						{/* ── Token / credit usage ── */}
+						<UsageSection range={usageRange} />
 
 						{/* ── Toolbar ── */}
 						<div className="flex items-center gap-3">

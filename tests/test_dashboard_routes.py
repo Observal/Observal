@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import inspect
+import re
 import uuid
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -579,22 +580,12 @@ async def test_trends_rejects_null_aggregate_days():
 async def test_placeholder_dashboard_endpoints_return_exact_empty_payloads():
     admin = _user(UserRole.admin)
 
-    tokens = await dashboard.token_stats(range_="90d")
     harnesses = await dashboard.harness_usage(admin)
     sandboxes = await dashboard.sandbox_metrics(admin)
     graphrag = await dashboard.graphrag_metrics(admin)
     latency = await dashboard.latency_heatmap(admin)
     traces = await dashboard.unannotated_traces(admin)
 
-    assert tokens.model_dump() == {
-        "total_input": 0,
-        "total_output": 0,
-        "total_tokens": 0,
-        "avg_per_trace": 0.0,
-        "by_agent": [],
-        "by_mcp": [],
-        "over_time": [],
-    }
     assert harnesses.model_dump() == {"harnesses": []}
     assert sandboxes.model_dump() == {
         "total_runs": 0,
@@ -618,6 +609,272 @@ async def test_placeholder_dashboard_endpoints_return_exact_empty_payloads():
     }
     assert latency == []
     assert traces == []
+
+
+@pytest.mark.asyncio
+async def test_token_stats_reports_credits_when_harness_has_no_raw_tokens(monkeypatch):
+    """Kiro sessions only carry credits, so tokens stay 0 but credits surface."""
+    ch = AsyncMock(
+        side_effect=[
+            [
+                {
+                    "input_tokens": "0",
+                    "output_tokens": "0",
+                    "cache_read_tokens": "0",
+                    "cache_write_tokens": "0",
+                    "credits": "1.5",
+                    "traces": "3",
+                    "credit_traces": "2",
+                }
+            ],
+            [{"agent_id": str(AGENT_ID), "input_tokens": "0", "output_tokens": "0", "credits": "1.5", "traces": "2"}],
+            [{"day": "2026-06-15", "input_tokens": "0", "output_tokens": "0", "credits": "1.5"}],
+            [],
+        ]
+    )
+    monkeypatch.setattr(dashboard, "_ch_json", ch)
+    db = _db(_Result([(AGENT_ID, "kiro-agent")]))
+
+    result = await dashboard.token_stats(range_="7d", db=db, current_user=_user(UserRole.user))
+
+    assert result.total_tokens == 0
+    assert result.has_token_data is False
+    assert result.has_credit_data is True
+    assert result.total_credits == 1.5
+    # Averaged over sessions that actually reported credits, not all sessions.
+    assert result.avg_credits_per_trace == 0.75
+    assert result.total_traces == 3
+    assert [(row.name, row.credits, row.traces) for row in result.by_agent] == [("kiro-agent", 1.5, 2)]
+    assert [(point.date, point.credits) for point in result.over_time] == [("2026-06-15", 1.5)]
+
+
+@pytest.mark.asyncio
+async def test_token_stats_scopes_non_admins_to_their_own_sessions(monkeypatch):
+    ch = AsyncMock(return_value=[])
+    monkeypatch.setattr(dashboard, "_ch_json", ch)
+
+    await dashboard.token_stats(range_="30d", db=_db(), current_user=_user(UserRole.user))
+
+    for item in ch.await_args_list:
+        assert "user_id = {uid:String}" in item.args[0]
+        assert item.args[1] == {"param_uid": str(USER_ID)}
+        assert "INTERVAL 30 DAY" in item.args[0]
+
+
+@pytest.mark.asyncio
+async def test_token_stats_lets_admins_see_all_sessions_unless_trace_privacy_is_on(monkeypatch):
+    ch = AsyncMock(return_value=[])
+    monkeypatch.setattr(dashboard, "_ch_json", ch)
+    admin = _user(UserRole.admin)
+    admin._trace_privacy = False
+
+    await dashboard.token_stats(range_="7d", db=_db(), current_user=admin)
+
+    assert all("user_id = {uid:String}" not in item.args[0] for item in ch.await_args_list)
+    assert all(item.args[1] is None for item in ch.await_args_list)
+
+    ch.reset_mock()
+    admin._trace_privacy = True
+    await dashboard.token_stats(range_="7d", db=_db(), current_user=admin)
+
+    assert all("user_id = {uid:String}" in item.args[0] for item in ch.await_args_list)
+
+
+@pytest.mark.asyncio
+async def test_token_stats_sums_tokens_and_excludes_subagent_rollups(monkeypatch):
+    ch = AsyncMock(
+        side_effect=[
+            [
+                {
+                    "input_tokens": "1000",
+                    "output_tokens": "500",
+                    "cache_read_tokens": "200",
+                    "cache_write_tokens": "100",
+                    "credits": "0",
+                    "traces": "4",
+                    "credit_traces": "0",
+                }
+            ],
+            [],
+            [],
+            [],
+        ]
+    )
+    monkeypatch.setattr(dashboard, "_ch_json", ch)
+
+    result = await dashboard.token_stats(range_="7d", db=_db(), current_user=_user(UserRole.admin))
+
+    assert (result.total_input, result.total_output, result.total_tokens) == (1000, 500, 1500)
+    assert (result.total_cache_read, result.total_cache_write) == (200, 100)
+    assert result.avg_per_trace == 375.0
+    assert result.has_token_data is True
+    assert result.has_credit_data is False
+    # Subagent rollups and promptless sessions would double-count the totals.
+    assert "parent_session_id = ''" in ch.await_args_list[0].args[0]
+    assert "prompt_count > 0" in ch.await_args_list[0].args[0]
+
+
+@pytest.mark.asyncio
+async def test_token_stats_returns_zeroes_without_dividing_by_zero(monkeypatch):
+    monkeypatch.setattr(dashboard, "_ch_json", AsyncMock(return_value=[]))
+
+    result = await dashboard.token_stats(range_=None, db=_db(), current_user=_user(UserRole.user))
+
+    assert result.model_dump() == {
+        "total_input": 0,
+        "total_output": 0,
+        "total_tokens": 0,
+        "avg_per_trace": 0.0,
+        "by_agent": [],
+        "by_mcp": [],
+        "over_time": [],
+        "total_cache_read": 0,
+        "total_cache_write": 0,
+        "total_credits": 0.0,
+        "avg_credits_per_trace": 0.0,
+        "total_traces": 0,
+        "has_token_data": False,
+        "has_credit_data": False,
+    }
+
+
+@pytest.mark.asyncio
+async def test_token_stats_falls_back_to_raw_agent_id_when_name_is_unresolvable(monkeypatch):
+    """Non-UUID agent identifiers must not be dropped from the breakdown."""
+    monkeypatch.setattr(
+        dashboard,
+        "_ch_json",
+        AsyncMock(
+            side_effect=[
+                [{"traces": "1", "credit_traces": "0"}],
+                [
+                    {
+                        "agent_id": "legacy-agent-name",
+                        "input_tokens": "10",
+                        "output_tokens": "5",
+                        "credits": "0",
+                        "traces": "1",
+                    }
+                ],
+                [],
+                [],
+            ]
+        ),
+    )
+    db = _db()
+
+    result = await dashboard.token_stats(range_="7d", db=db, current_user=_user(UserRole.admin))
+
+    assert [(row.id, row.name, row.total) for row in result.by_agent] == [
+        ("legacy-agent-name", "legacy-agent-name", 15)
+    ]
+    db.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_token_stats_attributes_sessions_to_mcp_servers(monkeypatch):
+    monkeypatch.setattr(
+        dashboard,
+        "_ch_json",
+        AsyncMock(
+            side_effect=[
+                [{"traces": "2", "credit_traces": "0"}],
+                [],
+                [],
+                [{"server": "github", "input_tokens": "80", "output_tokens": "20", "traces": "2"}],
+            ]
+        ),
+    )
+
+    result = await dashboard.token_stats(range_="7d", db=_db(), current_user=_user(UserRole.admin))
+
+    # Credits stay 0: they are metered per session and cannot be split per server.
+    assert [(row.name, row.total, row.traces, row.credits) for row in result.by_mcp] == [("github", 100, 2, 0.0)]
+
+
+_AGGREGATES = ("sum", "count", "avg", "min", "max", "countIf", "sumIf", "uniq", "any", "anyLast")
+
+
+def _select_aliases(sql: str) -> set[str]:
+    """Return aliases bound to an aggregate expression in the SELECT list."""
+    pattern = r"\b(?:" + "|".join(_AGGREGATES) + r")\s*\([^()]*\)\s+AS\s+(\w+)"
+    return set(re.findall(pattern, sql, flags=re.IGNORECASE))
+
+
+def _order_by_clause(sql: str) -> str:
+    match = re.search(r"\bORDER BY\b(.*?)(?:\bLIMIT\b|\bFORMAT\b|$)", sql, flags=re.IGNORECASE | re.DOTALL)
+    return match.group(1) if match else ""
+
+
+def find_nested_aggregates(sql: str) -> set[str]:
+    """Return aggregate aliases that are re-aggregated inside ORDER BY.
+
+    ClickHouse resolves a SELECT alias before evaluating ORDER BY, so writing
+    ``sum(x) AS x ... ORDER BY sum(x)`` expands to ``sum(sum(x))`` and fails with
+    ILLEGAL_AGGREGATION (error 184). ``_ch_json`` swallows query failures and
+    returns ``[]``, so this class of bug is silent at runtime: the endpoint
+    responds 200 with an empty breakdown. Mocked ``_ch_json`` tests cannot catch
+    it because the SQL string is never executed, hence this static guard.
+    """
+    order_by = _order_by_clause(sql)
+    if not order_by:
+        return set()
+    offenders = set()
+    for alias in _select_aliases(sql):
+        # The alias is re-aggregated when it appears inside an aggregate call in
+        # ORDER BY, e.g. `ORDER BY (sum(input_tokens) + ...)` where the SELECT
+        # already bound `sum(input_tokens) AS input_tokens`.
+        nested = r"\b(?:" + "|".join(_AGGREGATES) + r")\s*\(\s*" + re.escape(alias) + r"\s*\)"
+        if re.search(nested, order_by, flags=re.IGNORECASE):
+            offenders.add(alias)
+    return offenders
+
+
+def test_nested_aggregate_detector_flags_the_original_regression():
+    """The detector must reject the exact SQL shape that shipped broken.
+
+    Without this self-check the guard below could silently pass on any input.
+    """
+    broken = (
+        "SELECT agent_id, sum(input_tokens) AS input_tokens, sum(output_tokens) AS output_tokens, "
+        "count() AS traces FROM session_stats_agg FINAL WHERE agent_id != '' GROUP BY agent_id "
+        "ORDER BY (sum(input_tokens) + sum(output_tokens)) DESC, traces DESC LIMIT 10"
+    )
+    assert find_nested_aggregates(broken) == {"input_tokens", "output_tokens"}
+
+    fixed = broken.replace(
+        "ORDER BY (sum(input_tokens) + sum(output_tokens))", "ORDER BY (input_tokens + output_tokens)"
+    )
+    assert find_nested_aggregates(fixed) == set()
+
+
+@pytest.mark.asyncio
+async def test_token_stats_queries_never_nest_aggregates(monkeypatch):
+    """Every ClickHouse query the endpoint emits must be valid for ClickHouse.
+
+    Regression guard: `by_agent` and `by_mcp` previously aliased an aggregate and
+    then repeated it in ORDER BY, so both breakdowns silently returned empty.
+    """
+    captured: list[str] = []
+
+    async def capture(sql, params=None):
+        captured.append(sql)
+        return []
+
+    monkeypatch.setattr(dashboard, "_ch_json", capture)
+
+    await dashboard.token_stats(range_="30d", db=_db(), current_user=_user(UserRole.admin))
+
+    assert captured, "token_stats issued no ClickHouse queries"
+    offenders = {sql: find_nested_aggregates(sql) for sql in captured}
+    assert not any(offenders.values()), (
+        f"nested aggregates in generated SQL: { {k: v for k, v in offenders.items() if v} }"
+    )
+
+    # Guard the specific queries that regressed, so a future rewrite that drops
+    # the ORDER BY entirely does not quietly weaken this test.
+    ordered = [sql for sql in captured if "ORDER BY" in sql]
+    assert len(ordered) >= 2, "expected by_agent and by_mcp to remain ordered"
 
 
 def test_dashboard_route_role_contract_is_explicit():
@@ -648,7 +905,13 @@ def test_dashboard_route_role_contract_is_explicit():
         dependencies = [item for item in routes[path].dependant.dependencies if item.name == "current_user"]
         assert [item.call for item in dependencies] == [optional_current_user], path
 
-    assert all(item.name != "current_user" for item in routes["/api/v1/dashboard/tokens"].dependant.dependencies)
+    # Token usage is per-user session telemetry, so it requires authentication
+    # at the `user` role rather than being publicly readable.
+    token_deps = [
+        item for item in routes["/api/v1/dashboard/tokens"].dependant.dependencies if item.name == "current_user"
+    ]
+    assert len(token_deps) == 1
+    assert inspect.getclosurevars(token_deps[0].call).nonlocals["min_role"] == UserRole.user
 
 
 async def _dashboard_app(user=None):
@@ -700,7 +963,7 @@ async def test_admin_dashboard_routes_reject_missing_credentials_and_non_admins(
 
 
 @pytest.mark.asyncio
-async def test_public_token_route_and_dashboard_query_validation_do_not_touch_database():
+async def test_token_route_requires_auth_and_dashboard_query_validation_do_not_touch_database():
     app, db = await _dashboard_app()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -713,8 +976,7 @@ async def test_public_token_route_and_dashboard_query_validation_do_not_touch_da
             await client.get("/api/v1/overview/component-leaderboard", params={"limit": 51}),
         ]
 
-    assert token_response.status_code == 200
-    assert token_response.json()["total_tokens"] == 0
+    assert (token_response.status_code, token_response.json()) == (401, {"detail": "Missing credentials"})
     assert [response.status_code for response in invalid] == [422, 422, 422, 422, 422]
     assert [response.json()["detail"][0]["loc"][-1] for response in invalid] == [
         "limit",
