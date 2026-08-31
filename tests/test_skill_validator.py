@@ -31,6 +31,10 @@ class TestBuildRawUrl:
         url = _build_raw_url("https://github.com/owner/repo.git", "skills/my-skill", "main")
         assert url == "https://raw.githubusercontent.com/owner/repo/main/skills/my-skill/SKILL.md"
 
+    def test_skill_md_file_path_is_normalized_to_its_directory(self):
+        url = _build_raw_url("https://github.com/owner/repo", "skills/my-skill/SKILL.md", "main")
+        assert url == "https://raw.githubusercontent.com/owner/repo/main/skills/my-skill/SKILL.md"
+
     def test_github_root_skill_path(self):
         url = _build_raw_url("https://github.com/owner/repo", "/", "v1.0")
         assert url == "https://raw.githubusercontent.com/owner/repo/v1.0/SKILL.md"
@@ -161,12 +165,16 @@ class TestValidateSkillMd:
             mock_client.get = AsyncMock(return_value=_make_response(200, VALID_SKILL_MD))
             mock_cls.return_value = mock_client
 
-            result = await validate_skill_md("https://github.com/org/repo", "skills/code-review", "main")
+            result = await validate_skill_md("https://github.com/org/repo", "skills/code-review/SKILL.md", "main")
 
         assert result.name == "code-review"
         assert result.description == "Automated code review for pull requests"
         assert result.slash_command == "review"
+        assert result.discovered_path == "skills/code-review"
         assert "Instructions" in result.raw_content
+        mock_client.get.assert_awaited_once_with(
+            "https://raw.githubusercontent.com/org/repo/main/skills/code-review/SKILL.md"
+        )
 
     @pytest.mark.asyncio
     async def test_404_raises(self):

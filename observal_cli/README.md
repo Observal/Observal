@@ -72,12 +72,21 @@ Hooks have an extra `sync` subcommand. Prompts have an extra `render` subcommand
 ### Operations
 
 ```
-observal ops review list           # pending submissions
-observal ops review approve <id>   # approve
-observal ops review reject <id> --reason "..."  # reject
-observal ops telemetry status      # check telemetry flow
-observal ops telemetry test        # send a test event
-observal ops metrics <id>          # metrics for an MCP or agent
+observal ops telemetry status --output json       # check telemetry flow
+observal ops top --type agent --output json        # most-downloaded agents
+observal ops traces --output json                   # current session summaries
+observal ops traces --span --output json            # current session details
+observal ops insights list <agent> --output json    # agent insight reports
+```
+
+### Administration
+
+```
+observal admin diagnostics --output json             # server health
+observal admin users --output json                   # user management
+observal admin security-events --output json         # security events
+observal admin audit-log --output json               # compliance audit events
+observal admin review list --output json             # pending submissions
 ```
 
 ### Utilities
@@ -85,12 +94,13 @@ observal ops metrics <id>          # metrics for an MCP or agent
 ```
 observal agent pull <agent> --harness <harness>             # write agent config to harness files
 observal scan [--harness <harness>]                          # discover what's installed (read-only)
-observal doctor patch --all-harnesses                       # install hooks for every harness
-observal doctor patch --harness <harness>                    # install hooks for a specific harness
+observal reconcile --dry-run --output json                    # preview recoverable sessions
+observal doctor patch --all-harnesses --output json         # install hooks for every harness
+observal doctor patch --harness <harness> --output json      # install hooks for a specific harness
 observal use <profile>                               # swap harness config from a profile
-observal doctor                                      # diagnose harness/Observal issues
+observal doctor --output json                        # diagnose harness/Observal issues
+observal doctor support bundle --output json         # create a redacted support archive
 observal config show                                 # show current config
-observal uninstall                                   # tear down Docker, remove config
 ```
 
 ## Supported harnesses
@@ -140,7 +150,6 @@ observal_cli/
 ├── cmd_doctor.py            # Doctor command
 ├── cmd_ops.py               # Operations commands
 ├── cmd_profile.py           # Profile swapping
-├── cmd_uninstall.py         # Uninstall command
 ├── sandbox_runner.py        # observal-sandbox-run entrypoint
 └── hooks/                   # Telemetry hook scripts
 ```

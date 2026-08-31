@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""observal support: generate and inspect diagnostic support bundles.
+"""observal doctor support: generate and inspect diagnostic support bundles.
 
 Bundles contain no customer data or row contents - only aggregate counts,
 version info, sanitised configuration, health probes, and optional system
@@ -16,21 +16,23 @@ import io
 import json
 import os
 import platform
+import re
 import socket
 import tarfile
 import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
-import httpx
 import typer
 from rich import print as rprint
 from rich.tree import Tree
+from typer.models import OptionInfo
 
-from observal_cli import config, render
-from observal_cli.render import console, spinner
+from observal_cli import client, render
+from observal_cli.errors import CliError, ErrorCategory, fail
+from observal_cli.render import OutputMode, console, esc, output_json, spinner
 from observal_cli.support import CollectorResult
 from observal_cli.support.manifest import BundleManifest, compute_file_entry
 from observal_cli.support.redaction import RedactionStats, redact_value
@@ -40,7 +42,12 @@ from observal_cli.support.redaction import RedactionStats, redact_value
 CURRENT_SCHEMA_VERSION = 1
 
 support_app = typer.Typer(
-    help="Generate and inspect diagnostic support bundles. Bundles contain no customer data or row contents.",
+    help=(
+        "Generate and inspect diagnostic support bundles. Bundles contain no customer data or row contents.\n\n"
+        "Examples:\n"
+        "  observal doctor support bundle\n"
+        "  observal doctor support inspect ./observal-support.tar.gz"
+    ),
     no_args_is_help=True,
 )
 
@@ -67,7 +74,37 @@ CONFIG_ALLOWLIST = frozenset(
 )
 
 
-SIZE_BUDGET_BYTES = 100 * 1024 * 1024  # 100 MB uncompressed warning threshold
+SIZE_BUDGET_BYTES = 100 * 1024 * 1024
+MAX_INSPECT_BYTES = 1024 * 1024
+_DURATION_RE = re.compile(r"^(?:[1-9]\d*[dhms])+$", re.IGNORECASE)
+_SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+_REMOTE_COLLECTORS = frozenset({"versions", "health", "config", "aggregates", "errors", "logs"})
+
+
+def _value(value):
+    return value.default if isinstance(value, OptionInfo) else value
+
+
+def _progress(output: OutputMode | str, message: str):
+    from contextlib import nullcontext
+
+    return nullcontext() if _value(output) == "json" else spinner(message)
+
+
+def _safe_archive_path(name: str) -> bool:
+    path = PurePosixPath(name)
+    return (
+        bool(name)
+        and "\\" not in name
+        and not re.match(r"^[A-Za-z]:", name)
+        and not path.is_absolute()
+        and ".." not in path.parts
+    )
+
+
+def _duration_seconds(value: str) -> int:
+    units = {"d": 86400, "h": 3600, "m": 60, "s": 1}
+    return sum(int(amount) * units[unit.lower()] for amount, unit in re.findall(r"(\d+)([dhms])", value))
 
 
 # ── CollectorResult ──────────────────────────────────────────────────
@@ -186,11 +223,11 @@ def _get_cli_version() -> str:
 
 @support_app.command()
 def bundle(
-    output: Path = typer.Option(
+    file: Path | None = typer.Option(
         None,
-        "--output",
-        "-o",
-        help="Archive output path (default: ./observal-support-{timestamp}.tar.gz)",
+        "--file",
+        "-f",
+        help="Archive path (default: ./observal-support-{timestamp}.tar.gz)",
     ),
     logs_since: str = typer.Option(
         "1h",
@@ -202,6 +239,8 @@ def bundle(
         "--include-system/--no-include-system",
         help="Include OS/CPU/memory/disk metrics",
     ),
+    force: bool = typer.Option(False, "--force", "--yes", help="Overwrite files and skip size confirmation"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ) -> None:
     """Generate a diagnostic support bundle. No customer data or row contents included.
 
@@ -213,72 +252,100 @@ def bundle(
     exposing sensitive data. Archive permissions are set to 0600.
 
     Examples:
-        observal support bundle
-        observal support bundle -o /tmp/diag.tar.gz --logs-since 2h
-        observal support bundle --no-include-system
+        observal doctor support bundle
+        observal doctor support bundle --file /tmp/diag.tar.gz --logs-since 2h
+        observal doctor support bundle --no-include-system --output json
     """
-    # Determine output path
-    if output is None:
+    output = _value(output)
+    force = _value(force)
+    file = _value(file)
+    logs_since = _value(logs_since)
+    include_system = _value(include_system)
+    if not _DURATION_RE.fullmatch(logs_since) or _duration_seconds(logs_since) > 30 * 86400:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Invalid log duration: {logs_since}.",
+            operation="Generate support bundle",
+            resource="log duration",
+            remediation="Use a positive duration no greater than 30 days, such as 30m, 2h, or 1d12h.",
+        )
+    if file is None:
         timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-        output = Path(f"observal-support-{timestamp}.tar.gz")
+        file = Path(f"observal-support-{timestamp}.tar.gz")
+    file = file.expanduser()
+    if file.exists() and not force:
+        if output == "json":
+            fail(
+                ErrorCategory.CONFLICT,
+                f"Support bundle already exists: {file}.",
+                operation="Generate support bundle",
+                resource=str(file),
+                remediation="Choose another path or add --force.",
+            )
+        typer.confirm(f"Overwrite {file}?", abort=True)
 
     redaction_stats = RedactionStats()
+    warnings: list[str] = []
+    remote_status = "collected"
+    remote_error: str | None = None
 
-    # ── Collect remote diagnostics ────────────────────────
+    def warn(message: str) -> None:
+        warnings.append(message)
+        if output != "json":
+            rprint(f"[yellow]Warning:[/yellow] {esc(message)}")
+
+    # Remote collection is optional by design. Every fallback is recorded in
+    # the manifest result and JSON response rather than silently swallowed.
     server_response: dict = {}
-    with spinner("Collecting diagnostics..."):
+    with _progress(output, "Collecting diagnostics..."):
         try:
-            cfg = config.get_or_exit()
-            base_url = cfg["server_url"].rstrip("/")
-            headers = {"Authorization": f"Bearer {cfg['access_token']}"}
-            timeout = config.get_timeout()
-            r = httpx.post(
-                f"{base_url}/api/v1/support/collect",
-                json={"collectors": ["all"], "logs_since": logs_since},
-                headers=headers,
-                timeout=timeout,
+            response = client.post(
+                "/api/v1/support/collect",
+                {"collectors": ["all"], "logs_since": logs_since},
             )
-            r.raise_for_status()
-            server_response = r.json()
-        except httpx.HTTPStatusError as exc:
-            code = exc.response.status_code
-            if code == 404:
-                rprint(
-                    "[yellow]Warning:[/yellow] Server does not have the support endpoint yet. "
-                    "Rebuild the server container to enable remote collectors."
-                )
-            elif code == 401:
-                rprint(
-                    "[yellow]Warning:[/yellow] Authentication failed. Run [bold]observal auth login[/bold] to re-authenticate."
-                )
-            else:
-                rprint(f"[yellow]Warning:[/yellow] Server returned HTTP {code}. Remote collectors skipped.")
-            server_response = {}
-        except (httpx.ConnectError, httpx.ReadTimeout, httpx.ConnectTimeout):
-            rprint("[yellow]Warning:[/yellow] Could not reach server. Bundle will contain only local data.")
-            server_response = {}
-        except SystemExit:
-            # config.get_or_exit() may raise if not configured
-            rprint("[yellow]Warning:[/yellow] CLI not configured. Run [bold]observal auth login[/bold] first.")
-            server_response = {}
+            if not isinstance(response, dict):
+                raise ValueError("support response must be a JSON object")
+            server_response = response
+        except CliError as error:
+            remote_status = error.category.value
+            remote_error = f"Remote collectors unavailable: {error.message} Local collectors will continue."
+            warn(remote_error)
+        except (TypeError, ValueError) as error:
+            remote_status = "invalid_response"
+            remote_error = (
+                f"Remote collectors returned invalid data: {type(error).__name__}. Local collectors will continue."
+            )
+            warn(remote_error)
 
-    if not isinstance(server_response, dict):
-        server_response = {}
-
-    # ── Parse remote collector results ────────────────────
     remote_results: list[CollectorResult] = []
-    server_version = server_response.get("server_version", "unknown")
-    for name, cdata in server_response.get("collectors", {}).items():
-        if isinstance(cdata, dict):
-            remote_results.append(
-                CollectorResult(
-                    name=name,
-                    ok=cdata.get("ok", False),
-                    duration_ms=cdata.get("duration_ms", 0),
-                    data=cdata.get("data"),
-                    error=cdata.get("error"),
-                )
+    if remote_error:
+        remote_results.append(CollectorResult(name="remote", ok=False, duration_ms=0, data=None, error=remote_error))
+    server_version = str(server_response.get("server_version") or "unknown")
+    collectors = server_response.get("collectors", {})
+    if not isinstance(collectors, dict):
+        warn("Remote collector results were not an object and were skipped.")
+        collectors = {}
+    for name, collector_data in collectors.items():
+        if name not in _REMOTE_COLLECTORS:
+            warn(f"Unknown remote collector skipped: {name}.")
+            continue
+        if not isinstance(collector_data, dict):
+            warn(f"Invalid remote collector skipped: {name}.")
+            continue
+        try:
+            duration_ms = int(collector_data.get("duration_ms", 0))
+        except (TypeError, ValueError):
+            warn(f"Invalid remote collector duration skipped: {name}.")
+            continue
+        remote_results.append(
+            CollectorResult(
+                name=name,
+                ok=bool(collector_data.get("ok", False)),
+                duration_ms=duration_ms,
+                data=collector_data.get("data"),
+                error=str(collector_data.get("error")) if collector_data.get("error") else None,
             )
+        )
 
     # ── Run local collectors in parallel ──────────────────
     local_results: list[CollectorResult] = []
@@ -296,8 +363,16 @@ def bundle(
                 return _system_info_fn({}, server_response)
 
             local_tasks.append(_run_system_collector)
-        except ImportError:
-            pass
+        except ImportError as error:
+            local_results.append(
+                CollectorResult(
+                    name="system_info",
+                    ok=False,
+                    duration_ms=0,
+                    data=None,
+                    error=f"System collector unavailable: {type(error).__name__}",
+                )
+            )
 
     with ThreadPoolExecutor(max_workers=4) as pool:
         futures = [pool.submit(fn) for fn in local_tasks]
@@ -331,6 +406,10 @@ def bundle(
         # Handle special cases for remote collectors that map to multiple files.
         # These branches redact internally and continue, so the generic redaction
         # at the bottom of the loop only runs for simple single-file collectors.
+        if result.name == "config":
+            # The local allowlist collector is the only writer for config/config.json.
+            continue
+
         if result.name == "versions":
             # Split versions data into separate files
             if isinstance(result.data, dict):
@@ -360,9 +439,12 @@ def bundle(
             if isinstance(result.data, dict):
                 redacted_health, health_count = redact_value(result.data)
                 redaction_stats.record("health/health.json", health_count)
-                for svc_name, svc_data in redacted_health.items():
-                    svc_bytes = json.dumps(svc_data, indent=2, default=str).encode("utf-8")
-                    files[f"health/{svc_name}.json"] = svc_bytes
+                for service_name, service_data in redacted_health.items():
+                    if not _SAFE_NAME_RE.fullmatch(str(service_name)):
+                        warn(f"Unsafe health collector name skipped: {service_name}.")
+                        continue
+                    service_bytes = json.dumps(service_data, indent=2, default=str).encode("utf-8")
+                    files[f"health/{service_name}.json"] = service_bytes
             continue
 
         if result.name == "aggregates":
@@ -388,8 +470,9 @@ def bundle(
                 if redacted_lines:
                     files["logs/recent.ndjson"] = "\n".join(redacted_lines).encode("utf-8")
                 elif result.data.get("note"):
-                    # Write the note so the bundle still has the logs file
-                    files["logs/recent.ndjson"] = json.dumps({"note": result.data["note"]}, indent=2).encode("utf-8")
+                    note, note_count = redact_value(result.data["note"])
+                    redaction_stats.record("logs/recent.ndjson", note_count)
+                    files["logs/recent.ndjson"] = json.dumps({"note": note}, indent=2).encode("utf-8")
             continue
 
         # Generic single-file collectors (config_allowlisted, system_info, etc.)
@@ -403,10 +486,23 @@ def bundle(
 
         files[result.target_path] = file_bytes
 
-    # If no data at all, exit with error
+    unsafe_paths = [path for path in files if not _safe_archive_path(path)]
+    if unsafe_paths:
+        fail(
+            ErrorCategory.VALIDATION,
+            "A support collector produced an unsafe archive path.",
+            operation="Generate support bundle",
+            resource=unsafe_paths[0],
+            remediation="Update the CLI or server before generating another bundle.",
+        )
     if not files:
-        rprint("[red]Error:[/red] No diagnostic data could be collected. Bundle not created.")
-        raise typer.Exit(1)
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            "No diagnostic data could be collected.",
+            operation="Generate support bundle",
+            resource="support collectors",
+            remediation="Check local collector dependencies or server connectivity and retry.",
+        )
 
     # ── Build manifest ────────────────────────────────────
     cli_version = _get_cli_version()
@@ -419,7 +515,7 @@ def bundle(
     for r in all_results:
         collector_summary[r.name] = {"ok": r.ok, "duration_ms": r.duration_ms}
         if r.error:
-            collector_summary[r.name]["error"] = r.error
+            collector_summary[r.name]["error"] = redact_value(r.error)[0]
 
     manifest = BundleManifest(
         bundle_schema_version="1",
@@ -428,7 +524,7 @@ def bundle(
         host_os=platform.system(),
         node_id=hashlib.sha256(socket.gethostname().encode()).hexdigest()[:12],
         flags_used={
-            "output": output.name,
+            "file": file.name,
             "logs_since": logs_since,
             "include_system": include_system,
         },
@@ -442,21 +538,47 @@ def bundle(
     total_uncompressed = sum(len(v) for v in files.values()) + len(manifest_bytes)
 
     if total_uncompressed > SIZE_BUDGET_BYTES:
-        rprint(
-            f"[yellow]Warning:[/yellow] Uncompressed bundle size is "
-            f"{_human_size(total_uncompressed)} (exceeds 100 MB budget)."
-        )
-        if not typer.confirm("Continue writing the archive?"):
+        message = f"Uncompressed bundle size {_human_size(total_uncompressed)} exceeds the 100 MB budget."
+        warn(message)
+        if output == "json" and not force:
+            fail(
+                ErrorCategory.VALIDATION,
+                message,
+                operation="Generate support bundle",
+                resource="bundle size",
+                remediation="Add --force to accept the large archive or collect fewer logs.",
+            )
+        if output != "json" and not force and not typer.confirm("Continue writing the archive?"):
             rprint("[dim]Bundle creation cancelled.[/dim]")
-            raise typer.Exit(0)
+            return
 
-    # ── Write archive ─────────────────────────────────────
-    with spinner("Writing archive..."):
-        _write_archive(output, files, manifest)
+    try:
+        with _progress(output, "Writing archive..."):
+            _write_archive(file, files, manifest)
+        archive_size = file.stat().st_size
+    except (OSError, tarfile.TarError) as error:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            f"Could not write support bundle: {file}.",
+            operation="Generate support bundle",
+            resource=str(file),
+            remediation="Check the destination path, free space, and permissions, then retry.",
+            detail=repr(error),
+        )
 
-    archive_size = output.stat().st_size
-    rprint(f"[green]✓[/green] Support bundle written to [bold]{output}[/bold] ({_human_size(archive_size)})")
-    rprint("[dim]  Review contents with: observal support inspect " + str(output) + "[/dim]")
+    result = {
+        "path": str(file),
+        "size_bytes": archive_size,
+        "remote_status": remote_status,
+        "warnings": warnings,
+        "collector_results": collector_summary,
+        "redaction_counts": redaction_stats.counts,
+    }
+    if output == "json":
+        output_json(result)
+        return
+    rprint(f"[green]✓[/green] Support bundle written to [bold]{esc(file)}[/bold] ({_human_size(archive_size)})")
+    rprint(f"[dim]  Review contents with: observal doctor support inspect {esc(file)}[/dim]")
 
 
 # ── Inspect helpers ──────────────────────────────────────────────────
@@ -472,7 +594,7 @@ def _print_file_tree(members: list[tarfile.TarInfo]) -> None:
     for member in sorted(members, key=lambda m: m.name):
         if member.isfile():
             size = _human_size(member.size)
-            tree.add(f"{member.name}  [dim]{size}[/dim]")
+            tree.add(f"{esc(member.name)}  [dim]{size}[/dim]")
     console.print(tree)
 
 
@@ -483,7 +605,7 @@ def _is_safe_tar_member(member: tarfile.TarInfo) -> bool:
     while allowing legitimate names like 'foo..bar.json'.
     """
     normalized = os.path.normpath(member.name)
-    return not normalized.startswith(("..", os.sep)) and not os.path.isabs(normalized)
+    return _safe_archive_path(member.name) and not normalized.startswith(("..", os.sep))
 
 
 # ── Inspect command ──────────────────────────────────────────────────
@@ -491,89 +613,156 @@ def _is_safe_tar_member(member: tarfile.TarInfo) -> bool:
 
 @support_app.command()
 def inspect(
-    bundle_path: Path = typer.Argument(
-        ...,
-        help="Path to a .tar.gz support bundle",
-    ),
-    show: str | None = typer.Option(
-        None,
-        "--show",
-        help="Print contents of a specific file from the archive",
-    ),
+    bundle_path: Path = typer.Argument(..., help="Path to a .tar.gz support bundle"),
+    show: str | None = typer.Option(None, "--show", help="Print one regular file from the archive"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ) -> None:
-    """Inspect a support bundle.
-
-    Displays the bundle manifest (schema version, collector results, redaction
-    counts), a file tree with sizes, and optionally prints the contents of a
-    specific file from the archive using --show.
+    """Inspect a support bundle without extracting it.
 
     Examples:
-        observal support inspect ./observal-support-20260101-120000.tar.gz
-        observal support inspect bundle.tar.gz --show health/postgres.json
+        observal doctor support inspect ./observal-support.tar.gz
+        observal doctor support inspect bundle.tar.gz --show health/postgres.json
+        observal doctor support inspect bundle.tar.gz --output json
     """
-    if not bundle_path.exists():
-        render.error(f"Bundle not found: {bundle_path}")
-        raise typer.Exit(1)
-
+    output = _value(output)
+    show = _value(show)
+    bundle_path = bundle_path.expanduser()
+    if not bundle_path.is_file():
+        fail(
+            ErrorCategory.NOT_FOUND,
+            f"Support bundle not found: {bundle_path}.",
+            operation="Inspect support bundle",
+            resource=str(bundle_path),
+            remediation="Choose an existing .tar.gz support bundle.",
+        )
     try:
         tar = tarfile.open(bundle_path, "r:gz")  # noqa: SIM115
-    except (tarfile.TarError, OSError):
-        render.error(f"Cannot open bundle: {bundle_path}")
-        raise typer.Exit(1)
+    except (tarfile.TarError, OSError) as error:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Cannot open support bundle: {bundle_path}.",
+            operation="Inspect support bundle",
+            resource=str(bundle_path),
+            remediation="Choose a valid .tar.gz support bundle.",
+            detail=repr(error),
+        )
 
+    warnings: list[str] = []
+    shown: dict | None = None
     with tar:
-        # Safety: filter members to prevent path traversal attacks
-        safe_members = [m for m in tar.getmembers() if _is_safe_tar_member(m)]
+        members = tar.getmembers()
+        safe_members = [member for member in members if _is_safe_tar_member(member)]
+        if len(safe_members) != len(members):
+            warnings.append(f"Ignored {len(members) - len(safe_members)} unsafe archive member(s).")
 
-        # Read and display manifest
+        manifest_member = next(
+            (member for member in safe_members if member.name == "bundle_manifest.json" and member.isfile()),
+            None,
+        )
+        if manifest_member is None:
+            fail(
+                ErrorCategory.VALIDATION,
+                "Support bundle manifest is missing or is not a regular file.",
+                operation="Inspect support bundle",
+                resource="bundle_manifest.json",
+                remediation="Generate a new bundle with the current CLI.",
+            )
+        if manifest_member.size > MAX_INSPECT_BYTES:
+            fail(
+                ErrorCategory.VALIDATION,
+                "Support bundle manifest exceeds the inspection size limit.",
+                operation="Inspect support bundle",
+                resource="bundle_manifest.json",
+                remediation="Generate a new bundle with the current CLI.",
+            )
+        manifest_file = tar.extractfile(manifest_member)
+        if manifest_file is None:
+            fail(
+                ErrorCategory.VALIDATION,
+                "Support bundle manifest cannot be read.",
+                operation="Inspect support bundle",
+                resource="bundle_manifest.json",
+                remediation="Generate a new bundle with the current CLI.",
+            )
         try:
-            manifest_member = tar.getmember("bundle_manifest.json")
-            manifest_file = tar.extractfile(manifest_member)
-            if manifest_file is None:
-                render.error("Invalid bundle: bundle_manifest.json is not a regular file")
-                raise typer.Exit(1)
             manifest_data = json.loads(manifest_file.read())
-        except KeyError:
-            render.error("Invalid bundle: bundle_manifest.json missing or malformed")
-            raise typer.Exit(1)
-        except json.JSONDecodeError:
-            render.error("Invalid bundle: bundle_manifest.json missing or malformed")
-            raise typer.Exit(1)
+        except (json.JSONDecodeError, UnicodeDecodeError) as error:
+            fail(
+                ErrorCategory.VALIDATION,
+                "Support bundle manifest is malformed.",
+                operation="Inspect support bundle",
+                resource="bundle_manifest.json",
+                remediation="Generate a new bundle with the current CLI.",
+                detail=repr(error),
+            )
+        if not isinstance(manifest_data, dict):
+            fail(
+                ErrorCategory.VALIDATION,
+                "Support bundle manifest must be a JSON object.",
+                operation="Inspect support bundle",
+                resource="bundle_manifest.json",
+                remediation="Generate a new bundle with the current CLI.",
+            )
 
-        # Schema version warning
         schema_version = manifest_data.get("bundle_schema_version", "1")
         try:
             version_int = int(schema_version)
             if version_int > CURRENT_SCHEMA_VERSION:
-                render.warning(
-                    f"Bundle created by a newer CLI (schema v{schema_version}). Some fields may not be recognized."
-                )
+                warnings.append(f"Bundle uses newer schema v{schema_version}; some fields may not be recognized.")
         except (ValueError, TypeError):
-            render.warning(f"Unrecognized bundle schema version: {schema_version}")
+            warnings.append(f"Unrecognized bundle schema version: {schema_version}.")
 
-        # Print manifest as formatted JSON
-        console.print_json(json.dumps(manifest_data, indent=2))
-
-        # Print file tree with sizes (using safe_members to exclude path traversal entries)
-        _print_file_tree(safe_members)
-
-        # --show: print specific file contents
         if show:
-            try:
-                member = tar.getmember(show)
-                if not _is_safe_tar_member(member):
-                    render.error(f"Unsafe path rejected: {show}")
-                    raise typer.Exit(1)
-                extracted = tar.extractfile(member)
-                if extracted is None:
-                    render.error(f"Cannot read file from archive: {show}")
-                    raise typer.Exit(1)
-                content = extracted.read().decode("utf-8", errors="replace")
-                console.print(content)
-            except KeyError:
-                available = sorted(m.name for m in safe_members if m.isfile())
-                render.error(f"File not found in archive: {show}")
-                rprint("[dim]Available files:[/dim]")
-                for f in available:
-                    rprint(f"  {f}")
-                raise typer.Exit(1)
+            if not _safe_archive_path(show):
+                fail(
+                    ErrorCategory.VALIDATION,
+                    f"Unsafe archive path: {show}.",
+                    operation="Inspect support bundle",
+                    resource=show,
+                    remediation="Choose a regular file listed in the bundle.",
+                )
+            member = next((item for item in safe_members if item.name == show and item.isfile()), None)
+            if member is None:
+                available = ", ".join(sorted(item.name for item in safe_members if item.isfile()))
+                fail(
+                    ErrorCategory.NOT_FOUND,
+                    f"File not found in support bundle: {show}.",
+                    operation="Inspect support bundle",
+                    resource=show,
+                    remediation=f"Choose an available file: {available}.",
+                )
+            if member.size > MAX_INSPECT_BYTES:
+                fail(
+                    ErrorCategory.VALIDATION,
+                    f"Support bundle file is too large to display: {show}.",
+                    operation="Inspect support bundle",
+                    resource=show,
+                    remediation="Inspect the archive with a size-limited local tool.",
+                )
+            extracted = tar.extractfile(member)
+            if extracted is None:
+                fail(
+                    ErrorCategory.VALIDATION,
+                    f"Support bundle file cannot be read: {show}.",
+                    operation="Inspect support bundle",
+                    resource=show,
+                    remediation="Generate a new support bundle.",
+                )
+            shown = {"path": show, "content": extracted.read().decode("utf-8", errors="replace")}
+
+    files = [
+        {"path": member.name, "size_bytes": member.size}
+        for member in sorted(safe_members, key=lambda item: item.name)
+        if member.isfile()
+    ]
+    result = {"manifest": manifest_data, "files": files, "warnings": warnings, "shown": shown}
+    if output == "json":
+        output_json(result)
+        return
+
+    for warning in warnings:
+        render.warning(warning)
+    console.print_json(json.dumps(manifest_data, indent=2))
+    _print_file_tree(safe_members)
+    if shown:
+        typer.echo(shown["content"])

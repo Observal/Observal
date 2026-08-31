@@ -132,9 +132,10 @@ Vite 6 SPA with TanStack Router, not Next.js. `web/AGENTS.md` is the authoritati
 
 ```
 observal
+├── api                      # authenticated JSON escape hatch for /api/v1 endpoints
 ├── scan                     # read-only discovery of what's installed
 ├── outdated                 # installed components with newer versions available
-├── reconcile                # push local session JSONL to server for rich traces
+├── reconcile                # backfill sessions missed by automatic delivery
 ├── auth                     # login, logout, whoami, status, change-password, set-username
 ├── config                   # show, set, path, alias, aliases
 ├── registry                 # component parent group
@@ -145,29 +146,27 @@ observal
 │   ├── sandbox              #   submit, list, show, edit, delete, co-authors
 │   ├── models               #   inspect registry-backed harness model data
 │   ├── version              #   component version commands
-│   └── recommend            #   components recommended from your own sessions
+│   ├── recommend            #   components recommended from your own sessions
+│   └── bulk                 #   mixed component submission from one JSON file
 ├── agent                    # create, bulk-create, list, my, show, install, archive,
 │                            # unarchive, delete, init, add, build, publish, release,
 │                            # versions, transfer-owner, co-authors
 │   └── pull                 #   install agent into harness (primary workflow)
 ├── team                     # list, show, create, delete, leave, members (list/add/remove)
-├── ops                      # metrics, top, rate, rate-update, rate-delete, feedback,
-│                            # traces, spans
-│   ├── telemetry            #   status, test
+├── ops                      # top, rate, rate-update, rate-delete, feedback, traces
+│   ├── telemetry            #   status
 │   ├── logs                 #   live dev log viewer
 │   └── insights             #   agent insight reports
-├── admin                    # settings, set, users, review (list/show/approve/reject)
+├── admin                    # core administration + review (list/show/approve/reject)
 ├── self                     # upgrade, downgrade, rollback, status
-│   └── uninstall            #   tear down Docker stack and config
 ├── doctor                   # diagnose + patch harness settings for all 10 harnesses
 │   ├── patch / cleanup      #   install or remove telemetry hooks
 │   └── support              #   diagnostic bundle with redaction
 └── server                   # start, stop, restart, status, logs, install, reset, config
-    └── migrate              #   ClickHouse migration tools (falls back to top-level
-                             #   `observal migrate` when server deps are unavailable)
+    └── migrate              #   PostgreSQL and ClickHouse migration tools
 ```
 
-`pull` and `uninstall` are subcommands (`observal agent pull`, `observal self uninstall`), not top-level commands. Run `observal --help` to confirm before documenting a command path.
+`pull` is a subcommand (`observal agent pull`), not a top-level command. Run `observal --help` to confirm before documenting a command path.
 
 ## Server routes
 

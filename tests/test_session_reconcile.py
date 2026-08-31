@@ -3,11 +3,19 @@
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from pathlib import Path
+from unittest.mock import MagicMock
+
+from typer.main import get_command
+from typer.testing import CliRunner
 
 from observal_cli.harness import SessionSource
+from observal_cli.main import app
+
+runner = CliRunner()
 
 
 def test_public_reconcile_drains_outbox_then_all_detected_adapters(monkeypatch):
@@ -27,18 +35,32 @@ def test_public_reconcile_drains_outbox_then_all_detected_adapters(monkeypatch):
     monkeypatch.setattr(
         cmd_reconcile_cli,
         "drain_outbox",
-        lambda _config: calls.append("outbox") or True,
+        lambda _config, **_kwargs: calls.append("outbox") or True,
     )
     monkeypatch.setattr(
         cmd_reconcile_cli,
         "get_all_adapters",
         lambda: {"claude-code": Adapter(True), "kiro": Adapter(True), "pi": Adapter(False)},
     )
-    monkeypatch.setattr(
-        cmd_reconcile_cli,
-        "_reconcile_harness",
-        lambda harness, *_args: calls.append(harness) or 1,
-    )
+
+    def reconcile_harness(harness, *_args):
+        calls.append(harness)
+        return {
+            "harness": harness,
+            "discovered": 1,
+            "pushed": 1,
+            "finalized": 0,
+            "queued": 0,
+            "rejected": 0,
+            "would_push": 0,
+            "would_finalize": 0,
+            "up_to_date": 0,
+            "skipped": 0,
+            "errors": 0,
+            "sessions": [],
+        }
+
+    monkeypatch.setattr(cmd_reconcile_cli, "_reconcile_harness", reconcile_harness)
 
     cmd_reconcile_cli.reconcile(harness="", since_hours=24, dry_run=False)
 
@@ -56,7 +78,7 @@ def test_public_reconcile_discovers_claude_and_kiro_fixtures(tmp_path: Path, mon
     kiro.write_text("{}\n")
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setattr(cmd_reconcile_cli, "load_config", lambda: {"user_id": "user"})
-    monkeypatch.setattr(cmd_reconcile_cli, "drain_outbox", lambda _config: True)
+    monkeypatch.setattr(cmd_reconcile_cli, "drain_outbox", lambda _config, **_kwargs: True)
     delivered: list[str] = []
     monkeypatch.setattr(
         cmd_reconcile_cli,
@@ -115,3 +137,130 @@ def test_background_recovery_uses_adapter_sources_and_shared_drain(tmp_path: Pat
 
     assert calls == ["outbox", "unfinished"]
     assert finals == [True]
+
+
+def test_reconcile_is_a_leaf_command_with_json_output():
+    command = get_command(app).commands["reconcile"]
+
+    assert type(command).__name__ == "TyperCommand"
+    assert any(parameter.name == "output" for parameter in command.params)
+
+
+def test_reconcile_dry_run_json_has_no_network_or_human_output(tmp_path, monkeypatch):
+    from observal_cli import cmd_reconcile_cli
+
+    transcript = tmp_path / "session.jsonl"
+    transcript.write_text("{}\n")
+    source = SessionSource("kiro", "session-1", transcript)
+
+    class Adapter:
+        def is_installed(self):
+            return True
+
+        def discover_session_sources(self, since_hours):
+            assert since_hours == 24
+            return [source]
+
+    monkeypatch.setattr(cmd_reconcile_cli, "load_config", lambda: {"user_id": "user", "server_url": "http://server"})
+    monkeypatch.setattr(cmd_reconcile_cli, "ensure_loaded", lambda: None)
+    monkeypatch.setattr(cmd_reconcile_cli, "get_all_adapters", lambda: {"kiro": Adapter()})
+    monkeypatch.setattr(cmd_reconcile_cli, "get_adapter", lambda _name: Adapter())
+    monkeypatch.setattr(cmd_reconcile_cli, "read_cursor_state", lambda _key: (0, 0, False))
+    drain = MagicMock(side_effect=AssertionError("dry run must not drain"))
+    monkeypatch.setattr(cmd_reconcile_cli, "drain_outbox", drain)
+
+    result = runner.invoke(
+        app,
+        ["reconcile", "--harness", "kiro", "--since", "24", "--dry-run", "--output", "json"],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["dry_run"] is True
+    assert payload["outbox_drained"] is None
+    assert payload["summary"]["would_push"] == 1
+    assert payload["targets"][0]["sessions"] == [{"session_id": "session-1", "status": "would_push", "bytes_new": 3}]
+    drain.assert_not_called()
+
+
+def test_reconcile_json_validation_happens_before_outbox_side_effects(monkeypatch):
+    from observal_cli import cmd_reconcile_cli
+
+    monkeypatch.setattr(cmd_reconcile_cli, "load_config", lambda: {"user_id": "user"})
+    monkeypatch.setattr(cmd_reconcile_cli, "ensure_loaded", lambda: None)
+    monkeypatch.setattr(cmd_reconcile_cli, "get_all_adapters", lambda: {"kiro": object()})
+    drain = MagicMock(side_effect=AssertionError("must validate first"))
+    monkeypatch.setattr(cmd_reconcile_cli, "drain_outbox", drain)
+
+    result = runner.invoke(app, ["reconcile", "--harness", "unknown", "--output", "json"])
+
+    assert result.exit_code == 7
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["error"]["category"] == "validation"
+    drain.assert_not_called()
+
+
+def test_reconcile_json_requires_session_delivery_identity(monkeypatch):
+    from observal_cli import cmd_reconcile_cli
+
+    monkeypatch.setattr(cmd_reconcile_cli, "load_config", lambda: {"server_url": "http://server"})
+
+    result = runner.invoke(app, ["reconcile", "--output", "json"])
+
+    assert result.exit_code == 3
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["error"]["category"] == "authentication"
+
+
+def test_reconcile_finalizes_fully_uploaded_unfinished_session(tmp_path, monkeypatch):
+    from observal_cli import cmd_reconcile_cli
+
+    transcript = tmp_path / "session.jsonl"
+    transcript.write_text("{}\n")
+    source = SessionSource("kiro", "session-1", transcript)
+
+    class Adapter:
+        def discover_session_sources(self, since_hours):
+            return [source]
+
+    drain = MagicMock(return_value=True)
+    monkeypatch.setattr(cmd_reconcile_cli, "get_adapter", lambda _name: Adapter())
+    monkeypatch.setattr(cmd_reconcile_cli, "read_cursor_state", lambda _key: (3, 1, False))
+    monkeypatch.setattr(cmd_reconcile_cli, "recover_cursor_from_server", lambda _source, _cfg: (3, 1))
+    monkeypatch.setattr(cmd_reconcile_cli, "drain_session_source", drain)
+
+    result = cmd_reconcile_cli._reconcile_harness("kiro", {"user_id": "user"}, 24, False)
+
+    assert result["finalized"] == 1
+    assert result["sessions"] == [{"session_id": "session-1", "status": "finalized", "bytes_new": 0}]
+    drain.assert_called_once()
+    assert drain.call_args.kwargs["final"] is True
+
+
+def test_reconcile_reports_permanent_rejection(tmp_path, monkeypatch):
+    from observal_cli import cmd_reconcile_cli
+
+    transcript = tmp_path / "session.jsonl"
+    transcript.write_text("{}\n")
+    source = SessionSource("kiro", "session-1", transcript)
+
+    class Adapter:
+        def discover_session_sources(self, since_hours):
+            return [source]
+
+    def reject(_source, _cfg, **kwargs):
+        kwargs["rejections"].append(("kiro", "session-1", 422))
+        return True
+
+    rejections = []
+    monkeypatch.setattr(cmd_reconcile_cli, "get_adapter", lambda _name: Adapter())
+    monkeypatch.setattr(cmd_reconcile_cli, "read_cursor_state", lambda _key: (0, 0, False))
+    monkeypatch.setattr(cmd_reconcile_cli, "recover_cursor_from_server", lambda _source, _cfg: (0, 0))
+    monkeypatch.setattr(cmd_reconcile_cli, "drain_session_source", reject)
+
+    result = cmd_reconcile_cli._reconcile_harness("kiro", {"user_id": "user"}, 24, False, rejections)
+
+    assert result["pushed"] == 0
+    assert result["rejected"] == 1
+    assert result["sessions"][0]["status"] == "rejected"
+    assert rejections == [("kiro", "session-1", 422)]

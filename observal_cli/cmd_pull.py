@@ -17,16 +17,23 @@ import json
 import re
 import subprocess
 import sys
+import tomllib
+from contextlib import nullcontext, redirect_stdout
+from io import StringIO
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 import typer
 from loguru import logger as optic
+from packaging.version import InvalidVersion, Version
 from rich import print as rprint
 
 from observal_cli import client, config
+from observal_cli.constants import VALID_HARNESSES
+from observal_cli.errors import ErrorCategory, fail
 from observal_cli.harness import ensure_loaded, get_adapter
-from observal_cli.prompts import select_one, text_input
-from observal_cli.render import spinner
+from observal_cli.prompts import password_input, select_one
+from observal_cli.render import OutputMode, esc, output_json, spinner
 from observal_shared.harness_registry import get_scope_aware_harnesses
 
 # Hook script names used as placeholders in server-generated agent configs.
@@ -34,51 +41,47 @@ from observal_shared.harness_registry import get_scope_aware_harnesses
 _HOOK_SCRIPT_NAMES = ("observal-hook.sh", "observal-stop-hook.sh")
 
 
-def _warn_component_conflicts(harness: str, agent_name: str, components: list[dict]) -> None:
-    """Warn if pulling this agent would overwrite a component pinned by another agent.
+def _component_conflicts(harness: str, agent_name: str, components: list[dict]) -> list[str]:
+    """Return installed component version conflicts for the incoming agent."""
+    from observal_cli.lockfile import read_registry_lockfile
 
-    Checks the lockfile for other agents in the same harness that share a component
-    name but at a different version. Prints a warning but never blocks.
-    """
     try:
-        from observal_cli.lockfile import read_registry_lockfile
-
         _, registry = read_registry_lockfile()
-        harness_section = registry.get("harnesses", {}).get(harness, {})
-        other_agents = harness_section.get("agents", [])
+    except (OSError, RuntimeError) as error:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            "Could not read the local installation lockfile.",
+            operation="Pull agent",
+            resource="Observal lockfile",
+            remediation="Repair or remove the malformed lockfile, then retry.",
+            detail=repr(error),
+        )
+    harness_section = registry.get("harnesses", {}).get(harness, {})
+    other_agents = harness_section.get("agents", [])
 
-        # Build map of component name → (version, owning agent) from other agents
-        existing: dict[str, list[tuple[str, str]]] = {}  # {comp_name: [(version, agent_name)]}
-        for other in other_agents:
-            if other.get("name") == agent_name:
-                continue  # Skip self (re-pull of same agent)
-            for comp in other.get("components", []):
-                comp_name = comp.get("name", "")
-                comp_version = comp.get("version")
-                if comp_name and comp_version:
-                    existing.setdefault(comp_name, []).append((comp_version, other.get("name", "?")))
+    existing: dict[str, list[tuple[str, str]]] = {}
+    for other in other_agents:
+        if other.get("name") == agent_name:
+            continue
+        for component in other.get("components", []):
+            component_name = component.get("name", "")
+            component_version = component.get("version")
+            if component_name and component_version:
+                existing.setdefault(component_name, []).append((component_version, other.get("name", "?")))
 
-        # Check incoming components against existing
-        conflicts: list[str] = []
-        for comp in components:
-            comp_name = comp.get("name", "")
-            comp_version = comp.get("version")
-            if not comp_name or not comp_version:
-                continue
-            for ex_version, ex_agent in existing.get(comp_name, []):
-                if ex_version != comp_version:
-                    conflicts.append(
-                        f"  [yellow]⚠[/yellow]  {comp.get('type', 'component')} [bold]{comp_name}[/bold]: "
-                        f"v{comp_version} (this agent) vs v{ex_version} (from {ex_agent})"
-                    )
-
-        if conflicts:
-            rprint("\n[yellow]Version conflict detected:[/yellow]")
-            for c in conflicts:
-                rprint(c)
-            rprint("[dim]The newer version will be written to disk. Both agents will use it.[/dim]\n")
-    except Exception:
-        pass  # Never crash on conflict detection
+    conflicts: list[str] = []
+    for component in components:
+        component_name = component.get("name", "")
+        component_version = component.get("version")
+        if not component_name or not component_version:
+            continue
+        for existing_version, existing_agent in existing.get(component_name, []):
+            if existing_version != component_version:
+                conflicts.append(
+                    f"{component.get('type', 'component')} {component_name}: v{component_version} "
+                    f"(this agent) vs v{existing_version} (from {existing_agent})"
+                )
+    return conflicts
 
 
 def _resolve_hook_paths(content: str) -> str:
@@ -92,7 +95,6 @@ def _resolve_hook_paths(content: str) -> str:
     ``"observal-hook.sh --agent-name foo"`` are resolved correctly,
     but comments or prose mentioning the script name are not affected.
     """
-    optic.trace("content={}", content)
     import shutil
 
     hooks_dir = Path(__file__).parent / "hooks"
@@ -123,7 +125,6 @@ def _collect_mcp_env_vars(
 
     Returns {mcp_listing_id: {VAR_NAME: value}} for all MCPs that have env vars.
     """
-    optic.trace("agent_detail={}", agent_detail)
     env_values: dict[str, dict[str, str]] = {}
     _overrides = env_overrides or {}
 
@@ -143,10 +144,7 @@ def _collect_mcp_env_vars(
 
     # Fetch each MCP listing to get its environment_variables
     for listing_id, display_name in mcp_ids:
-        try:
-            listing = client.get(f"/api/v1/mcps/{listing_id}")
-        except (Exception, SystemExit):
-            continue
+        listing = client.get(f"/api/v1/mcps/{listing_id}")
 
         ev_list = listing.get("environment_variables") or []
         if not ev_list:
@@ -164,25 +162,25 @@ def _collect_mcp_env_vars(
                     mcp_env[ev["name"]] = _overrides[ev["name"]]
         else:
             if required:
-                rprint(f"\n[bold]{mcp_name}[/bold] requires {len(required)} environment variable(s):")
+                rprint(f"\n[bold]{esc(mcp_name)}[/bold] requires {len(required)} environment variable(s):")
                 for ev in required:
                     if ev["name"] in _overrides:
                         mcp_env[ev["name"]] = _overrides[ev["name"]]
-                        rprint(f"  [green]\u2713[/green] {ev['name']} [dim](from --env)[/dim]")
+                        rprint(f"  [green]\u2713[/green] {esc(ev['name'])} [dim](from --env)[/dim]")
                     else:
-                        desc = f" [dim]({ev['description']})[/dim]" if ev.get("description") else ""
-                        val = text_input(f"  {ev['name']}{desc}")
+                        desc = f" [dim]({esc(ev['description'])})[/dim]" if ev.get("description") else ""
+                        val = password_input(f"  {esc(ev['name'])}{desc}")
                         mcp_env[ev["name"]] = val
 
             if optional:
-                rprint(f"\n[dim]{mcp_name}: {len(optional)} optional env var(s):[/dim]")
+                rprint(f"\n[dim]{esc(mcp_name)}: {len(optional)} optional env var(s):[/dim]")
                 for ev in optional:
                     if ev["name"] in _overrides:
                         mcp_env[ev["name"]] = _overrides[ev["name"]]
-                        rprint(f"  [green]\u2713[/green] {ev['name']} [dim](from --env)[/dim]")
+                        rprint(f"  [green]\u2713[/green] {esc(ev['name'])} [dim](from --env)[/dim]")
                     else:
-                        desc = f" [dim]({ev['description']})[/dim]" if ev.get("description") else ""
-                        val = text_input(f"  {ev['name']}{desc} (press Enter to skip)", default="")
+                        desc = f" [dim]({esc(ev['description'])})[/dim]" if ev.get("description") else ""
+                        val = password_input(f"  {esc(ev['name'])}{desc} (press Enter to skip)")
                         if val:
                             mcp_env[ev["name"]] = val
 
@@ -203,7 +201,6 @@ def _collect_mcp_headers(
 
     Returns {mcp_listing_id: {Header-Name: value}} for all MCPs that have headers.
     """
-    optic.trace("agent_detail={}", agent_detail)
     header_values: dict[str, dict[str, str]] = {}
     _overrides = header_overrides or {}
 
@@ -221,10 +218,7 @@ def _collect_mcp_headers(
         return header_values
 
     for listing_id, display_name in mcp_ids:
-        try:
-            listing = client.get(f"/api/v1/mcps/{listing_id}")
-        except (Exception, SystemExit):
-            continue
+        listing = client.get(f"/api/v1/mcps/{listing_id}")
 
         header_list = listing.get("headers") or []
         if not header_list:
@@ -241,25 +235,25 @@ def _collect_mcp_headers(
                     mcp_hdrs[h["name"]] = _overrides[h["name"]]
         else:
             if required:
-                rprint(f"\n[bold]{mcp_name}[/bold] requires {len(required)} header(s):")
+                rprint(f"\n[bold]{esc(mcp_name)}[/bold] requires {len(required)} header(s):")
                 for h in required:
                     if h["name"] in _overrides:
                         mcp_hdrs[h["name"]] = _overrides[h["name"]]
-                        rprint(f"  [green]\u2713[/green] {h['name']} [dim](from --header)[/dim]")
+                        rprint(f"  [green]\u2713[/green] {esc(h['name'])} [dim](from --header)[/dim]")
                     else:
-                        desc = f" [dim]({h['description']})[/dim]" if h.get("description") else ""
-                        val = text_input(f"  {h['name']}{desc}")
+                        desc = f" [dim]({esc(h['description'])})[/dim]" if h.get("description") else ""
+                        val = password_input(f"  {esc(h['name'])}{desc}")
                         mcp_hdrs[h["name"]] = val
 
             if optional:
-                rprint(f"\n[dim]{mcp_name}: {len(optional)} optional header(s):[/dim]")
+                rprint(f"\n[dim]{esc(mcp_name)}: {len(optional)} optional header(s):[/dim]")
                 for h in optional:
                     if h["name"] in _overrides:
                         mcp_hdrs[h["name"]] = _overrides[h["name"]]
-                        rprint(f"  [green]\u2713[/green] {h['name']} [dim](from --header)[/dim]")
+                        rprint(f"  [green]\u2713[/green] {esc(h['name'])} [dim](from --header)[/dim]")
                     else:
-                        desc = f" [dim]({h['description']})[/dim]" if h.get("description") else ""
-                        val = text_input(f"  {h['name']}{desc} (press Enter to skip)", default="")
+                        desc = f" [dim]({esc(h['description'])})[/dim]" if h.get("description") else ""
+                        val = password_input(f"  {esc(h['name'])}{desc} (press Enter to skip)")
                         if val:
                             mcp_hdrs[h["name"]] = val
 
@@ -271,7 +265,6 @@ def _collect_mcp_headers(
 
 def _dict_to_toml(d: dict) -> str:
     """Very basic TOML serializer for MCP configs."""
-    optic.trace("d={}", d)
     lines = []
     for section, servers in d.items():
         for name, srv in servers.items():
@@ -293,6 +286,43 @@ def _dict_to_toml(d: dict) -> str:
     return "\n".join(lines)
 
 
+def _atomic_write_text(path: Path, content: str) -> None:
+    temporary: Path | None = None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False) as file:
+            temporary = Path(file.name)
+            file.write(content)
+        temporary.replace(path)
+    except (OSError, UnicodeError):
+        if temporary:
+            temporary.unlink(missing_ok=True)
+        raise
+
+
+def _merge_toml_text(existing_text: str, content: dict, root_key: str) -> str:
+    parsed = tomllib.loads(existing_text)
+    incoming = content.get(root_key, {})
+    existing_section = parsed.get(root_key, {})
+    if not isinstance(incoming, dict) or not isinstance(existing_section, dict):
+        raise ValueError(f"TOML section {root_key} must be a mapping")
+
+    lines = existing_text.splitlines(keepends=True)
+    for name in set(incoming).intersection(existing_section):
+        header = f"[{root_key}.{name}]"
+        start = next((index for index, line in enumerate(lines) if line.strip() == header), None)
+        if start is None:
+            raise ValueError(f"cannot safely update existing TOML table {header}")
+        end = start + 1
+        while end < len(lines) and not lines[end].lstrip().startswith("["):
+            end += 1
+        del lines[start:end]
+
+    existing = "".join(lines).rstrip()
+    rendered = _dict_to_toml(content).rstrip()
+    return f"{existing}\n\n{rendered}\n" if existing else f"{rendered}\n"
+
+
 def _merge_yaml_config(path: Path, content: dict, root_key: str, *, existed: bool, merge: bool) -> str:
     """Write a YAML config, merging one section into the file already on disk.
 
@@ -305,23 +335,31 @@ def _merge_yaml_config(path: Path, content: dict, root_key: str, *, existed: boo
     existing: dict = {}
     if existed:
         try:
-            loaded = yaml.safe_load(path.read_text()) or {}
-        except (yaml.YAMLError, OSError, UnicodeDecodeError) as exc:
-            optic.warning("cannot merge into {}: {}", path, exc)
-            return "skipped (unreadable YAML)"
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            raise
+        except UnicodeError as error:
+            raise ValueError(f"cannot merge unreadable YAML: {path}") from error
+        try:
+            loaded = yaml.safe_load(text) or {}
+        except yaml.YAMLError as error:
+            raise ValueError(f"cannot merge unreadable YAML: {path}") from error
         if not isinstance(loaded, dict):
-            optic.warning("cannot merge into {}: top level is not a mapping", path)
-            return "skipped (unexpected YAML)"
+            raise ValueError(f"cannot merge YAML whose top level is not a mapping: {path}")
         existing = loaded
 
     if merge and existed:
         section = existing.get(root_key)
         incoming = content.get(root_key, {})
-        existing[root_key] = {**section, **incoming} if isinstance(section, dict) else incoming
+        if section is not None and not isinstance(section, dict):
+            raise ValueError(f"cannot merge non-mapping YAML section {root_key}: {path}")
+        if not isinstance(incoming, dict):
+            raise ValueError(f"incoming YAML section {root_key} is not a mapping")
+        existing[root_key] = {**(section or {}), **incoming}
         payload = existing
     else:
         payload = {**existing, **content}
-    path.write_text(yaml.safe_dump(payload, sort_keys=False, allow_unicode=True))
+    _atomic_write_text(path, yaml.safe_dump(payload, sort_keys=False, allow_unicode=True))
     return "merged" if existed else "created"
 
 
@@ -340,30 +378,63 @@ def _write_file(path: Path, content: str | dict, *, merge_mcp: bool = False) -> 
     if isinstance(content, dict):
         root_key = next(iter(content.keys())) if content else "mcpServers"
         if path.suffix == ".toml":
-            incoming_servers = content.get(root_key, {})
-            toml_str = _dict_to_toml({root_key: incoming_servers})
+            toml_str = _dict_to_toml(content)
             if existed and merge_mcp:
-                path.write_text(path.read_text() + "\n" + toml_str)
+                existing_text = path.read_text(encoding="utf-8")
+                _atomic_write_text(path, _merge_toml_text(existing_text, content, root_key))
                 return "merged"
-            else:
-                path.write_text(toml_str)
+            _atomic_write_text(path, toml_str)
         elif path.suffix in (".yaml", ".yml"):
             return _merge_yaml_config(path, content, root_key, existed=existed, merge=merge_mcp)
         else:
             if merge_mcp and existed:
                 try:
-                    existing = json.loads(path.read_text())
-                except (json.JSONDecodeError, OSError):
-                    existing = {}
+                    text = path.read_text(encoding="utf-8")
+                except OSError:
+                    raise
+                except UnicodeError as error:
+                    raise ValueError(f"cannot merge unreadable JSON: {path}") from error
+                try:
+                    existing = json.loads(text)
+                except json.JSONDecodeError as error:
+                    raise ValueError(f"cannot merge unreadable JSON: {path}") from error
+                if not isinstance(existing, dict):
+                    raise ValueError(f"cannot merge JSON whose top level is not an object: {path}")
                 incoming_servers = content.get(root_key, {})
-                existing.setdefault(root_key, {}).update(incoming_servers)
-                path.write_text(json.dumps(existing, indent=2) + "\n")
+                section = existing.setdefault(root_key, {})
+                if not isinstance(section, dict) or not isinstance(incoming_servers, dict):
+                    raise ValueError(f"cannot merge non-object JSON section {root_key}: {path}")
+                section.update(incoming_servers)
+                _atomic_write_text(path, json.dumps(existing, indent=2) + "\n")
                 return "merged"
-            path.write_text(json.dumps(content, indent=2) + "\n")
+            _atomic_write_text(path, json.dumps(content, indent=2) + "\n")
     else:
-        path.write_text(content)
+        _atomic_write_text(path, content)
 
     return "updated" if existed else "created"
+
+
+def _write_file_checked(path: Path, content: str | dict, *, merge_mcp: bool = False) -> str:
+    try:
+        return _write_file(path, content, merge_mcp=merge_mcp)
+    except ValueError as error:
+        fail(
+            ErrorCategory.CONFLICT,
+            f"Could not safely merge existing configuration: {path}.",
+            operation="Pull agent",
+            resource=str(path),
+            remediation="Fix or back up the existing configuration, then retry.",
+            detail=repr(error),
+        )
+    except OSError as error:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            f"Could not write generated configuration: {path}.",
+            operation="Pull agent",
+            resource=str(path),
+            remediation="Check file permissions and available disk space.",
+            detail=repr(error),
+        )
 
 
 def _rewrite_kiro_hooks(content: dict, agent_id: str | None = None) -> dict:
@@ -372,7 +443,6 @@ def _rewrite_kiro_hooks(content: dict, agent_id: str | None = None) -> dict:
     The server generates commands with bare 'python3' which won't find
     observal_cli when installed in a project-local virtual environment.
     """
-    optic.trace("content={}", content)
     hooks = content.get("hooks") or {}
 
     from observal_cli.harness_specs.kiro_hooks_spec import build_kiro_hooks
@@ -404,7 +474,6 @@ def _rewrite_copilot_cli_hooks(content: dict, agent_id: str | None = None) -> di
     User-added hooks in the file are preserved; only Observal's entries are
     replaced. Mirrors _rewrite_kiro_hooks().
     """
-    optic.trace("content={}, agent_id={}", content, agent_id)
     hooks = content.get("hooks")
     if not hooks:
         return content
@@ -448,14 +517,83 @@ def _resolve_path(raw_path: str, target_dir: Path, *, allow_home: bool = False) 
         resolved = (target_dir / raw_path).resolve()
 
     if not resolved.is_relative_to(target_dir):
-        rprint(f"[red]Error:[/red] path '{raw_path}' escapes target directory")
-        raise typer.Exit(1)
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Generated path escapes the target directory: {raw_path}.",
+            operation="Pull agent",
+            resource=raw_path,
+            remediation="Use a safe target directory or report the invalid server config.",
+        )
 
     return resolved
 
 
 # harnesses that support a project vs user install scope (derived from registry)
 _SCOPE_AWARE_HARNESSES = get_scope_aware_harnesses()
+
+
+def _progress(output: OutputMode | str, message: str | None = None):
+    return nullcontext() if output == "json" else spinner(message)
+
+
+def _parse_assignments(values: list[str] | None, label: str) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for item in values or []:
+        key, separator, value = item.partition("=")
+        key = key.strip()
+        value = value.strip().strip("\"'")
+        if not separator or not key or not value:
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Invalid {label} assignment.",
+                operation="Pull agent",
+                resource=label,
+                remediation=f"Use {label}=VALUE with a non-empty name and value.",
+            )
+        parsed[key] = value
+    return parsed
+
+
+def _validate_pull_inputs(harness: str, scope: str | None, version: str | None) -> tuple[str, str | None, str | None]:
+    harness = harness.strip().lower()
+    if harness not in VALID_HARNESSES:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Unknown harness: {harness}.",
+            operation="Pull agent",
+            resource="target harness",
+            remediation=f"Choose from: {', '.join(VALID_HARNESSES)}.",
+        )
+    if scope is not None:
+        scope = scope.strip().lower()
+        if scope not in {"project", "user"}:
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Unknown install scope: {scope}.",
+                operation="Pull agent",
+                resource="install scope",
+                remediation="Choose project or user.",
+            )
+        if harness not in _SCOPE_AWARE_HARNESSES:
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Harness {harness} does not support an explicit install scope.",
+                operation="Pull agent",
+                resource="install scope",
+                remediation="Remove --scope for this harness.",
+            )
+    if version is not None:
+        try:
+            version = str(Version(version))
+        except InvalidVersion:
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Invalid semantic version: {version}.",
+                operation="Pull agent",
+                resource="agent version",
+                remediation="Use a semantic version such as 1.2.3.",
+            )
+    return harness, scope, version
 
 
 def _parse_model_overrides(values: list[str]) -> tuple[str | None, dict[str, str]]:
@@ -475,12 +613,27 @@ def _parse_model_overrides(values: list[str]) -> tuple[str | None, dict[str, str
     for raw in values or []:
         if "=" in raw:
             harness_key, _, val = raw.partition("=")
-            harness_key = harness_key.strip()
+            harness_key = harness_key.strip().lower()
             val = val.strip()
-            if harness_key and val:
-                overrides[harness_key] = val
+            if harness_key not in VALID_HARNESSES or not val:
+                fail(
+                    ErrorCategory.VALIDATION,
+                    f"Invalid model override: {raw}.",
+                    operation="Pull agent",
+                    resource="model override",
+                    remediation="Use MODEL or HARNESS=MODEL with a registered harness.",
+                )
+            overrides[harness_key] = val
         elif raw.strip():
             default = raw.strip()
+        else:
+            fail(
+                ErrorCategory.VALIDATION,
+                "Model override cannot be empty.",
+                operation="Pull agent",
+                resource="model override",
+                remediation="Provide a model ID or remove the empty --model option.",
+            )
     return default, overrides
 
 
@@ -492,7 +645,6 @@ def _agent_saved_model(agent_detail: dict | None, harness: str) -> str | None:
     server resolver rules so the CLI never re-prompts when the author has
     already chosen a model.
     """
-    optic.trace("agent_detail={}, harness={}", agent_detail, harness)
     ensure_loaded()
     return get_adapter(harness).saved_model(agent_detail)
 
@@ -507,6 +659,7 @@ def _collect_install_options(
     no_prompt: bool,
     refresh_models: bool = False,
     agent_detail: dict | None = None,
+    quiet: bool = False,
 ) -> dict:
     """Interactively collect harness-specific install options.
 
@@ -549,9 +702,10 @@ def _collect_install_options(
             try:
                 primary, _secondary, _ = _format_model({"model_id": saved})
                 pretty = primary or saved
-            except Exception:
+            except (KeyError, TypeError, ValueError):
                 pretty = saved
-            rprint(f"  [dim]Model:[/dim] {pretty} [dim](from agent)[/dim]")
+            if not quiet:
+                rprint(f"  [dim]Model:[/dim] {esc(pretty)} [dim](from agent)[/dim]")
             # Pass through the saved value so the server records the same
             # choice on the install download record. The resolver still
             # validates the candidate against the harness registry and falls
@@ -560,10 +714,7 @@ def _collect_install_options(
         elif interactive:
             from observal_cli import model_catalog as _catalog
 
-            try:
-                catalog = _catalog.fetch_catalog(refresh=refresh_models)
-            except Exception:
-                catalog = {"models": []}
+            catalog = _catalog.fetch_catalog(refresh=refresh_models)
             choices = _catalog.model_choices_for_picker(catalog, harness)
             choice_labels = [c[0] for c in choices] if choices else []
             choice_labels = ["auto (let the harness decide)", *choice_labels]
@@ -610,14 +761,15 @@ def register_pull(app: typer.Typer):
         ),
         no_prompt: bool = typer.Option(False, "--no-prompt", "-y", help="Skip interactive prompts"),
         env: list[str] | None = typer.Option(
-            None, "--env", "-e", help="MCP environment variable (KEY=VALUE, repeatable)"
+            None, "--env", "-e", help="Non-secret MCP environment setting (KEY=VALUE, repeatable)"
         ),
         header: list[str] | None = typer.Option(
-            None, "--header", "-H", help="MCP header value (Header-Name=value, repeatable)"
+            None, "--header", "-H", help="Non-secret MCP header setting (Header-Name=value, repeatable)"
         ),
         version: str | None = typer.Option(
             None, "--version", "-V", help="Install a specific version (e.g. '1.2.0'). Defaults to latest."
         ),
+        output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
     ):
         """Fetch agent config and write harness files to disk.
 
@@ -625,40 +777,71 @@ def register_pull(app: typer.Typer):
         then writes rules files, MCP configs, and agent files into the target
         directory.  Use --dry-run to preview without writing.
 
-        Use --env KEY=VALUE to pass MCP environment variables non-interactively
-        (repeatable). Use --header Header-Name=value to pass MCP auth headers
-        non-interactively (repeatable). When --no-prompt is set, env var and
-        header prompts are skipped and only values from flags are used.
+        Use --env KEY=VALUE and --header Header-Name=value only for non-secret
+        settings because command arguments are visible to other processes. For
+        credentials, omit --no-prompt and enter values interactively. When
+        --no-prompt is set, prompts are skipped and only flag values are used.
 
         Examples:
           observal agent pull my-agent --harness claude-code --no-prompt
           observal agent pull my-agent --harness claude-code --version 1.2.0
-          observal agent pull my-agent --harness kiro --no-prompt --scope user
           observal agent pull my-agent --harness cursor --no-prompt --dry-run
-          observal agent pull my-agent --harness kiro --no-prompt --env API_KEY=sk-123 --env SECRET=abc
-          observal agent pull my-agent --harness cursor --header Authorization="Bearer sk-123"
         """
+        if output == "json" and not no_prompt:
+            fail(
+                ErrorCategory.VALIDATION,
+                "JSON mode cannot prompt for installation values.",
+                operation="Pull agent",
+                resource="agent installation",
+                remediation="Add --no-prompt only when no secret values are required; otherwise use interactive table mode.",
+            )
+        harness, scope, version = _validate_pull_inputs(harness, scope, version)
+        env_overrides = _parse_assignments(env, "environment variable")
+        header_overrides = _parse_assignments(header, "header")
+        model_default, model_overrides = _parse_model_overrides(model or [])
+        unused_model_harnesses = set(model_overrides) - {harness}
+        if unused_model_harnesses:
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Model override does not target the selected harness: {sorted(unused_model_harnesses)[0]}.",
+                operation="Pull agent",
+                resource="model override",
+                remediation=f"Use {harness}=MODEL or a bare MODEL value.",
+            )
+        from observal_shared.harness_registry import has_model_selection
+
+        if (model_default or model_overrides) and not has_model_selection(harness):
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Harness {harness} does not support model selection.",
+                operation="Pull agent",
+                resource="model override",
+                remediation="Remove --model for this harness.",
+            )
+        if tools and harness != "claude-code":
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Harness {harness} does not support --tools.",
+                operation="Pull agent",
+                resource="tool allowlist",
+                remediation="Remove --tools or select claude-code.",
+            )
+        if refresh_models and no_prompt:
+            fail(
+                ErrorCategory.VALIDATION,
+                "--refresh-models requires the interactive model picker.",
+                operation="Pull agent",
+                resource="model catalog",
+                remediation="Remove --no-prompt or remove --refresh-models.",
+            )
+
         resolved = client.resolve_registry_reference("agent", agent_id)
         target_dir = Path(directory).resolve()
         ensure_loaded()
         adapter = get_adapter(harness)
 
-        # Parse --env flags into overrides dict
-        env_overrides: dict[str, str] = {}
-        for item in env or []:
-            k, _, v = item.partition("=")
-            if k:
-                env_overrides[k.strip()] = v.strip("\"'")
-
-        # Parse --header flags into overrides dict
-        header_overrides: dict[str, str] = {}
-        for item in header or []:
-            k, _, v = item.partition("=")
-            if k:
-                header_overrides[k.strip()] = v.strip("\"'")
-
         # Fetch agent details to discover MCP env vars
-        with spinner("Fetching agent details..."):
+        with _progress(output, "Fetching agent details..."):
             agent_detail = client.get(f"/api/v1/agents/{resolved}")
 
         env_values = _collect_mcp_env_vars(agent_detail, no_prompt=no_prompt, env_overrides=env_overrides or None)
@@ -666,12 +849,12 @@ def register_pull(app: typer.Typer):
             agent_detail, no_prompt=no_prompt, header_overrides=header_overrides or None
         )
 
-        rprint(f"\n[bold]Install options for [cyan]{harness}[/cyan]:[/bold]")
+        if output != "json":
+            rprint(f"\n[bold]Install options for [cyan]{esc(harness)}[/cyan]:[/bold]")
         if refresh_models:
             from observal_cli import model_catalog as _catalog
 
             _catalog.invalidate_cache()
-        model_default, model_overrides = _parse_model_overrides(model or [])
         options = _collect_install_options(
             harness,
             scope=scope,
@@ -681,26 +864,52 @@ def register_pull(app: typer.Typer):
             no_prompt=no_prompt,
             refresh_models=refresh_models,
             agent_detail=agent_detail,
+            quiet=output == "json",
         )
         is_user_scope = options.get("scope") == "user"
-        if is_user_scope:
+        if is_user_scope and output != "json":
             rprint("  [dim]Files will be written to your home directory (user scope).[/dim]")
 
         from observal_cli.lockfile import local_registry_name
 
         namespace = agent_detail.get("namespace", "")
         slug = agent_detail.get("slug") or agent_detail.get("name", "agent")
-        local_name = local_registry_name(
-            harness,
-            "agent",
-            namespace,
-            slug,
-            scope=options.get("scope", "project"),
-            directory=str(target_dir),
-        )
+        try:
+            local_name = local_registry_name(
+                harness,
+                "agent",
+                namespace,
+                slug,
+                scope=options.get("scope", "project"),
+                directory=str(target_dir),
+            )
+        except (OSError, RuntimeError) as error:
+            fail(
+                ErrorCategory.UNAVAILABLE,
+                "Could not read the local installation lockfile.",
+                operation="Pull agent",
+                resource="Observal lockfile",
+                remediation="Repair or remove the malformed lockfile, then retry.",
+                detail=repr(error),
+            )
         options["local_name"] = local_name
 
-        with spinner(f"Pulling {harness} config for agent {resolved[:8]}..."):
+        lock_components = [
+            {
+                "type": link.get("component_type", "unknown"),
+                "name": link.get("component_name", ""),
+                "id": str(link.get("component_id", "")),
+                "version": link.get("version_ref"),
+            }
+            for link in agent_detail.get("component_links", [])
+        ]
+        conflict_warnings = _component_conflicts(
+            harness,
+            agent_name=agent_detail.get("name", resolved),
+            components=lock_components,
+        )
+
+        with _progress(output, f"Pulling {harness} config for agent {resolved[:8]}..."):
             install_body: dict = {
                 "harness": harness,
                 "env_values": env_values,
@@ -717,8 +926,13 @@ def register_pull(app: typer.Typer):
 
         snippet = result.get("config_snippet", {})
         if not snippet:
-            rprint("[yellow]Server returned an empty config snippet.[/yellow]")
-            raise typer.Exit(1)
+            fail(
+                ErrorCategory.UNAVAILABLE,
+                "The server returned an empty agent configuration.",
+                operation="Pull agent",
+                resource="generated agent configuration",
+                remediation="Check server compatibility and the agent's harness support.",
+            )
 
         written: list[tuple[str, str]] = []  # (path, status)
 
@@ -729,7 +943,7 @@ def register_pull(app: typer.Typer):
             if dry_run:
                 written.append((str(p), "would write"))
             else:
-                status = _write_file(p, mcp_cfg["content"], merge_mcp=True)
+                status = _write_file_checked(p, mcp_cfg["content"], merge_mcp=True)
                 written.append((str(p), status))
 
         # ── hooks_config (Cursor/VSCode/Copilot/OpenCode/Gemini) ─
@@ -755,7 +969,7 @@ def register_pull(app: typer.Typer):
             if dry_run:
                 written.append((str(p), "would write"))
             else:
-                status = _write_file(p, content, merge_mcp=hooks_cfg.get("merge", False))
+                status = _write_file_checked(p, content, merge_mcp=hooks_cfg.get("merge", False))
                 written.append((str(p), status))
 
         # ── agent_profile (Kiro, Cursor) ────────────────────────
@@ -774,7 +988,7 @@ def register_pull(app: typer.Typer):
             if dry_run:
                 written.append((str(p), "would write"))
             else:
-                status = _write_file(p, agent_profile["content"])
+                status = _write_file_checked(p, agent_profile["content"])
                 written.append((str(p), status))
 
         # ── steering_file (Kiro) ───────────────────────────
@@ -784,7 +998,7 @@ def register_pull(app: typer.Typer):
             if dry_run:
                 written.append((str(p), "would write"))
             else:
-                status = _write_file(p, steering_file["content"])
+                status = _write_file_checked(p, steering_file["content"])
                 written.append((str(p), status))
 
         # ── hook_files (script files from hook components) ─────
@@ -795,12 +1009,21 @@ def register_pull(app: typer.Typer):
                 written.append((str(p), "would write"))
             else:
                 existed = p.exists()
-                p.parent.mkdir(parents=True, exist_ok=True)
-                p.write_text(hf["content"])
+                _write_file_checked(p, hf["content"])
                 if hf.get("executable"):
                     import os
 
-                    os.chmod(p, 0o755)
+                    try:
+                        os.chmod(p, 0o755)
+                    except OSError as error:
+                        fail(
+                            ErrorCategory.UNAVAILABLE,
+                            f"Could not mark generated hook executable: {p}.",
+                            operation="Pull agent",
+                            resource=str(p),
+                            remediation="Check file ownership and permissions.",
+                            detail=repr(error),
+                        )
                 written.append((str(p), "updated" if existed else "created"))
 
         # ── prompt_files (native Copilot .github/prompts/*.prompt.md) ─
@@ -810,8 +1033,7 @@ def register_pull(app: typer.Typer):
                 written.append((str(p), "would write"))
             else:
                 existed = p.exists()
-                p.parent.mkdir(parents=True, exist_ok=True)
-                p.write_text(pf["content"])
+                _write_file_checked(p, pf["content"])
                 written.append((str(p), "updated" if existed else "created"))
 
         # ── Direct skill files ─────────────────────────
@@ -820,7 +1042,7 @@ def register_pull(app: typer.Typer):
             if dry_run:
                 written.append((str(p), "would write"))
             else:
-                status = _write_file(p, sf["content"])
+                status = _write_file_checked(p, sf["content"])
                 written.append((str(p), status))
 
         # ── Skills ────────────────────────────────────
@@ -845,76 +1067,105 @@ def register_pull(app: typer.Typer):
                 continue
 
             if git_url:
-                result_path = install_skill_from_git(
-                    name=sc.get("name", "skill"),
-                    git_url=git_url,
-                    skill_path=sc.get("skill_path", "/"),
-                    git_ref=sc.get("git_ref", "main"),
-                    harness=harness,
-                    scope=scope_str,
-                    skill_md_content=sc.get("skill_md_content"),
-                    cwd=target_dir,
-                    dest=skill_dest,
-                )
+                with redirect_stdout(StringIO()) if output == "json" else nullcontext():
+                    result_path = install_skill_from_git(
+                        name=sc.get("name", "skill"),
+                        git_url=git_url,
+                        skill_path=sc.get("skill_path", "/"),
+                        git_ref=sc.get("git_ref", "main"),
+                        harness=harness,
+                        scope=scope_str,
+                        skill_md_content=sc.get("skill_md_content"),
+                        cwd=target_dir,
+                        dest=skill_dest,
+                    )
                 if result_path:
                     written.append((str(result_path), "cloned"))
                 else:
                     failed_skills.append(sc_name)
-                    rprint(f"[red]\u2717 Failed to install skill '{sc_name}'.[/red] Clone from {git_url} failed.")
+                    if output != "json":
+                        rprint(
+                            f"[red]\u2717 Failed to install skill '{esc(sc_name)}'.[/red] "
+                            f"Clone from {esc(git_url)} failed."
+                        )
             else:
                 # Registry direct: SKILL.md content + optional script
-                result_path = install_skill_registry_direct(
-                    name=sc.get("name", "skill"),
-                    skill_md_content=sc.get("skill_md_content"),
-                    script_content=sc.get("script_content"),
-                    script_filename=sc.get("script_filename"),
-                    harness=harness,
-                    scope=scope_str,
-                    cwd=target_dir,
-                    dest=skill_dest,
-                )
+                with redirect_stdout(StringIO()) if output == "json" else nullcontext():
+                    result_path = install_skill_registry_direct(
+                        name=sc.get("name", "skill"),
+                        skill_md_content=sc.get("skill_md_content"),
+                        script_content=sc.get("script_content"),
+                        script_filename=sc.get("script_filename"),
+                        harness=harness,
+                        scope=scope_str,
+                        cwd=target_dir,
+                        dest=skill_dest,
+                    )
                 if result_path:
                     written.append((str(result_path), "installed"))
                 else:
                     failed_skills.append(sc_name)
-                    rprint(f"[red]\u2717 Failed to install skill '{sc_name}'.[/red] No content available.")
+                    if output != "json":
+                        rprint(f"[red]\u2717 Failed to install skill '{esc(sc_name)}'.[/red] No content available.")
 
         if failed_skills:
-            rprint()
-            rprint("[red]Skill installation failed.[/red] The following skills could not be installed:")
-            for fs in failed_skills:
-                rprint(f"  [red]\u2022[/red] {fs}")
-            rprint()
-            raise typer.Exit(1)
+            fail(
+                ErrorCategory.UNAVAILABLE,
+                f"Failed to install {len(failed_skills)} agent skill(s).",
+                operation="Pull agent",
+                resource="agent skills",
+                remediation="Check skill source access and content, then retry.",
+                detail=", ".join(failed_skills),
+            )
 
-        # ── Lock file (all harnesses) ────────────────────────────
-        # Write agent + components to ~/.observal/lockfile.json so session_push
-        # can attribute telemetry and compute layer_hash.
+        if not written:
+            fail(
+                ErrorCategory.UNAVAILABLE,
+                "The generated agent configuration contained no writable files.",
+                operation="Pull agent",
+                resource="generated agent configuration",
+                remediation="Check agent contents and harness support, then retry.",
+            )
+
+        warnings_list = conflict_warnings + list(result.get("warnings") or []) + (snippet.get("_warnings") or [])
+
+        # Run required harness registration before recording the pull as installed.
+        setup_results: list[dict] = []
+        setup_failures: list[str] = []
+        setup_cmds = snippet.get("mcp_setup_commands") or []
+        if setup_cmds and not dry_run:
+            for command in setup_cmds:
+                try:
+                    process = subprocess.run(command, capture_output=True, text=True)
+                except FileNotFoundError:
+                    setup_results.append({"command": command, "status": "failed", "return_code": None})
+                    setup_failures.append(f"{command[0]} not found")
+                    continue
+                status = "completed" if process.returncode == 0 else "failed"
+                setup_results.append({"command": command, "status": status, "return_code": process.returncode})
+                if process.returncode != 0:
+                    setup_failures.append(f"{command[0]} exited with code {process.returncode}")
+        elif setup_cmds:
+            setup_results = [{"command": command, "status": "would_run", "return_code": None} for command in setup_cmds]
+
+        if setup_failures:
+            fail(
+                ErrorCategory.UNAVAILABLE,
+                f"Agent files were written, but {len(setup_failures)} MCP setup command(s) failed.",
+                operation="Pull agent",
+                resource="harness MCP registration",
+                remediation="Fix the reported command and pull the agent again.",
+                detail="; ".join(setup_failures),
+            )
+
+        # Record installation state only after files and setup commands succeed.
         if not dry_run:
             agent_uuid = agent_detail.get("id", resolved)
             agent_version = agent_detail.get("version") or agent_detail.get("latest_version")
 
-            # Build component list from agent_detail
-            lock_components = []
-            for link in agent_detail.get("component_links", []):
-                comp_entry = {
-                    "type": link.get("component_type", "unknown"),
-                    "name": link.get("component_name", ""),
-                    "id": str(link.get("component_id", "")),
-                    "version": link.get("version_ref"),
-                }
-                lock_components.append(comp_entry)
+            from observal_cli.lockfile import upsert_agent
 
             try:
-                from observal_cli.lockfile import upsert_agent
-
-                # Detect version conflicts with already-installed agents
-                _warn_component_conflicts(
-                    harness,
-                    agent_name=agent_detail.get("name", resolved),
-                    components=lock_components,
-                )
-
                 upsert_agent(
                     harness,
                     name=agent_detail.get("name", resolved),
@@ -927,18 +1178,34 @@ def register_pull(app: typer.Typer):
                     slug=agent_detail.get("slug"),
                     local_name=local_name,
                 )
-            except Exception:
-                pass  # Never block pull on lockfile failure
+            except (OSError, RuntimeError) as error:
+                fail(
+                    ErrorCategory.UNAVAILABLE,
+                    "Agent files were written, but installation tracking failed.",
+                    operation="Pull agent",
+                    resource="Observal lockfile",
+                    remediation="Repair the local lockfile and pull the agent again.",
+                    detail=repr(error),
+                )
 
-            # Generate/update local layer snapshot after pull
             try:
                 from observal_cli.layer import ensure_local_snapshot
 
                 ensure_local_snapshot(project_dir=str(target_dir))
-            except Exception:
-                pass  # Never block pull on snapshot failure
+            except (OSError, RuntimeError, ValueError):
+                warnings_list.append("Local layer snapshot could not be refreshed; run `observal doctor`.")
 
-            adapter.persist_active_agent(str(agent_uuid), agent_detail.get("name", resolved), agent_version)
+            try:
+                adapter.persist_active_agent(str(agent_uuid), agent_detail.get("name", resolved), agent_version)
+            except (OSError, RuntimeError) as error:
+                fail(
+                    ErrorCategory.UNAVAILABLE,
+                    "Agent files and lockfile were updated, but active-agent state could not be persisted.",
+                    operation="Pull agent",
+                    resource=f"{harness} active-agent state",
+                    remediation="Fix harness configuration permissions and pull the agent again.",
+                    detail=repr(error),
+                )
 
             from observal_cli.audit import emit_cli_audit
 
@@ -951,46 +1218,45 @@ def register_pull(app: typer.Typer):
                 sensitivity="high",
             )
 
-        # ── Output summary ──────────────────────────────────
-        if not written:
-            rprint("[yellow]No files to write from the config snippet.[/yellow]")
-            raise typer.Exit(1)
+        if output == "json":
+            output_json(
+                {
+                    "agent": {
+                        "id": str(agent_detail.get("id", resolved)),
+                        "qualified_name": agent_detail.get("qualified_name")
+                        or (f"{namespace}/{slug}" if namespace else slug),
+                        "version": agent_detail.get("version") or agent_detail.get("latest_version"),
+                        "local_name": local_name,
+                    },
+                    "harness": harness,
+                    "scope": options.get("scope", "project"),
+                    "dry_run": dry_run,
+                    "target_directory": str(target_dir),
+                    "files": [{"path": path, "status": status} for path, status in written],
+                    "warnings": warnings_list,
+                    "setup_commands": setup_results,
+                }
+            )
+            return
 
         if dry_run:
             rprint("\n[bold yellow]Dry run[/bold yellow] - no files written:\n")
         else:
             rprint(
-                f"\n[bold green]Pulled {harness} config[/bold green] ({len(written)} file{'s' if len(written) != 1 else ''}):\n"
+                f"\n[bold green]Pulled {esc(harness)} config[/bold green] "
+                f"({len(written)} file{'s' if len(written) != 1 else ''}):\n"
             )
-
         for path, status in written:
             style = "dim" if dry_run else "green"
-            rprint(f"  [{style}]{status}[/{style}]  {path}")
-
-        warnings_list = list(result.get("warnings") or []) + (snippet.get("_warnings") or [])
+            rprint(f"  [{style}]{esc(status)}[/{style}]  {esc(path)}")
         if warnings_list:
             rprint("")
-            for w in warnings_list:
-                rprint(f"  [yellow]⚠[/yellow]  {w}")
-
-        # ── Setup commands (Claude Code) ────────────────────
-        setup_cmds = snippet.get("mcp_setup_commands")
-        if setup_cmds and not dry_run:
-            rprint("\n[bold]Registering MCP servers...[/bold]")
-            for cmd in setup_cmds:
-                try:
-                    proc = subprocess.run(cmd, capture_output=True, text=True)
-                except FileNotFoundError:
-                    rprint(f"  [yellow]⚠[/yellow]  {cmd[0]} not found - run manually: [cyan]{' '.join(cmd)}[/cyan]")
-                    continue
-                if proc.returncode == 0:
-                    rprint(f"  [green]✓[/green]  {' '.join(cmd[:4])}...")
-                else:
-                    stderr = (proc.stderr or "").strip()
-                    rprint(f"  [red]✗[/red]  {' '.join(cmd)}")
-                    if stderr:
-                        rprint(f"      [dim]{stderr}[/dim]")
-        elif setup_cmds and dry_run:
-            rprint("\n[bold]Would run these setup commands:[/bold]")
-            for cmd in setup_cmds:
-                rprint(f"  [cyan]$ {' '.join(cmd)}[/cyan]")
+            for warning in warnings_list:
+                rprint(f"  [yellow]⚠[/yellow]  {esc(warning)}")
+        if setup_results:
+            title = "Would run these setup commands:" if dry_run else "Registered MCP servers:"
+            rprint(f"\n[bold]{title}[/bold]")
+            for setup in setup_results:
+                command_text = " ".join(map(str, setup["command"]))
+                marker = "$" if dry_run else "✓"
+                rprint(f"  [green]{marker}[/green] {esc(command_text)}")

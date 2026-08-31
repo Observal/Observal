@@ -11,22 +11,18 @@ import hashlib
 import json
 import re
 import tempfile
+from contextlib import nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
-import click.exceptions
 import pyarrow as pa
 import pyarrow.parquet as pq
-import pytest
 from hypothesis import given
 from hypothesis import settings as hsettings
 from hypothesis import strategies as st
 from typer.testing import CliRunner
 
-from observal_cli.cmd_migrate import (
-    _require_admin,
-)
 from observal_cli.main import app as cli_app
 from observal_shared.migration.archive import _is_empty_parquet, _month_range, _sha256_file
 from observal_shared.migration.ch_export import (
@@ -505,8 +501,7 @@ class TestErrorPaths:
         result = runner.invoke(cli_app, ["server", "migrate", "export-telemetry"])
         assert result.exit_code != 0
 
-    @patch("observal_cli.cmd_migrate._require_admin")
-    def test_export_telemetry_missing_manifest(self, mock_admin):
+    def test_export_telemetry_missing_manifest(self):
         """export-telemetry with non-existent manifest should fail."""
         result = runner.invoke(
             cli_app,
@@ -523,8 +518,7 @@ class TestErrorPaths:
         )
         assert result.exit_code != 0
 
-    @patch("observal_cli.cmd_migrate._require_admin")
-    def test_import_telemetry_missing_input_dir(self, mock_admin):
+    def test_import_telemetry_missing_input_dir(self):
         """import-telemetry with non-existent input dir should fail."""
         result = runner.invoke(
             cli_app,
@@ -539,8 +533,7 @@ class TestErrorPaths:
         )
         assert result.exit_code != 0
 
-    @patch("observal_cli.cmd_migrate._require_admin")
-    def test_validate_telemetry_missing_input_dir(self, mock_admin):
+    def test_validate_telemetry_missing_input_dir(self):
         """validate-telemetry with non-existent input dir should fail."""
         result = runner.invoke(
             cli_app,
@@ -560,9 +553,8 @@ class TestErrorPaths:
 class TestSecurity:
     """Verify connection strings never appear in CLI output."""
 
-    @patch("observal_cli.cmd_migrate._require_admin")
     @patch("observal_cli.cmd_migrate.asyncio")
-    def test_clickhouse_url_not_in_export_output(self, mock_asyncio, mock_admin):
+    def test_clickhouse_url_not_in_export_output(self, mock_asyncio):
         secret_url = "clickhouse://secret_user:secret_pass@secret-host:9000/secret_db"
         mock_asyncio.run.side_effect = SystemExit(1)
         result = runner.invoke(
@@ -580,8 +572,7 @@ class TestSecurity:
         )
         assert secret_url not in result.output
 
-    @patch("observal_cli.cmd_migrate._require_admin")
-    def test_clickhouse_url_not_in_import_output(self, mock_admin):
+    def test_clickhouse_url_not_in_import_output(self):
         secret_url = "clickhouse://secret_user:secret_pass@secret-host:9000/secret_db"
         result = runner.invoke(
             cli_app,
@@ -596,8 +587,7 @@ class TestSecurity:
         )
         assert secret_url not in result.output
 
-    @patch("observal_cli.cmd_migrate._require_admin")
-    def test_clickhouse_url_not_in_validate_output(self, mock_admin):
+    def test_clickhouse_url_not_in_validate_output(self):
         secret_url = "clickhouse://secret_user:secret_pass@secret-host:9000/secret_db"
         result = runner.invoke(
             cli_app,
@@ -616,35 +606,6 @@ class TestSecurity:
 # ══════════════════════════════════════════════════════════
 # Property-Based Tests (Hypothesis)
 # ══════════════════════════════════════════════════════════
-
-
-# ── Property 1: Admin role authorization gate ────────────
-
-
-class TestAdminRoleGateProperty:
-    """Property 1: Only super_admin role passes the gate.
-
-    **Validates: Requirements 1.5**
-    """
-
-    ALLOWED_ROLES = {"super_admin"}
-
-    @given(
-        role=st.text(
-            alphabet=st.characters(whitelist_categories=("L", "N", "P")),
-            min_size=0,
-            max_size=20,
-        )
-    )
-    @hsettings(max_examples=100)
-    def test_role_gate(self, role):
-        with patch("observal_cli.cmd_migrate.client") as mock_client:
-            mock_client.get.return_value = {"role": role}
-            if role in self.ALLOWED_ROLES:
-                _require_admin()  # Should not raise
-            else:
-                with pytest.raises((SystemExit, click.exceptions.Exit)):
-                    _require_admin()
 
 
 # ── Property 2: ClickHouse URL parsing correctness ──────
@@ -1008,7 +969,7 @@ class TestConnectionStringNeverLeakedProperty:
         secret_url = f"clickhouse://{user}:{password}@{host}:{port}/testdb"
 
         # Test export-telemetry path
-        with patch("observal_cli.cmd_migrate._require_admin"):
+        with nullcontext():
             result = runner.invoke(
                 cli_app,
                 [
@@ -1034,7 +995,7 @@ class TestConnectionStringNeverLeakedProperty:
     def test_clickhouse_url_never_in_import_output(self, host, port, user, password):
         secret_url = f"clickhouse://{user}:{password}@{host}:{port}/testdb"
 
-        with patch("observal_cli.cmd_migrate._require_admin"):
+        with nullcontext():
             result = runner.invoke(
                 cli_app,
                 [
@@ -1058,7 +1019,7 @@ class TestConnectionStringNeverLeakedProperty:
     def test_clickhouse_url_never_in_validate_output(self, host, port, user, password):
         secret_url = f"clickhouse://{user}:{password}@{host}:{port}/testdb"
 
-        with patch("observal_cli.cmd_migrate._require_admin"):
+        with nullcontext():
             result = runner.invoke(
                 cli_app,
                 [
@@ -1162,22 +1123,6 @@ class TestAtomicWritePattern:
         tmp = original.with_suffix(original.suffix + ".tmp")
         assert str(tmp).endswith(".parquet.tmp")
         assert tmp.name == "session_events_2025-01.parquet.tmp"
-
-
-# ── Exception Chaining ───────────────────────────────────
-
-
-class TestExceptionChaining:
-    """Verify raise typer.Exit(1) from exc preserves __cause__."""
-
-    def test_require_admin_chains_exception(self):
-        with patch("observal_cli.cmd_migrate.client") as mock_client:
-            mock_client.get.side_effect = SystemExit(1)
-            with pytest.raises((SystemExit, click.exceptions.Exit)) as exc_info:
-                _require_admin()
-            # The raised exception should have a __cause__
-            if hasattr(exc_info.value, "__cause__"):
-                assert exc_info.value.__cause__ is not None
 
 
 # ── UTF-8 Encoding ───────────────────────────────────────

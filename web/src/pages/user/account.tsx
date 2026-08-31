@@ -29,141 +29,24 @@ import { AvatarEditable } from "@/components/account/avatar-upload";
 import { NAMESPACE_RULE_TEXT, isValidNamespace } from "@/lib/registry-name";
 
 // ── Theme definitions ──────────────────────────────────────────────────────
-// Swatches: [bg, accent, fg] in oklch — derived from globals.css
+// Dark is the product default; light remains available for bright environments.
 const THEMES = [
-	{
-		value: "light",
-		label: "Light",
-		swatches: [
-			"oklch(0.99 0.005 260)",
-			"oklch(0.5 0.2 270)",
-			"oklch(0.15 0.02 260)",
-		],
-	},
-	{
-		value: "solarized-light",
-		label: "Solarized Light",
-		swatches: [
-			"oklch(0.97 0.026 90)",
-			"oklch(0.61 0.139 245)",
-			"oklch(0.52 0.028 219)",
-		],
-	},
 	{
 		value: "dark",
 		label: "Dark",
 		swatches: [
-			"oklch(0.13 0.02 260)",
-			"oklch(0.62 0.18 270)",
-			"oklch(0.88 0.01 260)",
+			"var(--theme-preview-dark-shell)",
+			"var(--theme-preview-dark-canvas)",
+			"var(--theme-preview-dark-accent)",
 		],
 	},
 	{
-		value: "midnight",
-		label: "Midnight",
+		value: "light",
+		label: "Light",
 		swatches: [
-			"oklch(0.1 0.025 270)",
-			"oklch(0.6 0.2 275)",
-			"oklch(0.88 0.008 260)",
-		],
-	},
-	{
-		value: "forest",
-		label: "Forest",
-		swatches: [
-			"oklch(0.1 0.02 155)",
-			"oklch(0.6 0.15 155)",
-			"oklch(0.87 0.01 150)",
-		],
-	},
-	{
-		value: "sunset",
-		label: "Sunset",
-		swatches: [
-			"oklch(0.11 0.025 45)",
-			"oklch(0.7 0.15 60)",
-			"oklch(0.87 0.01 50)",
-		],
-	},
-	{
-		value: "solarized-dark",
-		label: "Solarized Dark",
-		swatches: [
-			"oklch(0.27 0.049 220)",
-			"oklch(0.61 0.139 245)",
-			"oklch(0.65 0.020 205)",
-		],
-	},
-	{
-		value: "dracula",
-		label: "Dracula",
-		swatches: [
-			"oklch(0.26 0.030 278)",
-			"oklch(0.74 0.149 302)",
-			"oklch(0.98 0.008 107)",
-		],
-	},
-	{
-		value: "nord",
-		label: "Nord",
-		swatches: [
-			"oklch(0.30 0.018 230)",
-			"oklch(0.78 0.065 205)",
-			"oklch(0.93 0.010 230)",
-		],
-	},
-	{
-		value: "monokai",
-		label: "Monokai",
-		swatches: [
-			"oklch(0.25 0.012 110)",
-			"oklch(0.84 0.20 128)",
-			"oklch(0.98 0.008 107)",
-		],
-	},
-	{
-		value: "gruvbox",
-		label: "Gruvbox",
-		swatches: [
-			"oklch(0.28 0.000 90)",
-			"oklch(0.73 0.182 52)",
-			"oklch(0.88 0.055 85)",
-		],
-	},
-	{
-		value: "catppuccin",
-		label: "Catppuccin",
-		swatches: [
-			"oklch(0.22 0.035 290)",
-			"oklch(0.72 0.14 305)",
-			"oklch(0.86 0.045 270)",
-		],
-	},
-	{
-		value: "tokyo-night",
-		label: "Tokyo Night",
-		swatches: [
-			"oklch(0.20 0.025 260)",
-			"oklch(0.68 0.15 260)",
-			"oklch(0.76 0.050 268)",
-		],
-	},
-	{
-		value: "one-dark",
-		label: "One Dark",
-		swatches: [
-			"oklch(0.27 0.012 240)",
-			"oklch(0.70 0.13 240)",
-			"oklch(0.78 0.018 250)",
-		],
-	},
-	{
-		value: "rose-pine",
-		label: "Rosé Pine",
-		swatches: [
-			"oklch(0.19 0.030 300)",
-			"oklch(0.74 0.10 305)",
-			"oklch(0.90 0.028 295)",
+			"var(--theme-preview-light-shell)",
+			"var(--theme-preview-light-canvas)",
+			"var(--theme-preview-light-accent)",
 		],
 	},
 ] as const;

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import Mock, call
@@ -15,6 +16,7 @@ from typer.main import get_command
 from typer.testing import CliRunner
 
 import observal_cli.cmd_inbox as inbox
+from observal_cli.main import app as cli_app
 
 ITEM_ID = "11111111-1111-1111-1111-111111111111"
 SECOND_ITEM_ID = "22222222-2222-2222-2222-222222222222"
@@ -164,7 +166,7 @@ def test_explicit_list_normalizes_and_forwards_every_filter_as_raw_json(cli):
         },
     )
     assert cli.json == [payload]
-    assert cli.spinners == ["Fetching inbox..."]
+    assert cli.spinners == []
     assert cli.messages == []
     assert cli.tables == []
     assert cli.console.renderables == []
@@ -187,7 +189,7 @@ def test_filter_helpers_match_server_enums_and_omit_unrequested_values():
         "system_notice",
     )
     assert inbox._validate(None, inbox._STATES, "state") is None
-    assert inbox._filters(None, None, False) == {}
+    assert inbox._filters(None, None, False) == {"action_required": False}
     assert inbox._filters(" DONE ", " UPDATE_AVAILABLE ", True, unread=True) == {
         "state": "done",
         "kind": "update_available",
@@ -195,31 +197,28 @@ def test_filter_helpers_match_server_enums_and_omit_unrequested_values():
         "unread": True,
     }
     assert inbox._filter_params(None, None, False, False, page=4, page_size=7) == {
+        "action_required": False,
+        "unread": False,
         "page": 4,
         "page_size": 7,
     }
 
 
 @pytest.mark.parametrize(
-    ("state", "kind", "expected"),
+    ("state", "kind", "message", "resource"),
     [
-        ("lost", None, ["[red]Unknown state 'lost'.[/red]", "[dim]Choose one of: open, done, dismissed[/dim]"]),
-        (
-            None,
-            "[bad]",
-            [
-                "[red]Unknown kind '\\[bad]'.[/red]",
-                f"[dim]Choose one of: {', '.join(inbox._KINDS)}[/dim]",
-            ],
-        ),
+        ("lost", None, "Unknown inbox state: lost.", "inbox state"),
+        (None, "[bad]", "Unknown inbox kind: [bad].", "inbox kind"),
     ],
 )
-def test_invalid_filters_fail_locally_with_exact_guidance(cli, state, kind, expected):
+def test_invalid_filters_fail_locally_with_exact_guidance(cli, state, kind, message, resource):
     with pytest.raises(typer.Exit) as raised:
         inbox.inbox_list(state, kind, False, False, 1, 25, "table")
 
-    assert raised.value.exit_code == 1
-    assert cli.messages == expected
+    assert raised.value.exit_code == 7
+    assert raised.value.message == message
+    assert raised.value.resource == resource
+    assert cli.messages == [f"[red]{message}[/red]"]
     cli.get.assert_not_called()
     cli.post.assert_not_called()
     cli.confirm.assert_not_called()
@@ -361,7 +360,7 @@ def test_count_table_and_json_outputs_are_exact(cli):
     inbox.inbox_count("json")
 
     cli.get.assert_called_once_with("/api/v1/inbox/count")
-    assert cli.spinners == ["Fetching counts..."]
+    assert cli.spinners == []
     assert cli.json == [counts]
     assert cli.messages == []
 
@@ -407,7 +406,7 @@ def test_show_renders_full_detail_actions_and_timestamped_history_exactly(cli):
         f"[dim]Run:[/dim]  [cyan]observal registry mcp show acme/tool {LONG_OPTION}output json[/cyan]",
         "\n[bold]History[/bold]",
         "  [dim]2026-06-01T01:02:03Z[/dim]  created",
-        "  [dim]2026-06-02T04:05:06+00:00[/dim]  read \\[once] \N{EM DASH} Moved \\[queue]",
+        "  [dim]2026-06-02T04:05:06+00:00[/dim]  read \\[once] : Moved \\[queue]",
     ]
     assert cli.json == []
     assert cli.tables == []
@@ -435,6 +434,7 @@ def test_show_json_forwards_the_untouched_payload(cli):
 
     cli.get.assert_called_once_with(f"/api/v1/inbox/{ITEM_ID}")
     assert cli.json == [payload]
+    assert cli.spinners == []
     assert cli.messages == []
     assert cli.tables == []
     assert cli.console.renderables == []
@@ -484,7 +484,7 @@ def test_read_all_confirms_filter_scope_and_encodes_exact_query(cli):
         abort=True,
     )
     cli.post.assert_called_once_with(
-        "/api/v1/inbox/read-all?state=open&kind=update_available&action_required=True",
+        "/api/v1/inbox/read-all?state=open&kind=update_available&action_required=true",
         {},
     )
     assert cli.spinners == ["Marking read..."]
@@ -494,7 +494,7 @@ def test_read_all_confirms_filter_scope_and_encodes_exact_query(cli):
 def test_read_all_yes_bypasses_prompt_and_uses_unfiltered_endpoint(cli):
     _returns(cli.post, {})
 
-    inbox.inbox_read_all(None, None, False, True)
+    inbox.inbox_read_all(None, None, None, True)
 
     cli.confirm.assert_not_called()
     cli.post.assert_called_once_with("/api/v1/inbox/read-all", {})
@@ -506,7 +506,7 @@ def test_read_all_cancellation_has_no_http_or_rendering_side_effects(cli):
     cli.confirm.side_effect = typer.Abort()
 
     with pytest.raises(typer.Abort):
-        inbox.inbox_read_all(None, None, False, False)
+        inbox.inbox_read_all(None, None, None, False)
 
     cli.confirm.assert_called_once_with("Mark as read: ALL unread items?", abort=True)
     cli.get.assert_not_called()
@@ -566,7 +566,7 @@ def test_get_http_failures_propagate_without_success_output(cli, invoke, expecte
             "Marking done...",
         ),
         (
-            lambda: inbox.inbox_read_all(None, None, False, True),
+            lambda: inbox.inbox_read_all(None, None, None, True),
             call("/api/v1/inbox/read-all", {}),
             "Marking read...",
         ),
@@ -618,3 +618,141 @@ def test_malformed_non_mapping_responses_fail_loudly(cli, method, invoke, expect
     assert cli.messages == []
     assert cli.json == []
     assert cli.console.renderables == []
+
+
+def test_every_inbox_leaf_has_shared_output_option():
+    command = get_command(inbox.inbox_app)
+
+    assert all(any(parameter.name == "output" for parameter in leaf.params) for leaf in command.commands.values())
+
+
+def test_list_exposes_all_server_filters_including_false_booleans(cli):
+    payload = {"items": [], "total": 0, "page": 3, "page_size": 5}
+    _returns(cli.get, payload)
+
+    result = runner.invoke(
+        inbox.inbox_app,
+        [
+            "list",
+            "--state",
+            "done",
+            "--kind",
+            "system_notice",
+            "--no-action-required",
+            "--read",
+            "--subject-type",
+            "mcp",
+            "--search",
+            "postgres",
+            "--sort",
+            "oldest",
+            "--page",
+            "3",
+            "--page-size",
+            "5",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    cli.get.assert_called_once_with(
+        "/api/v1/inbox",
+        params={
+            "state": "done",
+            "kind": "system_notice",
+            "action_required": False,
+            "unread": False,
+            "subject_type": "mcp",
+            "q": "postgres",
+            "sort": "oldest",
+            "page": 3,
+            "page_size": 5,
+        },
+    )
+    assert cli.json == [payload]
+    assert cli.spinners == []
+
+
+def test_count_facets_forwards_state_and_renders_breakdown(cli):
+    counts = {
+        "unread": 4,
+        "action_required": 2,
+        "open": 7,
+        "by_kind": {"review_requested": 3},
+        "by_subject_type": {"mcp": 2},
+    }
+    _returns(cli.get, counts)
+
+    inbox.inbox_count("table", True, "done")
+
+    cli.get.assert_called_once_with("/api/v1/inbox/count", params={"facets": True, "facet_state": "done"})
+    assert cli.messages == ["[bold]4[/bold] unread, [bold]2[/bold] needing action, [bold]7[/bold] open"]
+    assert cli.spinners == ["Fetching counts..."]
+    assert len(cli.tables) == 1
+    assert cli.tables[0].rows == [
+        ("kind", "review_requested", "3"),
+        ("subject type", "mcp", "2"),
+    ]
+
+
+def test_facet_state_without_facets_is_validation_error(cli):
+    with pytest.raises(typer.Exit) as raised:
+        inbox.inbox_count("table", False, "done")
+
+    assert raised.value.exit_code == 7
+    assert raised.value.operation == "Count inbox items"
+    cli.get.assert_not_called()
+
+
+def test_read_all_json_forwards_all_server_filters_without_prompt_or_spinner(cli):
+    response = {"updated": 8}
+    _returns(cli.post, response)
+
+    inbox.inbox_read_all("open", "update_available", False, True, "mcp", "postgres", "json")
+
+    cli.confirm.assert_not_called()
+    cli.post.assert_called_once_with(
+        "/api/v1/inbox/read-all?state=open&kind=update_available&action_required=false&subject_type=mcp&q=postgres",
+        {},
+    )
+    assert cli.json == [response]
+    assert cli.messages == []
+    assert cli.spinners == []
+
+
+def test_item_mutation_json_writes_only_the_server_result(monkeypatch):
+    payload = {"id": ITEM_ID, "state": "done", "title": "Review [prod]"}
+    post = Mock(return_value=payload)
+    monkeypatch.setattr(inbox.client, "post", post)
+
+    result = runner.invoke(cli_app, ["inbox", "done", ITEM_ID, "--output", "json"])
+
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout) == payload
+    assert result.stderr == ""
+    post.assert_called_once_with(f"/api/v1/inbox/{ITEM_ID}/done", {})
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["inbox", "list", "--sort", "sideways", "--output", "json"],
+        ["inbox", "list", "--search", " ", "--output", "json"],
+        ["inbox", "show", "not-a-uuid", "--output", "json"],
+        ["inbox", "read-all", "--output", "json"],
+    ],
+)
+def test_json_validation_uses_shared_error_boundary(monkeypatch, arguments):
+    get = _blocked("client.get")
+    post = _blocked("client.post")
+    monkeypatch.setattr(inbox.client, "get", get)
+    monkeypatch.setattr(inbox.client, "post", post)
+
+    result = runner.invoke(cli_app, arguments)
+
+    assert result.exit_code == 7
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["error"]["category"] == "validation"
+    get.assert_not_called()
+    post.assert_not_called()

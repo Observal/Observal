@@ -699,6 +699,35 @@ async def test_publish_uses_real_model_pair_snapshots_content_and_orders_transac
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("component_type", COMPONENTS)
+async def test_publish_snapshots_complete_metadata_when_optional_fields_are_omitted(monkeypatch, component_type):
+    listing_model, version_model, _plural = COMPONENTS[component_type]
+    listing = _listing(component_type, owner_id=OWNER_ID)
+    listing.latest_version.supported_harnesses = ["claude-code"]
+    db = _db()
+    db.execute.return_value = _result()
+    db.flush.side_effect = lambda: _set_generated_defaults(db, component_type)
+    monkeypatch.setattr(versions, "resolve_visible_listing", AsyncMock(return_value=listing))
+    monkeypatch.setattr(versions.inbox, "on_publish", AsyncMock())
+    request = VersionPublishRequest(version="2.0.0", description="Second release")
+
+    await versions._publish_version(
+        str(LISTING_ID),
+        request,
+        listing_model,
+        version_model,
+        component_type,
+        db,
+        _user(user_id=OWNER_ID),
+    )
+
+    created = db.add.call_args.args[0]
+    for column in version_model.__table__.columns:
+        if column.name not in versions._VERSION_MANAGED_FIELDS:
+            assert getattr(created, column.name) == getattr(listing.latest_version, column.name)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("access", ["coauthor", "admin"])
 async def test_coauthor_and_admin_have_owner_level_publish_permission(monkeypatch, access):
     listing = _listing("mcp", co_authors=[str(COAUTHOR_ID)])

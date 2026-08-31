@@ -14,9 +14,9 @@ function AuthedLayout() {
   return (
     <AuthGuard>
       <HelpProvider>
-        <SidebarProvider>
+        <SidebarProvider className="bg-surface-sunken">
           <RegistrySidebar />
-          <SidebarInset>
+          <SidebarInset className="md:m-2 md:ml-0 md:max-h-[calc(100dvh-1rem)] md:rounded-lg md:border md:border-border md:bg-background md:shadow-sm">
             <Suspense fallback={<div className="flex h-screen w-full items-center justify-center" />}>
               <Outlet />
             </Suspense>

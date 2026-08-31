@@ -10,213 +10,269 @@ ClickHouse, and Redis.
 
 from __future__ import annotations
 
+import os
 import subprocess
+from contextlib import contextmanager, redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
+from tempfile import NamedTemporaryFile
+from typing import Annotated
 
 import typer
 from loguru import logger as optic
+from packaging.version import InvalidVersion, Version
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
-try:
-    from observal_cli.server.constants import (
-        API_PORT,
-        CONFIG_DIR,
-        LOG_DIR,
-        OBSERVAL_HOME,
-    )
-except ImportError:
-    # server.constants may not exist yet (feature not merged)
-    # Provide fallback values for the upgrade/rollback commands
-    from pathlib import Path as _Path
-
-    API_PORT = 8000
-    OBSERVAL_HOME = _Path.home() / ".observal"
-    CONFIG_DIR = OBSERVAL_HOME / "config"
-    LOG_DIR = OBSERVAL_HOME / "logs"
+from observal_cli.errors import ErrorCategory, fail
+from observal_cli.render import OutputMode, output_json, output_json_line
+from observal_cli.server.constants import API_PORT, CONFIG_DIR, LOG_DIR, OBSERVAL_HOME
 
 server_app = typer.Typer(
     name="server",
-    help="Manage the embedded Observal server (PostgreSQL + ClickHouse + Redis + API).",
+    help=(
+        "Manage the embedded Observal server (PostgreSQL + ClickHouse + Redis + API).\n\n"
+        "Examples:\n"
+        "  observal server status\n"
+        "  observal server start\n"
+        "  observal server logs api"
+    ),
     no_args_is_help=True,
 )
 
 console = Console()
 
 
-def _require_super_admin() -> None:
-    """Verify the current user has super_admin role. Exit if not."""
-    from rich import print as rprint
+def _is_json(output: OutputMode) -> bool:
+    return output == "json"
 
-    from observal_cli import client
 
-    try:
-        user = client.get("/api/v1/auth/whoami")
-    except SystemExit as exc:
-        rprint("[red]Authentication required.[/red]")
-        rprint("[dim]  Run [bold]observal auth login[/bold] first.[/dim]")
-        raise typer.Exit(1) from exc
-    role = user.get("role", "")
-    if role != "super_admin":
-        rprint("[red]Permission denied.[/red] Server management requires super_admin role.")
-        rprint(f"[dim]  Current role: {role}[/dim]")
-        raise typer.Exit(1)
+@contextmanager
+def _quiet_output(output: OutputMode):
+    """Suppress nested human progress while a command builds its JSON result."""
+    if not _is_json(output):
+        yield
+        return
+    with redirect_stdout(StringIO()), redirect_stderr(StringIO()):
+        yield
 
 
 @server_app.command()
 def start(
-    port: int = typer.Option(API_PORT, "--port", "-p", help="API port"),
+    port: int = typer.Option(API_PORT, "--port", "-p", min=1, max=65535, help="API port"),
     host: str = typer.Option("0.0.0.0", "--host", help="Bind address"),
-    background: bool = typer.Option(False, "--background", "-d", help="Run in background (daemonize)"),
+    background: Annotated[bool, typer.Option("--background", "-d", help="Run in background (daemonize)")] = False,
+    output: Annotated[
+        OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
+    ] = OutputMode.table,
 ) -> None:
-    """Start all services and the Observal API server.
+    """Start the embedded services and API.
 
-    On first run, downloads database binaries and initializes data directories.
+    JSON mode requires background startup and never emits progress output.
 
-    Example:
+    Examples:
         observal server start
         observal server start --port 9000
-        observal server start --background
+        observal server start --background --output json
     """
     import socket
 
     from observal_cli.server.deps import all_installed, install_dependencies
-    from observal_cli.server.orchestrator import Orchestrator
+    from observal_cli.server.orchestrator import Orchestrator, ServiceError
     from observal_cli.server.updater import check_for_update
 
-    # Check if port is available, try fallbacks if default
-    def _port_available(p: int) -> bool:
-        optic.trace("p={}", p)
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    if _is_json(output) and not background:
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON startup requires background mode.",
+            operation="Start embedded server",
+            resource="startup mode",
+            remediation="Pass --background and retry.",
+        )
+
+    def port_available(candidate: int) -> bool:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             try:
-                s.bind(("127.0.0.1", p))
+                sock.bind(("127.0.0.1", candidate))
                 return True
             except OSError:
                 return False
 
-    if not _port_available(port):
-        # Only try fallbacks if the user didn't explicitly specify a port
+    requested_port = port
+    if not port_available(port):
         if port == API_PORT:
-            fallbacks = [port + 1, port + 2, port + 10, port + 100]
-            for candidate in fallbacks:
-                if _port_available(candidate):
-                    console.print(f"[yellow]Port {port} in use,[/yellow] using :{candidate} instead")
-                    port = candidate
-                    break
-            else:
-                console.print(f"[red]Error:[/red] Port {port} and fallbacks are all in use.")
-                console.print("  Use [cyan]--port[/cyan] to specify a different port, or stop the conflicting process.")
-                raise typer.Exit(1)
+            port = next(
+                (candidate for candidate in (port + 1, port + 2, port + 10, port + 100) if port_available(candidate)), 0
+            )
         else:
-            console.print(f"[red]Error:[/red] Port {port} is already in use.")
-            console.print("  Use [cyan]--port[/cyan] to specify a different port, or stop the conflicting process.")
-            raise typer.Exit(1)
+            port = 0
+        if not port:
+            fail(
+                ErrorCategory.CONFLICT,
+                f"Port {requested_port} is already in use.",
+                operation="Start embedded server",
+                resource=f"TCP port {requested_port}",
+                remediation="Choose another port or stop the conflicting process.",
+            )
+        if not _is_json(output):
+            console.print(f"[yellow]Port {requested_port} in use,[/yellow] using :{port} instead")
 
-    # Check for updates (non-blocking, cached)
-    check_for_update(quiet=True)
+    try:
+        with _quiet_output(output):
+            check_for_update(quiet=True)
+            if not all_installed():
+                console.print("[blue]==>[/blue] First run: installing database dependencies...")
+                install_dependencies()
+            orchestrator = Orchestrator(port=port, host=host)
+            if orchestrator.is_running():
+                fail(
+                    ErrorCategory.CONFLICT,
+                    "Embedded services are already running.",
+                    operation="Start embedded server",
+                    resource="embedded server",
+                    remediation="Run observal server stop or observal server restart.",
+                )
+            orchestrator.start_all(foreground=not background)
+            if background:
+                check_for_update(quiet=False)
+    except (ServiceError, RuntimeError) as error:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            "The embedded server could not start.",
+            operation="Start embedded server",
+            resource="embedded services",
+            remediation="Check local dependencies and server logs, then retry.",
+            detail=repr(error),
+        )
 
-    # Ensure dependencies are installed
-    if not all_installed():
-        console.print("[blue]==>[/blue] First run - installing database dependencies...")
-        console.print()
-        install_dependencies()
-        console.print()
-
-    # Start everything
-    orch = Orchestrator(port=port, host=host)
-
-    if orch.is_running():
-        console.print("[yellow]Warning:[/yellow] Services are already running.")
-        console.print("  Run [cyan]observal server stop[/cyan] first, or use [cyan]observal server restart[/cyan]")
-        raise typer.Exit(1)
-
-    orch.start_all(foreground=not background)
-
-    if background:
-        # Print update notice if available
-        check_for_update(quiet=False)
+    if _is_json(output):
+        output_json(
+            {
+                "status": "started",
+                "mode": "embedded",
+                "host": host,
+                "port": port,
+                "background": True,
+                "used_fallback_port": port != requested_port,
+            }
+        )
 
 
 @server_app.command()
-def stop() -> None:
-    """Stop all running services.
+def stop(
+    output: Annotated[
+        OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
+    ] = OutputMode.table,
+) -> None:
+    """Stop all embedded services.
 
-    Gracefully shuts down in reverse order: API → Redis → ClickHouse → PostgreSQL.
-
-    Example:
+    Examples:
         observal server stop
+        observal server stop --output json
     """
     from observal_cli.server.orchestrator import Orchestrator
 
-    orch = Orchestrator()
-    orch.stop_all()
+    with _quiet_output(output):
+        Orchestrator().stop_all()
+    if _is_json(output):
+        output_json({"status": "stopped", "mode": "embedded"})
 
 
 @server_app.command()
 def restart(
-    port: int = typer.Option(API_PORT, "--port", "-p", help="API port"),
+    port: int = typer.Option(API_PORT, "--port", "-p", min=1, max=65535, help="API port"),
     host: str = typer.Option("0.0.0.0", "--host", help="Bind address"),
+    background: Annotated[bool, typer.Option("--background", "-d", help="Run in background (daemonize)")] = False,
+    output: Annotated[
+        OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
+    ] = OutputMode.table,
 ) -> None:
-    """Restart all services.
+    """Restart all embedded services.
 
-    Example:
+    JSON mode requires background startup.
+
+    Examples:
         observal server restart
+        observal server restart --background --output json
     """
-    optic.trace("port={}, host={}", port, host)
-    from observal_cli.server.orchestrator import Orchestrator
+    from observal_cli.server.orchestrator import Orchestrator, ServiceError
 
-    orch = Orchestrator(port=port, host=host)
-    if orch.is_running():
-        orch.stop_all()
-    orch.start_all(foreground=True)
+    if _is_json(output) and not background:
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON restart requires background mode.",
+            operation="Restart embedded server",
+            resource="startup mode",
+            remediation="Pass --background and retry.",
+        )
+    try:
+        with _quiet_output(output):
+            orchestrator = Orchestrator(port=port, host=host)
+            if orchestrator.is_running():
+                orchestrator.stop_all()
+            orchestrator.start_all(foreground=not background)
+    except ServiceError as error:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            "The embedded server could not restart.",
+            operation="Restart embedded server",
+            resource="embedded services",
+            remediation="Check local dependencies and server logs, then retry.",
+            detail=repr(error),
+        )
+    if _is_json(output):
+        output_json({"status": "restarted", "mode": "embedded", "host": host, "port": port, "background": True})
 
 
 @server_app.command()
-def status() -> None:
-    """Show status of all services.
+def status(
+    output: Annotated[
+        OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
+    ] = OutputMode.table,
+) -> None:
+    """Show embedded service status.
 
-    Example:
+    Examples:
         observal server status
+        observal server status --output json
     """
+    from observal_cli.server.constants import CLICKHOUSE_HTTP_PORT, POSTGRES_PORT, REDIS_PORT
     from observal_cli.server.orchestrator import Orchestrator
 
-    orch = Orchestrator()
-    statuses = orch.status()
+    orchestrator = Orchestrator()
+    statuses = orchestrator.status()
+    ports = {
+        "postgres": POSTGRES_PORT,
+        "clickhouse": CLICKHOUSE_HTTP_PORT,
+        "redis": REDIS_PORT,
+        "api": orchestrator.port,
+    }
+    payload = {
+        "healthy": all(state == "running" for state in statuses.values()),
+        "services": [
+            {"service": service, "status": state, "port": ports.get(service)} for service, state in statuses.items()
+        ],
+    }
+    if _is_json(output):
+        output_json(payload)
+        return
 
     table = Table(title="Observal Service Status")
     table.add_column("Service", style="bold")
     table.add_column("Status")
     table.add_column("Port")
-
-    status_styles = {
+    styles = {
         "running": "[green]running[/green]",
         "stopped": "[red]stopped[/red]",
         "not initialized": "[dim]not initialized[/dim]",
     }
-
-    try:
-        from observal_cli.server.constants import (
-            CLICKHOUSE_HTTP_PORT,
-            POSTGRES_PORT,
-            REDIS_PORT,
-        )
-    except ImportError:
-        POSTGRES_PORT, CLICKHOUSE_HTTP_PORT, REDIS_PORT = 5480, 8124, 6380  # noqa: N806
-
-    port_map = {
-        "postgres": str(POSTGRES_PORT),
-        "clickhouse": str(CLICKHOUSE_HTTP_PORT),
-        "redis": str(REDIS_PORT),
-        "api": str(API_PORT),
-    }
-
-    for service, state in statuses.items():
+    for item in payload["services"]:
         table.add_row(
-            service.capitalize(),
-            status_styles.get(state, state),
-            port_map.get(service, "-"),
+            str(item["service"]).capitalize(),
+            styles.get(str(item["status"]), str(item["status"])),
+            str(item["port"] or "-"),
         )
-
     console.print(table)
 
 
@@ -227,134 +283,205 @@ def logs(
         help="Service to show logs for (postgres, clickhouse, redis, api). Default: all.",
     ),
     follow: bool = typer.Option(False, "--follow", "-f", help="Follow log output"),
-    lines: int = typer.Option(50, "--lines", "-n", help="Number of lines to show"),
+    lines: int = typer.Option(50, "--lines", "-n", min=1, help="Number of lines to show"),
+    output: Annotated[
+        OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
+    ] = OutputMode.table,
 ) -> None:
-    """Show service logs.
+    """Show embedded service logs.
 
-    Example:
+    Follow mode emits JSON Lines when JSON output is selected.
+
+    Examples:
         observal server logs
-        observal server logs postgres
-        observal server logs -f
-        observal server logs api -n 100
+        observal server logs postgres --lines 100
+        observal server logs api --follow --output json
     """
-    optic.trace("service={}, follow={}", service, follow)
     log_files = {
         "postgres": LOG_DIR / "postgres.log",
         "clickhouse": LOG_DIR / "clickhouse-startup.log",
         "redis": LOG_DIR / "redis.log",
         "api": LOG_DIR / "api.log",
     }
+    if service and service not in log_files:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Unknown service: {service}.",
+            operation="Read embedded server logs",
+            resource="service filter",
+            remediation=f"Choose one of: {', '.join(log_files)}.",
+        )
+    if _is_json(output) and follow and not service:
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON log following requires one service.",
+            operation="Follow embedded server logs",
+            resource="service filter",
+            remediation="Provide postgres, clickhouse, redis, or api.",
+        )
 
-    if service:
-        if service not in log_files:
-            console.print(f"[red]Error:[/red] Unknown service '{service}'. Choose from: {', '.join(log_files.keys())}")
-            raise typer.Exit(1)
-        files = [log_files[service]]
-    else:
-        files = [f for f in log_files.values() if f.exists()]
-
+    selected = [log_files[service]] if service else [path for path in log_files.values() if path.exists()]
+    files = [path for path in selected if path.exists()]
     if not files:
-        console.print("[yellow]No log files found.[/yellow] Has the server been started?")
-        raise typer.Exit(1)
+        fail(
+            ErrorCategory.NOT_FOUND,
+            "No embedded service logs were found.",
+            operation="Read embedded server logs",
+            resource=str(LOG_DIR),
+            remediation="Start the embedded server, then retry.",
+        )
 
     if follow:
-        # Use tail -f for following
-        cmd = ["tail", "-f"] + [str(f) for f in files if f.exists()]
+        command = (
+            ["tail", "-n", str(lines), "-f", str(files[0])]
+            if _is_json(output)
+            else [
+                "tail",
+                "-n",
+                str(lines),
+                "-f",
+                *map(str, files),
+            ]
+        )
         try:
-            subprocess.run(cmd)
+            if _is_json(output):
+                process = subprocess.Popen(command, stdout=subprocess.PIPE, text=True)
+                try:
+                    assert process.stdout is not None
+                    for line in process.stdout:
+                        output_json_line({"service": service, "line": line.rstrip("\n")})
+                finally:
+                    process.terminate()
+                    process.wait(timeout=5)
+            else:
+                subprocess.run(command, check=False)
         except KeyboardInterrupt:
-            pass
-    else:
-        for log_file in files:
-            if log_file.exists():
-                content = log_file.read_text()
-                log_lines = content.splitlines()
-                tail = log_lines[-lines:] if len(log_lines) > lines else log_lines
-                if len(files) > 1:
-                    console.print(f"\n[bold]==> {log_file.stem} <==[/bold]")
-                for line in tail:
-                    console.print(line)
+            return
+        return
+
+    records = []
+    for name, path in log_files.items():
+        if path not in files:
+            continue
+        tail = path.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:]
+        records.append({"service": name, "path": str(path), "lines": tail})
+    if _is_json(output):
+        output_json({"follow": False, "logs": records})
+        return
+    for record in records:
+        if len(records) > 1:
+            console.print(f"\n[bold]==> {escape(str(record['service']))} <==[/bold]")
+        for line in record["lines"]:
+            console.print(escape(str(line)))
 
 
 @server_app.command()
 def install(
     upgrade: bool = typer.Option(False, "--upgrade", help="Re-download even if already installed"),
+    output: Annotated[
+        OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
+    ] = OutputMode.table,
 ) -> None:
-    """Download database dependency binaries (PostgreSQL, ClickHouse, Redis).
+    """Download verified embedded database binaries.
 
-    Automatically runs on first `server start`, but can be invoked manually
-    to pre-download or upgrade dependencies.
-
-    Example:
+    Examples:
         observal server install
-        observal server install --upgrade
+        observal server install --upgrade --output json
     """
-    optic.trace("upgrade={}", upgrade)
     from observal_cli.server.deps import install_dependencies
 
-    install_dependencies(force=upgrade)
-    console.print()
-    console.print("[green]\u2713[/green] All dependencies installed")
-    console.print("  Run [cyan]observal server start[/cyan] to start the server")
+    try:
+        with _quiet_output(output):
+            install_dependencies(force=upgrade)
+    except RuntimeError as error:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            "Embedded dependency installation failed.",
+            operation="Install embedded server dependencies",
+            resource="dependency release",
+            remediation="Check network access, disk space, and published checksums, then retry.",
+            detail=repr(error),
+        )
+    if _is_json(output):
+        output_json({"status": "installed", "services": ["postgres", "clickhouse", "redis"], "refreshed": upgrade})
+    else:
+        console.print("\n[green]✓[/green] All dependencies installed")
+        console.print("  Run [cyan]observal server start[/cyan] to start the server")
 
 
 @server_app.command()
 def reset(
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+    output: Annotated[
+        OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
+    ] = OutputMode.table,
 ) -> None:
-    """Stop all services and wipe all data. Requires re-initialization on next start.
+    """Stop embedded services and wipe database data and generated secrets.
 
-    Example:
+    Examples:
         observal server reset
-        observal server reset --force
+        observal server reset --force --output json
     """
-    optic.trace("force={}", force)
     from observal_cli.server.orchestrator import Orchestrator
 
-    if not force:
-        confirm = typer.confirm("This will delete all Observal data (databases, config, keys). Continue?")
-        if not confirm:
-            raise typer.Abort()
+    if _is_json(output) and not force:
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON reset requires explicit confirmation.",
+            operation="Reset embedded server",
+            resource="embedded database data",
+            remediation="Pass --force and retry.",
+        )
+    if not force and not typer.confirm("Delete embedded database data and generated secrets?"):
+        raise typer.Abort()
 
-    orch = Orchestrator()
-    orch.reset()
+    with _quiet_output(output):
+        Orchestrator().reset()
+    if _is_json(output):
+        output_json({"status": "reset", "deleted": ["postgres", "clickhouse", "redis", "generated secrets"]})
 
 
 @server_app.command()
-def config() -> None:
-    """Show current server configuration.
+def config(
+    output: Annotated[
+        OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
+    ] = OutputMode.table,
+) -> None:
+    """Show embedded server paths and ports.
 
-    Example:
+    Examples:
         observal server config
+        observal server config --output json
     """
-    config_file = OBSERVAL_HOME / "observal.yaml"
+    from observal_cli.server.constants import CLICKHOUSE_HTTP_PORT, POSTGRES_PORT, REDIS_PORT
 
+    config_file = OBSERVAL_HOME / "observal.yaml"
+    payload = {
+        "mode": "embedded",
+        "home_directory": str(OBSERVAL_HOME),
+        "ports": {
+            "api": API_PORT,
+            "postgres": POSTGRES_PORT,
+            "clickhouse": CLICKHOUSE_HTTP_PORT,
+            "redis": REDIS_PORT,
+        },
+        "config_directory": str(CONFIG_DIR),
+        "log_directory": str(LOG_DIR),
+        "config_file": str(config_file) if config_file.exists() else None,
+    }
+    if _is_json(output):
+        output_json(payload)
+        return
     table = Table(title="Observal Server Configuration")
     table.add_column("Setting", style="bold")
     table.add_column("Value")
-
-    try:
-        from observal_cli.server.constants import (
-            CLICKHOUSE_HTTP_PORT,
-            POSTGRES_PORT,
-            REDIS_PORT,
-        )
-    except ImportError:
-        POSTGRES_PORT, CLICKHOUSE_HTTP_PORT, REDIS_PORT = 5480, 8124, 6380  # noqa: N806
-
-    table.add_row("Home directory", str(OBSERVAL_HOME))
-    table.add_row("API port", str(API_PORT))
-    table.add_row("PostgreSQL port", str(POSTGRES_PORT))
-    table.add_row("ClickHouse port", str(CLICKHOUSE_HTTP_PORT))
-    table.add_row("Redis port", str(REDIS_PORT))
-    table.add_row("Config dir", str(CONFIG_DIR))
-    table.add_row("Log dir", str(LOG_DIR))
-
-    if config_file.exists():
-        table.add_row("Config file", str(config_file))
-    else:
-        table.add_row("Config file", "[dim]not created (using defaults)[/dim]")
-
+    table.add_row("Mode", "embedded")
+    table.add_row("Home directory", payload["home_directory"])
+    for service, port in payload["ports"].items():
+        table.add_row(f"{service.capitalize()} port", str(port))
+    table.add_row("Config dir", payload["config_directory"])
+    table.add_row("Log dir", payload["log_directory"])
+    table.add_row("Config file", payload["config_file"] or "[dim]not created (using defaults)[/dim]")
     console.print(table)
 
 
@@ -376,6 +503,19 @@ def _find_compose_dir() -> Path:
         if (d / "docker-compose.yml").exists() or (d / "compose.yml").exists():
             return d
     return Path("/opt/observal")  # Default
+
+
+def _require_compose_dir() -> Path:
+    compose_dir = _find_compose_dir()
+    if not any((compose_dir / name).is_file() for name in ("docker-compose.yml", "compose.yml")):
+        fail(
+            ErrorCategory.NOT_FOUND,
+            "A Docker Compose deployment was not found.",
+            operation="Manage Docker server deployment",
+            resource=str(compose_dir),
+            remediation="Run the command from a deployment directory containing compose.yml.",
+        )
+    return compose_dir
 
 
 def _get_current_server_version(compose_dir: Path) -> str:
@@ -426,84 +566,106 @@ def _get_health_url(compose_dir: Path) -> str:
 
 
 def _update_env_version(compose_dir: Path, version: str) -> None:
-    """Update OBSERVAL_VERSION in .env file."""
-    optic.trace("compose_dir={}, version={}", compose_dir, version)
+    """Atomically update OBSERVAL_VERSION while preserving unrelated settings."""
     env_file = _find_env_file(compose_dir)
-    if not env_file.exists():
-        env_file.write_text(f"OBSERVAL_VERSION={version}\n")
-        return
-
-    lines = env_file.read_text().splitlines()
-    found = False
-    for i, line in enumerate(lines):
+    lines = env_file.read_text().splitlines() if env_file.exists() else []
+    for index, line in enumerate(lines):
         if line.startswith("OBSERVAL_VERSION="):
-            lines[i] = f"OBSERVAL_VERSION={version}"
-            found = True
+            lines[index] = f"OBSERVAL_VERSION={version}"
             break
-    if not found:
+    else:
         lines.append(f"OBSERVAL_VERSION={version}")
-    env_file.write_text("\n".join(lines) + "\n")
+    env_file.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            "w", encoding="utf-8", dir=env_file.parent, prefix=f".{env_file.name}.", delete=False
+        ) as file:
+            temporary = Path(file.name)
+            file.write("\n".join(lines) + "\n")
+            file.flush()
+            os.fsync(file.fileno())
+        temporary.chmod(0o600)
+        temporary.replace(env_file)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
-@server_app.command(name="upgrade")
-def server_upgrade(
-    version: str | None = typer.Option(
-        None, "--version", "-v", help="Target version (e.g. 0.9.0). Defaults to latest."
-    ),
-    skip_backup: bool = typer.Option(False, "--skip-backup", help="Skip pre-upgrade database backup"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Show upgrade plan without applying changes"),
-    force: bool = typer.Option(False, "--force", "-f", help="Skip interactive confirmation prompt"),
-) -> None:
-    """Upgrade the Observal server to the latest or a specified version.
-
-    Pulls new Docker images from GHCR, creates a database backup (unless
-    skipped), and recreates containers. Runs a health check after upgrade
-    and automatically rolls back if the server fails to start.
-
-    Requires super_admin role.
-
-    Examples:
-        observal server upgrade
-        observal server upgrade --version 0.9.0
-        observal server upgrade --dry-run
-        observal server upgrade --skip-backup --force
-    """
-    optic.trace("version={}, skip_backup={}", version, skip_backup)
-    _require_super_admin()
+def _server_upgrade(version: str | None, skip_backup: bool, dry_run: bool, force: bool) -> dict:
+    """Apply a Docker server upgrade and return its structured result."""
     from observal_cli import version_check
     from observal_cli.upgrade_lock import UpgradeLockError, acquire_lock, release_lock
 
-    compose_dir = _find_compose_dir()
+    compose_dir = _require_compose_dir()
     current = _get_current_server_version(compose_dir)
+    try:
+        Version(current)
+    except InvalidVersion as error:
+        fail(
+            ErrorCategory.VALIDATION,
+            "The current Docker server version is not configured.",
+            operation="Upgrade Docker server",
+            resource=str(_find_env_file(compose_dir)),
+            remediation="Set OBSERVAL_VERSION to the deployed version and retry.",
+            detail=repr(error),
+        )
 
-    # Resolve target version
     if version:
-        target = version
+        target = version.removeprefix("v")
     else:
         with console.status("Checking for latest version..."):
             rel = version_check._fetch_from_github()
         if not rel:
-            console.print("[red]Failed to fetch latest release from GitHub.[/red]")
-            raise typer.Exit(1)
-        target = rel["latest_version"]
+            fail(
+                ErrorCategory.UNAVAILABLE,
+                "The latest server release could not be resolved.",
+                operation="Upgrade Docker server",
+                resource="GitHub releases",
+                remediation="Check network access or provide --version explicitly.",
+            )
+        target = str(rel["latest_version"]).removeprefix("v")
+
+    try:
+        Version(target)
+    except InvalidVersion as error:
+        fail(
+            ErrorCategory.VALIDATION,
+            "The target server version is invalid.",
+            operation="Upgrade Docker server",
+            resource=target,
+            remediation="Provide a valid released version.",
+            detail=repr(error),
+        )
 
     if target == current:
-        console.print(f"[green]Already on v{current}.[/green]")
-        raise typer.Exit(0)
+        console.print(f"[green]Already on v{escape(current)}.[/green]")
+        return {"status": "current", "current_version": current, "target_version": target, "changed": False}
 
     # Verify image exists on GHCR before any state changes
     with console.status("Verifying image on GHCR..."):
         if not version_check.verify_server_image_exists(target):
-            console.print(f"[red]Image not found on GHCR: ghcr.io/observal/observal-api:{target}[/red]")
-            console.print("[dim]Check available versions with: observal server versions[/dim]")
-            raise typer.Exit(1)
+            fail(
+                ErrorCategory.NOT_FOUND,
+                "The target server image was not found.",
+                operation="Upgrade Docker server",
+                resource=f"ghcr.io/observal/observal-api:{target}",
+                remediation="Run observal server versions and choose an available version.",
+            )
 
     if dry_run:
         console.print(f"[dim]Dry run: would upgrade v{current} → v{target}[/dim]")
         console.print(f"[dim]  Pull: ghcr.io/observal/observal-api:{target}[/dim]")
         console.print(f"[dim]  Pull: ghcr.io/observal/observal-web:{target}[/dim]")
-        console.print(f"[dim]  Compose dir: {compose_dir}[/dim]")
-        raise typer.Exit(0)
+        console.print(f"[dim]  Compose dir: {escape(str(compose_dir))}[/dim]")
+        return {
+            "status": "planned",
+            "current_version": current,
+            "target_version": target,
+            "compose_directory": str(compose_dir),
+            "backup": not skip_backup,
+            "changed": False,
+        }
 
     if not force:
         console.print(f"  Current: [dim]v{current}[/dim]")
@@ -514,9 +676,15 @@ def server_upgrade(
 
     try:
         lock = acquire_lock("server")
-    except UpgradeLockError as e:
-        console.print(f"[red]{e}[/red]")
-        raise typer.Exit(1)
+    except UpgradeLockError as error:
+        fail(
+            ErrorCategory.CONFLICT,
+            "Another server upgrade operation is active.",
+            operation="Upgrade Docker server",
+            resource="server upgrade lock",
+            remediation="Wait for the active operation to finish, then retry.",
+            detail=repr(error),
+        )
 
     backup_path = None
     try:
@@ -526,12 +694,10 @@ def server_upgrade(
 
             console.print("[blue]==>[/blue] Creating backup...")
             backup_path = create_backup(compose_dir, current)
-            console.print(f"  Backup: {backup_path}")
+            console.print(f"  Backup: {escape(str(backup_path))}")
 
         # Pull new images
         console.print(f"[blue]==>[/blue] Pulling images for v{target}...")
-        import os
-
         env = {**os.environ, "OBSERVAL_VERSION": target}
         result = subprocess.run(
             ["docker", "compose", "pull"],
@@ -542,8 +708,14 @@ def server_upgrade(
             timeout=600,
         )
         if result.returncode != 0:
-            console.print(f"[red]Pull failed:[/red] {result.stderr[:200]}")
-            raise typer.Exit(1)
+            fail(
+                ErrorCategory.UNAVAILABLE,
+                "Docker image download failed.",
+                operation="Upgrade Docker server",
+                resource=f"server images v{target}",
+                remediation="Check Docker and registry access, then retry.",
+                detail=f"docker_returncode={result.returncode}",
+            )
 
         # Update .env
         _update_env_version(compose_dir, target)
@@ -558,10 +730,15 @@ def server_upgrade(
             timeout=300,
         )
         if result.returncode != 0:
-            console.print(f"[red]Container recreation failed:[/red] {result.stderr[:200]}")
-            # Rollback .env
             _update_env_version(compose_dir, current)
-            raise typer.Exit(1)
+            fail(
+                ErrorCategory.UNAVAILABLE,
+                "Docker container recreation failed.",
+                operation="Upgrade Docker server",
+                resource=str(compose_dir),
+                remediation="Inspect Docker Compose logs and retry.",
+                detail=f"docker_returncode={result.returncode}",
+            )
 
         # Health check
         console.print("[blue]==>[/blue] Health check...")
@@ -577,83 +754,154 @@ def server_upgrade(
                 if resp.status_code == 200:
                     healthy = True
                     break
-            except Exception:
+            except httpx.RequestError:
                 continue
 
         if not healthy:
             console.print("[red]Health check failed! Rolling back...[/red]")
             _update_env_version(compose_dir, current)
-            subprocess.run(
+            rollback = subprocess.run(
                 ["docker", "compose", "up", "-d"],
                 cwd=compose_dir,
                 capture_output=True,
                 timeout=300,
             )
-            raise typer.Exit(1)
+            fail(
+                ErrorCategory.UNAVAILABLE,
+                "The upgraded server failed its health check.",
+                operation="Upgrade Docker server",
+                resource=_get_health_url(compose_dir),
+                remediation="Inspect Docker Compose logs; the previous version was requested again.",
+                detail=f"rollback_returncode={rollback.returncode}",
+            )
 
         console.print(f"[green]✓ Upgraded to v{target}[/green]")
         if backup_path:
-            console.print(f"  Backup: {backup_path}")
+            console.print(f"  Backup: {escape(str(backup_path))}")
         console.print("  Rollback: [dim]observal server rollback[/dim]")
+        return {
+            "status": "upgraded",
+            "current_version": current,
+            "target_version": target,
+            "backup": str(backup_path) if backup_path else None,
+            "compose_directory": str(compose_dir),
+            "changed": True,
+        }
 
     finally:
         release_lock(lock)
 
 
-@server_app.command(name="rollback")
-def server_rollback(
-    from_backup: str | None = typer.Option(
-        None, "--from-backup", help="Path to a specific backup directory to restore from"
-    ),
-    force: bool = typer.Option(False, "--force", "-f", help="Skip interactive confirmation prompt"),
+@server_app.command(name="upgrade")
+def server_upgrade(
+    version: str | None = typer.Option(None, "--version", "-v", help="Target version; defaults to latest"),
+    skip_backup: bool = typer.Option(False, "--skip-backup", help="Skip pre-upgrade PostgreSQL backup"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show the plan without applying changes"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip interactive confirmation"),
+    output: Annotated[
+        OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
+    ] = OutputMode.table,
 ) -> None:
-    """Rollback the server to a previous version from backup.
+    """Upgrade a local Docker deployment.
 
-    Restores the database from the most recent backup (or a specified one),
-    reverts the Docker images, and recreates containers. Runs a health check
-    after rollback.
-
-    Requires super_admin role.
+    JSON mutation requires explicit confirmation. Dry run is read-only.
 
     Examples:
-        observal server rollback
-        observal server rollback --from-backup ~/.observal/backups/v0.7.0-20260521T120000
-        observal server rollback --force
+        observal server upgrade --dry-run --output json
+        observal server upgrade --version 1.2.3 --force --output json
     """
-    optic.trace("from_backup={}, force={}", from_backup, force)
-    _require_super_admin()
-    from observal_cli.server.backup import list_backups, restore_backup
+    if _is_json(output) and not dry_run and not force:
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON upgrade requires explicit confirmation.",
+            operation="Upgrade Docker server",
+            resource="Docker deployment",
+            remediation="Pass --force and retry.",
+        )
+    try:
+        with _quiet_output(output):
+            result = _server_upgrade(version, skip_backup, dry_run, force)
+    except (RuntimeError, subprocess.SubprocessError) as error:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            "The Docker server upgrade could not complete.",
+            operation="Upgrade Docker server",
+            resource="local Docker deployment",
+            remediation="Check Docker, local storage, and network access, then retry.",
+            detail=repr(error),
+        )
+    if _is_json(output):
+        output_json(result)
+
+
+def _server_rollback(from_backup: str | None, force: bool) -> dict:
+    """Restore PostgreSQL and Docker image version from one managed backup."""
+    from observal_cli.server.backup import BACKUPS_DIR, list_backups, restore_backup
     from observal_cli.upgrade_lock import UpgradeLockError, acquire_lock, release_lock
 
-    compose_dir = _find_compose_dir()
+    compose_dir = _require_compose_dir()
     current = _get_current_server_version(compose_dir)
 
     backups = list_backups()
     if not backups and not from_backup:
-        console.print("[red]No backups found. Cannot rollback.[/red]")
-        raise typer.Exit(1)
+        fail(
+            ErrorCategory.NOT_FOUND,
+            "No managed server backups were found.",
+            operation="Rollback Docker server",
+            resource=str(BACKUPS_DIR),
+            remediation="Upgrade with backups enabled before attempting rollback.",
+        )
 
-    backup_dir = Path(from_backup) if from_backup else Path(backups[0]["path"])
+    backup_dir = (Path(from_backup).expanduser() if from_backup else Path(backups[0]["path"])).resolve()
+    managed_root = BACKUPS_DIR.resolve()
+    if not backup_dir.is_relative_to(managed_root):
+        fail(
+            ErrorCategory.PERMISSION,
+            "The backup path is outside the managed backup directory.",
+            operation="Rollback Docker server",
+            resource=str(backup_dir),
+            remediation=f"Choose a backup under {managed_root}.",
+        )
+    if not backup_dir.is_dir() or not (backup_dir / "pg.dump").is_file():
+        fail(
+            ErrorCategory.NOT_FOUND,
+            "The managed PostgreSQL backup was not found.",
+            operation="Rollback Docker server",
+            resource=str(backup_dir),
+            remediation="Run observal server versions to list available backups.",
+        )
 
-    if not backup_dir.exists():
-        console.print(f"[red]Backup not found: {backup_dir}[/red]")
-        raise typer.Exit(1)
-
-    # Extract version from backup dir name (e.g., v0.7.0-20260521T120000)
-    prev_version = backup_dir.name.split("-")[0].lstrip("v")
+    prev_version = backup_dir.name.split("-")[0].removeprefix("v")
+    try:
+        Version(prev_version)
+    except InvalidVersion as error:
+        fail(
+            ErrorCategory.VALIDATION,
+            "The backup directory does not identify a valid server version.",
+            operation="Rollback Docker server",
+            resource=str(backup_dir),
+            remediation="Choose a backup created by observal server upgrade.",
+            detail=repr(error),
+        )
 
     if not force:
         console.print(f"  Current: [dim]v{current}[/dim]")
         console.print(f"  Rollback to: [yellow]v{prev_version}[/yellow]")
-        console.print(f"  Backup: [dim]{backup_dir}[/dim]")
+        console.print(f"  Backup: [dim]{escape(str(backup_dir))}[/dim]")
         if not typer.confirm("\nProceed with rollback?"):
             raise typer.Abort()
 
     try:
         lock = acquire_lock("server")
-    except UpgradeLockError as e:
-        console.print(f"[red]{e}[/red]")
-        raise typer.Exit(1)
+    except UpgradeLockError as error:
+        fail(
+            ErrorCategory.CONFLICT,
+            "Another server upgrade operation is active.",
+            operation="Rollback Docker server",
+            resource="server upgrade lock",
+            remediation="Wait for the active operation to finish, then retry.",
+            detail=repr(error),
+        )
 
     try:
         # Restore database
@@ -665,12 +913,21 @@ def server_rollback(
 
         # Recreate containers with previous images
         console.print("[blue]==>[/blue] Recreating containers...")
-        subprocess.run(
+        recreate = subprocess.run(
             ["docker", "compose", "up", "-d"],
             cwd=compose_dir,
             capture_output=True,
             timeout=300,
         )
+        if recreate.returncode != 0:
+            fail(
+                ErrorCategory.UNAVAILABLE,
+                "Docker container recreation failed after restoring PostgreSQL.",
+                operation="Rollback Docker server",
+                resource=str(compose_dir),
+                remediation="Inspect Docker Compose logs before retrying.",
+                detail=f"docker_returncode={recreate.returncode}",
+            )
 
         # Health check
         import time
@@ -686,74 +943,133 @@ def server_rollback(
                 if resp.status_code == 200:
                     healthy = True
                     break
-            except Exception:
+            except httpx.RequestError:
                 continue
 
-        if healthy:
-            console.print(f"[green]✓ Rolled back to v{prev_version}[/green]")
-        else:
-            console.print("[yellow]⚠ Rollback complete but health check didn't pass.[/yellow]")
-            console.print("  Check logs: [dim]docker compose logs -f[/dim]")
-
+        if not healthy:
+            fail(
+                ErrorCategory.UNAVAILABLE,
+                "Rollback completed but the server is unhealthy.",
+                operation="Rollback Docker server",
+                resource=_get_health_url(compose_dir),
+                remediation="Inspect Docker Compose logs before taking further action.",
+            )
+        console.print(f"[green]✓ Rolled back to v{prev_version}[/green]")
+        console.print("[yellow]ClickHouse telemetry was not restored.[/yellow]")
+        return {
+            "status": "rolled_back",
+            "from_version": current,
+            "to_version": prev_version,
+            "backup": str(backup_dir),
+            "postgres_restored": True,
+            "clickhouse_restored": False,
+            "healthy": True,
+        }
     finally:
         release_lock(lock)
 
 
+@server_app.command(name="rollback")
+def server_rollback(
+    from_backup: str | None = typer.Option(None, "--from-backup", help="Managed backup directory to restore"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip interactive confirmation"),
+    output: Annotated[
+        OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
+    ] = OutputMode.table,
+) -> None:
+    """Restore PostgreSQL and the Docker image version from backup.
+
+    ClickHouse telemetry is left unchanged. JSON mode requires explicit confirmation.
+
+    Examples:
+        observal server rollback --force --output json
+        observal server rollback --from-backup ~/.observal/backups/v1.2.2-20260521T120000 --force
+    """
+    if _is_json(output) and not force:
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON rollback requires explicit confirmation.",
+            operation="Rollback Docker server",
+            resource="Docker deployment",
+            remediation="Pass --force and retry.",
+        )
+    try:
+        with _quiet_output(output):
+            result = _server_rollback(from_backup, force)
+    except (RuntimeError, subprocess.SubprocessError) as error:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            "The Docker server rollback could not complete.",
+            operation="Rollback Docker server",
+            resource="local Docker deployment",
+            remediation="Check Docker and the managed backup, then retry.",
+            detail=repr(error),
+        )
+    if _is_json(output):
+        output_json(result)
+
+
 @server_app.command(name="versions")
-def server_versions() -> None:
-    """List available server versions from GHCR and local backup status.
-
-    Shows the current running version, available versions on the container
-    registry, and which versions have local database backups.
-
-    Requires super_admin role.
+def server_versions(
+    output: Annotated[
+        OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
+    ] = OutputMode.table,
+) -> None:
+    """List Docker image versions and managed PostgreSQL backups.
 
     Examples:
         observal server versions
+        observal server versions --output json
     """
-    _require_super_admin()
     from observal_cli import version_check
     from observal_cli.server.backup import list_backups
 
-    compose_dir = _find_compose_dir()
+    compose_dir = _require_compose_dir()
     current = _get_current_server_version(compose_dir)
-
-    # Fetch available from GHCR
-    with console.status("Fetching available versions from GHCR..."):
+    with _quiet_output(output):
         available = version_check.fetch_available_server_images()
-
+    if not available:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            "Available server versions could not be loaded.",
+            operation="List Docker server versions",
+            resource="GHCR server images",
+            remediation="Check network and GHCR access, then retry.",
+        )
     backups = list_backups()
-    backup_versions = {b["name"].split("-")[0].lstrip("v"): b for b in backups}
-
+    backup_versions = {item["name"].split("-")[0].removeprefix("v"): item for item in backups}
+    versions = []
+    for version in ([current] if current != "unknown" else []) + available[:10]:
+        if any(item["version"] == version for item in versions):
+            continue
+        backup = backup_versions.get(version)
+        versions.append(
+            {
+                "version": version,
+                "current": version == current,
+                "image_available": version in available,
+                "backup": backup,
+            }
+        )
+    payload = {
+        "current_version": None if current == "unknown" else current,
+        "image_repository": "ghcr.io/observal/observal-{api,web}",
+        "versions": versions,
+    }
+    if _is_json(output):
+        output_json(payload)
+        return
     table = Table(title="Server Versions")
     table.add_column("Version", style="bold")
     table.add_column("Status")
     table.add_column("GHCR")
-    table.add_column("Backup")
-
-    # Show current + available
-    shown = set()
-    if current != "unknown":
-        backup_info = backup_versions.get(current, {})
+    table.add_column("PostgreSQL backup")
+    for item in versions:
+        backup = item["backup"]
         table.add_row(
-            current,
-            "[green]← current[/green]",
-            "✓" if current in available else "-",
-            f"{backup_info.get('size_mb', 0)} MB" if backup_info else "-",
+            escape(item["version"]),
+            "[green]← current[/green]" if item["current"] else "",
+            "✓" if item["image_available"] else "-",
+            f"{backup.get('size_mb', 0)} MB" if backup else "-",
         )
-        shown.add(current)
-
-    for ver in available[:10]:
-        if ver in shown:
-            continue
-        backup_info = backup_versions.get(ver, {})
-        table.add_row(
-            ver,
-            "",
-            "✓",
-            f"{backup_info.get('size_mb', 0)} MB" if backup_info else "-",
-        )
-        shown.add(ver)
-
     console.print(table)
-    console.print(f"\n  Current: v{current} | Images: ghcr.io/observal/observal-{{api,web}}")

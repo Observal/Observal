@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn>
 # SPDX-License-Identifier: Apache-2.0
 
 """Pi harness adapter for scanning and hook detection."""
@@ -9,6 +10,7 @@ import json
 from pathlib import Path
 
 from observal_cli.harness import (
+    BundledSkillPlan,
     DiscoveredMcp,
     DiscoveredSkill,
     HookSpec,
@@ -27,13 +29,28 @@ class PiAdapter(BaseAdapter):
     Hooks are delivered as the observal-pi package.
     """
 
-    home_markers = (".pi/agent",)
+    home_markers = (".pi",)
     managed_agent_profiles = ("user:AGENTS.md",)
     managed_skills = ("user:skills/{name}/SKILL.md",)
 
     @property
     def harness_name(self) -> str:
         return "pi"
+
+    def plan_bundled_skill_install(
+        self,
+        skill_name: str,
+        home: Path,
+        installed_harnesses: frozenset[str],
+    ) -> BundledSkillPlan:
+        """Share bundled skills with Codex instead of creating Pi duplicates."""
+        native = home / ".pi" / "agent" / "skills" / skill_name / "SKILL.md"
+        shared = home / ".agents" / "skills" / skill_name / "SKILL.md"
+        return BundledSkillPlan(
+            target=shared if "codex" in installed_harnesses else native,
+            reuse_candidates=(shared,),
+            cleanup_candidates=(native,),
+        )
 
     # ── Scanning ──────────────────────────────────────────────
 

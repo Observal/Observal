@@ -1,119 +1,92 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# observal config
+# `observal config`
 
-Local CLI configuration. Config lives in `~/.observal/config.json`; aliases in `~/.observal/aliases.json`.
+Manage local CLI configuration. Configuration lives in `~/.observal/config.json`; aliases live in `~/.observal/aliases.json`. Both files are written atomically with mode `0600`.
 
-## Subcommands
+## Commands
 
 | Command | Description |
 | --- | --- |
-| [`config show`](#observal-config-show) | Show current config (API key masked) |
-| [`config set`](#observal-config-set) | Set a config value |
-| [`config path`](#observal-config-path) | Print the config file path |
-| [`config alias`](#observal-config-alias) | Create a shorthand for an ID |
-| [`config aliases`](#observal-config-aliases) | List all aliases |
+| `observal config show` | Show effective configuration without exposing credentials |
+| `observal config set` | Set a validated user-managed value |
+| `observal config path` | Print the configuration file path |
+| `observal config alias` | Set or remove a local reference alias |
+| `observal config aliases` | List local aliases |
 
----
+Every command supports explicit table and JSON output. Human-readable table output is the default. `config path` preserves a bare path in table mode for shell composition.
 
-## `observal config show`
-
-Dumps your current config, with the API key masked.
+## Show configuration
 
 ```bash
 observal config show
+observal config show --output json
 ```
 
-Example:
+Token values and fragments are never displayed. Output reports only whether access, refresh, or harness-hook credentials are configured. Environment overrides are included because the command shows effective configuration.
 
-```
-server_url:    https://observal.your-company.internal
-access_token:  ey••••••••••••••••••••6e
-user_id:       f9f3...
-user_name:     alice@example.com
-output:        table
-color:         auto
-timeout:       30
-```
-
----
-
-## `observal config set`
-
-Set one config key.
-
-### Synopsis
+## Set configuration
 
 ```bash
-observal config set <key> <value>
+observal config set server_url https://observal.example.com
+observal config set timeout 60 --output json
+observal config set update_check false
+observal config set update_check_interval 86400
+observal config set update_check_repo Observal/Observal
 ```
 
-### Common keys
+Only these user-managed keys are accepted:
 
-| Key | Purpose |
+| Key | Accepted value |
 | --- | --- |
-| `server_url` | Observal server base URL |
-| `output` | Default output format: `table`, `json`, `plain` |
-| `color` | `auto`, `always`, `never` |
-| `timeout` | HTTP timeout in seconds |
+| `server_url` | HTTP or HTTPS URL without embedded credentials |
+| `timeout` | Positive integer seconds |
+| `update_check` | `true`, `false`, `yes`, `no`, `on`, `off`, `1`, or `0` |
+| `update_check_interval` | Integer seconds, minimum 60 |
+| `update_check_repo` | `owner/repository` or an empty string |
 
-Example:
+Authentication and identity fields are managed by `observal auth` and cannot be set here. The removed `output` and `color` settings had no runtime consumers. Select JSON explicitly for each command.
 
-```bash
-observal config set server_url https://observal.your-company.internal
-observal config set timeout 60
-```
+JSON output distinguishes the persisted value from the effective value, which may be overridden by an environment variable.
 
-Login-managed keys (`access_token`, `refresh_token`, `user_id`, `user_name`) are updated by `observal auth login`, not by `config set`.
-
----
-
-## `observal config path`
-
-Print the path to the config file.
+## Configuration path
 
 ```bash
 observal config path
-# /Users/alice/.observal/config.json
+observal config path --output json
 ```
 
----
+Table mode prints only the absolute path. JSON includes the path and whether the file currently exists.
 
-## `observal config alias`
-
-Create a shorthand for a long ID. Use the alias anywhere a `<id-or-name>` is accepted, prefixed with `@`.
-
-### Synopsis
+## Set or remove an alias
 
 ```bash
-observal config alias <name> <id>
+observal config alias reviewer alice/reviewer
+observal config alias reviewer alice/reviewer --output json
+observal config alias reviewer
 ```
 
-### Example
+Alias names must start with a letter and may contain letters, numbers, dots, underscores, and hyphens, up to 64 characters. Targets may be UUIDs, canonical `namespace/slug` identities, names, or other references accepted by the destination command.
 
-```bash
-observal config alias my-mcp 498c17ac-1234-4567-89ab-cdef01234567
+Omitting the target removes the alias. Removing an already absent alias is an idempotent success with `changed` set to `false` in JSON.
 
-observal registry mcp show @my-mcp
-observal ops metrics @my-mcp --type mcp
-```
-
-Aliases live in `~/.observal/aliases.json`. They're local to your machine.
-
----
-
-## `observal config aliases`
-
-List every alias you've created.
+## List aliases
 
 ```bash
 observal config aliases
-# @my-mcp     → 498c17ac-1234-4567-89ab-cdef01234567
-# @reviewer   → a01c5-...
+observal config aliases --output json
 ```
+
+JSON returns an `items` array and `total`. Empty output preserves the same shape.
+
+## Environment overrides
+
+Environment values take precedence over persisted values for the current invocation. `config set` changes the file but does not replace an active environment override.
+
+See [Environment variables](../reference/environment-variables.md) for supported overrides.
 
 ## Related
 
-* [Config files](../reference/config-files.md): full schema of `~/.observal/`
-* [Environment variables](../reference/environment-variables.md): env-var overrides
+* [Config files](../reference/config-files.md): local file schemas and permissions
+* [`observal auth`](auth.md): authentication-managed values

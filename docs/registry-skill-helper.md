@@ -50,10 +50,10 @@ Reference supporting files from `SKILL.md` only when they are useful. Keep the m
 
 ## CLI example
 
-Run the submit command with the example flag to print ready-to-edit examples:
+Submit a skill directly from its `SKILL.md` file:
 
 ```bash
-observal registry skill submit --example
+observal registry skill submit --skill-md ./SKILL.md --git-url https://github.com/org/repo
 ```
 
 ## Sources

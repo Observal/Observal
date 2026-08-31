@@ -54,14 +54,20 @@ class Orchestrator:
     """Manages lifecycle of all embedded services."""
 
     def __init__(self, *, port: int = API_PORT, host: str = "127.0.0.1"):
-        self.port = port
-        self.host = host
         self.bins = get_bin_paths()
         self.pids = get_pid_paths()
+        active_port_file = RUN_DIR / "api.port"
+        if port == API_PORT and active_port_file.exists():
+            try:
+                port = int(active_port_file.read_text().strip())
+            except (OSError, ValueError):
+                pass
+        self.port = port
+        self.host = host
         self.data = get_data_paths()
         self._processes: dict[str, subprocess.Popen] = {}
         self._log_handles: list = []
-        self._secrets = self._load_or_create_secrets()
+        self._secrets: dict[str, str] | None = None
 
     # ── Secrets management ─────────────────────────────────────
 
@@ -109,6 +115,8 @@ class Orchestrator:
 
     def _build_env(self) -> dict[str, str]:
         """Build environment variables for the FastAPI server."""
+        if self._secrets is None:
+            self._secrets = self._load_or_create_secrets()
         env = os.environ.copy()
         env.update(
             {
@@ -490,6 +498,7 @@ class Orchestrator:
             )
             self._processes["api"] = proc
             self.pids["api"].write_text(str(proc.pid))
+            (RUN_DIR / "api.port").write_text(str(self.port))
             return None
         else:
             log_handle = (LOG_DIR / "api.log").open("a")
@@ -504,6 +513,7 @@ class Orchestrator:
             )
             self._processes["api"] = proc
             self.pids["api"].write_text(str(proc.pid))
+            (RUN_DIR / "api.port").write_text(str(self.port))
             return proc
 
     def _find_server_dir(self) -> Path:
@@ -565,6 +575,7 @@ class Orchestrator:
             except (ProcessLookupError, ValueError):
                 pass
             pid_file.unlink(missing_ok=True)
+        (RUN_DIR / "api.port").unlink(missing_ok=True)
 
         if "api" in self._processes:
             proc = self._processes.pop("api")
@@ -581,41 +592,32 @@ class Orchestrator:
         return not self._pg_is_initialized()
 
     def run_migrations(self) -> None:
-        """Run database migrations (Alembic)."""
+        """Apply PostgreSQL and ClickHouse migrations before API startup."""
         env = self._build_env()
         server_dir = self._find_server_dir()
         python = self._find_python()
-        alembic_ini = server_dir / "alembic.ini"
+        if not (server_dir / "alembic.ini").exists():
+            raise ServiceError(f"Cannot find Alembic configuration in {server_dir}")
 
-        if not alembic_ini.exists():
-            console.print("[yellow]Warning:[/yellow] No alembic.ini found, skipping migrations")
-            return
-
-        console.print("[blue]==>[/blue] Running database migrations...")
-
-        result = subprocess.run(
-            [python, "-m", "alembic", "upgrade", "head"],
-            cwd=str(server_dir),
-            env=env,
-            capture_output=True,
-            text=True,
+        commands = (
+            ([python, "-m", "alembic", "upgrade", "head"], "PostgreSQL"),
+            ([python, "-m", "services.clickhouse.migrations"], "ClickHouse"),
         )
-
-        if result.returncode != 0:
-            # On first run, stamp head instead
-            if "Can't locate revision" in result.stderr or "Target database is not up to date" in result.stderr:
-                subprocess.run(
-                    [python, "-m", "alembic", "stamp", "head"],
-                    cwd=str(server_dir),
-                    env=env,
-                    capture_output=True,
-                )
-            else:
-                console.print(f"[yellow]Warning:[/yellow] Migration issue: {result.stderr[:200]}")
+        for command, database in commands:
+            console.print(f"[blue]==>[/blue] Running {database} migrations...")
+            result = subprocess.run(
+                command,
+                cwd=str(server_dir),
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                raise ServiceError(f"{database} migration failed: {result.stderr[:200]}")
 
     # ── Auto-bootstrap ─────────────────────────────────────────
 
-    def _auto_bootstrap(self) -> None:
+    def _auto_bootstrap(self) -> dict | None:
         """Bootstrap the admin user after API is healthy.
 
         Waits for the API to respond on /livez (simple liveness, no DB check),
@@ -636,39 +638,52 @@ class Orchestrator:
             time.sleep(0.5)
         else:
             console.print("[yellow]Warning:[/yellow] API did not become ready for bootstrap")
-            return
+            return None
 
         # Call bootstrap
         try:
             resp = httpx.post(f"{base_url}/api/v1/auth/bootstrap", timeout=10)
             if resp.status_code == 200:
+                payload = resp.json()
+                if not isinstance(payload, dict) or not payload.get("access_token") or not payload.get("refresh_token"):
+                    console.print("[yellow]Warning:[/yellow] Bootstrap returned invalid credentials")
+                    return None
                 console.print("[green]\u2713[/green] Admin user created")
-            elif resp.status_code == 400:
-                pass  # Already initialized - fine
-            else:
+                return payload
+            if resp.status_code != 400:
                 console.print(f"[yellow]Warning:[/yellow] Bootstrap returned {resp.status_code}")
-        except (httpx.ConnectError, httpx.ReadTimeout):
-            console.print("[yellow]Warning:[/yellow] Could not reach API for bootstrap")
+        except (httpx.ConnectError, httpx.ReadTimeout, ValueError):
+            console.print("[yellow]Warning:[/yellow] Could not complete API bootstrap")
+        return None
 
-    def _configure_cli(self) -> None:
-        """Auto-configure CLI config to point at this embedded server.
-
-        Sets server_url and a placeholder access_token so CLI commands
-        (observal agent list, etc.) work without manual `observal auth login`.
-        """
-        from observal_cli.config import load, save
+    def _configure_cli(self, credentials: dict | None) -> None:
+        """Point the CLI at the embedded server and persist real bootstrap tokens."""
+        from observal_cli.config import load, remove, save
 
         cfg = load()
         target_url = f"http://localhost:{self.port}"
-        if cfg.get("server_url") != target_url or not cfg.get("access_token"):
-            save({"server_url": target_url, "access_token": "embedded", "api_key": "embedded"})
+        if cfg.get("server_url") == target_url and not credentials:
+            return
+        if cfg.get("server_url") != target_url:
+            remove("access_token", "refresh_token", "api_key")
+        values = {"server_url": target_url}
+        if credentials:
+            user = credentials.get("user")
+            values.update(
+                access_token=credentials["access_token"],
+                refresh_token=credentials["refresh_token"],
+                user_id=str(user.get("id", "")) if isinstance(user, dict) else "",
+            )
+        save(values)
 
-    def _install_hooks(self) -> None:
+    def _install_hooks(self) -> list[str]:
         """Install harness telemetry hooks (Claude Code, Kiro, etc.) if not already present.
 
         Runs the equivalent of `observal doctor patch --all-harnesses` non-interactively.
         This ensures traces flow to the embedded server without manual setup.
         """
+        warnings: list[str] = []
+
         # Claude Code hooks
         claude_dir = Path.home() / ".claude"
         if claude_dir.is_dir():
@@ -680,8 +695,9 @@ class Orchestrator:
                 changes = settings_reconciler.reconcile(desired_hooks, {}, dry_run=False)
                 if changes:
                     console.print("[green]\u2713[/green] Claude Code hooks installed")
-            except Exception:
-                pass  # Non-fatal - user can run `observal doctor patch` manually
+            except Exception as error:
+                optic.warning("Claude Code hook installation failed: {}", error)
+                warnings.append("Claude Code hooks were not installed; run observal doctor patch.")
 
         # Kiro hooks
         kiro_agents_dir = Path.home() / ".kiro" / "agents"
@@ -691,8 +707,10 @@ class Orchestrator:
 
                 if _patch_kiro(dry_run=False):
                     console.print("[green]\u2713[/green] Kiro hooks installed")
-            except Exception:
-                pass
+            except Exception as error:
+                optic.warning("Kiro hook installation failed: {}", error)
+                warnings.append("Kiro hooks were not installed; run observal doctor patch.")
+        return warnings
 
     # ── Full lifecycle ─────────────────────────────────────────
 
@@ -717,16 +735,17 @@ class Orchestrator:
 
             self.run_migrations()
 
-            self.start_api(foreground=not foreground)
+            self.start_api(foreground=foreground)
 
             # Auto-bootstrap admin user for embedded mode
-            self._auto_bootstrap()
+            credentials = self._auto_bootstrap()
 
             # Auto-configure CLI to point at this server
-            self._configure_cli()
+            self._configure_cli(credentials)
 
             # Install harness hooks for telemetry (non-interactive)
-            self._install_hooks()
+            for warning in self._install_hooks():
+                console.print(f"[yellow]Warning:[/yellow] {warning}")
 
             console.print()
             console.print("[bold green]\u2713 Observal is running![/bold green]")
@@ -749,11 +768,13 @@ class Orchestrator:
                     console.print("\n[yellow]Shutting down...[/yellow]")
                     self.stop_all()
 
-        except (ServiceError, Exception) as e:
-            console.print(f"\n[red]Error:[/red] {e}")
+        except Exception as error:
+            console.print(f"\n[red]Error:[/red] {error}")
             console.print("[yellow]Cleaning up...[/yellow]")
             self.stop_all()
-            raise SystemExit(1)
+            if isinstance(error, ServiceError):
+                raise
+            raise ServiceError(str(error)) from error
 
     def stop_all(self) -> None:
         """Stop all services in reverse order."""
@@ -808,19 +829,22 @@ class Orchestrator:
             statuses["clickhouse"] = "stopped"
 
         # Redis
-        result = subprocess.run(
-            [
-                str(self.bins["redis_cli"]),
-                "-h",
-                "127.0.0.1",
-                "-p",
-                str(REDIS_PORT),
-                "ping",
-            ],
-            capture_output=True,
-            text=True,
-        )
-        statuses["redis"] = "running" if "PONG" in (result.stdout or "") else "stopped"
+        if self.bins["redis_cli"].exists():
+            result = subprocess.run(
+                [
+                    str(self.bins["redis_cli"]),
+                    "-h",
+                    "127.0.0.1",
+                    "-p",
+                    str(REDIS_PORT),
+                    "ping",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            statuses["redis"] = "running" if "PONG" in (result.stdout or "") else "stopped"
+        else:
+            statuses["redis"] = "not initialized"
 
         # API
         try:
@@ -844,7 +868,11 @@ class Orchestrator:
         console.print("[yellow]==>[/yellow] Wiping data directories...")
         import shutil
 
+        data_root = DATA_DIR.resolve()
         for path in self.data.values():
+            resolved = path.resolve()
+            if not resolved.is_relative_to(data_root):
+                raise ServiceError(f"Refusing to delete unmanaged path: {resolved}")
             if path.exists():
                 shutil.rmtree(path)
 

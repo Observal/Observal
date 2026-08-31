@@ -211,7 +211,7 @@ class TestInspectShowFlag:
             app, ["doctor", "support", "inspect", str(bundle_path), "--show", "nonexistent/file.json"]
         )
 
-        assert result.exit_code == 1
+        assert result.exit_code == 5
         assert "not found" in result.output.lower() or "File not found" in result.output
         # Should list available files
         assert "versions/app.json" in result.output
@@ -228,7 +228,7 @@ class TestInspectShowFlag:
 
         result = runner.invoke(app, ["doctor", "support", "inspect", str(bundle_path), "--show", "does-not-exist.txt"])
 
-        assert result.exit_code == 1
+        assert result.exit_code == 5
         # All real files should be listed as available
         for f in ["versions/app.json", "health/postgres.json", "config/config.json", "bundle_manifest.json"]:
             assert f in result.output, f"Expected '{f}' in available files listing"
@@ -246,8 +246,8 @@ class TestInspectMissingBundle:
 
         result = runner.invoke(app, ["doctor", "support", "inspect", str(fake_path)])
 
-        assert result.exit_code == 1
-        assert "not found" in result.output.lower() or "Bundle not found" in result.output
+        assert result.exit_code == 5
+        assert "not found" in result.output.lower() or "Support bundle not found" in result.output
 
 
 # ── Invalid tar.gz ───────────────────────────────────────────────────
@@ -263,7 +263,7 @@ class TestInspectInvalidArchive:
 
         result = runner.invoke(app, ["doctor", "support", "inspect", str(bad_file)])
 
-        assert result.exit_code == 1
+        assert result.exit_code == 7
         assert "cannot open" in result.output.lower() or "Cannot open" in result.output
 
     def test_empty_file_exits_1(self, tmp_path):
@@ -273,7 +273,7 @@ class TestInspectInvalidArchive:
 
         result = runner.invoke(app, ["doctor", "support", "inspect", str(empty_file)])
 
-        assert result.exit_code == 1
+        assert result.exit_code == 7
 
 
 # ── Missing manifest ────────────────────────────────────────────────
@@ -292,8 +292,8 @@ class TestInspectMissingManifest:
 
         result = runner.invoke(app, ["doctor", "support", "inspect", str(bundle_path)])
 
-        assert result.exit_code == 1
-        assert "missing" in result.output.lower() or "malformed" in result.output.lower()
+        assert result.exit_code == 7
+        assert "missing" in result.output.lower() or "regular file" in result.output.lower()
 
     def test_malformed_manifest_exits_1(self, tmp_path):
         """A bundle with invalid JSON in bundle_manifest.json should exit 1."""
@@ -304,8 +304,8 @@ class TestInspectMissingManifest:
 
         result = runner.invoke(app, ["doctor", "support", "inspect", str(bundle_path)])
 
-        assert result.exit_code == 1
-        assert "missing" in result.output.lower() or "malformed" in result.output.lower()
+        assert result.exit_code == 7
+        assert "malformed" in result.output.lower()
 
 
 # ── Schema version warnings ─────────────────────────────────────────
@@ -421,3 +421,47 @@ class TestInspectNoExtraction:
         assert result.exit_code == 0
         after = set(work_dir.iterdir())
         assert before == after, "--show should not extract files to disk"
+
+
+def test_inspect_json_returns_manifest_files_and_requested_content(tmp_path):
+    bundle_path = _create_bundle(
+        tmp_path / "bundle.tar.gz",
+        files={"versions/app.json": b'{"version":"1.0.0"}'},
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "doctor",
+            "support",
+            "inspect",
+            str(bundle_path),
+            "--show",
+            "versions/app.json",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["manifest"]["bundle_schema_version"] == "1"
+    assert {item["path"] for item in data["files"]} == {"bundle_manifest.json", "versions/app.json"}
+    assert data["shown"] == {"path": "versions/app.json", "content": '{"version":"1.0.0"}'}
+    assert "Bundle contents" not in result.stdout
+
+
+def test_inspect_rejects_large_show_member(tmp_path):
+    bundle_path = _create_bundle(
+        tmp_path / "large.tar.gz",
+        files={"logs/recent.ndjson": b"x" * (1024 * 1024 + 1)},
+    )
+
+    result = runner.invoke(
+        app,
+        ["doctor", "support", "inspect", str(bundle_path), "--show", "logs/recent.ndjson", "--output", "json"],
+    )
+
+    assert result.exit_code == 7
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["error"]["category"] == "validation"

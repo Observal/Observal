@@ -11,18 +11,20 @@ Every command available in the installed CLI. This block is generated from the T
 
 **Root commands**
 
-- `observal outdated`: Show installed components that have newer versions available.
+- `observal api`: Call an authenticated Observal JSON API endpoint.
+- `observal outdated`: Show installed agents and standalone components with their registry status.
+- `observal reconcile`: Backfill local session records missed by automatic hook delivery
 - `observal scan`: Show a read-only inventory of your local harness setup.
 
-**`observal admin`**: Admin commands
+**`observal admin`**: Core administration and submission review commands
 
-- `observal admin review`: Admin review commands
-  - `observal admin review approve`: Approve a submission (component, agent, or bundle).
-  - `observal admin review list`: List pending submissions awaiting admin review.
-  - `observal admin review reject`: Reject a submission (component, agent, or bundle).
-  - `observal admin review show`: Show review details for a component or agent.
-- `observal admin audit-log`: Query the audit log.
-- `observal admin audit-log-export`: Export audit log as CSV.
+- `observal admin review`: Submission review commands
+  - `observal admin review approve`: Approve a component, Agent, or bundle submission.
+  - `observal admin review list`: List pending submissions awaiting review.
+  - `observal admin review reject`: Reject a component, Agent, or bundle submission.
+  - `observal admin review show`: Show review details for a component or Agent.
+- `observal admin audit-log`: Query the compliance audit log.
+- `observal admin audit-log-export`: Export the compliance audit log as CSV or JSON.
 - `observal admin cache-clear`: Clear all server caches.
 - `observal admin create-user`: Create a new user account. Requires admin privileges.
 - `observal admin delete-user`: Delete a user account. Requires admin privileges.
@@ -71,25 +73,25 @@ Every command available in the installed CLI. This block is generated from the T
 - `observal auth login`: Connect to Observal.
 - `observal auth logout`: Clear saved credentials.
 - `observal auth whoami`: Show current authenticated user.
-- `observal auth status`: Check server connectivity and health.
+- `observal auth status`: Check authenticated server connectivity and local outbox health.
 - `observal auth change-password`: Change your password.
 - `observal auth set-username`: Set or update your username.
 
 **`observal config`**: CLI configuration
 
-- `observal config alias`: Set or remove an alias for an MCP/agent ID.
-- `observal config aliases`: List all aliases.
-- `observal config path`: Show config file path.
-- `observal config set`: Set a CLI config value.
-- `observal config show`: Show current CLI configuration.
+- `observal config alias`: Set or remove a local registry reference alias.
+- `observal config aliases`: List all local aliases.
+- `observal config path`: Show the config file path.
+- `observal config set`: Set a validated user-managed CLI setting.
+- `observal config show`: Show effective CLI configuration without exposing credentials.
 
 **`observal doctor`**: Diagnose and patch harness settings for Observal telemetry
 
 - `observal doctor support`: Generate and inspect diagnostic support bundles. Bundles contain no customer data or row contents.
   - `observal doctor support bundle`: Generate a diagnostic support bundle. No customer data or row contents included.
-  - `observal doctor support inspect`: Inspect a support bundle.
-- `observal doctor cleanup`: Remove ALL Observal hooks, env vars, and legacy telemetry config.
-- `observal doctor patch`: Install Observal session telemetry hooks for selected harnesses.
+  - `observal doctor support inspect`: Inspect a support bundle without extracting it.
+- `observal doctor cleanup`: Remove Observal-managed telemetry artifacts while preserving user configuration.
+- `observal doctor patch`: Install Observal-managed session telemetry for selected harnesses.
 
 **`observal inbox`**: Your work and event feed: reviews, decisions, and update notices
 
@@ -97,37 +99,32 @@ Every command available in the installed CLI. This block is generated from the T
 - `observal inbox dismiss`: Dismiss an item without acting on it.
 - `observal inbox done`: Resolve an item.
 - `observal inbox list`: List your inbox items.
-- `observal inbox read`: Mark an item read. This does not resolve it — it stays in your open list.
+- `observal inbox read`: Mark an item read without resolving it.
 - `observal inbox read-all`: Mark everything matching the filter as read.
-- `observal inbox reopen`: Reopen an item you resolved or dismissed by mistake.
+- `observal inbox reopen`: Reopen a resolved or dismissed item.
 - `observal inbox show`: Show one item with its full action history.
 - `observal inbox unread`: Mark an item unread again.
 
-**`observal ops`**: Observability and operational commands (traces, telemetry, dashboard, feedback)
+**`observal ops`**: Observability and operational commands (sessions, telemetry, rankings, feedback, insights)
 
 - `observal ops insights`: Agent insight reports
   - `observal ops insights generate`: Trigger generation of a new insight report.
   - `observal ops insights list`: List insight reports for an agent.
   - `observal ops insights show`: Show an insight report with pretty-printed narrative.
 - `observal ops logs`: Live log viewer (open in a separate tab)
-- `observal ops telemetry`: Telemetry commands
+- `observal ops telemetry`: Telemetry health commands
   - `observal ops telemetry status`: Check telemetry data flow status.
-  - `observal ops telemetry test`: Send a test telemetry event.
 - `observal ops feedback`: Show feedback for an MCP server or agent.
-- `observal ops metrics`: Show metrics for an MCP server or agent.
 - `observal ops rate`: Rate an MCP server, agent, or component.
 - `observal ops rate-delete`: Delete your review for an item.
 - `observal ops rate-update`: Update your existing review for an item.
-- `observal ops spans`: List spans for a trace.
 - `observal ops top`: Show top MCP servers or agents by usage.
 - `observal ops traces`: List recent traces (sessions).
 
-**`observal reconcile`**: Push local session transcripts to the server
-
-- (no subcommands)
-
 **`observal registry`**: Component registry (MCPs, skills, hooks, prompts, sandboxes)
 
+- `observal registry bulk`: Submit mixed Registry components from one JSON file.
+  - `observal registry bulk submit`: Submit mixed MCP, skill, hook, prompt, and sandbox entries.
 - `observal registry hook`: Hook registry commands
   - `observal registry hook co-authors`: Manage co-authors for hooks
     - `observal registry hook co-authors add`: Add a co-author.
@@ -156,7 +153,7 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal registry mcp transfer-owner`: Transfer ownership to another username.
   - `observal registry mcp unarchive`: Restore an archived component.
 - `observal registry models`: Inspect registry-backed harness model data.
-  - `observal registry models list`
+  - `observal registry models list`: List registry-backed harness models.
 - `observal registry prompt`: Prompt registry commands
   - `observal registry prompt co-authors`: Manage co-authors for prompts
     - `observal registry prompt co-authors add`: Add a co-author.
@@ -206,30 +203,62 @@ Every command available in the installed CLI. This block is generated from the T
 
 **`observal self`**: CLI self-management commands (upgrade, downgrade, rollback, status)
 
-- `observal self upgrade`: Upgrade the observal CLI to the latest (or specified) version.
-- `observal self downgrade`: Downgrade the observal CLI to a previous version.
-- `observal self rollback`: Restore the CLI to the version before the last upgrade/downgrade.
-- `observal self status`: Show current CLI version, install method, and update availability.
-- `observal self uninstall`: Completely uninstall Observal: stop containers, remove volumes, delete repo and config.
+- `observal self upgrade`: Upgrade the Observal CLI to the latest or specified version.
+- `observal self downgrade`: Downgrade the Observal CLI to a previous version.
+- `observal self rollback`: Restore the CLI binary saved before the last version change.
+- `observal self status`: Show the CLI version, install method, and update availability.
 
-**`observal team`**: Manage teamspaces: creation, membership, and listing.
+**`observal server`**: Manage the embedded Observal server (PostgreSQL + ClickHouse + Redis + API).
+
+- `observal server migrate`: Portable PostgreSQL and ClickHouse migration tools
+  - `observal server migrate export`: Export all PostgreSQL registry data to a portable archive.
+  - `observal server migrate export-telemetry`: Export ClickHouse telemetry data to Parquet files.
+  - `observal server migrate import`: Import a migration archive into the target database.
+  - `observal server migrate import-telemetry`: Import Parquet telemetry files into target ClickHouse.
+  - `observal server migrate validate`: Validate archive integrity and optionally compare against a database.
+  - `observal server migrate validate-telemetry`: Validate telemetry Parquet files and optionally check FK references.
+- `observal server start`: Start the embedded services and API.
+- `observal server stop`: Stop all embedded services.
+- `observal server restart`: Restart all embedded services.
+- `observal server status`: Show embedded service status.
+- `observal server logs`: Show embedded service logs.
+- `observal server install`: Download verified embedded database binaries.
+- `observal server reset`: Stop embedded services and wipe database data and generated secrets.
+- `observal server config`: Show embedded server paths and ports.
+- `observal server rollback`: Restore PostgreSQL and the Docker image version from backup.
+- `observal server upgrade`: Upgrade a local Docker deployment.
+- `observal server versions`: List Docker image versions and managed PostgreSQL backups.
+
+**`observal team`**: Manage teamspaces: creation, membership, access, and visibility.
 
 - `observal team invite`: Manage private-team invitation links.
   - `observal team invite create`: Create a private-team invitation link. Owner or global admin only.
+  - `observal team invite delete`: Delete an unused invitation. Owner or global admin only.
   - `observal team invite list`: List invitation links for a private teamspace.
+  - `observal team invite preview`: Preview an invitation without requesting access.
+  - `observal team invite request`: Use an invitation to request access. An owner must still approve.
+  - `observal team invite requests`: List access requests associated with an invitation.
   - `observal team invite revoke`: Revoke a private-team invitation link. Owner or global admin only.
 - `observal team members`: Manage team membership.
   - `observal team members add`: Add or update a team member. Owner or admin only.
   - `observal team members list`: List members of a teamspace.
   - `observal team members remove`: Remove a team member. Owner or admin only. The last owner cannot be removed.
-- `observal team approve`: Approve a pending join request. Owner or admin only. Grants member role.
+- `observal team request`: Manage teamspace join requests.
+  - `observal team request approve`: Approve a pending join request. Owner or admin only. Grants member role.
+  - `observal team request join`: Request member access to a teamspace. An owner must approve.
+  - `observal team request list`: List a teamspace's join requests and decisions. Owner or admin only.
+  - `observal team request mine`: Show your join-request status for a teamspace.
+  - `observal team request reject`: Reject a pending join request. Owner or admin only.
+  - `observal team request withdraw`: Withdraw your pending join request for a teamspace.
+- `observal team visibility`: Manage and review teamspace visibility.
+  - `observal team visibility approve`: Approve pending public visibility. Reviewer or admin only.
+  - `observal team visibility list-requests`: List pending public visibility requests. Reviewer or admin only.
+  - `observal team visibility reject`: Reject pending public visibility. Reviewer or admin only.
+  - `observal team visibility set`: Change visibility or request public review. Owners and admins only.
+- `observal team claim-personal`: Claim or return your private personal teamspace.
 - `observal team create`: Create a teamspace. Any signed-in user can; you become the owner.
 - `observal team delete`: Delete a teamspace. Owner or admin only. This cannot be undone.
 - `observal team leave`: Leave a teamspace. The last owner cannot leave; transfer ownership first.
 - `observal team list`: List teamspaces you belong to (or all with --all).
-- `observal team reject`: Reject a pending join request. Owner or admin only.
-- `observal team request-join`: Request member access to a teamspace. An owner must approve before you join.
-- `observal team requests`: List a teamspace's join requests and decisions. Owner or admin only.
 - `observal team show`: Show teamspace detail and members.
-- `observal team visibility`: Change a teamspace's visibility. Team owners and deployment admins only.
 <!-- END AUTO-GENERATED COMMAND REFERENCE -->

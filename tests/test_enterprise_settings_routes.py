@@ -609,6 +609,62 @@ async def test_clearing_insights_api_key_does_not_delete_legacy_rows(boundaries,
 
 
 @pytest.mark.asyncio
+async def test_usage_reporting_settings_require_super_admin(boundaries):
+    db = _db()
+
+    with pytest.raises(HTTPException) as error:
+        await es.upsert_setting(
+            "usage_ping.frequency",
+            EnterpriseConfigUpdate(value="daily"),
+            db=db,
+            current_user=_actor(UserRole.admin),
+        )
+
+    assert error.value.status_code == 403
+    assert error.value.detail == "Usage reporting can only be changed by a super administrator"
+    db.execute.assert_not_awaited()
+    boundaries.invalidate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_usage_reporting_frequency_rejects_unknown_values(boundaries, monkeypatch):
+    db = _db()
+    monkeypatch.setattr(es.ds, "is_externally_managed", lambda _key: False)
+
+    with pytest.raises(HTTPException) as error:
+        await es.upsert_setting(
+            "usage_ping.frequency",
+            EnterpriseConfigUpdate(value="hourly"),
+            db=db,
+            current_user=_actor(UserRole.super_admin),
+        )
+
+    assert error.value.status_code == 422
+    assert error.value.detail == "Usage reporting frequency must be every_6_hours, daily, or weekly"
+    db.execute.assert_not_awaited()
+    boundaries.invalidate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value", ["every_6_hours", "daily", "weekly"])
+async def test_super_admin_can_set_usage_reporting_frequency(value, boundaries, monkeypatch):
+    db = _db(_one(None))
+    monkeypatch.setattr(es.ds, "is_externally_managed", lambda _key: False)
+
+    response = await es.upsert_setting(
+        "usage_ping.frequency",
+        EnterpriseConfigUpdate(value=value),
+        db=db,
+        current_user=_actor(UserRole.super_admin),
+    )
+
+    stored = db.add.call_args.args[0]
+    assert (stored.key, stored.value) == ("usage_ping.frequency", value)
+    assert response.value == value
+    boundaries.invalidate.assert_awaited_once_with("usage_ping.frequency")
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("key", "value", "detail"),
     [

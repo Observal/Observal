@@ -77,7 +77,7 @@ class OutdatedItem(BaseModel):
     """One outdated finding reported by the CLI.
 
     The character-set patterns are not cosmetic. ``namespace``, ``slug`` and
-    ``harness`` are interpolated into the ``observal pull ...`` string that the
+    ``harness`` are interpolated into the type-specific upgrade command that the
     web UI and CLI present as a command to run, so they are constrained to what
     a real registry identifier can contain. The versions carry ``min_length=1``
     because an empty version would truncate the ``update_available`` dedupe key

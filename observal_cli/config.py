@@ -12,7 +12,9 @@ import re
 import shutil
 import tomllib
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
+from observal_cli.errors import ErrorCategory, fail
 from observal_shared.secrets import resolve_secret
 
 logger = logging.getLogger(__name__)
@@ -38,8 +40,6 @@ _LEGACY_MCP_CONFIGS = (
 )
 
 DEFAULTS = {
-    "output": "table",
-    "color": True,
     "server_url": "",
     "access_token": "",
     "refresh_token": "",
@@ -158,48 +158,111 @@ def migrate_shimmed_mcp_configs(home: Path | None = None, cwd: Path | None = Non
     return migrated
 
 
+def _read_json_object(path: Path, *, operation: str) -> dict:
+    try:
+        data = json.loads(path.read_text())
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        fail(
+            ErrorCategory.VALIDATION,
+            "The JSON file is malformed.",
+            operation=operation,
+            resource=str(path),
+            remediation="Repair or remove the file, then retry.",
+            detail=repr(exc),
+        )
+    if not isinstance(data, dict):
+        fail(
+            ErrorCategory.VALIDATION,
+            "The JSON file must contain an object.",
+            operation=operation,
+            resource=str(path),
+            remediation="Replace the file contents with a JSON object and retry.",
+        )
+    return data
+
+
+def _write_json(path: Path, data: dict) -> None:
+    """Atomically write a JSON object with owner-only permissions."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False) as file:
+            temporary = Path(file.name)
+            json.dump(data, file, indent=2)
+            file.flush()
+            os.fsync(file.fileno())
+        temporary.chmod(0o600)
+        temporary.replace(path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def load_persisted() -> dict:
+    """Load only on-disk config values, without environment overrides."""
+    if not CONFIG_FILE.exists():
+        return {}
+    stored = _read_json_object(CONFIG_FILE, operation="Load CLI configuration")
+    stored.pop("output", None)
+    stored.pop("color", None)
+    return stored
+
+
 def load() -> dict:
     """Load config from disk and apply environment variable overrides."""
-    cfg = dict(DEFAULTS)
-    if CONFIG_FILE.exists():
-        cfg.update(json.loads(CONFIG_FILE.read_text()))
+    cfg = {**DEFAULTS, **load_persisted()}
 
-    # Environment variable overrides (No login required if these are set)
     if env_url := os.environ.get("OBSERVAL_SERVER_URL"):
         cfg["server_url"] = env_url
-    # Preserve legacy precedence: OBSERVAL_TOKEN wins when multiple aliases are set.
     for name in ("OBSERVAL_ACCESS_TOKEN", "OBSERVAL_API_KEY", "OBSERVAL_TOKEN"):
-        if token := resolve_secret(name):
+        try:
+            token = resolve_secret(name)
+        except ValueError as exc:
+            fail(
+                ErrorCategory.VALIDATION,
+                f"{name} is configured incorrectly.",
+                operation="Load CLI configuration",
+                resource=name,
+                remediation=f"Set only {name} or {name}_FILE, then retry.",
+                detail=repr(exc),
+            )
+        if token:
             cfg["access_token"] = token
 
     return cfg
 
 
-def save(data: dict):
-    """Save config to disk (safely ignoring environment variables)."""
+def _write_config(data: dict) -> None:
     try:
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        _write_json(CONFIG_FILE, data)
+    except PermissionError as error:
+        fail(
+            ErrorCategory.PERMISSION,
+            f"Cannot write {error.filename or CONFIG_FILE}: permission denied.",
+            operation="Save CLI configuration",
+            resource=str(error.filename or CONFIG_FILE),
+            remediation=f'If {CONFIG_DIR} is owned by root, run: sudo chown -R "$USER" "{CONFIG_DIR}"',
+            detail=repr(error),
+        )
 
-        # Read strictly from disk so we don't accidentally save env vars
-        existing = {}
-        if CONFIG_FILE.exists():
-            existing = json.loads(CONFIG_FILE.read_text())
 
-        existing.update(data)
+def save(data: dict):
+    """Save config to disk without persisting environment overrides."""
+    existing = load_persisted()
+    existing.update(data)
+    existing.pop("output", None)
+    existing.pop("color", None)
+    _write_config(existing)
 
-        # Write with restrictive permissions from the start (contains API key)
-        old_umask = os.umask(0o077)
-        try:
-            CONFIG_FILE.write_text(json.dumps(existing, indent=2))
-        finally:
-            os.umask(old_umask)
-    except PermissionError as exc:
-        # Typically ~/.observal was created root-owned by a Docker bind mount
-        raise SystemExit(
-            f"Cannot write {exc.filename or CONFIG_FILE}: permission denied.\n"
-            f"If {CONFIG_DIR} is owned by root (e.g. created by Docker before it existed), fix it with:\n"
-            f'  sudo chown -R "$USER" "{CONFIG_DIR}"'
-        ) from exc
+
+def remove(*keys: str) -> None:
+    """Remove keys from the on-disk config without persisting environment overrides."""
+    if not CONFIG_FILE.exists():
+        return
+    existing = load_persisted()
+    for key in keys:
+        existing.pop(key, None)
+    _write_config(existing)
 
 
 def get_timeout() -> int:
@@ -217,13 +280,13 @@ def get_timeout() -> int:
 def get_or_exit() -> dict:
     cfg = load()
     if not cfg.get("server_url") or not cfg.get("access_token"):
-        import typer
-        from rich import print as rprint
-
-        rprint(
-            "[red]Not configured.[/red] Run [bold]observal auth login[/bold] or set the [bold]OBSERVAL_TOKEN[/bold] / [bold]OBSERVAL_ACCESS_TOKEN[/bold] environment variable."
+        fail(
+            ErrorCategory.AUTH,
+            "Not configured. Observal authentication is required.",
+            operation="Load authenticated CLI configuration",
+            resource=str(CONFIG_FILE),
+            remediation="Run observal auth login or set OBSERVAL_TOKEN or OBSERVAL_ACCESS_TOKEN.",
         )
-        raise typer.Exit(1)
     return cfg
 
 
@@ -231,64 +294,103 @@ def get_or_exit() -> dict:
 
 
 def load_aliases() -> dict[str, str]:
-    if ALIASES_FILE.exists():
-        return json.loads(ALIASES_FILE.read_text())
-    return {}
+    if not ALIASES_FILE.exists():
+        return {}
+    aliases = _read_json_object(ALIASES_FILE, operation="Load CLI aliases")
+    if not all(isinstance(name, str) and isinstance(target, str) for name, target in aliases.items()):
+        fail(
+            ErrorCategory.VALIDATION,
+            "Every alias and target must be a string.",
+            operation="Load CLI aliases",
+            resource=str(ALIASES_FILE),
+            remediation="Repair or remove the aliases file, then retry.",
+        )
+    return aliases
 
 
 def save_aliases(aliases: dict[str, str]):
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    ALIASES_FILE.write_text(json.dumps(aliases, indent=2))
+    _write_json(ALIASES_FILE, aliases)
 
 
 # ── Last results cache ───────────────────────────────────
 
 
-def save_last_results(items: list[dict]):
-    """Cache list results. Each item needs 'id' and 'name' keys."""
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+def save_last_results(items: list[dict], item_type: str | None = None) -> None:
+    """Cache list results and the registry type that produced them."""
     cache = {
+        "item_type": item_type,
         "ids": [str(item["id"]) for item in items],
         "names": {item.get("name", "").lower(): str(item["id"]) for item in items if item.get("name")},
     }
-    LAST_RESULTS_FILE.write_text(json.dumps(cache))
+    _write_json(LAST_RESULTS_FILE, cache)
 
 
 def load_last_results() -> dict:
-    if LAST_RESULTS_FILE.exists():
-        data = json.loads(LAST_RESULTS_FILE.read_text())
-        # Handle old format (plain list)
-        if isinstance(data, list):
-            return {"ids": data, "names": {}}
-        return data
-    return {"ids": [], "names": {}}
+    if not LAST_RESULTS_FILE.exists():
+        return {"item_type": None, "ids": [], "names": {}}
+    data = _read_json_object(LAST_RESULTS_FILE, operation="Load CLI list results")
+    ids = data.get("ids")
+    names = data.get("names")
+    item_type = data.get("item_type")
+    if (
+        not isinstance(ids, list)
+        or not all(isinstance(item, str) for item in ids)
+        or not isinstance(names, dict)
+        or not all(isinstance(name, str) and isinstance(item, str) for name, item in names.items())
+        or (item_type is not None and not isinstance(item_type, str))
+    ):
+        fail(
+            ErrorCategory.VALIDATION,
+            "The cached CLI list results are malformed.",
+            operation="Load CLI list results",
+            resource=str(LAST_RESULTS_FILE),
+            remediation="Remove the results cache and run the list command again.",
+        )
+    return {"item_type": item_type, "ids": ids, "names": names}
 
 
 # ── Universal resolver ───────────────────────────────────
 
 
-def resolve_alias(name: str) -> str:
-    """Resolve any reference to a UUID: @alias, row number, name, or passthrough UUID."""
+def resolve_alias(name: str, expected_type: str | None = None) -> str:
+    """Resolve an alias or a type-scoped row number to its stored reference."""
     # @alias
     if name.startswith("@"):
         aliases = load_aliases()
         resolved = aliases.get(name[1:])
         if resolved:
             return resolved
-        import typer
-        from rich import print as rprint
-
-        rprint(f"[red]Unknown alias: {name}[/red]")
-        rprint(f"[dim]Set it with: observal config alias {name[1:]} <id>[/dim]")
-        raise typer.Exit(1)
+        fail(
+            ErrorCategory.NOT_FOUND,
+            f"Alias {name} is not configured.",
+            operation="Resolve CLI alias",
+            resource=name,
+            remediation=f"Run observal config alias {name[1:]} <reference> to create it.",
+        )
 
     # Row number from last list (positional shortcut only)
     if name.isdigit():
         cache = load_last_results()
+        cached_type = cache.get("item_type")
+        if expected_type and cached_type != expected_type:
+            fail(
+                ErrorCategory.NOT_FOUND,
+                f"Row {name} is not from the latest {expected_type} list.",
+                operation="Resolve CLI row reference",
+                resource=name,
+                remediation=f"Run the {expected_type} list command and retry with one of its row numbers.",
+            )
         idx = int(name)
         ids = cache.get("ids", [])
         if 1 <= idx <= len(ids):
             return ids[idx - 1]
+        fail(
+            ErrorCategory.NOT_FOUND,
+            f"Row {name} does not exist in the latest list results.",
+            operation="Resolve CLI row reference",
+            resource=name,
+            remediation="Run the relevant list command and retry with one of its row numbers.",
+        )
 
     # Pass names through as-is. The server resolves names natively.
     # Previously we looked up names in a local cache (last_results.json),

@@ -150,7 +150,7 @@
 - [ ] Run `observal scan` to discover harness configs (read-only)
 - [ ] Run `observal doctor patch --all-harnesses --dry-run` to preview instrumentation
 - [ ] Run `observal doctor patch --all-harnesses` to instrument harnesses
-- [ ] Run `observal self doctor` to check harness compatibility
+- [ ] Run `observal doctor --output json` to check harness compatibility
 
 ## 18. Admin - Agent Registry Management
 - [ ] Log in as Admin

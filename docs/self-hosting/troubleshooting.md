@@ -107,7 +107,7 @@ Run through, in order:
 observal ops telemetry status
 
 # 2. Are session hooks installed for the harness?
-observal doctor --harness <harness>
+observal doctor --output json
 
 # 3. Is the API reachable from the harness environment?
 curl http://localhost/health

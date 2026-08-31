@@ -1,265 +1,174 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Observal Contributors -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# observal server
+# `observal server`
 
-Manage the embedded Observal server stack (PostgreSQL, ClickHouse, Redis, API, web UI).
+Manage local Observal deployments. The lifecycle commands operate the embedded PostgreSQL, ClickHouse, Redis, and API processes. Upgrade, rollback, and version commands operate a local Docker Compose deployment.
 
-All commands operate on the local Docker Compose stack. The `upgrade`, `rollback`, and `versions` commands require **super_admin** role.
+Local filesystem, process, Docker, and database access are the authorization boundary. These commands do not require a reachable Observal API or an API role.
 
-## Subcommands
+## Command summary
 
-| Command | Description |
-| --- | --- |
-| [`server start`](#observal-server-start) | Start all services |
-| [`server stop`](#observal-server-stop) | Stop all services |
-| [`server restart`](#observal-server-restart) | Restart all services |
-| [`server status`](#observal-server-status) | Show service status |
-| [`server logs`](#observal-server-logs) | View service logs |
-| [`server install`](#observal-server-install) | Download dependency binaries |
-| [`server config`](#observal-server-config) | Show current configuration |
-| [`server reset`](#observal-server-reset) | Wipe all data |
-| [`server upgrade`](#observal-server-upgrade) | Upgrade to a new version |
-| [`server rollback`](#observal-server-rollback) | Roll back to previous version |
-| [`server versions`](#observal-server-versions) | List available versions |
+| Command | Target | Purpose |
+| --- | --- | --- |
+| `start` | Embedded | Start dependencies and the API |
+| `stop` | Embedded | Stop all services |
+| `restart` | Embedded | Stop and start services |
+| `status` | Embedded | Report service health and ports |
+| `logs` | Embedded | Read or follow service logs |
+| `install` | Embedded | Install verified dependency binaries |
+| `config` | Embedded | Show local paths and ports |
+| `reset` | Embedded | Delete database data and generated secrets |
+| `upgrade` | Docker | Back up PostgreSQL and replace images |
+| `rollback` | Docker | Restore PostgreSQL and the prior image version |
+| `versions` | Docker | List image versions and managed backups |
+| `migrate` | Databases | Move PostgreSQL registry and ClickHouse telemetry data |
 
----
+## Embedded lifecycle
 
-## `observal server start`
-
-Start all services and the Observal API server. On first run, downloads database binaries and initializes data directories.
+Start in the foreground:
 
 ```bash
 observal server start
-observal server start --port 9000
-observal server start --background
 ```
 
-| Option | Short | Default | Description |
-| --- | --- | --- | --- |
-| `--port` | `-p` | 8000 | API port |
-| `--host` | | 0.0.0.0 | Bind address |
-| `--background` | `-d` | false | Run in background (daemonize) |
-
-If the default port is in use, the server automatically tries fallback ports (8001, 8002, 8010, 8100).
-
----
-
-## `observal server stop`
-
-Gracefully shut down all services in reverse order: API, Redis, ClickHouse, PostgreSQL.
+Start for automation:
 
 ```bash
-observal server stop
+observal server start --background --output json
 ```
 
----
-
-## `observal server restart`
-
-Stop and restart all services.
+JSON start and restart require `--background` because foreground mode remains attached until shutdown.
 
 ```bash
-observal server restart
-observal server restart --port 9000
+observal server restart --background --output json
+observal server stop --output json
 ```
 
-| Option | Short | Default | Description |
-| --- | --- | --- | --- |
-| `--port` | `-p` | 8000 | API port |
-| `--host` | | 0.0.0.0 | Bind address |
+`start` accepts `--port/-p` and `--host`. When the default API port is occupied, it tries the documented local fallback ports and reports the selected port. An explicitly selected occupied port is a conflict.
 
----
+Startup performs these steps in order:
 
-## `observal server status`
+1. Installs embedded dependencies when missing. Downloads require a published SHA-256 checksum and archives reject links and path traversal.
+2. Starts PostgreSQL, ClickHouse, and Redis.
+3. Applies PostgreSQL and ClickHouse migrations. Migration failures stop startup; the CLI never stamps a failed PostgreSQL schema as current.
+4. Starts the API.
+5. Bootstraps a local admin only on a fresh embedded server and persists the real access and refresh tokens. It never writes placeholder credentials or an API key.
+6. Attempts telemetry hook installation. Optional hook failures are explicit warnings.
 
-Show a table of all service statuses (running, stopped, not initialized) with their ports.
+## Status and configuration
 
 ```bash
-observal server status
+observal server status --output json
+observal server config --output json
 ```
 
-Output:
+Status is a finite diagnosis command. It exits successfully when checks run, including when `healthy` is false.
 
+```json
+{
+  "healthy": false,
+  "services": [
+    {"service": "postgres", "status": "running", "port": 5480},
+    {"service": "clickhouse", "status": "stopped", "port": 8124},
+    {"service": "redis", "status": "running", "port": 6380},
+    {"service": "api", "status": "stopped", "port": 8000}
+  ]
+}
 ```
-        Observal Service Status
-┌────────────┬─────────┬──────┐
-│ Service    │ Status  │ Port │
-├────────────┼─────────┼──────┤
-│ Postgres   │ running │ 5480 │
-│ Clickhouse │ running │ 8124 │
-│ Redis      │ running │ 6380 │
-│ Api        │ running │ 8000 │
-└────────────┴─────────┴──────┘
-```
 
----
+Configuration output contains paths and ports only. It never returns generated secrets.
 
-## `observal server logs`
+## Logs
 
-Show or follow service logs.
+Read a bounded snapshot:
 
 ```bash
-observal server logs
-observal server logs postgres
-observal server logs api --follow
-observal server logs redis --lines 200
+observal server logs --output json
+observal server logs api --lines 200 --output json
 ```
 
-| Argument | Description |
-| --- | --- |
-| `[SERVICE]` | Service name: `postgres`, `clickhouse`, `redis`, `api`. Omit for all. |
-
-| Option | Short | Default | Description |
-| --- | --- | --- | --- |
-| `--follow` | `-f` | false | Follow log output (like `tail -f`) |
-| `--lines` | `-n` | 50 | Number of lines to show |
-
----
-
-## `observal server install`
-
-Download database dependency binaries (PostgreSQL, ClickHouse, Redis). Runs automatically on first `server start`, but can be invoked manually to pre-download.
+Follow one service as JSON Lines:
 
 ```bash
-observal server install
-observal server install --upgrade
+observal server logs api --follow --output json
 ```
 
-| Option | Description |
-| --- | --- |
-| `--upgrade` | Re-download even if already installed |
+JSON follow requires one service so every event has an unambiguous `service` field. Valid services are `postgres`, `clickhouse`, `redis`, and `api`.
 
----
-
-## `observal server config`
-
-Show current server configuration (ports, data directories, API URL).
+## Install and reset
 
 ```bash
-observal server config
+observal server install --output json
+observal server install --upgrade --output json
 ```
 
----
+Reset deletes embedded database directories and the generated server secret. It does not delete CLI configuration, downloaded binaries, logs, or unrelated files.
 
-## `observal server reset`
-
-Stop all services and wipe all data (databases, config, keys). Requires re-initialization on next start.
+Human mode confirms. JSON mode requires `--force`:
 
 ```bash
-observal server reset
-observal server reset --force
+observal server reset --force --output json
 ```
 
-| Option | Short | Description |
+Deletion is confined to the managed embedded data directory.
+
+## Docker upgrade
+
+Preview an upgrade:
+
+```bash
+observal server upgrade --dry-run --output json
+```
+
+Apply one non-interactively:
+
+```bash
+observal server upgrade --version 1.2.3 --force --output json
+```
+
+An upgrade validates the target version and image, acquires the server upgrade lock, creates a managed PostgreSQL backup unless `--skip-backup` is set, pulls images, atomically updates `OBSERVAL_VERSION`, recreates containers, and runs the configured health check. A failed health check requests the previous image version again and returns an unavailable error.
+
+JSON mutation requires `--force`; dry run does not.
+
+## Docker rollback
+
+```bash
+observal server rollback --force --output json
+observal server rollback \
+  --from-backup ~/.observal/backups/v1.2.2-20260521T120000 \
+  --force --output json
+```
+
+Rollback accepts only backup directories under the managed backup root. It restores PostgreSQL, atomically restores the image version, recreates containers, and checks health.
+
+**ClickHouse telemetry is not restored by this command.** JSON and human results state `clickhouse_restored: false`. Use [`observal server migrate`](migrate.md) for ClickHouse export and import.
+
+## Docker versions
+
+```bash
+observal server versions --output json
+```
+
+The result distinguishes the current version, available GHCR images, and local PostgreSQL backups. Failure to query GHCR is reported as unavailable rather than as an empty registry.
+
+## Error and output contract
+
+All finite commands accept `--output table|json`. JSON success writes one document to stdout. Failures leave stdout empty and write one categorized error to stderr. Log following is the only JSON Lines stream.
+
+| Code | Category | Typical server cause |
 | --- | --- | --- |
-| `--force` | `-f` | Skip confirmation prompt |
-
-> **Warning:** This is destructive. All traces, users, agents, and configuration will be permanently deleted.
-
----
-
-## `observal server upgrade`
-
-Upgrade the server to the latest or a specified version. Pulls new Docker images from GHCR, creates a database backup, and recreates containers with a health check.
-
-**Requires super_admin role.**
-
-```bash
-observal server upgrade
-observal server upgrade --version 0.9.0
-observal server upgrade --dry-run
-observal server upgrade --skip-backup --force
-```
-
-| Option | Short | Default | Description |
-| --- | --- | --- | --- |
-| `--version` | `-v` | latest | Target version (e.g. 0.9.0) |
-| `--skip-backup` | | false | Skip pre-upgrade database backup |
-| `--dry-run` | | false | Show upgrade plan without applying changes |
-| `--force` | `-f` | false | Skip interactive confirmation |
-
-**What happens during an upgrade:**
-
-1. Resolves target version (latest from GitHub if not specified)
-2. Verifies the Docker image exists on GHCR
-3. Acquires an upgrade lock (prevents concurrent upgrades)
-4. Creates a database backup (unless `--skip-backup`)
-5. Pulls new images: `ghcr.io/observal/observal-{api,web}:<version>`
-6. Updates `.env` with the new version
-7. Recreates containers via `docker compose up -d`
-8. Runs health checks for up to 120 seconds
-9. If health check fails, automatically rolls back
-
-After a successful upgrade:
-
-```
-✓ Upgraded to v0.9.0
-  Backup: ~/.observal/backups/v0.8.0-20260523T100000
-  Rollback: observal server rollback
-```
-
----
-
-## `observal server rollback`
-
-Rollback the server to a previous version from backup. Restores the database, reverts Docker images, and recreates containers.
-
-**Requires super_admin role.**
-
-```bash
-observal server rollback
-observal server rollback --from-backup ~/.observal/backups/v0.7.0-20260521T120000
-observal server rollback --force
-```
-
-| Option | Short | Description |
-| --- | --- | --- |
-| `--from-backup` | | Path to a specific backup directory (default: most recent) |
-| `--force` | `-f` | Skip interactive confirmation |
-
-If no backup path is specified, the most recent backup is used.
-
----
-
-## `observal server versions`
-
-List available server versions from GHCR alongside local backup status. Shows which versions have images available and which have local database backups.
-
-**Requires super_admin role.**
-
-```bash
-observal server versions
-```
-
-Output:
-
-```
-         Server Versions
-┌─────────┬────────────┬──────┬─────────┐
-│ Version │ Status     │ GHCR │ Backup  │
-├─────────┼────────────┼──────┼─────────┤
-│ 0.9.0   │ ← current │ ✓    │ -       │
-│ 0.8.0   │            │ ✓    │ 42 MB   │
-│ 0.7.0   │            │ ✓    │ 38 MB   │
-└─────────┴────────────┴──────┴─────────┘
-```
-
----
-
-## Permissions
-
-| Command | Role required |
-| --- | --- |
-| `start`, `stop`, `restart`, `status`, `logs`, `install`, `config`, `reset` | None (local shell access) |
-| `upgrade`, `rollback`, `versions` | super_admin |
-
-The super_admin check calls `/api/v1/auth/whoami` and verifies the authenticated user's role. If you're not logged in or lack the role, the command exits with a permission error.
-
----
+| 2 | Usage | Invalid option or missing required argument |
+| 4 | Permission | Unreadable local state or backup outside the managed root |
+| 5 | Not found | Missing logs, Compose deployment, image, or backup |
+| 6 | Conflict | Busy port, active upgrade lock, or existing destination |
+| 7 | Validation | Missing JSON confirmation or invalid version |
+| 9 | Unavailable | Dependency, Docker, migration, health, or network failure |
 
 ## Related
 
-* [Upgrades guide](../self-hosting/upgrades.md) for manual and zero-downtime upgrade strategies
-* [Backup and restore](../self-hosting/backup-and-restore.md) for database backup details
-* [`observal self`](self.md) for CLI version management (separate from server)
+* [Database migration](migrate.md)
+* [Self-hosted upgrades](../self-hosting/upgrades.md)
+* [Backup and restore](../self-hosting/backup-and-restore.md)
+* [`observal self`](self.md), for CLI binary versions

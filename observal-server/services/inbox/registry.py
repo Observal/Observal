@@ -108,37 +108,33 @@ def _review_show_command(subject: Subject, ctx: dict[str, Any]) -> str | None:
     return f"observal admin review show {subject.id}{suffix}"
 
 
-# A pull target is a namespace/slug pair or a UUID; a harness is a registry key.
+# An upgrade target is a namespace/slug pair or a UUID; a harness is a registry key.
 # Neither ever contains a space, a quote, or a shell metacharacter.
 _SAFE_TARGET = re.compile(r"^[a-zA-Z0-9._/-]{1,128}$")
 _SAFE_HARNESS = re.compile(r"^[a-zA-Z0-9._-]{1,50}$")
 
 
-def _pull_command(subject: Subject, ctx: dict[str, Any]) -> str | None:
-    """The upgrade command for an installed item.
-
-    Inbox never runs this. It renders the exact command for the user to copy,
-    which is precisely why the parts are validated here: the values arrive from
-    a CLI-supplied report, and the product of this function is a string the web
-    UI and the terminal both present as "run this". A name carrying a quote or a
-    semicolon would render as a command that does something other than it reads.
-    Anything that does not match is dropped rather than escaped, because a
-    mangled command is worse than no command.
-
-    ``subject.name`` is deliberately not a fallback target. It is a display
-    name, and `observal pull` does not accept one.
-    """
+def _upgrade_command(subject: Subject, ctx: dict[str, Any]) -> str | None:
+    """Return a safe, type-specific upgrade command for an installed item."""
     target = f"{subject.namespace}/{subject.slug}" if subject.namespace and subject.slug else None
     if target is None and subject.id is not None:
         target = str(subject.id)
     if not target or not _SAFE_TARGET.match(target):
         return None
 
+    if subject.type == "agent":
+        prefix = "observal agent pull"
+        prompt_flag = " --no-prompt"
+    elif subject.type in {"mcp", "skill", "hook"}:
+        prefix = f"observal registry {subject.type} install"
+        prompt_flag = " --no-prompt" if subject.type == "mcp" else ""
+    else:
+        return None
+
     harness = ctx.get("harness")
-    harness_flag = ""
-    if harness and _SAFE_HARNESS.match(str(harness)):
-        harness_flag = f" --harness {harness}"
-    return f"observal pull {target}{harness_flag}"
+    if not harness or not _SAFE_HARNESS.match(str(harness)):
+        return None
+    return f"{prefix} {target} --harness {harness}{prompt_flag}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -263,7 +259,7 @@ SPECS: dict[InboxKind, KindSpec] = {
         # Keyed on the new version, so a newer release is a new fact and a new
         # item rather than a duplicate of the old one.
         dedupe=lambda s, c: f"update_available:{s.type}:{s.id}:{s.version}",
-        command=_pull_command,
+        command=_upgrade_command,
         # Reported by the CLI about what the reporting user has installed, so
         # there is no team subject to re-check.
         recheck_visibility=False,

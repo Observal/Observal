@@ -601,7 +601,12 @@ async def test_create_resolves_components_builds_snapshot_and_reports_conflicts(
     boundaries.build_snapshot.assert_awaited_once_with(version, db)
     assert db.flush.await_count == 2
     generate_call = boundaries.generate.call_args
-    assert generate_call.args == (version, "kiro")
+    config_agent = generate_call.args[0]
+    assert generate_call.args[1] == "kiro"
+    assert config_agent.id == agent.id
+    assert config_agent.name == agent.name
+    assert config_agent.version == version.version
+    assert config_agent.components == links
     assert generate_call.kwargs == {
         "mcp_listings": {MCP_ID: mcp_listing},
         "options": {"_resolved_model": "claude-haiku-4", "_model_warnings": ["normalized alias"]},

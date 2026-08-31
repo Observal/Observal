@@ -49,13 +49,20 @@ export async function loginToWebUI(page: Page) {
 
 /** Wait for API to be healthy */
 export async function waitForAPI() {
-  const { execSync } = await import("child_process");
-  for (let i = 0; i < 30; i++) {
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    const remaining = deadline - Date.now();
     try {
-      execSync(`curl -sf ${API_BASE}/health`, { timeout: 5000 });
-      return;
+      const response = await fetch(`${API_BASE}/health`, {
+        signal: AbortSignal.timeout(Math.min(5000, remaining)),
+      });
+      if (response.ok) return;
     } catch {
-      await new Promise((r) => setTimeout(r, 2000));
+      // Retry until the API reaches a healthy state.
+    }
+    const delay = Math.min(2000, deadline - Date.now());
+    if (delay > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
   throw new Error("API not healthy after 60s");

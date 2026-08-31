@@ -97,12 +97,17 @@ def test_public_reconcile_uses_shared_drain(tmp_path: Path, monkeypatch):
 
     calls = []
     monkeypatch.setattr(cmd_reconcile_cli, "get_adapter", lambda _harness: Adapter())
-    monkeypatch.setattr(cmd_reconcile_cli, "read_cursor", lambda _key: (0, 0))
+    monkeypatch.setattr(cmd_reconcile_cli, "read_cursor_state", lambda _key: (0, 0, False))
+    monkeypatch.setattr(cmd_reconcile_cli, "recover_cursor_from_server", lambda source, cfg: (0, 0))
     monkeypatch.setattr(
         cmd_reconcile_cli,
         "drain_session_source",
         lambda *args, **kwargs: calls.append((args, kwargs)) or True,
     )
 
-    assert cmd_reconcile_cli._reconcile_harness("antigravity", {}, 24, False) == 1
-    assert calls[0][1] == {"hook_event": "Reconcile", "final": True}
+    result = cmd_reconcile_cli._reconcile_harness("antigravity", {}, 24, False)
+
+    assert result["pushed"] == 1
+    assert result["sessions"] == [{"session_id": "session", "status": "pushed", "bytes_new": 3}]
+    assert calls[0][1]["hook_event"] == "Reconcile"
+    assert calls[0][1]["final"] is True

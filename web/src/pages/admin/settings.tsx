@@ -28,6 +28,7 @@ import {
 	Power,
 } from "lucide-react";
 import { InsightsSection } from "./settings/insights-section";
+import { UsagePingSection } from "./settings/usage-ping-section";
 import { MigrateDialog } from "./dashboard/components/migrate-dialog";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
@@ -580,7 +581,7 @@ export default function SettingsPage() {
 				}))
 	).filter((e) => !e.key.startsWith("branding."));
 
-	const settingSections = settingsSchema.filter((section) => section.id !== "sso");
+	const settingSections = settingsSchema.filter((section) => section.id !== "sso" && section.id !== "usage_ping");
 	const settingByKey = useMemo(() => {
 		const map = new Map<string, AdminSettingDef>();
 		for (const section of settingSections) {
@@ -761,6 +762,8 @@ export default function SettingsPage() {
 						</div>
 					</div>
 				</section>
+
+				<UsagePingSection settings={entries as AdminSetting[]} onChanged={() => { void refetch(); }} />
 
 				{/* Appearance */}
 				<section className="animate-in">

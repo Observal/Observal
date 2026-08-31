@@ -744,6 +744,8 @@ async def update_agent(
         )
         for comp in old_comps:
             await db.delete(comp)
+        if old_comps:
+            await db.flush()
         for i, cref in enumerate(req.components):
             db.add(
                 AgentComponent(
@@ -783,6 +785,8 @@ async def update_agent(
         )
         for comp in old_comps:
             await db.delete(comp)
+        if old_comps:
+            await db.flush()
         for i, (mid, listing) in enumerate(zip(req.mcp_server_ids, mcp_listings, strict=False)):
             db.add(
                 AgentComponent(

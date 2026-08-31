@@ -113,10 +113,10 @@ docker build -t ghcr.io/acme/python-pytest:1.0.0 .
 
 ## CLI example
 
-Run the submit command with the example flag to print ready-to-edit examples:
+Submit a sandbox from a JSON file like the examples above:
 
 ```bash
-observal registry sandbox submit --example
+observal registry sandbox submit --from-file sandbox.json
 ```
 
 ## Sources

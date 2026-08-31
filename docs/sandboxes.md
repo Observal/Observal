@@ -74,8 +74,11 @@ observal registry sandbox submit \
   --runtime-type docker \
   --image python:3.12-slim \
   --resource-limits '{"timeout":60,"memory_mb":512}' \
-  --entrypoint "pytest"
+  --entrypoint "pytest" \
+  --output json
 ```
+
+Sandbox submission returns the direct server result in JSON mode. Standalone Sandbox installation is not supported. Add the returned sandbox UUID to an agent with `observal agent add sandbox <sandbox-uuid>`.
 
 From JSON:
 

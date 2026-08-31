@@ -10,6 +10,14 @@
     <link rel="icon" type="image/png" href="/icon.png" />
     <link rel="alternate icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" href="/icon.png" />
+    <script>
+      try {
+        document.documentElement.className =
+          localStorage.getItem("observal-theme") === "light" ? "light" : "dark";
+      } catch {
+        document.documentElement.className = "dark";
+      }
+    </script>
     <style>
       @font-face {
         font-family: "Archivo";

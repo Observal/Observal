@@ -86,16 +86,21 @@ observal registry hook install <name> --harness kiro
 # Install into a specific directory
 observal registry hook install <name> --harness claude-code --dir /path/to/project
 
-# Raw JSON output (no file writes)
+# Raw server response, no file writes
 observal registry hook install <name> --harness claude-code --raw
+
+# Install files and return a JSON operation result
+observal registry hook install <name> --harness claude-code --output json
 ```
+
+Installation validates paths before writing, refuses to overwrite malformed existing JSON, writes each file atomically, and deduplicates existing event entries.
 
 ### Edit a hook
 
 ```bash
-observal registry hook edit <name-or-id> --name "new-name"
-observal registry hook edit <name-or-id> --description "updated"
-observal registry hook edit <name-or-id> --from-file updates.json
+observal registry hook edit <name-or-id> --name "new-name" --output json
+observal registry hook edit <name-or-id> --description "updated" --output json
+observal registry hook edit <name-or-id> --from-file updates.json --output json
 ```
 
 

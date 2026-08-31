@@ -14,6 +14,8 @@ from unittest.mock import Mock, call
 import pytest
 import typer
 import yaml
+from click import Group
+from typer.main import get_command
 from typer.testing import CliRunner
 
 import observal_cli.cmd_agent as agent
@@ -93,9 +95,11 @@ def test_helpers_validate_fetch_and_round_trip_yaml(tmp_path, monkeypatch, capsy
     get.assert_called_once_with("/api/v1/mcps")
 
     get.side_effect = RuntimeError("offline")
-    assert agent._fetch_registry_items("skill") == []
+    with pytest.raises(RuntimeError, match="offline"):
+        agent._fetch_registry_items("skill")
     get.side_effect = typer.Exit(1)
-    assert agent._fetch_registry_items("hook") == []
+    with pytest.raises(typer.Exit):
+        agent._fetch_registry_items("hook")
 
     data = {"name": "local", "components": []}
     agent._save_agent_yaml(tmp_path / "nested", data)
@@ -103,7 +107,7 @@ def test_helpers_validate_fetch_and_round_trip_yaml(tmp_path, monkeypatch, capsy
 
     with pytest.raises(typer.Exit) as exc:
         agent._load_agent_yaml(tmp_path / "missing")
-    assert exc.value.exit_code == 1
+    assert exc.value.exit_code == 5
     assert "not found" in capsys.readouterr().out
 
 
@@ -200,8 +204,7 @@ def test_create_flags_reads_prompt_file_slugifies_and_sends_exact_payload(tmp_pa
     target.assert_called_once_with(payload, None, None)
 
 
-def test_create_flags_falls_back_to_config_owner_and_defaults(monkeypatch, _isolated_boundaries):
-    _isolated_boundaries.load.return_value = {}
+def test_create_flags_do_not_hide_owner_lookup_failure(monkeypatch):
     monkeypatch.setattr(agent.client, "get", Mock(side_effect=RuntimeError("offline")))
     monkeypatch.setattr(agent.client, "add_publish_target", Mock(side_effect=_publish_target))
     post = Mock(return_value={"id": "agent-3"})
@@ -209,13 +212,9 @@ def test_create_flags_falls_back_to_config_owner_and_defaults(monkeypatch, _isol
 
     result = _invoke("create", "--name", "helper", "--prompt", "Help")
 
-    assert result.exit_code == 0, result.output
-    payload = post.call_args.args[1]
-    assert payload["owner"] == "unknown"
-    assert payload["version"] == "1.0.0"
-    assert payload["model_name"] == "claude-sonnet-4"
-    assert payload["supported_harnesses"] == []
-    assert payload["visibility"] == "public"
+    assert result.exit_code == 1
+    assert isinstance(result.exception, RuntimeError)
+    post.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -229,7 +228,8 @@ def test_create_flags_falls_back_to_config_owner_and_defaults(monkeypatch, _isol
 )
 def test_create_flag_validation(args, message):
     result = _invoke(*args)
-    assert result.exit_code == 1
+    expected = 5 if "file not found" in message.lower() else 7
+    assert result.exit_code == expected
     assert message.lower() in result.output.lower()
 
 
@@ -302,7 +302,7 @@ def test_create_interactive_rejects_invalid_name_before_network(monkeypatch):
 
     result = _invoke("create")
 
-    assert result.exit_code == 1
+    assert result.exit_code == 7
     assert "Agent name is required" in result.output
     post.assert_not_called()
 
@@ -330,23 +330,23 @@ def test_create_interactive_uses_defaults_and_can_be_cancelled(monkeypatch, _iso
 @pytest.mark.parametrize(
     ("content", "message"),
     [
-        ("not json", "Invalid JSON"),
+        ("not json", "Could not read JSON"),
         (json.dumps({"wrong": []}), "bare array"),
-        (json.dumps([]), "No agents found"),
+        (json.dumps([]), "contains no agents"),
     ],
 )
 def test_bulk_create_rejects_invalid_input(tmp_path, content, message):
     source = tmp_path / "agents.json"
     source.write_text(content, encoding="utf-8")
     result = _invoke("bulk-create", "--from-file", str(source))
-    assert result.exit_code == 1
+    assert result.exit_code == 7
     assert message in result.output
 
 
 def test_bulk_create_rejects_missing_file(tmp_path):
     result = _invoke("bulk-create", "--from-file", str(tmp_path / "missing.json"))
-    assert result.exit_code == 1
-    assert "File not found" in result.output
+    assert result.exit_code == 5
+    assert "JSON file not found" in result.output
 
 
 def test_bulk_create_dry_run_renders_each_status_and_exact_payload(tmp_path, monkeypatch):
@@ -444,7 +444,7 @@ def test_agent_list_table_filters_ids_and_pagination(monkeypatch, _isolated_boun
         params={"limit": 2, "offset": 0, "search": "review", "namespace": "alice", "team_id": "team-1"},
     )
     resolve_team.assert_called_once_with("@platform")
-    _isolated_boundaries.save_last_results.assert_called_once_with(data)
+    _isolated_boundaries.save_last_results.assert_called_once_with(data, "agent")
 
     get_with_headers.reset_mock()
     get_with_headers.return_value = (data[:1], {"x-total-count": "3"})
@@ -461,19 +461,19 @@ def test_agent_list_table_filters_ids_and_pagination(monkeypatch, _isolated_boun
     assert "End of results" not in no_id.output
 
 
-def test_agent_list_json_plain_and_empty_pages(monkeypatch):
+def test_agent_list_json_rejects_plain_and_handles_empty_pages(monkeypatch):
     data = [_item()]
     get_with_headers = Mock(return_value=(data, {}))
     monkeypatch.setattr(agent.client, "get_with_headers", get_with_headers)
 
     as_json = _invoke("list", "--output", "json")
     assert as_json.exit_code == 0, as_json.output
-    assert json.loads(as_json.output)[0]["qualified_name"] == "alice/reviewer"
+    assert json.loads(as_json.output)["items"][0]["qualified_name"] == "alice/reviewer"
 
     plain = _invoke("list", "--output", "plain")
-    assert plain.exit_code == 0, plain.output
-    assert "reviewer" in plain.output
-    assert "@alice" in plain.output
+    assert plain.exit_code == 2
+    assert "Error" in plain.output
+    assert "plain" in plain.output
 
     get_with_headers.return_value = ([], {"x-total-count": "0"})
     empty = _invoke("list")
@@ -511,7 +511,7 @@ def test_agent_list_interactive_selection_and_cancellation(monkeypatch):
     show.assert_not_called()
 
 
-def test_agent_my_empty_json_plain_and_table(monkeypatch, _isolated_boundaries):
+def test_agent_my_empty_json_rejects_plain_and_renders_table(monkeypatch, _isolated_boundaries):
     get = Mock(return_value=[])
     monkeypatch.setattr(agent.client, "get", get)
 
@@ -523,11 +523,12 @@ def test_agent_my_empty_json_plain_and_table(monkeypatch, _isolated_boundaries):
     get.return_value = data
     as_json = _invoke("my", "--output", "json")
     assert as_json.exit_code == 0
-    assert json.loads(as_json.output)[0]["status"] == "pending"
+    assert json.loads(as_json.output)["items"][0]["status"] == "pending"
 
     plain = _invoke("my", "--output", "plain")
-    assert plain.exit_code == 0
-    assert "pending" in plain.output
+    assert plain.exit_code == 2
+    assert "Error" in plain.output
+    assert "plain" in plain.output
 
     table = _invoke("my")
     assert table.exit_code == 0, table.output
@@ -708,10 +709,12 @@ def test_agent_init_flag_mode_prompt_file_beta_and_harnesses(tmp_path, monkeypat
         "description": "Triage incidents",
         "owner": "alice",
         "model_name": "claude-sonnet-4",
+        "model_config_json": {},
         "models_by_harness": {},
         "prompt": "Triage incidents.",
         "supported_harnesses": ["kiro"],
         "components": [],
+        "external_mcps": [],
         "success_criteria": None,
     }
 
@@ -722,14 +725,14 @@ def test_agent_init_flag_mode_prompt_file_beta_and_harnesses(tmp_path, monkeypat
         (("--name", "helper", "--description", "desc"), "required"),
         (
             ("--name", "helper", "--description", "desc", "--prompt", "Help", "--harness", "invalid"),
-            "Invalid harness",
+            "Unknown harness",
         ),
         (("--name", "!!!", "--description", "desc", "--prompt", "Help"), "name is required"),
     ],
 )
 def test_agent_init_flag_validation(tmp_path, extra, message):
     result = _invoke("init", "--dir", str(tmp_path), *extra)
-    assert result.exit_code == 1
+    assert result.exit_code == 7
     assert message.lower() in result.output.lower()
 
 
@@ -745,7 +748,7 @@ def test_agent_init_missing_prompt_file_reports_actionable_error(tmp_path):
         "--prompt-file",
         str(tmp_path / "missing.md"),
     )
-    assert result.exit_code == 1
+    assert result.exit_code == 5
     assert "Prompt file not found" in result.output
     assert "missing.md" in result.output.replace("\n", "")
 
@@ -756,13 +759,13 @@ def test_agent_add_scans_existing_non_duplicate_components(tmp_path):
         components=[{"component_type": "mcp", "component_id": "mcp-1"}],
     )
 
-    result = _invoke("add", "skill", "skill-1", "--dir", str(tmp_path))
+    result = _invoke("add", "skill", "22222222-2222-2222-2222-222222222222", "--dir", str(tmp_path))
 
     assert result.exit_code == 0, result.output
     data = yaml.safe_load((tmp_path / agent.YAML_FILE).read_text(encoding="utf-8"))
     assert data["components"] == [
         {"component_type": "mcp", "component_id": "mcp-1"},
-        {"component_type": "skill", "component_id": "skill-1"},
+        {"component_type": "skill", "component_id": "22222222-2222-2222-2222-222222222222"},
     ]
 
 
@@ -813,8 +816,8 @@ def test_agent_publish_rejects_incompatible_draft_modes(monkeypatch):
     post = Mock()
     monkeypatch.setattr(agent.client, "post", post)
     result = _invoke("publish", "--draft", "--submit", "draft-1")
-    assert result.exit_code == 1
-    assert "Cannot use" in result.output
+    assert result.exit_code == 7
+    assert "cannot be used together" in result.output
     post.assert_not_called()
 
 
@@ -880,7 +883,7 @@ def test_agent_publish_update_rejects_scope_changes(tmp_path, monkeypatch, optio
     put = Mock()
     monkeypatch.setattr(agent.client, "put", put)
     result = _invoke("publish", "--dir", str(tmp_path), "--update", *option)
-    assert result.exit_code == 1
+    assert result.exit_code == 7
     assert message in result.output.lower()
     put.assert_not_called()
 
@@ -893,7 +896,7 @@ def test_agent_publish_update_requires_exact_name_match(tmp_path, monkeypatch):
 
     result = _invoke("publish", "--dir", str(tmp_path), "--update")
 
-    assert result.exit_code == 1
+    assert result.exit_code == 5
     assert "No existing agent" in result.output
     put.assert_not_called()
 
@@ -964,7 +967,7 @@ def test_agent_publish_tty_selects_suggested_bump(tmp_path, monkeypatch):
     assert "version_bump_type" not in keep_payload
 
 
-def test_agent_publish_tty_uses_yaml_version_when_suggestions_fail(tmp_path, monkeypatch):
+def test_agent_publish_tty_surfaces_suggestion_failure(tmp_path, monkeypatch):
     _write_agent_yaml(tmp_path)
     get = Mock(
         side_effect=[
@@ -977,25 +980,24 @@ def test_agent_publish_tty_uses_yaml_version_when_suggestions_fail(tmp_path, mon
     monkeypatch.setattr(agent.client, "put", put)
     monkeypatch.setattr(sys, "stdin", SimpleNamespace(isatty=lambda: True))
 
-    agent.agent_publish(
-        directory=str(tmp_path),
-        update=True,
-        draft=False,
-        submit=None,
-        bump=None,
-        team=None,
-        visibility=None,
-    )
+    with pytest.raises(RuntimeError, match="offline"):
+        agent.agent_publish(
+            directory=str(tmp_path),
+            update=True,
+            draft=False,
+            submit=None,
+            bump=None,
+            team=None,
+            visibility=None,
+        )
 
-    payload = put.call_args.args[1]
-    assert payload["version"] == "1.2.3"
-    assert "version_bump_type" not in payload
+    put.assert_not_called()
 
 
 def test_agent_release_validates_bump_and_suggestion(tmp_path, monkeypatch):
     invalid = _invoke("release", "reviewer", "--bump", "epoch", "--dir", str(tmp_path))
-    assert invalid.exit_code == 1
-    assert "patch, minor, major" in invalid.output
+    assert invalid.exit_code == 7
+    assert "Unknown version bump" in invalid.output
 
     _write_agent_yaml(tmp_path)
     monkeypatch.setattr(agent.client, "resolve_registry_reference", Mock(return_value="resolved"))
@@ -1008,8 +1010,8 @@ def test_agent_release_validates_bump_and_suggestion(tmp_path, monkeypatch):
     monkeypatch.setattr(agent.client, "post", post)
 
     missing = _invoke("release", "reviewer", "--bump", "patch", "--dir", str(tmp_path))
-    assert missing.exit_code == 1
-    assert "Could not determine" in missing.output
+    assert missing.exit_code == 7
+    assert "did not provide" in missing.output
     post.assert_not_called()
 
 
@@ -1082,7 +1084,7 @@ def test_agent_versions_empty_json_and_table(monkeypatch):
     get.return_value = response
     as_json = _invoke("versions", "reviewer", "--output", "json")
     assert as_json.exit_code == 0, as_json.output
-    assert json.loads(as_json.output) == response
+    assert json.loads(as_json.output) == {**response, "total": 2, "page": 1, "page_size": 2}
 
     table = _invoke("versions", "reviewer")
     assert table.exit_code == 0, table.output
@@ -1103,7 +1105,7 @@ def test_agent_transfer_owner_validation_cancellation_and_success(monkeypatch):
     monkeypatch.setattr(agent.client, "post", post)
 
     invalid = _invoke("transfer-owner", "reviewer", "@", "--yes")
-    assert invalid.exit_code == 1
+    assert invalid.exit_code == 7
     assert "username is required" in invalid.output
 
     monkeypatch.setattr(typer, "confirm", Mock(return_value=False))
@@ -1131,19 +1133,19 @@ def test_agent_co_author_commands_render_and_preserve_http_boundaries(monkeypatc
 
     listed = _invoke("co-authors", "list", "agent-1")
     added = _invoke("co-authors", "add", "agent-1", "DEV@EXAMPLE.TEST")
-    removed = _invoke("co-authors", "remove", "agent-1", "user-1")
+    removed = _invoke("co-authors", "remove", "agent-1", "22222222-2222-2222-2222-222222222222")
 
     assert listed.exit_code == added.exit_code == removed.exit_code == 0
     assert "dev@example.test" in listed.output
     assert any(cell.strip() == "no" for line in listed.output.splitlines() for cell in line.split("│"))
     assert "Added co-author" in added.output
     assert "Co-author removed" in removed.output
-    get.assert_called_once_with("/agents/agent-1/co-authors")
+    get.assert_called_once_with("/api/v1/agents/agent-1/co-authors")
     post.assert_called_once_with(
-        "/agents/agent-1/co-authors",
+        "/api/v1/agents/agent-1/co-authors",
         json_data={"email": "dev@example.test"},
     )
-    delete.assert_called_once_with("/agents/agent-1/co-authors/user-1")
+    delete.assert_called_once_with("/api/v1/agents/agent-1/co-authors/22222222-2222-2222-2222-222222222222")
 
     get.return_value = []
     empty = _invoke("co-authors", "list", "agent-1")
@@ -1174,3 +1176,203 @@ def test_agent_commands_are_registered_on_public_cli():
         "co-authors",
     ):
         assert command in result.output
+
+
+def test_every_agent_leaf_has_shared_output_option():
+    command = get_command(cli_app).commands["agent"]
+
+    def leaves(group):
+        for child in group.commands.values():
+            if isinstance(child, Group):
+                yield from leaves(child)
+            else:
+                yield child
+
+    assert all(any(parameter.name == "output" for parameter in leaf.params) for leaf in leaves(command))
+
+
+def test_create_flags_json_returns_only_server_result(monkeypatch):
+    response = {"id": "agent-1", "status": "pending", "qualified_name": "alice/reviewer"}
+    monkeypatch.setattr(agent.client, "get", Mock(return_value={"username": "alice"}))
+    monkeypatch.setattr(agent.client, "add_publish_target", Mock(side_effect=_publish_target))
+    monkeypatch.setattr(agent.client, "post", Mock(return_value=response))
+
+    result = runner.invoke(
+        cli_app,
+        ["agent", "create", "--name", "reviewer", "--prompt", "Review", "--output", "json"],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout) == response
+    assert result.stderr == ""
+
+
+def test_bulk_create_json_requires_noninteractive_confirmation(tmp_path):
+    source = tmp_path / "agents.json"
+    source.write_text(json.dumps([{"name": "reviewer"}]), encoding="utf-8")
+
+    result = runner.invoke(
+        cli_app,
+        ["agent", "bulk-create", "--from-file", str(source), "--output", "json"],
+    )
+
+    assert result.exit_code == 7
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["error"]["category"] == "validation"
+
+
+def test_install_and_archive_lifecycle_json_return_server_results(monkeypatch):
+    resolve = Mock(return_value="agent-1")
+    post = Mock(return_value={"config_snippet": {"agent_profile": {"path": "agent.md", "content": "rules"}}})
+    patch_request = Mock(
+        side_effect=[
+            {"id": "agent-1", "archived": True},
+            {"id": "agent-1", "archived": True},
+            {"id": "agent-1", "archived": False},
+        ]
+    )
+    monkeypatch.setattr(agent.client, "resolve_registry_reference", resolve)
+    monkeypatch.setattr(agent.client, "post", post)
+    monkeypatch.setattr(agent.client, "patch", patch_request)
+
+    installed = _invoke("install", "reviewer", "--harness", "kiro", "--output", "json")
+    archived = _invoke("archive", "reviewer", "--yes", "--output", "json")
+    deleted = _invoke("delete", "reviewer", "--yes", "--output", "json")
+    restored = _invoke("unarchive", "reviewer", "--yes", "--output", "json")
+
+    assert json.loads(installed.output)["config_snippet"]["agent_profile"]["path"] == "agent.md"
+    assert json.loads(archived.output)["archived"] is True
+    assert json.loads(deleted.output)["archived"] is True
+    assert json.loads(restored.output)["archived"] is False
+
+
+def test_local_init_add_and_build_json_contracts(tmp_path, monkeypatch):
+    target = tmp_path / "agent"
+    monkeypatch.setattr(agent.config, "load", Mock(return_value={"username": "alice"}))
+
+    initialized = _invoke(
+        "init",
+        "--dir",
+        str(target),
+        "--name",
+        "reviewer",
+        "--description",
+        "Reviews changes",
+        "--prompt",
+        "Review carefully",
+        "--harness",
+        "kiro",
+        "--output",
+        "json",
+    )
+    added = _invoke(
+        "add",
+        "skill",
+        "22222222-2222-2222-2222-222222222222",
+        "--dir",
+        str(target),
+        "--output",
+        "json",
+    )
+    monkeypatch.setattr(agent.client, "get", Mock(return_value={"id": "skill"}))
+    monkeypatch.setattr(agent.client, "post", Mock(return_value={"issues": []}))
+    monkeypatch.setattr(agent.client, "add_publish_target", Mock(side_effect=_publish_target))
+    built = _invoke("build", "--dir", str(target), "--output", "json")
+
+    assert json.loads(initialized.output)["agent"]["name"] == "reviewer"
+    assert json.loads(added.output)["component"]["component_id"] == "22222222-2222-2222-2222-222222222222"
+    assert json.loads(built.output)["valid"] is True
+
+
+def test_publish_and_release_json_return_server_results(tmp_path, monkeypatch):
+    _write_agent_yaml(tmp_path)
+    monkeypatch.setattr(agent.client, "add_publish_target", Mock(side_effect=_publish_target))
+    post = Mock(
+        side_effect=[
+            {"id": "agent-1", "status": "pending"},
+            {"id": "version-1", "status": "pending", "warnings": []},
+        ]
+    )
+    monkeypatch.setattr(agent.client, "post", post)
+
+    published = _invoke("publish", "--dir", str(tmp_path), "--output", "json")
+
+    monkeypatch.setattr(agent.client, "resolve_registry_reference", Mock(return_value="agent-1"))
+    monkeypatch.setattr(
+        agent.client,
+        "get",
+        Mock(
+            side_effect=[
+                {"id": "agent-1"},
+                {"current": "1.2.3", "suggestions": {"patch": "1.2.4"}},
+            ]
+        ),
+    )
+    released = _invoke(
+        "release",
+        "reviewer",
+        "--bump",
+        "patch",
+        "--dir",
+        str(tmp_path),
+        "--output",
+        "json",
+    )
+
+    assert json.loads(published.output) == {"id": "agent-1", "status": "pending"}
+    assert json.loads(released.output)["version"] == "1.2.4"
+
+
+def test_release_failure_does_not_change_local_version(tmp_path, monkeypatch):
+    _write_agent_yaml(tmp_path)
+    monkeypatch.setattr(agent.client, "resolve_registry_reference", Mock(return_value="agent-1"))
+    monkeypatch.setattr(
+        agent.client,
+        "get",
+        Mock(
+            side_effect=[
+                {"id": "agent-1"},
+                {"current": "1.2.3", "suggestions": {"patch": "1.2.4"}},
+            ]
+        ),
+    )
+    monkeypatch.setattr(agent.client, "post", Mock(side_effect=RuntimeError("server failed")))
+
+    result = _invoke("release", "reviewer", "--bump", "patch", "--dir", str(tmp_path))
+
+    assert result.exit_code == 1
+    assert yaml.safe_load((tmp_path / agent.YAML_FILE).read_text())["version"] == "1.2.3"
+
+
+def test_co_author_validation_stops_before_requests(monkeypatch):
+    post = Mock()
+    delete = Mock()
+    monkeypatch.setattr(agent.client, "post", post)
+    monkeypatch.setattr(agent.client, "delete", delete)
+
+    empty_user = _invoke("co-authors", "add", "alice/reviewer", "@", "--output", "json")
+    bad_id = _invoke("co-authors", "remove", "alice/reviewer", "not-a-uuid", "--output", "json")
+
+    assert empty_user.exit_code == 7
+    assert bad_id.exit_code == 7
+    post.assert_not_called()
+    delete.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["agent", "create", "--output", "json"],
+        ["agent", "archive", "alice/reviewer", "--output", "json"],
+        ["agent", "delete", "alice/reviewer", "--output", "json"],
+        ["agent", "unarchive", "alice/reviewer", "--output", "json"],
+        ["agent", "pull", "alice/reviewer", "--harness", "kiro", "--output", "json"],
+        ["agent", "pull", "alice/reviewer", "--harness", "unknown", "--no-prompt", "--output", "json"],
+    ],
+)
+def test_agent_json_validation_uses_shared_error_boundary(arguments):
+    result = runner.invoke(cli_app, arguments)
+
+    assert result.exit_code == 7
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["error"]["category"] == "validation"

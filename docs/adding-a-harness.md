@@ -10,7 +10,7 @@ hook instrumentation (telemetry), and session parsing (reconciliation).
 
 ## Overview: What "Supporting a harness" Means
 
-When a user runs `observal pull <agent>`, Observal writes harness-specific files:
+When a user runs `observal agent pull <agent>`, Observal writes harness-specific files:
 
 | Component | What gets written | Example |
 |-----------|------------------|---------|
@@ -316,7 +316,7 @@ register_adapter(MyHarnessAdapter())
 ## Step 4: Create Server-Side Config Generator (Install)
 
 Create `observal-server/services/harness/my_harness.py`. This generates files when
-users run `observal pull` or install an agent:
+users run `observal agent pull` or install an agent:
 
 ```python
 # SPDX-FileCopyrightText: 2026 Your Name <your@email.com>
@@ -539,7 +539,7 @@ observal scan --harness my-harness
 cd observal-server && uv run pytest ../tests/test_agent_config_generator.py -q
 
 # Install produces correct files
-observal pull <some-agent> --harness my-harness --dry-run
+observal agent pull <some-agent> --harness my-harness --dry-run
 
 # Hooks install correctly
 observal doctor patch --harness my-harness --dry-run

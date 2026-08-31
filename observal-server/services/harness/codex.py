@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import json
 
-from loguru import logger as optic
-
 from observal_shared.harness_registry import HARNESS_REGISTRY
 from services.harness import BaseHarnessAdapter, ConfigContext, McpConfigContext, register_adapter
 
@@ -69,7 +67,6 @@ class CodexAdapter(BaseHarnessAdapter):
         return {"mcp_servers": {ctx.name: entry}}
 
     def format_config(self, ctx: ConfigContext) -> dict:
-        optic.trace("ctx={}", ctx)
         options = ctx.options
         mcp_configs = ctx.mcp_configs
         rules_content = ctx.rules_content

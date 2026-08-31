@@ -12,6 +12,7 @@ Usage in each type's route file::
 from __future__ import annotations
 
 import re
+from copy import deepcopy
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -29,11 +30,30 @@ from api.deps import (
 from models.mcp import ListingStatus
 from models.user import User, UserRole
 from schemas.component_version import VersionPublishRequest, VersionReviewRequest  # noqa: TC001
-from services.component_version_extras import ALLOWED_FIELDS, validate_and_extract
+from services.component_version_extras import ALLOWED_FIELDS, REQUIRED_FIELDS, validate_and_extract
 from services.inbox import sources as inbox
 
 # Semver pattern: X.Y.Z or X.Y.Z-prerelease
 SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$")
+
+_VERSION_MANAGED_FIELDS = {
+    "id",
+    "listing_id",
+    "version",
+    "description",
+    "changelog",
+    "status",
+    "rejection_reason",
+    "download_count",
+    "released_by",
+    "released_at",
+    "reviewed_by",
+    "reviewed_at",
+    "created_at",
+    "is_editing",
+    "editing_since",
+    "editing_by",
+}
 
 
 async def audit(*_args, **_kwargs):
@@ -177,55 +197,38 @@ async def _publish_version(
     if dup_result.scalar_one_or_none() is not None:
         raise HTTPException(status_code=409, detail=f"Version {req.version!r} already exists for this listing")
 
-    extra_fields = validate_and_extract(component_type, req.extra)
+    effective_extra = dict(req.extra or {})
+    for field in REQUIRED_FIELDS.get(component_type, set()):
+        if field not in effective_extra:
+            value = getattr(listing, field, None)
+            if value is not None:
+                effective_extra[field] = value
+    extra_fields = validate_and_extract(component_type, effective_extra)
     now = datetime.now(UTC)
+    current_version = listing.latest_version
+    snapshot = (
+        {
+            column.name: deepcopy(getattr(current_version, column.name))
+            for column in version_model.__table__.columns
+            if column.name not in _VERSION_MANAGED_FIELDS
+        }
+        if current_version
+        else {}
+    )
+    if "supported_harnesses" in req.model_fields_set:
+        snapshot["supported_harnesses"] = req.supported_harnesses
     ver = version_model(
+        **snapshot,
         listing_id=listing.id,
         version=req.version,
         description=req.description,
         changelog=req.changelog,
-        supported_harnesses=req.supported_harnesses or [],
         status=ListingStatus.pending,
         released_by=current_user.id,
         released_at=now,
     )
     for field_name, value in extra_fields.items():
         setattr(ver, field_name, value)
-
-    # Auto-snapshot content from listing when not explicitly provided in extras.
-    # This ensures each version preserves the content at publish time.
-    content_fields = {
-        "skill": [
-            "skill_md_content",
-            "script_content",
-            "script_filename",
-            "delivery_mode",
-            "git_url",
-            "git_ref",
-            "skill_path",
-            "task_type",
-        ],
-        "hook": ["hook_content", "script_content", "handler_type", "event", "git_url", "git_ref"],
-        "prompt": ["template", "category"],
-        "mcp": ["git_url", "git_ref", "command", "args", "url", "transport"],
-        "sandbox": [
-            "runtime_type",
-            "image",
-            "resource_limits",
-            "network_policy",
-            "entrypoint",
-            "runtime_config",
-            "source_url",
-            "source_ref",
-            "resolved_sha",
-            "sandbox_path",
-        ],
-    }
-    for field in content_fields.get(component_type, []):
-        if field not in extra_fields and hasattr(listing, field):
-            listing_val = getattr(listing, field, None)
-            if listing_val is not None and hasattr(ver, field):
-                setattr(ver, field, listing_val)
 
     db.add(ver)
     await db.flush()

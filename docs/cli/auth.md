@@ -1,132 +1,121 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# observal auth
+# `observal auth`
 
 Authentication and account management.
 
-## Subcommands
+## Commands
 
 | Command | Description |
 | --- | --- |
-| [`auth login`](#observal-auth-login) | Log in to an Observal server (auto-creates admin on fresh server) |
-| [`auth logout`](#observal-auth-logout) | Clear saved credentials |
-| [`auth whoami`](#observal-auth-whoami) | Show the authenticated user |
-| [`auth status`](#observal-auth-status) | Check server connectivity, health, and local telemetry buffer |
-| [`auth reset-password`](#observal-auth-reset-password) | Reset a forgotten password |
+| `observal auth login` | Authenticate with credentials or browser SSO |
+| `observal auth logout` | Revoke the remote session when possible and clear local credentials |
+| `observal auth whoami` | Show the authenticated user |
+| `observal auth status` | Check authenticated server and local outbox health |
+| `observal auth change-password` | Change the current user's password |
+| `observal auth set-username` | Set or update the registry namespace username |
 
----
-
-## `observal auth login`
-
-Log in to an Observal server. On a fresh server with no users, bootstraps an admin account with your email and password.
-
-### Synopsis
-
-```bash
-observal auth login [--server URL] [--key KEY] [--email EMAIL] [--password PASSWORD] [--name NAME]
-```
-
-### Options
-
-| Option | Description |
-| --- | --- |
-| `--server URL` | Override the server URL for this login |
-| `--key KEY` | Log in with an API key instead of email/password |
-| `--email EMAIL` | Skip the email prompt |
-| `--password PASSWORD` | Skip the password prompt (pass via env var in CI) |
-| `--name NAME` | Display name used when bootstrapping |
-
-### Example
+## Login
 
 ```bash
 observal auth login
-# Server URL [http://localhost]: <Enter>
-# Method: [E]mail / [K]ey: E
-# Email: admin@demo.example
-# Password: **************
-# Logged in as admin@demo.example (super_admin)
+observal auth login --server https://observal.example.com --email alice
+observal auth login --sso
 ```
 
-Credentials are saved to `~/.observal/config.json` (mode `0600`).
+Login accepts `server`, `email`, `password`, `name`, `sso`, `saml`, `output`, and `no-setup` options. Prefer `OBSERVAL_PASSWORD` or `OBSERVAL_PASSWORD_FILE` over the password option so the secret does not enter shell history or process arguments.
 
----
+Human login always asks for the server URL unless `--server` is supplied; leave the prompt blank to use `http://localhost`. On a fresh server, provide email, name, and a password to create the first administrator. JSON mode never prompts, uses the configured server or local default, and requires complete credential inputs.
 
-## `observal auth logout`
+Successful human login synchronizes the bundled skills, creates the initial layer snapshot, and runs doctor. Select `no-setup` to skip the snapshot and doctor. JSON mode skips those post-login steps.
 
-Clears credentials from `~/.observal/config.json`. Does not delete aliases or the telemetry buffer.
+Every CLI invocation also computes a SHA-256 hash for each installed Observal-managed skill tree. A mismatched tree is replaced completely from the packaged bundle, including references and scripts, so local edits and stale extra files do not survive. Skill directories outside the six bundled Observal names are untouched.
+
+Credential JSON login emits one safe object and never includes tokens or passwords:
+
+```bash
+OBSERVAL_PASSWORD_FILE=/run/secrets/observal-password \
+  observal auth login \
+  --server https://observal.example.com \
+  --email alice \
+  --output json
+```
+
+Browser SSO in JSON mode is a JSON Lines stream. The first event contains the verification URL and user code. The final event confirms authentication:
+
+```bash
+observal auth login --sso --output json
+```
+
+## Logout
 
 ```bash
 observal auth logout
+observal auth logout --output json
 ```
 
----
+Logout always removes local tokens when the local configuration is readable. Remote revocation is best effort and is reported separately in JSON. Use `observal doctor cleanup` to remove Observal-managed harness hooks.
 
-## `observal auth whoami`
-
-Print the currently authenticated user.
+## Current user
 
 ```bash
 observal auth whoami
-# alice@example.com (user), https://observal.your-company.internal
+observal auth whoami --output json
 ```
 
-Exits non-zero if you're not logged in.
+The JSON form returns the server user object directly.
 
----
-
-## `observal auth status`
-
-Check server connectivity, health, and the local telemetry buffer.
+## Status
 
 ```bash
 observal auth status
-# Server:   https://observal.your-company.internal: OK (200)
-# Auth:     alice@example.com (user)
-# Buffer:   0 pending events
-# Health:   API ok, Postgres ok, ClickHouse ok, Redis ok
+observal auth status --output json
 ```
 
-Useful as the first step when things aren't working.
+Status reports the server URL, authentication state, health latency, and local telemetry outbox. It returns exit code 3 when authentication is absent and exit code 9 when the configured server is unreachable.
 
----
-
-## `observal auth reset-password`
-
-Reset a forgotten password. The server logs a 6-character reset code to its console. The operator reads it and passes it to you.
-
-### Synopsis
+## Change password
 
 ```bash
-observal auth reset-password [--email EMAIL]
+observal auth change-password
 ```
 
-### Flow
+Both modes read `OBSERVAL_CURRENT_PASSWORD` and `OBSERVAL_NEW_PASSWORD`, including their corresponding `_FILE` forms. Human mode prompts for missing values; JSON mode requires both values and never prompts.
 
 ```bash
-observal auth reset-password --email admin@demo.example
-# → server console prints:
-#   WARNING - PASSWORD RESET CODE for admin@demo.example: A7X9B2 (expires in 15 minutes)
-# Enter reset code: A7X9B2
-# New password: **************
-# Password reset for admin@demo.example.
+OBSERVAL_CURRENT_PASSWORD_FILE=/run/secrets/current-password \
+OBSERVAL_NEW_PASSWORD_FILE=/run/secrets/new-password \
+  observal auth change-password --output json
 ```
 
-The same flow is available in the web UI via the **Forgot password?** link.
+Passwords require at least 12 characters, one uppercase letter, one number, and one special character.
 
----
+## Set username
+
+```bash
+observal auth set-username alice
+observal auth set-username alice --output json
+```
+
+The username is the user's registry namespace. It must follow the namespace rules shown by command help. The server prevents changes that conflict with another namespace or published registry ownership.
 
 ## Environment variables
 
 | Variable | Purpose |
 | --- | --- |
-| `OBSERVAL_SERVER_URL` | Default server URL for login |
-| `OBSERVAL_ACCESS_TOKEN` / `OBSERVAL_API_KEY` | Pre-authenticate without calling `login` (for CI) |
-| `OBSERVAL_TIMEOUT` | Request timeout in seconds |
+| `OBSERVAL_SERVER_URL` | Default server URL |
+| `OBSERVAL_ACCESS_TOKEN` | Pre-authenticate commands without login |
+| `OBSERVAL_PASSWORD` | Credential or bootstrap login password |
+| `OBSERVAL_CURRENT_PASSWORD` | Current password for JSON password changes |
+| `OBSERVAL_NEW_PASSWORD` | New password for JSON password changes and mandatory login changes |
+| `OBSERVAL_TIMEOUT` | Authenticated client timeout |
+
+Password and token variables support a corresponding `_FILE` form. Do not set a direct value and its file form together.
 
 Full list: [Environment variables](../reference/environment-variables.md).
 
 ## Related
 
-* [`observal config`](config.md): where credentials live
-* [Self-Hosting: Authentication and SSO](../self-hosting/authentication.md): server-side auth setup
+* [`observal config`](config.md): local configuration
+* [Self-hosting authentication](../self-hosting/authentication.md): server authentication and SSO

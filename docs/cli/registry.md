@@ -4,33 +4,38 @@
 
 # observal registry
 
-Publish and manage registry components. The registry has five component types (MCP servers, skills, hooks, prompts, and sandboxes), and all five share a similar command structure.
+Publish and manage registry components. The registry has five component types: MCP servers, skills, hooks, prompts, and sandboxes.
 
 ## Subcommand structure
 
-```
+```text
 observal registry <type> <action> [args]
 ```
 
-`<type>` is one of: `mcp`, `skill`, `hook`, `prompt`, `sandbox`.
+| Type | Submit | List | My | Show | Install | Render | Edit |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `mcp` | yes | yes | yes | yes | yes | no | yes |
+| `skill` | yes | yes | yes | yes | yes | no | yes |
+| `hook` | yes | yes | no | yes | yes | no | yes |
+| `prompt` | yes | yes | yes | yes | no | yes | yes |
+| `sandbox` | yes | yes | no | yes | no | no | yes |
 
-Every type supports these actions:
+Every component type also supports archive, unarchive, ownership transfer, and co-author management. Registry also contains the `models`, `version`, `recommend`, and mixed `bulk` groups.
 
-| Action | Description |
-| --- | --- |
-| `submit` | Submit a new component for review |
-| `list` | List approved components |
-| `my` | List your own components across all statuses |
-| `show` | Show details for one component |
-| `install` | Generate a harness config snippet |
-| `edit` | Edit a draft, pending, or rejected submission |
-| `transfer-owner` | Transfer ownership to another username |
+All registry references accept a UUID, canonical `namespace/slug`, a unique legacy bare name, a row number from the latest human list output for the same component type, or an `@alias`. Agents and scripts must use returned UUIDs or `qualified_name` values, never row numbers. If the same bare slug exists in multiple namespaces, qualify it, for example `alice/search` instead of `search`.
 
-Notes:
-- `my` is available for `mcp`, `skill`, and `prompt`. Hooks and sandboxes do not have a `my` subcommand.
-- Prompts also support [`render`](#observal-registry-prompt-render).
+### Shared lifecycle and collaboration commands
 
-All registry references accept a UUID, canonical `namespace/slug`, a unique legacy bare name, a row number from the last `list` output, or an `@alias`. If the same bare slug exists in multiple namespaces, qualify it (for example, `alice/search` instead of `search`).
+```bash
+observal registry skill archive alice/reviewer --yes --output json
+observal registry skill unarchive alice/reviewer --yes --output json
+observal registry skill transfer-owner alice/reviewer bob --yes --output json
+observal registry skill co-authors list alice/reviewer --output json
+observal registry skill co-authors add alice/reviewer bob@example.com --output json
+observal registry skill co-authors remove alice/reviewer <user-uuid> --output json
+```
+
+Archive, restore, and ownership transfer require explicit confirmation in JSON mode. Their JSON output is the direct server result. Co-author list returns the standard list envelope; add and remove return the direct server result.
 
 The namespace is the publisher's username or a teamspace handle. Usernames cannot change after the account owns a registry listing. Team members can browse approved private teamspace items in normal list results. Use `--team TEAM_HANDLE` to include public items plus that team's private items, or `--namespace TEAM_HANDLE` to restrict results to that namespace. Direct references use `team-handle/item-slug`. Nonmembers receive the same not-found response for private items as for unknown items.
 
@@ -50,9 +55,51 @@ observal registry skill show platform-tools/internal-skill --output json
 
 ---
 
+## Mixed bulk submission
+
+Submit up to 200 MCP, skill, hook, prompt, and sandbox entries from one JSON file:
+
+```bash
+observal registry bulk submit --from-file components.json --dry-run --output json
+observal registry bulk submit --from-file components.json --yes --output json
+```
+
+The file is a bare array or an object with a `components` array. Each entry contains `type` plus the normal API submission fields:
+
+```json
+{
+  "components": [
+    {
+      "type": "skill",
+      "name": "review-helper",
+      "version": "1.0.0",
+      "description": "Reviews changes",
+      "owner": "alice",
+      "task_type": "code-review",
+      "delivery_mode": "registry_direct",
+      "skill_md_content": "---\nname: review-helper\ndescription: Reviews changes\n---\n"
+    },
+    {
+      "type": "prompt",
+      "name": "review-brief",
+      "description": "Review prompt",
+      "owner": "alice",
+      "category": "general",
+      "template": "Review {{change}}"
+    }
+  ]
+}
+```
+
+Dry run validates file structure without contacting submission endpoints. Execution structurally validates every entry before the first mutation, submits entries in order, reports conflicts as skipped, and returns per-entry IDs, canonical names, review status, and safe errors. Authentication, permission, rate-limit, version, and service failures stop the batch. JSON execution requires `--yes`.
+
+Re-running a partially completed file is safe only after inspecting results. Existing identities are skipped for component types that reject duplicates. Verify created items by returned UUID or `qualified_name`.
+
+---
+
 ## MCP servers
 
-MCP server registry commands for submitting, browsing, installing, editing, and deleting MCP server listings.
+MCP server registry commands for submitting, browsing, generating configuration, editing, and archiving MCP server listings.
 
 ### `observal registry mcp submit`
 
@@ -75,6 +122,7 @@ observal registry mcp submit --git <url> [OPTIONS]
 | `--yes` | `-y` | Accept all defaults |
 | `--draft` | | Save as draft instead of submitting for review |
 | `--submit` | | Submit an existing draft for review (MCP ID) |
+| `--output` | `-o` | Output format: `table` or `json` |
 
 #### Default flow (JSON paste)
 
@@ -104,7 +152,7 @@ observal registry mcp submit --git <url> [OPTIONS]
 observal registry mcp submit
 
 # Non-interactive with piped JSON
-echo '{"command": "npx", "args": ["-y", "@example/mcp-server"]}' | observal registry mcp submit -y -n my-server -c developer-tools
+echo '{"command": "npx", "args": ["-y", "@example/mcp-server"]}' | observal registry mcp submit -y -n my-server -c developer-tools --output json
 
 # Save as draft
 observal registry mcp submit --draft
@@ -138,7 +186,7 @@ observal registry mcp submit --submit my-server
 List approved MCP servers in the registry.
 
 ```bash
-observal registry mcp list [--search TERM] [--category CAT] [--limit N] [--sort name|category|version] [--output table|json|plain] [--interactive]
+observal registry mcp list [--search TERM] [--category CAT] [--limit N] [--sort name|category|version] [--output table|json] [--interactive]
 ```
 
 | Option | Short | Description |
@@ -147,12 +195,12 @@ observal registry mcp list [--search TERM] [--category CAT] [--limit N] [--sort 
 | `--category` | `-c` | Filter by category |
 | `--limit` | `-n` | Max results (default: 50) |
 | `--sort` | | Sort by: `name`, `category`, `version` |
-| `--output` | `-o` | Output format: `table`, `json`, `plain` |
+| `--output` | `-o` | Output format: `table`, `json` |
 | `--interactive` | `-i` | Open a fuzzy-search picker |
 
 ```bash
 observal registry mcp list --search github
-observal registry mcp list --category ai --output json
+observal registry mcp list --category ai-ml --output json
 observal registry mcp list --interactive
 observal registry mcp list --sort category --limit 10
 ```
@@ -164,7 +212,7 @@ observal registry mcp list --sort category --limit 10
 List your own MCP servers across all statuses (draft, pending, approved, rejected).
 
 ```bash
-observal registry mcp my [--output table|json|plain]
+observal registry mcp my [--output table|json]
 ```
 
 ```bash
@@ -192,16 +240,22 @@ observal registry mcp show @fav --output json
 
 ### `observal registry mcp install`
 
-Generate a harness config snippet for an MCP server. Prompts for required environment variables and headers interactively.
+Generate a harness config snippet for an MCP server. This command does not write harness configuration or record an installation. Prompts for required environment variables and headers unless non-interactive or machine output is selected.
 
 ```bash
-observal registry mcp install <id-or-name> --harness <harness> [--raw]
+observal registry mcp install <id-or-name> --harness <harness> [options]
 ```
 
 | Option | Short | Description |
 | --- | --- | --- |
 | `--harness` | `-i` | Target harness (required) |
-| `--raw` | | Output bare JSON only, suitable for piping to a file |
+| `--version` | `-V` | Generate configuration for one version |
+| `--env` | `-e` | Environment value as `KEY=VALUE`; repeatable |
+| `--header` | | Header value as `KEY=VALUE`; repeatable |
+| `--env-file` | | Read environment values from a file |
+| `--no-prompt` | `-y` | Use supplied values and placeholders without prompting |
+| `--raw` | | Output only the bare config snippet for piping |
+| `--output` | `-o` | Output the complete operation result as table or JSON |
 
 ```bash
 observal registry mcp install my-server --harness claude-code
@@ -230,6 +284,9 @@ observal registry mcp edit <id-or-name> [OPTIONS]
 | `--git-url` | | New git URL |
 | `--command` | | New command |
 | `--url` | | New URL (SSE/HTTP) |
+| `--bump` | | Version bump for approved listings: `patch`, `minor`, or `major` |
+| `--changelog` | | Changelog for an approved-listing version |
+| `--output` | `-o` | Output format: `table` or `json` |
 
 Without flags, opens an interactive JSON paste prompt (same format as submit).
 
@@ -281,11 +338,12 @@ observal registry skill submit [OPTIONS]
 | `--git-ref` | | Branch or tag (default: main) |
 | `--draft` | | Save as draft instead of submitting for review |
 | `--submit` | | Submit a draft for review (skill ID) |
+| `--output` | `-o` | Output format: `table` or `json` |
 
 ```bash
 observal registry skill submit --git-url https://github.com/org/repo
 observal registry skill submit --from-file skill.json
-observal registry skill submit --skill-md ./SKILL.md --git-url https://github.com/org/repo
+observal registry skill submit --skill-md ./SKILL.md --git-url https://github.com/org/repo --name review --description "Review code" --task-type code-review --output json
 observal registry skill submit --draft
 observal registry skill submit --submit abc123
 ```
@@ -297,7 +355,7 @@ observal registry skill submit --submit abc123
 List approved skills in the registry.
 
 ```bash
-observal registry skill list [--task-type TYPE] [--target-agent AGENT] [--search TERM] [--output table|json|plain]
+observal registry skill list [--task-type TYPE] [--target-agent AGENT] [--search TERM] [--output table|json]
 ```
 
 | Option | Short | Description |
@@ -305,7 +363,7 @@ observal registry skill list [--task-type TYPE] [--target-agent AGENT] [--search
 | `--task-type` | `-t` | Filter by task type |
 | `--target-agent` | | Filter by target agent |
 | `--search` | `-s` | Search by name or description |
-| `--output` | `-o` | Output format: `table`, `json`, `plain` |
+| `--output` | `-o` | Output format: `table`, `json` |
 
 ```bash
 observal registry skill list
@@ -321,7 +379,7 @@ observal registry skill list --search "refactor"
 List your own skills across all statuses (draft, pending, approved, rejected).
 
 ```bash
-observal registry skill my [--output table|json|plain]
+observal registry skill my [--output table|json]
 ```
 
 ```bash
@@ -360,11 +418,15 @@ observal registry skill install <id-or-name> --harness <harness> [--scope user|p
 | `--harness` | `-i` | Target harness (required) |
 | `--scope` | `-s` | Install scope: `user` (global, default) or `project` |
 | `--raw` | | Output raw JSON only |
-| `--no-write` | | Print config without writing files |
+| `--no-write` | | Generate config without writing skill files or lockfile state |
+| `--version` | `-V` | Install one version instead of the latest |
+| `--output` | `-o` | Output the operation result as table or JSON |
 
 Scopes:
-- `user` (default): writes to `~/.<harness>/skills/<name>/` (global).
-- `project`: writes to `.agents/skills/<name>/` in cwd, then symlinks into each harness config dir found in the project.
+- `user` (default): writes to `~/.<harness>/skills/<name>/` globally.
+- `project`: writes to `.agents/skills/<name>/` in the current directory, then symlinks into detected harness config directories.
+
+JSON output does not disable installation. It returns whether files were written and the installed path. Raw and no-write modes do not record the skill as installed. A failed file write or lockfile update returns a categorized failure instead of reporting success.
 
 ```bash
 observal registry skill install my-skill --harness claude-code
@@ -392,6 +454,7 @@ observal registry skill edit <id-or-name> [OPTIONS]
 | `--task-type` | `-t` | New task type |
 | `--git-url` | | New git URL |
 | `--git-ref` | | New git ref |
+| `--output` | `-o` | Output format: `table` or `json` |
 
 ```bash
 observal registry skill edit my-skill --description "Better desc"
@@ -420,6 +483,7 @@ observal registry hook submit [OPTIONS]
 | `--source-ref` | | Branch/tag to track (default: main) |
 | `--source-path` | | Directory within repo containing hook files |
 | `--requires` | | Install prerequisites (repeatable) |
+| `--output` | `-o` | Output format: `table` or `json` |
 
 ```bash
 observal registry hook submit
@@ -437,14 +501,14 @@ observal registry hook submit --submit abc123
 List approved hooks from the registry.
 
 ```bash
-observal registry hook list [--event EVENT] [--search TERM] [--output table|json|plain]
+observal registry hook list [--event EVENT] [--search TERM] [--output table|json]
 ```
 
 | Option | Short | Description |
 | --- | --- | --- |
 | `--event` | `-e` | Filter by event type |
 | `--search` | `-s` | Search by name or description |
-| `--output` | `-o` | Output format: `table`, `json`, `plain` |
+| `--output` | `-o` | Output format: `table`, `json` |
 
 ```bash
 observal registry hook list
@@ -484,13 +548,17 @@ observal registry hook install <id-or-name> --harness <harness> [--platform PLAT
 | `--platform` | `-p` | Platform: `win32`, `darwin`, `linux` |
 | `--raw` | | Output raw JSON only (no file writes) |
 | `--dir` | `-d` | Project directory for file writes (default: cwd) |
+| `--output` | `-o` | Output the complete installation result as table or JSON |
 
 ```bash
 observal registry hook install my-hook --harness claude-code
 observal registry hook install @guard --harness kiro --dir ./project
 observal registry hook install my-hook --harness cursor --raw
 observal registry hook install my-hook --harness claude-code --platform darwin
+observal registry hook install my-hook --harness claude-code --output json
 ```
+
+Hook installation validates every path before writing, refuses to replace malformed existing JSON, writes files atomically, and does not duplicate an existing event entry when repeated.
 
 ---
 
@@ -509,6 +577,7 @@ observal registry hook edit <id-or-name> [OPTIONS]
 | `--description` | `-d` | New description |
 | `--version` | `-v` | New version string |
 | `--event` | `-e` | New event type |
+| `--output` | `-o` | Output format: `table` or `json` |
 
 ```bash
 observal registry hook edit my-hook --description "Updated guard hook"
@@ -532,6 +601,7 @@ observal registry prompt submit [OPTIONS]
 | `--from-file` | `-f` | Create from JSON file, or read template from a text file |
 | `--draft` | | Save as draft instead of submitting for review |
 | `--submit` | | Submit a draft for review (prompt ID) |
+| `--output` | `-o` | Output format: `table` or `json` |
 
 If `--from-file` points to a non-JSON file, its content is used as the template and you are prompted for metadata interactively.
 
@@ -550,14 +620,14 @@ observal registry prompt submit --submit abc123
 List approved prompts in the registry.
 
 ```bash
-observal registry prompt list [--category CAT] [--search TERM] [--output table|json|plain]
+observal registry prompt list [--category CAT] [--search TERM] [--output table|json]
 ```
 
 | Option | Short | Description |
 | --- | --- | --- |
 | `--category` | `-c` | Filter by category |
 | `--search` | `-s` | Search by name or description |
-| `--output` | `-o` | Output format: `table`, `json`, `plain` |
+| `--output` | `-o` | Output format: `table`, `json` |
 
 ```bash
 observal registry prompt list
@@ -572,7 +642,7 @@ observal registry prompt list --search "refactor" --output json
 List your own prompts across all statuses (draft, pending, approved, rejected).
 
 ```bash
-observal registry prompt my [--output table|json|plain]
+observal registry prompt my [--output table|json]
 ```
 
 ```bash
@@ -598,26 +668,6 @@ observal registry prompt show @refactor-prompt --output json
 
 ---
 
-### `observal registry prompt install`
-
-Generate harness install configuration for a prompt.
-
-```bash
-observal registry prompt install <id-or-name> --harness <harness> [--raw]
-```
-
-| Option | Short | Description |
-| --- | --- | --- |
-| `--harness` | `-i` | Target harness (required) |
-| `--raw` | | Output bare JSON only, suitable for piping |
-
-```bash
-observal registry prompt install my-prompt --harness claude-code
-observal registry prompt install @tpl --harness cursor --raw > prompt.json
-```
-
----
-
 ### `observal registry prompt render`
 
 Render a prompt template with variable substitution. Sends key=value pairs to the server, which substitutes them into the template and returns the rendered output.
@@ -629,6 +679,7 @@ observal registry prompt render <id-or-name> --var key=value [--var key2=value2 
 | Option | Short | Description |
 | --- | --- | --- |
 | `--var` | `-v` | Variable as `key=value` (repeatable) |
+| `--output` | `-o` | Output format: `table` or `json` |
 
 ```bash
 observal registry prompt render my-prompt --var lang=python
@@ -653,6 +704,7 @@ observal registry prompt edit <id-or-name> [OPTIONS]
 | `--version` | `-v` | New version string |
 | `--category` | `-c` | New category |
 | `--template` | `-t` | New template text |
+| `--output` | `-o` | Output format: `table` or `json` |
 
 ```bash
 observal registry prompt edit my-prompt --description "Updated desc"
@@ -676,6 +728,7 @@ observal registry sandbox submit [OPTIONS]
 | `--from-file` | `-f` | Create from JSON file |
 | `--draft` | | Save as draft instead of submitting for review |
 | `--submit` | | Submit a draft for review (sandbox ID) |
+| `--output` | `-o` | Output format: `table` or `json` |
 
 ```bash
 observal registry sandbox submit
@@ -691,14 +744,14 @@ observal registry sandbox submit --submit abc123
 List approved sandboxes in the registry.
 
 ```bash
-observal registry sandbox list [--runtime TYPE] [--search TERM] [--output table|json|plain]
+observal registry sandbox list [--runtime TYPE] [--search TERM] [--output table|json]
 ```
 
 | Option | Short | Description |
 | --- | --- | --- |
 | `--runtime` | `-r` | Filter by runtime type |
 | `--search` | `-s` | Search by name or description |
-| `--output` | `-o` | Output format: `table`, `json`, `plain` |
+| `--output` | `-o` | Output format: `table`, `json` |
 
 ```bash
 observal registry sandbox list
@@ -724,24 +777,11 @@ observal registry sandbox show @dev-env --output json
 
 ---
 
-### `observal registry sandbox install`
-
-Generate harness install configuration for a sandbox.
-
-> **Note:** Standalone sandbox install is deprecated. Sandboxes should be added as agent components instead. Preferred workflow: `observal agent add --type sandbox --id <id>` then `observal pull <agent> --harness <harness>`.
+Sandboxes are attached to agents by UUID and are installed when the agent is pulled. There is no standalone Sandbox install command.
 
 ```bash
-observal registry sandbox install <id-or-name> --harness <harness> [--raw]
-```
-
-| Option | Short | Description |
-| --- | --- | --- |
-| `--harness` | `-i` | Target harness (required) |
-| `--raw` | | Output bare JSON only |
-
-```bash
-observal registry sandbox install my-sandbox --harness claude-code
-observal registry sandbox install @env --harness cursor --raw
+observal agent add sandbox <sandbox-uuid>
+observal agent build
 ```
 
 ---
@@ -762,11 +802,24 @@ observal registry sandbox edit <id-or-name> [OPTIONS]
 | `--version` | `-v` | New version string |
 | `--runtime-type` | `-r` | New runtime type |
 | `--image` | `-i` | New container image |
+| `--output` | `-o` | Output format: `table` or `json` |
 
 ```bash
 observal registry sandbox edit my-sandbox --image node:20-alpine
 observal registry sandbox edit abc123 --from-file updates.json
-observal registry sandbox edit @env --runtime-type docker --version 2.0.0
+observal registry sandbox edit @env --runtime-type docker --version 2.0.0 --output json
 ```
 
 ---
+
+## Component versions
+
+Use `observal registry version publish` and `observal registry version list` for all five component types. Publication supports direct JSON results; history supports explicit pagination.
+
+See [`observal registry version`](component.md) for the complete contract.
+
+## Personalized recommendations
+
+Use `observal registry recommend` to rank visible components against the signed-in user's sessions and to dismiss or mark recommendations as installed.
+
+See [`observal registry recommend`](recommend.md) for the JSON schema and feedback actions.

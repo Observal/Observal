@@ -3,297 +3,260 @@
 <!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# observal agent
+# `observal agent`
 
-Create, author, and publish agents. An agent bundles registry components (MCPs, skills, hooks, prompts, sandboxes) into one installable YAML. Public identities use `namespace/slug`; different users may publish the same slug.
+Create, compose, publish, install, and govern agents. An agent bundles MCP servers, skills, hooks, prompts, and sandboxes into one versioned Registry object.
 
-## Subcommands
+Canonical identities use `namespace/slug`. Commands also accept UUIDs, unambiguous bare names, aliases, and row numbers from the latest Agent list.
 
-| Command | Description |
+## Commands
+
+| Command | Purpose |
 | --- | --- |
-| [`agent create`](#observal-agent-create) | Interactive agent creation wizard |
-| [`agent bulk-create`](#observal-agent-bulk-create) | Bulk-create agents from a JSON file |
-| [`agent list`](#observal-agent-list) | List agents |
-| [`agent my`](#observal-agent-my) | List your own agents (all statuses) |
-| [`agent show`](#observal-agent-show) | Show an agent's details and components |
-| [`agent install`](#observal-agent-install) | Get install config for an agent |
-| [`agent pull`](#observal-agent-pull) | Write agent config to harness files |
-| [`agent delete`](#observal-agent-delete) | Delete an agent |
-| [`agent transfer-owner`](#observal-agent-transfer-owner) | Transfer ownership to another user |
-| [`agent unarchive`](#observal-agent-unarchive) | Restore an archived agent |
-| [`agent init`](#observal-agent-init) | Scaffold `observal-agent.yaml` in the current directory |
-| [`agent add`](#observal-agent-add) | Add a component to the local `observal-agent.yaml` |
-| [`agent build`](#observal-agent-build) | Validate an agent against the server (dry-run) |
-| [`agent publish`](#observal-agent-publish) | Publish the agent to the registry |
-| [`agent release`](#observal-agent-release) | Bump version and push a versioned release |
-| [`agent versions`](#observal-agent-versions) | List all versions for an agent |
+| `create` | Create from flags, JSON, or an interactive wizard |
+| `bulk-create` | Validate or create multiple agents from JSON |
+| `list` | List approved visible agents |
+| `my` | List agents owned or co-authored by the user |
+| `show` | Show an agent and its composition |
+| `install` | Generate an installation config without writing files |
+| `pull` | Generate and write a complete harness installation |
+| `archive` | Archive an agent |
+| `delete` | Compatibility alias for `archive` |
+| `unarchive` | Restore an archived agent |
+| `init` | Create a local `observal-agent.yaml` |
+| `add` | Add a Registry component UUID to local YAML |
+| `build` | Validate local composition and target scope |
+| `publish` | Create, update, save, or submit an agent |
+| `release` | Publish a reviewed version bump |
+| `versions` | List version history |
+| `transfer-owner` | Transfer ownership |
+| `co-authors` | List, add, or remove co-authors |
 
----
+Every leaf command supports `--output table|json`. JSON success output contains no Rich text, prompt, banner, or spinner. JSON failures leave stdout empty and write one categorized object to stderr.
 
-## `observal agent create`
+## Create
 
-Interactive wizard. Prompts for name, description, which MCP servers / skills / hooks to include, then submits to the registry.
-
-Three modes are supported: load from a JSON file, pass flags for non-interactive creation, or run the interactive wizard.
+Use complete flags for automation:
 
 ```bash
+observal agent create \
+  --name reviewer \
+  --description 'Reviews changes' \
+  --prompt 'Review carefully.' \
+  --model claude-sonnet-4 \
+  --harness kiro \
+  --output json
+```
+
+Other modes:
+
+```bash
+observal agent create --from-file agent.json --output json
 observal agent create
-observal agent create --from-file agent.json
-observal agent create --name my-agent --prompt "You are..." --model claude-sonnet-4
-observal agent create --name my-agent --prompt-file ./PROMPT.md --harness kiro --harness claude-code
-observal agent create --name team-agent --prompt 'Team workflow' --team platform-tools --visibility team
 ```
 
-| Option | Description |
-| --- | --- |
-| `--from-file`, `-f` | Create from a JSON file |
-| `--name`, `-n` | Agent name (lowercase, hyphens, underscores) |
-| `--version`, `-v` | Version (semver, e.g. 1.0.0) |
-| `--description`, `-d` | Short description |
-| `--prompt`, `-p` | System prompt text |
-| `--prompt-file` | Read system prompt from a file |
-| `--model`, `-m` | Model name (e.g. claude-sonnet-4) |
-| `--harness` | Supported harnesses (repeat for multiple) |
-| `--team` | Teamspace UUID or handle |
-| `--visibility` | `public` or `team`, team visibility requires `--team` |
+The no-flag form is interactive and cannot run in JSON mode. Flag mode requires `--name` and either `--prompt` or `--prompt-file`. Versions must be semantic versions and every repeated `--harness` must be registered.
 
----
+`--team HANDLE --visibility team` creates a private teamspace agent. `--visibility team` requires `--team`.
 
-## `observal agent bulk-create`
+JSON returns the direct server Agent object.
 
-Bulk-create agents from a JSON file. Accepts a JSON file containing an array of agent definitions, or an object with an `"agents"` key. Shows a preview table before creating. Use `--dry-run` to validate without actually creating agents.
+## Bulk create
 
-```bash
-observal agent bulk-create --from-file agents.json
-observal agent bulk-create --from-file agents.json --dry-run
-observal agent bulk-create --from-file agents.json --yes
+Input may be an array or an object containing an `agents` array:
+
+```json
+{
+  "agents": [
+    {
+      "name": "reviewer",
+      "version": "1.0.0",
+      "owner": "alice",
+      "prompt": "Review carefully.",
+      "model_name": "claude-sonnet-4",
+      "components": []
+    }
+  ]
+}
 ```
 
-| Option | Description |
-| --- | --- |
-| `--from-file` | (Required) JSON file with agent definitions |
-| `--dry-run` | Preview without creating |
-| `--yes`, `-y` | Skip confirmation |
-
----
-
-## `observal agent list`
-
-List active agents in the registry with pagination support. Use `--interactive` for fuzzy search with arrow-key selection.
-
 ```bash
-observal agent list
-observal agent list --search my-agent
-observal agent list --team platform-tools --output json
-observal agent list --page 2 --limit 20
-observal agent list --interactive
-observal agent list --output json
-observal agent list --full-id
+observal agent bulk-create --from-file agents.json --dry-run --output json
+observal agent bulk-create --from-file agents.json --yes --output json
 ```
 
-| Option | Description |
-| --- | --- |
-| `--search`, `-s` | Filter by search term |
-| `--namespace` | Restrict to one publisher or team namespace |
-| `--team` | Include public items plus private items from this teamspace |
-| `--interactive`, `-i` | Interactive search mode |
-| `--limit`, `-n` | Page size (1-200, default 50) |
-| `--page`, `-p` | Page number (1-indexed) |
-| `--id` | Include the agent ID column |
-| `--full-id` | Show full UUID (implies --id) |
-| `--output`, `-o` | Output format: table, json, plain |
+JSON mode requires either `--dry-run` or `--yes`. It returns the direct bulk result, including per-agent statuses and summary counts.
 
----
-
-## `observal agent my`
-
-List your own agents across all statuses: pending, approved, rejected, and archived. Useful for checking the review status of your submissions.
+## List, my, and show
 
 ```bash
-observal agent my
+observal agent list --search 'incident response' --output json
+observal agent list --namespace alice --page 2 --limit 20 --output json
+observal agent list --team platform --output json
 observal agent my --output json
-observal agent my --output plain
+observal agent show alice/reviewer --output json
 ```
 
-| Option | Description |
+`list` JSON is paginated:
+
+```json
+{
+  "items": [],
+  "total": 0,
+  "page": 1,
+  "page_size": 50
+}
+```
+
+The most recent `list` or `my` result is cached for row-number references. Empty results clear stale Agent rows. `--interactive` is human-only and cannot be combined with JSON.
+
+`my` returns the standard `items`, `total`, `page`, and `page_size` envelope, including pending, approved, rejected, and archived agents. Empty results use `items: []`.
+
+`show` returns the direct Agent object, including component links and success criteria.
+
+## Generate installation config
+
+`install` asks the server to generate config but does not write it:
+
+```bash
+observal agent install alice/reviewer --harness kiro --output json
+```
+
+JSON returns the complete server installation result. Legacy `--raw` prints only `config_snippet`; new automation should use the shared output option.
+
+Use [`observal agent pull`](pull.md) to write and track the generated installation.
+
+## Archive, delete, and restore
+
+```bash
+observal agent archive alice/reviewer --yes --output json
+observal agent delete alice/reviewer --yes --output json
+observal agent unarchive alice/reviewer --yes --output json
+```
+
+`delete` is an alias for the same reversible archive operation. JSON mode never prompts and requires `--yes`. JSON returns the direct updated Agent object.
+
+## Local authoring workflow
+
+### Initialize
+
+```bash
+observal agent init \
+  --dir ./reviewer \
+  --name reviewer \
+  --description 'Reviews changes' \
+  --prompt-file ./PROMPT.md \
+  --model claude-sonnet-4 \
+  --harness kiro \
+  --output json
+```
+
+The no-flag form is interactive. JSON mode requires complete flags and refuses to overwrite an existing definition. Writes are atomic.
+
+JSON returns:
+
+```json
+{
+  "path": "/work/reviewer/observal-agent.yaml",
+  "agent": {
+    "name": "reviewer",
+    "version": "1.0.0"
+  }
+}
+```
+
+### Add components
+
+Find a component in Registry JSON, then copy its UUID:
+
+```bash
+observal registry skill list --search review --output json
+observal agent add skill 22222222-2222-2222-2222-222222222222 --dir ./reviewer --output json
+```
+
+Valid types are `mcp`, `skill`, `hook`, `prompt`, and `sandbox`. Duplicate type and UUID pairs return conflict exit code 6. Invalid types or IDs return validation exit code 7.
+
+JSON returns the YAML path and added component.
+
+### Build
+
+```bash
+observal agent build --dir ./reviewer --output json
+observal agent build --dir ./reviewer --team platform --visibility team --output json
+```
+
+Build verifies every component and validates whether private components are visible to the target owner. A successful JSON result contains `valid`, `agent`, `components`, and `issues`. Invalid composition exits with code 7 and leaves JSON stdout empty.
+
+### Publish
+
+```bash
+observal agent publish --dir ./reviewer --output json
+observal agent publish --dir ./reviewer --draft --output json
+observal agent publish --submit alice/reviewer --output json
+observal agent publish --dir ./reviewer --update --bump minor --output json
+```
+
+`--draft` and `--submit` are mutually exclusive. Scope changes cannot be combined with `--update`; use ownership transfer or a separate visibility operation. Non-interactive updates may use `--bump patch|minor|major`.
+
+JSON returns the direct created, saved, submitted, or updated Agent object.
+
+## Release and versions
+
+```bash
+observal agent release alice/reviewer --bump patch --dir ./reviewer --output json
+observal agent versions alice/reviewer --page 1 --page-size 50 --output json
+```
+
+Release obtains the server's semantic-version suggestion, submits the complete YAML snapshot, then updates local YAML atomically only after the server accepts the release. A failed server request leaves the local version unchanged.
+
+Versions JSON returns the direct paginated server object. Page size is 1 through 100.
+
+## Transfer ownership
+
+```bash
+observal agent transfer-owner alice/reviewer bob --yes --output json
+```
+
+The username may optionally begin with `@`. JSON mode requires `--yes` and returns the direct server result.
+
+## Co-authors
+
+Co-authors can edit and publish the same Agent:
+
+```bash
+observal agent co-authors list alice/reviewer --output json
+observal agent co-authors add alice/reviewer dev@example.com --output json
+observal agent co-authors add alice/reviewer @dev --output json
+observal agent co-authors remove alice/reviewer 550e8400-e29b-41d4-a716-446655440000 --output json
+```
+
+List returns the standard list envelope. Add returns the added user. Remove requires the user UUID returned by list and returns the direct deletion result.
+
+## Pull
+
+```bash
+observal agent pull alice/reviewer --harness kiro --no-prompt --output json
+```
+
+Pull writes harness files, records the exact Agent and component versions, and reports every file and setup action. See the [Pull reference](pull.md) for path, secret, merge, dry-run, and JSON behavior.
+
+## Exit codes
+
+Common Agent failures use:
+
+| Code | Meaning |
 | --- | --- |
-| `--output`, `-o` | Output format: table, json, plain |
-
----
-
-## `observal agent show`
-
-```bash
-observal agent show <uuid|namespace/slug|unique-bare-name>
-```
-
-Prints the agent's metadata and every bundled component.
-
----
-
-## `observal agent install`
-
-Get install config for an agent.
-
-```bash
-observal agent install <uuid|namespace/slug|unique-bare-name> --harness <harness>
-```
-
----
-
-## `observal agent pull`
-
-Fetch agent config and write harness files to disk.
-
-```bash
-observal agent pull <uuid|namespace/slug|unique-bare-name> --harness <harness>
-```
-
----
-
-## `observal agent delete`
-
-Archive an agent (soft delete). The agent will no longer appear in public listings but can be restored with `agent unarchive`. Prompts for confirmation unless `--yes` is provided.
-
-```bash
-observal agent delete my-agent
-observal agent delete my-agent --yes
-observal agent delete @myalias
-```
-
-| Option | Description |
-| --- | --- |
-| `--yes`, `-y` | Skip confirmation |
-
----
-
-## `observal agent transfer-owner`
-
-Transfer ownership to another username. You stop being the owner immediately.
-
-```bash
-observal agent transfer-owner my-agent @alice -y
-```
-
-| Option | Description |
-| --- | --- |
-| `--yes`, `-y` | Skip confirmation |
-
----
-
-## `observal agent unarchive`
-
-Restore an archived agent back to active status. Reverses a previous archive (soft delete), making the agent visible in public listings again.
-
-```bash
-observal agent unarchive my-agent
-observal agent unarchive my-agent --yes
-observal agent unarchive a1b2c3d4-...
-```
-
-| Option | Description |
-| --- | --- |
-| `--yes`, `-y` | Skip confirmation |
-
----
-
-## The YAML workflow
-
-For teams, the YAML workflow is the recommended path: the file lives in a repo and changes flow through PR review.
-
-### `observal agent init`
-
-Scaffolds `observal-agent.yaml` in the current directory with required fields stubbed out.
-
-```bash
-observal agent init
-```
-
-### `observal agent add`
-
-Add a component to `observal-agent.yaml` by ID or name.
-
-```bash
-observal agent add mcp github-mcp
-observal agent add skill code-review-skill
-observal agent add hook pretooluse-logger
-observal agent add prompt system-intro
-observal agent add sandbox node-18
-```
-
-Valid types: `mcp`, `skill`, `hook`, `prompt`, `sandbox`.
-
-### `observal agent build`
-
-Validate the agent against the server without publishing. Catches missing components, invalid references, and schema violations.
-
-```bash
-observal agent build
-```
-
-### `observal agent publish`
-
-Submit the agent to the registry for review. Use `--update` to modify an existing agent (same name). Use `--draft` to save without submitting for review.
-
-```bash
-observal agent publish
-observal agent publish --update
-observal agent publish --draft
-observal agent publish --dir /tmp/my-agent
-observal agent publish --dir /tmp/my-agent --team platform-tools --visibility team
-```
-
-| Option | Description |
-| --- | --- |
-| `--dir`, `-d` | Directory containing observal-agent.yaml |
-| `--update`, `-u` | Update existing agent instead of creating |
-| `--draft` | Save as draft instead of submitting for review |
-| `--submit` | Submit an existing draft agent for review (agent ID) |
-| `--team` | Publish into a teamspace by UUID or handle |
-| `--visibility` | Set `public` or `team` visibility, team visibility requires `--team` |
-
----
-
-### `observal agent release`
-
-Bump version and push a versioned release to the registry. Reads `observal-agent.yaml`, bumps the version according to the specified type, updates the YAML file, and submits a new version to the review queue.
-
-```bash
-observal agent release my-agent --bump patch
-observal agent release my-agent --bump minor --dir /tmp/my-agent
-observal agent release my-agent --bump major
-```
-
-| Option | Description |
-| --- | --- |
-| `--bump` | (Required) Version bump type: patch, minor, or major |
-| `--dir`, `-d` | Directory containing observal-agent.yaml |
-
----
-
-### `observal agent versions`
-
-List all versions for an agent. Shows version history including version number, review status, release date, author, and component count.
-
-```bash
-observal agent versions my-agent
-observal agent versions my-agent --output json
-observal agent versions @myalias
-```
-
-| Option | Description |
-| --- | --- |
-| `--output`, `-o` | Output format: table or json |
-
-## Naming rules
-
-Agent names must match `^[a-z0-9][a-z0-9_-]*$`: lowercase, alphanumeric, hyphens or underscores, starting with a letter or digit.
-
-Valid: `code-reviewer`, `my_agent_v2`, `kiro-helper`
-Invalid: `Code-Reviewer` (uppercase), `-starts-with-hyphen`, `my.agent` (dot)
+| 3 | Authentication required or failed |
+| 4 | Permission denied |
+| 5 | Agent, component, or local definition not found |
+| 6 | Existing definition, duplicate component, or unsafe config merge conflict |
+| 7 | Invalid name, version, harness, component, scope, or command combination |
+| 8 | Server rate limit |
+| 9 | Server, filesystem, lockfile, generated config, or setup dependency unavailable |
+| 10 | CLI and server version mismatch |
 
 ## Related
 
-* [`observal agent pull`](pull.md): install a published agent
-* [`observal registry`](registry.md): author the components an agent will bundle
-* [Use Cases → Share agent configs](../use-cases/share-agent-configs.md)
+* [`observal agent pull`](pull.md): install into a harness
+* [`observal registry`](registry.md): manage Agent components
+* [`observal registry models`](models.md): inspect exact harness model IDs

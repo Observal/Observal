@@ -13,21 +13,28 @@ from __future__ import annotations
 
 import json as _json
 import re
+from contextlib import nullcontext
 from pathlib import Path
+from tempfile import NamedTemporaryFile
+from uuid import UUID
 
 import typer
 import yaml
 from loguru import logger as optic
+from packaging.version import InvalidVersion, Version
 from rich import print as rprint
 from rich.panel import Panel
 from rich.table import Table
 
 from observal_cli import client, config
 from observal_cli.constants import AGENT_NAME_REGEX, VALID_HARNESSES
+from observal_cli.errors import CliError, ErrorCategory, fail
 from observal_cli.prompts import fuzzy_select, select_many, select_one, text_input
 from observal_cli.render import (
+    OutputMode,
     console,
     display_name,
+    esc,
     handle,
     ide_tags,
     kv_panel,
@@ -73,34 +80,219 @@ def _validate_name(name: str) -> str | None:
 
 
 def _fetch_registry_items(component_type: str) -> list[dict]:
-    """Fetch approved items from a registry endpoint. Returns [] on failure."""
+    """Fetch approved items from a registry endpoint."""
     plural = {"mcp": "mcps", "skill": "skills", "hook": "hooks", "prompt": "prompts", "sandbox": "sandboxes"}
+    return client.get(f"/api/v1/{plural[component_type]}")
+
+
+def _progress(output: OutputMode | str, message: str | None = None):
+    return nullcontext() if output == "json" else spinner(message)
+
+
+def _validate_version(value: str, *, operation: str) -> str:
     try:
-        return client.get(f"/api/v1/{plural[component_type]}")
-    except (Exception, SystemExit):
-        return []
+        return str(Version(value))
+    except InvalidVersion:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Invalid semantic version: {value}.",
+            operation=operation,
+            resource="agent version",
+            remediation="Use a semantic version such as 1.2.3.",
+        )
+
+
+def _validate_harnesses(values: list[str], *, operation: str) -> list[str]:
+    invalid = [value for value in values if value not in VALID_HARNESSES]
+    if invalid:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Unknown harness: {invalid[0]}.",
+            operation=operation,
+            resource="agent harnesses",
+            remediation=f"Choose from: {', '.join(VALID_HARNESSES)}.",
+        )
+    return values
+
+
+def _validate_component_id(value: str) -> str:
+    try:
+        return str(UUID(value))
+    except ValueError:
+        fail(
+            ErrorCategory.VALIDATION,
+            "Component ID must be a UUID.",
+            operation="Add agent component",
+            resource="agent component",
+            remediation="Copy the component ID from a Registry list JSON result.",
+        )
+
+
+def _dump_agent_yaml(data: dict) -> str:
+    return yaml.safe_dump(data, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+
+def _load_json_file(path_value: str, *, operation: str):
+    path = Path(path_value)
+    if not path.is_file():
+        fail(
+            ErrorCategory.NOT_FOUND,
+            f"JSON file not found: {path}.",
+            operation=operation,
+            resource=str(path),
+            remediation="Check the path and retry.",
+        )
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeError as error:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Could not read JSON file: {path}.",
+            operation=operation,
+            resource=str(path),
+            remediation="Provide a valid UTF-8 JSON file.",
+            detail=repr(error),
+        )
+    except OSError as error:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            f"Could not read JSON file: {path}.",
+            operation=operation,
+            resource=str(path),
+            remediation="Check file permissions and retry.",
+            detail=repr(error),
+        )
+    try:
+        return _json.loads(text)
+    except (UnicodeError, _json.JSONDecodeError) as error:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Could not read JSON file: {path}.",
+            operation=operation,
+            resource=str(path),
+            remediation="Provide a valid UTF-8 JSON file.",
+            detail=repr(error),
+        )
 
 
 # ── Agent authoring helpers ────────────────────────────────
-def _load_agent_yaml(directory: Path) -> dict:
-    """Load and return the agent YAML from *directory*. Exits if missing."""
+def _load_agent_yaml(directory: Path, *, operation: str = "Read agent definition") -> dict:
     path = directory / YAML_FILE
-    if not path.exists():
-        rprint(f"[red]Error:[/red] {YAML_FILE} not found in {directory}")
-        raise typer.Exit(code=1)
-    with open(path) as f:
-        return yaml.safe_load(f)
+    if not path.is_file():
+        fail(
+            ErrorCategory.NOT_FOUND,
+            f"Agent definition not found: {path}.",
+            operation=operation,
+            resource=str(path),
+            remediation="Run `observal agent init` or pass the directory containing observal-agent.yaml.",
+        )
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeError as error:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Could not read agent definition: {path}.",
+            operation=operation,
+            resource=str(path),
+            remediation="Provide a valid UTF-8 YAML file.",
+            detail=repr(error),
+        )
+    except OSError as error:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            f"Could not read agent definition: {path}.",
+            operation=operation,
+            resource=str(path),
+            remediation="Check file permissions and retry.",
+            detail=repr(error),
+        )
+    try:
+        data = yaml.safe_load(text)
+    except (UnicodeError, yaml.YAMLError) as error:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Could not read agent definition: {path}.",
+            operation=operation,
+            resource=str(path),
+            remediation="Fix the YAML file and retry.",
+            detail=repr(error),
+        )
+    if not isinstance(data, dict):
+        fail(
+            ErrorCategory.VALIDATION,
+            "Agent definition must be a YAML mapping.",
+            operation=operation,
+            resource=str(path),
+            remediation="Replace the file with a valid observal-agent.yaml mapping.",
+        )
+    return data
 
 
-def _save_agent_yaml(directory: Path, data: dict) -> None:
-    """Write *data* as YAML to *directory*/observal-agent.yaml."""
+def _validate_agent_definition(data: dict, *, operation: str) -> dict:
+    name = data.get("name")
+    error = _validate_name(name) if isinstance(name, str) else "Agent name is required."
+    if error:
+        fail(
+            ErrorCategory.VALIDATION,
+            error,
+            operation=operation,
+            resource="agent name",
+            remediation="Use lowercase letters, digits, hyphens, or underscores.",
+        )
+    data["version"] = _validate_version(str(data.get("version") or "1.0.0"), operation=operation)
+    harnesses = data.get("supported_harnesses", [])
+    if not isinstance(harnesses, list) or not all(isinstance(value, str) for value in harnesses):
+        fail(
+            ErrorCategory.VALIDATION,
+            "Agent supported_harnesses must be a list of names.",
+            operation=operation,
+            resource="agent harnesses",
+            remediation="Use a YAML list of registered harness names.",
+        )
+    data["supported_harnesses"] = _validate_harnesses(harnesses, operation=operation)
+    if not isinstance(data.get("components", []), list):
+        fail(
+            ErrorCategory.VALIDATION,
+            "Agent components must be a list.",
+            operation=operation,
+            resource="agent components",
+            remediation="Use a YAML list of component reference objects.",
+        )
+    return data
+
+
+def _save_agent_yaml(directory: Path, data: dict, *, operation: str = "Write agent definition") -> Path:
     path = directory / YAML_FILE
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
-        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+    temporary: Path | None = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False) as file:
+            temporary = Path(file.name)
+            file.write(_dump_agent_yaml(data))
+        temporary.replace(path)
+    except OSError as error:
+        if temporary:
+            temporary.unlink(missing_ok=True)
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            f"Could not write agent definition: {path}.",
+            operation=operation,
+            resource=str(path),
+            remediation="Check directory permissions and available disk space.",
+            detail=repr(error),
+        )
+    return path
 
 
-agent_app = typer.Typer(help="Agent registry commands")
+agent_app = typer.Typer(
+    help=(
+        "Agent registry commands\n\n"
+        "Examples:\n"
+        "  observal agent list\n"
+        "  observal agent show alice/my-agent\n"
+        "  observal agent pull alice/my-agent --harness claude-code"
+    )
+)
 
 
 @agent_app.command(name="create")
@@ -117,6 +309,7 @@ def agent_create(
     ),
     team: str | None = typer.Option(None, "--team", help="Teamspace UUID or handle"),
     visibility: str | None = typer.Option(None, "--visibility", help="Visibility: public or team"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Create a new agent (interactive wizard, from file, or via flags).
 
@@ -131,19 +324,42 @@ def agent_create(
       observal agent create --name my-agent --prompt-file ./PROMPT.md --model claude-sonnet-4 --harness kiro --harness claude-code
     """
     optic.trace("from_file={}", from_file)
+    if output == "json" and not (from_file or name or prompt or prompt_file):
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON mode cannot run the interactive agent builder.",
+            operation="Create agent",
+            resource="agent definition",
+            remediation="Provide --from-file, or provide --name with --prompt or --prompt-file.",
+        )
+
     # ── Path A: From JSON file ───────────────────────────────
     if from_file:
-        import json
-
-        with open(from_file) as f:
-            payload = json.load(f)
+        payload = _load_json_file(from_file, operation="Create agent")
+        if not isinstance(payload, dict):
+            fail(
+                ErrorCategory.VALIDATION,
+                "Agent JSON must be an object.",
+                operation="Create agent",
+                resource=from_file,
+                remediation="Provide one complete agent definition object.",
+            )
+        if payload.get("version"):
+            payload["version"] = _validate_version(str(payload["version"]), operation="Create agent")
+        if payload.get("supported_harnesses"):
+            payload["supported_harnesses"] = _validate_harnesses(
+                list(payload["supported_harnesses"]), operation="Create agent"
+            )
         if team or visibility:
             client.add_publish_target(payload, team, visibility)
-        with spinner("Creating agent..."):
+        with _progress(output, "Creating agent..."):
             result = client.post("/api/v1/agents", payload)
+        if output == "json":
+            output_json(result)
+            return
         status = result.get("status", "pending")
-        rprint(f"[green]✓ Agent submitted for review![/green] ID: [bold]{result['id']}[/bold]")
-        rprint(f"[yellow]Status: {status} - an admin must approve it before it becomes visible.[/yellow]")
+        rprint(f"[green]✓ Agent submitted for review![/green] ID: [bold]{esc(result['id'])}[/bold]")
+        rprint(f"[yellow]Status: {esc(status)} - an admin must approve it before it becomes visible.[/yellow]")
         return
 
     # ── Path B: From flags (non-interactive) ─────────────────
@@ -154,51 +370,84 @@ def agent_create(
             from pathlib import Path as _Path
 
             pf = _Path(prompt_file)
-            if not pf.exists():
-                rprint(f"[red]Error:[/red] Prompt file not found: {prompt_file}")
-                raise typer.Exit(1)
-            _prompt = pf.read_text(encoding="utf-8")
+            if not pf.is_file():
+                fail(
+                    ErrorCategory.NOT_FOUND,
+                    f"Prompt file not found: {prompt_file}.",
+                    operation="Create agent",
+                    resource=str(pf),
+                    remediation="Check --prompt-file or provide --prompt directly.",
+                )
+            try:
+                _prompt = pf.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as error:
+                fail(
+                    ErrorCategory.UNAVAILABLE,
+                    f"Could not read prompt file: {prompt_file}.",
+                    operation="Create agent",
+                    resource=str(pf),
+                    remediation="Provide a readable UTF-8 prompt file.",
+                    detail=repr(error),
+                )
 
         # Validate required fields
         if not name:
-            rprint("[red]Error:[/red] --name is required when using --prompt or --prompt-file")
-            raise typer.Exit(1)
+            fail(
+                ErrorCategory.VALIDATION,
+                "--name is required with --prompt or --prompt-file.",
+                operation="Create agent",
+                resource="agent name",
+                remediation="Add --name with a lowercase agent name.",
+            )
         _name = _slugify(name)
         err = _validate_name(_name)
         if err:
-            rprint(f"[red]Error:[/red] {err}")
-            raise typer.Exit(1)
+            fail(
+                ErrorCategory.VALIDATION,
+                err,
+                operation="Create agent",
+                resource="agent name",
+                remediation="Use lowercase letters, digits, hyphens, or underscores.",
+            )
         if not _prompt:
-            rprint("[red]Error:[/red] --prompt or --prompt-file is required")
-            raise typer.Exit(1)
+            fail(
+                ErrorCategory.VALIDATION,
+                "--prompt or --prompt-file is required.",
+                operation="Create agent",
+                resource="agent prompt",
+                remediation="Provide non-empty prompt content.",
+            )
+
+        normalized_version = _validate_version(version or "1.0.0", operation="Create agent")
+        normalized_harnesses = _validate_harnesses(supported_harnesses or [], operation="Create agent")
 
         # Default model
         _model = model_name or "claude-sonnet-4"
 
         # Resolve owner from whoami
-        try:
-            whoami = client.get("/api/v1/auth/whoami")
-            _owner = whoami.get("username") or whoami.get("email", "unknown")
-        except (Exception, SystemExit):
-            _owner = config.load().get("username", "") or "unknown"
+        whoami = client.get("/api/v1/auth/whoami")
+        _owner = whoami.get("username") or whoami.get("email", "unknown")
 
         payload = {
             "name": _name,
-            "version": version or "1.0.0",
+            "version": normalized_version,
             "description": description or "",
             "owner": _owner,
             "prompt": _prompt,
             "model_name": _model,
-            "supported_harnesses": supported_harnesses or [],
+            "supported_harnesses": normalized_harnesses,
             "components": [],
         }
 
         client.add_publish_target(payload, team, visibility)
-        with spinner("Creating agent..."):
+        with _progress(output, "Creating agent..."):
             result = client.post("/api/v1/agents", payload)
+        if output == "json":
+            output_json(result)
+            return
         status = result.get("status", "pending")
-        rprint(f"[green]✓ Agent created![/green] ID: [bold]{result['id']}[/bold]")
-        rprint(f"[dim]Status: {status}[/dim]")
+        rprint(f"[green]✓ Agent created![/green] ID: [bold]{esc(result['id'])}[/bold]")
+        rprint(f"[dim]Status: {esc(status)}[/dim]")
         if _name != name:
             rprint(f"[dim]Name slugified: {name} → {_name}[/dim]")
         return
@@ -215,11 +464,16 @@ def agent_create(
         rprint(f"  [dim]→ Slugified to:[/dim] [bold]{name}[/bold]")
     err = _validate_name(name)
     if err:
-        rprint(f"  [red]Error:[/red] {err}")
-        raise typer.Exit(1)
+        fail(
+            ErrorCategory.VALIDATION,
+            err,
+            operation="Create agent",
+            resource="agent name",
+            remediation="Use lowercase letters, digits, hyphens, or underscores.",
+        )
 
     description = text_input("  Description")
-    version = text_input("  Version", default="1.0.0")
+    version = _validate_version(text_input("  Version", default="1.0.0"), operation="Create agent")
     model_name = select_one("  Model", _MODEL_CHOICES, default="claude-sonnet-4")
 
     # ── Phase 2: Components ──────────────────────────────────
@@ -268,14 +522,6 @@ def agent_create(
 
     # ── Phase 5: Optional Details ────────────────────────────
     rprint("\n[bold]5. Optional Details[/bold]")
-    # Try to get owner from whoami
-    default_owner = ""
-    try:
-        whoami = client.get("/api/v1/auth/whoami")
-        default_owner = whoami.get("username") or whoami.get("email", "")
-    except (Exception, SystemExit):
-        pass
-    owner = default_owner or config.load().get("username", "") or "unknown"
     prompt_text = text_input("  System prompt (optional)", default="")
     max_tokens = text_input("  Max tokens", default="4096")
     temperature = text_input("  Temperature", default="0.2")
@@ -303,6 +549,8 @@ def agent_create(
         rprint("[yellow]Aborted.[/yellow]")
         raise typer.Exit(0)
 
+    whoami = client.get("/api/v1/auth/whoami")
+    owner = whoami.get("username") or whoami.get("email", "unknown")
     payload = {
         "name": name,
         "version": version,
@@ -318,8 +566,8 @@ def agent_create(
     with spinner("Creating agent..."):
         result = client.post("/api/v1/agents", payload)
     status = result.get("status", "pending")
-    rprint(f"\n[green]✓ Agent submitted for review![/green] ID: [bold]{result['id']}[/bold]")
-    rprint(f"[yellow]Status: {status} - an admin must approve it before it becomes visible.[/yellow]")
+    rprint(f"\n[green]✓ Agent submitted for review![/green] ID: [bold]{esc(result['id'])}[/bold]")
+    rprint(f"[yellow]Status: {esc(status)} - an admin must approve it before it becomes visible.[/yellow]")
 
 
 @agent_app.command(name="bulk-create")
@@ -327,6 +575,7 @@ def agent_bulk_create(
     file_path: str = typer.Option(..., "--from-file", help="JSON file with agent definitions"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview without creating"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Bulk-create agents from a JSON file.
 
@@ -339,19 +588,7 @@ def agent_bulk_create(
       observal agent bulk-create --from-file agents.json --dry-run
       observal agent bulk-create --from-file agents.json --yes
     """
-    import json
-
-    path = Path(file_path)
-    if not path.exists():
-        rprint(f"[red]Error:[/red] File not found: {file_path}")
-        raise typer.Exit(code=1)
-
-    try:
-        with open(path) as f:
-            raw = json.load(f)
-    except json.JSONDecodeError as exc:
-        rprint(f"[red]Error:[/red] Invalid JSON: {exc}")
-        raise typer.Exit(code=1)
+    raw = _load_json_file(file_path, operation="Bulk create agents")
 
     # Accept {"agents": [...]} or bare [...]
     if isinstance(raw, list):
@@ -359,12 +596,38 @@ def agent_bulk_create(
     elif isinstance(raw, dict) and "agents" in raw:
         agents = raw["agents"]
     else:
-        rprint('[red]Error:[/red] JSON must be {"agents": [...]} or a bare array.')
-        raise typer.Exit(code=1)
+        fail(
+            ErrorCategory.VALIDATION,
+            'Agent JSON must be {"agents": [...]} or a bare array.',
+            operation="Bulk create agents",
+            resource=file_path,
+            remediation="Provide an array of agent definition objects.",
+        )
 
     if not agents:
-        rprint("[yellow]No agents found in file.[/yellow]")
-        raise typer.Exit(code=1)
+        fail(
+            ErrorCategory.VALIDATION,
+            "Agent JSON contains no agents.",
+            operation="Bulk create agents",
+            resource=file_path,
+            remediation="Add at least one agent definition.",
+        )
+    if not all(isinstance(item, dict) for item in agents):
+        fail(
+            ErrorCategory.VALIDATION,
+            "Every bulk agent entry must be an object.",
+            operation="Bulk create agents",
+            resource=file_path,
+            remediation="Replace scalar or array entries with agent definition objects.",
+        )
+    if output == "json" and not (dry_run or yes):
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON mode cannot prompt before bulk creation.",
+            operation="Bulk create agents",
+            resource=file_path,
+            remediation="Add --yes or use --dry-run.",
+        )
 
     # ── Preview table ────────────────────────────────────────
     preview = Table(title=f"Agents to create ({len(agents)})", show_lines=False, padding=(0, 1))
@@ -377,17 +640,21 @@ def agent_bulk_create(
         comp_count = str(len(ag.get("components", [])))
         preview.add_row(
             str(i),
-            ag.get("name", "unnamed"),
-            ag.get("version", "1.0.0"),
+            esc(ag.get("name", "unnamed")),
+            esc(ag.get("version", "1.0.0")),
             comp_count,
-            ag.get("model_name", "claude-sonnet-4"),
+            esc(ag.get("model_name", "claude-sonnet-4")),
         )
-    console.print(preview)
+    if output != "json":
+        console.print(preview)
 
     # ── Dry-run mode ─────────────────────────────────────────
     if dry_run:
-        with spinner("Running dry-run..."):
+        with _progress(output, "Running dry-run..."):
             result = client.post("/api/v1/bulk/agents", {"agents": agents, "dry_run": True})
+        if output == "json":
+            output_json(result)
+            return
 
         results_table = Table(title="Dry-run results", show_lines=False, padding=(0, 1))
         results_table.add_column("#", style="dim", width=3)
@@ -399,9 +666,9 @@ def agent_bulk_create(
             badge = (
                 "[green]created[/green]"
                 if status == "created"
-                else ("[yellow]skipped[/yellow]" if status == "skipped" else f"[red]{status}[/red]")
+                else ("[yellow]skipped[/yellow]" if status == "skipped" else f"[red]{esc(status)}[/red]")
             )
-            results_table.add_row(str(i), item.get("name", ""), badge, item.get("error", "") or "")
+            results_table.add_row(str(i), esc(item.get("name", "")), badge, esc(item.get("error", "") or ""))
         console.print(results_table)
 
         rprint(
@@ -416,8 +683,11 @@ def agent_bulk_create(
         raise typer.Exit(0)
 
     # ── Create ───────────────────────────────────────────────
-    with spinner("Creating agents..."):
+    with _progress(output, "Creating agents..."):
         result = client.post("/api/v1/bulk/agents", {"agents": agents, "dry_run": False})
+    if output == "json":
+        output_json(result)
+        return
 
     results_table = Table(title="Bulk create results", show_lines=False, padding=(0, 1))
     results_table.add_column("#", style="dim", width=3)
@@ -430,10 +700,10 @@ def agent_bulk_create(
         badge = (
             "[green]created[/green]"
             if status == "created"
-            else ("[yellow]skipped[/yellow]" if status == "skipped" else f"[red]{status}[/red]")
+            else ("[yellow]skipped[/yellow]" if status == "skipped" else f"[red]{esc(status)}[/red]")
         )
         agent_id = f"{str(item['agent_id'])[:8]}…" if item.get("agent_id") else ""
-        results_table.add_row(str(i), item.get("name", ""), badge, agent_id, item.get("error", "") or "")
+        results_table.add_row(str(i), esc(item.get("name", "")), badge, agent_id, esc(item.get("error", "") or ""))
     console.print(results_table)
 
     rprint(
@@ -453,7 +723,7 @@ def agent_list(
     page: int = typer.Option(1, "--page", "-p", min=1, help="Page number (1-indexed)"),
     show_id: bool = typer.Option(False, "--id", help="Include the agent ID column"),
     full_id: bool = typer.Option(False, "--full-id", help="Show full UUID (implies --id)"),
-    output: str = typer.Option("table", "--output", "-o", help="Output: table, json, plain"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """List active agents (paginated).
 
@@ -464,11 +734,17 @@ def agent_list(
     Examples:
       observal agent list
       observal agent list --search my-agent
-      observal agent list --page 2 --limit 20
-      observal agent list --interactive
       observal agent list --output json
-      observal agent list --full-id
     """
+    if interactive and output == "json":
+        fail(
+            ErrorCategory.VALIDATION,
+            "Interactive selection cannot be combined with JSON output.",
+            operation="List agents",
+            resource="agent registry",
+            remediation="Remove --interactive or use table output.",
+        )
+
     params: dict = {"limit": limit, "offset": (page - 1) * limit}
     if search:
         params["search"] = search
@@ -477,7 +753,7 @@ def agent_list(
     if team:
         params["team_id"] = client.resolve_team_id(team)
 
-    with spinner("Fetching agents..."):
+    with _progress(output, "Fetching agents..."):
         data, headers = client.get_with_headers("/api/v1/agents", params=params)
 
     if interactive and data:
@@ -495,23 +771,18 @@ def agent_list(
     total = int(headers.get("x-total-count", str(len(data))))
     total_pages = max(1, (total + limit - 1) // limit)
 
+    # Preserve only this agent page for numeric shorthand.
+    config.save_last_results(data, "agent")
+
+    if output == "json":
+        output_json({"items": data, "total": total, "page": page, "page_size": limit})
+        return
+
     if not data:
         if total == 0:
             rprint("[dim]No agents found.[/dim]")
         else:
             rprint(f"[yellow]Page {page} is empty. Total agents: {total} (last page: {total_pages})[/yellow]")
-        return
-
-    # Cache IDs for numeric shorthand
-    config.save_last_results(data)
-
-    if output == "json":
-        output_json(data)
-        return
-
-    if output == "plain":
-        for item in data:
-            rprint(f"{name_inline(item)}  v{item.get('version', '?')}  {item.get('model_name', '')}")
         return
 
     include_id = show_id or full_id
@@ -528,7 +799,13 @@ def agent_list(
     if include_id:
         table.add_column("ID", style="dim", no_wrap=full_id)
     for i, item in enumerate(data, 1):
-        row = [str(i), display_name(item), item.get("version", ""), item.get("model_name", ""), handle(item)]
+        row = [
+            str(i),
+            esc(display_name(item)),
+            esc(item.get("version", "")),
+            esc(item.get("model_name", "")),
+            esc(handle(item)),
+        ]
         if include_id:
             row.append(str(item["id"]) if full_id else f"{str(item['id'])[:8]}…")
         table.add_row(*row)
@@ -547,7 +824,7 @@ def agent_list(
 
 @agent_app.command(name="my")
 def agent_my(
-    output: str = typer.Option("table", "--output", "-o", help="Output: table, json, plain"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """List your own agents (all statuses).
 
@@ -558,20 +835,15 @@ def agent_my(
     Examples:
       observal agent my
       observal agent my --output json
-      observal agent my --output plain
     """
-    with spinner("Fetching your agents..."):
+    with _progress(output, "Fetching your agents..."):
         data = client.get("/api/v1/agents/my")
-    if not data:
-        rprint("[dim]You have no agents.[/dim]")
-        return
-    config.save_last_results(data)
+    config.save_last_results(data, "agent")
     if output == "json":
         output_json(data)
         return
-    if output == "plain":
-        for item in data:
-            rprint(f"{name_inline(item)}  v{item.get('version', '?')}  {item.get('status', '')}")
+    if not data:
+        rprint("[dim]You have no agents.[/dim]")
         return
     table = Table(title=f"My Agents ({len(data)})", show_lines=False, padding=(0, 1))
     table.add_column("#", style="dim", width=3)
@@ -584,10 +856,10 @@ def agent_my(
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            display_name(item),
-            item.get("version", ""),
-            item.get("model_name", ""),
-            handle(item),
+            esc(display_name(item)),
+            esc(item.get("version", "")),
+            esc(item.get("model_name", "")),
+            esc(handle(item)),
             status_badge(item.get("status", "")),
             str(item["id"])[:8] + "…",
         )
@@ -597,7 +869,7 @@ def agent_my(
 @agent_app.command(name="show")
 def agent_show(
     agent_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
-    output: str = typer.Option("table", "--output", "-o"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
     """Show full agent details.
 
@@ -608,12 +880,11 @@ def agent_show(
 
     Examples:
       observal agent show my-agent
-      observal agent show 3
       observal agent show @myalias
-      observal agent show a1b2c3d4-... --output json
+      observal agent show alice/my-agent --output json
     """
     resolved = client.resolve_registry_reference("agent", agent_id)
-    with spinner():
+    with _progress(output):
         item = client.get(f"/api/v1/agents/{resolved}")
 
     if output == "json":
@@ -625,11 +896,11 @@ def agent_show(
             f"{display_name(item)} v{item.get('version', '?')}",
             [
                 ("Status", status_badge(item.get("status", ""))),
-                ("Model", f"[bold]{item.get('model_name', 'N/A')}[/bold]"),
-                ("Namespace", handle(item) or "N/A"),
-                ("Created By", item.get("created_by_username") or item.get("created_by_email", "")),
-                ("Description", item.get("description", "")),
-                ("harnesses", ide_tags(item.get("supported_harnesses", []))),
+                ("Model", f"[bold]{esc(item.get('model_name', 'N/A'))}[/bold]"),
+                ("Namespace", esc(handle(item) or "N/A")),
+                ("Created By", esc(item.get("created_by_username") or item.get("created_by_email", ""))),
+                ("Description", esc(item.get("description", ""))),
+                ("harnesses", ide_tags([esc(value) for value in item.get("supported_harnesses", [])])),
                 ("Created", relative_time(item.get("created_at"))),
                 ("ID", f"[dim]{item['id']}[/dim]"),
             ],
@@ -641,27 +912,30 @@ def agent_show(
     if item.get("mcp_links"):
         rprint("\n[bold]Linked MCP Servers:[/bold]")
         for link in item["mcp_links"]:
-            rprint(f"  [cyan]•[/cyan] {link.get('mcp_name', '')} [dim]({link.get('mcp_listing_id', '')})[/dim]")
+            rprint(
+                f"  [cyan]•[/cyan] {esc(link.get('mcp_name', ''))} [dim]({esc(link.get('mcp_listing_id', ''))})[/dim]"
+            )
 
     # Success criteria
     sc = item.get("success_criteria")
     if sc and sc.get("intended_purpose"):
         rprint("\n[bold]Success Criteria:[/bold]")
-        rprint(f"  [cyan]Purpose:[/cyan] {sc['intended_purpose']}")
+        rprint(f"  [cyan]Purpose:[/cyan] {esc(sc['intended_purpose'])}")
         metrics = sc.get("success_metrics") or []
         if metrics:
             rprint("  [cyan]Metrics:[/cyan]")
             for m in metrics:
-                rprint(f"    • {m['name']} — target: {m['target']} (via: {m['measurement']})")
+                rprint(f"    • {esc(m['name'])} : target {esc(m['target'])} (via {esc(m['measurement'])})")
         if sc.get("evaluation_notes"):
-            rprint(f"  [cyan]Notes:[/cyan] {sc['evaluation_notes']}")
+            rprint(f"  [cyan]Notes:[/cyan] {esc(sc['evaluation_notes'])}")
 
 
 @agent_app.command(name="install")
 def agent_install(
     agent_id: str = typer.Argument(..., help="Agent ID, name, row number, or @alias"),
     harness: str = typer.Option(..., "--harness", "-i", help="Target harness"),
-    raw: bool = typer.Option(False, "--raw", help="Output raw JSON only"),
+    raw: bool = typer.Option(False, "--raw", help="Output only the generated config snippet as JSON"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Get install config for an agent.
 
@@ -672,45 +946,49 @@ def agent_install(
 
     Examples:
       observal agent install my-agent --harness claude-code
-      observal agent install my-agent --harness kiro
       observal agent install my-agent --harness cursor --raw > config.json
       observal agent install @myalias --harness opencode
     """
+    harness = _validate_harnesses([harness], operation="Generate agent installation")[0]
     resolved = client.resolve_registry_reference("agent", agent_id)
-    with spinner(f"Generating {harness} config..."):
+    with _progress("json" if raw else output, f"Generating {harness} config..."):
         result = client.post(f"/api/v1/agents/{resolved}/install", {"harness": harness})
 
     snippet = result.get("config_snippet", {})
     if raw:
-        print(_json.dumps(snippet, indent=2))
+        output_json(snippet)
+        return
+    if output == "json":
+        output_json(result)
         return
 
-    rprint(f"\n[bold]Config for {harness}:[/bold]\n")
+    rprint(f"\n[bold]Config for {esc(harness)}:[/bold]\n")
 
     # Kiro agent file: single JSON to drop in
     agent_profile = snippet.get("agent_profile")
     if agent_profile:
-        rprint(f"[bold]Save to:[/bold] {agent_profile['path']}")
+        rprint(f"[bold]Save to:[/bold] {esc(agent_profile['path'])}")
         rprint()
         console.print_json(_json.dumps(agent_profile["content"], indent=2))
         rprint(
-            f"\n[dim]Or pipe:[/dim] observal agent install {agent_id} --harness {harness} --raw | jq .agent_profile.content > {agent_profile['path']}"
+            f"\n[dim]Or pipe:[/dim] observal agent install {esc(agent_id)} --harness {esc(harness)} "
+            f"--raw | jq .agent_profile.content > {esc(agent_profile['path'])}"
         )
         return
 
     # Rules file
     rules = snippet.get("agent_profile")
     if rules:
-        rprint(f"[bold]Rules file:[/bold] {rules.get('path', '')}")
+        rprint(f"[bold]Rules file:[/bold] {esc(rules.get('path', ''))}")
         content = rules.get("content", "")
-        rprint(f"[dim]{content[:200]}{'...' if len(content) > 200 else ''}[/dim]\n")
+        rprint(f"[dim]{esc(content[:200])}{'...' if len(content) > 200 else ''}[/dim]\n")
 
     # Skill files
     skills = snippet.get("skills", [])
     if skills:
         rprint(f"[bold]Skill files ({len(skills)}):[/bold]")
         for sf in skills:
-            rprint(f"  [green]{sf['path']}[/green]")
+            rprint(f"  [green]{esc(sf['path'])}[/green]")
         rprint()
 
     # MCP config
@@ -719,7 +997,7 @@ def agent_install(
         path = mcp_cfg.get("path") if isinstance(mcp_cfg, dict) and "path" in mcp_cfg else None
         content = mcp_cfg.get("content", mcp_cfg) if isinstance(mcp_cfg, dict) and "content" in mcp_cfg else mcp_cfg
         if path:
-            rprint(f"[bold]MCP config:[/bold] {path}")
+            rprint(f"[bold]MCP config:[/bold] {esc(path)}")
         else:
             rprint("[bold]MCP config:[/bold]")
         console.print_json(_json.dumps(content, indent=2))
@@ -729,15 +1007,26 @@ def agent_install(
     console.print_json(_json.dumps(snippet, indent=2))
 
 
-def _archive_agent(agent_id: str, yes: bool) -> None:
+def _archive_agent(agent_id: str, yes: bool, output: OutputMode) -> None:
+    if output == "json" and not yes:
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON mode cannot prompt before archiving an agent.",
+            operation="Archive agent",
+            resource="agent registry",
+            remediation="Add --yes to confirm the archive.",
+        )
     resolved = client.resolve_registry_reference("agent", agent_id)
     if not yes:
         with spinner():
             item = client.get(f"/api/v1/agents/{resolved}")
-        if not typer.confirm(f"Archive [bold]{item['name']}[/bold] ({resolved})?"):
+        if not typer.confirm(f"Archive [bold]{esc(item['name'])}[/bold] ({esc(resolved)})?"):
             raise typer.Abort()
-    with spinner("Archiving..."):
-        client.patch(f"/api/v1/agents/{resolved}/archive")
+    with _progress(output, "Archiving..."):
+        result = client.patch(f"/api/v1/agents/{resolved}/archive")
+    if output == "json":
+        output_json(result)
+        return
     rprint("[green]✓ Agent archived[/green]")
 
 
@@ -745,28 +1034,40 @@ def _archive_agent(agent_id: str, yes: bool) -> None:
 def agent_archive(
     agent_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Archive an agent.
 
     Marks the agent as archived. It will no longer appear in public
     listings but can be restored with the unarchive command.
+
+    Examples:
+      observal agent archive alice/my-agent
+      observal agent archive alice/my-agent --yes
     """
-    _archive_agent(agent_id, yes)
+    _archive_agent(agent_id, yes, output)
 
 
 @agent_app.command(name="delete")
 def agent_delete(
     agent_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
-    """Archive an agent. Prefer the archive command."""
-    _archive_agent(agent_id, yes)
+    """Archive an agent. Prefer the archive command.
+
+    Examples:
+      observal agent delete alice/my-agent
+      observal agent delete alice/my-agent --yes
+    """
+    _archive_agent(agent_id, yes, output)
 
 
 @agent_app.command(name="unarchive")
 def agent_unarchive(
     agent_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Restore an archived agent back to active status.
 
@@ -779,14 +1080,25 @@ def agent_unarchive(
       observal agent unarchive my-agent --yes
       observal agent unarchive a1b2c3d4-...
     """
+    if output == "json" and not yes:
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON mode cannot prompt before restoring an agent.",
+            operation="Restore agent",
+            resource="agent registry",
+            remediation="Add --yes to confirm the restore.",
+        )
     resolved = client.resolve_registry_reference("agent", agent_id)
     if not yes:
         with spinner():
             item = client.get(f"/api/v1/agents/{resolved}")
-        if not typer.confirm(f"Unarchive [bold]{item['name']}[/bold] ({resolved})?"):
+        if not typer.confirm(f"Unarchive [bold]{esc(item['name'])}[/bold] ({esc(resolved)})?"):
             raise typer.Abort()
-    with spinner("Restoring..."):
-        client.patch(f"/api/v1/agents/{resolved}/unarchive")
+    with _progress(output, "Restoring..."):
+        result = client.patch(f"/api/v1/agents/{resolved}/unarchive")
+    if output == "json":
+        output_json(result)
+        return
     rprint("[green]✓ Agent restored[/green]")
 
 
@@ -806,6 +1118,7 @@ def agent_init(
     prompt: str | None = typer.Option(None, "--prompt", "-p", help="System prompt text"),
     prompt_file: str | None = typer.Option(None, "--prompt-file", help="Read system prompt from a file"),
     supported_harnesses: list[str] | None = typer.Option(None, "--harness", help="Supported harness (repeatable)"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Scaffold an observal-agent.yaml definition file.
 
@@ -822,9 +1135,29 @@ def agent_init(
     dir_path = Path(directory)
     yaml_path = dir_path / YAML_FILE
 
-    if yaml_path.exists() and not typer.confirm(f"{YAML_FILE} already exists in {dir_path}. Overwrite?"):
-        rprint("[yellow]Aborted.[/yellow]")
-        raise typer.Exit(code=1)
+    if output == "json" and not any(
+        value is not None
+        for value in (name, version, description, model_name, prompt, prompt_file, supported_harnesses)
+    ):
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON mode cannot run the interactive agent initializer.",
+            operation="Initialize agent definition",
+            resource=str(yaml_path),
+            remediation="Provide --name, --description, and --prompt or --prompt-file.",
+        )
+    if yaml_path.exists():
+        if output == "json":
+            fail(
+                ErrorCategory.CONFLICT,
+                f"Agent definition already exists: {yaml_path}.",
+                operation="Initialize agent definition",
+                resource=str(yaml_path),
+                remediation="Choose an empty directory or remove the existing file deliberately.",
+            )
+        if not typer.confirm(f"{YAML_FILE} already exists in {dir_path}. Overwrite?"):
+            rprint("[yellow]Aborted.[/yellow]")
+            raise typer.Abort()
 
     default_version = "0.1.0" if beta else "1.0.0"
     flag_mode = any(
@@ -832,22 +1165,40 @@ def agent_init(
     )
     if flag_mode:
         if not name or not description or not (prompt or prompt_file):
-            rprint("[red]Error:[/red] --name, --description, and --prompt or --prompt-file are required")
-            raise typer.Exit(1)
+            fail(
+                ErrorCategory.VALIDATION,
+                "--name, --description, and --prompt or --prompt-file are required.",
+                operation="Initialize agent definition",
+                resource="agent definition",
+                remediation="Provide every required non-interactive field.",
+            )
         raw_name = name
         if prompt_file:
             prompt_path = Path(prompt_file)
-            if not prompt_path.exists():
-                rprint(f"[red]Error:[/red] Prompt file not found: {prompt_file}")
-                raise typer.Exit(1)
-            prompt_text = prompt_path.read_text(encoding="utf-8")
+            if not prompt_path.is_file():
+                fail(
+                    ErrorCategory.NOT_FOUND,
+                    f"Prompt file not found: {prompt_file}.",
+                    operation="Initialize agent definition",
+                    resource=str(prompt_path),
+                    remediation="Check --prompt-file or provide --prompt directly.",
+                )
+            try:
+                prompt_text = prompt_path.read_text(encoding="utf-8")
+            except (OSError, UnicodeError) as error:
+                fail(
+                    ErrorCategory.UNAVAILABLE,
+                    f"Could not read prompt file: {prompt_file}.",
+                    operation="Initialize agent definition",
+                    resource=str(prompt_path),
+                    remediation="Provide a readable UTF-8 prompt file.",
+                    detail=repr(error),
+                )
         else:
             prompt_text = prompt or ""
-        harnesses = supported_harnesses or list(VALID_HARNESSES)
-        bad_harnesses = [h for h in harnesses if h not in VALID_HARNESSES]
-        if bad_harnesses:
-            rprint(f"[red]Error:[/red] Invalid harness: {bad_harnesses[0]}")
-            raise typer.Exit(1)
+        harnesses = _validate_harnesses(
+            supported_harnesses or list(VALID_HARNESSES), operation="Initialize agent definition"
+        )
     else:
         raw_name = text_input("Agent name")
         version = text_input("Version", default=default_version)
@@ -861,28 +1212,39 @@ def agent_init(
         rprint(f"  [dim]→ Slugified to:[/dim] [bold]{name}[/bold]")
     err = _validate_name(name)
     if err:
-        rprint(f"[red]Error:[/red] {err}")
-        raise typer.Exit(1)
+        fail(
+            ErrorCategory.VALIDATION,
+            err,
+            operation="Initialize agent definition",
+            resource="agent name",
+            remediation="Use lowercase letters, digits, hyphens, or underscores.",
+        )
+    version = _validate_version(version or default_version, operation="Initialize agent definition")
 
     owner = config.load().get("username", "") or "unknown"
 
     data = {
         "name": name,
-        "version": version or default_version,
+        "version": version,
         "description": description,
         "owner": owner,
         "model_name": model_name or "claude-sonnet-4",
+        "model_config_json": {},
         # Optional per-harness model overrides, e.g. {"kiro": "claude-haiku-4-5"}.
         # Leave empty to use model_name everywhere that accepts a model choice.
         "models_by_harness": {},
         "prompt": prompt_text,
         "supported_harnesses": harnesses,
         "components": [],
+        "external_mcps": [],
         "success_criteria": None,
     }
 
-    _save_agent_yaml(dir_path, data)
-    rprint(f"[green]✓ Created {yaml_path}[/green]")
+    saved_path = _save_agent_yaml(dir_path, data, operation="Initialize agent definition")
+    if output == "json":
+        output_json({"path": str(saved_path), "agent": data})
+        return
+    rprint(f"[green]✓ Created {esc(yaml_path)}[/green]")
 
 
 @agent_app.command(name="add")
@@ -890,6 +1252,7 @@ def agent_add(
     component_type: str = typer.Argument(..., help="Component type: mcp, skill, hook, prompt, sandbox"),
     component_id: str = typer.Argument(..., help="Component ID (UUID)"),
     directory: str = typer.Option(".", "--dir", "-d", help="Directory containing observal-agent.yaml"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Add a component reference to observal-agent.yaml.
 
@@ -902,26 +1265,47 @@ def agent_add(
       observal agent add skill b2c3d4e5-f6a7-8901-bcde-f12345678901
       observal agent add hook c3d4e5f6-... --dir ./my-agent
     """
+    component_type = component_type.strip().lower()
     if component_type not in VALID_COMPONENT_TYPES:
-        rprint(
-            f"[red]Error:[/red] Invalid component type '{component_type}'. "
-            f"Must be one of: {', '.join(sorted(VALID_COMPONENT_TYPES))}"
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Unknown agent component type: {component_type}.",
+            operation="Add agent component",
+            resource="agent component type",
+            remediation=f"Choose from: {', '.join(sorted(VALID_COMPONENT_TYPES))}.",
         )
-        raise typer.Exit(code=1)
+    component_id = _validate_component_id(component_id)
 
     dir_path = Path(directory)
-    data = _load_agent_yaml(dir_path)
+    data = _load_agent_yaml(dir_path, operation="Add agent component")
 
     components = data.get("components", [])
+    if not isinstance(components, list):
+        fail(
+            ErrorCategory.VALIDATION,
+            "Agent components must be a list.",
+            operation="Add agent component",
+            resource=str(dir_path / YAML_FILE),
+            remediation="Fix the components field and retry.",
+        )
     for comp in components:
         if comp.get("component_type") == component_type and comp.get("component_id") == component_id:
-            rprint(f"[yellow]Component {component_type}:{component_id} already exists.[/yellow]")
-            raise typer.Exit(code=1)
+            fail(
+                ErrorCategory.CONFLICT,
+                f"Component already exists: {component_type}:{component_id}.",
+                operation="Add agent component",
+                resource=str(dir_path / YAML_FILE),
+                remediation="Choose a different component or leave the definition unchanged.",
+            )
 
     components.append({"component_type": component_type, "component_id": component_id})
     data["components"] = components
-    _save_agent_yaml(dir_path, data)
-    rprint(f"[green]✓ Added {component_type}:{component_id}[/green]")
+    path = _save_agent_yaml(dir_path, data, operation="Add agent component")
+    result = {"path": str(path), "component": components[-1]}
+    if output == "json":
+        output_json(result)
+        return
+    rprint(f"[green]✓ Added {esc(component_type)}:{esc(component_id)}[/green]")
 
 
 @agent_app.command(name="build")
@@ -929,6 +1313,7 @@ def agent_build(
     directory: str = typer.Option(".", "--dir", "-d", help="Directory containing observal-agent.yaml"),
     team: str | None = typer.Option(None, "--team", help="Validate private components for this teamspace"),
     visibility: str | None = typer.Option(None, "--visibility", help="Agent visibility: public or team"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Validate agent definition against the server (dry-run).
 
@@ -941,15 +1326,30 @@ def agent_build(
       observal agent build --dir ./my-agent
     """
     dir_path = Path(directory)
-    data = _load_agent_yaml(dir_path)
+    data = _validate_agent_definition(
+        _load_agent_yaml(dir_path, operation="Validate agent"), operation="Validate agent"
+    )
 
-    rprint(f"[bold]Agent:[/bold] {data.get('name', 'unnamed')} v{data.get('version', '?')}")
-    rprint(f"[bold]Model:[/bold] {data.get('model_name', 'N/A')}")
-    rprint()
+    if output != "json":
+        rprint(f"[bold]Agent:[/bold] {esc(data.get('name', 'unnamed'))} v{esc(data.get('version', '?'))}")
+        rprint(f"[bold]Model:[/bold] {esc(data.get('model_name', 'N/A'))}")
+        rprint()
 
     components = data.get("components", [])
+    if not isinstance(components, list):
+        fail(
+            ErrorCategory.VALIDATION,
+            "Agent components must be a list.",
+            operation="Validate agent",
+            resource=str(dir_path / YAML_FILE),
+            remediation="Fix the components field and retry.",
+        )
     if not components:
-        rprint("[dim]No components to validate.[/dim]")
+        result = {"valid": True, "agent": data.get("name"), "components": [], "issues": []}
+        if output == "json":
+            output_json(result)
+        else:
+            rprint("[dim]No components to validate.[/dim]")
         return
 
     table = Table(title="Component Validation", show_lines=False)
@@ -958,34 +1358,65 @@ def agent_build(
     table.add_column("Status")
 
     errors: list[str] = []
+    component_results: list[dict] = []
     for comp in components:
-        ctype = comp["component_type"]
-        cid = comp["component_id"]
+        ctype = comp.get("component_type")
+        cid = str(comp.get("component_id", ""))
+        if ctype not in VALID_COMPONENT_TYPES:
+            errors.append(f"invalid component type: {ctype}")
+            component_results.append({"type": ctype, "id": cid, "valid": False, "error": "invalid type"})
+            if output != "json":
+                table.add_row(esc(ctype), esc(cid), "[red]✗ invalid type[/red]")
+            continue
         # API convention: plural resource name
         plural = {"mcp": "mcps", "skill": "skills", "hook": "hooks", "prompt": "prompts", "sandbox": "sandboxes"}
         endpoint = f"/api/v1/{plural[ctype]}/{cid}"
         try:
-            with spinner(f"Checking {ctype} {cid[:8]}..."):
+            with _progress(output, f"Checking {ctype} {cid[:8]}..."):
                 client.get(endpoint)
-            table.add_row(ctype, cid, "[green]✓ valid[/green]")
-        except (Exception, SystemExit):
-            table.add_row(ctype, cid, "[red]✗ not found[/red]")
+            component_results.append({"type": ctype, "id": cid, "valid": True, "error": None})
+            if output != "json":
+                table.add_row(esc(ctype), esc(cid), "[green]✓ valid[/green]")
+        except CliError as error:
+            if error.category is not ErrorCategory.NOT_FOUND:
+                raise
+            component_results.append({"type": ctype, "id": cid, "valid": False, "error": "not found"})
+            if output != "json":
+                table.add_row(esc(ctype), esc(cid), "[red]✗ not found[/red]")
             errors.append(f"{ctype}:{cid}")
 
-    console.print(table)
+    if output != "json":
+        console.print(table)
 
     scope_payload = {"components": components}
     client.add_publish_target(scope_payload, team, visibility)
-    with spinner("Checking agent composition scope..."):
+    with _progress(output, "Checking agent composition scope..."):
         scope_result = client.post("/api/v1/agents/validate", scope_payload)
-    for issue in scope_result.get("issues", []):
+    issues = scope_result.get("issues", [])
+    for issue in issues:
         errors.append(issue.get("message", "Component is not valid for this agent target"))
 
+    result = {
+        "valid": not errors,
+        "agent": data.get("name"),
+        "components": component_results,
+        "issues": issues,
+    }
     if errors:
-        rprint(f"\n[red]{len(errors)} component(s) failed validation:[/red]")
-        for e in errors:
-            rprint(f"  [red]•[/red] {e}")
-        raise typer.Exit(code=1)
+        if output != "json":
+            rprint(f"\n[red]{len(errors)} component issue(s):[/red]")
+            for error in errors:
+                rprint(f"  [red]•[/red] {esc(error)}")
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Agent validation failed with {len(errors)} issue(s).",
+            operation="Validate agent",
+            resource=str(dir_path / YAML_FILE),
+            remediation="Fix the reported component references or target scope and retry.",
+            detail=_json.dumps(result, default=str),
+        )
+    if output == "json":
+        output_json(result)
     else:
         rprint("\n[green]✓ All components valid.[/green]")
 
@@ -999,6 +1430,7 @@ def agent_publish(
     bump: str | None = typer.Option(None, "--bump", help="Version bump type: patch, minor, or major (skips prompt)"),
     team: str | None = typer.Option(None, "--team", help="Teamspace UUID or handle"),
     visibility: str | None = typer.Option(None, "--visibility", help="Visibility: public or team"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Publish the agent definition to the server.
 
@@ -1010,22 +1442,35 @@ def agent_publish(
       observal agent publish
       observal agent publish --update
       observal agent publish --draft
-      observal agent publish --dir /tmp/my-agent
     """
     if draft and submit:
-        rprint(
-            "[red]Cannot use --draft and --submit together.[/red] Use --draft to save a new draft, or --submit to submit an existing draft."
+        fail(
+            ErrorCategory.VALIDATION,
+            "--draft and --submit cannot be used together.",
+            operation="Publish agent",
+            resource="agent publication mode",
+            remediation="Use --draft to save a new draft or --submit to submit an existing draft.",
         )
-        raise typer.Exit(code=1)
+    if bump is not None and bump not in {"patch", "minor", "major"}:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Unknown version bump: {bump}.",
+            operation="Publish agent",
+            resource="agent version bump",
+            remediation="Choose patch, minor, or major.",
+        )
     if submit:
         resolved = client.resolve_registry_reference("agent", submit)
-        with spinner("Submitting draft for review..."):
+        with _progress(output, "Submitting draft for review..."):
             result = client.post(f"/api/v1/agents/{resolved}/submit")
-        rprint(f"[green]✓ Draft submitted for review![/green] ID: [bold]{result['id']}[/bold]")
+        if output == "json":
+            output_json(result)
+            return
+        rprint(f"[green]✓ Draft submitted for review![/green] ID: [bold]{esc(result['id'])}[/bold]")
         return
 
     dir_path = Path(directory)
-    data = _load_agent_yaml(dir_path)
+    data = _validate_agent_definition(_load_agent_yaml(dir_path, operation="Publish agent"), operation="Publish agent")
 
     payload = {
         "name": data["name"],
@@ -1049,36 +1494,46 @@ def agent_publish(
             # There is no single server call that edits an agent and republishes it,
             # so doing both means one can succeed while the other fails and the agent
             # is left half-published. Reordering only chooses which half breaks.
-            rprint(
-                "[red]--visibility cannot be combined with --update.[/red] They are two server "
-                "operations with no atomic form, so a failure would leave the agent half-published. "
-                "Run the update first, then change visibility on the agent."
+            fail(
+                ErrorCategory.VALIDATION,
+                "--visibility cannot be combined with --update.",
+                operation="Publish agent",
+                resource="agent visibility",
+                remediation="Run the update first, then change visibility separately.",
             )
-            raise typer.Exit(code=1)
         if team is not None:
-            rprint(
-                "[red]--team cannot be used with --update.[/red] Moving an agent between teamspaces "
-                "is a transfer, not an edit. Use [bold]observal agent transfer-owner[/bold] or "
-                "recreate the agent under the target teamspace."
+            fail(
+                ErrorCategory.VALIDATION,
+                "--team cannot be used with --update.",
+                operation="Publish agent",
+                resource="agent ownership",
+                remediation="Use agent transfer-owner or recreate the agent in the target teamspace.",
             )
-            raise typer.Exit(code=1)
     else:
         client.add_publish_target(payload, team, visibility)
 
     if draft:
-        with spinner("Saving draft..."):
+        with _progress(output, "Saving draft..."):
             result = client.post("/api/v1/agents/draft", payload)
-        rprint(f"[green]✓ Draft saved![/green] ID: [bold]{result['id']}[/bold]")
+        if output == "json":
+            output_json(result)
+            return
+        rprint(f"[green]✓ Draft saved![/green] ID: [bold]{esc(result['id'])}[/bold]")
         return
 
     if update:
         # Find existing agent by name
-        with spinner("Looking up existing agent..."):
+        with _progress(output, "Looking up existing agent..."):
             results = client.get("/api/v1/agents", params={"search": data["name"]})
-        match = next((a for a in results if a["name"] == data["name"]), None)
+        match = next((agent for agent in results if agent.get("name") == data["name"]), None)
         if not match:
-            rprint(f"[red]Error:[/red] No existing agent found with name '{data['name']}'")
-            raise typer.Exit(code=1)
+            fail(
+                ErrorCategory.NOT_FOUND,
+                f"No existing agent has the name {data['name']}.",
+                operation="Publish agent",
+                resource="agent registry",
+                remediation="Check the name or publish without --update.",
+            )
         agent_id = match["id"]
 
         # Version bump selection (interactive only when --bump not provided)
@@ -1089,34 +1544,39 @@ def agent_publish(
             payload.pop("version", None)
         elif sys.stdin.isatty():
             current_version = match.get("version", "1.0.0")
-            try:
-                suggestions = client.get(f"/api/v1/agents/{agent_id}/version-suggestions")
-                sug = suggestions.get("suggestions", {})
-                bump_choices = [
-                    f"patch  {current_version} → {sug.get('patch', '?')}  (bug fix)",
-                    f"minor  {current_version} → {sug.get('minor', '?')}  (improvement)",
-                    f"major  {current_version} → {sug.get('major', '?')}  (revamp)",
-                    "keep   (use version from YAML)",
-                ]
-                choice = select_one("Version bump type", bump_choices, default=bump_choices[0])
-                bump_type = choice.split()[0]
-                if bump_type != "keep":
-                    payload["version_bump_type"] = bump_type
-                    payload.pop("version", None)
-            except (Exception, SystemExit):
-                pass
+            suggestions = client.get(f"/api/v1/agents/{agent_id}/version-suggestions")
+            sug = suggestions.get("suggestions", {})
+            bump_choices = [
+                f"patch  {current_version} → {sug.get('patch', '?')}  (bug fix)",
+                f"minor  {current_version} → {sug.get('minor', '?')}  (improvement)",
+                f"major  {current_version} → {sug.get('major', '?')}  (revamp)",
+                "keep   (use version from YAML)",
+            ]
+            choice = select_one("Version bump type", bump_choices, default=bump_choices[0])
+            bump_type = choice.split()[0]
+            if bump_type != "keep":
+                payload["version_bump_type"] = bump_type
+                payload.pop("version", None)
 
-        with spinner("Updating agent..."):
+        with _progress(output, "Updating agent..."):
             result = client.put(f"/api/v1/agents/{agent_id}", payload)
-        rprint(f"[green]✓ Agent updated![/green] ID: [bold]{result['id']}[/bold]  v{result.get('version', '?')}")
+        if output == "json":
+            output_json(result)
+            return
+        rprint(
+            f"[green]✓ Agent updated![/green] ID: [bold]{esc(result['id'])}[/bold]  v{esc(result.get('version', '?'))}"
+        )
     else:
-        with spinner("Submitting agent for review..."):
+        with _progress(output, "Submitting agent for review..."):
             result = client.post("/api/v1/agents", payload)
+        if output == "json":
+            output_json(result)
+            return
         status = result.get("status", "pending")
-        rprint(f"[green]✓ Agent submitted![/green] ID: [bold]{result['id']}[/bold]")
-        rprint(f"  Pull: [cyan]observal pull {client.canonical_name(result)}[/cyan]")
+        rprint(f"[green]✓ Agent submitted![/green] ID: [bold]{esc(result['id'])}[/bold]")
+        rprint(f"  Pull: [cyan]observal agent pull {esc(client.canonical_name(result))}[/cyan]")
         if status != "approved":
-            rprint(f"[yellow]Status: {status} - an admin must approve it before it becomes visible.[/yellow]")
+            rprint(f"[yellow]Status: {esc(status)} - an admin must approve it before it becomes visible.[/yellow]")
 
 
 @agent_app.command(name="release")
@@ -1124,6 +1584,7 @@ def agent_release(
     name: str = typer.Argument(..., help="Agent name, ID, row number, or @alias"),
     bump: str = typer.Option(..., "--bump", help="Version bump type: patch, minor, or major"),
     directory: str = typer.Option(".", "--dir", "-d", help="Directory containing observal-agent.yaml"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Bump version and push a versioned release to the registry.
 
@@ -1137,33 +1598,45 @@ def agent_release(
       observal agent release my-agent --bump major
     """
     if bump not in ("patch", "minor", "major"):
-        rprint("[red]Error:[/red] --bump must be one of: patch, minor, major")
-        raise typer.Exit(code=1)
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Unknown version bump: {bump}.",
+            operation="Release agent version",
+            resource="agent version bump",
+            remediation="Choose patch, minor, or major.",
+        )
 
     dir_path = Path(directory)
-    data = _load_agent_yaml(dir_path)
+    data = _validate_agent_definition(
+        _load_agent_yaml(dir_path, operation="Release agent version"), operation="Release agent version"
+    )
 
     resolved = client.resolve_registry_reference("agent", name)
-    with spinner("Looking up agent..."):
+    with _progress(output, "Looking up agent..."):
         agent = client.get(f"/api/v1/agents/{resolved}")
     agent_id = agent["id"]
 
     # Fetch version suggestions
-    with spinner("Fetching version suggestions..."):
+    with _progress(output, "Fetching version suggestions..."):
         suggestions = client.get(f"/api/v1/agents/{agent_id}/version-suggestions")
 
     current = suggestions.get("current", data.get("version", "1.0.0"))
     new_version = suggestions.get("suggestions", {}).get(bump)
     if not new_version:
-        rprint(f"[red]Error:[/red] Could not determine new version for bump type '{bump}'")
-        raise typer.Exit(code=1)
+        fail(
+            ErrorCategory.VALIDATION,
+            f"The server did not provide a {bump} version suggestion.",
+            operation="Release agent version",
+            resource="agent version suggestions",
+            remediation="Check the current version and retry.",
+        )
+    new_version = _validate_version(str(new_version), operation="Release agent version")
 
-    rprint(f"[dim]→[/dim] Bumping version: [bold]{current}[/bold] → [bold cyan]{new_version}[/bold cyan]")
+    if output != "json":
+        rprint(f"[dim]→[/dim] Bumping version: [bold]{esc(current)}[/bold] → [bold cyan]{esc(new_version)}[/bold cyan]")
 
-    # Update version in data BEFORE capturing snapshot
     data["version"] = new_version
-    _save_agent_yaml(dir_path, data)
-    raw_yaml = (dir_path / YAML_FILE).read_text()
+    raw_yaml = _dump_agent_yaml(data)
 
     # Build release payload from YAML
     payload = {
@@ -1180,20 +1653,28 @@ def agent_release(
         "success_criteria": data.get("success_criteria"),
     }
 
-    rprint("[dim]→[/dim] Pushing definition to registry...")
-    with spinner("Creating version..."):
+    if output != "json":
+        rprint("[dim]→[/dim] Pushing definition to registry...")
+    with _progress(output, "Creating version..."):
         result = client.post(f"/api/v1/agents/{agent_id}/versions", payload)
 
-    rprint(f"[green]✓ Version {new_version} submitted for review[/green]")
+    _save_agent_yaml(dir_path, data, operation="Record released agent version")
+    result.setdefault("version", new_version)
+    if output == "json":
+        output_json(result)
+        return
 
+    rprint(f"[green]✓ Version {esc(new_version)} submitted for review[/green]")
     for warning in result.get("warnings", []):
-        rprint(f"[yellow]⚠ {warning}[/yellow]")
+        rprint(f"[yellow]⚠ {esc(warning)}[/yellow]")
 
 
 @agent_app.command(name="versions")
 def agent_versions(
     name: str = typer.Argument(..., help="Agent name, ID, row number, or @alias"),
-    output: str = typer.Option("table", "--output", "-o", help="Output format: table or json"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
+    page: int = typer.Option(1, "--page", "-p", min=1, help="Page number"),
+    page_size: int = typer.Option(50, "--page-size", min=1, max=100, help="Versions per page"),
 ):
     """List all versions for an agent.
 
@@ -1208,8 +1689,8 @@ def agent_versions(
     """
     resolved = client.resolve_registry_reference("agent", name)
 
-    with spinner("Fetching versions..."):
-        data = client.get(f"/api/v1/agents/{resolved}/versions", params={"page": 1, "page_size": 50})
+    with _progress(output, "Fetching versions..."):
+        data = client.get(f"/api/v1/agents/{resolved}/versions", params={"page": page, "page_size": page_size})
 
     items = data.get("items", [])
 
@@ -1230,10 +1711,10 @@ def agent_versions(
 
     for item in items:
         table.add_row(
-            item.get("version", ""),
+            esc(item.get("version", "")),
             status_badge(item.get("status", "")),
-            relative_time(item.get("created_at")),
-            item.get("created_by_email", "") or item.get("created_by_username", ""),
+            esc(relative_time(item.get("created_at"))),
+            esc(item.get("created_by_email", "") or item.get("created_by_username", "")),
             str(item.get("component_count", "")),
         )
 

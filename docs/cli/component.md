@@ -1,103 +1,73 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# observal component
+# `observal registry version`
 
-Manage versioned releases for registry components. The `component version` subgroup lets you publish new versions and view version history for any component type (mcp, skill, hook, prompt, sandbox).
+Publish and inspect versioned releases for MCP servers, skills, hooks, prompts, and sandboxes.
 
-## Synopsis
+## Commands
 
-```bash
-observal component version publish <type> <listing> [options]
-observal component version list <type> <listing> [options]
-```
+| Command | Description |
+| --- | --- |
+| `publish` | Publish a new component version for review |
+| `list` | List paginated version history |
 
-## Subcommands
+Valid component types are `mcp`, `skill`, `hook`, `prompt`, and `sandbox`.
 
-### `version publish`
-
-Publish a new version for a registry component.
+## Publish
 
 ```bash
-observal component version publish <type> <listing> [--version <semver>] --description <text> [--changelog <text>] [--harness <harness>...] [--extra <json>]
+observal registry version publish mcp acme/server \
+  --version 2.0.0 \
+  --description "New authentication flow" \
+  --changelog "Breaking change" \
+  --output json
 ```
 
 | Option | Description |
 | --- | --- |
-| `<type>` | Component type: `mcp`, `skill`, `hook`, `prompt`, or `sandbox`. |
-| `<listing>` | Listing name, UUID, or alias (e.g. `@my-server`). |
-| `--version, -v` | Semantic version string (e.g. `2.0.0`). If omitted, the CLI fetches suggestions from the server and prompts interactively. |
-| `--description, -d` | **Required.** Short description of this version. |
-| `--changelog` | Changelog or release notes for this version. |
-| `--harness` | Supported harnesses. Repeat the flag for multiple values. |
-| `--extra` | JSON string with type-specific metadata (e.g. `'{"transport": "http"}'` for MCP servers). |
+| `--version`, `-v` | Version to publish |
+| `--description`, `-d` | Required release description |
+| `--changelog` | Optional release notes |
+| `--harness` | Supported harness; repeatable |
+| `--extra` | Type-specific metadata as a JSON object |
+| `--output`, `-o` | Table or JSON output |
 
-After publishing, the version enters `pending` status and awaits admin review before becoming publicly visible. Submitters can install their own pending versions immediately.
+Human mode fetches version suggestions and prompts when a version is omitted. JSON mode never prompts and therefore requires an explicit version. Suggestion failures retain their original authentication, rate-limit, unavailable, or version-mismatch category.
 
-#### Examples
+The extra value must be a JSON object. Versions and harnesses are validated before publication.
 
-```bash
-# Publish with an explicit version
-observal component version publish mcp my-server -v 2.0.0 -d "Breaking change: new auth flow"
-
-# Include changelog and harness support
-observal component version publish hook guard-hook -v 1.1.0 \
-  -d "Add timeout handling" \
-  --changelog "Fixed race condition on slow networks"
-
-# Multiple harness targets
-observal component version publish skill my-skill -v 1.0.0 \
-  -d "Initial release" \
-  --harness claude-code --harness cursor
-
-# Type-specific extra metadata
-observal component version publish mcp analyzer \
-  --extra '{"transport": "http"}' \
-  -d "HTTP transport support"
-
-# Omit --version to get interactive suggestions
-observal component version publish prompt welcome-prompt -d "Revised tone"
-```
-
----
-
-### `version list`
-
-List all published versions for a registry component.
+## List
 
 ```bash
-observal component version list <type> <listing> [--output <format>]
+observal registry version list mcp acme/server --output json
+observal registry version list hook acme/guard --page 2 --page-size 100 --output json
 ```
 
 | Option | Description |
 | --- | --- |
-| `<type>` | Component type: `mcp`, `skill`, `hook`, `prompt`, or `sandbox`. |
-| `<listing>` | Listing name, UUID, or alias. |
-| `--output, -o` | Output format: `table` (default) or `json`. |
+| `--page` | Page number, starting at 1 |
+| `--page-size` | Items per page, from 1 through 200 |
+| `--output`, `-o` | Table or JSON output |
 
-The table view shows version number, review status, release date, and who published each version.
+JSON returns the direct paginated server object with `items`, `total`, `page`, and `page_size`. Empty pages preserve that shape. Human output shows version, review status, relative release date, and publisher.
 
-#### Examples
+## Exit codes
 
-```bash
-# Table output (default)
-observal component version list mcp my-server
+| Code | Meaning |
+| --- | --- |
+| `0` | Publication or listing completed |
+| `2` | Invalid command syntax or pagination bounds |
+| `3` | Authentication required or failed |
+| `4` | Permission denied |
+| `5` | Component not found |
+| `6` | Version or state conflict |
+| `7` | Invalid component type, version, harness, or metadata |
+| `8` | Rate limit reached |
+| `9` | Registry unavailable |
+| `10` | CLI and server version mismatch |
 
-# JSON for scripting
-observal component version list hook guard-hook --output json
+## Related
 
-# Using an alias
-observal component version list skill @my-skill-alias
-```
-
-## Valid component types
-
-The following types are accepted by all `component version` commands:
-
-- `mcp`
-- `skill`
-- `hook`
-- `prompt`
-- `sandbox`
-
-Passing any other type results in an error with the list of valid options.
+* [`observal registry`](registry.md): component management
+* [`observal outdated`](outdated.md): compare installed and latest versions

@@ -834,7 +834,7 @@ async def test_update_typed_components_refreshes_features_snapshot_and_response(
     boundaries.validate_command.assert_called_once_with("python", ["main.py"])
     boundaries.build_snapshot.assert_awaited_once_with(agent.latest_version, db)
     assert agent.latest_version.yaml_snapshot == "snapshot: true\n"
-    assert db.flush.await_count == 1
+    assert db.flush.await_count == 2
     assert response.version == "1.3.0"
 
 
@@ -880,6 +880,7 @@ async def test_update_legacy_mcp_links_only_replaces_mcp_components(boundaries, 
     )
     old_query = _sql(db.execute.await_args_list[0].args[0])
     assert "agent_components.component_type = 'mcp'" in old_query
+    assert db.flush.await_count == 2
     boundaries.build_snapshot.assert_awaited_once()
 
 

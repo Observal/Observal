@@ -60,10 +60,10 @@ Use blocking only when the hook must stop unsafe behavior. Use async for logging
 
 ## CLI example
 
-Run the submit command with the example flag to print ready-to-edit examples:
+Submit a hook from a JSON file like the examples above:
 
 ```bash
-observal registry hook submit --example
+observal registry hook submit --from-file hook.json
 ```
 
 ## Sources

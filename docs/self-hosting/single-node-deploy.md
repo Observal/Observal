@@ -320,12 +320,12 @@ git checkout v1.5.0    # or whatever version
 docker compose -f docker/docker-compose.yml up -d --build
 ```
 
-Migrations run automatically on API startup. See [Upgrades](upgrades.md) for rollback procedures.
+The Compose init service applies migrations before API startup. See [Upgrades](upgrades.md) for rollback procedures.
 
 Or use the CLI:
 
 ```bash
-observal server upgrade --version 1.5.0
+observal server upgrade --version 1.5.0 --force --output json
 ```
 
 ## Monitoring

@@ -20,28 +20,48 @@ import json as _json
 import os
 import re
 import shutil
+from contextlib import nullcontext
 from pathlib import Path
+from typing import Annotated, NoReturn
+from urllib.parse import urlparse
 
 import httpx
 import typer
 from loguru import logger as optic
 from rich import print as rprint
+from rich.table import Table
 
 from observal_cli import client, config
 from observal_cli.branding import welcome_banner
+from observal_cli.errors import CliError, ErrorCategory, fail
 from observal_cli.prompts import password_input, quick_choice, text_input
-from observal_cli.render import console, kv_panel, spinner, status_badge
+from observal_cli.render import OutputMode, console, esc, kv_panel, output_json, spinner, status_badge
 from observal_shared.namespace_rules import NAMESPACE_RULE_TEXT, is_valid_namespace
+from observal_shared.secrets import resolve_secret
 
 # ── Auth subgroup ───────────────────────────────────────────
 
 auth_app = typer.Typer(
     name="auth",
-    help="Authentication and account commands",
+    help=(
+        "Authentication and account commands\n\n"
+        "Examples:\n"
+        "  observal auth login\n"
+        "  observal auth whoami\n"
+        "  observal auth logout"
+    ),
     no_args_is_help=True,
 )
 
-config_app = typer.Typer(help="CLI configuration")
+config_app = typer.Typer(
+    help=(
+        "CLI configuration\n\n"
+        "Examples:\n"
+        "  observal config show\n"
+        "  observal config set server_url https://observal.example.com\n"
+        "  observal config aliases --output json"
+    )
+)
 
 
 # ── Auth commands (registered on auth_app) ──────────────────
@@ -75,6 +95,111 @@ def _prompt_password(prompt_text: str = "New password") -> str:
         rprint("\n[yellow]Password does not meet requirements:[/yellow]")
         for f in failed:
             rprint(f"  [red]✗[/red] {f}")
+
+
+def _is_json(output: OutputMode | str) -> bool:
+    return output == OutputMode.json or output == "json"
+
+
+def _json_line(data: dict) -> None:
+    print(_json.dumps(data, ensure_ascii=False))
+
+
+def _secret(name: str, *, operation: str) -> str | None:
+    try:
+        return resolve_secret(name)
+    except ValueError as exc:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"{name} is configured incorrectly.",
+            operation=operation,
+            resource=name,
+            remediation=f"Set only {name} or {name}_FILE, then retry.",
+            detail=repr(exc),
+        )
+
+
+def _fail_transport(error: httpx.TransportError, *, operation: str, resource: str) -> NoReturn:
+    if isinstance(error, httpx.TimeoutException):
+        client._handle_timeout(operation=operation, resource=resource, detail=repr(error))
+    client._handle_connect(operation=operation, resource=resource, detail=repr(error))
+    raise AssertionError("transport handlers must terminate")
+
+
+def _raise_for_status(response: httpx.Response, *, path: str, operation: str, resource: str) -> None:
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as error:
+        client._handle_error(error, path, operation=operation, resource=resource)
+
+
+def _save_login(server_url: str, data: dict) -> dict:
+    try:
+        user = data["user"]
+        cfg_data = {
+            "server_url": server_url,
+            "access_token": data["access_token"],
+            "refresh_token": data["refresh_token"],
+            "user_id": user.get("id", ""),
+            "user_name": user.get("name", ""),
+            "username": user.get("username", ""),
+        }
+    except (KeyError, TypeError, AttributeError) as exc:
+        fail(
+            ErrorCategory.UNEXPECTED,
+            "The server returned an invalid authentication response.",
+            operation="Save authenticated session",
+            resource=f"server {server_url}",
+            remediation="Check server health and version compatibility, then retry.",
+            detail=repr(exc),
+        )
+
+    endpoints = _fetch_endpoints(server_url)
+    if endpoints:
+        cfg_data["web_url"] = endpoints.get("web", "")
+    config.save(cfg_data)
+    return user
+
+
+def _login_result(server_url: str, user: dict, *, method: str, bootstrapped: bool) -> dict:
+    return {
+        "authenticated": True,
+        "server_url": server_url,
+        "method": method,
+        "bootstrapped": bootstrapped,
+        "user": {
+            "id": user.get("id", ""),
+            "name": user.get("name", ""),
+            "email": user.get("email", ""),
+            "role": user.get("role", ""),
+            "username": user.get("username", ""),
+        },
+    }
+
+
+def _finish_login(
+    server_url: str,
+    data: dict,
+    *,
+    output: OutputMode | str,
+    method: str,
+    bootstrapped: bool = False,
+    run_setup: bool = True,
+    stream: bool = False,
+) -> None:
+    user = _save_login(server_url, data)
+    result = _login_result(server_url, user, method=method, bootstrapped=bootstrapped)
+    if _is_json(output):
+        if stream:
+            _json_line({"event": "authenticated", **result})
+        else:
+            output_json(result)
+        return
+
+    rprint(f"[green]Logged in as {esc(user.get('name', 'unknown'))}[/green] ({esc(user.get('email', ''))})")
+    rprint(f"[dim]Config saved to {config.CONFIG_FILE}[/dim]")
+    if run_setup:
+        _post_login_setup()
 
 
 def _ensure_cli_matches_server(server_url: str) -> None:
@@ -115,158 +240,266 @@ def _ensure_cli_matches_server(server_url: str) -> None:
 
     if cli_version > server_version:
         install_command = f"observal self downgrade --version {server_ver}"
-        rprint(
-            f"\n[bold red]CLI version {cli_ver_str} is ahead of server {server_ver}.[/bold red]\n"
-            f"  Downgrade the CLI to match your server:\n\n"
-            f"    [cyan]{install_command}[/cyan]\n"
-        )
     else:
         install_command = upgrade_command(server_ver)
-        rprint(
-            f"\n[bold red]CLI version {cli_ver_str} is behind server {server_ver}.[/bold red]\n"
-            f"  Upgrade the CLI to match your server:\n\n"
-            f"    [cyan]{install_command}[/cyan]\n"
-        )
-    raise typer.Exit(1)
+    fail(
+        ErrorCategory.VERSION,
+        f"CLI version {cli_ver_str} does not match server version {server_ver}.",
+        operation="Authenticate with Observal",
+        resource=f"server {server_url}",
+        remediation=f"Run {install_command} and retry login.",
+    )
 
 
 @auth_app.command()
 def login(
     server: str = typer.Option(None, "--server", "-s", help="Server URL"),
-    email: str = typer.Option(None, "--email", "-e", help="Email"),
+    email: str = typer.Option(None, "--email", "-e", help="Email or username"),
     password: str = typer.Option(None, "--password", "-p", help="Password"),
     name: str = typer.Option(None, "--name", "-n", help="Your name (used for admin setup)"),
     sso: bool = typer.Option(False, "--sso", help="Authenticate via browser SSO"),
     saml: bool = typer.Option(False, "--saml", help="Authenticate via browser SAML SSO"),
+    output: Annotated[
+        OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
+    ] = OutputMode.table,
+    no_setup: Annotated[bool, typer.Option("--no-setup", help="Skip post-login skill installation and doctor")] = False,
 ):
     """Connect to Observal.
 
-    On a fresh server: prompts for email, name, and password to create the
-    first admin account. On an initialized server: logs in with credentials
-    or SSO. After login, runs `observal doctor` to check harness instrumentation.
-
-    If the server has SSO enabled, you can choose browser-based login via
-    the device authorization flow (opens your default browser).
+    Human mode asks for the server URL; leave it blank for http://localhost.
+    On a fresh server, creates the first admin account. On an initialized
+    server, authenticates with credentials or browser SSO. Set
+    OBSERVAL_PASSWORD or OBSERVAL_PASSWORD_FILE to avoid exposing a password
+    in shell history. JSON credential login requires complete inputs and never
+    prompts. JSON SSO emits JSON Lines authorization and completion events.
 
     Examples:
         observal auth login
-        observal auth login --server http://observal.internal:80
-        observal auth login -e admin@example.com -p 'MyP@ss1234!'
-        observal auth login --sso
-        observal auth login --saml
+        observal auth login --server https://observal.example.com --email alice --output json --no-setup
+        observal auth login --sso --output json
     """
-    welcome_banner()
+    json_mode = _is_json(output)
+    if not json_mode:
+        welcome_banner()
 
     from observal_cli.lockfile import migrate_lockfile_v1
 
-    previous_server = config.load().get("server_url")
+    stored = config.load()
+    previous_server = stored.get("server_url")
     if previous_server:
         migrate_lockfile_v1(str(previous_server))
 
-    server_url = server or text_input("Server URL", default="") or "http://localhost:80"
-    server_url = server_url.rstrip("/")
+    if server:
+        server_url = server.rstrip("/")
+    elif json_mode:
+        server_url = str(stored.get("server_url") or "http://localhost:80").rstrip("/")
+    else:
+        server_url = (
+            text_input("Server URL (leave blank for http://localhost)", default="") or "http://localhost"
+        ).rstrip("/")
 
-    # 1. Check connectivity + initialization state
-    try:
-        with spinner("Connecting..."):
-            r = httpx.get(f"{server_url}/health", timeout=10)
-            r.raise_for_status()
-            health_data = r.json()
-    except httpx.ConnectError:
-        rprint(f"[red]Connection failed.[/red] Is the server running at {server_url}?")
-        raise typer.Exit(1)
-    except Exception as e:
-        rprint(f"[red]Server error:[/red] {e!s}")
-        raise typer.Exit(1)
+    candidates = [server_url]
+    parsed_server = urlparse(server_url)
+    if (
+        not server
+        and parsed_server.hostname in {"localhost", "127.0.0.1", "::1"}
+        and parsed_server.port
+        not in {
+            None,
+            80,
+            443,
+        }
+    ):
+        fallback_host = f"[{parsed_server.hostname}]" if ":" in parsed_server.hostname else parsed_server.hostname
+        candidates.append(f"{parsed_server.scheme or 'http'}://{fallback_host}")
+
+    last_transport_error: httpx.TransportError | None = None
+    with nullcontext() if json_mode else spinner("Connecting..."):
+        for candidate in candidates:
+            resource = f"server {candidate}"
+            try:
+                response = httpx.get(f"{candidate}/health", timeout=10)
+            except httpx.TransportError as error:
+                last_transport_error = error
+                continue
+            except Exception as error:
+                fail(
+                    ErrorCategory.UNEXPECTED,
+                    "The server health check failed unexpectedly.",
+                    operation="Check server before login",
+                    resource=resource,
+                    remediation="Retry with debug output and inspect server health if the failure persists.",
+                    detail=repr(error),
+                )
+            _raise_for_status(
+                response,
+                path="/health",
+                operation="Check server before login",
+                resource=resource,
+            )
+            try:
+                health_data = response.json()
+            except (ValueError, TypeError, AttributeError) as error:
+                fail(
+                    ErrorCategory.UNEXPECTED,
+                    "The server returned an invalid health response.",
+                    operation="Check server before login",
+                    resource=resource,
+                    remediation="Check server health and version compatibility, then retry.",
+                    detail=repr(error),
+                )
+            if not isinstance(health_data, dict):
+                fail(
+                    ErrorCategory.UNEXPECTED,
+                    "The server returned an invalid health response.",
+                    operation="Check server before login",
+                    resource=resource,
+                    remediation="Check server health and version compatibility, then retry.",
+                )
+            server_url = candidate
+            break
+        else:
+            assert last_transport_error is not None
+            _fail_transport(
+                last_transport_error,
+                operation="Check server before login",
+                resource=f"server {candidates[-1]}",
+            )
 
     _ensure_cli_matches_server(server_url)
-
     initialized = health_data.get("initialized", True)
+    run_setup = not no_setup and not json_mode
+    supplied_password = password or _secret("OBSERVAL_PASSWORD", operation="Authenticate with Observal")
 
-    # 2. Fresh server → prompt for admin credentials and initialize
     if not initialized:
-        rprint("[green]Connected.[/green] No users yet - let's set up your admin account.\n")
-
-        admin_email = email or text_input("Admin email")
-        admin_name = name or text_input("Admin name", default="admin")
-        if password:
-            admin_password = password
+        if json_mode:
+            if not email or not name or not supplied_password:
+                fail(
+                    ErrorCategory.VALIDATION,
+                    "Fresh-server JSON login requires email, name, and a password.",
+                    operation="Initialize Observal administrator",
+                    resource=resource,
+                    remediation=(
+                        "Provide email and name, and set OBSERVAL_PASSWORD or OBSERVAL_PASSWORD_FILE, then retry."
+                    ),
+                )
+            admin_email, admin_name, admin_password = email, name, supplied_password
         else:
-            admin_password = _prompt_password("Admin password")
-            confirm = password_input("Confirm password")
-            if admin_password != confirm:
-                rprint("[red]Passwords do not match.[/red]")
-                raise typer.Exit(1)
+            rprint("[green]Connected.[/green] No users yet; setting up the administrator account.")
+            admin_email = email or text_input("Admin email")
+            admin_name = name or text_input("Admin name", default="admin")
+            admin_password = supplied_password or _prompt_password("Admin password")
+            if supplied_password is None:
+                confirm = password_input("Confirm password")
+                if admin_password != confirm:
+                    fail(
+                        ErrorCategory.VALIDATION,
+                        "Passwords do not match.",
+                        operation="Initialize Observal administrator",
+                        resource="administrator password",
+                        remediation="Enter matching passwords and retry.",
+                    )
+
+        failed = _validate_password(admin_password)
+        if failed:
+            fail(
+                ErrorCategory.VALIDATION,
+                "The administrator password does not meet security requirements.",
+                operation="Initialize Observal administrator",
+                resource="administrator password",
+                remediation="Use at least 12 characters with uppercase, number, and special characters.",
+            )
 
         try:
-            with spinner("Creating admin account..."):
-                r = httpx.post(
+            with nullcontext() if json_mode else spinner("Creating admin account..."):
+                response = httpx.post(
                     f"{server_url}/api/v1/auth/init",
                     json={"email": admin_email, "name": admin_name, "password": admin_password},
                     timeout=30,
                 )
-                r.raise_for_status()
-                data = r.json()
-
-            user = data["user"]
-            endpoints = _fetch_endpoints(server_url)
-            cfg_data = {
-                "server_url": server_url,
-                "access_token": data["access_token"],
-                "refresh_token": data["refresh_token"],
-                "user_id": user.get("id", ""),
-                "user_name": user.get("name", ""),
-                "username": user.get("username", ""),
-            }
-            if endpoints:
-                cfg_data["web_url"] = endpoints.get("web", "")
-            config.save(cfg_data)
-
-            rprint(f"[green]Logged in as {user['name']}[/green] ({user['email']}) [admin]")
-            rprint(f"[dim]Config saved to {config.CONFIG_FILE}[/dim]\n")
-            _post_login_setup()
-
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 400 and "already initialized" in e.response.text.lower():
-                rprint("[yellow]Server was just initialized by someone else.[/yellow]")
-                rprint("Please log in with your email and password.")
-            else:
-                rprint(f"[red]Setup failed ({e.response.status_code}):[/red] {e.response.text}")
-                raise typer.Exit(1)
+            if response.status_code == 400 and "already initialized" in response.text.lower():
+                fail(
+                    ErrorCategory.CONFLICT,
+                    "The server was initialized by another user before this request completed.",
+                    operation="Initialize Observal administrator",
+                    resource=resource,
+                    remediation="Retry login with an existing account.",
+                    http_status=400,
+                )
+            _raise_for_status(
+                response,
+                path="/api/v1/auth/init",
+                operation="Initialize Observal administrator",
+                resource=resource,
+            )
+            data = response.json()
+        except CliError:
+            raise
+        except httpx.TransportError as error:
+            _fail_transport(error, operation="Initialize Observal administrator", resource=resource)
+        except (ValueError, TypeError) as error:
+            fail(
+                ErrorCategory.UNEXPECTED,
+                "The server returned an invalid initialization response.",
+                operation="Initialize Observal administrator",
+                resource=resource,
+                remediation="Check server health and version compatibility, then retry.",
+                detail=repr(error),
+            )
+        _finish_login(
+            server_url,
+            data,
+            output=output,
+            method="bootstrap",
+            bootstrapped=True,
+            run_setup=run_setup,
+        )
         return
 
-    rprint("[green]Connected.[/green]\n")
+    if not json_mode:
+        rprint("[green]Connected.[/green]")
 
-    # 3. Check available login methods
-    sso_mode = False
-    direct_sso = False
-    sso_provider: str | None = None
+    sso_mode = bool(sso or saml)
+    direct_sso = sso_mode
+    sso_provider: str | None = "saml" if saml else None
     sso_only = False
     sso_available = False
     oidc_available = False
     saml_available = False
     try:
-        config_r = httpx.get(f"{server_url}/api/v1/config/public", timeout=5)
-        if config_r.status_code == 200:
-            pub_config = config_r.json()
-            sso_only = pub_config.get("sso_only", False)
-            oidc_available = bool(pub_config.get("sso_enabled"))
-            saml_available = bool(pub_config.get("saml_enabled"))
-            sso_available = bool(oidc_available or saml_available)
+        public_response = httpx.get(f"{server_url}/api/v1/config/public", timeout=5)
+        if public_response.status_code == 200:
+            public = public_response.json()
+            sso_only = bool(public.get("sso_only"))
+            oidc_available = bool(public.get("sso_enabled"))
+            saml_available = bool(public.get("saml_enabled"))
+            sso_available = oidc_available or saml_available
             if saml and not saml_available:
-                rprint("[red]SAML SSO is not configured on this server.[/red]")
-                raise typer.Exit(1)
-            # Use device flow if --sso/--saml flag passed, or if sso_only mode (no password option)
-            if sso or saml or sso_only:
+                fail(
+                    ErrorCategory.VALIDATION,
+                    "SAML SSO is not configured on this server.",
+                    operation="Authenticate with SAML SSO",
+                    resource=resource,
+                    remediation="Use an enabled authentication method or ask an administrator to configure SAML.",
+                )
+            if sso_only:
                 sso_mode = True
                 direct_sso = True
-                if saml:
-                    sso_provider = "saml"
-    except Exception:
+    except CliError:
+        raise
+    except (httpx.HTTPError, ValueError, TypeError):
         pass
 
-    # If flags did not decide, offer the smallest useful method menu.
-    if not sso_mode and not (email or password):
+    if json_mode and not (sso or saml) and not (email and supplied_password):
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON login requires complete credentials or an explicit SSO option.",
+            operation="Authenticate with Observal",
+            resource=resource,
+            remediation=("Provide email and OBSERVAL_PASSWORD, or select SSO or SAML, then retry."),
+        )
+
+    if not json_mode and not sso_mode and not (email or supplied_password):
         if sso_only:
             if oidc_available and saml_available:
                 rprint("  [1] OIDC SSO")
@@ -305,223 +538,304 @@ def login(
                 sso_provider = "saml"
 
     if sso_mode:
-        _do_device_flow_login(server_url, direct_sso=direct_sso, provider=sso_provider)
+        _do_device_flow_login(
+            server_url,
+            direct_sso=direct_sso,
+            provider=sso_provider,
+            output=output,
+            run_setup=run_setup,
+        )
         return
 
-    # 4. Email+password provided via flags -> password login
-    if email and password:
-        _do_password_login(server_url, email, password)
-        return
-
-    # 5. Interactive: prompt for email/username + password
-    # In _do_password_login / login interactive section
     login_email = email or text_input("Email or username")
-    login_password = password or password_input("Password")
-    _do_password_login(server_url, login_email, login_password)
+    login_password = supplied_password or password_input("Password")
+    _do_password_login(
+        server_url,
+        login_email,
+        login_password,
+        output=output,
+        run_setup=run_setup,
+    )
 
 
 @auth_app.command()
-def logout():
+def logout(
+    output: Annotated[
+        OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
+    ] = OutputMode.table,
+):
     """Clear saved credentials.
 
-    Revokes tokens on the server (best-effort), then removes access and
-    refresh tokens from the local config file. The server URL and other
-    settings are preserved. harness hooks will stop sending telemetry after
-    logout.
+    Revokes the remote session when possible, then removes local access and
+    refresh tokens. Remote revocation failure never blocks local cleanup.
 
     Examples:
         observal auth logout
+        observal auth logout --output json
     """
-    # Best-effort: revoke tokens on the server before clearing locally
-    if config.CONFIG_FILE.exists():
-        import json
-
-        raw_cfg = json.loads(config.CONFIG_FILE.read_text())
+    existed = config.CONFIG_FILE.exists()
+    attempted = False
+    revoked: bool | None = None
+    if existed:
+        try:
+            raw_cfg = _json.loads(config.CONFIG_FILE.read_text())
+        except (OSError, _json.JSONDecodeError) as error:
+            fail(
+                ErrorCategory.VALIDATION,
+                "The local authentication configuration cannot be read.",
+                operation="Log out of Observal",
+                resource=str(config.CONFIG_FILE),
+                remediation="Repair or remove the configuration file, then retry.",
+                detail=repr(error),
+            )
 
         access_token = raw_cfg.get("access_token")
         refresh_token = raw_cfg.get("refresh_token")
         server_url = raw_cfg.get("server_url", "").rstrip("/")
-
         if access_token and server_url:
+            attempted = True
             try:
-                resp = httpx.post(
+                response = httpx.post(
                     f"{server_url}/api/v1/auth/logout",
                     json={"refresh_token": refresh_token or None},
                     headers={"Authorization": f"Bearer {access_token}"},
                     timeout=5,
                 )
-                resp.raise_for_status()
-            except Exception:
-                pass  # Best-effort - proceed with local cleanup regardless
+                revoked = response.is_success
+            except httpx.HTTPError:
+                revoked = False
+        config.remove("access_token", "refresh_token", "api_key")
 
-        for key in ("access_token", "refresh_token", "api_key"):
-            raw_cfg.pop(key, None)
-        config.CONFIG_FILE.write_text(json.dumps(raw_cfg, indent=2))
+    result = {
+        "logged_out": True,
+        "config_existed": existed,
+        "local_tokens_cleared": True,
+        "remote_revocation_attempted": attempted,
+        "remote_revoked": revoked,
+    }
+    if _is_json(output):
+        output_json(result)
+        return
 
-        rprint("[green]Logged out.[/green]")
+    rprint("[green]Logged out.[/green]" if existed else "[dim]No config to clear.[/dim]")
+    if revoked is False:
+        rprint("[yellow]The remote session could not be revoked, but local credentials were removed.[/yellow]")
+    if existed:
         rprint(
-            "[dim]Note: harness hooks will stop sending telemetry. "
-            "To remove hook scripts from your harness, run [bold]observal doctor unpatch[/bold].[/dim]"
+            "[dim]Harness hooks will stop sending telemetry. "
+            "Run [bold]observal doctor cleanup[/bold] to remove managed hooks.[/dim]"
         )
-    else:
-        rprint("[dim]No config to clear.[/dim]")
 
 
 @auth_app.command()
 def whoami(
-    output: str = typer.Option("table", "--output", "-o", help="Output format: table, json"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Show current authenticated user.
 
-    Queries the server for the user associated with the stored access
-    token. Displays username, email, role, and user ID.
+    Queries the server for the user associated with the stored access token.
 
     Examples:
         observal auth whoami
         observal auth whoami --output json
     """
-    with spinner("Checking..."):
+    with nullcontext() if _is_json(output) else spinner("Checking..."):
         user = client.get("/api/v1/auth/whoami")
-    if output == "json":
-        from observal_cli.render import output_json
-
+    if _is_json(output):
         output_json(user)
         return
     console.print(
         kv_panel(
-            user["name"],
+            esc(user["name"]),
             [
-                ("Username", f"@{user['username']}" if user.get("username") else "[dim]not set[/dim]"),
-                ("Email", user["email"]),
-                ("Role", status_badge(user.get("role", "user"))),
-                ("ID", f"[dim]{user['id']}[/dim]"),
+                ("Username", f"@{esc(user['username'])}" if user.get("username") else "[dim]not set[/dim]"),
+                ("Email", esc(user["email"])),
+                ("Role", status_badge(esc(user.get("role", "user")))),
+                ("ID", f"[dim]{esc(user['id'])}[/dim]"),
             ],
         )
     )
 
 
 @auth_app.command()
-def status():
-    """Check server connectivity and health.
+def status(
+    output: Annotated[
+        OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
+    ] = OutputMode.table,
+):
+    """Check authenticated server connectivity and local outbox health.
 
-    Shows the configured server URL, whether auth is configured, server
-    reachability with latency, and local telemetry buffer stats. Useful
-    for diagnosing connectivity issues.
+    Returns authentication code 3 when credentials are absent and unavailable
+    code 9 when the configured server cannot be reached.
 
     Examples:
         observal auth status
+        observal auth status --output json
     """
     cfg = config.load()
-    url = cfg.get("server_url", "not set")
-    has_token = bool(cfg.get("access_token"))
+    url = str(cfg.get("server_url") or "").rstrip("/")
+    if not url or not cfg.get("access_token"):
+        fail(
+            ErrorCategory.AUTH,
+            "Observal authentication is not configured.",
+            operation="Check authentication status",
+            resource=str(config.CONFIG_FILE),
+            remediation="Run observal auth login or configure an access token, then retry.",
+        )
+
     ok, latency = client.health()
+    if not ok:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            "The configured Observal server is unreachable.",
+            operation="Check authentication status",
+            resource=f"server {url}",
+            remediation="Check the server URL and service health, then retry.",
+        )
 
-    rprint(f"  Server:  {url}")
-    rprint(f"  Auth:    {'[green]configured[/green]' if has_token else '[red]not set[/red]'}")
-    if ok:
-        color = "green" if latency < 200 else "yellow" if latency < 1000 else "red"
-        rprint(f"  Health:  [{color}]ok[/{color}] ({latency:.0f}ms)")
-    else:
-        rprint("  Health:  [red]unreachable[/red]")
-
-    # Show local telemetry buffer summary
+    outbox: dict[str, object]
     try:
         from observal_cli.telemetry_buffer import stats as buffer_stats
 
         buf = buffer_stats()
-        if buf["total"] > 0:
-            rprint()
-            pending = buf["pending"]
-            label = f"[yellow]{pending} pending[/yellow]" if pending else "[green]0 pending[/green]"
-            rprint(f"  Outbox:  {label} batches, {buf['bytes'] / 1024:.1f} KiB")
-            if buf["oldest_pending"]:
-                rprint(f"  Oldest:  {buf['oldest_pending']} UTC")
-            if pending and not ok:
-                rprint("  [dim]Session data is pushed incrementally; run `observal doctor` to diagnose.[/dim]")
-    except Exception:
-        pass
+        outbox = {
+            "available": True,
+            "total": buf.get("total", 0),
+            "pending": buf.get("pending", 0),
+            "bytes": buf.get("bytes", 0),
+            "oldest_pending": buf.get("oldest_pending"),
+        }
+    except Exception as error:
+        outbox = {"available": False, "error": type(error).__name__}
+
+    result = {
+        "server_url": url,
+        "authenticated": True,
+        "health": {"reachable": True, "latency_ms": round(latency, 3)},
+        "outbox": outbox,
+    }
+    if _is_json(output):
+        output_json(result)
+        return
+
+    rprint(f"  Server:  {esc(url)}")
+    rprint("  Auth:    [green]configured[/green]")
+    color = "green" if latency < 200 else "yellow" if latency < 1000 else "red"
+    rprint(f"  Health:  [{color}]ok[/{color}] ({latency:.0f}ms)")
+    if outbox["available"] and outbox["total"]:
+        pending = int(outbox["pending"])
+        label = f"[yellow]{pending} pending[/yellow]" if pending else "[green]0 pending[/green]"
+        rprint()
+        rprint(f"  Outbox:  {label} batches, {int(outbox['bytes']) / 1024:.1f} KiB")
+        if outbox["oldest_pending"]:
+            rprint(f"  Oldest:  {esc(outbox['oldest_pending'])} UTC")
+    elif not outbox["available"]:
+        rprint("  Outbox:  [yellow]status unavailable[/yellow]")
 
 
 @auth_app.command(name="change-password")
-def change_password():
+def change_password(
+    output: Annotated[
+        OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
+    ] = OutputMode.table,
+):
     """Change your password.
 
-    Prompts for your current password, then asks for a new password that
-    meets the security requirements (12+ chars, uppercase, number, and
-    special character). Requires an active login session.
+    Both modes read OBSERVAL_CURRENT_PASSWORD and OBSERVAL_NEW_PASSWORD,
+    including their FILE forms. Human mode prompts for missing values; JSON
+    mode requires both values and never prompts.
 
     Examples:
         observal auth change-password
+        observal auth change-password --output json
     """
     cfg = config.load()
-    server_url = cfg.get("server_url")
-    token = cfg.get("access_token")
-    if not server_url or not token:
-        rprint("[red]Not logged in.[/red] Run [bold]observal auth login[/bold] first.")
-        raise typer.Exit(1)
+    if not cfg.get("server_url") or not cfg.get("access_token"):
+        fail(
+            ErrorCategory.AUTH,
+            "An authenticated session is required to change the password.",
+            operation="Change password",
+            resource=str(config.CONFIG_FILE),
+            remediation="Run observal auth login and retry.",
+        )
 
-    current = password_input("Current password")
-    new_pw = _prompt_password("New password")
-    confirm = password_input("Confirm password")
-    if new_pw != confirm:
-        rprint("[red]Passwords do not match.[/red]")
-        raise typer.Exit(1)
+    json_mode = _is_json(output)
+    current = _secret("OBSERVAL_CURRENT_PASSWORD", operation="Change password")
+    new_password = _secret("OBSERVAL_NEW_PASSWORD", operation="Change password")
+    if json_mode and (not current or not new_password):
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON password change requires current and new password secrets.",
+            operation="Change password",
+            resource="password input",
+            remediation=("Set OBSERVAL_CURRENT_PASSWORD and OBSERVAL_NEW_PASSWORD, or their FILE forms, then retry."),
+        )
 
-    try:
-        with spinner("Changing password..."):
-            r = httpx.put(
-                f"{server_url}/api/v1/auth/profile/password",
-                json={"current_password": current, "new_password": new_pw},
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=30,
+    current = current or password_input("Current password")
+    if new_password is None:
+        new_password = _prompt_password("New password")
+        confirmation = password_input("Confirm password")
+        if new_password != confirmation:
+            fail(
+                ErrorCategory.VALIDATION,
+                "Passwords do not match.",
+                operation="Change password",
+                resource="new password",
+                remediation="Enter matching passwords and retry.",
             )
-            r.raise_for_status()
+
+    if _validate_password(new_password):
+        fail(
+            ErrorCategory.VALIDATION,
+            "The new password does not meet security requirements.",
+            operation="Change password",
+            resource="new password",
+            remediation="Use at least 12 characters with uppercase, number, and special characters.",
+        )
+
+    with nullcontext() if json_mode else spinner("Changing password..."):
+        result = client.put(
+            "/api/v1/auth/profile/password",
+            {"current_password": current, "new_password": new_password},
+        )
+    payload = result or {"changed": True}
+    if _is_json(output):
+        output_json(payload)
+    else:
         rprint("[green]Password changed successfully.[/green]")
-    except httpx.HTTPStatusError as e:
-        detail = ""
-        try:
-            detail = e.response.json().get("detail", e.response.text)
-        except Exception:
-            detail = e.response.text
-        rprint(f"[red]Failed:[/red] {detail}")
-        raise typer.Exit(1)
 
 
 @auth_app.command(name="set-username")
 def set_username(
     username: str = typer.Argument(..., help="Username (3-32 chars, lowercase alphanumeric, hyphens and dots)"),
+    output: Annotated[
+        OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
+    ] = OutputMode.table,
 ):
     """Set or update your username.
 
-    Usernames must be 3 to 32 characters of lowercase letters, numbers,
-    hyphens, and dots, starting and ending with a letter or number. Once set,
-    your username can be used for login, doubles as your registry namespace,
-    and is displayed as @username in the UI.
-
-    The server locks the username once you have published a registry item.
-    The exception is a username that is not a valid namespace (one carried
-    over from before namespace validation) — that one can never publish, so
-    it stays changeable and anything already published moves with you.
-
     Examples:
         observal auth set-username alice
-        observal auth set-username my-dev-handle
+        observal auth set-username my-dev-handle --output json
         observal auth set-username my.dev.handle
     """
     optic.trace("username={}", username)
-    from observal_cli import client as _client
+    if username != username.strip().lower() or not is_valid_namespace(username):
+        fail(
+            ErrorCategory.VALIDATION,
+            NAMESPACE_RULE_TEXT,
+            operation="Update username",
+            resource="username",
+            remediation="Choose a valid registry namespace and retry.",
+        )
 
-    if not is_valid_namespace(username):
-        rprint(f"[red]Failed:[/red] {NAMESPACE_RULE_TEXT}.")
-        raise typer.Exit(1)
-
-    try:
-        with spinner("Updating username..."):
-            result = _client.put("/api/v1/auth/profile/username", {"username": username})
-        rprint(f"[green]Username set to @{result.get('username', username)}[/green]")
-    except Exception as e:
-        rprint(f"[red]Failed:[/red] {e}")
-        raise typer.Exit(1)
+    with nullcontext() if _is_json(output) else spinner("Updating username..."):
+        result = client.put("/api/v1/auth/profile/username", {"username": username})
+    config.save({"username": result.get("username", username)})
+    if _is_json(output):
+        output_json(result)
+    else:
+        rprint(f"[green]Username set to @{esc(result.get('username', username))}[/green]")
 
 
 def version_callback():
@@ -554,102 +868,158 @@ def _fetch_endpoints(server_url: str) -> dict:
     return {}
 
 
-def _do_password_login(server_url: str, email: str, password: str):
-    """Authenticate with email/username + password."""
+def _do_password_login(
+    server_url: str,
+    email: str,
+    password: str,
+    *,
+    output: OutputMode | str = OutputMode.table,
+    run_setup: bool = True,
+) -> None:
+    """Authenticate with email or username and password."""
     optic.trace("server_url={}, email={}", server_url, email)
+    json_mode = _is_json(output)
+    resource = f"server {server_url}"
     try:
-        with spinner("Authenticating..."):
-            r = httpx.post(
+        with nullcontext() if json_mode else spinner("Authenticating..."):
+            response = httpx.post(
                 f"{server_url}/api/v1/auth/login",
                 json={"email": email, "password": password},
                 timeout=30,
             )
-            r.raise_for_status()
-            data = r.json()
+        _raise_for_status(
+            response,
+            path="/api/v1/auth/login",
+            operation="Authenticate with password",
+            resource=resource,
+        )
+        data = response.json()
+    except CliError:
+        raise
+    except httpx.TransportError as error:
+        _fail_transport(error, operation="Authenticate with password", resource=resource)
+    except (ValueError, TypeError) as error:
+        fail(
+            ErrorCategory.UNEXPECTED,
+            "The server returned an invalid login response.",
+            operation="Authenticate with password",
+            resource=resource,
+            remediation="Check server health and version compatibility, then retry.",
+            detail=repr(error),
+        )
 
-        user = data["user"]
-
-        if data.get("must_change_password"):
-            rprint("[yellow]Your admin has required a password change.[/yellow]\n")
-            access_token = data["access_token"]
-            new_pw = password_input("New password")
-            confirm = password_input("Confirm new password")
-            if new_pw != confirm:
-                rprint("[red]Passwords do not match.[/red]")
-                raise typer.Exit(1)
-            if len(new_pw) < 8:
-                rprint("[red]Password must be at least 8 characters.[/red]")
-                raise typer.Exit(1)
-            with spinner("Changing password..."):
-                cr = httpx.put(
+    if data.get("must_change_password"):
+        if not json_mode:
+            rprint("[yellow]Your administrator requires a password change.[/yellow]")
+        new_password = _secret("OBSERVAL_NEW_PASSWORD", operation="Complete required password change")
+        if new_password is None:
+            if json_mode:
+                fail(
+                    ErrorCategory.VALIDATION,
+                    "JSON login requires a new password for the mandatory password change.",
+                    operation="Complete required password change",
+                    resource="new password",
+                    remediation="Set OBSERVAL_NEW_PASSWORD or OBSERVAL_NEW_PASSWORD_FILE, then retry.",
+                )
+            new_password = _prompt_password("New password")
+            confirmation = password_input("Confirm new password")
+            if new_password != confirmation:
+                fail(
+                    ErrorCategory.VALIDATION,
+                    "Passwords do not match.",
+                    operation="Complete required password change",
+                    resource="new password",
+                    remediation="Enter matching passwords and retry.",
+                )
+        if _validate_password(new_password):
+            fail(
+                ErrorCategory.VALIDATION,
+                "The new password does not meet security requirements.",
+                operation="Complete required password change",
+                resource="new password",
+                remediation="Use at least 12 characters with uppercase, number, and special characters.",
+            )
+        try:
+            with nullcontext() if json_mode else spinner("Changing password..."):
+                changed = httpx.put(
                     f"{server_url}/api/v1/auth/profile/password",
-                    json={"current_password": password, "new_password": new_pw},
-                    headers={"Authorization": f"Bearer {access_token}"},
+                    json={"current_password": password, "new_password": new_password},
+                    headers={"Authorization": f"Bearer {data['access_token']}"},
                     timeout=30,
                 )
-                cr.raise_for_status()
-            rprint("[green]Password changed.[/green]\n")
+            _raise_for_status(
+                changed,
+                path="/api/v1/auth/profile/password",
+                operation="Complete required password change",
+                resource="user account",
+            )
+        except CliError:
+            raise
+        except httpx.TransportError as error:
+            _fail_transport(error, operation="Complete required password change", resource=resource)
+        if not json_mode:
+            rprint("[green]Password changed.[/green]")
 
-        endpoints = _fetch_endpoints(server_url)
-        cfg_data = {
-            "server_url": server_url,
-            "access_token": data["access_token"],
-            "refresh_token": data["refresh_token"],
-            "user_id": user.get("id", ""),
-            "user_name": user.get("name", ""),
-            "username": user.get("username", ""),
-        }
-        if endpoints:
-            cfg_data["web_url"] = endpoints.get("web", "")
-        config.save(cfg_data)
-        rprint(f"[green]Logged in as {user['name']}[/green] ({user['email']}) [{user.get('role', '')}]")
-        rprint(f"[dim]Config saved to {config.CONFIG_FILE}[/dim]")
-
-        _post_login_setup()
-
-    except httpx.HTTPStatusError as e:
-        detail = ""
-        try:
-            detail = e.response.json().get("detail", e.response.text)
-        except Exception:
-            detail = e.response.text
-        rprint(f"[red]Login failed:[/red] {detail}")
-        raise typer.Exit(1)
+    _finish_login(
+        server_url,
+        data,
+        output=output,
+        method="password",
+        run_setup=run_setup,
+    )
 
 
-def _do_device_flow_login(server_url: str, direct_sso: bool = False, provider: str | None = None):
+def _do_device_flow_login(
+    server_url: str,
+    direct_sso: bool = False,
+    provider: str | None = None,
+    *,
+    output: OutputMode | str = OutputMode.table,
+    run_setup: bool = True,
+) -> None:
     """Authenticate via browser using the device authorization flow."""
     optic.trace("server_url={}", server_url)
     import time
     import webbrowser
-    from urllib.parse import urlparse
 
-    # 1. Request device authorization
+    json_mode = _is_json(output)
+    resource = f"server {server_url}"
     try:
-        with spinner("Requesting device authorization..."):
-            r = httpx.post(
+        with nullcontext() if json_mode else spinner("Requesting device authorization..."):
+            response = httpx.post(
                 f"{server_url}/api/v1/auth/device/authorize",
                 json={"sso": direct_sso, "provider": provider},
                 timeout=10,
             )
-            r.raise_for_status()
-            data = r.json()
-    except httpx.HTTPStatusError as e:
-        rprint(f"[red]Device authorization failed ({e.response.status_code}):[/red] {e.response.text}")
-        raise typer.Exit(1)
+        _raise_for_status(
+            response,
+            path="/api/v1/auth/device/authorize",
+            operation="Request device authorization",
+            resource=resource,
+        )
+        data = response.json()
+        device_code = data["device_code"]
+        user_code = data["user_code"]
+        verification_uri = data["verification_uri"]
+        verification_uri_complete = data["verification_uri_complete"]
+        expires_in = data["expires_in"]
+        interval = data.get("interval", 5)
+    except CliError:
+        raise
+    except httpx.TransportError as error:
+        _fail_transport(error, operation="Request device authorization", resource=resource)
+    except (KeyError, ValueError, TypeError) as error:
+        fail(
+            ErrorCategory.UNEXPECTED,
+            "The server returned an invalid device authorization response.",
+            operation="Request device authorization",
+            resource=resource,
+            remediation="Check server health and version compatibility, then retry.",
+            detail=repr(error),
+        )
 
-    device_code = data["device_code"]
-    user_code = data["user_code"]
-    verification_uri = data["verification_uri"]
-    verification_uri_complete = data["verification_uri_complete"]
-    expires_in = data["expires_in"]
-    interval = data.get("interval", 5)
-
-    # If the server returned a localhost URL but we connected to a remote server,
-    # rewrite the verification URLs using the server_url we already know.
     parsed_verification = urlparse(verification_uri)
     parsed_server = urlparse(server_url)
-    # None check: urlparse returns hostname=None for malformed URLs (bare paths, etc.)
     if parsed_verification.hostname in ("localhost", "127.0.0.1", "::1") and parsed_server.hostname not in (
         "localhost",
         "127.0.0.1",
@@ -663,29 +1033,41 @@ def _do_device_flow_login(server_url: str, direct_sso: bool = False, provider: s
         verification_uri_complete = f"{base}{path}?{original_query}" if original_query else f"{base}{path}"
         optic.debug("rewrote localhost verification_uri to {}", verification_uri)
 
-    # 2. Display instructions
-    rprint()
-    rprint("[bold]To sign in, open this URL in your browser:[/bold]")
-    rprint()
-    rprint(f"  [link={verification_uri_complete}]{verification_uri}[/link]")
-    rprint()
-    rprint(f"  Then enter code: [bold cyan]{user_code}[/bold cyan]")
-    rprint()
+    if json_mode:
+        _json_line(
+            {
+                "event": "authorization_required",
+                "verification_uri": verification_uri,
+                "verification_uri_complete": verification_uri_complete,
+                "user_code": user_code,
+                "expires_in": expires_in,
+                "interval": interval,
+            }
+        )
+    else:
+        rprint()
+        rprint("[bold]To sign in, open this URL in your browser:[/bold]")
+        rprint()
+        rprint(f"  [link={verification_uri_complete}]{verification_uri}[/link]")
+        rprint()
+        rprint(f"  Then enter code: [bold cyan]{user_code}[/bold cyan]")
+        rprint()
 
-    # Try to open browser automatically
     try:
         import platform
         import subprocess as _sp
 
-        _opened = False
-        _sys = platform.system()
-        if _sys == "Darwin":
+        opened = False
+        system = platform.system()
+        if system == "Darwin":
             _sp.Popen(["open", verification_uri_complete], stderr=_sp.DEVNULL, stdout=_sp.DEVNULL)
-            _opened = True
-        elif _sys == "Linux":
-            # WSL: use powershell.exe to open in Windows browser
-            _wsl = _sp.run(["wslpath", "-w", "/"], capture_output=True)
-            if _wsl.returncode == 0:
+            opened = True
+        elif system == "Linux":
+            try:
+                wsl_ok = _sp.run(["wslpath", "-w", "/"], capture_output=True).returncode == 0
+            except (OSError, ValueError):
+                wsl_ok = False
+            if wsl_ok:
                 _sp.Popen(
                     ["powershell.exe", "-NoProfile", "-c", f"Start-Process '{verification_uri_complete}'"],
                     stderr=_sp.DEVNULL,
@@ -693,24 +1075,25 @@ def _do_device_flow_login(server_url: str, direct_sso: bool = False, provider: s
                 )
             else:
                 _sp.Popen(["xdg-open", verification_uri_complete], stderr=_sp.DEVNULL, stdout=_sp.DEVNULL)
-            _opened = True
+            opened = True
         else:
             webbrowser.open(verification_uri_complete)
-            _opened = True
-        if _opened:
+            opened = True
+        if opened and not json_mode:
             rprint("[dim]Browser opened automatically.[/dim]")
     except Exception:
-        rprint("[dim]Could not open browser automatically. Please open the URL manually.[/dim]")
+        if not json_mode:
+            rprint("[dim]Could not open browser automatically. Please open the URL manually.[/dim]")
 
-    rprint()
-    rprint("[dim]Waiting for authorization...[/dim]", end="")
+    if not json_mode:
+        rprint()
+        rprint("[dim]Waiting for authorization...[/dim]", end="")
 
-    # 3. Poll for token
     deadline = time.monotonic() + expires_in
     while time.monotonic() < deadline:
         time.sleep(interval)
         try:
-            r = httpx.post(
+            response = httpx.post(
                 f"{server_url}/api/v1/auth/device/token",
                 json={
                     "device_code": device_code,
@@ -718,178 +1101,350 @@ def _do_device_flow_login(server_url: str, direct_sso: bool = False, provider: s
                 },
                 timeout=10,
             )
-
-            if r.status_code == 200:
-                # Success!
-                token_data = r.json()
-                rprint(" [green]authorized![/green]")
-                rprint()
-
-                user = token_data.get("user", {})
-                endpoints = _fetch_endpoints(server_url)
-                cfg_data = {
-                    "server_url": server_url,
-                    "access_token": token_data["access_token"],
-                    "refresh_token": token_data["refresh_token"],
-                    "user_id": user.get("id", ""),
-                    "user_name": user.get("name", ""),
-                    "username": user.get("username", ""),
-                }
-                if endpoints:
-                    cfg_data["web_url"] = endpoints.get("web", "")
-                config.save(cfg_data)
-
-                rprint(
-                    f"[green]Logged in as {user.get('name', 'unknown')}[/green]"
-                    f" ({user.get('email', '')}) [{user.get('role', '')}]"
-                )
-                rprint(f"[dim]Config saved to {config.CONFIG_FILE}[/dim]")
-
-                _post_login_setup()
-                return
-
-            if r.status_code == 428:
-                # Still pending, keep polling
-                rprint(".", end="", flush=True)
-                continue
-
-            # Error response
-            error_data = r.json()
-            error = error_data.get("error", "unknown_error")
-            if error == "expired_token":
-                rprint(" [red]expired[/red]")
-                rprint("[red]Device code expired. Please try again.[/red]")
-                raise typer.Exit(1)
-            elif error == "access_denied":
-                rprint(" [red]denied[/red]")
-                rprint("[red]Authorization was denied.[/red]")
-                raise typer.Exit(1)
-            else:
-                rprint(f" [red]error: {error}[/red]")
-                raise typer.Exit(1)
-
         except httpx.RequestError:
-            # Network error, keep trying
-            rprint(".", end="", flush=True)
+            if not json_mode:
+                rprint(".", end="", flush=True)
             continue
 
-    rprint(" [red]timed out[/red]")
-    rprint("[red]Authorization timed out. Please try again.[/red]")
-    raise typer.Exit(1)
+        if response.status_code == 200:
+            try:
+                token_data = response.json()
+            except ValueError as error:
+                fail(
+                    ErrorCategory.UNEXPECTED,
+                    "The server returned an invalid device token response.",
+                    operation="Complete device authorization",
+                    resource=resource,
+                    remediation="Check server health and version compatibility, then retry.",
+                    detail=repr(error),
+                )
+            if not json_mode:
+                rprint(" [green]authorized![/green]")
+            _finish_login(
+                server_url,
+                token_data,
+                output=output,
+                method=provider or "sso",
+                run_setup=run_setup,
+                stream=json_mode,
+            )
+            return
+
+        if response.status_code == 428:
+            if not json_mode:
+                rprint(".", end="", flush=True)
+            continue
+
+        try:
+            error = response.json().get("error", "unknown_error")
+        except ValueError:
+            error = "unknown_error"
+        if error == "expired_token":
+            fail(
+                ErrorCategory.AUTH,
+                "The device authorization code expired.",
+                operation="Complete device authorization",
+                resource="device authorization",
+                remediation="Start login again to request a new code.",
+                http_status=response.status_code,
+            )
+        if error == "access_denied":
+            fail(
+                ErrorCategory.PERMISSION,
+                "Device authorization was denied.",
+                operation="Complete device authorization",
+                resource="device authorization",
+                remediation="Approve the browser authorization request and retry.",
+                http_status=response.status_code,
+            )
+        _raise_for_status(
+            response,
+            path="/api/v1/auth/device/token",
+            operation="Complete device authorization",
+            resource=resource,
+        )
+
+    fail(
+        ErrorCategory.UNAVAILABLE,
+        "Device authorization timed out.",
+        operation="Complete device authorization",
+        resource="device authorization",
+        remediation="Start login again and complete browser authorization before the code expires.",
+    )
+
+
+_CONFIG_KEYS = {"server_url", "timeout", "update_check", "update_check_interval", "update_check_repo"}
+_ALIAS_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,63}$")
+
+
+def _parse_bool(value: str, *, key: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {"true", "1", "yes", "on"}:
+        return True
+    if normalized in {"false", "0", "no", "off"}:
+        return False
+    fail(
+        ErrorCategory.VALIDATION,
+        f"{key} must be true or false.",
+        operation="Update CLI configuration",
+        resource=key,
+        remediation=f"Run observal config set {key} true or {key} false.",
+    )
+
+
+def _normalize_config_value(key: str, value: str) -> object:
+    if key not in _CONFIG_KEYS:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"{key} is not a user-configurable setting.",
+            operation="Update CLI configuration",
+            resource=key,
+            remediation=f"Choose one of: {', '.join(sorted(_CONFIG_KEYS))}.",
+        )
+
+    normalized = value.strip()
+    if key == "server_url":
+        parsed = urlparse(normalized)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+            or parsed.query
+            or parsed.fragment
+        ):
+            fail(
+                ErrorCategory.VALIDATION,
+                "server_url must be an HTTP or HTTPS URL without embedded credentials.",
+                operation="Update CLI configuration",
+                resource=key,
+                remediation="Provide a URL such as https://observal.example.com.",
+            )
+        return normalized.rstrip("/")
+    if key in {"timeout", "update_check_interval"}:
+        try:
+            number = int(normalized)
+        except ValueError:
+            number = 0
+        minimum = 1 if key == "timeout" else 60
+        if number < minimum:
+            fail(
+                ErrorCategory.VALIDATION,
+                f"{key} must be an integer of at least {minimum}.",
+                operation="Update CLI configuration",
+                resource=key,
+                remediation=f"Provide an integer of at least {minimum} and retry.",
+            )
+        return number
+    if key == "update_check":
+        return _parse_bool(normalized, key=key)
+    if key == "update_check_repo":
+        if normalized and not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", normalized):
+            fail(
+                ErrorCategory.VALIDATION,
+                "update_check_repo must use owner/repository format.",
+                operation="Update CLI configuration",
+                resource=key,
+                remediation="Provide a value such as Observal/Observal or an empty string.",
+            )
+        return normalized
+    return normalized
+
+
+def _safe_config(cfg: dict) -> dict:
+    visible = {
+        key: cfg.get(key)
+        for key in (
+            "server_url",
+            "timeout",
+            "update_check",
+            "update_check_interval",
+            "update_check_repo",
+            "user_id",
+            "user_name",
+            "username",
+            "web_url",
+        )
+        if key in cfg
+    }
+    visible["access_token_configured"] = bool(cfg.get("access_token"))
+    visible["refresh_token_configured"] = bool(cfg.get("refresh_token"))
+    visible["hooks_token_configured"] = bool(cfg.get("api_key"))
+    return visible
+
+
+def _validate_alias_name(name: str) -> None:
+    if not _ALIAS_PATTERN.fullmatch(name):
+        fail(
+            ErrorCategory.VALIDATION,
+            "Alias names must start with a letter and contain only letters, numbers, dots, underscores, or hyphens.",
+            operation="Update CLI alias",
+            resource=name,
+            remediation="Choose an alias of at most 64 characters without spaces or a leading at sign.",
+        )
 
 
 def register_config(app: typer.Typer):
     """Register config subcommands."""
 
     @config_app.command(name="show")
-    def config_show():
-        """Show current CLI configuration.
-
-        Prints all config values as JSON. Access and refresh tokens are
-        masked for safety. The config file lives at ~/.observal/config.json.
+    def config_show(
+        output: Annotated[
+            OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
+        ] = OutputMode.table,
+    ):
+        """Show effective CLI configuration without exposing credentials.
 
         Examples:
             observal config show
+            observal config show --output json
         """
-        cfg = config.load()
-        safe = dict(cfg)
-        if safe.get("access_token"):
-            t = safe["access_token"]
-            safe["access_token"] = t[:8] + "..." + t[-4:] if len(t) > 12 else "***"
-        if safe.get("refresh_token"):
-            t = safe["refresh_token"]
-            safe["refresh_token"] = t[:8] + "..." + t[-4:] if len(t) > 12 else "***"
-        # Clean up legacy key if present
-        safe.pop("api_key", None)
-        console.print_json(_json.dumps(safe, indent=2))
+        safe = _safe_config(config.load())
+        if _is_json(output):
+            output_json(safe)
+            return
+
+        table = Table(title="CLI Configuration", show_lines=False)
+        table.add_column("Setting", style="bold")
+        table.add_column("Value")
+        for key, value in safe.items():
+            rendered = str(value).lower() if isinstance(value, bool) else "" if value is None else str(value)
+            table.add_row(key, esc(rendered))
+        console.print(table)
 
     @config_app.command(name="set")
     def config_set(
-        key: str = typer.Argument(..., help="Config key (output, color, server_url)"),
+        key: str = typer.Argument(..., help="Config key"),
         value: str = typer.Argument(..., help="Config value"),
+        output: Annotated[
+            OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
+        ] = OutputMode.table,
     ):
-        """Set a CLI config value.
-
-        Persists the given key/value pair to ~/.observal/config.json.
-        Common keys: output (table/json/plain), color (true/false),
-        server_url.
+        """Set a validated user-managed CLI setting.
 
         Examples:
-            observal config set output json
-            observal config set color false
-            observal config set server_url http://observal.internal:80
+            observal config set server_url https://observal.example.com
+            observal config set timeout 60 --output json
+            observal config set update_check false
         """
-        optic.trace("key={}, value={}", key, value)
+        optic.trace("key={}", key)
+        normalized = _normalize_config_value(key, value)
         if key == "server_url":
-            from observal_cli.lockfile import migrate_lockfile_v1
+            from observal_cli.lockfile import LOCKFILE_PATH, migrate_lockfile_v1
 
-            previous_server = config.load().get("server_url")
-            if previous_server:
-                migrate_lockfile_v1(str(previous_server))
-        if key == "color":
-            config.save({key: value.lower() in ("true", "1", "yes")})
+            previous_server = config.load_persisted().get("server_url")
+            if previous_server and previous_server != normalized:
+                try:
+                    migrate_lockfile_v1(str(previous_server))
+                except (RuntimeError, ValueError) as error:
+                    fail(
+                        ErrorCategory.VALIDATION,
+                        "The installed-state lockfile could not be migrated.",
+                        operation="Update CLI server",
+                        resource=str(LOCKFILE_PATH),
+                        remediation="Repair or remove the invalid lockfile, then retry.",
+                        detail=repr(error),
+                    )
+        config.save({key: normalized})
+        effective = config.load().get(key)
+        result = {"key": key, "value": normalized, "persisted": True, "effective": effective}
+        if _is_json(output):
+            output_json(result)
         else:
-            config.save({key: value})
-        rprint(f"[green]Set {key}[/green]")
+            rprint(f"[green]Set {esc(key)}.[/green]")
 
     @config_app.command(name="path")
-    def config_path():
-        """Show config file path.
-
-        Prints the absolute path to the CLI config file. Useful for
-        scripting or manual edits.
+    def config_path(
+        output: Annotated[
+            OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
+        ] = OutputMode.table,
+    ):
+        """Show the config file path.
 
         Examples:
             observal config path
-            cat $(observal config path)
+            observal config path --output json
         """
-        rprint(str(config.CONFIG_FILE))
+        result = {"path": str(config.CONFIG_FILE), "exists": config.CONFIG_FILE.exists()}
+        if _is_json(output):
+            output_json(result)
+        else:
+            print(result["path"])
 
     @config_app.command(name="alias")
     def config_alias(
-        name: str = typer.Argument(..., help="Alias name (used as @name)"),
-        target: str = typer.Argument(None, help="Target ID (omit to remove)"),
+        name: str = typer.Argument(..., help="Alias name used as @name"),
+        target: str | None = typer.Argument(None, help="Target reference; omit to remove"),
+        output: Annotated[
+            OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
+        ] = OutputMode.table,
     ):
-        """Set or remove an alias for an MCP/agent ID.
-
-        Aliases let you reference agents or components by short names
-        instead of UUIDs. Use @name in any command that accepts an ID.
-        Omit the target argument to remove an existing alias.
+        """Set or remove a local registry reference alias.
 
         Examples:
-            observal config alias myagent 550e8400-e29b-41d4-a716-446655440000
-            observal config alias myagent
+            observal config alias reviewer alice/reviewer
+            observal config alias reviewer alice/reviewer --output json
+            observal config alias reviewer
         """
-        optic.trace("name={}, target={}", name, target)
+        optic.trace("name={}, has_target={}", name, target is not None)
+        _validate_alias_name(name)
         aliases = config.load_aliases()
-        if target:
-            aliases[name] = target
-            config.save_aliases(aliases)
-            rprint(f"[green]@{name} -> {target}[/green]")
+        if target is not None:
+            normalized_target = target.strip()
+            if not normalized_target:
+                fail(
+                    ErrorCategory.VALIDATION,
+                    "Alias targets must not be empty.",
+                    operation="Update CLI alias",
+                    resource=name,
+                    remediation="Provide a UUID, namespace/slug, name, or another supported reference.",
+                )
+            changed = aliases.get(name) != normalized_target
+            aliases[name] = normalized_target
+            if changed:
+                config.save_aliases(aliases)
+            result = {"action": "set", "alias": name, "target": normalized_target, "changed": changed}
+            message = f"@{esc(name)} → {esc(normalized_target)}"
         else:
             removed = aliases.pop(name, None)
-            config.save_aliases(aliases)
-            if removed:
-                rprint(f"[green]Removed @{name}[/green]")
-            else:
-                rprint(f"[yellow]Alias @{name} not found.[/yellow]")
+            changed = removed is not None
+            if changed:
+                config.save_aliases(aliases)
+            result = {"action": "removed", "alias": name, "target": removed, "changed": changed}
+            message = f"Removed @{esc(name)}" if changed else f"Alias @{esc(name)} was already absent"
+
+        if _is_json(output):
+            output_json(result)
+        else:
+            color = "green" if changed else "yellow"
+            rprint(f"[{color}]{message}[/{color}]")
 
     @config_app.command(name="aliases")
-    def config_aliases():
-        """List all aliases.
-
-        Shows all configured @name to ID mappings. Aliases are stored
-        in ~/.observal/aliases.json.
+    def config_aliases(
+        output: Annotated[
+            OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
+        ] = OutputMode.table,
+    ):
+        """List all local aliases.
 
         Examples:
             observal config aliases
+            observal config aliases --output json
         """
-        aliases = config.load_aliases()
-        if not aliases:
-            rprint("[dim]No aliases set. Use: observal config alias <name> <id>[/dim]")
+        items = [{"alias": name, "target": target} for name, target in sorted(config.load_aliases().items())]
+        if _is_json(output):
+            output_json({"items": items, "total": len(items)})
             return
-        for name, target in sorted(aliases.items()):
-            rprint(f"  @{name} -> [dim]{target}[/dim]")
+        if not items:
+            rprint("[dim]No aliases set. Use: observal config alias <name> <reference>[/dim]")
+            return
+
+        table = Table(title="CLI Aliases", show_lines=False)
+        table.add_column("Alias", style="bold")
+        table.add_column("Target")
+        for item in items:
+            table.add_row(f"@{esc(item['alias'])}", esc(item["target"]))
+        console.print(table)
 
     app.add_typer(config_app, name="config")
 

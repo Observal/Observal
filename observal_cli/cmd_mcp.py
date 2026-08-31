@@ -13,20 +13,26 @@ from __future__ import annotations
 import json
 import re
 import sys
+from contextlib import nullcontext, redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 import typer
 from loguru import logger as optic
+from packaging.version import InvalidVersion, Version
 from rich import print as rprint
 from rich.table import Table
 
 from observal_cli import client, config
 from observal_cli.analyzer import analyze_local
 from observal_cli.constants import VALID_HARNESSES, VALID_MCP_CATEGORIES
+from observal_cli.errors import ErrorCategory, fail, load_json_object
 from observal_cli.prompts import fuzzy_select, select_one, text_input
 from observal_cli.render import (
+    OutputMode,
     console,
     display_name,
+    esc,
     handle,
     ide_tags,
     kv_panel,
@@ -37,7 +43,15 @@ from observal_cli.render import (
     status_badge,
 )
 
-mcp_app = typer.Typer(help="MCP server registry commands")
+mcp_app = typer.Typer(
+    help=(
+        "MCP server registry commands\n\n"
+        "Examples:\n"
+        "  observal registry mcp list\n"
+        "  observal registry mcp show alice/my-server\n"
+        "  observal registry mcp install alice/my-server --harness claude-code"
+    )
+)
 
 
 # ── Env var configuration helpers ────────────────────────────
@@ -47,9 +61,14 @@ def _parse_env_file(file_path: str) -> list[dict]:
     """Parse a .env-style file and return env var dicts."""
     optic.trace("file_path={}", file_path)
     path = Path(file_path).expanduser().resolve()
-    if not path.exists():
-        rprint(f"[red]File not found:[/red] {path}")
-        return []
+    if not path.is_file():
+        fail(
+            ErrorCategory.NOT_FOUND,
+            "The environment file was not found.",
+            operation="Install MCP server",
+            resource=str(path),
+            remediation="Provide an existing environment file and retry.",
+        )
 
     env_vars: list[dict] = []
     for line in path.read_text(errors="ignore").splitlines():
@@ -60,6 +79,22 @@ def _parse_env_file(file_path: str) -> list[dict]:
         if key and key == key.upper():
             env_vars.append({"name": key, "description": "", "required": True})
     return env_vars
+
+
+def _parse_assignments(values: list[str] | None, label: str) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for value in values or []:
+        key, separator, raw = value.partition("=")
+        if not separator or not key.strip():
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Invalid {label} assignment.",
+                operation="Install MCP server",
+                resource=label,
+                remediation=f"Provide {label} values as KEY=VALUE.",
+            )
+        parsed[key.strip()] = raw.strip("\"'")
+    return parsed
 
 
 def _configure_env_vars_interactive(detected: list[dict]) -> list[dict]:
@@ -494,17 +529,28 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False,
                 lines.append(line)
         raw_text = "\n".join(lines).strip()
         if not raw_text:
-            rprint("[red]No input received.[/red]")
-            raise typer.Exit(1)
+            fail(
+                ErrorCategory.VALIDATION,
+                "No MCP configuration was provided.",
+                operation="Submit MCP server",
+                resource="standard input",
+                remediation="Pipe or paste an MCP JSON configuration and retry.",
+            )
         try:
             cfg = json.loads(raw_text)
         except json.JSONDecodeError:
-            # Long single-line pastes can get split by the terminal - retry without newlines
+            # Long single-line pastes can get split by the terminal, retry without newlines.
             try:
                 cfg = json.loads("".join(part.strip() for part in lines))
-            except json.JSONDecodeError as e:
-                rprint(f"[red]Invalid JSON:[/red] {e}")
-                raise typer.Exit(1)
+            except json.JSONDecodeError as error:
+                fail(
+                    ErrorCategory.VALIDATION,
+                    "The MCP configuration is not valid JSON.",
+                    operation="Submit MCP server",
+                    resource="standard input",
+                    remediation="Correct the JSON and retry.",
+                    detail=repr(error),
+                )
 
         parsed = _parse_direct_config(cfg)
         _name = name or parsed.pop("_server_name", None) or "my-mcp-server"
@@ -609,7 +655,7 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False,
         rprint(f"\n[green]{msg}[/green] ID: [bold]{result['id']}[/bold]")
         rprint(f"  Install: [cyan]observal registry mcp install {client.canonical_name(result)}[/cyan]")
         rprint(f"  Status: {status_badge(result.get('status', 'pending'))}")
-        return
+        return result
 
     # ── Path A: Git URL analysis ─────────────────────────────
     rprint(
@@ -919,6 +965,7 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False,
     if _framework:
         rprint(f"  Framework: [cyan]{_framework}[/cyan]")
     rprint(f"  Status: {status_badge(result.get('status', 'pending'))}")
+    return result
 
 
 def _list_impl(category, search, limit, sort, output, interactive=False, namespace=None, team=None):
@@ -933,14 +980,19 @@ def _list_impl(category, search, limit, sort, output, interactive=False, namespa
     if team:
         params["team_id"] = client.resolve_team_id(team)
 
-    with spinner("Fetching MCP servers..."):
+    fetch_ctx = nullcontext() if output == "json" else spinner("Fetching MCP servers...")
+    with fetch_ctx:
         data = client.get("/api/v1/mcps", params=params)
 
     if not data:
-        rprint("[dim]No MCP servers found.[/dim]")
+        config.save_last_results([], "mcp")
+        if output == "json":
+            output_json([])
+        else:
+            rprint("[dim]No MCP servers found.[/dim]")
         return
 
-    if interactive:
+    if interactive and output != "json":
 
         def _display(item: dict) -> str:
             optic.trace("item={}", item)
@@ -957,15 +1009,10 @@ def _list_impl(category, search, limit, sort, output, interactive=False, namespa
     data = sorted(data, key=lambda x: x.get(sk, ""))[:limit]
 
     # Cache IDs for numeric shorthand
-    config.save_last_results(data)
+    config.save_last_results(data, "mcp")
 
     if output == "json":
         output_json(data)
-        return
-
-    if output == "plain":
-        for item in data:
-            rprint(f"{item['id']}  {name_inline(item)}  v{item.get('version', '?')}  [{item.get('category', '')}]")
         return
 
     table = Table(title=f"MCP Servers ({len(data)})", show_lines=False, padding=(0, 1))
@@ -979,12 +1026,12 @@ def _list_impl(category, search, limit, sort, output, interactive=False, namespa
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            display_name(item),
-            item.get("version", ""),
-            item.get("category", ""),
-            handle(item),
+            esc(display_name(item)),
+            esc(item.get("version", "")),
+            esc(item.get("category", "")),
+            esc(handle(item)),
             ide_tags(item.get("supported_harnesses", [])),
-            str(item["id"])[:8] + "…",
+            esc(str(item["id"])[:8] + "…"),
         )
     console.print(table)
 
@@ -992,7 +1039,8 @@ def _list_impl(category, search, limit, sort, output, interactive=False, namespa
 def _show_impl(mcp_id, output):
     optic.trace("mcp_id={}, output={}", mcp_id, output)
     resolved = client.resolve_registry_reference("mcp", mcp_id)
-    with spinner():
+    fetch_ctx = nullcontext() if output == "json" else spinner()
+    with fetch_ctx:
         item = client.get(f"/api/v1/mcps/{resolved}")
 
     if output == "json":
@@ -1001,18 +1049,18 @@ def _show_impl(mcp_id, output):
 
     console.print(
         kv_panel(
-            f"{display_name(item)} v{item.get('version', '?')}",
+            f"{esc(display_name(item))} v{esc(item.get('version', '?'))}",
             [
                 ("Status", status_badge(item.get("status", ""))),
-                ("Category", item.get("category", "N/A")),
-                ("Namespace", handle(item) or "N/A"),
-                ("Description", item.get("description", "")),
+                ("Category", esc(item.get("category", "N/A"))),
+                ("Namespace", esc(handle(item) or "N/A")),
+                ("Description", esc(item.get("description", ""))),
                 ("harnesses", ide_tags(item.get("supported_harnesses", []))),
-                ("Git", f"[link={item.get('git_url', '')}]{item.get('git_url', 'N/A')}[/link]"),
-                ("Setup", item.get("setup_instructions") or "[dim]none[/dim]"),
-                ("Changelog", item.get("changelog") or "[dim]none[/dim]"),
-                ("Created", relative_time(item.get("created_at"))),
-                ("ID", f"[dim]{item['id']}[/dim]"),
+                ("Git", esc(item.get("git_url", "N/A"))),
+                ("Setup", esc(item.get("setup_instructions") or "none")),
+                ("Changelog", esc(item.get("changelog") or "none")),
+                ("Created", esc(relative_time(item.get("created_at")))),
+                ("ID", f"[dim]{esc(item['id'])}[/dim]"),
             ],
             border_style="cyan",
         )
@@ -1022,7 +1070,7 @@ def _show_impl(mcp_id, output):
         rprint("\n[bold]Validation:[/bold]")
         for v in item["validation_results"]:
             icon = "[green]✓[/green]" if v["passed"] else "[red]✗[/red]"
-            rprint(f"  {icon} {v['stage']}: {v.get('details', '') or 'passed'}")
+            rprint(f"  {icon} {esc(v['stage'])}: {esc(v.get('details', '') or 'passed')}")
 
 
 def _install_impl(
@@ -1035,14 +1083,16 @@ def _install_impl(
     header_overrides: dict[str, str] | None = None,
     env_file: str | None = None,
     no_prompt: bool = False,
+    output: OutputMode = OutputMode.table,
 ):
     optic.trace("mcp_id={}, harness={}, version={}", mcp_id, harness, version)
     import json as _json
 
     resolved = client.resolve_registry_reference("mcp", mcp_id)
 
-    # Fetch listing details to check for required env vars
-    with spinner("Fetching server details..."):
+    machine_output = raw or output == "json"
+    fetch_context = nullcontext() if machine_output else spinner("Fetching server details...")
+    with fetch_context:
         listing = client.get(f"/api/v1/mcps/{resolved}")
 
     # Build env overrides from --env flags and --env-file
@@ -1066,7 +1116,7 @@ def _install_impl(
                         _env_from_flags[k] = v
 
     _header_from_flags: dict[str, str] = dict(header_overrides) if header_overrides else {}
-    skip_prompts = raw or no_prompt
+    skip_prompts = machine_output or no_prompt
 
     env_values: dict[str, str] = {}
     env_var_list = listing.get("environment_variables") or []
@@ -1141,7 +1191,8 @@ def _install_impl(
     from observal_cli.lockfile import local_registry_name
 
     local_name = local_registry_name(harness, "mcp", listing["namespace"], listing["slug"])
-    with spinner(f"Generating {harness} config..."):
+    generate_context = nullcontext() if machine_output else spinner(f"Generating {harness} config...")
+    with generate_context:
         install_body = {
             "harness": harness,
             "local_name": local_name,
@@ -1159,24 +1210,9 @@ def _install_impl(
     if raw:
         print(_json.dumps(snippet, indent=2))
         return
-
-    # Write to lock file (track the install regardless of how user applies config)
-    try:
-        from observal_cli.lockfile import upsert_standalone
-
-        upsert_standalone(
-            harness,
-            component_type="mcp",
-            name=listing.get("name", resolved),
-            component_id=str(listing.get("id", resolved)),
-            version=version or listing.get("version") or listing.get("latest_version"),
-            scope="user",
-            namespace=listing.get("namespace"),
-            slug=listing.get("slug"),
-            local_name=local_name,
-        )
-    except Exception:
-        pass  # Never block install on lockfile failure
+    if output == "json":
+        output_json(result)
+        return
 
     harness_config_paths = {
         "kiro": ".kiro/settings/mcp.json",
@@ -1191,15 +1227,18 @@ def _install_impl(
     config_path = harness_config_paths.get(harness, "")
     if config_path and not config_path.startswith("("):
         rprint(f"\n[dim]Add to:[/dim] [bold]{config_path}[/bold]")
-        rprint(f"[dim]Or pipe:[/dim] observal install {mcp_id} --harness {harness} --raw > {config_path}")
+        rprint(
+            f"[dim]Or pipe:[/dim] observal registry mcp install {esc(mcp_id)} "
+            f"--harness {esc(harness)} --raw > {esc(config_path)}"
+        )
 
     warnings = result.get("warnings") or []
     for warning in warnings:
-        rprint(f"\n[yellow]Warning:[/yellow] {warning}")
+        rprint(f"\n[yellow]Warning:[/yellow] {esc(warning)}")
 
     setup = listing.get("setup_instructions")
     if setup and not any(setup in warning for warning in warnings):
-        rprint(f"\n[yellow]Setup required before use:[/yellow]\n{setup}")
+        rprint(f"\n[yellow]Setup required before use:[/yellow]\n{esc(setup)}")
 
     # Warn about any empty env vars the user skipped
     missing = [k for k, v in env_values.items() if not v or v.startswith("<")]
@@ -1213,40 +1252,6 @@ def _install_impl(
 # ── Canonical commands (on mcp_app) ─────────────────────────
 
 
-def _print_mcp_examples() -> None:
-    console.print_json(
-        json.dumps(
-            {
-                "filesystem": {
-                    "mcpServers": {
-                        "filesystem": {
-                            "command": "npx",
-                            "args": ["-y", "@modelcontextprotocol/server-filesystem", "/home/dev/project"],
-                        }
-                    }
-                },
-                "git": {
-                    "mcpServers": {
-                        "git": {
-                            "command": "uvx",
-                            "args": ["mcp-server-git", "--repository", "/home/dev/project"],
-                        }
-                    }
-                },
-                "postgres": {
-                    "mcpServers": {
-                        "postgres": {
-                            "command": "npx",
-                            "args": ["-y", "@modelcontextprotocol/server-postgres", "postgresql://localhost/mydb"],
-                        }
-                    }
-                },
-            },
-            indent=2,
-        )
-    )
-
-
 @mcp_app.command()
 def submit(
     git_url: str = typer.Option(None, "--git", "-g", help="Optional git repo for local OCI setup detection"),
@@ -1256,9 +1261,9 @@ def submit(
     config: bool = typer.Option(False, "--config", hidden=True, help="(deprecated) JSON paste is now the default"),
     draft: bool = typer.Option(False, "--draft", help="Save as draft instead of submitting for review"),
     submit_draft: str | None = typer.Option(None, "--submit", help="Submit a draft for review (MCP ID)"),
-    example: bool = typer.Option(False, "--example", help="Print example MCP configs and exit"),
     team: str | None = typer.Option(None, "--team", help="Teamspace UUID or handle"),
     visibility: str | None = typer.Option(None, "--visibility", help="Visibility: public or team"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Submit an MCP server to the registry.
 
@@ -1275,40 +1280,54 @@ def submit(
     header values are auto-detected and become install-time prompts.
 
     Examples:
-        # Interactive JSON paste (default)
         observal registry mcp submit
-
-        # Paste JSON and attach a git repo for local OCI setup hints
         observal registry mcp submit --git https://github.com/org/mcp-server --yes
-
-        # Submit with name and category pre-filled
-        observal registry mcp submit --git https://github.com/org/server -n my-server -c developer-tools
-
-        # Save as draft for later editing
-        observal registry mcp submit --draft
-
-        # Submit an existing draft for review
-        observal registry mcp submit --submit my-server
+        observal registry mcp submit --submit my-server --output json
     """
-    if example:
-        _print_mcp_examples()
-        return
     if draft and submit_draft:
-        rprint(
-            "[red]Cannot use --draft and --submit together.[/red] Use --draft to save a new draft, or --submit to submit an existing draft."
+        fail(
+            ErrorCategory.VALIDATION,
+            "Draft creation and draft submission cannot be requested together.",
+            operation="Submit MCP server",
+            resource="submit options",
+            remediation="Choose either draft creation or draft submission and retry.",
         )
-        raise typer.Exit(code=1)
+    if output == "json" and not yes and not submit_draft:
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON mode requires non-interactive submission.",
+            operation="Submit MCP server",
+            resource="submit options",
+            remediation="Pass the defaults-acceptance option and provide MCP JSON on standard input.",
+        )
     if submit_draft:
-        from observal_cli import config as cfg
-
-        resolved = cfg.resolve_alias(submit_draft)
-        with spinner("Submitting draft for review..."):
+        resolved = client.resolve_registry_reference("mcp", submit_draft)
+        submit_context = nullcontext() if output == "json" else spinner("Submitting draft for review...")
+        with submit_context:
             result = client.post(f"/api/v1/mcps/{resolved}/submit")
-        rprint(f"[green]✓ Draft submitted for review![/green] ID: [bold]{result['id']}[/bold]")
+        if output == "json":
+            output_json(result)
+        else:
+            rprint(f"[green]✓ Draft submitted for review![/green] ID: [bold]{result['id']}[/bold]")
         return
-    if config:
-        rprint("[dim]Note: --config is now the default. You can just run `observal mcp submit`.[/dim]")
-    rprint("[dim]Note: Only submit components you created (private) or are the point-of-contact for (external).[/dim]")
+    if output != "json":
+        if config:
+            rprint("[dim]Note: JSON paste is already the default.[/dim]")
+        rprint("[dim]Note: Only submit components you created or represent.[/dim]")
+    if output == "json":
+        with redirect_stdout(StringIO()):
+            result = _submit_impl(
+                git_url,
+                name,
+                category,
+                yes,
+                direct_config=True,
+                draft=draft,
+                team=team,
+                visibility=visibility,
+            )
+        output_json(result)
+        return
     _submit_impl(
         git_url,
         name,
@@ -1328,9 +1347,9 @@ def list_mcps(
     namespace: str | None = typer.Option(None, "--namespace", help="Filter by user or team namespace"),
     team: str | None = typer.Option(None, "--team", help="Only items owned by this teamspace"),
     interactive: bool = typer.Option(False, "--interactive", "-i", help="Interactive search mode"),
-    limit: int = typer.Option(50, "--limit", "-n", help="Max results"),
+    limit: int = typer.Option(50, "--limit", "-n", min=1, max=200, help="Max results"),
     sort: str = typer.Option("name", "--sort", help="Sort by: name, category, version"),
-    output: str = typer.Option("table", "--output", "-o", help="Output: table, json, plain"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """List approved MCP servers in the registry.
 
@@ -1343,27 +1362,32 @@ def list_mcps(
     displays full details of the selected server.
 
     Examples:
-        # List all approved servers
         observal registry mcp list
-
-        # Search for database-related servers
         observal registry mcp list --search postgres
-
-        # Filter by category, output as JSON
-        observal registry mcp list --category ai --output json
-
-        # Interactive fuzzy picker
-        observal registry mcp list --interactive
-
-        # Sort by category, limit to 10 results
-        observal registry mcp list --sort category --limit 10
+        observal registry mcp list --category ai-ml --output json
     """
+    if category and category not in VALID_MCP_CATEGORIES:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Unknown MCP category: {category}.",
+            operation="List MCP servers",
+            resource="category filter",
+            remediation=f"Choose one of: {', '.join(VALID_MCP_CATEGORIES)}.",
+        )
+    if sort not in {"name", "category", "version"}:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Unknown MCP sort field: {sort}.",
+            operation="List MCP servers",
+            resource="sort option",
+            remediation="Choose name, category, or version.",
+        )
     _list_impl(category, search, limit, sort, output, interactive=interactive, namespace=namespace, team=team)
 
 
 @mcp_app.command(name="my")
 def mcp_my(
-    output: str = typer.Option("table", "--output", "-o", help="Output: table, json, plain"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """List your own MCP servers across all statuses.
 
@@ -1377,23 +1401,21 @@ def mcp_my(
 
         # JSON output for scripting
         observal registry mcp my --output json
-
-        # Plain output (one per line)
-        observal registry mcp my --output plain
     """
     optic.trace("output={}", output)
-    with spinner("Fetching your MCPs..."):
+    fetch_ctx = nullcontext() if output == "json" else spinner("Fetching your MCPs...")
+    with fetch_ctx:
         data = client.get("/api/v1/mcps/my")
     if not data:
-        rprint("[dim]You have no MCP servers.[/dim]")
+        config.save_last_results([], "mcp")
+        if output == "json":
+            output_json([])
+        else:
+            rprint("[dim]You have no MCP servers.[/dim]")
         return
-    config.save_last_results(data)
+    config.save_last_results(data, "mcp")
     if output == "json":
         output_json(data)
-        return
-    if output == "plain":
-        for item in data:
-            rprint(f"{name_inline(item)}  v{item.get('version', '?')}  {item.get('status', '')}")
         return
     table = Table(title=f"My MCPs ({len(data)})", show_lines=False, padding=(0, 1))
     table.add_column("#", style="dim", width=3)
@@ -1405,11 +1427,11 @@ def mcp_my(
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            display_name(item),
-            item.get("version", ""),
-            handle(item),
+            esc(display_name(item)),
+            esc(item.get("version", "")),
+            esc(handle(item)),
             status_badge(item.get("status", "")),
-            str(item["id"])[:8] + "…",
+            esc(str(item["id"])[:8] + "…"),
         )
     console.print(table)
 
@@ -1417,7 +1439,7 @@ def mcp_my(
 @mcp_app.command()
 def show(
     mcp_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
-    output: str = typer.Option("table", "--output", "-o", help="Output: table, json"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output: table, json"),
 ):
     """Show full details of an MCP server.
 
@@ -1426,16 +1448,8 @@ def show(
     row number from the last list command, or an @alias.
 
     Examples:
-        # Show by name
         observal registry mcp show my-server
-
-        # Show by row number from last list
-        observal registry mcp show 3
-
-        # Show by alias
         observal registry mcp show @fav
-
-        # JSON output
         observal registry mcp show my-server --output json
     """
     optic.trace("mcp_id={}, output={}", mcp_id, output)
@@ -1454,6 +1468,7 @@ def install(
     header: list[str] | None = typer.Option(None, "--header", help="Header value (KEY=VALUE, repeatable)"),
     env_file: str | None = typer.Option(None, "--env-file", help="Path to .env file for environment variables"),
     no_prompt: bool = typer.Option(False, "--no-prompt", "-y", help="Skip interactive prompts"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Generate an install config snippet for an MCP server.
 
@@ -1469,35 +1484,41 @@ def install(
     config files, with placeholder values for any missing env vars.
 
     Examples:
-        # Generate config for Claude Code
         observal registry mcp install my-server --harness claude-code
-
-        # Non-interactive with env vars
-        observal registry mcp install my-server --harness kiro --no-prompt --env API_KEY=sk-123
-
-        # Multiple env vars
-        observal registry mcp install my-server --harness cursor --env API_KEY=sk-123 --env SECRET=abc
-
-        # From env file
         observal registry mcp install my-server --harness claude-code --env-file .env --no-prompt
-
-        # Generate for Cursor and pipe to config file
         observal registry mcp install my-server --harness cursor --raw > .cursor/mcp.json
-
-        # With headers for SSE servers
-        observal registry mcp install my-server --harness kiro --header Authorization='Bearer token'
     """
     optic.trace("mcp_id={}, harness={}", mcp_id, harness)
-    env_overrides = {}
-    for item in env or []:
-        k, _, v = item.partition("=")
-        if k:
-            env_overrides[k.strip()] = v.strip("\"'")
-    header_overrides = {}
-    for item in header or []:
-        k, _, v = item.partition("=")
-        if k:
-            header_overrides[k.strip()] = v.strip("\"'")
+    if raw and output == "json":
+        fail(
+            ErrorCategory.VALIDATION,
+            "Raw config output and JSON operation output cannot be combined.",
+            operation="Install MCP server",
+            resource="output options",
+            remediation="Choose either raw config output or JSON operation output.",
+        )
+    if harness not in VALID_HARNESSES:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Unknown harness: {harness}.",
+            operation="Install MCP server",
+            resource="harness",
+            remediation=f"Choose one of: {', '.join(VALID_HARNESSES)}.",
+        )
+    if version:
+        try:
+            Version(version)
+        except InvalidVersion as error:
+            fail(
+                ErrorCategory.VALIDATION,
+                "The requested MCP version is invalid.",
+                operation="Install MCP server",
+                resource=version,
+                remediation="Provide a valid version and retry.",
+                detail=repr(error),
+            )
+    env_overrides = _parse_assignments(env, "environment variable")
+    header_overrides = _parse_assignments(header, "header")
     _install_impl(
         mcp_id,
         harness,
@@ -1507,6 +1528,7 @@ def install(
         header_overrides=header_overrides or None,
         env_file=env_file,
         no_prompt=no_prompt,
+        output=output,
     )
 
 
@@ -1523,6 +1545,7 @@ def edit_mcp(
     url: str | None = typer.Option(None, "--url", help="New URL"),
     bump: str | None = typer.Option(None, "--bump", help="Version bump type: patch, minor, or major (skips prompt)"),
     changelog: str | None = typer.Option(None, "--changelog", help="Changelog text for new version (skips prompt)"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Edit an MCP server submission.
 
@@ -1535,33 +1558,14 @@ def edit_mcp(
     complete update from a JSON file with --from-file.
 
     Examples:
-        # Interactive JSON paste edit
         observal registry mcp edit my-server
-
-        # Update description and category
         observal registry mcp edit my-server -d "New description" -c databases
-
-        # Load updates from a file
-        observal registry mcp edit my-server --from-file updates.json
-
-        # Bump version on an approved listing
-        observal registry mcp edit my-server --version 1.2.0
-
-        # Change the git URL
-        observal registry mcp edit my-server --git-url https://github.com/org/new-repo
+        observal registry mcp edit my-server --from-file updates.json --output json
     """
     optic.trace("mcp_id={}, from_file={}", mcp_id, from_file)
     resolved = client.resolve_registry_reference("mcp", mcp_id)
     if from_file:
-        try:
-            with open(from_file) as f:
-                updates = json.load(f)
-        except json.JSONDecodeError as e:
-            rprint(f"[red]Invalid JSON in {from_file}:[/red] {e}")
-            raise typer.Exit(code=1)
-        except FileNotFoundError:
-            rprint(f"[red]File not found:[/red] {from_file}")
-            raise typer.Exit(code=1)
+        updates = load_json_object(from_file, operation="Edit MCP server", noun="MCP update file")
     else:
         updates = {}
         if name is not None:
@@ -1578,6 +1582,15 @@ def edit_mcp(
             updates["command"] = command
         if url is not None:
             updates["url"] = url
+
+    if output == "json" and not updates:
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON mode requires explicit MCP updates.",
+            operation="Edit MCP server",
+            resource=mcp_id,
+            remediation="Provide an update file or one or more field options.",
+        )
 
     if not updates:
         # Interactive JSON paste mode (like submit)
@@ -1598,16 +1611,27 @@ def edit_mcp(
                 lines.append(line)
         raw_text = "\n".join(lines).strip()
         if not raw_text:
-            rprint("[yellow]No input received.[/yellow]")
-            raise typer.Exit(code=1)
+            fail(
+                ErrorCategory.VALIDATION,
+                "No MCP updates were provided.",
+                operation="Edit MCP server",
+                resource="standard input",
+                remediation="Provide an MCP JSON configuration and retry.",
+            )
         try:
             cfg = json.loads(raw_text)
         except json.JSONDecodeError:
             try:
                 cfg = json.loads("".join(part.strip() for part in lines))
-            except json.JSONDecodeError as e:
-                rprint(f"[red]Invalid JSON:[/red] {e}")
-                raise typer.Exit(1)
+            except json.JSONDecodeError as error:
+                fail(
+                    ErrorCategory.VALIDATION,
+                    "The MCP update is not valid JSON.",
+                    operation="Edit MCP server",
+                    resource="standard input",
+                    remediation="Correct the JSON and retry.",
+                    detail=repr(error),
+                )
 
         parsed = _parse_direct_config(cfg)
         _name = parsed.pop("_server_name", None)
@@ -1640,77 +1664,79 @@ def edit_mcp(
             raise typer.Abort()
 
     if not updates:
-        rprint("[yellow]No changes could be parsed from input.[/yellow]")
-        raise typer.Exit(code=1)
+        fail(
+            ErrorCategory.VALIDATION,
+            "No MCP changes could be parsed.",
+            operation="Edit MCP server",
+            resource=mcp_id,
+            remediation="Provide at least one supported MCP field.",
+        )
 
-    # Check listing status - approved listings need a new version, drafts can be edited directly
-    is_approved = False
-    listing = None
-    try:
-        with spinner("Checking listing status..."):
-            listing = client.get(f"/api/v1/mcps/{resolved}")
-        if listing.get("status") == "approved":
-            is_approved = True
-    except SystemExit:
-        # client raises typer.Exit on API failure - fall through to draft edit flow
-        pass
+    status_context = nullcontext() if output == "json" else spinner("Checking listing status...")
+    with status_context:
+        listing = client.get(f"/api/v1/mcps/{resolved}")
 
-    if is_approved:
-        # Approved listing → publish a new version with semver bump
-        current_ver = listing.get("version", "0.1.0") if listing else "0.1.0"
-        rprint(f"[dim]Current version: {current_ver}[/dim]")
-        if bump and bump in ("patch", "minor", "major"):
-            bump_type = bump
+    if listing.get("status") == "approved":
+        if bump and bump not in {"patch", "minor", "major"}:
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Unknown version bump: {bump}.",
+                operation="Edit MCP server",
+                resource="version bump",
+                remediation="Choose patch, minor, or major.",
+            )
+        if output == "json" and not bump:
+            fail(
+                ErrorCategory.VALIDATION,
+                "JSON mode requires an explicit version bump for an approved MCP server.",
+                operation="Edit MCP server",
+                resource=mcp_id,
+                remediation="Provide a patch, minor, or major version bump.",
+            )
+        current_ver = str(listing.get("version") or "0.1.0")
+        try:
+            release = Version(current_ver).release
+        except InvalidVersion as error:
+            fail(
+                ErrorCategory.UNAVAILABLE,
+                "The registry returned an invalid current MCP version.",
+                operation="Edit MCP server",
+                resource=mcp_id,
+                remediation="Correct the registry version and retry.",
+                detail=repr(error),
+            )
+        major, minor, patch = (*release, 0, 0, 0)[:3]
+        bump_type = bump or select_one("Version bump", ["patch", "minor", "major"], default="patch")
+        if bump_type == "major":
+            new_version = f"{major + 1}.0.0"
+        elif bump_type == "minor":
+            new_version = f"{major}.{minor + 1}.0"
         else:
-            bump_type = select_one("Version bump", ["patch", "minor", "major"], default="patch")
-
-        parts = current_ver.split(".")
-        if len(parts) == 3 and all(p.isdigit() for p in parts):
-            major, minor, patch = int(parts[0]), int(parts[1]), int(parts[2])
-            if bump_type == "major":
-                _new_version = f"{major + 1}.0.0"
-            elif bump_type == "minor":
-                _new_version = f"{major}.{minor + 1}.0"
-            else:
-                _new_version = f"{major}.{minor}.{patch + 1}"
-        else:
-            _new_version = "0.2.0"
-
-        rprint(f"[bold]New version:[/bold] {_new_version}")
-        _changelog = changelog if changelog is not None else text_input("Changelog (what changed?)", default="")
-
-        # Separate top-level fields from extra (version-specific) fields
-        version_description = updates.pop("description", None) or (listing.get("description", "") if listing else "")
-        updates.pop("name", None)  # name is a listing field, not a version field
-
-        version_body: dict = {
-            "version": _new_version.strip(),
-            "description": version_description,
-        }
+            new_version = f"{major}.{minor}.{patch + 1}"
+        update_changelog = changelog or ""
+        if changelog is None and output != "json":
+            update_changelog = text_input("Changelog (what changed?)", default="")
+        version_description = updates.pop("description", None) or listing.get("description", "")
+        updates.pop("name", None)
+        body: dict = {"version": new_version, "description": version_description}
         if updates:
-            version_body["extra"] = updates
-        if _changelog.strip():
-            version_body["changelog"] = _changelog.strip()
+            body["extra"] = updates
+        if update_changelog.strip():
+            body["changelog"] = update_changelog.strip()
+        publish_context = nullcontext() if output == "json" else spinner("Publishing new version...")
+        with publish_context:
+            result = client.post(f"/api/v1/mcps/{resolved}/versions", body)
+        if output == "json":
+            output_json(result)
+        else:
+            rprint(f"[green]✓ Published v{esc(new_version)}[/green] for [bold]{esc(result.get('name', mcp_id))}[/bold]")
+        return
 
-        # client.post prints its own error message and raises typer.Exit on failure - let it propagate
-        with spinner("Publishing new version..."):
-            result = client.post(f"/api/v1/mcps/{resolved}/versions", version_body)
-        rprint(f"[green]✓ Published v{_new_version.strip()}[/green] for [bold]{result.get('name', mcp_id)}[/bold]")
+    client.post(f"/api/v1/mcps/{resolved}/start-edit")
+    save_context = nullcontext() if output == "json" else spinner("Saving changes...")
+    with save_context:
+        result = client.put(f"/api/v1/mcps/{resolved}/draft", updates)
+    if output == "json":
+        output_json(result)
     else:
-        # Draft/pending/rejected → edit in place
-        try:
-            client.post(f"/api/v1/mcps/{resolved}/start-edit")
-        except SystemExit:
-            # start-edit may 409 if already locked - client prints the error, proceed anyway
-            pass
-        try:
-            with spinner("Saving changes..."):
-                result = client.put(f"/api/v1/mcps/{resolved}/draft", updates)
-            rprint(f"[green]✓ Updated {result['name']}[/green] (status: {result.get('status', 'unknown')})")
-        except SystemExit:
-            # Save failed - attempt to release the edit lock before exiting
-            try:
-                client.post(f"/api/v1/mcps/{resolved}/cancel-edit")
-            except SystemExit:
-                pass
-            raise typer.Exit(code=1)
+        rprint(f"[green]✓ Updated {esc(result['name'])}[/green] (status: {esc(result.get('status', 'unknown'))})")

@@ -13,7 +13,7 @@ Architecture - every optic.* call flows through loguru into up to 3 sinks:
   2. file   - TRACE+ for post-mortem (dev mode only, skipped if read-only FS)
   3. ring buffer - TRACE+ into memory, feeds the SSE /admin/logs/stream endpoint
 
-The ring buffer is what makes ``observal logs --remote`` work.  Without it
+The ring buffer is what makes ``observal ops logs --remote`` work. Without it
 a remote CLI user has zero visibility into a hosted instance.
 
 Color policy:

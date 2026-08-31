@@ -151,9 +151,9 @@ Limit discovery to one harness or time window:
 observal reconcile --harness kiro --since 24
 ```
 
-`--since` is a number of hours and defaults to 168. Without `--harness`, the command scans every installed adapter. A non-dry run first retries the existing shared outbox, then discovers matching sources, recovers each server checkpoint, and sends only records after that checkpoint.
+`--since` accepts 1 through 8,760 hours and defaults to 168. Without `--harness`, the command scans every installed adapter. A non-dry run validates its targets before touching the outbox, retries pending batches, recovers each server checkpoint, sends only records after that checkpoint, and finalizes fully uploaded but unfinished sessions.
 
-A dry run reports sessions whose local source is larger than the local cursor. It does not drain the outbox, contact the ingest endpoint, or change cursor state.
+A dry run reports sessions whose local source is larger than the local cursor and sessions that still need final metadata. It does not drain the outbox, contact the ingest endpoint, or change cursor state. JSON results distinguish delivered, finalized, queued, rejected, skipped, and failed sources.
 
 ## Installation and verification
 

@@ -951,21 +951,37 @@ async def test_every_action_url_is_a_same_origin_path(sessions):
         await db.commit()
 
 
+@pytest.mark.parametrize(
+    ("item_type", "expected_command"),
+    [
+        ("agent", "observal agent pull acme/widget --harness claude-code --no-prompt"),
+        ("mcp", "observal registry mcp install acme/widget --harness claude-code --no-prompt"),
+        ("skill", "observal registry skill install acme/widget --harness claude-code"),
+        ("hook", "observal registry hook install acme/widget --harness claude-code"),
+    ],
+)
 @pytest.mark.asyncio
-async def test_update_available_carries_an_upgrade_command(sessions):
+async def test_update_available_carries_a_type_specific_upgrade_command(sessions, item_type, expected_command):
     async with sessions() as db:
         user = await _user(db)
         item = await delivery.deliver_one(
             db,
             kind=InboxKind.update_available,
             user_id=user.id,
-            subject=_subject(namespace="acme", slug="widget", version="2.0.0"),
+            subject=_subject(type=item_type, namespace="acme", slug="widget", version="2.0.0"),
             context={"current_version": "1.0.0", "harness": "claude-code"},
         )
         await db.commit()
         # Shown, never run: the command is the whole point of an actionable feed.
-        assert item.action_command == "observal pull acme/widget --harness claude-code"
+        assert item.action_command == expected_command
         assert "1.0.0" in item.title and "2.0.0" in item.title
+
+
+@pytest.mark.parametrize("context", [{}, {"harness": "unsafe; harness"}])
+def test_update_available_omits_invalid_upgrade_commands(context):
+    spec = spec_for(InboxKind.update_available)
+
+    assert spec.command(_subject(type="agent", namespace="acme", slug="widget"), context) is None
 
 
 # ── Retention ──────────────────────────────────────────────────────

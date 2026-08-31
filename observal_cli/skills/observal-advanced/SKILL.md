@@ -4,109 +4,35 @@
 # SPDX-License-Identifier: Apache-2.0
 name: observal-advanced
 command: observal
-description: Advanced Observal operations including session reconciliation, CLI upgrades and downgrades, complete uninstallation, and local fallback mode for offline use. Use when the user wants to reconcile sessions, upgrade or downgrade the CLI, uninstall Observal, or write agent configs locally when the server is unreachable.
-version: 2.0.0
+description: "Recovers Observal session ingestion, manages CLI upgrades, downgrades and rollback, and performs explicit local Agent fallback when the server is unavailable. Use when the user asks to reconcile missed sessions, repair CLI version state, or continue locally after a confirmed connection or configuration failure."
+version: 2.2.0
 owner: observal
 ---
 
-# Observal Advanced Operations
+# Recovering Observal
 
-## Procedure: Reconcile Sessions
+## Execution contract
 
-Push local session JSONL to server for full trace context. Normally automatic via hooks.
+1. Execute commands with a 60 second timeout unless the operation documents a longer wait.
+2. **Use machine output by default:** add `--output json` whenever supported. Parse list results from `items` and pagination fields.
+3. Run `--help` before acting when a path or flag is uncertain.
+4. Use dry run before reconciliation when scope or session volume is uncertain.
+5. Supply documented force flags so version operations never prompt.
+6. Verify cursor, outbox, installed version, checksum, and rollback state after recovery operations.
+7. Fail openly. Never hide an unavailable server behind automatic local writes.
+8. Never retry reconciliation, version changes, or fallback writes without checking resulting state.
 
-Manual recovery for all detected harnesses:
+Read [Recovery workflows](references/recovery-workflows.md) completely before executing.
 
-```bash
-observal reconcile
-```
+## Decision rules
 
-Target one harness or shorten the discovery window when needed:
+- Healthy telemetry does not need routine reconciliation.
+- Reconcile repairs missed local session delivery. It does not replace hook or extension installation.
+- Upgrade, downgrade, and rollback are distinct requests. Do not substitute one for another.
+- Local fallback is allowed only after the CLI explicitly reports `Connection failed` or `Not configured`, and only when the user still wants local files written.
+- Local fallback creates harness-native Agent files. It does not publish Registry state and must be reported as local-only.
+- Never invent telemetry environment variables or wrappers.
 
-```bash
-observal reconcile --harness claude-code --since 24
-```
+## Completion
 
----
-
-## Procedure: Self-Manage CLI
-
-```bash
-observal self status
-observal self upgrade --force
-observal self upgrade --version 2.5.0 --force
-observal self downgrade --list
-observal self downgrade --version 2.4.0 --force
-observal self rollback
-```
-
-Use `--force` when running upgrades or downgrades from an agent so the command is non-interactive.
-
----
-
-## Procedure: Uninstall
-
-Completely removes Observal. **Destructive and irreversible.**
-
-```bash
-observal self uninstall
-```
-
-Requires typing `confirm` (not `--yes`). Selective flags:
-- `--keep-config`: preserve `~/.observal/`
-- `--keep-cli`: keep the CLI binary
-- `--keep-repo`: keep the cloned repo
-- `--repo-dir PATH`: specify repo location
-
----
-
-## Procedure: Local Fallback Mode
-
-Use **only** when a command exits with `Connection failed` or `Not configured`.
-
-| harness | User-scope path | Project-scope path |
-|---|---|---|
-| Claude Code | `~/.claude/agents/<name>.md` | `.claude/agents/<name>.md` |
-| Kiro | `~/.kiro/agents/<name>.json` | `.kiro/agents/<name>.json` |
-| Cursor | `~/.cursor/rules/<name>.mdc` | `.cursor/rules/<name>.mdc` |
-| VS Code | `~/.config/Code/User/agents/<name>.md` | `.vscode/agents/<name>.md` |
-| Codex CLI | `~/.codex/agents/<name>.md` | `.codex/agents/<name>.md` |
-| Copilot CLI | `~/.config/github-copilot/agents/<name>.md` | `.github/copilot/agents/<name>.md` |
-| OpenCode | `~/.opencode/agents/<name>.md` | `.opencode/agents/<name>.md` |
-
-**Kiro** (`~/.kiro/agents/<name>.json`):
-
-```json
-{"name":"<name>","description":"<desc>","prompt":"<prompt>","model":"claude-sonnet-4-20250514","mcpServers":{},"tools":["*"],"resources":["skill://~/.kiro/skills/*/SKILL.md"]}
-```
-
-**Claude Code, VS Code, Codex CLI, Copilot CLI, OpenCode** (markdown):
-
-```markdown
----
-name: <name>
-description: <desc>
----
-<prompt>
-```
-
-**Cursor** (`.mdc`):
-
-```markdown
----
-name: <name>
-description: <desc>
----
-<prompt>
-```
-
-After writing locally, remind the user to run `observal agent create` once the server is reachable.
-
----
-
-## Output Contract
-
-1. One sentence stating intent.
-2. The exact command in a fenced code block.
-3. The result: success / specific error.
-4. The next action, or "done".
+Report sessions discovered, queued, skipped, or failed for reconciliation; old and new versions for CLI changes; or exact local paths for fallback. Include unresolved warnings and the command needed once the server is reachable.

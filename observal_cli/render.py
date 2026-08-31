@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json as _json
 from datetime import UTC, date, datetime
+from enum import Enum
 from typing import Any
 
 from rich import print as rprint
@@ -18,6 +19,13 @@ from rich.panel import Panel
 from rich.table import Table  # noqa: TC002 - used at runtime
 
 console = Console()
+
+
+class OutputMode(str, Enum):
+    """Supported CLI output formats."""
+
+    table = "table"
+    json = "json"
 
 
 def esc(value: Any) -> str:
@@ -112,7 +120,7 @@ def handle(item: dict) -> str:
 
 
 def name_inline(item: dict) -> str:
-    """``name @namespace`` for plain output, which has no columns to separate them."""
+    """Render ``name @namespace`` when columns are unavailable."""
     name, namespace = registry_identity(item)
     return f"{name} [dim]@{namespace}[/dim]" if namespace else name
 
@@ -127,17 +135,29 @@ def star_rating(n: int, max_stars: int = 5) -> str:
 # ── Output format dispatch ───────────────────────────────
 
 
-def output_json(data: Any):
-    console.print_json(_json.dumps(data, default=str))
+def list_envelope(items: list[Any]) -> dict[str, Any]:
+    """Return the universal JSON contract for an unpaginated list."""
+    return {"items": items, "total": len(items), "page": 1, "page_size": len(items)}
 
 
-def output_table(table: Table):
+def output_json(data: Any, *, raw: bool = False) -> None:
+    if isinstance(data, list) and not raw:
+        data = list_envelope(data)
+    elif isinstance(data, dict) and isinstance(data.get("items"), list) and not raw:
+        data = dict(data)
+        data.setdefault("total", len(data["items"]))
+        data.setdefault("page", 1)
+        data.setdefault("page_size", len(data["items"]))
+    print(_json.dumps(data, default=str, ensure_ascii=False, indent=2))
+
+
+def output_json_line(data: Any) -> None:
+    """Write one compact JSON Lines record for a streaming command."""
+    print(_json.dumps(data, default=str, ensure_ascii=False, separators=(",", ":")), flush=True)
+
+
+def output_table(table: Table) -> None:
     console.print(table)
-
-
-def output_plain(lines: list[str]):
-    for line in lines:
-        rprint(line)
 
 
 # ── Detail panels ────────────────────────────────────────

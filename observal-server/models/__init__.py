@@ -33,6 +33,7 @@ from models.skill import SkillDownload, SkillListing
 from models.submission import Submission
 from models.team import Team, TeamJoinRequestStatus, TeamMembership, TeamMembershipRequest, TeamRole
 from models.team_invite import TeamInvite
+from models.usage_ping import UsagePingState
 from models.user import User, UserRole
 from models.user_group import UserGroup
 from models.user_profile import RecommendationFeedback, UserWorkProfile
@@ -87,6 +88,7 @@ __all__ = [
     "TeamMembership",
     "TeamMembershipRequest",
     "TeamRole",
+    "UsagePingState",
     "User",
     "UserGroup",
     "UserRole",

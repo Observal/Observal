@@ -8,34 +8,49 @@ from __future__ import annotations
 
 import json as _json
 import os
+import tempfile
+from contextlib import nullcontext, redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 import typer
+from packaging.version import InvalidVersion, Version
 from rich import print as rprint
 from rich.table import Table
 
 from observal_cli import client, config
 from observal_cli.constants import (
+    HARNESS_CAPABILITIES,
     VALID_HARNESSES,
     VALID_HOOK_EVENTS,
     VALID_HOOK_EXECUTION_MODES,
     VALID_HOOK_HANDLER_TYPES,
     VALID_HOOK_SCOPES,
 )
+from observal_cli.errors import ErrorCategory, fail, load_json_object
 from observal_cli.prompts import select_one, text_input
 from observal_cli.render import (
+    OutputMode,
     console,
     display_name,
+    esc,
     handle,
     kv_panel,
-    name_inline,
     output_json,
     relative_time,
     spinner,
     status_badge,
 )
 
-hook_app = typer.Typer(help="Hook registry commands")
+hook_app = typer.Typer(
+    help=(
+        "Hook registry commands\n\n"
+        "Examples:\n"
+        "  observal registry hook list\n"
+        "  observal registry hook show alice/my-hook\n"
+        "  observal registry hook install alice/my-hook --harness claude-code"
+    )
+)
 
 
 def register_hook(app: typer.Typer):
@@ -51,50 +66,31 @@ HOOK_TIMEOUT_CAPS: dict[str, int] = {
 }
 
 
-def _print_hook_examples() -> None:
-    output_json(
-        {
-            "command_hook": {
-                "name": "block-rm",
-                "version": "1.0.0",
-                "description": "Block destructive shell commands before they run",
-                "owner": "your-team",
-                "event": "PreToolUse",
-                "handler_type": "command",
-                "handler_config": {"command": "./hooks/block-rm.sh", "timeout": 10},
-                "execution_mode": "blocking",
-                "scope": "agent",
-                "source_url": "https://github.com/acme/agent-hooks",
-                "source_ref": "main",
-                "source_path": "hooks/security",
-            },
-            "http_hook": {
-                "name": "audit-bash",
-                "version": "1.0.0",
-                "description": "Send Bash tool calls to an audit endpoint",
-                "owner": "your-team",
-                "event": "PreToolUse",
-                "handler_type": "http",
-                "handler_config": {"url": "https://hooks.example.com/pre-tool-use", "timeout": 10},
-                "execution_mode": "sync",
-                "scope": "session",
-            },
-        }
-    )
-
-
 def _validate_timeout(execution_mode: str, handler_config: dict) -> None:
     """Fail-fast timeout validation before sending to server."""
     timeout = handler_config.get("timeout")
     if timeout is None:
         return
     cap = HOOK_TIMEOUT_CAPS.get(execution_mode)
-    if cap and int(timeout) > cap:
-        rprint(
-            f"[red]Timeout {timeout}s exceeds maximum {cap}s for {execution_mode} hooks.[/red]\n"
-            f"Either reduce the timeout or change execution_mode (async max: 60s)."
+    try:
+        seconds = int(timeout)
+    except (TypeError, ValueError) as error:
+        fail(
+            ErrorCategory.VALIDATION,
+            "The hook timeout must be an integer.",
+            operation="Validate hook",
+            resource="timeout",
+            remediation="Provide an integer timeout and retry.",
+            detail=repr(error),
         )
-        raise typer.Exit(code=1)
+    if cap and seconds > cap:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Timeout {seconds}s exceeds the {cap}s maximum for {execution_mode} hooks.",
+            operation="Validate hook",
+            resource="timeout",
+            remediation="Reduce the timeout or choose a compatible execution mode.",
+        )
 
 
 @hook_app.command(name="submit")
@@ -118,47 +114,43 @@ def hook_submit(
     execution_mode: str | None = typer.Option(None, "--execution-mode", help="async, sync, or blocking"),
     scope: str | None = typer.Option(None, "--scope", help="agent, session, or global"),
     supported_harnesses: list[str] | None = typer.Option(None, "--harness", help="Supported harness (repeatable)"),
-    example: bool = typer.Option(False, "--example", help="Print example hook payloads and exit"),
     team: str | None = typer.Option(None, "--team", help="Teamspace UUID or handle"),
     visibility: str | None = typer.Option(None, "--visibility", help="Visibility: public or team"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Submit a new hook for review.
 
     Only submit hooks you created or are the point-of-contact for.
 
     Examples:
-      observal registry hook submit
       observal registry hook submit --script ./protect-files.sh
       observal registry hook submit --source-url https://github.com/org/hooks --source-path hooks/guard/
-      observal registry hook submit --from-file hook.json
+      observal registry hook submit --from-file hook.json --output json
     """
-    if example:
-        _print_hook_examples()
-        return
-    rprint("[dim]Note: Only submit components you created (private) or are the point-of-contact for (external).[/dim]")
+    human_output = output != "json"
+    if human_output:
+        rprint("[dim]Note: Only submit components you created or represent.[/dim]")
     if draft and submit_draft:
-        rprint(
-            "[red]Cannot use --draft and --submit together.[/red] "
-            "Use --draft to save a new draft, or --submit to submit an existing draft."
+        fail(
+            ErrorCategory.VALIDATION,
+            "Draft creation and draft submission cannot be requested together.",
+            operation="Submit hook",
+            resource="submit options",
+            remediation="Choose either draft creation or draft submission and retry.",
         )
-        raise typer.Exit(code=1)
     if submit_draft:
         resolved = client.resolve_registry_reference("hook", submit_draft)
-        with spinner("Submitting draft for review..."):
+        submit_context = nullcontext() if output == "json" else spinner("Submitting draft for review...")
+        with submit_context:
             result = client.post(f"/api/v1/hooks/{resolved}/submit")
-        rprint(f"[green]✓ Draft submitted for review![/green] ID: [bold]{result['id']}[/bold]")
+        if output == "json":
+            output_json(result)
+        else:
+            rprint(f"[green]✓ Draft submitted for review![/green] ID: [bold]{esc(result['id'])}[/bold]")
         return
 
     if from_file:
-        try:
-            with open(from_file) as f:
-                payload = _json.load(f)
-        except _json.JSONDecodeError as e:
-            rprint(f"[red]Invalid JSON in {from_file}:[/red] {e}")
-            raise typer.Exit(code=1)
-        except FileNotFoundError:
-            rprint(f"[red]File not found:[/red] {from_file}")
-            raise typer.Exit(code=1)
+        payload = load_json_object(from_file, operation="Submit hook", noun="hook submission file")
         if not payload.get("owner"):
             payload["owner"] = config.load().get("username", "")
     else:
@@ -167,9 +159,14 @@ def hook_submit(
         script_filename: str | None = None
         if script:
             script_path = Path(script)
-            if not script_path.exists():
-                rprint(f"[red]Script file not found:[/red] {script}")
-                raise typer.Exit(code=1)
+            if not script_path.is_file():
+                fail(
+                    ErrorCategory.NOT_FOUND,
+                    "The hook script file was not found.",
+                    operation="Submit hook",
+                    resource=script,
+                    remediation="Provide an existing script file and retry.",
+                )
             script_content = script_path.read_text()
             script_filename = script_path.name
 
@@ -189,6 +186,14 @@ def hook_submit(
                 supported_harnesses,
             )
         )
+        if output == "json" and not flag_mode:
+            fail(
+                ErrorCategory.VALIDATION,
+                "JSON mode requires explicit hook fields.",
+                operation="Submit hook",
+                resource="submit options",
+                remediation="Provide the hook name, description, event, handler, and execution settings.",
+            )
         if flag_mode:
             _handler_type = handler_type or ("http" if handler_url else "command")
             _execution_mode = execution_mode or "async"
@@ -200,25 +205,50 @@ def hook_submit(
                 (_scope, VALID_HOOK_SCOPES, "scope"),
             ):
                 if value and value not in choices:
-                    rprint(f"[red]Error:[/red] Invalid {label}: {value}")
-                    raise typer.Exit(1)
+                    fail(
+                        ErrorCategory.VALIDATION,
+                        f"Unknown hook {label}: {value}.",
+                        operation="Submit hook",
+                        resource=label,
+                        remediation=f"Choose one of: {', '.join(choices)}.",
+                    )
             bad_harnesses = [h for h in supported_harnesses or [] if h not in VALID_HARNESSES]
             if bad_harnesses:
-                rprint(f"[red]Error:[/red] Invalid harness: {bad_harnesses[0]}")
-                raise typer.Exit(1)
+                fail(
+                    ErrorCategory.VALIDATION,
+                    f"Unknown harness: {bad_harnesses[0]}.",
+                    operation="Submit hook",
+                    resource="supported harnesses",
+                    remediation=f"Choose from: {', '.join(VALID_HARNESSES)}.",
+                )
             if not (name and description and event):
-                rprint("[red]Error:[/red] --name, --description, and --event are required without prompts")
-                raise typer.Exit(1)
+                fail(
+                    ErrorCategory.VALIDATION,
+                    "Hook name, description, and event are required without prompts.",
+                    operation="Submit hook",
+                    resource="hook payload",
+                    remediation="Provide the required fields and retry.",
+                )
             if _handler_type == "http":
                 if not handler_url:
-                    rprint("[red]Error:[/red] --handler-url is required for http hooks")
-                    raise typer.Exit(1)
+                    fail(
+                        ErrorCategory.VALIDATION,
+                        "An HTTP handler URL is required for an HTTP hook.",
+                        operation="Submit hook",
+                        resource="handler URL",
+                        remediation="Provide a handler URL and retry.",
+                    )
                 handler_config = {"url": handler_url, "timeout": timeout or 10}
             else:
                 command = handler_command or script_filename
                 if not command:
-                    rprint("[red]Error:[/red] --handler-command or --script is required for command hooks")
-                    raise typer.Exit(1)
+                    fail(
+                        ErrorCategory.VALIDATION,
+                        "A handler command or script is required for a command hook.",
+                        operation="Submit hook",
+                        resource="handler command",
+                        remediation="Provide a handler command or script and retry.",
+                    )
                 handler_config = {"command": command, "timeout": timeout or 10}
             _validate_timeout(_execution_mode, handler_config)
             payload: dict = {
@@ -245,23 +275,24 @@ def hook_submit(
             # Build handler_config
             if script_filename and handler_type == "command":
                 # Auto-populate command from script filename
-                timeout = int(text_input("Timeout (seconds)", default="10"))
+                timeout = text_input("Timeout (seconds)", default="10")
                 handler_config = {"command": script_filename, "timeout": timeout}
                 rprint(f"[dim]Command auto-set to '{script_filename}' from --script[/dim]")
             elif handler_type == "command":
                 command = text_input("Command")
-                timeout = int(text_input("Timeout (seconds)", default="10"))
+                timeout = text_input("Timeout (seconds)", default="10")
                 handler_config = {"command": command, "timeout": timeout}
             else:
                 # HTTP handler
                 url = text_input("Hook URL")
-                timeout = int(text_input("Timeout (seconds)", default="10"))
+                timeout = text_input("Timeout (seconds)", default="10")
                 handler_config = {"url": url, "timeout": timeout}
 
             execution_mode = select_one("Execution mode", VALID_HOOK_EXECUTION_MODES)
 
             # Validate timeout before sending
             _validate_timeout(execution_mode, handler_config)
+            handler_config["timeout"] = int(handler_config["timeout"])
 
             payload = {
                 "name": name,
@@ -286,16 +317,28 @@ def hook_submit(
         if requires:
             payload["requirements"] = requires
 
+    try:
+        Version(str(payload.get("version") or ""))
+    except InvalidVersion as error:
+        fail(
+            ErrorCategory.VALIDATION,
+            "The hook version is invalid.",
+            operation="Submit hook",
+            resource=str(payload.get("version") or ""),
+            remediation="Provide a valid version and retry.",
+            detail=repr(error),
+        )
     client.add_publish_target(payload, team, visibility)
-    if draft:
-        with spinner("Saving draft..."):
-            result = client.post("/api/v1/hooks/draft", payload)
-        rprint(f"[green]✓ Draft saved![/green] ID: [bold]{result['id']}[/bold]")
-    else:
-        with spinner("Submitting hook..."):
-            result = client.post("/api/v1/hooks/submit", payload)
-        rprint(f"[green]✓ Hook submitted![/green] ID: [bold]{result['id']}[/bold]")
-    rprint(f"  Install: [cyan]observal registry hook install {client.canonical_name(result)}[/cyan]")
+    submit_context = nullcontext() if output == "json" else spinner("Saving hook...")
+    with submit_context:
+        endpoint = "/api/v1/hooks/draft" if draft else "/api/v1/hooks/submit"
+        result = client.post(endpoint, payload)
+    if output == "json":
+        output_json(result)
+        return
+    message = "Draft saved" if draft else "Hook submitted"
+    rprint(f"[green]✓ {message}![/green] ID: [bold]{esc(result['id'])}[/bold]")
+    rprint(f"  Install: [cyan]observal registry hook install {esc(client.canonical_name(result))}[/cyan]")
 
 
 @hook_app.command(name="list")
@@ -304,7 +347,7 @@ def hook_list(
     search: str | None = typer.Option(None, "--search", "-s"),
     namespace: str | None = typer.Option(None, "--namespace", help="Filter by user or team namespace"),
     team: str | None = typer.Option(None, "--team", help="Only items owned by this teamspace"),
-    output: str = typer.Option("table", "--output", "-o", help="Output: table, json, plain"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """List approved hooks from the registry.
 
@@ -316,8 +359,15 @@ def hook_list(
       observal registry hook list
       observal registry hook list --event Stop
       observal registry hook list --search guard --output json
-      observal registry hook list -o plain
     """
+    if event and event not in VALID_HOOK_EVENTS:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Unknown hook event: {event}.",
+            operation="List hooks",
+            resource="event filter",
+            remediation=f"Choose one of: {', '.join(VALID_HOOK_EVENTS)}.",
+        )
     params = {}
     if event:
         params["event"] = event
@@ -327,18 +377,19 @@ def hook_list(
         params["namespace"] = namespace.lstrip("@").lower()
     if team:
         params["team_id"] = client.resolve_team_id(team)
-    with spinner("Fetching hooks..."):
+    fetch_ctx = nullcontext() if output == "json" else spinner("Fetching hooks...")
+    with fetch_ctx:
         data = client.get("/api/v1/hooks", params=params)
     if not data:
-        rprint("[dim]No hooks found.[/dim]")
+        config.save_last_results([], "hook")
+        if output == "json":
+            output_json([])
+        else:
+            rprint("[dim]No hooks found.[/dim]")
         return
-    config.save_last_results(data)
+    config.save_last_results(data, "hook")
     if output == "json":
         output_json(data)
-        return
-    if output == "plain":
-        for item in data:
-            rprint(f"{item['id']}  {name_inline(item)}  {item.get('event', '?')}")
         return
     table = Table(title=f"Hooks ({len(data)})", show_lines=False, padding=(0, 1))
     table.add_column("#", style="dim", width=3)
@@ -351,12 +402,12 @@ def hook_list(
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            display_name(item),
-            item.get("event", ""),
-            item.get("execution_mode", ""),
-            handle(item),
+            esc(display_name(item)),
+            esc(item.get("event", "")),
+            esc(item.get("execution_mode", "")),
+            esc(handle(item)),
             status_badge(item.get("status", "")),
-            str(item["id"])[:8] + "…",
+            esc(str(item["id"])[:8] + "…"),
         )
     console.print(table)
 
@@ -364,7 +415,7 @@ def hook_list(
 @hook_app.command(name="show")
 def hook_show(
     hook_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
-    output: str = typer.Option("table", "--output", "-o"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
     """Show detailed information for a single hook.
 
@@ -375,41 +426,58 @@ def hook_show(
     \b
     Examples:
       observal registry hook show my-hook
-      observal registry hook show 1              # Row number from last list
-      observal registry hook show @guard         # Using alias
+      observal registry hook show @guard
       observal registry hook show abc123 -o json
     """
     resolved = client.resolve_registry_reference("hook", hook_id)
-    with spinner():
+    fetch_ctx = nullcontext() if output == "json" else spinner()
+    with fetch_ctx:
         item = client.get(f"/api/v1/hooks/{resolved}")
     if output == "json":
         output_json(item)
         return
     rows = [
         ("Status", status_badge(item.get("status", ""))),
-        ("Event", item.get("event", "N/A")),
-        ("Handler Type", item.get("handler_type", "N/A")),
-        ("Handler Config", _json.dumps(item.get("handler_config", {}), indent=2)),
-        ("Execution Mode", item.get("execution_mode", "N/A")),
-        ("Scope", item.get("scope", "N/A")),
-        ("Namespace", handle(item) or "N/A"),
-        ("Description", item.get("description", "")),
-        ("Created", relative_time(item.get("created_at"))),
-        ("ID", f"[dim]{item['id']}[/dim]"),
+        ("Event", esc(item.get("event", "N/A"))),
+        ("Handler Type", esc(item.get("handler_type", "N/A"))),
+        ("Handler Config", esc(_json.dumps(item.get("handler_config", {}), indent=2))),
+        ("Execution Mode", esc(item.get("execution_mode", "N/A"))),
+        ("Scope", esc(item.get("scope", "N/A"))),
+        ("Namespace", esc(handle(item) or "N/A")),
+        ("Description", esc(item.get("description", ""))),
+        ("Created", esc(relative_time(item.get("created_at")))),
+        ("ID", f"[dim]{esc(item['id'])}[/dim]"),
     ]
     if item.get("script_filename"):
-        rows.insert(5, ("Script", item["script_filename"]))
+        rows.insert(5, ("Script", esc(item["script_filename"])))
     if item.get("source_url"):
-        rows.insert(5, ("Source", f"{item['source_url']}@{item.get('source_ref', 'main')}"))
+        rows.insert(5, ("Source", esc(f"{item['source_url']}@{item.get('source_ref', 'main')}")))
     if item.get("requirements"):
-        rows.insert(5, ("Requires", ", ".join(item["requirements"])))
+        rows.insert(5, ("Requires", esc(", ".join(item["requirements"]))))
     console.print(
         kv_panel(
-            f"{display_name(item)} v{item.get('version', '?')}",
+            f"{esc(display_name(item))} v{esc(item.get('version', '?'))}",
             rows,
             border_style="magenta",
         )
     )
+
+
+def _atomic_write_text(path: Path, content: str, *, executable: bool = False) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    existing_mode = path.stat().st_mode if path.exists() else None
+    descriptor, temp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
+    temp_path = Path(temp_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+            file.write(content)
+        if executable:
+            os.chmod(temp_path, (existing_mode or 0o644) | 0o111)
+        elif existing_mode is not None:
+            os.chmod(temp_path, existing_mode)
+        temp_path.replace(path)
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 @hook_app.command(name="install")
@@ -419,6 +487,7 @@ def hook_install(
     platform: str = typer.Option("", "--platform", "-p", help="Platform (win32, darwin, linux)"),
     raw: bool = typer.Option(False, "--raw", help="Output raw JSON only (no file writes)"),
     directory: str | None = typer.Option(None, "--dir", "-d", help="Project directory for file writes"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Install a hook for a specific harness.
 
@@ -431,8 +500,32 @@ def hook_install(
       observal registry hook install my-hook --harness claude-code
       observal registry hook install @guard --harness kiro --dir ./project
       observal registry hook install my-hook --harness cursor --raw
-      observal registry hook install my-hook --harness claude-code --platform darwin
     """
+    if raw and output == "json":
+        fail(
+            ErrorCategory.VALIDATION,
+            "Raw config output and JSON operation output cannot be combined.",
+            operation="Install hook",
+            resource="output options",
+            remediation="Choose either raw config output or JSON operation output.",
+        )
+    if harness not in VALID_HARNESSES or "hooks" not in HARNESS_CAPABILITIES.get(harness, set()):
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Harness {harness} does not support hooks.",
+            operation="Install hook",
+            resource="harness",
+            remediation="Choose a harness with hook support.",
+        )
+    if platform and platform not in {"win32", "darwin", "linux"}:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Unknown platform: {platform}.",
+            operation="Install hook",
+            resource="platform",
+            remediation="Choose win32, darwin, or linux.",
+        )
+    machine_output = raw or output == "json"
     resolved = client.resolve_registry_reference("hook", hook_id)
     listing = client.get(f"/api/v1/hooks/{resolved}")
     project_dir = Path(directory) if directory else Path.cwd()
@@ -446,7 +539,8 @@ def hook_install(
         scope="project",
         directory=str(project_dir.resolve()),
     )
-    with spinner(f"Generating {harness} config..."):
+    install_context = nullcontext() if machine_output else spinner(f"Generating {harness} config...")
+    with install_context:
         result = client.post(
             f"/api/v1/hooks/{resolved}/install",
             {"harness": harness, "platform": platform, "local_name": local_name},
@@ -463,59 +557,118 @@ def hook_install(
         print(_json.dumps(result, indent=2))
         return
 
-    # Write script files to disk
-    if files:
-        for file_entry in files:
-            file_path = (project_dir / file_entry["path"]).resolve()
-            # Guard against path traversal
-            if not file_path.is_relative_to(project_dir.resolve()):
-                rprint(f"  [red]✗[/red] Skipped {file_entry['path']} (path traversal blocked)")
-                continue
-            file_path.parent.mkdir(parents=True, exist_ok=True)
-            file_path.write_text(file_entry["content"])
-            if file_entry.get("executable"):
-                os.chmod(file_path, 0o755)
-            rprint(f"  [green]✓[/green] Wrote {file_entry['path']}")
+    project_root = project_dir.resolve()
+    file_writes: list[tuple[Path, str, bool]] = []
+    for file_entry in files:
+        if not isinstance(file_entry, dict) or not isinstance(file_entry.get("path"), str):
+            fail(
+                ErrorCategory.UNAVAILABLE,
+                "The registry returned an invalid hook file entry.",
+                operation="Install hook",
+                resource=hook_id,
+                remediation="Check server health and version compatibility, then retry.",
+            )
+        file_path = (project_root / file_entry["path"]).resolve()
+        if not file_path.is_relative_to(project_root):
+            fail(
+                ErrorCategory.VALIDATION,
+                "The hook contains a file path outside the project directory.",
+                operation="Install hook",
+                resource=file_entry["path"],
+                remediation="Correct the hook package path and retry.",
+            )
+        file_writes.append((file_path, str(file_entry.get("content") or ""), bool(file_entry.get("executable"))))
 
-    # Write/merge config into the harness's hooks config file
+    cfg_file: Path | None = None
+    config_content: str | None = None
     if config_path and config_snippet:
-        cfg_file = Path(config_path).expanduser() if config_path.startswith("~/") else project_dir / config_path
-        cfg_file.parent.mkdir(parents=True, exist_ok=True)
-
+        if not isinstance(config_snippet, dict):
+            fail(
+                ErrorCategory.UNAVAILABLE,
+                "The registry returned an invalid hook configuration.",
+                operation="Install hook",
+                resource=hook_id,
+                remediation="Check server health and version compatibility, then retry.",
+            )
+        if config_path.startswith("~/"):
+            cfg_file = Path(config_path).expanduser().resolve()
+            if not cfg_file.is_relative_to(Path.home().resolve()):
+                fail(
+                    ErrorCategory.VALIDATION,
+                    "The hook configuration path is outside the user home directory.",
+                    operation="Install hook",
+                    resource=config_path,
+                    remediation="Correct the hook configuration path and retry.",
+                )
+        else:
+            cfg_file = (project_root / config_path).resolve()
+            if not cfg_file.is_relative_to(project_root):
+                fail(
+                    ErrorCategory.VALIDATION,
+                    "The hook configuration path is outside the project directory.",
+                    operation="Install hook",
+                    resource=config_path,
+                    remediation="Correct the hook configuration path and retry.",
+                )
         if cfg_file.exists():
             try:
                 existing = _json.loads(cfg_file.read_text())
-            except (_json.JSONDecodeError, OSError):
-                existing = {}
-            # Merge hooks: append to existing event arrays
-            incoming_hooks = config_snippet.get("hooks", {})
-            existing_hooks = existing.setdefault("hooks", {})
-            for event, entries in incoming_hooks.items():
-                existing_hooks.setdefault(event, []).extend(entries)
-            if "version" in config_snippet:
-                existing["version"] = config_snippet["version"]
-            cfg_file.write_text(_json.dumps(existing, indent=2) + "\n")
-            rprint(f"  [green]✓[/green] Merged hook into {config_path}")
+            except _json.JSONDecodeError as error:
+                fail(
+                    ErrorCategory.VALIDATION,
+                    "The existing hook configuration is not valid JSON.",
+                    operation="Install hook",
+                    resource=str(cfg_file),
+                    remediation="Repair the existing configuration and retry.",
+                    detail=repr(error),
+                )
+            if not isinstance(existing, dict):
+                fail(
+                    ErrorCategory.VALIDATION,
+                    "The existing hook configuration must contain a JSON object.",
+                    operation="Install hook",
+                    resource=str(cfg_file),
+                    remediation="Repair the existing configuration and retry.",
+                )
         else:
-            cfg_file.write_text(_json.dumps(config_snippet, indent=2) + "\n")
-            rprint(f"  [green]✓[/green] Created {config_path}")
+            existing = {}
+        incoming_hooks = config_snippet.get("hooks", {})
+        existing_hooks = existing.setdefault("hooks", {})
+        if not isinstance(incoming_hooks, dict) or not isinstance(existing_hooks, dict):
+            fail(
+                ErrorCategory.VALIDATION,
+                "The hook configuration has an invalid hooks object.",
+                operation="Install hook",
+                resource=str(cfg_file),
+                remediation="Repair the hook configuration and retry.",
+            )
+        for event_name, entries in incoming_hooks.items():
+            current = existing_hooks.setdefault(event_name, [])
+            if not isinstance(current, list) or not isinstance(entries, list):
+                fail(
+                    ErrorCategory.VALIDATION,
+                    "The hook configuration event entries must be arrays.",
+                    operation="Install hook",
+                    resource=str(cfg_file),
+                    remediation="Repair the hook configuration and retry.",
+                )
+            current.extend(entry for entry in entries if entry not in current)
+        if "version" in config_snippet:
+            existing["version"] = config_snippet["version"]
+        config_content = _json.dumps(existing, indent=2) + "\n"
 
-    for warning in warnings:
-        rprint(f"\n[yellow]Warning:[/yellow] {warning}")
+    write_context = redirect_stdout(StringIO()) if output == "json" else nullcontext()
+    with write_context:
+        for file_path, content, executable in file_writes:
+            _atomic_write_text(file_path, content, executable=executable)
+            rprint(f"  [green]✓[/green] Wrote {esc(file_path.relative_to(project_root))}")
+        if cfg_file and config_content is not None:
+            _atomic_write_text(cfg_file, config_content)
+            rprint(f"  [green]✓[/green] Updated {esc(cfg_file)}")
 
-    # Print requirements warning
-    if requirements:
-        rprint("\n[yellow]⚠ Prerequisites required:[/yellow]")
-        for req in requirements:
-            rprint(f"  [dim]$[/dim] {req}")
-
-    # Print notes
-    for note in notes:
-        rprint(f"[dim]i {note}[/dim]")
+    from observal_cli.lockfile import upsert_standalone
 
     try:
-        from observal_cli.lockfile import upsert_standalone
-
         upsert_standalone(
             harness,
             component_type="hook",
@@ -523,15 +676,49 @@ def hook_install(
             component_id=str(listing.get("id", resolved)),
             version=listing.get("version"),
             scope="project",
-            directory=str(project_dir.resolve()),
+            directory=str(project_root),
             namespace=listing.get("namespace"),
             slug=listing.get("slug"),
             local_name=local_name,
         )
-    except Exception:
-        pass
+    except PermissionError as error:
+        fail(
+            ErrorCategory.PERMISSION,
+            "The hook was written but its installed state could not be recorded.",
+            operation="Install hook",
+            resource="installed-state lockfile",
+            remediation="Check lockfile ownership and permissions, then retry.",
+            detail=repr(error),
+        )
+    except (OSError, RuntimeError) as error:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            "The hook was written but its installed state could not be recorded.",
+            operation="Install hook",
+            resource="installed-state lockfile",
+            remediation="Check local storage and retry.",
+            detail=repr(error),
+        )
 
-    rprint(f"\n[green]✓ Hook installed for {harness}![/green]")
+    if output == "json":
+        output_json(
+            {
+                **result,
+                "files_written": [str(path) for path, _content, _executable in file_writes],
+                "config_path": str(cfg_file) if cfg_file else None,
+            }
+        )
+        return
+
+    for warning in warnings:
+        rprint(f"\n[yellow]Warning:[/yellow] {esc(warning)}")
+    if requirements:
+        rprint("\n[yellow]⚠ Prerequisites required:[/yellow]")
+        for requirement in requirements:
+            rprint(f"  [dim]$[/dim] {esc(requirement)}")
+    for note in notes:
+        rprint(f"[dim]i {esc(note)}[/dim]")
+    rprint(f"\n[green]✓ Hook installed for {esc(harness)}![/green]")
 
 
 @hook_app.command(name="edit")
@@ -542,6 +729,7 @@ def hook_edit(
     description: str | None = typer.Option(None, "--description", "-d", help="New description"),
     version: str | None = typer.Option(None, "--version", "-v", help="New version string"),
     event: str | None = typer.Option(None, "--event", "-e", help="New event type"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Edit a draft, rejected, or pending hook submission.
 
@@ -553,20 +741,11 @@ def hook_edit(
     Examples:
       observal registry hook edit my-hook --description "Updated guard hook"
       observal registry hook edit my-hook --event Stop --version 1.1.0
-      observal registry hook edit @guard --from-file updated-hook.json
-      observal registry hook edit 1 --name new-name
+      observal registry hook edit @guard --from-file updated-hook.json --output json
     """
     resolved = client.resolve_registry_reference("hook", hook_id)
     if from_file:
-        try:
-            with open(from_file) as f:
-                updates = _json.load(f)
-        except _json.JSONDecodeError as e:
-            rprint(f"[red]Invalid JSON in {from_file}:[/red] {e}")
-            raise typer.Exit(code=1)
-        except FileNotFoundError:
-            rprint(f"[red]File not found:[/red] {from_file}")
-            raise typer.Exit(code=1)
+        updates = load_json_object(from_file, operation="Edit hook", noun="hook update file")
     else:
         updates = {}
         if name is not None:
@@ -579,23 +758,41 @@ def hook_edit(
             updates["event"] = event
 
     if not updates:
-        rprint("[yellow]No changes specified.[/yellow] Use --from-file or field options (--name, --description, etc.)")
-        raise typer.Exit(code=1)
-
-    try:
-        client.post(f"/api/v1/hooks/{resolved}/start-edit")
-    except Exception as exc:
-        if "409" in str(exc) or "currently being edited" in str(exc):
-            rprint(f"[red]✗ Cannot edit:[/red] {exc}")
-            raise typer.Exit(code=1)
-    try:
-        with spinner("Saving changes..."):
-            result = client.put(f"/api/v1/hooks/{resolved}/draft", updates)
-        rprint(f"[green]✓ Updated {result['name']}[/green] (status: {result.get('status', 'unknown')})")
-    except Exception as exc:
+        fail(
+            ErrorCategory.VALIDATION,
+            "No hook changes were provided.",
+            operation="Edit hook",
+            resource=hook_id,
+            remediation="Provide an update file or one or more field options.",
+        )
+    updated_event = updates.get("event")
+    if updated_event is not None and updated_event not in VALID_HOOK_EVENTS:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Unknown hook event: {updated_event}.",
+            operation="Edit hook",
+            resource="event",
+            remediation=f"Choose one of: {', '.join(VALID_HOOK_EVENTS)}.",
+        )
+    updated_version = updates.get("version")
+    if updated_version is not None:
         try:
-            client.post(f"/api/v1/hooks/{resolved}/cancel-edit")
-        except Exception:
-            pass
-        rprint(f"[red]Failed to update:[/red] {exc}")
-        raise typer.Exit(code=1)
+            Version(str(updated_version))
+        except InvalidVersion as error:
+            fail(
+                ErrorCategory.VALIDATION,
+                "The hook version is invalid.",
+                operation="Edit hook",
+                resource=str(updated_version),
+                remediation="Provide a valid version and retry.",
+                detail=repr(error),
+            )
+
+    client.post(f"/api/v1/hooks/{resolved}/start-edit")
+    save_context = nullcontext() if output == "json" else spinner("Saving changes...")
+    with save_context:
+        result = client.put(f"/api/v1/hooks/{resolved}/draft", updates)
+    if output == "json":
+        output_json(result)
+    else:
+        rprint(f"[green]✓ Updated {esc(result['name'])}[/green] (status: {esc(result.get('status', 'unknown'))})")

@@ -663,11 +663,11 @@ Before opening a PR:
 * [ ] Branch is rebased on the latest `main`
 * [ ] Commits follow [Conventional Commits](https://www.conventionalcommits.org/) format
 * [ ] All commits are signed off with SPDX headers (pre-commit hook handles this automatically)
-* [ ] PR template is filled in completely (not by AI)
+* [ ] PR template is filled in completely and reviewed by the accountable human contributor
 * [ ] CHANGELOG.md updated under `[Unreleased]` for user-facing changes
 * [ ] Frontend changes include screenshots in the PR body
 * [ ] AI-assisted contributions labelled with tool name and version (see [AI Policy](../AI_POLICY.md))
-* [ ] No autonomous agent submissions (see [AI Policy](../AI_POLICY.md))
+* [ ] No unattended agent submissions without meaningful human direction and review (see [AI Policy](../AI_POLICY.md))
 
 ***
 

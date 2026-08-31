@@ -15,6 +15,7 @@ from loguru import logger as optic
 from jobs.catalog import batch_generate_insights, generate_insight_report, refresh_user_profiles
 from jobs.maintenance import maintain_clickhouse, purge_inbox_items, sync_component_sources
 from jobs.migration import purge_migration_artifacts, run_migration_job
+from jobs.usage_ping import submit_usage_ping
 from logging_config import setup_logging
 from services.alert_evaluator import evaluate_alerts
 from services.optic import setup_optic
@@ -56,6 +57,7 @@ class WorkerSettings:
         run_migration_job,
         refresh_user_profiles,
         purge_inbox_items,
+        submit_usage_ping,
     ]
     cron_jobs = [
         cron(sync_component_sources, hour={0, 6, 12, 18}),  # Every 6 hours
@@ -68,6 +70,8 @@ class WorkerSettings:
         cron(purge_migration_artifacts, hour={2, 8, 14, 20}, timeout=300, unique=True),  # Every 6 hours (artifacts)
         cron(refresh_user_profiles, hour={3}, minute={15}, timeout=600, unique=True),  # Daily 3:15AM
         cron(purge_inbox_items, hour={4}, minute={45}, timeout=300, unique=True),  # Daily 4:45AM
+        # Poll at each supported boundary; the job applies the super admin's selected cadence.
+        cron(submit_usage_ping, hour={0, 6, 12, 18}, minute={30}, timeout=90, unique=True),
     ]
     on_startup = startup
     on_shutdown = shutdown

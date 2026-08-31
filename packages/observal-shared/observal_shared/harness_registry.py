@@ -285,8 +285,8 @@ HARNESS_REGISTRY: dict[str, dict] = {
         },
         "mcp_servers_key": "mcpServers",
         "skills": {
-            "project": ".agents/skills/{name}.md",
-            "user": "~/.gemini/antigravity-cli/skills/{name}.md",
+            "project": ".agents/skills/{name}/SKILL.md",
+            "user": "~/.gemini/antigravity-cli/skills/{name}/SKILL.md",
         },
         "skill_format": "yaml_frontmatter",
         "hook_type": "command",

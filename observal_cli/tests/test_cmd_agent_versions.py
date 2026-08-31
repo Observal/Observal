@@ -143,6 +143,32 @@ def test_agent_release_shows_pending_warning(agent_yaml_dir: Path) -> None:
     assert "This agent already has 2 pending version(s)" in result.output
 
 
+# ── agent list ─────────────────────────────────────────────────
+
+
+def test_agent_list_json_includes_pagination_metadata() -> None:
+    rows = [
+        {
+            "id": "agent-uuid-list",
+            "name": "Reviewer",
+            "slug": "reviewer",
+            "namespace": "observal",
+            "version": "1.2.0",
+            "model_name": "claude-sonnet-4",
+        }
+    ]
+    with patch("observal_cli.cmd_agent.client.get_with_headers", return_value=(rows, {"x-total-count": "3"})):
+        result = runner.invoke(app, ["agent", "list", "--page", "2", "--limit", "2", "--output", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == {
+        "items": rows,
+        "total": 3,
+        "page": 2,
+        "page_size": 2,
+    }
+
+
 # ── agent versions ─────────────────────────────────────────────
 
 
@@ -328,5 +354,5 @@ def test_agent_pull_path_traversal_rejected(tmp_path: Path) -> None:
         )
 
     # Should fail due to path escape
-    assert result.exit_code == 1
+    assert result.exit_code == 7
     assert not (tmp_path / ".." / ".." / "etc" / "evil.txt").resolve().exists()

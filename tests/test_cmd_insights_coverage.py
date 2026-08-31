@@ -70,6 +70,7 @@ def _returns(boundary: MagicMock, value) -> MagicMock:
 def cli(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     prints: list[tuple[tuple[object, ...], dict]] = []
     json_values: list[object] = []
+    json_lines: list[object] = []
     spinner_messages: list[str] = []
     tables: list[FakeTable] = []
     console = FakeConsole()
@@ -99,6 +100,7 @@ def cli(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     monkeypatch.setattr(insights, "console", console)
     monkeypatch.setattr(insights, "rprint", lambda *values, **options: prints.append((values, options)))
     monkeypatch.setattr(insights, "output_json", json_values.append)
+    monkeypatch.setattr(insights, "output_json_line", json_lines.append)
     monkeypatch.setattr(insights, "status_badge", lambda status: f"<{status}>")
     monkeypatch.setattr(insights, "relative_time", lambda value: f"relative:{value}")
     monkeypatch.setattr(insights, "_registry_name_cache", None)
@@ -113,6 +115,7 @@ def cli(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
         confirm=confirm,
         console=console,
         json=json_values,
+        json_lines=json_lines,
         messages=messages,
         prints=prints,
         spinners=spinner_messages,
@@ -198,7 +201,7 @@ def test_list_json_and_empty_table_have_distinct_output(cli):
     assert cli.messages() == ["[dim]No insight reports found.[/dim]"]
     assert cli.tables == []
     assert cli.console.renderables == []
-    assert cli.spinners == ["Fetching insight reports...", "Fetching insight reports..."]
+    assert cli.spinners == ["Fetching insight reports..."]
 
 
 def test_select_report_defaults_to_first_when_none_completed(cli):
@@ -212,38 +215,20 @@ def test_select_report_defaults_to_first_when_none_completed(cli):
 
 
 @pytest.mark.parametrize(
-    ("reports", "report_ref", "expected"),
+    ("reports", "report_ref", "exit_code", "message"),
     [
-        ([], None, ["[dim]No insight reports found.[/dim]"]),
-        (
-            [{"id": "one"}, {"id": "two"}],
-            "3",
-            ["[red]Report row 3 is out of range.[/red]", "[dim]Choose a row from 1 to 2.[/dim]"],
-        ),
-        (
-            [{"id": "abc-one"}, {"id": "abc-two"}],
-            "abc",
-            [
-                "[red]Report prefix 'abc' is ambiguous.[/red]",
-                "[dim]Use the row number from `observal ops insights list <agent>` instead.[/dim]",
-            ],
-        ),
-        (
-            [{"id": "abc-one"}],
-            "missing",
-            [
-                "[red]Report 'missing' was not found for this agent.[/red]",
-                "[dim]Use the row number from `observal ops insights list <agent>` instead.[/dim]",
-            ],
-        ),
+        ([], None, 5, "No insight reports were found"),
+        ([{"id": "one"}, {"id": "two"}], "3", 7, "row 3 is out of range"),
+        ([{"id": "abc-one"}, {"id": "abc-two"}], "abc", 6, "prefix is ambiguous"),
+        ([{"id": "abc-one"}], "missing", 5, "report not found"),
     ],
 )
-def test_select_report_validation_exits_without_side_effects(cli, reports, report_ref, expected):
+def test_select_report_validation_exits_without_side_effects(cli, reports, report_ref, exit_code, message):
     with pytest.raises(typer.Exit) as raised:
         insights._select_report_id(reports, report_ref)
 
-    assert raised.value.exit_code == 1
-    assert cli.messages() == expected
+    assert raised.value.exit_code == exit_code
+    assert message.lower() in " ".join(cli.messages()).lower()
     cli.client_get.assert_not_called()
     cli.client_post.assert_not_called()
     cli.confirm.assert_not_called()
@@ -273,8 +258,8 @@ def test_show_non_completed_report_renders_status_progress_and_error(cli, monkey
     assert cli.console.renderables == []
 
 
-def test_show_json_bypasses_malformed_narrative_and_rendering(cli, monkeypatch):
-    report = _completed_report(narrative=["not", "a", "mapping"])
+def test_show_json_section_returns_only_requested_data(cli, monkeypatch):
+    report = _completed_report(narrative={"suggestions": {"features_to_try": []}})
     resolve_report = MagicMock(return_value=report)
     render_section = MagicMock()
     monkeypatch.setattr(insights, "_resolve_report_for_show", resolve_report)
@@ -282,7 +267,7 @@ def test_show_json_bypasses_malformed_narrative_and_rendering(cli, monkeypatch):
 
     insights.insights_show("agent", "abc", "json", "suggestions")
 
-    assert cli.json == [report]
+    assert cli.json == [{"report_id": REPORT_ID, "section": "suggestions", "data": {"features_to_try": []}}]
     assert cli.messages() == []
     render_section.assert_not_called()
 
@@ -294,11 +279,8 @@ def test_show_rejects_unknown_section_with_available_names(cli, monkeypatch):
     with pytest.raises(typer.Exit) as raised:
         insights.insights_show("agent", None, "table", "missing")
 
-    assert raised.value.exit_code == 1
-    assert cli.messages() == [
-        "[red]Section 'missing' not found.[/red]",
-        "[dim]Available: at_a_glance, suggestions[/dim]",
-    ]
+    assert raised.value.exit_code == 7
+    assert cli.messages() == ["[red]Unknown insight report section: missing.[/red]"]
 
 
 def test_show_completed_header_orders_sections_and_registry_note(cli, monkeypatch):
@@ -547,26 +529,21 @@ def test_generate_unavailable_exits_before_agent_resolution_or_post(cli, status,
     with pytest.raises(typer.Exit) as raised:
         insights.insights_generate("agent", 14, None, None, "table", False)
 
-    assert raised.value.exit_code == 1
+    assert raised.value.exit_code == 9
     cli.client_get.assert_called_once_with("/api/v1/insights/status")
     cli.resolve.assert_not_called()
     cli.client_post.assert_not_called()
     cli.confirm.assert_not_called()
-    assert cli.messages() == [
-        f"[red]✗ Insights not available:[/red] {reason}",
-        "",
-        "  Configure with:",
-        "    [cyan]observal admin set insights.model_sections anthropic/claude-3-5-sonnet-20241022[/cyan]",
-        "    [cyan]observal admin set insights.api_key <your-api-key>[/cyan]",
-        "",
-        "  [dim]Any LiteLLM-compatible model string works (OpenAI, Anthropic, Bedrock, Gemini, Ollama).[/dim]",
-        "  [dim]See: https://docs.litellm.ai/docs/providers[/dim]",
-    ]
+    assert cli.messages() == [f"[red]Insights is unavailable: {reason}[/red]"]
 
 
-def test_generate_json_ignores_wait_and_returns_initial_response(cli, monkeypatch):
+def test_generate_json_wait_emits_json_lines_until_completion(cli, monkeypatch):
     report = {"id": REPORT_ID, "status": "pending"}
-    _returns(cli.client_get, {"available": True})
+    cli.client_get.side_effect = [
+        {"available": True},
+        {"id": REPORT_ID, "status": "running", "progress_percent": 50},
+        {"id": REPORT_ID, "status": "completed", "progress_percent": 100},
+    ]
     _returns(cli.client_post, report)
     resolve_agent = MagicMock(return_value=AGENT_ID)
     sleep = MagicMock()
@@ -580,10 +557,20 @@ def test_generate_json_ignores_wait_and_returns_initial_response(cli, monkeypatc
         f"/api/v1/agents/{AGENT_ID}/insights/reports",
         {"period_days": 7},
     )
-    assert cli.client_get.call_args_list == [call("/api/v1/insights/status")]
-    assert cli.json == [report]
+    poll_path = f"/api/v1/agents/{AGENT_ID}/insights/reports/{REPORT_ID}"
+    assert cli.client_get.call_args_list == [
+        call("/api/v1/insights/status"),
+        call(poll_path),
+        call(poll_path),
+    ]
+    assert cli.json == []
+    assert cli.json_lines == [
+        {"event": "queued", "report": report},
+        {"event": "progress", "report": {"id": REPORT_ID, "status": "running", "progress_percent": 50}},
+        {"event": "progress", "report": {"id": REPORT_ID, "status": "completed", "progress_percent": 100}},
+    ]
     assert cli.messages() == []
-    sleep.assert_not_called()
+    sleep.assert_called_once_with(3)
 
 
 @pytest.mark.parametrize("terminal_status", ["completed", "failed"])
@@ -612,7 +599,12 @@ def test_generate_wait_polls_progress_until_terminal_status(cli, monkeypatch, te
     sleep = MagicMock()
     monkeypatch.setattr(time, "sleep", sleep)
 
-    insights.insights_generate("agent", 14, None, None, "table", True)
+    if terminal_status == "failed":
+        with pytest.raises(typer.Exit) as raised:
+            insights.insights_generate("agent", 14, None, None, "table", True)
+        assert raised.value.exit_code == 9
+    else:
+        insights.insights_generate("agent", 14, None, None, "table", True)
 
     poll_path = f"/api/v1/agents/{AGENT_ID}/insights/reports/{REPORT_ID}"
     assert cli.client_get.call_args_list == [
@@ -628,17 +620,20 @@ def test_generate_wait_polls_progress_until_terminal_status(cli, monkeypatch, te
         ((f"\r  <{terminal_status}> writing report (100%)",), {"end": ""}),
         ((), {}),
     ]
-    assert cli.messages()[4:] == [
-        f"[green]✓ Report queued[/green] (status: <{terminal_status}>)",
-        f"  ID: [dim]{REPORT_ID}[/dim]",
-        "  Version: v2.0.0",
-        "  Period: 2026-05-01 → 2026-05-14",
-        "  Phase: writing report (100%)",
-        "[dim]  Run `observal ops insights show <agent>` when complete.[/dim]",
-    ]
+    if terminal_status == "failed":
+        assert cli.messages()[4:] == ["[red]Insight report generation failed.[/red]"]
+    else:
+        assert cli.messages()[4:] == [
+            "[green]✓ Report queued[/green] (status: <completed>)",
+            f"  ID: [dim]{REPORT_ID}[/dim]",
+            "  Version: v2.0.0",
+            "  Period: 2026-05-01 → 2026-05-14",
+            "  Phase: writing report (100%)",
+            "[dim]  Run `observal ops insights show <agent>` when complete.[/dim]",
+        ]
 
 
-def test_generate_wait_exhaustion_polls_120_times_and_returns_initial_state(cli, monkeypatch):
+def test_generate_wait_exhaustion_is_categorized(cli, monkeypatch):
     initial = {
         "id": REPORT_ID,
         "status": "pending",
@@ -660,17 +655,13 @@ def test_generate_wait_exhaustion_polls_120_times_and_returns_initial_state(cli,
     sleep = MagicMock()
     monkeypatch.setattr(time, "sleep", sleep)
 
-    insights.insights_generate("agent", 14, None, None, "table", True)
+    with pytest.raises(typer.Exit) as raised:
+        insights.insights_generate("agent", 14, None, None, "table", True)
 
+    assert raised.value.exit_code == 9
     assert cli.client_get.call_args_list == [call("/api/v1/insights/status"), *[call(poll_path)] * 120]
     assert sleep.call_args_list == [call(3)] * 120
-    assert cli.messages()[-4:] == [
-        "[green]✓ Report queued[/green] (status: <pending>)",
-        f"  ID: [dim]{REPORT_ID}[/dim]",
-        "  Period: 2026-05-01 → 2026-05-14",
-        "[dim]  Run `observal ops insights show <agent>` when complete.[/dim]",
-    ]
-    assert not any("timed out" in message.lower() for message in cli.messages())
+    assert "timed out" in cli.messages()[-1].lower()
 
 
 def test_generate_wait_keyboard_interrupt_propagates_without_success(cli, monkeypatch):
@@ -719,9 +710,8 @@ def test_malformed_responses_fail_loudly_at_the_owning_boundary(cli, monkeypatch
         cli.client_get,
         [{"status": "completed", "period_start": None, "period_end": "2026-05-01T00:00:00Z"}],
     )
-    with pytest.raises(TypeError):
-        insights.insights_list("agent", "table")
-    assert cli.console.renderables == []
+    insights.insights_list("agent", "table")
+    assert len(cli.console.renderables) == 1
 
     cli.client_get.reset_mock()
     monkeypatch.setattr(
@@ -729,8 +719,9 @@ def test_malformed_responses_fail_loudly_at_the_owning_boundary(cli, monkeypatch
         "_resolve_report_for_show",
         MagicMock(return_value=_completed_report(narrative=["invalid"])),
     )
-    with pytest.raises(AttributeError):
+    with pytest.raises(typer.Exit) as raised:
         insights.insights_show("agent", None, "table", None)
+    assert raised.value.exit_code == 9
 
     cli.client_get.reset_mock()
     _returns(cli.client_get, None)

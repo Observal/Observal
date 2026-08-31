@@ -1,25 +1,24 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Component version CLI commands.
-
-Provides:
-  observal component version publish <type> <listing-name-or-id> [flags]
-  observal component version list    <type> <listing-name-or-id> [flags]
-"""
+"""Registry component version commands."""
 
 from __future__ import annotations
 
 import json as _json
+from contextlib import nullcontext
 
 import typer
 from loguru import logger as optic
+from packaging.version import InvalidVersion, Version
 from rich import print as rprint
 from rich.table import Table
 
 from observal_cli import client
+from observal_cli.constants import VALID_HARNESSES
+from observal_cli.errors import ErrorCategory, fail
 from observal_cli.prompts import text_input
-from observal_cli.render import console, output_json, relative_time, spinner, status_badge
+from observal_cli.render import OutputMode, console, esc, output_json, relative_time, spinner, status_badge
 
 # ── Constants ──────────────────────────────────────────────────
 
@@ -35,29 +34,28 @@ _PLURAL = {
 
 # ── App hierarchy ──────────────────────────────────────────────
 
-component_app = typer.Typer(
-    help="Component version commands",
-    no_args_is_help=True,
-)
-
 version_app = typer.Typer(
-    help="Manage component versions",
+    help=(
+        "Manage component versions\n\n"
+        "Examples:\n"
+        "  observal registry version list mcp alice/my-server\n"
+        "  observal registry version publish mcp alice/my-server --version 2.0.0 --description 'Breaking change'"
+    ),
     no_args_is_help=True,
 )
-
-component_app.add_typer(version_app, name="version")
-
 
 # ── Helpers ────────────────────────────────────────────────────
 
 
 def _require_valid_type(component_type: str) -> None:
     if component_type not in _VALID_TYPES:
-        rprint(
-            f"[red]Error:[/red] Invalid component type '{component_type}'. "
-            f"Must be one of: {', '.join(sorted(_VALID_TYPES))}"
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Unknown component type: {component_type}.",
+            operation="Manage component version",
+            resource="component type",
+            remediation=f"Choose one of: {', '.join(sorted(_VALID_TYPES))}.",
         )
-        raise typer.Exit(code=1)
 
 
 # ── version publish ────────────────────────────────────────────
@@ -74,6 +72,7 @@ def version_publish(
         None, "--harness", help="Supported harnesses (repeat for multiple)"
     ),
     extra: str | None = typer.Option(None, "--extra", help="Extra JSON for type-specific fields"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Publish a new version for a registry component.
 
@@ -86,11 +85,9 @@ def version_publish(
 
     \b
     Examples:
-      observal component version publish mcp my-server -v 2.0.0 -d "Breaking change"
-      observal component version publish hook guard-hook -v 1.1.0 -d "Add timeout" --changelog "Fixed race"
-      observal component version publish skill my-skill -v 1.0.0 -d "Initial" --harness claude-code --harness cursor
-      observal component version publish mcp analyzer --extra '{"transport": "http"}' -d "HTTP support"
-      observal registry version publish sandbox py -v 1.1.0 -d "Python 3.12" --extra '{"runtime_type":"docker","image":"python:3.12-slim","resource_limits":{"timeout":60}}'
+      observal registry version publish mcp alice/my-server -v 2.0.0 -d "Breaking change"
+      observal registry version publish hook alice/guard-hook -v 1.1.0 -d "Add timeout" --changelog "Fixed race"
+      observal registry version publish skill alice/my-skill -v 1.0.0 -d "Initial" --harness claude-code --output json
     """
     optic.trace("component_type={}", component_type)
     _require_valid_type(component_type)
@@ -100,30 +97,65 @@ def version_publish(
     if extra is not None:
         try:
             extra_data = _json.loads(extra)
-        except _json.JSONDecodeError as exc:
-            rprint(f"[red]Error:[/red] --extra is not valid JSON: {exc}")
-            raise typer.Exit(code=1)
+        except _json.JSONDecodeError as error:
+            fail(
+                ErrorCategory.VALIDATION,
+                "The extra version metadata is not valid JSON.",
+                operation="Publish component version",
+                resource="extra metadata",
+                remediation="Correct the JSON and retry.",
+                detail=repr(error),
+            )
+        if not isinstance(extra_data, dict):
+            fail(
+                ErrorCategory.VALIDATION,
+                "The extra version metadata must be a JSON object.",
+                operation="Publish component version",
+                resource="extra metadata",
+                remediation="Provide a JSON object and retry.",
+            )
 
+    bad_harnesses = [harness for harness in supported_harnesses or [] if harness not in VALID_HARNESSES]
+    if bad_harnesses:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Unknown harness: {bad_harnesses[0]}.",
+            operation="Publish component version",
+            resource="supported harnesses",
+            remediation=f"Choose from: {', '.join(VALID_HARNESSES)}.",
+        )
     resolved = client.resolve_registry_reference(component_type, listing)
     plural = _PLURAL[component_type]
 
-    # If --version omitted, fetch suggestions and prompt
+    if output == "json" and version is None:
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON mode requires an explicit component version.",
+            operation="Publish component version",
+            resource=listing,
+            remediation="Provide a version and retry.",
+        )
     if version is None:
-        try:
-            with spinner("Fetching version suggestions..."):
-                suggestions = client.get(f"/api/v1/{plural}/{resolved}/version-suggestions")
-            current = suggestions.get("current", "?")
-            sugs = suggestions.get("suggestions", {})
-            hint = (
-                f"  Current: {current}  "
-                f"patch→{sugs.get('patch', '?')}  "
-                f"minor→{sugs.get('minor', '?')}  "
-                f"major→{sugs.get('major', '?')}"
-            )
-            rprint(f"[dim]{hint}[/dim]")
-        except (Exception, SystemExit):
-            pass
+        with spinner("Fetching version suggestions..."):
+            suggestions = client.get(f"/api/v1/{plural}/{resolved}/version-suggestions")
+        current = suggestions.get("current", "?")
+        suggested = suggestions.get("suggestions", {})
+        rprint(
+            f"[dim]Current: {esc(current)}  patch→{esc(suggested.get('patch', '?'))}  "
+            f"minor→{esc(suggested.get('minor', '?'))}  major→{esc(suggested.get('major', '?'))}[/dim]"
+        )
         version = text_input("Version")
+    try:
+        Version(version)
+    except InvalidVersion as error:
+        fail(
+            ErrorCategory.VALIDATION,
+            "The component version is invalid.",
+            operation="Publish component version",
+            resource=version,
+            remediation="Provide a valid version and retry.",
+            detail=repr(error),
+        )
 
     # Build payload (only include optional keys when provided)
     payload: dict = {
@@ -137,12 +169,18 @@ def version_publish(
     if extra_data is not None:
         payload["extra"] = extra_data
 
-    with spinner(f"Publishing {component_type} version {version}..."):
+    publish_context = (
+        nullcontext() if output == "json" else spinner(f"Publishing {component_type} version {version}...")
+    )
+    with publish_context:
         result = client.post(f"/api/v1/{plural}/{resolved}/versions", payload)
 
+    if output == "json":
+        output_json(result)
+        return
     status = result.get("status", "pending")
     rprint(
-        f"[green]✓ Version [bold]{result.get('version', version)}[/bold] submitted for review![/green]"
+        f"[green]✓ Version [bold]{esc(result.get('version', version))}[/bold] submitted for review![/green]"
         f"  Status: {status_badge(status)}"
     )
 
@@ -154,7 +192,9 @@ def version_publish(
 def version_list(
     component_type: str = typer.Argument(..., help="Component type: hook, skill, prompt, mcp, sandbox"),
     listing: str = typer.Argument(..., help="Listing name or ID"),
-    output: str = typer.Option("table", "--output", "-o", help="Output format: table or json"),
+    page: int = typer.Option(1, "--page", min=1, help="Page number"),
+    page_size: int = typer.Option(50, "--page-size", min=1, max=200, help="Items per page"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """List version history for a registry component.
 
@@ -164,17 +204,21 @@ def version_list(
 
     \b
     Examples:
-      observal component version list mcp my-server
-      observal component version list hook guard-hook --output json
-      observal component version list skill @my-skill-alias
+      observal registry version list mcp alice/my-server
+      observal registry version list hook alice/guard-hook --output json
+      observal registry version list skill @my-skill-alias
     """
     _require_valid_type(component_type)
 
     resolved = client.resolve_registry_reference(component_type, listing)
     plural = _PLURAL[component_type]
 
-    with spinner("Fetching versions..."):
-        data = client.get(f"/api/v1/{plural}/{resolved}/versions", params={"page": 1, "page_size": 50})
+    fetch_context = nullcontext() if output == "json" else spinner("Fetching versions...")
+    with fetch_context:
+        data = client.get(
+            f"/api/v1/{plural}/{resolved}/versions",
+            params={"page": page, "page_size": page_size},
+        )
 
     items = data.get("items", [])
 
@@ -194,10 +238,10 @@ def version_list(
 
     for item in items:
         table.add_row(
-            item.get("version", ""),
+            esc(item.get("version", "")),
             status_badge(item.get("status", "")),
-            relative_time(item.get("created_at")),
-            item.get("created_by_email", "") or item.get("created_by_username", ""),
+            esc(relative_time(item.get("created_at"))),
+            esc(item.get("created_by_email", "") or item.get("created_by_username", "")),
         )
 
     console.print(table)

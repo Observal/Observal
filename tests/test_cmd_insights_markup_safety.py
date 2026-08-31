@@ -101,12 +101,12 @@ def test_bracketed_text_renders_literally(monkeypatch, section, payload):
 class TestLegacySectionShapes:
     def test_string_section_does_not_crash_typed_renderer(self, monkeypatch):
         # Older reports stored some sections as prose; `.get` would explode.
-        _serve(monkeypatch, {"suggestions": "Try writing shorter prompts."})
+        _serve(monkeypatch, {"suggestions": HOSTILE})
 
         result = runner.invoke(insights_app, ["show", "ultra-pi"])
 
         assert result.exit_code == 0, result.output
-        assert "Try writing shorter prompts." in result.output
+        assert HOSTILE in _flat(result.output)
 
     def test_list_section_does_not_crash_typed_renderer(self, monkeypatch):
         _serve(monkeypatch, {"suggestions": ["one", "two"]})

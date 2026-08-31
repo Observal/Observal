@@ -13,17 +13,13 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-import click.exceptions
 import pytest
 from hypothesis import given
 from hypothesis import settings as hsettings
 from hypothesis import strategies as st
 from typer.testing import CliRunner
 
-from observal_cli.cmd_migrate import (
-    _require_admin,
-    _require_pyarrow,
-)
+from observal_cli.cmd_migrate import _require_pyarrow
 from observal_cli.main import app as cli_app
 from observal_shared.migration.archive import _sha256_file
 from observal_shared.migration.constants import CHUNK_SIZE, INSERT_ORDER, JSONB_COLUMNS
@@ -73,6 +69,16 @@ class TestCLIRegistration:
         assert result.exit_code == 0
         assert "--archive" in _plain(result.output)
 
+    @pytest.mark.parametrize(
+        "command",
+        ["export", "import", "validate", "export-telemetry", "import-telemetry", "validate-telemetry"],
+    )
+    def test_leaf_help_does_not_load_pyarrow(self, command):
+        with patch("observal_cli.cmd_migrate._require_pyarrow", side_effect=AssertionError("loaded pyarrow")):
+            result = runner.invoke(cli_app, ["server", "migrate", command, "--help"])
+
+        assert result.exit_code == 0, result.output
+
 
 class TestPyarrowRequirement:
     def test_passes_when_pyarrow_importable(self):
@@ -89,17 +95,16 @@ class TestPyarrowRequirement:
                 raise ImportError("simulated missing pyarrow")
             return real_import(name, *args, **kwargs)
 
-        import typer
+        from observal_cli.errors import CliError, ErrorCategory
 
         with (
             patch.object(builtins, "__import__", side_effect=fake_import),
-            pytest.raises(typer.BadParameter) as excinfo,
+            pytest.raises(CliError) as excinfo,
         ):
             _require_pyarrow()
 
-        msg = str(excinfo.value)
-        assert "pyarrow" in msg
-        assert "observal-cli[migrate]" in msg
+        assert excinfo.value.category is ErrorCategory.UNAVAILABLE
+        assert excinfo.value.resource == "pyarrow"
 
 
 # ── 2. PGEncoder Tests ───────────────────────────────────
@@ -249,40 +254,6 @@ class TestBuildSelect:
     def test_unknown_table_raises_valueerror(self):
         with pytest.raises(ValueError, match="Unknown table"):
             _build_select("nonexistent_table", ["id"])
-
-
-# ── 5. _require_admin Tests ─────────────────────────────
-
-
-class TestRequireAdmin:
-    @patch("observal_cli.cmd_migrate.client")
-    def test_admin_role_rejected(self, mock_client):
-        mock_client.get.return_value = {"role": "admin"}
-        with pytest.raises((SystemExit, click.exceptions.Exit)):
-            _require_admin()
-
-    @patch("observal_cli.cmd_migrate.client")
-    def test_super_admin_role_allowed(self, mock_client):
-        mock_client.get.return_value = {"role": "super_admin"}
-        _require_admin()  # Should not raise
-
-    @patch("observal_cli.cmd_migrate.client")
-    def test_user_role_rejected(self, mock_client):
-        mock_client.get.return_value = {"role": "user"}
-        with pytest.raises((SystemExit, click.exceptions.Exit)):
-            _require_admin()
-
-    @patch("observal_cli.cmd_migrate.client")
-    def test_reviewer_role_rejected(self, mock_client):
-        mock_client.get.return_value = {"role": "reviewer"}
-        with pytest.raises((SystemExit, click.exceptions.Exit)):
-            _require_admin()
-
-    @patch("observal_cli.cmd_migrate.client")
-    def test_unauthenticated_rejected(self, mock_client):
-        mock_client.get.side_effect = SystemExit(1)
-        with pytest.raises((SystemExit, click.exceptions.Exit)):
-            _require_admin()
 
 
 # ── 6. _sha256_file Tests ───────────────────────────────
@@ -478,16 +449,14 @@ class TestManifestStructure:
 
 
 class TestErrorPaths:
-    @patch("observal_cli.cmd_migrate._require_admin")
-    def test_import_nonexistent_archive(self, mock_admin):
+    def test_import_nonexistent_archive(self):
         result = runner.invoke(
             cli_app,
             ["server", "migrate", "import", "--db-url", "postgres://x", "--archive", "/nonexistent/archive.tar.gz"],
         )
         assert result.exit_code != 0
 
-    @patch("observal_cli.cmd_migrate._require_admin")
-    def test_validate_nonexistent_archive(self, mock_admin):
+    def test_validate_nonexistent_archive(self):
         result = runner.invoke(
             cli_app,
             ["server", "migrate", "validate", "--archive", "/nonexistent/archive.tar.gz"],
@@ -504,9 +473,8 @@ class TestErrorPaths:
 
 
 class TestSecurity:
-    @patch("observal_cli.cmd_migrate._require_admin")
     @patch("observal_cli.cmd_migrate.asyncio")
-    def test_db_url_not_in_export_output(self, mock_asyncio, mock_admin):
+    def test_db_url_not_in_export_output(self, mock_asyncio):
         """The --db-url value should never appear in CLI output."""
         secret_url = "postgres://secret_user:secret_pass@secret-host:5432/secret_db"
         mock_asyncio.run.side_effect = SystemExit(1)
@@ -516,8 +484,7 @@ class TestSecurity:
         )
         assert secret_url not in result.output
 
-    @patch("observal_cli.cmd_migrate._require_admin")
-    def test_db_url_not_in_import_output(self, mock_admin):
+    def test_db_url_not_in_import_output(self):
         """The --db-url value should never appear in CLI output for import."""
         secret_url = "postgres://secret_user:secret_pass@secret-host:5432/secret_db"
         result = runner.invoke(
@@ -526,8 +493,7 @@ class TestSecurity:
         )
         assert secret_url not in result.output
 
-    @patch("observal_cli.cmd_migrate._require_admin")
-    def test_db_url_not_in_validate_output(self, mock_admin):
+    def test_db_url_not_in_validate_output(self):
         """The --db-url value should never appear in CLI output for validate."""
         secret_url = "postgres://secret_user:secret_pass@secret-host:5432/secret_db"
         result = runner.invoke(
@@ -987,23 +953,3 @@ class TestMigrationIdConsistencyProperty:
         m2 = json.loads(json.dumps(migration_manifest))
         assert m1["migration_id"] == m2["migration_id"]
         assert m1["migration_id"] == mid
-
-
-# ── Property 10: Admin role authorization gate ──────────
-
-
-class TestAdminRoleGateProperty:
-    """Property 10: Only super_admin role passes the gate."""
-
-    ALLOWED_ROLES = {"super_admin"}
-
-    @given(role=st.sampled_from(["admin", "super_admin", "user", "reviewer", "", "moderator", "guest", "operator"]))
-    @hsettings(max_examples=100)
-    def test_role_gate(self, role):
-        with patch("observal_cli.cmd_migrate.client") as mock_client:
-            mock_client.get.return_value = {"role": role}
-            if role in self.ALLOWED_ROLES:
-                _require_admin()  # Should not raise
-            else:
-                with pytest.raises((SystemExit, click.exceptions.Exit)):
-                    _require_admin()

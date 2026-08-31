@@ -18,7 +18,7 @@ def test_listings_render_the_bare_name_over_an_at_handle():
     # Tables put the name and its namespace in separate columns.
     assert render.display_name(item) == "task-creator"
     assert render.handle(item) == "@alice"
-    # Plain output has no columns, so it keeps them on one line.
+    # Inline displays have no columns, so they keep both values on one line.
     assert render.name_inline(item) == "task-creator [dim]@alice[/dim]"
     # Commands still need the slash form.
     assert client.canonical_name(item) == "alice/task-creator"

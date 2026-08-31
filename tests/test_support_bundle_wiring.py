@@ -15,11 +15,11 @@ from __future__ import annotations
 import json
 import re
 import tarfile
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import httpx
 from typer.testing import CliRunner
 
+from observal_cli.errors import CliError, ErrorCategory
 from observal_cli.main import app
 
 runner = CliRunner()
@@ -27,13 +27,13 @@ runner = CliRunner()
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
-def _mock_httpx_response(data: dict, status_code: int = 200) -> MagicMock:
-    """Create a mock httpx.Response that behaves like a real one."""
-    resp = MagicMock(spec=httpx.Response)
-    resp.status_code = status_code
-    resp.json.return_value = data
-    resp.raise_for_status.return_value = None
-    return resp
+def _unavailable() -> CliError:
+    return CliError(
+        ErrorCategory.UNAVAILABLE,
+        "Server unavailable.",
+        operation="Generate support bundle",
+        resource="support endpoint",
+    )
 
 
 # ── CLI registration ─────────────────────────────────────────────────
@@ -55,6 +55,7 @@ class TestSupportAppRegistration:
         result = runner.invoke(app, ["doctor", "support", "bundle", "--help"])
         assert result.exit_code == 0
         output = _ANSI_RE.sub("", result.output)
+        assert "--file" in output
         assert "--output" in output
         assert "--logs-since" in output
         assert "--include-system" in output
@@ -144,14 +145,11 @@ class TestBundleDirectoryStructure:
         """Bundle should contain versions/, health/, system/, config/, and bundle_manifest.json."""
         output_path = tmp_path / "test-bundle.tar.gz"
         server_resp = _make_server_response()
-        mock_cfg = {"server_url": "http://localhost:8000", "access_token": "test-token"}
 
         with (
-            patch("observal_cli.cmd_support.config.get_or_exit", return_value=mock_cfg),
-            patch("observal_cli.cmd_support.config.get_timeout", return_value=30),
-            patch("observal_cli.cmd_support.httpx.post", return_value=_mock_httpx_response(server_resp)),
+            patch("observal_cli.cmd_support.client.post", return_value=server_resp),
         ):
-            result = runner.invoke(app, ["doctor", "support", "bundle", "--output", str(output_path)])
+            result = runner.invoke(app, ["doctor", "support", "bundle", "--file", str(output_path)])
 
         assert result.exit_code == 0, f"Unexpected exit code: {result.output}"
         assert output_path.exists()
@@ -182,14 +180,11 @@ class TestBundleDirectoryStructure:
         """bundle_manifest.json should be valid JSON with required fields."""
         output_path = tmp_path / "test-bundle.tar.gz"
         server_resp = _make_server_response()
-        mock_cfg = {"server_url": "http://localhost:8000", "access_token": "test-token"}
 
         with (
-            patch("observal_cli.cmd_support.config.get_or_exit", return_value=mock_cfg),
-            patch("observal_cli.cmd_support.config.get_timeout", return_value=30),
-            patch("observal_cli.cmd_support.httpx.post", return_value=_mock_httpx_response(server_resp)),
+            patch("observal_cli.cmd_support.client.post", return_value=server_resp),
         ):
-            result = runner.invoke(app, ["doctor", "support", "bundle", "--output", str(output_path)])
+            result = runner.invoke(app, ["doctor", "support", "bundle", "--file", str(output_path)])
 
         assert result.exit_code == 0
 
@@ -211,16 +206,13 @@ class TestBundleDirectoryStructure:
         """With --no-include-system, system/ directory should be absent."""
         output_path = tmp_path / "test-bundle.tar.gz"
         server_resp = _make_server_response()
-        mock_cfg = {"server_url": "http://localhost:8000", "access_token": "test-token"}
 
         with (
-            patch("observal_cli.cmd_support.config.get_or_exit", return_value=mock_cfg),
-            patch("observal_cli.cmd_support.config.get_timeout", return_value=30),
-            patch("observal_cli.cmd_support.httpx.post", return_value=_mock_httpx_response(server_resp)),
+            patch("observal_cli.cmd_support.client.post", return_value=server_resp),
         ):
             result = runner.invoke(
                 app,
-                ["doctor", "support", "bundle", "--output", str(output_path), "--no-include-system"],
+                ["doctor", "support", "bundle", "--file", str(output_path), "--no-include-system"],
             )
 
         assert result.exit_code == 0
@@ -242,14 +234,11 @@ class TestPartialFailure:
         """When versions collector fails, bundle is still created with remaining data."""
         output_path = tmp_path / "test-bundle.tar.gz"
         server_resp = _make_server_response(versions_ok=False)
-        mock_cfg = {"server_url": "http://localhost:8000", "access_token": "test-token"}
 
         with (
-            patch("observal_cli.cmd_support.config.get_or_exit", return_value=mock_cfg),
-            patch("observal_cli.cmd_support.config.get_timeout", return_value=30),
-            patch("observal_cli.cmd_support.httpx.post", return_value=_mock_httpx_response(server_resp)),
+            patch("observal_cli.cmd_support.client.post", return_value=server_resp),
         ):
-            result = runner.invoke(app, ["doctor", "support", "bundle", "--output", str(output_path)])
+            result = runner.invoke(app, ["doctor", "support", "bundle", "--file", str(output_path)])
 
         assert result.exit_code == 0, f"Should exit 0 on partial failure: {result.output}"
         assert output_path.exists()
@@ -271,14 +260,11 @@ class TestPartialFailure:
         """When health collector fails, bundle is still created."""
         output_path = tmp_path / "test-bundle.tar.gz"
         server_resp = _make_server_response(health_ok=False)
-        mock_cfg = {"server_url": "http://localhost:8000", "access_token": "test-token"}
 
         with (
-            patch("observal_cli.cmd_support.config.get_or_exit", return_value=mock_cfg),
-            patch("observal_cli.cmd_support.config.get_timeout", return_value=30),
-            patch("observal_cli.cmd_support.httpx.post", return_value=_mock_httpx_response(server_resp)),
+            patch("observal_cli.cmd_support.client.post", return_value=server_resp),
         ):
-            result = runner.invoke(app, ["doctor", "support", "bundle", "--output", str(output_path)])
+            result = runner.invoke(app, ["doctor", "support", "bundle", "--file", str(output_path)])
 
         assert result.exit_code == 0, f"Should exit 0 on partial failure: {result.output}"
         assert output_path.exists()
@@ -286,15 +272,10 @@ class TestPartialFailure:
     def test_server_unreachable_still_produces_bundle(self, tmp_path):
         """When the server is unreachable, local collectors still run and produce a bundle."""
         output_path = tmp_path / "test-bundle.tar.gz"
-        mock_cfg = {"server_url": "http://localhost:8000", "access_token": "test-token"}
 
         # Simulate server unreachable by raising ConnectError
-        with (
-            patch("observal_cli.cmd_support.config.get_or_exit", return_value=mock_cfg),
-            patch("observal_cli.cmd_support.config.get_timeout", return_value=30),
-            patch("observal_cli.cmd_support.httpx.post", side_effect=httpx.ConnectError("Connection refused")),
-        ):
-            result = runner.invoke(app, ["doctor", "support", "bundle", "--output", str(output_path)])
+        with patch("observal_cli.cmd_support.client.post", side_effect=_unavailable()):
+            result = runner.invoke(app, ["doctor", "support", "bundle", "--file", str(output_path)])
 
         assert result.exit_code == 0, f"Should exit 0 with local-only data: {result.output}"
         assert output_path.exists()
@@ -311,14 +292,11 @@ class TestPartialFailure:
         """Failed collectors should be recorded in the manifest with ok=false."""
         output_path = tmp_path / "test-bundle.tar.gz"
         server_resp = _make_server_response(versions_ok=False, health_ok=False)
-        mock_cfg = {"server_url": "http://localhost:8000", "access_token": "test-token"}
 
         with (
-            patch("observal_cli.cmd_support.config.get_or_exit", return_value=mock_cfg),
-            patch("observal_cli.cmd_support.config.get_timeout", return_value=30),
-            patch("observal_cli.cmd_support.httpx.post", return_value=_mock_httpx_response(server_resp)),
+            patch("observal_cli.cmd_support.client.post", return_value=server_resp),
         ):
-            result = runner.invoke(app, ["doctor", "support", "bundle", "--output", str(output_path)])
+            result = runner.invoke(app, ["doctor", "support", "bundle", "--file", str(output_path)])
 
         assert result.exit_code == 0
 
@@ -341,7 +319,6 @@ class TestTotalFailure:
         from observal_cli.cmd_support import CollectorResult
 
         output_path = tmp_path / "test-bundle.tar.gz"
-        mock_cfg = {"server_url": "http://localhost:8000", "access_token": "test-token"}
 
         # All remote collectors fail
         server_resp = _make_server_response(
@@ -355,18 +332,16 @@ class TestTotalFailure:
 
         # Mock both local collectors to fail, and disable system import
         with (
-            patch("observal_cli.cmd_support.config.get_or_exit", return_value=mock_cfg),
-            patch("observal_cli.cmd_support.config.get_timeout", return_value=30),
-            patch("observal_cli.cmd_support.httpx.post", return_value=_mock_httpx_response(server_resp)),
+            patch("observal_cli.cmd_support.client.post", return_value=server_resp),
             patch("observal_cli.cmd_support._config_allowlisted", return_value=failed_config),
             patch(
                 "observal_cli.support.collectors.system_info",
                 return_value=failed_system,
             ),
         ):
-            result = runner.invoke(app, ["doctor", "support", "bundle", "--output", str(output_path)])
+            result = runner.invoke(app, ["doctor", "support", "bundle", "--file", str(output_path)])
 
-        assert result.exit_code == 1, f"Should exit 1 when no data collected: {result.output}"
+        assert result.exit_code == 9, f"Should exit 9 when no data is available: {result.output}"
         assert not output_path.exists(), "No archive should be written on total failure"
 
     def test_empty_server_response_with_failed_local_exits_1(self, tmp_path):
@@ -374,19 +349,73 @@ class TestTotalFailure:
         from observal_cli.cmd_support import CollectorResult
 
         output_path = tmp_path / "test-bundle.tar.gz"
-        mock_cfg = {"server_url": "http://localhost:8000", "access_token": "test-token"}
 
         failed_config = CollectorResult(name="config_allowlisted", ok=False, duration_ms=0, data=None, error="fail")
 
         with (
-            patch("observal_cli.cmd_support.config.get_or_exit", return_value=mock_cfg),
-            patch("observal_cli.cmd_support.config.get_timeout", return_value=30),
-            patch("observal_cli.cmd_support.httpx.post", side_effect=httpx.ConnectError("Connection refused")),
+            patch("observal_cli.cmd_support.client.post", side_effect=_unavailable()),
             patch("observal_cli.cmd_support._config_allowlisted", return_value=failed_config),
         ):
             result = runner.invoke(
                 app,
-                ["doctor", "support", "bundle", "--output", str(output_path), "--no-include-system"],
+                ["doctor", "support", "bundle", "--file", str(output_path), "--no-include-system"],
             )
 
-        assert result.exit_code == 1, f"Should exit 1 when no data collected: {result.output}"
+        assert result.exit_code == 9, f"Should exit 9 when no data is available: {result.output}"
+
+
+def test_bundle_json_returns_archive_metadata_without_human_output(tmp_path):
+    output_path = tmp_path / "bundle.tar.gz"
+    server_response = _make_server_response()
+
+    with patch("observal_cli.cmd_support.client.post", return_value=server_response):
+        result = runner.invoke(
+            app,
+            ["doctor", "support", "bundle", "--file", str(output_path), "--output", "json"],
+        )
+
+    assert result.exit_code == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["path"] == str(output_path)
+    assert data["size_bytes"] == output_path.stat().st_size
+    assert data["remote_status"] == "collected"
+    assert data["warnings"] == []
+    assert "Support bundle written" not in result.stdout
+
+
+def test_bundle_json_reports_explicit_local_fallback(tmp_path):
+    output_path = tmp_path / "local-bundle.tar.gz"
+
+    with patch("observal_cli.cmd_support.client.post", side_effect=_unavailable()):
+        result = runner.invoke(
+            app,
+            ["doctor", "support", "bundle", "--file", str(output_path), "--output", "json"],
+        )
+
+    assert result.exit_code == 0, result.stderr
+    data = json.loads(result.stdout)
+    assert data["remote_status"] == "unavailable"
+    assert data["warnings"]
+    assert output_path.is_file()
+
+
+def test_bundle_json_validation_uses_shared_error_contract(tmp_path):
+    existing = tmp_path / "existing.tar.gz"
+    existing.write_bytes(b"keep")
+
+    invalid_duration = runner.invoke(
+        app,
+        ["doctor", "support", "bundle", "--logs-since", "forever", "--output", "json"],
+    )
+    existing_file = runner.invoke(
+        app,
+        ["doctor", "support", "bundle", "--file", str(existing), "--output", "json"],
+    )
+
+    assert invalid_duration.exit_code == 7
+    assert invalid_duration.stdout == ""
+    assert json.loads(invalid_duration.stderr)["error"]["category"] == "validation"
+    assert existing_file.exit_code == 6
+    assert existing_file.stdout == ""
+    assert json.loads(existing_file.stderr)["error"]["category"] == "conflict"
+    assert existing.read_bytes() == b"keep"

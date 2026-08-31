@@ -66,8 +66,8 @@ def _verify_checksum(file_path: Path, expected_checksums: dict[str, str]) -> boo
     """Verify SHA256 checksum of a downloaded file."""
     filename = file_path.name
     if filename not in expected_checksums:
-        console.print(f"[yellow]Warning:[/yellow] No checksum found for {filename}, skipping verification")
-        return True
+        console.print(f"[red]No checksum published for {filename}.[/red]")
+        return False
 
     sha256 = hashlib.sha256()
     with file_path.open("rb") as f:
@@ -92,9 +92,8 @@ def _fetch_checksums() -> dict[str, str]:
     try:
         resp = httpx.get(url, follow_redirects=True, timeout=30)
         resp.raise_for_status()
-    except httpx.HTTPError:
-        console.print("[yellow]Warning:[/yellow] Could not fetch checksums, skipping verification")
-        return {}
+    except httpx.HTTPError as error:
+        raise RuntimeError("Could not fetch dependency checksums") from error
 
     checksums = {}
     for line in resp.text.strip().splitlines():
@@ -105,9 +104,13 @@ def _fetch_checksums() -> dict[str, str]:
 
 
 def _extract_tarball(tarball: Path, dest_dir: Path) -> None:
-    """Extract a .tar.gz archive to destination directory."""
-    with tarfile.open(tarball, "r:gz") as tf:
-        tf.extractall(path=dest_dir)
+    """Extract a dependency archive without allowing links or path traversal."""
+    destination = dest_dir.resolve()
+    with tarfile.open(tarball, "r:gz") as archive:
+        for member in archive.getmembers():
+            if member.issym() or member.islnk() or not (dest_dir / member.name).resolve().is_relative_to(destination):
+                raise RuntimeError(f"Unsafe dependency archive member: {member.name}")
+        archive.extractall(path=dest_dir, filter="data")
 
 
 def _make_executable(path: Path) -> None:
@@ -157,7 +160,7 @@ def install_dependencies(force: bool = False) -> None:
 
             _download_file(url, download_path, f"  {service}")
 
-            if checksums and not _verify_checksum(download_path, checksums):
+            if not _verify_checksum(download_path, checksums):
                 raise RuntimeError(f"Checksum verification failed for {service}")
 
             # Extract to a staging dir, then move binaries
@@ -203,7 +206,7 @@ def install_single(service: str, force: bool = False) -> None:
 
         _download_file(url, download_path, f"  {service}")
 
-        if checksums and not _verify_checksum(download_path, checksums):
+        if not _verify_checksum(download_path, checksums):
             raise RuntimeError(f"Checksum verification failed for {service}")
 
         staging = tmp_path / "staging"

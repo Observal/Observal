@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from typer.testing import CliRunner
 
+from observal_cli.errors import CliError, ErrorCategory, ExitCode
 from observal_cli.main import app
 
 runner = CliRunner()
@@ -136,7 +137,7 @@ def test_version_publish_invalid_type_exits() -> None:
             "test",
         ],
     )
-    assert result.exit_code != 0
+    assert result.exit_code == ExitCode.VALIDATION
 
 
 def test_version_publish_invalid_extra_json_exits() -> None:
@@ -160,7 +161,7 @@ def test_version_publish_invalid_extra_json_exits() -> None:
                 "not-valid-json",
             ],
         )
-    assert result.exit_code != 0
+    assert result.exit_code == ExitCode.VALIDATION
 
 
 def test_version_publish_prompts_for_version_when_omitted() -> None:
@@ -272,3 +273,103 @@ def test_version_list_json_output() -> None:
     assert result.exit_code == 0, result.output
     parsed = json.loads(result.output)
     assert isinstance(parsed, (dict, list))
+
+
+def test_version_publish_json_returns_direct_result() -> None:
+    response = {"id": "version-1", "version": "1.1.0", "status": "pending"}
+    with (
+        patch("observal_cli.config.resolve_alias", return_value="hook-id"),
+        patch("observal_cli.client.post", return_value=response),
+    ):
+        result = runner.invoke(
+            app,
+            [
+                "registry",
+                "version",
+                "publish",
+                "hook",
+                "acme/guard",
+                "--version",
+                "1.1.0",
+                "--description",
+                "Fix",
+                "--output",
+                "json",
+            ],
+        )
+
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout) == response
+
+
+def test_version_publish_json_requires_explicit_version() -> None:
+    with patch("observal_cli.config.resolve_alias", return_value="hook-id"):
+        result = runner.invoke(
+            app,
+            [
+                "registry",
+                "version",
+                "publish",
+                "hook",
+                "acme/guard",
+                "--description",
+                "Fix",
+                "--output",
+                "json",
+            ],
+        )
+
+    assert result.exit_code == ExitCode.VALIDATION
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["error"]["category"] == "validation"
+
+
+def test_version_suggestion_failure_is_not_suppressed() -> None:
+    unavailable = CliError(
+        ErrorCategory.UNAVAILABLE,
+        "Registry unavailable.",
+        operation="Publish component version",
+        resource="component versions",
+    )
+    with (
+        patch("observal_cli.config.resolve_alias", return_value="hook-id"),
+        patch("observal_cli.client.get", side_effect=unavailable),
+    ):
+        result = runner.invoke(
+            app,
+            ["registry", "version", "publish", "hook", "acme/guard", "--description", "Fix"],
+        )
+
+    assert result.exit_code == ExitCode.UNAVAILABLE
+
+
+def test_version_list_forwards_pagination_and_escapes_table() -> None:
+    hostile = "Version [bold] literal"
+    response = {
+        "items": [
+            {
+                "version": "2.0.0",
+                "status": "approved",
+                "created_at": None,
+                "created_by_email": hostile,
+            }
+        ],
+        "total": 201,
+        "page": 2,
+        "page_size": 100,
+    }
+    with (
+        patch("observal_cli.config.resolve_alias", return_value="mcp-id"),
+        patch("observal_cli.client.get", return_value=response) as get,
+    ):
+        result = runner.invoke(
+            app,
+            ["registry", "version", "list", "mcp", "acme/tool", "--page", "2", "--page-size", "100"],
+        )
+
+    assert result.exit_code == 0
+    assert hostile in result.output
+    get.assert_called_once_with(
+        "/api/v1/mcps/mcp-id/versions",
+        params={"page": 2, "page_size": 100},
+    )

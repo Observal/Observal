@@ -2,64 +2,77 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { test, expect } from "@playwright/test";
-import { execSync } from "child_process";
+import { mkdirSync, rmSync } from "node:fs";
+import { runCommand } from "./command";
 
-const CLI_TIMEOUT = 30_000;
-const CWD = execSync("git rev-parse --show-toplevel", {
-  encoding: "utf-8",
-}).trim();
-
-function run(cmd: string): string {
-  return execSync(cmd, { encoding: "utf-8", timeout: CLI_TIMEOUT, cwd: CWD });
-}
+const PULL_DIR = "/tmp/kiro-e2e-pull";
 
 test.describe("Kiro CLI Commands", () => {
   test.beforeAll(() => {
-    try {
-      execSync(
-        'observal auth login --server http://localhost --email admin@demo.example --password admin-changeme 2>&1',
-        { encoding: "utf-8", timeout: CLI_TIMEOUT, cwd: CWD },
-      );
-    } catch {
-      // login may fail if already configured — that's fine
-    }
+    runCommand(
+      "observal",
+      [
+        "auth",
+        "login",
+        "--server",
+        "http://localhost",
+        "--email",
+        "admin@demo.example",
+      ],
+      {
+        allowFailure: true,
+        env: { OBSERVAL_PASSWORD: "admin-changeme" },
+      },
+    );
   });
 
   test("observal doctor --harness kiro runs without errors", () => {
-    const output = run("observal doctor --harness kiro 2>&1 || true");
-    // Doctor should run and produce output (may have warnings, but shouldn't crash)
+    const output = runCommand(
+      "observal",
+      ["doctor", "--harness", "kiro"],
+      { allowFailure: true },
+    );
     expect(output).toBeTruthy();
     expect(output).not.toContain("Traceback");
     expect(output).not.toContain("TypeError");
   });
 
   test("observal scan --harness kiro shows read-only inventory", () => {
-    const output = run("observal scan --harness kiro 2>&1 || true");
+    const output = runCommand(
+      "observal",
+      ["scan", "--harness", "kiro"],
+      { allowFailure: true },
+    );
     expect(output).not.toContain("Traceback");
-    // Should discover Kiro agents from ~/.kiro/agents/
     expect(output).toMatch(/Agents/);
     expect(output).toMatch(/coder|backend|frontend/i);
   });
 
   test("observal scan shows components from multiple harnesses", () => {
-    const output = run("observal scan 2>&1 || true");
+    const output = runCommand("observal", ["scan"], { allowFailure: true });
     expect(output).not.toContain("Traceback");
     const clean = output.replace(/\x1b\[[0-9;]*m/g, "");
     expect(clean).toMatch(/\d+ components discovered/);
     expect(clean).toMatch(/kiro/i);
   });
 
-  test("observal doctor patch --hook --harness kiro --dry-run previews changes", () => {
-    const output = run("observal doctor patch --hook --harness kiro --dry-run 2>&1 || true");
+  test("observal doctor patch --harness kiro --dry-run previews changes", () => {
+    const output = runCommand(
+      "observal",
+      ["doctor", "patch", "--harness", "kiro", "--dry-run"],
+      { allowFailure: true },
+    );
     expect(output).not.toContain("Traceback");
     expect(output).toMatch(/Dry run|Would/i);
   });
 
-  test("observal pull --harness kiro --dry-run generates Kiro config", () => {
-    // Get an agent to pull
+  test("observal agent pull --harness kiro --dry-run generates Kiro config", () => {
     let agents: { id?: string; name?: string }[];
     try {
-      agents = JSON.parse(run("observal agent list --output json 2>/dev/null"));
+      const payload = JSON.parse(
+        runCommand("observal", ["agent", "list", "--output", "json"]),
+      );
+      agents = payload.items;
     } catch {
       test.skip();
       return;
@@ -70,24 +83,42 @@ test.describe("Kiro CLI Commands", () => {
     }
 
     const agentId = agents[0].id ?? agents[0].name;
-    run("mkdir -p /tmp/kiro-e2e-pull");
+    if (!agentId) {
+      test.skip();
+      return;
+    }
+    rmSync(PULL_DIR, { recursive: true, force: true });
+    mkdirSync(PULL_DIR, { recursive: true });
 
-    const output = run(
-      `observal pull ${agentId} --harness kiro --dir /tmp/kiro-e2e-pull --dry-run 2>&1 || true`,
-    );
-    expect(output).not.toContain("Traceback");
-
-    // Cleanup
-    run("rm -rf /tmp/kiro-e2e-pull");
+    try {
+      const output = runCommand(
+        "observal",
+        [
+          "agent",
+          "pull",
+          agentId,
+          "--harness",
+          "kiro",
+          "--dir",
+          PULL_DIR,
+          "--dry-run",
+          "--no-prompt",
+        ],
+        { allowFailure: true },
+      );
+      expect(output).not.toContain("Traceback");
+    } finally {
+      rmSync(PULL_DIR, { recursive: true, force: true });
+    }
   });
 
   test("observal auth status reports healthy server", () => {
-    const output = run("observal auth status 2>&1");
+    const output = runCommand("observal", ["auth", "status"]);
     expect(output.toLowerCase()).toMatch(/ok|healthy/);
   });
 
   test("observal auth whoami returns current user", () => {
-    const output = run("observal auth whoami 2>&1");
+    const output = runCommand("observal", ["auth", "whoami"]);
     expect(output).toBeTruthy();
     expect(output).not.toContain("401");
     expect(output).not.toContain("Unauthorized");

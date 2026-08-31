@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Annie Chiang <anniechiang.yn@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn>
 # SPDX-License-Identifier: Apache-2.0
 
 """Tests for observal_cli.cmd_doctor helpers."""
@@ -7,15 +8,13 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 import typer
 from typer.testing import CliRunner
 
-if TYPE_CHECKING:
-    from pathlib import Path
 from observal_cli.cmd_doctor import (
     _check_antigravity,
     _check_claude_code,
@@ -262,6 +261,19 @@ class TestChecks:
 
         assert "Pi" in missing
 
+    def test_shared_observal_skill_satisfies_codex_and_pi(self, tmp_path: Path):
+        (tmp_path / ".codex").mkdir()
+        (tmp_path / ".pi").mkdir()
+        source = Path(__file__).parents[1] / "observal_cli/skills/observal/SKILL.md"
+        shared = tmp_path / ".agents/skills/observal/SKILL.md"
+        shared.parent.mkdir(parents=True)
+        shared.write_bytes(source.read_bytes())
+
+        missing = _check_observal_skill_missing()
+
+        assert "Codex" not in missing
+        assert "Pi" not in missing
+
 
 class TestPatchFunctions:
     def test_patch_claude_code_writes_and_is_idempotent(self, tmp_path: Path):
@@ -416,19 +428,19 @@ class TestPatchFunctions:
                 "observal_cli.lockfile_reconcile.plan_lockfile_reconciliation",
                 return_value=MagicMock(changes=[], warnings=[]),
             ),
-            patch("subprocess.run") as run,
+            patch("observal_cli.cmd_doctor._patch_targets", return_value={"changed": True}) as patch_targets,
             patch("observal_cli.skill_installer.install_observal_skill"),
         ):
             result = CliRunner().invoke(doctor_app, ["--yes"])
 
         assert result.exit_code == 0
-        assert run.call_args.args[0][-2:] == ["patch", "--all-harnesses"]
+        patch_targets.assert_called_once()
 
     def test_doctor_patch_requires_target(self):
         with pytest.raises(typer.Exit) as exc:
             doctor_patch(all_harnesses=False, harness=[], dry_run=False)
 
-        assert exc.value.exit_code == 1
+        assert exc.value.exit_code == 7
 
     def test_doctor_patch_rejects_unknown_harness(self):
         with (
@@ -437,7 +449,7 @@ class TestPatchFunctions:
         ):
             doctor_patch(all_harnesses=False, harness=["wat"], dry_run=False)
 
-        assert exc.value.exit_code == 1
+        assert exc.value.exit_code == 7
 
 
 class TestCleanupFunctions:

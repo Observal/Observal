@@ -7,7 +7,7 @@ Manages ~/.observal/lockfile.json, the canonical record of all agents,
 MCPs, skills, hooks, and sandboxes installed via Observal, organized by harness.
 
 The lock file is:
-- Written on `observal pull`, `observal mcp install`, `observal skill install`
+- Written by `observal agent pull` and component registry install commands
 - Read on session push to resolve agent attribution and compute layer_hash
 - Read by `observal outdated` to compare pinned versions against registry latest
 """
@@ -440,7 +440,11 @@ def get_all_entries(harness: str | None = None) -> list[dict]:
     Returns a flat list of entries with 'harness' and 'entry_type' fields added.
     Used by `observal outdated`.
     """
-    _, registry = read_registry_lockfile()
+    data = read_lockfile()
+    if not data["registries"]:
+        return []
+    server_url = current_registry_url()
+    registry = data["registries"].get(server_url, {"server_url": server_url, "harnesses": {}})
     entries: list[dict] = []
 
     for harness_name, harness_section in registry.get("harnesses", {}).items():

@@ -2,139 +2,173 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Link } from "@tanstack/react-router";
-import { Sparkles, X } from "lucide-react";
+import {
+  BookOpenCheck,
+  Box,
+  GitBranch,
+  MessageSquareText,
+  PlugZap,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { CardSkeleton } from "@/components/shared/skeleton-layouts";
-import { RegistryMark } from "@/components/registry/registry-mark";
-// "sandbox" does not pluralise by appending "s"; the route expects "sandboxes".
+import { TableSkeleton } from "@/components/shared/skeleton-layouts";
 import { REVERSE_TYPE_MAP } from "@/components/registry/agent-component-constants";
 import {
-	useDismissRecommendation,
-	useMyRecommendations,
+  useDismissRecommendation,
+  useMyRecommendations,
 } from "@/hooks/use-recommendations-api";
 import { registryItemPath } from "@/lib/registry-name";
 import { compactNumber } from "@/lib/utils";
 
-const TYPE_LABELS: Record<string, string> = {
-	skill: "Skill",
-	hook: "Hook",
-	prompt: "Prompt",
-	mcp: "MCP",
-	sandbox: "Sandbox",
+const TYPE_META: Record<
+  string,
+  { label: string; icon: LucideIcon; color: string }
+> = {
+  mcp: { label: "MCP", icon: PlugZap, color: "text-component-mcp" },
+  skill: { label: "Skill", icon: BookOpenCheck, color: "text-component-skill" },
+  hook: { label: "Hook", icon: GitBranch, color: "text-component-hook" },
+  prompt: {
+    label: "Prompt",
+    icon: MessageSquareText,
+    color: "text-component-prompt",
+  },
+  sandbox: {
+    label: "Sandbox",
+    icon: Box,
+    color: "text-component-sandbox",
+  },
 };
 
-/**
- * Personalised component rail on the registry home page.
- *
- * Renders nothing at all when there is nothing worth showing — an empty rail
- * is worse than no rail. When the user has no session history the copy says
- * "popular" rather than implying personalisation that did not happen.
- */
+function Header({
+  personalized,
+  sessions,
+  loading = false,
+}: {
+  personalized: boolean;
+  sessions: number;
+  loading?: boolean;
+}) {
+  return (
+    <header className="flex min-h-16 flex-col justify-center gap-1 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-5">
+      <div className="min-w-0">
+        <h2 className="text-base font-semibold tracking-tight text-foreground">
+          {loading
+            ? "Recommended for you"
+            : personalized
+              ? "Matches from your work"
+              : "Popular components"}
+        </h2>
+        <p className="mt-0.5 text-sm text-muted-foreground">
+          {loading
+            ? "Loading recommendations."
+            : personalized
+              ? `Evidence from ${sessions} captured session${sessions === 1 ? "" : "s"}.`
+              : "Most-used components visible to you."}
+        </p>
+      </div>
+      {!loading && personalized && (
+        <span className="shrink-0 text-sm text-muted-foreground">
+          Ranked by observed activity
+        </span>
+      )}
+    </header>
+  );
+}
+
 export function RecommendedForYou({ limit = 6 }: { limit?: number }) {
-	const { data, isLoading, isError } = useMyRecommendations(limit);
-	const dismiss = useDismissRecommendation();
+  const { data, isLoading, isError } = useMyRecommendations(limit);
+  const dismiss = useDismissRecommendation();
 
-	if (isError) return null;
+  if (isError) return null;
 
-	if (isLoading) {
-		return (
-			<section className="space-y-3">
-				<h2 className="font-[family-name:var(--font-display)] text-sm font-semibold">
-					Recommended for you
-				</h2>
-				<CardSkeleton />
-			</section>
-		);
-	}
+  if (isLoading) {
+    return (
+      <section className="overflow-hidden rounded-md border border-border bg-card">
+        <Header loading personalized={false} sessions={0} />
+        <div className="p-3">
+          <TableSkeleton rows={3} cols={3} />
+        </div>
+      </section>
+    );
+  }
 
-	const items = data?.items ?? [];
-	const personalized = data?.personalized ?? false;
-	const sessions = data?.profile_sessions ?? 0;
+  const items = data?.items ?? [];
+  const personalized = data?.personalized ?? false;
+  const sessions = data?.profile_sessions ?? 0;
 
-	// An empty rail used to render nothing at all, which is indistinguishable
-	// from the feature being broken or absent. Say why instead.
-	if (items.length === 0) {
-		return (
-			<section className="space-y-3">
-				<div className="flex items-center gap-2">
-					<Sparkles className="h-4 w-4 text-muted-foreground" />
-					<h2 className="font-[family-name:var(--font-display)] text-sm font-semibold">
-						Recommended for you
-					</h2>
-				</div>
-				<div className="rounded-lg border border-border bg-card px-4 py-3">
-					<p className="text-sm text-muted-foreground">
-						Nothing to recommend right now. Either the registry has no components
-						visible to you, or you have already installed or dismissed them all.
-					</p>
-				</div>
-			</section>
-		);
-	}
+  return (
+    <section className="overflow-hidden rounded-md border border-border bg-card">
+      <Header personalized={personalized} sessions={sessions} />
 
-	// Sub-heading is the honest part: it must never imply personalisation
-	// that did not happen, and it should say what would improve it.
-	const subtitle = personalized
-		? data?.topics && data.topics.length > 0
-			? `Based on ${sessions} session${sessions === 1 ? "" : "s"} — mostly ${data.topics.slice(0, 3).join(", ")}`
-			: `Based on ${sessions} session${sessions === 1 ? "" : "s"} of your activity`
-		: "No session history yet, so these are simply the most-used components. Run a few sessions and this becomes personal.";
-
-	return (
-		<section className="space-y-3">
-			<div className="flex items-start justify-between gap-3 flex-wrap">
-				<div className="flex items-center gap-2">
-					<Sparkles className={`h-4 w-4 ${personalized ? "text-primary-accent" : "text-muted-foreground"}`} />
-					<h2 className="font-[family-name:var(--font-display)] text-sm font-semibold">
-						{personalized ? "Recommended for you" : "Popular in your registry"}
-					</h2>
-				</div>
-				<p className="text-xs text-muted-foreground max-w-prose">{subtitle}</p>
-			</div>
-
-			<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-				{items.map((item) => (
-					<div
-						key={`${item.type}:${item.id}`}
-						className="group relative rounded-lg border border-border bg-card p-3 hover:border-primary/40 transition-colors"
-					>
-						<Button
-							variant="ghost"
-							size="sm"
-							aria-label={`Dismiss ${item.name}`}
-							className="absolute top-1.5 right-1.5 h-6 w-6 p-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
-							disabled={dismiss.isPending}
-							onClick={() => dismiss.mutate({ type: item.type, id: item.id })}
-						>
-							<X className="h-3.5 w-3.5" />
-						</Button>
-
-						<div className="flex items-center gap-2">
-							<RegistryMark size={13} />
-							<span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-								{TYPE_LABELS[item.type] ?? item.type}
-							</span>
-							{item.download_count > 0 && (
-								<span className="text-xs text-muted-foreground">
-									{compactNumber(item.download_count)} installs
-								</span>
-							)}
-						</div>
-
-						<Link
-							to={registryItemPath(item, REVERSE_TYPE_MAP[item.type] ?? "mcps", item.id)}
-							className="mt-2 block font-medium text-sm hover:text-primary-accent break-all pr-6"
-						>
-							{item.name}
-						</Link>
-
-						<p className="mt-1 text-xs text-muted-foreground line-clamp-2">
-							{item.description}
-						</p>
-						<p className="mt-2 text-xs text-primary-accent/80">{item.reason}</p>
-					</div>
-				))}
-			</div>
-		</section>
-	);
+      {items.length === 0 ? (
+        <p className="p-6 text-sm leading-6 text-muted-foreground">
+          Nothing new to recommend. You may have already installed or dismissed
+          the current matches.
+        </p>
+      ) : (
+        <div>
+          {items.map((item) => {
+            const meta = TYPE_META[item.type] ?? TYPE_META.mcp;
+            const Icon = meta.icon;
+            return (
+              <div
+                key={`${item.type}:${item.id}`}
+                className="group grid min-h-20 grid-cols-[1.25rem_minmax(0,1fr)_auto] gap-3 border-b border-border/75 px-4 py-3 last:border-b-0 hover:bg-accent/45"
+              >
+                <Icon
+                  className={`mt-0.5 h-4 w-4 ${meta.color}`}
+                  aria-hidden="true"
+                />
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <Link
+                      to={registryItemPath(
+                        item,
+                        REVERSE_TYPE_MAP[item.type] ?? "mcps",
+                        item.id,
+                      )}
+                      className="break-all text-sm font-semibold text-foreground underline-offset-4 hover:text-primary-accent hover:underline"
+                    >
+                      {item.name}
+                    </Link>
+                    <span className={`text-xs font-semibold ${meta.color}`}>
+                      {meta.label}
+                    </span>
+                    <span className="font-mono text-xs text-muted-foreground">
+                      v{item.latest_version}
+                    </span>
+                  </div>
+                  <p className="mt-1 line-clamp-1 text-sm text-muted-foreground">
+                    {item.description}
+                  </p>
+                  <p className="mt-1 text-sm text-foreground/85">{item.reason}</p>
+                </div>
+                <div className="flex items-start gap-2">
+                  {item.download_count > 0 && (
+                    <span className="hidden whitespace-nowrap text-xs text-muted-foreground sm:inline">
+                      {compactNumber(item.download_count)} installs
+                    </span>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Dismiss ${item.name}`}
+                    title="Dismiss recommendation"
+                    className="h-8 w-8 rounded-sm text-muted-foreground opacity-70 hover:opacity-100"
+                    disabled={dismiss.isPending}
+                    onClick={() =>
+                      dismiss.mutate({ type: item.type, id: item.id })
+                    }
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
 }

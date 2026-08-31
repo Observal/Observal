@@ -111,8 +111,7 @@ class TestExportCommand:
     """Verify export_cmd passes correct args to export_pg."""
 
     @patch("observal_cli.cmd_migrate.export_pg", new_callable=AsyncMock)
-    @patch("observal_cli.cmd_migrate._require_admin")
-    def test_export_passes_pg_conn_params(self, mock_admin, mock_export_pg, tmp_path):
+    def test_export_passes_pg_conn_params(self, mock_export_pg, tmp_path):
         """export_pg receives PgConnParams with the --db-url DSN."""
         mock_export_pg.return_value = _make_export_result()
         output = tmp_path / "out.tar.gz"
@@ -121,13 +120,14 @@ class TestExportCommand:
         # so we need the file to exist. Create it as a side effect of the mock.
         async def _fake_export(*args, **kwargs):
             output.write_bytes(b"\x00" * 1024)
+            output.with_name("out.manifest.json").write_text("{}")
             return _make_export_result()
 
         mock_export_pg.side_effect = _fake_export
 
         result = runner.invoke(
             migrate_app,
-            ["export", "--db-url", "postgresql://user:pass@myhost:5432/mydb", "--output", str(output)],
+            ["export", "--db-url", "postgresql://user:pass@myhost:5432/mydb", "--file", str(output)],
         )
 
         assert result.exit_code == 0, result.output
@@ -149,8 +149,7 @@ class TestImportCommand:
     """Verify import_cmd passes correct args to import_pg."""
 
     @patch("observal_cli.cmd_migrate.import_pg", new_callable=AsyncMock)
-    @patch("observal_cli.cmd_migrate._require_admin")
-    def test_import_passes_pg_conn_params_and_archive(self, mock_admin, mock_import_pg, tmp_path):
+    def test_import_passes_pg_conn_params_and_archive(self, mock_import_pg, tmp_path):
         """import_pg receives only the target connection, archive, and reporter."""
         mock_import_pg.return_value = _make_import_result()
 
@@ -184,8 +183,7 @@ class TestImportCommand:
         assert not kwargs
 
     @patch("observal_cli.cmd_migrate.import_pg", new_callable=AsyncMock)
-    @patch("observal_cli.cmd_migrate._require_admin")
-    def test_import_without_target_identity_flags(self, mock_admin, mock_import_pg, tmp_path):
+    def test_import_without_target_identity_flags(self, mock_import_pg, tmp_path):
         """The import command has no target identity options."""
         mock_import_pg.return_value = _make_import_result()
 
@@ -212,8 +210,7 @@ class TestValidateCommand:
     """Verify validate_cmd passes correct args to validate_pg."""
 
     @patch("observal_cli.cmd_migrate.validate_pg", new_callable=AsyncMock)
-    @patch("observal_cli.cmd_migrate._require_admin")
-    def test_validate_without_db_url(self, mock_admin, mock_validate_pg, tmp_path):
+    def test_validate_without_db_url(self, mock_validate_pg, tmp_path):
         """validate_pg receives None for pg_params when no --db-url is given."""
         mock_validate_pg.return_value = _make_validation_result()
 
@@ -237,8 +234,7 @@ class TestValidateCommand:
         assert args[1] == archive
 
     @patch("observal_cli.cmd_migrate.validate_pg", new_callable=AsyncMock)
-    @patch("observal_cli.cmd_migrate._require_admin")
-    def test_validate_with_db_url(self, mock_admin, mock_validate_pg, tmp_path):
+    def test_validate_with_db_url(self, mock_validate_pg, tmp_path):
         """validate_pg receives PgConnParams when --db-url is given."""
         mock_validate_pg.return_value = _make_validation_result()
 
@@ -265,8 +261,7 @@ class TestExportTelemetryCommand:
     """Verify export-telemetry passes correct args to export_ch."""
 
     @patch("observal_cli.cmd_migrate.export_ch", new_callable=AsyncMock)
-    @patch("observal_cli.cmd_migrate._require_admin")
-    def test_export_telemetry_passes_ch_params(self, mock_admin, mock_export_ch, tmp_path):
+    def test_export_telemetry_passes_ch_params(self, mock_export_ch, tmp_path):
         """export_ch receives ChConnParams, manifest path, output dir, and reporter."""
         mock_export_ch.return_value = _make_telemetry_export_result()
 
@@ -307,8 +302,7 @@ class TestImportTelemetryCommand:
     """Verify import-telemetry passes correct args to import_ch."""
 
     @patch("observal_cli.cmd_migrate.import_ch", new_callable=AsyncMock)
-    @patch("observal_cli.cmd_migrate._require_admin")
-    def test_import_telemetry_passes_ch_params(self, mock_admin, mock_import_ch, tmp_path):
+    def test_import_telemetry_passes_ch_params(self, mock_import_ch, tmp_path):
         """import_ch receives only the connection, input directory, and reporter."""
         mock_import_ch.return_value = _make_telemetry_import_result()
 
@@ -338,8 +332,7 @@ class TestImportTelemetryCommand:
         assert not kwargs
 
     @patch("observal_cli.cmd_migrate.import_ch", new_callable=AsyncMock)
-    @patch("observal_cli.cmd_migrate._require_admin")
-    def test_import_telemetry_without_target_identity_flags(self, mock_admin, mock_import_ch, tmp_path):
+    def test_import_telemetry_without_target_identity_flags(self, mock_import_ch, tmp_path):
         """The import command has no target identity options."""
         mock_import_ch.return_value = _make_telemetry_import_result()
 
@@ -369,8 +362,7 @@ class TestValidateTelemetryCommand:
     """Verify validate-telemetry passes correct args to validate_ch."""
 
     @patch("observal_cli.cmd_migrate.validate_ch", new_callable=AsyncMock)
-    @patch("observal_cli.cmd_migrate._require_admin")
-    def test_validate_telemetry_with_all_options(self, mock_admin, mock_validate_ch, tmp_path):
+    def test_validate_telemetry_with_all_options(self, mock_validate_ch, tmp_path):
         """validate_ch receives ch_params, pg_params, input dir, and reporter."""
         mock_validate_ch.return_value = _make_telemetry_validation_result()
 
@@ -403,8 +395,7 @@ class TestValidateTelemetryCommand:
         assert hasattr(args[3], "update")
 
     @patch("observal_cli.cmd_migrate.validate_ch", new_callable=AsyncMock)
-    @patch("observal_cli.cmd_migrate._require_admin")
-    def test_validate_telemetry_without_optional_urls(self, mock_admin, mock_validate_ch, tmp_path):
+    def test_validate_telemetry_without_optional_urls(self, mock_validate_ch, tmp_path):
         """Without optional URLs, ch_params and pg_params should be None."""
         mock_validate_ch.return_value = _make_telemetry_validation_result()
 
@@ -429,8 +420,7 @@ class TestErrorHandling:
     """Verify MigrationError is caught and converted to typer.Exit(1)."""
 
     @patch("observal_cli.cmd_migrate.export_pg", new_callable=AsyncMock)
-    @patch("observal_cli.cmd_migrate._require_admin")
-    def test_migration_error_causes_exit_1(self, mock_admin, mock_export_pg, tmp_path):
+    def test_migration_error_causes_exit_1(self, mock_export_pg, tmp_path):
         """A MigrationError from the service should result in exit code 1."""
         from observal_shared.migration.exceptions import ConnectionFailedError
 
@@ -439,8 +429,8 @@ class TestErrorHandling:
 
         result = runner.invoke(
             migrate_app,
-            ["export", "--db-url", "postgresql://u:p@h/d", "--output", str(output)],
+            ["export", "--db-url", "postgresql://u:p@h/d", "--file", str(output)],
         )
 
-        assert result.exit_code == 1
-        assert "Connection failed" in result.output
+        assert result.exit_code == 9
+        assert "connection failed" in result.output.lower()

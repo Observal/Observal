@@ -1,172 +1,87 @@
 <!-- SPDX-FileCopyrightText: 2026 Nithin-Bhargav-07 <gaddamnithinbhargav@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# observal skill
+# `observal registry skill`
 
-Submit, browse, and install portable skill packages. A skill is a `SKILL.md`
-instruction file that agents load on demand to handle a specific task.
+Submit, browse, install, edit, archive, restore, transfer, and manage co-authors for portable skill packages.
 
-## Subcommands
+## Commands
 
 | Command | Description |
 | --- | --- |
-| [`skill submit`](#observal-skill-submit) | Submit a skill to the registry |
-| [`skill list`](#observal-skill-list) | List approved skills |
-| [`skill my`](#observal-skill-my) | List your own skills (all statuses) |
-| [`skill show`](#observal-skill-show) | Show detailed information about a skill |
-| [`skill install`](#observal-skill-install) | Install a skill into an harness |
-| [`skill edit`](#observal-skill-edit) | Edit a draft, rejected, or pending skill |
+| `submit` | Submit a Git-backed or registry-direct skill |
+| `list` | List approved visible skills |
+| `my` | List your skills across all statuses |
+| `show` | Show one skill |
+| `install` | Write a skill into a supported harness |
+| `edit` | Edit a draft, pending, or rejected skill |
+| `archive` | Archive an approved skill |
+| `unarchive` | Restore an archived skill |
+| `transfer-owner` | Transfer ownership |
+| `co-authors` | List, add, or remove co-authors |
 
----
+Every command that returns structured data supports table and JSON output. Archive, restore, and ownership transfer require the confirmation bypass in JSON mode.
 
-## `observal skill submit`
+## Submit
 
-Submit a skill to the registry. There are two delivery modes:
-
-- **git_fetch** (default): provide `--git-url` and the server clones the
-  `SKILL.md` from the repo on install.
-- **registry_direct**: provide `--skill-md` (and optionally `--script`) with
-  `--delivery-mode registry_direct`. The content is stored inline in the
-  registry and written directly on install, no git repo needed.
-
-You can also provide `--skill-md` alongside `--git-url` to auto-fill
-frontmatter fields while still using git_fetch delivery.
+Git-backed skills require a Git URL. Registry-direct skills store SKILL.md and an optional script in Observal.
 
 ```bash
-# Git-based submission
-observal skill submit --git-url https://github.com/your-org/your-skill
-observal skill submit --skill-md ./SKILL.md --git-url https://github.com/your-org/your-skill
-observal skill submit --git-url https://github.com/your-org/your-skill --draft
+observal registry skill submit \
+  --skill-md ./SKILL.md \
+  --git-url https://github.com/acme/review-skill \
+  --name review-skill \
+  --description "Review code" \
+  --task-type code-review \
+  --output json
 
-# Registry direct (no git repo required)
-observal skill submit --skill-md ./SKILL.md --delivery-mode registry_direct
-observal skill submit --skill-md ./SKILL.md --script ./run.sh --delivery-mode registry_direct
-
-# From JSON file
-observal skill submit --from-file skill.json
-
-# Submit a saved draft
-observal skill submit --submit abc123
+observal registry skill submit \
+  --skill-md ./SKILL.md \
+  --delivery-mode registry_direct \
+  --name review-skill \
+  --description "Review code" \
+  --task-type code-review \
+  --output json
 ```
 
-| Option | Description |
-| --- | --- |
-| `--from-file`, `-f` | Create from a JSON file |
-| `--skill-md` | Path to `SKILL.md` to paste (auto-fills fields from frontmatter) |
-| `--git-url` | Git repository URL |
-| `--git-ref` | Branch or tag (default: main) |
-| `--script` | Path to script file (registry_direct mode only) |
-| `--delivery-mode` | Delivery mode: `git_fetch` (default) or `registry_direct` |
-| `--draft` | Save as draft instead of submitting for review |
-| `--submit` | Submit a draft for review (skill ID) |
+JSON mode never prompts. Supply the name, description, task type, delivery mode, and required source inputs explicitly.
 
----
+Valid task types are `code-review`, `code-generation`, `testing`, `documentation`, `debugging`, `refactoring`, `deployment`, `security-audit`, `performance`, and `general`.
 
-## `observal skill list`
-
-List approved skills in the registry. Use `--task-type`, `--target-agent`, or
-`--search` to filter results. Row numbers from the output can be used as
-references in subsequent commands.
+## List and show
 
 ```bash
-observal skill list
-observal skill list --task-type coding
-observal skill list --target-agent claude-code --output json
-observal skill list --search "refactor"
+observal registry skill list --task-type code-review --output json
+observal registry skill list --harness claude-code --output json
+observal registry skill my --output json
+observal registry skill show acme/review-skill --output json
 ```
 
-| Option | Description |
-| --- | --- |
-| `--task-type`, `-t` | Filter by task type |
-| `--target-agent` | Filter by target agent |
-| `--search`, `-s` | Filter by search term |
-| `--output`, `-o` | Output format: table, json, plain (default: table) |
+Row numbers are scoped to the latest Skill list. Empty lists clear previous Skill row references.
 
----
-
-## `observal skill my`
-
-List your own skills across all statuses: drafts, pending, approved, and
-rejected. Useful for tracking the review status of your submissions.
+## Install
 
 ```bash
-observal skill my
-observal skill my --output json
+observal registry skill install acme/review-skill --harness claude-code --scope user --output json
+observal registry skill install acme/review-skill --harness pi --scope project --output json
+observal registry skill install acme/review-skill --harness pi --no-write --output json
+observal registry skill install acme/review-skill --harness pi --raw
 ```
 
-| Option | Description |
-| --- | --- |
-| `--output`, `-o` | Output format: table, json, plain (default: table) |
+JSON output performs the installation unless no-write is selected. It reports `write_performed` and `installed_path`. Raw mode emits only the generated config and performs no write. Lockfile state is recorded only after the skill content is written successfully.
 
----
+The command fails if the harness lacks skill support, the source cannot be installed, a project symlink cannot be created, or installed state cannot be recorded.
 
-## `observal skill show`
-
-Show detailed information about a skill including validation status, task type,
-git source, slash command, target agents, and timestamps. Accepts a UUID, name,
-row number from a previous list, or @alias.
+## Edit
 
 ```bash
-observal skill show my-skill
-observal skill show 1
-observal skill show @refactor-skill --output json
+observal registry skill edit acme/review-skill --description "Updated" --output json
+observal registry skill edit acme/review-skill --from-file updates.json --output json
 ```
 
-| Option | Description |
-| --- | --- |
-| `--output`, `-o` | Output format (default: table) |
+Edit-lock conflicts preserve conflict exit code 6. Invalid fields and files use the shared validation, not-found, permission, and unavailable categories.
 
----
+## Related
 
-## `observal skill install`
-
-Install a skill into an harness. For git_fetch skills, clones the skill directory
-from the configured `git_url`. For registry_direct skills, writes the stored
-`SKILL.md` (and script, if present) directly. Falls back to cached content if
-git clone fails.
-
-Two scopes are supported:
-
-- `--scope user` (default): writes to `~/.<harness>/skills/<name>/` globally.
-- `--scope project`: writes to `.agents/skills/<name>/` in the current
-  directory, then symlinks into each harness config dir found in the project.
-
-```bash
-observal skill install my-skill --harness claude-code
-observal skill install @sk --harness kiro --scope project
-observal skill install 2 --harness cursor --raw > config.json
-```
-
-| Option | Description |
-| --- | --- |
-| `--harness`, `-i` | Target harness (required) |
-| `--scope`, `-s` | Install scope: user (default) or project |
-| `--raw` | Output raw JSON only |
-| `--no-write` | Print config without writing files |
-
----
-
-## `observal skill edit`
-
-Edit a draft, rejected, or pending skill submission. You can provide individual
-field options or load all updates from a JSON file. Acquires an edit lock to
-prevent concurrent modifications.
-
-```bash
-observal skill edit my-skill --description "Better desc"
-observal skill edit abc123 --from-file updates.json
-observal skill edit @sk --git-url https://github.com/org/new-repo
-observal skill edit 2 --version 2.0.0 --task-type debugging
-```
-
-| Option | Description |
-| --- | --- |
-| `--from-file`, `-f` | Load updates from a JSON file |
-| `--name`, `-n` | New listing name |
-| `--description`, `-d` | New description |
-| `--version`, `-v` | New version string |
-| `--task-type`, `-t` | New task type |
-| `--git-url` | New git URL |
-| `--git-ref` | New git ref |
-
----
+* [`observal registry`](registry.md): complete registry reference
+* [`observal agent`](agent.md): attach skills to agents

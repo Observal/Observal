@@ -294,10 +294,10 @@ See [AGENTS.md](AGENTS.md) for internal codebase context.
 ## Reporting Issues
 
 ```bash
-observal support bundle
+observal doctor support bundle
 ```
 
-Produces a redacted diagnostic archive. Review before sharing: `observal support inspect observal-support-*.tar.gz`
+Produces a redacted diagnostic archive. Review before sharing: `observal doctor support inspect observal-support-*.tar.gz`
 
 For live debugging, Observal uses loguru-based dev logging (internally called "optic"). Stream logs with:
 

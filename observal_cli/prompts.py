@@ -164,15 +164,16 @@ def quick_choice(message: str, valid_keys: list[str]) -> str:
     rprint(f"  {message}: ", end="", flush=True)
     fd = sys.stdin.fileno()
     old_settings = termios.tcgetattr(fd)
+    selected = ""
     try:
         tty.setraw(fd)
-        while True:
+        while not selected:
             ch = sys.stdin.read(1)
             if ch == "\x03":  # Ctrl+C
-                print()
                 raise KeyboardInterrupt
             if ch in valid_keys:
-                rprint(ch)
-                return ch
+                selected = ch
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    rprint(selected)
+    return selected

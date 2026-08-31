@@ -108,10 +108,12 @@ def boundaries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleNamespa
     get_config = MagicMock(side_effect=_blocked("config.get_or_exit"))
     get_version = MagicMock(side_effect=_blocked("client._get_cli_version"))
     sleep = MagicMock(side_effect=_blocked("time.sleep"))
+    json_lines: list[dict] = []
 
     monkeypatch.setattr(logs, "Console", console_factory)
     monkeypatch.setattr(logs, "LOG_PATH", tmp_path / "dev.log")
     monkeypatch.setattr(logs.time, "sleep", sleep)
+    monkeypatch.setattr(logs, "output_json_line", json_lines.append)
     monkeypatch.setattr(httpx, "stream", stream)
     monkeypatch.setattr(config, "get_or_exit", get_config)
     monkeypatch.setattr(client, "_get_cli_version", get_version)
@@ -124,6 +126,7 @@ def boundaries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleNamespa
         get_version=get_version,
         sleep=sleep,
         log_path=logs.LOG_PATH,
+        json_lines=json_lines,
     )
 
 
@@ -260,19 +263,11 @@ def test_remote_stream_builds_exact_authenticated_request_and_finishes_cleanly(
     boundaries.sleep.assert_not_called()
 
 
-@pytest.mark.parametrize(
-    ("status", "message"),
-    [
-        (401, "[red]Authentication failed.[/red] Run `observal auth login`."),
-        (403, "[red]Admin access required.[/red] Only admins can stream server logs."),
-        (418, "[red]Server returned 418[/red]"),
-        (503, "[red]Server returned 503[/red]"),
-    ],
-)
-def test_remote_http_errors_close_response_and_exit_one(
+@pytest.mark.parametrize(("status", "exit_code"), [(401, 3), (403, 4), (418, 9), (503, 9)])
+def test_remote_http_errors_are_categorized_and_close_response(
     boundaries: SimpleNamespace,
     status: int,
-    message: str,
+    exit_code: int,
 ) -> None:
     response = StreamResponse(status_code=status)
     _allow_remote(boundaries, response)
@@ -280,14 +275,11 @@ def test_remote_http_errors_close_response_and_exit_one(
     with pytest.raises(typer.Exit) as raised:
         logs._stream_remote(boundaries.console, level="ERROR", filter_text="", no_color=False)
 
-    assert raised.value.exit_code == 1
+    assert raised.value.exit_code == exit_code
     assert response.enter_count == 1
     assert response.iter_count == 0
     assert response.exits[0][1] is raised.value
-    assert boundaries.console.calls == [
-        (("[dim]Connecting to https://registry.example.test …[/dim]",), {}),
-        ((message,), {}),
-    ]
+    assert boundaries.console.calls == [(("[dim]Connecting to https://registry.example.test …[/dim]",), {})]
     boundaries.sleep.assert_not_called()
 
 
@@ -305,9 +297,12 @@ def test_connection_failure_makes_one_attempt_then_exits_without_retry(
     with pytest.raises(typer.Exit) as raised:
         logs._stream_remote(boundaries.console, level="DEBUG", filter_text="", no_color=True)
 
-    assert raised.value.exit_code == 1
+    assert raised.value.exit_code == 9
     assert boundaries.stream.call_count == 1
-    assert boundaries.console.calls[-1] == (("[red]Cannot connect.[/red] Is the server running?",), {})
+    expected_console = [(("[dim]Connecting to https://registry.example.test …[/dim]",), {})]
+    if failure_during_iteration:
+        expected_console.append((("[dim]- Streaming (Ctrl+C to stop) -[/dim]\n",), {}))
+    assert boundaries.console.calls == expected_console
     boundaries.sleep.assert_not_called()
     if failure_during_iteration:
         assert response.exits == [(httpx.ConnectError, failure)]
@@ -316,15 +311,15 @@ def test_connection_failure_makes_one_attempt_then_exits_without_retry(
         assert response.exits == []
 
 
-def test_read_timeout_is_not_retried_or_translated_and_response_is_closed(boundaries: SimpleNamespace) -> None:
+def test_read_timeout_is_categorized_and_response_is_closed(boundaries: SimpleNamespace) -> None:
     failure = httpx.ReadTimeout("stalled", request=httpx.Request("GET", "https://registry.example.test"))
     response = StreamResponse(lines=[failure])
     _allow_remote(boundaries, response)
 
-    with pytest.raises(httpx.ReadTimeout) as raised:
+    with pytest.raises(typer.Exit) as raised:
         logs._stream_remote(boundaries.console, level="INFO", filter_text="", no_color=True)
 
-    assert raised.value is failure
+    assert raised.value.exit_code == 9
     assert boundaries.stream.call_count == 1
     assert response.exits == [(httpx.ReadTimeout, failure)]
     assert boundaries.console.calls == [
@@ -345,6 +340,30 @@ def test_configuration_failure_propagates_before_version_or_http_boundaries(boun
     boundaries.get_config.assert_called_once_with()
     boundaries.get_version.assert_not_called()
     boundaries.stream.assert_not_called()
+    assert boundaries.console.calls == []
+
+
+def test_recent_remote_logs_use_finite_endpoint_and_limit(boundaries: SimpleNamespace, monkeypatch) -> None:
+    entry = {"timestamp": "2026-05-17T12:34:56Z", "level": "INFO", "event": "ready"}
+    get = MagicMock(return_value={"entries": [entry], "count": 1, "buffer_size": 10})
+    monkeypatch.setattr(client, "get", get)
+
+    logs._recent_remote(
+        boundaries.console,
+        level="INFO",
+        filter_text="worker",
+        lines=2,
+        no_color=True,
+        output="json",
+    )
+
+    get.assert_called_once_with(
+        "/api/v1/admin/logs",
+        {"level": "INFO", "limit": 2, "filter": "worker"},
+        operation="Read recent server logs",
+        resource="server logs",
+    )
+    assert boundaries.json_lines == [{"event": "log", "source": "remote", "log": entry}]
     assert boundaries.console.calls == []
 
 
@@ -379,29 +398,31 @@ def test_remote_sse_ignores_framing_and_formats_valid_json(boundaries: SimpleNam
         ("12:34:56.789 | ERROR   | services.ingest:push:73 - first line\nsecond line",),
         {"highlight": False},
     )
-    assert len(boundaries.console.calls) == 3
+    assert len(boundaries.console.calls) == 4
 
 
-def test_malformed_sse_json_is_printed_as_raw_data(boundaries: SimpleNamespace) -> None:
+def test_malformed_sse_json_is_categorized(boundaries: SimpleNamespace) -> None:
     response = StreamResponse(lines=["data: {not-json", "data: "])
     _allow_remote(boundaries, response)
 
-    logs._stream_remote(boundaries.console, level="DEBUG", filter_text="", no_color=False)
+    with pytest.raises(typer.Exit) as raised:
+        logs._stream_remote(boundaries.console, level="DEBUG", filter_text="", no_color=False)
 
-    assert boundaries.console.calls[-2:] == [(("{not-json",), {}), (("",), {})]
-    assert response.exits == [(None, None)]
+    assert raised.value.exit_code == 9
+    assert response.exits[0][1] is raised.value
 
 
-def test_multiline_sse_json_is_treated_as_separate_malformed_fragments(boundaries: SimpleNamespace) -> None:
+def test_multiline_sse_json_fails_on_the_first_malformed_record(boundaries: SimpleNamespace) -> None:
     first = '{"timestamp":"2026-05-17T12:34:56.789Z","level":"INFO",'
     second = '"event":"joined","logger_name":"svc","function":"run","line":7}'
     response = StreamResponse(lines=[f"data: {first}", f"data: {second}", ""])
     _allow_remote(boundaries, response)
 
-    logs._stream_remote(boundaries.console, level="INFO", filter_text="", no_color=True)
+    with pytest.raises(typer.Exit) as raised:
+        logs._stream_remote(boundaries.console, level="INFO", filter_text="", no_color=True)
 
-    assert boundaries.console.calls[-2:] == [((first,), {}), ((second,), {})]
-    assert response.exits == [(None, None)]
+    assert raised.value.exit_code == 9
+    assert response.exits[0][1] is raised.value
 
 
 @pytest.mark.parametrize("payload", ["[]", '"text"', "null"])
@@ -412,10 +433,11 @@ def test_json_payloads_that_are_not_objects_propagate_shape_error_and_close_stre
     response = StreamResponse(lines=[f"data: {payload}"])
     _allow_remote(boundaries, response)
 
-    with pytest.raises(AttributeError) as raised:
+    with pytest.raises(typer.Exit) as raised:
         logs._stream_remote(boundaries.console, level="INFO", filter_text="", no_color=True)
 
-    assert response.exits == [(AttributeError, raised.value)]
+    assert raised.value.exit_code == 9
+    assert response.exits[0][1] is raised.value
     assert len(boundaries.console.calls) == 2
 
 
@@ -428,18 +450,18 @@ def test_remote_interrupt_closes_stream_prints_stopped_and_exits_zero(
     exit_process = MagicMock(side_effect=SystemExit(0))
     monkeypatch.setattr(logs.sys, "exit", exit_process)
 
-    with pytest.raises(SystemExit) as raised:
-        logs._stream_remote(boundaries.console, level="DEBUG", filter_text="", no_color=True)
+    assert logs._stream_remote(boundaries.console, level="DEBUG", filter_text="", no_color=True) is None
 
-    assert raised.value.code == 0
     assert response.exits == [(KeyboardInterrupt, response.lines[0])]
     assert boundaries.console.calls[-1] == (("\n[dim]Stopped.[/dim]",), {})
-    exit_process.assert_called_once_with(0)
+    exit_process.assert_not_called()
 
 
-def test_remote_mode_dispatches_without_reading_local_path(boundaries: SimpleNamespace, monkeypatch) -> None:
-    remote_stream = MagicMock()
-    monkeypatch.setattr(logs, "_stream_remote", remote_stream)
+def test_remote_finite_mode_dispatches_without_opening_stream(boundaries: SimpleNamespace, monkeypatch) -> None:
+    recent = MagicMock()
+    stream = MagicMock()
+    monkeypatch.setattr(logs, "_recent_remote", recent)
+    monkeypatch.setattr(logs, "_stream_remote", stream)
 
     result = logs.logs(
         level="CRITICAL",
@@ -452,12 +474,15 @@ def test_remote_mode_dispatches_without_reading_local_path(boundaries: SimpleNam
 
     assert result is None
     boundaries.console_factory.assert_called_once_with(stderr=True, no_color=True)
-    remote_stream.assert_called_once_with(
+    recent.assert_called_once_with(
         boundaries.console,
         level="CRITICAL",
         filter_text="worker",
+        lines=3,
         no_color=True,
+        output="table",
     )
+    stream.assert_not_called()
     boundaries.sleep.assert_not_called()
 
 
@@ -472,17 +497,9 @@ def test_missing_local_file_prints_guidance_and_exits_one(boundaries: SimpleName
             no_color=False,
         )
 
-    assert raised.value.exit_code == 1
+    assert raised.value.exit_code == 5
     boundaries.console_factory.assert_called_once_with(stderr=True, no_color=False)
-    assert boundaries.console.calls == [
-        (
-            (
-                f"[yellow]No log file at {boundaries.log_path}[/yellow]\n"
-                f"[dim]Try [bold]observal logs {LONG_OPTION}remote[/bold] to stream from a hosted server.[/dim]",
-            ),
-            {},
-        )
-    ]
+    assert boundaries.console.calls == []
 
 
 def test_finite_local_mode_tails_then_applies_level_and_case_insensitive_text_filters(
@@ -532,7 +549,7 @@ def test_nonpositive_tail_length_reads_no_initial_lines(boundaries: SimpleNamesp
     assert boundaries.console.calls == []
 
 
-def test_initial_local_read_error_is_silently_treated_as_empty_in_finite_mode(
+def test_initial_local_read_error_is_categorized(
     boundaries: SimpleNamespace,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -541,16 +558,17 @@ def test_initial_local_read_error_is_silently_treated_as_empty_in_finite_mode(
     open_file = MagicMock(side_effect=failure)
     monkeypatch.setattr(builtins, "open", open_file)
 
-    result = logs.logs(
-        level="DEBUG",
-        filter_text="",
-        lines=20,
-        no_follow=True,
-        remote=False,
-        no_color=True,
-    )
+    with pytest.raises(typer.Exit) as raised:
+        logs.logs(
+            level="DEBUG",
+            filter_text="",
+            lines=20,
+            no_follow=True,
+            remote=False,
+            no_color=True,
+        )
 
-    assert result is None
+    assert raised.value.exit_code == 9
     open_file.assert_called_once_with(boundaries.log_path)
     assert boundaries.console.calls == []
 
@@ -611,7 +629,7 @@ def test_follow_open_error_propagates_after_initial_file_is_closed(
     open_file = MagicMock(side_effect=[initial, failure])
     monkeypatch.setattr(builtins, "open", open_file)
 
-    with pytest.raises(OSError) as raised:
+    with pytest.raises(typer.Exit) as raised:
         logs.logs(
             level="DEBUG",
             filter_text="",
@@ -621,7 +639,7 @@ def test_follow_open_error_propagates_after_initial_file_is_closed(
             no_color=True,
         )
 
-    assert raised.value is failure
+    assert raised.value.exit_code == 9
     assert initial.exits == [None]
     assert open_file.call_args_list == [call(boundaries.log_path), call(boundaries.log_path)]
     assert boundaries.console.calls == [((f"\n[dim]- Following {boundaries.log_path} (Ctrl+C to stop) -[/dim]\n",), {})]
@@ -660,7 +678,7 @@ def test_user_facing_ops_logs_route_uses_defaults_and_returns_success(
     ("arguments", "message"),
     [
         ([f"{LONG_OPTION}lines", "many"], "is not a valid integer"),
-        ([f"{LONG_OPTION}output", "json"], "No such option"),
+        ([f"{LONG_OPTION}output", "yaml"], "is not one of"),
     ],
 )
 def test_cli_validation_exits_two_before_constructing_console(
@@ -673,3 +691,44 @@ def test_cli_validation_exits_two_before_constructing_console(
     assert result.exit_code == 2, result.output
     assert message in result.output
     boundaries.console_factory.assert_not_called()
+
+
+def test_remote_json_lines_emit_one_record_per_entry_without_human_banners(boundaries: SimpleNamespace) -> None:
+    entry = {"timestamp": "2026-05-17T12:34:56Z", "level": "INFO", "event": "ready"}
+    response = StreamResponse(lines=[f"data: {json.dumps(entry)}"])
+    _allow_remote(boundaries, response)
+
+    logs._stream_remote(
+        boundaries.console,
+        level="INFO",
+        filter_text="",
+        no_color=True,
+        output="json",
+    )
+
+    assert boundaries.json_lines == [{"event": "log", "source": "remote", "log": entry}]
+    assert boundaries.console.calls == []
+
+
+def test_local_json_lines_emit_filtered_finite_records(boundaries: SimpleNamespace) -> None:
+    boundaries.log_path.write_text("now | INFO | svc:run:1 - ignored\nnow | ERROR | svc:run:2 - kept\n")
+
+    logs.logs(
+        level="WARNING",
+        filter_text="kept",
+        lines=20,
+        no_follow=True,
+        remote=False,
+        no_color=True,
+        output="json",
+    )
+
+    assert boundaries.json_lines == [
+        {
+            "event": "log",
+            "source": "local",
+            "level": "ERROR",
+            "line": "now | ERROR | svc:run:2 - kept",
+        }
+    ]
+    assert boundaries.console.calls == []

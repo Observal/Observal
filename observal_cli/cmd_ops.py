@@ -9,17 +9,28 @@
 
 from __future__ import annotations
 
-import time
+import json
+import sqlite3
+from contextlib import nullcontext, redirect_stdout
+from io import StringIO
+from pathlib import Path
+from tempfile import NamedTemporaryFile
+from urllib.parse import quote
+from uuid import UUID
 
 import typer
-from loguru import logger as optic
 from rich import print as rprint
 from rich.table import Table
+from typer.models import OptionInfo
 
 from observal_cli import client, config
+from observal_cli.constants import VALID_HARNESSES
+from observal_cli.errors import CliError, ErrorCategory, fail
 from observal_cli.prompts import password_input
 from observal_cli.render import (
+    OutputMode,
     console,
+    esc,
     kv_panel,
     output_json,
     relative_time,
@@ -32,32 +43,124 @@ from observal_cli.render import (
 # ops_app: Observability / operational commands group
 # ═══════════════════════════════════════════════════════════
 
+_RANKING_TYPES = ("mcp", "agent")
+_FEEDBACK_TYPES = ("mcp", "agent", "skill", "hook", "prompt", "sandbox")
+_ADMIN_ROLES = ("super_admin", "admin", "reviewer", "user")
+_REVIEW_TYPES = ("mcp", "skill", "hook", "prompt", "sandbox")
+_REVIEW_TABS = ("agents", "components")
+_SECURITY_SEVERITIES = ("info", "warning", "critical")
+_AUDIT_SOURCES = ("server", "cli")
+
+
+def _command_value(value):
+    return value.default if isinstance(value, OptionInfo) else value
+
+
+def _command_progress(output: OutputMode | str, message: str | None = None):
+    return nullcontext() if _command_value(output) == "json" else spinner(message)
+
+
+def _command_choice(value: str, allowed: tuple[str, ...], label: str, operation: str) -> str:
+    normalized = value.strip().lower()
+    if normalized not in allowed:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Unknown {label}: {value}.",
+            operation=operation,
+            resource=label,
+            remediation=f"Choose from: {', '.join(allowed)}.",
+        )
+    return normalized
+
+
+def _admin_user(email: str, output: OutputMode | str, operation: str) -> dict:
+    normalized = email.strip().lower()
+    with _command_progress(output, "Looking up user..."):
+        users = client.get("/api/v1/admin/users")
+    match = next((user for user in users if str(user.get("email", "")).lower() == normalized), None)
+    if match is None:
+        fail(
+            ErrorCategory.NOT_FOUND,
+            f"User not found: {email}.",
+            operation=operation,
+            resource="user",
+            remediation="Run `observal admin users --output json` and retry with an existing email.",
+        )
+    return match
+
+
+def _uuid(value: str, label: str, operation: str) -> str:
+    try:
+        return str(UUID(value))
+    except ValueError:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Invalid {label}: {value}.",
+            operation=operation,
+            resource=label,
+            remediation="Use a complete UUID.",
+        )
+
+
+def _atomic_write(path: Path, content: str, operation: str) -> None:
+    temporary: Path | None = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False) as file:
+            temporary = Path(file.name)
+            file.write(content)
+        temporary.replace(path)
+    except OSError as error:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            f"Could not write audit export: {path}.",
+            operation=operation,
+            resource=str(path),
+            remediation="Check the destination path and permissions, then retry.",
+            detail=repr(error),
+        )
+
+
 ops_app = typer.Typer(
     name="ops",
-    help="Observability and operational commands (traces, telemetry, dashboard, feedback)",
+    help=(
+        "Observability and operational commands (sessions, telemetry, rankings, feedback, insights)\n\n"
+        "Examples:\n"
+        "  observal ops traces\n"
+        "  observal ops top --type agent\n"
+        "  observal ops telemetry status"
+    ),
     no_args_is_help=True,
 )
 
 
 # ── Review ───────────────────────────────────────────────
 
-review_app = typer.Typer(help="Admin review commands")
+review_app = typer.Typer(
+    help=(
+        "Submission review commands\n\n"
+        "Examples:\n"
+        "  observal admin review list\n"
+        "  observal admin review show 1\n"
+        "  observal admin review approve 1"
+    )
+)
 
 
 @review_app.command(name="list")
 def review_list(
-    type_filter: str = typer.Option(None, "--type", "-t", help="Filter by type (mcp, skill, hook, prompt, sandbox)"),
-    tab: str = typer.Option(None, "--tab", help="Filter tab (agents, components)"),
-    output: str = typer.Option("table", "--output", "-o"),
+    type_filter: str | None = typer.Option(
+        None, "--type", "-t", help="Filter by component type (mcp, skill, hook, prompt, sandbox)"
+    ),
+    tab: str | None = typer.Option(None, "--tab", help="Filter tab (agents, components)"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
+    team_id: str | None = typer.Option(None, "--team-id", help="Filter by teamspace UUID"),
 ):
-    """List pending submissions awaiting admin review.
+    """List pending submissions awaiting review.
 
-    Shows all components and agents that have been submitted but not yet
-    approved or rejected. Use --type to filter by component type, or --tab
-    to separate agents from components.
-
-    Row numbers from the output can be used as shorthand in other review
-    commands (show, approve, reject).
+    Row numbers from this output can be used by show, approve, and reject.
 
     Examples:
 
@@ -67,16 +170,29 @@ def review_list(
 
         observal admin review list --tab agents --output json
     """
-    optic.trace("type_filter={}", type_filter)
+    team_id = _command_value(team_id)
     params = {}
+    if tab:
+        tab = _command_choice(tab, _REVIEW_TABS, "review tab", "List pending reviews")
     if type_filter:
+        type_filter = _command_choice(type_filter, _REVIEW_TYPES, "review type", "List pending reviews")
+        if tab == "agents":
+            fail(
+                ErrorCategory.VALIDATION,
+                "A component type cannot be combined with the agents tab.",
+                operation="List pending reviews",
+                resource="review filters",
+                remediation="Remove --type or use --tab components.",
+            )
         params["type"] = type_filter
+        tab = tab or "components"
     if tab:
         params["tab"] = tab
-    with spinner("Fetching reviews..."):
+    if team_id:
+        params["team_id"] = _uuid(team_id, "teamspace ID", "List pending reviews")
+    with _command_progress(output, "Fetching reviews..."):
         data = client.get("/api/v1/review", params=params or None)
-    if data:
-        config.save_last_results(data)
+    config.save_last_results(data, "review")
     if output == "json":
         output_json(data)
         return
@@ -94,96 +210,96 @@ def review_list(
     for i, item in enumerate(data, 1):
         table.add_row(
             str(i),
-            item.get("type", item.get("listing_type", "")),
-            item.get("name", ""),
-            item.get("version", ""),
-            item.get("submitted_by", ""),
+            esc(item.get("type", item.get("listing_type", ""))),
+            esc(item.get("name", "")),
+            esc(item.get("version", "")),
+            esc(item.get("submitted_by", "")),
             relative_time(item.get("created_at") or item.get("submitted_at")),
-            str(item["id"])[:12],
+            esc(str(item.get("id", ""))[:12]),
         )
     console.print(table)
 
 
 @review_app.command(name="show")
 def review_show(
-    review_id: str = typer.Argument(..., help="Name, row #, @alias, or UUID"),
-    output: str = typer.Option("table", "--output", "-o"),
+    review_id: str = typer.Argument(..., help="Name, row number, @alias, or UUID"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
-    """Show review details for a component or agent.
-
-    Displays metadata, validation results, and status for a pending
-    submission. Accepts a row number from `review list`, a name,
-    an @alias, or a UUID.
+    """Show review details for a component or Agent.
 
     Examples:
 
         observal admin review show 1
 
-        observal admin review show my-mcp-server
-
-        observal admin review show @my-alias --output json
+        observal admin review show my-mcp-server --output json
     """
-    resolved = config.resolve_alias(review_id)
-    with spinner():
-        item = client.get(f"/api/v1/review/{resolved}")
+    resolved = config.resolve_alias(review_id, expected_type="review")
+    with _command_progress(output):
+        item = client.get(f"/api/v1/review/{quote(resolved, safe='')}")
     if output == "json":
         output_json(item)
         return
     fields = [
-        ("Type", item.get("type", "N/A")),
+        ("Type", esc(item.get("type", "N/A"))),
         ("Status", status_badge(item.get("status", ""))),
-        ("Version", item.get("version", "N/A")),
-        ("Owner", item.get("owner", "N/A")),
-        ("Submitted By", item.get("submitted_by", "N/A")),
+        ("Version", esc(item.get("version", "N/A"))),
+        ("Owner", esc(item.get("owner", "N/A"))),
+        ("Submitted By", esc(item.get("submitted_by", "N/A"))),
         ("Created", relative_time(item.get("created_at"))),
-        ("Git URL", item.get("git_url", "N/A")),
-        ("Description", item.get("description", "") or "[dim]none[/dim]"),
-        ("ID", f"[dim]{item['id']}[/dim]"),
+        ("Git URL", esc(item.get("git_url", "N/A"))),
+        ("Description", esc(item.get("description")) if item.get("description") else "[dim]none[/dim]"),
+        ("ID", f"[dim]{esc(item.get('id', ''))}[/dim]"),
     ]
     if item.get("rejection_reason"):
-        fields.append(("Rejection Reason", f"[red]{item['rejection_reason']}[/red]"))
+        fields.append(("Rejection Reason", f"[red]{esc(item['rejection_reason'])}[/red]"))
     if item.get("mcp_validated") is not None:
         badge = "[green]✓ Validated[/green]" if item["mcp_validated"] else "[red]✗ Not validated[/red]"
         fields.append(("MCP Validation", badge))
-    if item.get("validation_results"):
-        for vr in item["validation_results"]:
-            passed = "[green]pass[/green]" if vr.get("passed") else "[red]fail[/red]"
-            fields.append((f"  {vr.get('stage', '?')}", passed))
-    console.print(kv_panel(item.get("name", "Review"), fields))
+    for validation in item.get("validation_results") or []:
+        passed = "[green]pass[/green]" if validation.get("passed") else "[red]fail[/red]"
+        fields.append((f"  {esc(validation.get('stage', '?'))}", passed))
+    console.print(kv_panel(esc(item.get("name", "Review")), fields))
+
+
+def _review_action_path(review_id: str, action: str, agent: bool, bundle: bool) -> str:
+    if agent and bundle:
+        fail(
+            ErrorCategory.VALIDATION,
+            "A review cannot be both an Agent and a bundle.",
+            operation=f"{action.title()} review",
+            resource="review type",
+            remediation="Choose only --agent or --bundle.",
+        )
+    resolved = quote(config.resolve_alias(review_id, expected_type="review"), safe="")
+    if agent:
+        return f"/api/v1/review/agents/{resolved}/{action}"
+    if bundle:
+        return f"/api/v1/review/bundles/{resolved}/{action}"
+    return f"/api/v1/review/{resolved}/{action}"
 
 
 @review_app.command(name="approve")
 def review_approve(
-    review_id: str = typer.Argument(..., help="Name, row #, @alias, or UUID"),
-    agent: bool = typer.Option(False, "--agent", "-a", help="Approve an agent (not a component)"),
+    review_id: str = typer.Argument(..., help="Name, row number, @alias, or UUID"),
+    agent: bool = typer.Option(False, "--agent", "-a", help="Approve an Agent"),
     bundle: bool = typer.Option(False, "--bundle", "-b", help="Approve an entire bundle atomically"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
-    """Approve a submission (component, agent, or bundle).
-
-    After `observal admin review list`, use a row number (e.g. 1),
-    the component/agent name, or a UUID prefix. Approved items become
-    visible in the public registry.
+    """Approve a component, Agent, or bundle submission.
 
     Examples:
 
         observal admin review approve 1
 
-        observal admin review approve my-mcp-server
-
-        observal admin review approve my-agent --agent
-
-        observal admin review approve my-bundle --bundle
+        observal admin review approve my-agent --agent --output json
     """
-    resolved = config.resolve_alias(review_id)
-    if agent:
-        path = f"/api/v1/review/agents/{resolved}/approve"
-    elif bundle:
-        path = f"/api/v1/review/bundles/{resolved}/approve"
-    else:
-        path = f"/api/v1/review/{resolved}/approve"
-    with spinner("Approving..."):
+    path = _review_action_path(review_id, "approve", agent, bundle)
+    with _command_progress(output, "Approving..."):
         result = client.post(path)
-    name = result.get("name", review_id)
+    if output == "json":
+        output_json(result)
+        return
+    name = esc(result.get("name", review_id))
     if bundle:
         rprint(f"[green]✓ Bundle approved: {name} ({result.get('approved_count', '?')} components)[/green]")
     else:
@@ -192,38 +308,36 @@ def review_approve(
 
 @review_app.command(name="reject")
 def review_reject(
-    review_id: str = typer.Argument(..., help="Name, row #, @alias, or UUID"),
+    review_id: str = typer.Argument(..., help="Name, row number, @alias, or UUID"),
     reason: str = typer.Option(..., "--reason", "-r", help="Rejection reason"),
-    agent: bool = typer.Option(False, "--agent", "-a", help="Reject an agent (not a component)"),
+    agent: bool = typer.Option(False, "--agent", "-a", help="Reject an Agent"),
     bundle: bool = typer.Option(False, "--bundle", "-b", help="Reject an entire bundle atomically"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
-    """Reject a submission (component, agent, or bundle).
-
-    After `observal admin review list`, use a row number (e.g. 1),
-    the component/agent name, or a UUID prefix. A reason is required
-    so the submitter understands why.
+    """Reject a component, Agent, or bundle submission.
 
     Examples:
 
         observal admin review reject 2 --reason "Missing README"
 
-        observal admin review reject my-agent --agent -r "Unsafe prompt"
-
-        observal admin review reject my-bundle --bundle -r "License issue"
+        observal admin review reject my-agent --agent --reason "Unsafe prompt" --output json
     """
-    resolved = config.resolve_alias(review_id)
-    if not reason.strip():
-        rprint("[red]Rejection reason cannot be empty.[/red]")
-        raise typer.Exit(1)
-    if agent:
-        path = f"/api/v1/review/agents/{resolved}/reject"
-    elif bundle:
-        path = f"/api/v1/review/bundles/{resolved}/reject"
-    else:
-        path = f"/api/v1/review/{resolved}/reject"
-    with spinner("Rejecting..."):
+    reason = reason.strip()
+    if not reason or len(reason) > 5000:
+        fail(
+            ErrorCategory.VALIDATION,
+            "Rejection reason must contain 1 to 5,000 characters.",
+            operation="Reject review",
+            resource="rejection reason",
+            remediation="Provide a concise, non-empty reason.",
+        )
+    path = _review_action_path(review_id, "reject", agent, bundle)
+    with _command_progress(output, "Rejecting..."):
         result = client.post(path, {"reason": reason})
-    name = result.get("name", review_id)
+    if output == "json":
+        output_json(result)
+        return
+    name = esc(result.get("name", review_id))
     if bundle:
         rprint(f"[yellow]✗ Bundle rejected: {name} ({result.get('rejected_count', '?')} components)[/yellow]")
     else:
@@ -232,11 +346,17 @@ def review_reject(
 
 # ── Telemetry ────────────────────────────────────────────
 
-telemetry_app = typer.Typer(help="Telemetry commands")
+telemetry_app = typer.Typer(
+    help=(
+        "Telemetry health commands\n\nExamples:\n  observal ops telemetry status\n  observal ops telemetry status --output json"
+    )
+)
 
 
 @telemetry_app.command(name="status")
-def telemetry_status():
+def telemetry_status(
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
+):
     """Check telemetry data flow status.
 
     Shows server-side event counts (tool calls, interactions) for the
@@ -247,140 +367,43 @@ def telemetry_status():
 
         observal ops telemetry status
     """
-    with spinner("Checking telemetry..."):
-        data = client.get("/api/v1/telemetry/status")
-    rprint(f"  Status:       [green]{data.get('status', 'unknown')}[/green]")
-    rprint(f"  Tool calls:   {data.get('tool_call_events', 0)} (last hour)")
-    rprint(f"  Interactions: {data.get('agent_interaction_events', 0)} (last hour)")
+    with _command_progress(output, "Checking telemetry..."):
+        server = client.get("/api/v1/telemetry/status")
 
-    # Show local buffer stats
+    from observal_cli.telemetry_buffer import stats as buffer_stats
+
     try:
-        from observal_cli.telemetry_buffer import stats as buffer_stats
+        outbox = {"available": True, **buffer_stats()}
+    except (OSError, RuntimeError, sqlite3.Error) as error:
+        outbox = {"available": False, "error": type(error).__name__}
 
-        buf = buffer_stats()
-        rprint()
-        rprint("  [bold]Durable Session Outbox[/bold]")
-        rprint(f"  Pending:      {buf['pending']} batches")
-        rprint(f"  Disk:         {buf['bytes'] / 1024:.1f} KiB")
-        if buf["oldest_pending"]:
-            rprint(f"  Oldest:       {buf['oldest_pending']} UTC")
-        if buf["last_sync"]:
-            rprint(f"  Last sync:    {buf['last_sync']} UTC")
-        if buf["total"] == 0:
-            rprint("  [dim]Outbox is empty (all observed records acknowledged)[/dim]")
-    except Exception:
-        pass
+    result = {"server": server, "outbox": outbox}
+    if output == "json":
+        output_json(result)
+        return
 
-
-@telemetry_app.command(name="test")
-def telemetry_test():
-    """Send a test telemetry event.
-
-    Submits a synthetic tool call event to the server to verify that
-    the telemetry ingestion pipeline is working end to end.
-
-    Examples:
-
-        observal ops telemetry test
-    """
-    with spinner("Sending test event..."):
-        result = client.post(
-            "/api/v1/telemetry/events",
-            {
-                "tool_calls": [
-                    {
-                        "mcp_server_id": "test-mcp",
-                        "tool_name": "test_tool",
-                        "status": "success",
-                        "latency_ms": 42,
-                        "harness": "test",
-                    }
-                ],
-            },
-        )
-    rprint(f"[green]✓ Test event sent![/green] Ingested: {result.get('ingested', 0)}")
-
-
-@ops_app.command(name="metrics")
-def _metrics(
-    item_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
-    item_type: str = typer.Option("mcp", "--type", "-t", help="mcp or agent"),
-    output: str = typer.Option("table", "--output", "-o"),
-    watch: bool = typer.Option(False, "--watch", "-w", help="Refresh every 5s"),
-):
-    """Show metrics for an MCP server or agent.
-
-    Displays downloads, call counts, error rates, and latency percentiles
-    for the specified item. Use --watch to auto-refresh every 5 seconds
-    (Ctrl+C to stop).
-
-    Examples:
-
-        observal ops metrics my-mcp
-
-        observal ops metrics my-agent --type agent
-
-        observal ops metrics @mcp-alias --watch
-
-        observal ops metrics my-mcp --output json
-    """
-    _metrics_impl(item_id, item_type, output, watch)
-
-
-def _metrics_impl(item_id, item_type, output, watch):
-    resolved = config.resolve_alias(item_id)
-
-    def _fetch_and_print():
-        if item_type == "agent":
-            data = client.get(f"/api/v1/agents/{resolved}/metrics")
-            if output == "json":
-                output_json(data)
-                return
-            total = data.get("total_interactions", 0)
-            rate = data.get("acceptance_rate") or 0
-            rprint("\n  [bold]Agent Metrics[/bold]")
-            rprint(f"  Interactions:   {total}")
-            rprint(f"  Downloads:      {data.get('total_downloads', 0)}")
-            rprint(f"  Acceptance:     [{'green' if rate > 0.7 else 'yellow' if rate > 0.4 else 'red'}]{rate:.1%}[/]")
-            rprint(f"  Avg tool calls: {data.get('avg_tool_calls', 0)}")
-            rprint(f"  Avg latency:    {(data.get('avg_latency_ms') or 0):.0f}ms")
-        else:
-            data = client.get(f"/api/v1/mcps/{resolved}/metrics")
-            if output == "json":
-                output_json(data)
-                return
-            err_rate = data.get("error_rate") or 0
-            rprint("\n  [bold]MCP Metrics[/bold]")
-            rprint(f"  Downloads:  {data.get('total_downloads', 0)}")
-            rprint(f"  Total calls: {data.get('total_calls', 0)}")
-            rprint(
-                f"  Error rate:  [{'red' if err_rate > 0.1 else 'yellow' if err_rate > 0.01 else 'green'}]{err_rate:.2%}[/]"
-            )
-            rprint(f"  Avg latency: {(data.get('avg_latency_ms') or 0):.0f}ms")
-            rprint(
-                f"  Latency p50/p90/p99: {data.get('p50_latency_ms', 0)}/{data.get('p90_latency_ms', 0)}/{data.get('p99_latency_ms', 0)}ms"
-            )
-        rprint()
-
-    if watch:
-        try:
-            while True:
-                console.clear()
-                rprint(f"[dim]Watching metrics for {resolved} (Ctrl+C to stop)[/dim]")
-                _fetch_and_print()
-                time.sleep(5)
-        except KeyboardInterrupt:
-            rprint("\n[dim]Stopped.[/dim]")
-    else:
-        with spinner("Loading metrics..."):
-            pass
-        _fetch_and_print()
+    rprint(f"  Status:       [green]{esc(server.get('status', 'unknown'))}[/green]")
+    rprint(f"  Tool calls:   {server.get('tool_call_events', 0)} (last hour)")
+    rprint(f"  Interactions: {server.get('agent_interaction_events', 0)} (last hour)")
+    rprint()
+    rprint("  [bold]Durable Session Outbox[/bold]")
+    if not outbox["available"]:
+        rprint(f"  [yellow]Unavailable:[/yellow] {esc(outbox['error'])}")
+        return
+    rprint(f"  Pending:      {outbox['pending']} batches")
+    rprint(f"  Disk:         {outbox['bytes'] / 1024:.1f} KiB")
+    if outbox["oldest_pending"]:
+        rprint(f"  Oldest:       {esc(outbox['oldest_pending'])} UTC")
+    if outbox["last_sync"]:
+        rprint(f"  Last sync:    {esc(outbox['last_sync'])} UTC")
+    if outbox["total"] == 0:
+        rprint("  [dim]Outbox is empty (all observed records acknowledged)[/dim]")
 
 
 @ops_app.command(name="top")
 def _top(
     item_type: str = typer.Option("mcp", "--type", "-t", help="mcp or agent"),
-    output: str = typer.Option("table", "--output", "-o"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
     """Show top MCP servers or agents by usage.
 
@@ -399,8 +422,9 @@ def _top(
 
 
 def _top_impl(item_type, output):
+    item_type = _command_choice(item_type, _RANKING_TYPES, "ranking type", "List top registry items")
     endpoint = "/api/v1/overview/top-mcps" if item_type == "mcp" else "/api/v1/overview/top-agents"
-    with spinner():
+    with _command_progress(output):
         data = client.get(endpoint)
     if output == "json":
         output_json(data)
@@ -415,7 +439,9 @@ def _top_impl(item_type, output):
     table.add_column("Downloads", justify="right")
     table.add_column("ID", style="dim", max_width=12)
     for i, item in enumerate(data, 1):
-        table.add_row(str(i), item["name"], str(int(item["value"])), str(item["id"])[:8] + "…")
+        table.add_row(
+            str(i), esc(item.get("name", "")), str(int(item.get("value", 0))), esc(str(item.get("id", ""))[:8] + "…")
+        )
     console.print(table)
 
 
@@ -429,6 +455,7 @@ def _rate(
     listing_type: str = typer.Option("mcp", "--type", "-t", help="mcp, agent, skill, hook, prompt, or sandbox"),
     comment: str | None = typer.Option(None, "--comment", "-c"),
     anonymous: bool = typer.Option(False, "--anonymous", "-a", help="Submit anonymously"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Rate an MCP server, agent, or component.
 
@@ -443,13 +470,22 @@ def _rate(
 
         observal ops rate my-mcp --stars 5 --anonymous
     """
-    _rate_impl(listing_id, stars, listing_type, comment, anonymous)
+    _rate_impl(listing_id, stars, listing_type, comment, anonymous, output)
 
 
-def _rate_impl(listing_id, stars, listing_type, comment, anonymous=False):
+def _rate_impl(listing_id, stars, listing_type, comment, anonymous=False, output="table"):
+    listing_type = _command_choice(listing_type, _FEEDBACK_TYPES, "feedback type", "Rate registry item")
+    if comment is not None and len(comment) > 5000:
+        fail(
+            ErrorCategory.VALIDATION,
+            "Feedback comment must be at most 5000 characters.",
+            operation="Rate registry item",
+            resource="feedback comment",
+            remediation="Shorten the comment and retry.",
+        )
     resolved = _resolve_listing_id(listing_id, listing_type)
-    with spinner("Submitting rating..."):
-        client.post(
+    with _command_progress(output, "Submitting rating..."):
+        result = client.post(
             "/api/v1/feedback",
             {
                 "listing_id": resolved,
@@ -459,6 +495,9 @@ def _rate_impl(listing_id, stars, listing_type, comment, anonymous=False):
                 "anonymous": anonymous,
             },
         )
+    if output == "json":
+        output_json(result)
+        return
     rprint(f"[green]\u2713 Rated {star_rating(stars)}[/green]")
 
 
@@ -469,6 +508,7 @@ def _rate_update(
     stars: int | None = typer.Option(None, "--stars", "-s", min=1, max=5, help="New rating 1-5"),
     comment: str | None = typer.Option(None, "--comment", "-c", help="New comment"),
     anonymous: bool | None = typer.Option(None, "--anonymous/--no-anonymous", help="Set or unset anonymous flag"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Update your existing review for an item.
 
@@ -480,10 +520,7 @@ def _rate_update(
 
         observal ops rate-update my-mcp --comment "Updated opinion" --anonymous
     """
-    resolved = _resolve_listing_id(listing_id, listing_type)
-    # First, get the user's existing review
-    with spinner("Fetching your review..."):
-        review = client.get(f"/api/v1/feedback/mine/{listing_type}/{resolved}")
+    listing_type = _command_choice(listing_type, _FEEDBACK_TYPES, "feedback type", "Update registry feedback")
     body = {}
     if stars is not None:
         body["rating"] = stars
@@ -492,10 +529,29 @@ def _rate_update(
     if anonymous is not None:
         body["anonymous"] = anonymous
     if not body:
-        rprint("[yellow]Nothing to update. Provide --stars, --comment, or --anonymous.[/yellow]")
-        raise typer.Exit(1)
-    with spinner("Updating review..."):
-        client.put(f"/api/v1/feedback/{review['id']}", body)
+        fail(
+            ErrorCategory.VALIDATION,
+            "No feedback changes were provided.",
+            operation="Update registry feedback",
+            resource="feedback update",
+            remediation="Provide --stars, --comment, --anonymous, or --no-anonymous.",
+        )
+    if comment is not None and len(comment) > 5000:
+        fail(
+            ErrorCategory.VALIDATION,
+            "Feedback comment must be at most 5000 characters.",
+            operation="Update registry feedback",
+            resource="feedback comment",
+            remediation="Shorten the comment and retry.",
+        )
+    resolved = _resolve_listing_id(listing_id, listing_type)
+    with _command_progress(output, "Fetching your review..."):
+        review = client.get(f"/api/v1/feedback/mine/{listing_type}/{resolved}")
+    with _command_progress(output, "Updating review..."):
+        result = client.put(f"/api/v1/feedback/{review['id']}", body)
+    if output == "json":
+        output_json(result)
+        return
     rprint("[green]\u2713 Review updated[/green]")
 
 
@@ -503,6 +559,8 @@ def _rate_update(
 def _rate_delete(
     listing_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
     listing_type: str = typer.Option("mcp", "--type", "-t", help="mcp, agent, skill, hook, prompt, or sandbox"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Delete your review for an item.
 
@@ -514,37 +572,54 @@ def _rate_delete(
 
         observal ops rate-delete my-agent --type agent
     """
+    listing_type = _command_choice(listing_type, _FEEDBACK_TYPES, "feedback type", "Delete registry feedback")
+    yes = _command_value(yes)
+    output = _command_value(output)
+    if output == "json" and not yes:
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON mode cannot prompt before deleting feedback.",
+            operation="Delete registry feedback",
+            resource="feedback",
+            remediation="Add --yes to confirm deletion.",
+        )
     resolved = _resolve_listing_id(listing_id, listing_type)
-    with spinner("Fetching your review..."):
+    with _command_progress(output, "Fetching your review..."):
         review = client.get(f"/api/v1/feedback/mine/{listing_type}/{resolved}")
-    with spinner("Deleting review..."):
-        client.delete(f"/api/v1/feedback/{review['id']}")
+    if not yes and not typer.confirm("Delete your review permanently?"):
+        raise typer.Abort()
+    with _command_progress(output, "Deleting review..."):
+        result = client.delete(f"/api/v1/feedback/{review['id']}")
+    if output == "json":
+        output_json(result)
+        return
     rprint("[green]\u2713 Review deleted[/green]")
 
 
 def _resolve_listing_id(listing_id: str, listing_type: str) -> str:
-    """Resolve a name/alias to UUID for feedback operations."""
-    resolved = config.resolve_alias(listing_id)
-    try:
-        import uuid as _uuid
+    """Resolve a UUID, canonical name, row, alias, or unambiguous bare name."""
+    import uuid
 
-        _uuid.UUID(resolved)
+    try:
+        return str(uuid.UUID(listing_id))
     except ValueError:
-        endpoint = "/api/v1/agents" if listing_type == "agent" else f"/api/v1/{listing_type}s"
-        try:
-            item = client.get(f"{endpoint}/{resolved}")
-            resolved = item["id"]
-        except Exception:
-            rprint(f"[red]Could not find {listing_type} named '{resolved}'[/red]")
-            raise typer.Exit(1)
-    return resolved
+        pass
+    resolved = client.resolve_registry_reference(listing_type, listing_id)
+    try:
+        return str(uuid.UUID(resolved))
+    except ValueError:
+        result = client.get(
+            "/api/v1/registry/resolve",
+            params={"type": listing_type, "identifier": resolved},
+        )
+        return str(result["id"])
 
 
 @ops_app.command(name="feedback")
 def _feedback(
     listing_id: str = typer.Argument(..., help="ID, name, row number, or @alias"),
     listing_type: str = typer.Option("mcp", "--type", "-t"),
-    output: str = typer.Option("table", "--output", "-o"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
     """Show feedback for an MCP server or agent.
 
@@ -563,8 +638,9 @@ def _feedback(
 
 
 def _feedback_impl(listing_id, listing_type, output):
-    resolved = config.resolve_alias(listing_id)
-    with spinner():
+    listing_type = _command_choice(listing_type, _FEEDBACK_TYPES, "feedback type", "Show registry feedback")
+    resolved = _resolve_listing_id(listing_id, listing_type)
+    with _command_progress(output):
         data = client.get(f"/api/v1/feedback/{listing_type}/{resolved}")
         summary = client.get(f"/api/v1/feedback/summary/{resolved}")
 
@@ -581,18 +657,26 @@ def _feedback_impl(listing_id, listing_type, output):
     rprint(f"\n  {star_rating(round(avg))} [bold]{avg:.1f}[/bold]/5 ({total} reviews)\n")
     for fb in data:
         stars_str = star_rating(fb.get("rating", 0))
-        comment = f"  {fb['comment']}" if fb.get("comment") else ""
+        comment = f"  {esc(fb['comment'])}" if fb.get("comment") else ""
         rprint(f"  {stars_str}{comment}")
     rprint()
 
 
 # ── Admin ────────────────────────────────────────────────
 
-admin_app = typer.Typer(help="Admin commands")
+admin_app = typer.Typer(
+    help=(
+        "Core administration and submission review commands\n\n"
+        "Examples:\n"
+        "  observal admin diagnostics\n"
+        "  observal admin users\n"
+        "  observal admin review list"
+    )
+)
 
 
 @admin_app.command(name="settings")
-def admin_settings(output: str = typer.Option("table", "--output", "-o")):
+def admin_settings(output: OutputMode = typer.Option("table", "--output", "-o")):
     """List server settings.
 
     Displays all configured key-value server settings.
@@ -603,7 +687,7 @@ def admin_settings(output: str = typer.Option("table", "--output", "-o")):
 
         observal admin settings --output json
     """
-    with spinner():
+    with _command_progress(output):
         data = client.get("/api/v1/admin/settings")
     if output == "json":
         output_json(data)
@@ -615,7 +699,7 @@ def admin_settings(output: str = typer.Option("table", "--output", "-o")):
     table.add_column("Key", style="bold")
     table.add_column("Value")
     for item in data:
-        table.add_row(item["key"], item["value"])
+        table.add_row(esc(item.get("key", "")), esc(item.get("value", "")))
     console.print(table)
 
 
@@ -623,6 +707,7 @@ def admin_settings(output: str = typer.Option("table", "--output", "-o")):
 def admin_set(
     key: str = typer.Argument(...),
     value: str = typer.Argument(...),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
     """Set a server setting.
 
@@ -635,13 +720,16 @@ def admin_set(
 
         observal admin set telemetry_retention_days 90
     """
-    with spinner():
-        client.put(f"/api/v1/admin/settings/{key}", {"value": value})
-    rprint(f"[green]✓ {key} = {value}[/green]")
+    with _command_progress(output):
+        result = client.put(f"/api/v1/admin/settings/{quote(key, safe='')}", {"value": value})
+    if output == "json":
+        output_json(result)
+        return
+    rprint(f"[green]✓ Updated {esc(result.get('key', key))}[/green]")
 
 
 @admin_app.command(name="users")
-def admin_users(output: str = typer.Option("table", "--output", "-o")):
+def admin_users(output: OutputMode = typer.Option("table", "--output", "-o")):
     """List all users.
 
     Displays all registered users with their email, name, role, and ID.
@@ -653,7 +741,7 @@ def admin_users(output: str = typer.Option("table", "--output", "-o")):
 
         observal admin users --output json
     """
-    with spinner():
+    with _command_progress(output):
         data = client.get("/api/v1/admin/users")
     if output == "json":
         output_json(data)
@@ -664,10 +752,16 @@ def admin_users(output: str = typer.Option("table", "--output", "-o")):
     table.add_column("Name", style="bold")
     table.add_column("Role")
     table.add_column("ID", style="dim", max_width=12)
-    for i, u in enumerate(data, 1):
-        role_color = "green" if u["role"] == "admin" else "cyan" if u["role"] == "developer" else "white"
+    role_colors = {"super_admin": "magenta", "admin": "green", "reviewer": "cyan", "user": "white"}
+    for i, user in enumerate(data, 1):
+        role = str(user.get("role", ""))
+        color = role_colors.get(role, "white")
         table.add_row(
-            str(i), u["email"], u["name"], f"[{role_color}]{u['role']}[/{role_color}]", str(u["id"])[:8] + "…"
+            str(i),
+            esc(user.get("email", "")),
+            esc(user.get("name", "")),
+            f"[{color}]{esc(role)}[/{color}]",
+            esc(str(user.get("id", ""))[:8] + "…"),
         )
     console.print(table)
 
@@ -677,9 +771,9 @@ def admin_create_user(
     email: str = typer.Argument(..., help="Email address for the new user"),
     name: str = typer.Argument(..., help="Full name of the user"),
     username: str = typer.Option(None, "--username", "-u", help="Username (optional)"),
-    role: str = typer.Option("reviewer", "--role", "-r", help="Role: admin, reviewer, or user"),
+    role: str = typer.Option("reviewer", "--role", "-r", help="Role: super_admin, admin, reviewer, or user"),
     password: str = typer.Option(None, "--password", "-p", help="Password (auto-generated if omitted)"),
-    output: str = typer.Option("table", "--output", "-o"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
     """Create a new user account. Requires admin privileges.
 
@@ -693,13 +787,14 @@ def admin_create_user(
 
         observal admin create-user carol@example.com "Carol Lee" -u carol -r reviewer -p s3cret
     """
-    body: dict = {"email": email, "name": name, "role": role}
+    role = _command_choice(role, _ADMIN_ROLES, "user role", "Create administrator-managed user")
+    body: dict = {"email": email.strip().lower(), "name": name.strip(), "role": role}
     if username:
         body["username"] = username
     if password:
         body["password"] = password
 
-    with spinner("Creating user..."):
+    with _command_progress(output, "Creating user..."):
         data = client.post("/api/v1/admin/users", body)
 
     if output == "json":
@@ -707,13 +802,13 @@ def admin_create_user(
         return
 
     rprint("\n[green]User created successfully.[/green]\n")
-    rprint(f"  [bold]Name:[/bold]     {data['name']}")
-    rprint(f"  [bold]Email:[/bold]    {data['email']}")
+    rprint(f"  [bold]Name:[/bold]     {esc(data.get('name', ''))}")
+    rprint(f"  [bold]Email:[/bold]    {esc(data.get('email', ''))}")
     if data.get("username"):
-        rprint(f"  [bold]Username:[/bold] {data['username']}")
-    rprint(f"  [bold]Role:[/bold]     {data['role']}")
-    rprint(f"  [bold]ID:[/bold]       {data['id']}")
-    rprint(f"\n[yellow]Password:[/yellow] {data['password']}")
+        rprint(f"  [bold]Username:[/bold] {esc(data['username'])}")
+    rprint(f"  [bold]Role:[/bold]     {esc(data.get('role', ''))}")
+    rprint(f"  [bold]ID:[/bold]       {esc(data.get('id', ''))}")
+    rprint(f"\n[yellow]Password:[/yellow] {esc(data.get('password', ''))}")
     rprint("[dim]Save this, it will not be shown again.[/dim]")
 
 
@@ -721,83 +816,102 @@ def admin_create_user(
 def admin_reset_password(
     email: str = typer.Argument(..., help="Email of the user to reset"),
     generate: bool = typer.Option(False, "--generate", "-g", help="Generate a secure random password"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
     """Reset a user's password. Requires admin privileges.
 
-    Provide the user's email and either enter a new password interactively
-    or use --generate to create a secure random password.
+    JSON mode requires --generate and never prompts.
 
     Examples:
 
         observal admin reset-password alice@example.com
 
-        observal admin reset-password alice@example.com --generate
+        observal admin reset-password alice@example.com --generate --output json
     """
-    # Look up user ID by email
-    with spinner("Looking up user..."):
-        users = client.get("/api/v1/admin/users")
-    match = next((u for u in users if u["email"] == email.strip().lower()), None)
-    if not match:
-        rprint(f"[red]User not found:[/red] {email}")
-        raise typer.Exit(1)
-
+    output = _command_value(output)
+    if output == "json" and not generate:
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON mode cannot prompt for a new password.",
+            operation="Reset user password",
+            resource="new password",
+            remediation="Add --generate.",
+        )
+    match = _admin_user(email, output, "Reset user password")
     if generate:
         body: dict = {"generate": True}
     else:
         new_password = password_input("New password")
-        confirm = password_input("Confirm password")
-        if new_password != confirm:
-            rprint("[red]Passwords do not match.[/red]")
-            raise typer.Exit(1)
+        confirmation = password_input("Confirm password")
+        if new_password != confirmation:
+            fail(
+                ErrorCategory.VALIDATION,
+                "Passwords do not match.",
+                operation="Reset user password",
+                resource="new password",
+                remediation="Enter the same password twice.",
+            )
         body = {"new_password": new_password}
 
-    with spinner("Resetting password..."):
+    with _command_progress(output, "Resetting password..."):
         result = client.put(f"/api/v1/admin/users/{match['id']}/password", body)
-
-    rprint(f"[green]{result['message']}[/green]")
+    if output == "json":
+        output_json(result)
+        return
+    rprint(f"[green]{esc(result.get('message', 'Password reset.'))}[/green]")
     if "generated_password" in result:
-        rprint(f"\n[yellow]Generated password:[/yellow] {result['generated_password']}")
+        rprint(f"\n[yellow]Generated password:[/yellow] {esc(result['generated_password'])}")
         rprint("[dim]Save this, it will not be shown again.[/dim]")
 
 
 @admin_app.command(name="delete-user")
 def admin_delete_user(
     email: str = typer.Argument(..., help="Email of the user to delete"),
-    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+    force: bool = typer.Option(False, "--force", "--yes", "-f", help="Skip confirmation prompt"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
     """Delete a user account. Requires admin privileges.
 
-    This permanently removes the user and all associated data (API keys, etc.).
+    JSON mode requires --force and never prompts.
 
     Examples:
 
         observal admin delete-user alice@example.com
 
-        observal admin delete-user alice@example.com --force
+        observal admin delete-user alice@example.com --force --output json
     """
-    # Look up user ID by email
-    with spinner("Looking up user..."):
-        users = client.get("/api/v1/admin/users")
-    match = next((u for u in users if u["email"] == email.strip().lower()), None)
-    if not match:
-        rprint(f"[red]User not found:[/red] {email}")
-        raise typer.Exit(1)
-
-    rprint(f"\n  [bold]{match['name']}[/bold] ({match['email']}), {match['role']}")
+    force = _command_value(force)
+    output = _command_value(output)
+    if output == "json" and not force:
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON mode cannot prompt before deleting a user.",
+            operation="Delete administrator-managed user",
+            resource="user",
+            remediation="Add --force to confirm deletion.",
+        )
+    match = _admin_user(email, output, "Delete administrator-managed user")
     if not force:
+        rprint(
+            f"\n  [bold]{esc(match.get('name', ''))}[/bold] "
+            f"({esc(match.get('email', ''))}), {esc(match.get('role', ''))}"
+        )
         typer.confirm("\nPermanently delete this user?", abort=True)
 
-    with spinner("Deleting user..."):
+    with _command_progress(output, "Deleting user..."):
         client.delete(f"/api/v1/admin/users/{match['id']}")
-
-    rprint(f"[green]Deleted user {match['email']}[/green]")
+    result = {"deleted": True, "id": match.get("id"), "email": match.get("email")}
+    if output == "json":
+        output_json(result)
+        return
+    rprint(f"[green]Deleted user {esc(match.get('email', ''))}[/green]")
 
 
 # ── Diagnostics ─────────────────────────────────────────
 
 
 @admin_app.command(name="diagnostics")
-def admin_diagnostics(output: str = typer.Option("table", "--output", "-o")):
+def admin_diagnostics(output: OutputMode = typer.Option("table", "--output", "-o")):
     """Show system diagnostics and health status.
 
     Reports overall system health, database connectivity, JWT key status,
@@ -810,7 +924,7 @@ def admin_diagnostics(output: str = typer.Option("table", "--output", "-o")):
 
         observal admin diagnostics --output json
     """
-    with spinner():
+    with _command_progress(output):
         data = client.get("/api/v1/admin/diagnostics")
     if output == "json":
         output_json(data)
@@ -818,21 +932,21 @@ def admin_diagnostics(output: str = typer.Option("table", "--output", "-o")):
 
     overall = data.get("status", "unknown")
     color = {"ok": "green", "degraded": "yellow", "unhealthy": "red"}.get(overall, "white")
-    rprint(f"\n  Overall: [{color}]{overall}[/{color}]")
+    rprint(f"\n  Overall: [{color}]{esc(overall)}[/{color}]")
 
     checks = data.get("checks", {})
 
     db = checks.get("database", {})
     if db:
         db_color = "green" if db.get("status") == "ok" else "red"
-        rprint(f"\n  Database: [{db_color}]{db.get('status', 'unknown')}[/{db_color}]")
+        rprint(f"\n  Database: [{db_color}]{esc(db.get('status', 'unknown'))}[/{db_color}]")
         rprint(f"    Users: {db.get('users', '?')}")
 
     jwt_info = checks.get("jwt_keys", {})
     if jwt_info:
         jwt_color = "green" if jwt_info.get("status") == "ok" else "red"
-        rprint(f"\n  JWT:     [{jwt_color}]{jwt_info.get('status', 'unknown')}[/{jwt_color}]")
-        rprint(f"    Algorithm: {jwt_info.get('algorithm', '?')}")
+        rprint(f"\n  JWT:     [{jwt_color}]{esc(jwt_info.get('status', 'unknown'))}[/{jwt_color}]")
+        rprint(f"    Algorithm: {esc(jwt_info.get('algorithm', '?'))}")
 
     runtime_cfg = checks.get("runtime_config", {})
     if runtime_cfg:
@@ -840,7 +954,7 @@ def admin_diagnostics(output: str = typer.Option("table", "--output", "-o")):
         if issues:
             rprint("\n  [yellow]Configuration issues:[/yellow]")
             for issue in issues:
-                rprint(f"    - {issue}")
+                rprint(f"    • {esc(issue)}")
         else:
             rprint("\n  Configuration: [green]ok[/green]")
     rprint()
@@ -850,7 +964,7 @@ def admin_diagnostics(output: str = typer.Option("table", "--output", "-o")):
 
 
 @admin_app.command(name="saml-config")
-def admin_saml_config(output: str = typer.Option("table", "--output", "-o")):
+def admin_saml_config(output: OutputMode = typer.Option("table", "--output", "-o")):
     """View current SAML SSO configuration.
 
     Displays the IdP entity ID, SSO/SLO URLs, SP entity ID, and whether
@@ -862,7 +976,7 @@ def admin_saml_config(output: str = typer.Option("table", "--output", "-o")):
 
         observal admin saml-config --output json
     """
-    with spinner():
+    with _command_progress(output):
         data = client.get("/api/v1/admin/saml-config")
     if output == "json":
         output_json(data)
@@ -873,10 +987,10 @@ def admin_saml_config(output: str = typer.Option("table", "--output", "-o")):
         return
 
     rprint("\n[bold]SAML SSO Configuration[/bold]\n")
-    for key in ("idp_entity_id", "idp_sso_url", "idp_slo_url", "sp_entity_id", "saml_active", "jit_provisioning"):
-        val = data.get(key)
-        if val is not None:
-            display = "[green]Yes[/green]" if val is True else "[red]No[/red]" if val is False else str(val)
+    for key in ("source", "idp_entity_id", "idp_sso_url", "idp_slo_url", "sp_entity_id", "active", "jit_provisioning"):
+        value = data.get(key)
+        if value is not None:
+            display = "[green]Yes[/green]" if value is True else "[red]No[/red]" if value is False else esc(value)
             rprint(f"  {key}: {display}")
     rprint()
 
@@ -890,6 +1004,7 @@ def admin_saml_config_set(
     sp_entity_id: str = typer.Option(None, "--sp-entity-id", help="SP Entity ID"),
     jit: bool = typer.Option(True, "--jit/--no-jit", help="Enable JIT user provisioning"),
     active: bool = typer.Option(True, "--active/--inactive", help="Enable SAML SSO"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
     """Create or update SAML SSO configuration.
 
@@ -899,32 +1014,50 @@ def admin_saml_config_set(
             --idp-sso-url https://idp.example.com/sso \\
             --idp-x509-cert "$(cat idp-cert.pem)"
     """
-    body: dict = {"saml_active": active, "jit_provisioning": jit}
-    if idp_entity_id:
-        body["idp_entity_id"] = idp_entity_id
-    if idp_sso_url:
-        body["idp_sso_url"] = idp_sso_url
+    required = {
+        "IdP entity ID": idp_entity_id,
+        "IdP SSO URL": idp_sso_url,
+        "IdP X.509 certificate": idp_x509_cert,
+    }
+    missing = [label for label, value in required.items() if not value or not value.strip()]
+    if missing:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Missing required SAML values: {', '.join(missing)}.",
+            operation="Update SAML configuration",
+            resource="SAML configuration",
+            remediation="Provide --idp-entity-id, --idp-sso-url, and --idp-x509-cert.",
+        )
+    body: dict = {
+        "idp_entity_id": idp_entity_id.strip(),
+        "idp_sso_url": idp_sso_url.strip(),
+        "idp_x509_cert": idp_x509_cert.strip(),
+        "active": active,
+        "jit_provisioning": jit,
+    }
     if idp_slo_url:
-        body["idp_slo_url"] = idp_slo_url
-    if idp_x509_cert:
-        body["idp_x509_cert"] = idp_x509_cert
+        body["idp_slo_url"] = idp_slo_url.strip()
     if sp_entity_id:
-        body["sp_entity_id"] = sp_entity_id
+        body["sp_entity_id"] = sp_entity_id.strip()
 
-    with spinner("Updating SAML config..."):
+    with _command_progress(output, "Updating SAML config..."):
         result = client.put("/api/v1/admin/saml-config", body)
+    if output == "json":
+        output_json(result)
+        return
     rprint("[green]SAML SSO configuration updated.[/green]")
     if result.get("sp_entity_id"):
-        rprint(f"  SP Entity ID:  {result['sp_entity_id']}")
+        rprint(f"  SP Entity ID:  {esc(result['sp_entity_id'])}")
     if result.get("sp_acs_url"):
-        rprint(f"  SP ACS URL:    {result['sp_acs_url']}")
+        rprint(f"  SP ACS URL:    {esc(result['sp_acs_url'])}")
     if result.get("sp_metadata_url"):
-        rprint(f"  SP Metadata:   {result['sp_metadata_url']}")
+        rprint(f"  SP Metadata:   {esc(result['sp_metadata_url'])}")
 
 
 @admin_app.command(name="saml-config-delete")
 def admin_saml_config_delete(
-    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+    force: bool = typer.Option(False, "--force", "--yes", "-f", help="Skip confirmation prompt"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
     """Delete SAML SSO configuration. Disables SAML SSO.
 
@@ -937,10 +1070,23 @@ def admin_saml_config_delete(
 
         observal admin saml-config-delete --force
     """
+    force = _command_value(force)
+    output = _command_value(output)
+    if output == "json" and not force:
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON mode cannot prompt before deleting SAML configuration.",
+            operation="Delete SAML configuration",
+            resource="SAML configuration",
+            remediation="Add --force to confirm deletion.",
+        )
     if not force:
         typer.confirm("This will disable SAML SSO for all users. Continue?", abort=True)
-    with spinner("Deleting SAML config..."):
-        client.delete("/api/v1/admin/saml-config")
+    with _command_progress(output, "Deleting SAML config..."):
+        result = client.delete("/api/v1/admin/saml-config")
+    if output == "json":
+        output_json(result)
+        return
     rprint("[green]SAML SSO configuration deleted.[/green]")
 
 
@@ -948,7 +1094,7 @@ def admin_saml_config_delete(
 
 
 @admin_app.command(name="scim-tokens")
-def admin_scim_tokens(output: str = typer.Option("table", "--output", "-o")):
+def admin_scim_tokens(output: OutputMode = typer.Option("table", "--output", "-o")):
     """List SCIM provisioning tokens.
 
     Shows all SCIM bearer tokens with their prefix, description,
@@ -960,7 +1106,7 @@ def admin_scim_tokens(output: str = typer.Option("table", "--output", "-o")):
 
         observal admin scim-tokens --output json
     """
-    with spinner():
+    with _command_progress(output):
         data = client.get("/api/v1/admin/scim-tokens")
     if output == "json":
         output_json(data)
@@ -979,11 +1125,11 @@ def admin_scim_tokens(output: str = typer.Option("table", "--output", "-o")):
         active = "[green]Yes[/green]" if t.get("active") else "[red]No[/red]"
         created = t.get("created_at", "")[:10] if t.get("created_at") else "-"
         table.add_row(
-            str(t.get("id", ""))[:8] + "...",
-            t.get("token_prefix", ""),
-            t.get("description", "-"),
+            esc(str(t.get("id", ""))[:8] + "..."),
+            esc(t.get("token_prefix", "")),
+            esc(t.get("description", "-")),
             active,
-            created,
+            esc(created),
         )
     console.print(table)
 
@@ -991,6 +1137,7 @@ def admin_scim_tokens(output: str = typer.Option("table", "--output", "-o")):
 @admin_app.command(name="scim-token-create")
 def admin_scim_token_create(
     description: str = typer.Option("", "--description", "-d", help="Token description"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
     """Create a new SCIM provisioning token.
 
@@ -1003,19 +1150,23 @@ def admin_scim_token_create(
     body: dict = {}
     if description:
         body["description"] = description
-    with spinner("Creating SCIM token..."):
+    with _command_progress(output, "Creating SCIM token..."):
         result = client.post("/api/v1/admin/scim-tokens", body)
+    if output == "json":
+        output_json(result)
+        return
     rprint("[green]SCIM token created.[/green]")
-    rprint(f"\n[yellow]Token:[/yellow] {result.get('token', '')}")
+    rprint(f"\n[yellow]Token:[/yellow] {esc(result.get('token', ''))}")
     rprint("[dim]Save this -- it will not be shown again.[/dim]")
     if result.get("description"):
-        rprint(f"  Description: {result['description']}")
+        rprint(f"  Description: {esc(result['description'])}")
 
 
 @admin_app.command(name="scim-token-revoke")
 def admin_scim_token_revoke(
     token_id: str = typer.Argument(..., help="Token ID to revoke"),
-    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+    force: bool = typer.Option(False, "--force", "--yes", "-f", help="Skip confirmation prompt"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
     """Revoke a SCIM provisioning token.
 
@@ -1028,11 +1179,25 @@ def admin_scim_token_revoke(
 
         observal admin scim-token-revoke abc12345-uuid --force
     """
+    token_id = _uuid(token_id, "SCIM token ID", "Revoke SCIM token")
+    force = _command_value(force)
+    output = _command_value(output)
+    if output == "json" and not force:
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON mode cannot prompt before revoking a SCIM token.",
+            operation="Revoke SCIM token",
+            resource="SCIM token",
+            remediation="Add --force to confirm revocation.",
+        )
     if not force:
         typer.confirm(f"Revoke SCIM token {token_id[:8]}...?", abort=True)
-    with spinner("Revoking SCIM token..."):
-        client.delete(f"/api/v1/admin/scim-tokens/{token_id}")
-    rprint(f"[green]SCIM token {token_id[:8]}... revoked.[/green]")
+    with _command_progress(output, "Revoking SCIM token..."):
+        result = client.delete(f"/api/v1/admin/scim-tokens/{token_id}")
+    if output == "json":
+        output_json(result)
+        return
+    rprint(f"[green]SCIM token {esc(token_id[:8])}... revoked.[/green]")
 
 
 # ── Security Events ─────────────────────────────────────
@@ -1040,11 +1205,12 @@ def admin_scim_token_revoke(
 
 @admin_app.command(name="security-events")
 def admin_security_events(
-    event_type: str = typer.Option(None, "--type", "-t", help="Filter by event type"),
-    severity: str = typer.Option(None, "--severity", "-s", help="Filter: info, warning, critical"),
-    actor: str = typer.Option(None, "--actor", "-a", help="Filter by actor email"),
-    limit: int = typer.Option(50, "--limit", "-n"),
-    output: str = typer.Option("table", "--output", "-o"),
+    event_type: str | None = typer.Option(None, "--type", "-t", help="Filter by event type"),
+    severity: str | None = typer.Option(None, "--severity", "-s", help="Filter: info, warning, critical"),
+    actor: str | None = typer.Option(None, "--actor", "-a", help="Filter by actor email"),
+    limit: int = typer.Option(50, "--limit", "-n", min=1, max=1000),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
+    offset: int = typer.Option(0, "--offset", min=0, help="Skip the first N events"),
 ):
     """View security events log.
 
@@ -1058,22 +1224,20 @@ def admin_security_events(
         observal admin security-events --type auth.login --severity critical
 
         observal admin security-events --actor alice@example.com -n 100
-
-        observal admin security-events --output json
     """
-    params: dict = {"limit": str(limit)}
+    offset = _command_value(offset)
+    params: dict = {"limit": limit, "offset": offset}
     if event_type:
-        params["event_type"] = event_type
+        params["event_type"] = event_type.strip()
     if severity:
-        params["severity"] = severity
+        params["severity"] = _command_choice(
+            severity, _SECURITY_SEVERITIES, "security severity", "List security events"
+        )
     if actor:
-        params["actor_email"] = actor
+        params["actor_email"] = actor.strip()
 
-    from urllib.parse import urlencode
-
-    qs = f"?{urlencode(params)}" if params else ""
-    with spinner():
-        data = client.get(f"/api/v1/admin/security-events{qs}")
+    with _command_progress(output):
+        data = client.get("/api/v1/admin/security-events", params=params)
     events = data.get("events", data) if isinstance(data, dict) else data
     if output == "json":
         output_json(data)
@@ -1093,14 +1257,14 @@ def admin_security_events(
         sev_color = {"critical": "red", "warning": "yellow", "info": "dim"}.get(sev, "white")
         outcome = ev.get("outcome", "")
         outcome_color = "green" if outcome == "success" else "red" if outcome == "failure" else "white"
-        ts = ev.get("timestamp", ev.get("created_at", ""))[:19]
+        timestamp = str(ev.get("timestamp") or ev.get("created_at") or "")[:19]
         table.add_row(
-            ts,
-            ev.get("event_type", ""),
-            f"[{sev_color}]{sev}[/{sev_color}]",
-            ev.get("actor_email", "-"),
-            f"[{outcome_color}]{outcome}[/{outcome_color}]",
-            (ev.get("detail", "") or "")[:40],
+            esc(timestamp),
+            esc(ev.get("event_type", "")),
+            f"[{sev_color}]{esc(sev)}[/{sev_color}]",
+            esc(ev.get("actor_email", "-")),
+            f"[{outcome_color}]{esc(outcome)}[/{outcome_color}]",
+            esc(str(ev.get("detail") or "")[:40]),
         )
     console.print(table)
 
@@ -1110,41 +1274,49 @@ def admin_security_events(
 
 @admin_app.command(name="audit-log")
 def admin_audit_log(
-    action: str = typer.Option(None, "--action", "-a", help="Filter by action (e.g. auth.login)"),
-    actor: str = typer.Option(None, "--actor", help="Filter by actor email"),
-    resource_type: str = typer.Option(None, "--resource-type", "-r", help="Filter by resource type"),
-    limit: int = typer.Option(50, "--limit", "-n"),
-    output: str = typer.Option("table", "--output", "-o"),
+    action: str | None = typer.Option(None, "--action", "-a", help="Filter by action"),
+    actor: str | None = typer.Option(None, "--actor", help="Filter by actor name, username, or email"),
+    resource_type: str | None = typer.Option(None, "--resource-type", "-r", help="Filter by resource type"),
+    limit: int = typer.Option(50, "--limit", "-n", min=1, max=500),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
+    sensitivity: str | None = typer.Option(None, "--sensitivity", help="Filter by sensitivity"),
+    outcome: str | None = typer.Option(None, "--outcome", help="Filter by outcome"),
+    source: str | None = typer.Option(None, "--source", help="Filter by source: server or cli"),
+    start_date: str | None = typer.Option(None, "--start-date", help="Filter from an ISO 8601 date or timestamp"),
+    end_date: str | None = typer.Option(None, "--end-date", help="Filter through an ISO 8601 date or timestamp"),
+    offset: int = typer.Option(0, "--offset", min=0, help="Skip the first N entries"),
 ):
-    """Query the audit log.
-
-    Shows timestamped entries of admin and user actions with actor,
-    resource, IP address, and detail fields. Supports filtering by
-    action, actor, and resource type.
+    """Query the compliance audit log.
 
     Examples:
 
         observal admin audit-log
 
-        observal admin audit-log --action auth.login --limit 100
-
-        observal admin audit-log --actor alice@example.com -r agent
-
-        observal admin audit-log --output json
+        observal admin audit-log --action auth.login --limit 100 --output json
     """
-    from urllib.parse import urlencode
+    sensitivity = _command_value(sensitivity)
+    outcome = _command_value(outcome)
+    source = _command_value(source)
+    start_date = _command_value(start_date)
+    end_date = _command_value(end_date)
+    offset = _command_value(offset)
+    params: dict = {"limit": limit, "offset": offset}
+    for key, value in (
+        ("action", action),
+        ("actor", actor),
+        ("resource_type", resource_type),
+        ("sensitivity", sensitivity),
+        ("outcome", outcome),
+        ("start_date", start_date),
+        ("end_date", end_date),
+    ):
+        if value:
+            params[key] = value.strip()
+    if source:
+        params["source"] = _command_choice(source, _AUDIT_SOURCES, "audit source", "Query audit log")
 
-    params: dict = {"limit": str(limit)}
-    if action:
-        params["action"] = action
-    if actor:
-        params["actor_email"] = actor
-    if resource_type:
-        params["resource_type"] = resource_type
-
-    qs = f"?{urlencode(params)}" if params else ""
-    with spinner():
-        data = client.get(f"/api/v1/admin/audit-log{qs}")
+    with _command_progress(output):
+        data = client.get("/api/v1/admin/audit-log", params=params)
     if output == "json":
         output_json(data)
         return
@@ -1159,31 +1331,36 @@ def admin_audit_log(
     table.add_column("IP", style="dim")
     table.add_column("Detail", max_width=30)
     for entry in data:
-        ts = entry.get("timestamp", entry.get("created_at", ""))[:19]
-        resource = entry.get("resource_type", "")
+        timestamp = str(entry.get("timestamp") or entry.get("created_at") or "")[:19]
+        resource = str(entry.get("resource_type") or "")
         if entry.get("resource_name"):
             resource += f"/{entry['resource_name']}"
         table.add_row(
-            ts,
-            entry.get("actor_email", "-"),
-            entry.get("action", ""),
-            resource,
-            entry.get("ip_address", "-"),
-            (entry.get("detail", "") or "")[:30],
+            esc(timestamp),
+            esc(entry.get("actor_email", "-")),
+            esc(entry.get("action", "")),
+            esc(resource),
+            esc(entry.get("ip_address", "-")),
+            esc(str(entry.get("detail") or "")[:30]),
         )
     console.print(table)
 
 
 @admin_app.command(name="audit-log-export")
 def admin_audit_log_export(
-    action: str = typer.Option(None, "--action", "-a", help="Filter by action"),
-    actor: str = typer.Option(None, "--actor", help="Filter by actor email"),
-    file: str = typer.Option(None, "--file", "-f", help="Write output to file"),
+    action: str | None = typer.Option(None, "--action", "-a", help="Filter by action"),
+    actor: str | None = typer.Option(None, "--actor", help="Filter by actor name, username, or email"),
+    file: str | None = typer.Option(None, "--file", "-f", help="Write output to file"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="CSV in table mode, JSON in JSON mode"),
+    resource_type: str | None = typer.Option(None, "--resource-type", "-r", help="Filter by resource type"),
+    sensitivity: str | None = typer.Option(None, "--sensitivity", help="Filter by sensitivity"),
+    outcome: str | None = typer.Option(None, "--outcome", help="Filter by outcome"),
+    source: str | None = typer.Option(None, "--source", help="Filter by source: server or cli"),
+    start_date: str | None = typer.Option(None, "--start-date", help="Filter from an ISO 8601 date or timestamp"),
+    end_date: str | None = typer.Option(None, "--end-date", help="Filter through an ISO 8601 date or timestamp"),
+    force: bool = typer.Option(False, "--force", "--yes", help="Overwrite an existing export file"),
 ):
-    """Export audit log as CSV.
-
-    Downloads the audit log in CSV format. Prints to stdout by default,
-    or writes to a file with --file.
+    """Export the compliance audit log as CSV or JSON.
 
     Examples:
 
@@ -1191,34 +1368,79 @@ def admin_audit_log_export(
 
         observal admin audit-log-export --file audit.csv
 
-        observal admin audit-log-export --action auth.login --actor bob@example.com
+        observal admin audit-log-export --output json --file audit.json
     """
-    from urllib.parse import urlencode
-
+    output = _command_value(output)
+    force = _command_value(force)
+    resource_type = _command_value(resource_type)
+    sensitivity = _command_value(sensitivity)
+    outcome = _command_value(outcome)
+    source = _command_value(source)
+    start_date = _command_value(start_date)
+    end_date = _command_value(end_date)
     params: dict = {}
-    if action:
-        params["action"] = action
-    if actor:
-        params["actor_email"] = actor
+    for key, value in (
+        ("action", action),
+        ("actor", actor),
+        ("resource_type", resource_type),
+        ("sensitivity", sensitivity),
+        ("outcome", outcome),
+        ("start_date", start_date),
+        ("end_date", end_date),
+    ):
+        if value:
+            params[key] = value.strip()
+    if source:
+        params["source"] = _command_choice(source, _AUDIT_SOURCES, "audit source", "Export audit log")
 
-    qs = f"?{urlencode(params)}" if params else ""
-    with spinner("Exporting audit log..."):
-        data = client.get_text(f"/api/v1/admin/audit-log/export{qs}", content_type="text/csv")
+    destination = Path(file).expanduser() if file else None
+    if destination is not None and destination.exists() and not force:
+        if output == "json":
+            fail(
+                ErrorCategory.CONFLICT,
+                f"Audit export already exists: {destination}.",
+                operation="Export audit log",
+                resource=str(destination),
+                remediation="Choose another path or add --force.",
+            )
+        typer.confirm(f"Overwrite {destination}?", abort=True)
 
-    if file:
-        from pathlib import Path
-
-        Path(file).write_text(data)
-        rprint(f"[green]Audit log exported to {file}[/green]")
+    if output == "json":
+        params["format"] = "json"
+        with _command_progress(output, "Exporting audit log..."):
+            data = client.get("/api/v1/admin/audit-log/export", params=params)
+        content = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
     else:
-        rprint(data)
+        with _command_progress("json" if destination is None else output, "Exporting audit log..."):
+            content = client.get_text("/api/v1/admin/audit-log/export", params=params or None, content_type="text/csv")
+        data = None
+
+    if destination is not None:
+        _atomic_write(destination, content, "Export audit log")
+        if output == "json":
+            output_json(
+                {
+                    "path": str(destination),
+                    "format": "json",
+                    "record_count": data.get("record_count") if isinstance(data, dict) else None,
+                }
+            )
+        else:
+            rprint(f"[green]Audit log exported to {esc(destination)}[/green]")
+        return
+    if output == "json":
+        output_json(data)
+    else:
+        typer.echo(content, nl=False)
 
 
 # ── Trace Privacy ───────────────────────────────────────
 
 
 @admin_app.command(name="trace-privacy")
-def admin_trace_privacy():
+def admin_trace_privacy(
+    output: OutputMode = typer.Option("table", "--output", "-o"),
+):
     """View trace privacy setting.
 
     Shows whether trace privacy (sensitive data redaction) is currently
@@ -1228,8 +1450,11 @@ def admin_trace_privacy():
 
         observal admin trace-privacy
     """
-    with spinner():
+    with _command_progress(output):
         data = client.get("/api/v1/admin/trace-privacy")
+    if output == "json":
+        output_json(data)
+        return
     enabled = data.get("trace_privacy", False)
     status = "[green]enabled[/green]" if enabled else "[red]disabled[/red]"
     rprint(f"  Trace privacy: {status}")
@@ -1238,6 +1463,7 @@ def admin_trace_privacy():
 @admin_app.command(name="trace-privacy-set")
 def admin_trace_privacy_set(
     enabled: bool = typer.Argument(..., help="true or false"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
     """Enable or disable trace privacy (redacts sensitive trace data).
 
@@ -1250,8 +1476,11 @@ def admin_trace_privacy_set(
 
         observal admin trace-privacy-set false
     """
-    with spinner("Updating trace privacy..."):
+    with _command_progress(output, "Updating trace privacy..."):
         result = client.put("/api/v1/admin/trace-privacy", {"trace_privacy": enabled})
+    if output == "json":
+        output_json(result)
+        return
     status = "[green]enabled[/green]" if result.get("trace_privacy") else "[red]disabled[/red]"
     rprint(f"  Trace privacy: {status}")
 
@@ -1260,7 +1489,9 @@ def admin_trace_privacy_set(
 
 
 @admin_app.command(name="cache-clear")
-def admin_cache_clear():
+def admin_cache_clear(
+    output: OutputMode = typer.Option("table", "--output", "-o"),
+):
     """Clear all server caches.
 
     Flushes all in-memory and Redis caches on the server. Useful after
@@ -1270,9 +1501,12 @@ def admin_cache_clear():
 
         observal admin cache-clear
     """
-    with spinner("Clearing caches..."):
-        client.post("/api/v1/admin/cache/clear")
-    rprint("[green]All caches cleared.[/green]")
+    with _command_progress(output, "Clearing caches..."):
+        result = client.post("/api/v1/admin/cache/clear")
+    if output == "json":
+        output_json(result)
+        return
+    rprint(f"[green]Cleared {result.get('cleared', 0)} cached entries.[/green]")
 
 
 # ── Role Update ─────────────────────────────────────────
@@ -1282,6 +1516,7 @@ def admin_cache_clear():
 def admin_set_role(
     email: str = typer.Argument(..., help="Email of the user"),
     role: str = typer.Argument(..., help="New role: super_admin, admin, reviewer, or user"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
     """Change a user's role.
 
@@ -1294,36 +1529,27 @@ def admin_set_role(
 
         observal admin set-role bob@example.com reviewer
     """
-    with spinner("Looking up user..."):
-        users = client.get("/api/v1/admin/users")
-    match = next((u for u in users if u["email"] == email.strip().lower()), None)
-    if not match:
-        rprint(f"[red]User not found:[/red] {email}")
-        raise typer.Exit(1)
-    with spinner("Updating role..."):
+    role = _command_choice(role, _ADMIN_ROLES, "user role", "Update user role")
+    match = _admin_user(email, output, "Update user role")
+    with _command_progress(output, "Updating role..."):
         result = client.put(f"/api/v1/admin/users/{match['id']}/role", {"role": role})
-    rprint(f"[green]{result.get('email', email)} is now {result.get('role', role)}[/green]")
+    if output == "json":
+        output_json(result)
+        return
+    rprint(f"[green]{esc(result.get('email', email))} is now {esc(result.get('role', role))}[/green]")
 
 
 # ── Traces / Spans (on ops_app) ─────────────────────────
 
 
-def _graphql_query(query: str, variables: dict | None = None) -> dict:
-    """Execute a GraphQL query via the client module (handles auth refresh + retries)."""
-    payload = {"query": query}
-    if variables:
-        payload["variables"] = variables
-    return client.post("/api/v1/graphql", payload)
-
-
 @ops_app.command(name="traces")
 def _traces(
     platform: str | None = typer.Option(None, "--platform", "-p", help="Filter by harness platform"),
-    days: int | None = typer.Option(None, "--days", "-d", help="Limit to last N days"),
-    limit: int = typer.Option(20, "--limit", "-n"),
+    days: int | None = typer.Option(None, "--days", "-d", min=1, max=365, help="Limit to last N days"),
+    limit: int = typer.Option(20, "--limit", "-n", min=1, max=200),
     turn: bool = typer.Option(False, "--turn", help="Unfold sessions to show turns (prompts)"),
     span: bool = typer.Option(False, "--span", help="Show full detail including tool calls"),
-    output: str = typer.Option("table", "--output", "-o"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
     """List recent traces (sessions).
 
@@ -1337,8 +1563,6 @@ def _traces(
 
         observal ops traces --turn
 
-        observal ops traces --span --limit 5
-
         observal ops traces --platform kiro --days 7
     """
     _traces_impl(platform, days, limit, turn, span, output)
@@ -1348,15 +1572,24 @@ def _traces_impl(platform, days, limit, turn, span, output):
     # Fetch sessions from the REST endpoint (same data the web UI shows)
     params: dict = {"limit": limit}
     if platform:
+        platform = _command_choice(platform, tuple(VALID_HARNESSES), "harness platform", "List sessions")
         params["platform"] = platform
     if days:
         params["days"] = days
 
-    with spinner("Querying sessions..."):
+    with _command_progress(output, "Querying sessions..."):
         sessions = client.get("/api/v1/sessions", params=params)
 
     if output == "json":
-        output_json(sessions)
+        if turn or span:
+            items = []
+            for session in sessions:
+                session_id = str(session.get("session_id", ""))
+                detail = client.get(f"/api/v1/sessions/{quote(session_id, safe='')}")
+                items.append({"summary": session, "detail": detail})
+            output_json({"view": "span" if span else "turn", "items": items})
+        else:
+            output_json(sessions)
         return
 
     if not sessions:
@@ -1390,8 +1623,8 @@ def _render_sessions_summary(sessions: list[dict]):
         table.add_row(
             str(i),
             name,
-            s.get("user_name", "--"),
-            s.get("platform", "--"),
+            esc(s.get("user_name", "--")),
+            esc(s.get("platform", "--")),
             str(prompt_count),
             str(int(s.get("tool_result_count", 0))),
             tokens_display,
@@ -1414,24 +1647,15 @@ def _render_sessions_detail(sessions: list[dict], full: bool = False):
         name = f"{prompt_count} prompt{'s' if prompt_count != 1 else ''}"
         session_label = (
             f"[bold]{name}[/bold] "
-            f"[dim]{session_id[:12]}…[/dim] "
-            f"[cyan]{s.get('platform', '')}[/cyan] "
-            f"[dim]{s.get('user_name', '')}[/dim] "
+            f"[dim]{esc(session_id[:12])}…[/dim] "
+            f"[cyan]{esc(s.get('platform', ''))}[/cyan] "
+            f"[dim]{esc(s.get('user_name', ''))}[/dim] "
             f"[dim]{relative_time(s.get('first_event_time'))}[/dim]"
         )
         session_node = tree.add(session_label)
 
         # Fetch session detail for turns
-        try:
-            detail = client.get(f"/api/v1/sessions/{session_id}")
-        except Exception:
-            # Detail endpoint failed (e.g. no session parser for this harness)
-            # Show summary info we already have
-            session_node.add(f"[dim]prompts: {prompt_count}, tools: {tool_count}[/dim]")
-            session_node.add(f"[dim]tokens: {_format_tokens(tokens_in, tokens_out)}[/dim]")
-            if s.get("model"):
-                session_node.add(f"[dim]model: {s['model']}[/dim]")
-            continue
+        detail = client.get(f"/api/v1/sessions/{quote(session_id, safe='')}")
 
         events = detail.get("events", [])
         if not events:
@@ -1446,17 +1670,17 @@ def _render_sessions_detail(sessions: list[dict], full: bool = False):
 
             if etype in ("user_prompt", "human_turn", "hook_userpromptsubmit"):
                 prompt_text = body[:100] + ("…" if len(body) > 100 else "")
-                session_node.add(f"[bold green]▶[/bold green] {prompt_text}")
+                session_node.add(f"[bold green]▶[/bold green] {esc(prompt_text)}")
             elif etype in ("assistant_response", "assistant_turn", "hook_assistant_response"):
                 if full:
                     resp_text = body[:150] + ("…" if len(body) > 150 else "")
-                    session_node.add(f"  [dim]{resp_text}[/dim]")
+                    session_node.add(f"  [dim]{esc(resp_text)}[/dim]")
             elif etype in ("tool_call", "hook_pretooluse"):
                 tool_name = attrs.get("tool_name") or body[:50]
-                session_node.add(f"  [cyan]⚡ {tool_name}[/cyan]")
+                session_node.add(f"  [cyan]⚡ {esc(tool_name)}[/cyan]")
             elif etype in ("tool_result", "hook_posttooluse") and full:
                 result_text = body[:100] + ("…" if len(body) > 100 else "")
-                session_node.add(f"    [dim]→ {result_text}[/dim]")
+                session_node.add(f"    [dim]→ {esc(result_text)}[/dim]")
 
         # Show subagent sessions if available
         for sub in detail.get("subagent_sessions", []):
@@ -1467,10 +1691,10 @@ def _render_sessions_detail(sessions: list[dict], full: bool = False):
                     etype = evt.get("event_name", "")
                     body = evt.get("body", "") or ""
                     if etype in ("user_prompt", "human_turn"):
-                        sub_node.add(f"[green]▶[/green] {body[:80]}")
+                        sub_node.add(f"[green]▶[/green] {esc(body[:80])}")
                     elif etype == "tool_call":
                         tool_name = evt.get("attributes", {}).get("tool_name") or body[:40]
-                        sub_node.add(f"  [cyan]⚡ {tool_name}[/cyan]")
+                        sub_node.add(f"  [cyan]⚡ {esc(tool_name)}[/cyan]")
 
     console.print(tree)
 
@@ -1488,383 +1712,508 @@ def _format_tokens(input_tokens: int, output_tokens: int) -> str:
     return f"{_fmt(input_tokens)} / {_fmt(output_tokens)}"
 
 
-@ops_app.command(name="spans")
-def _spans(
-    trace_id: str = typer.Argument(..., help="Trace ID"),
-    output: str = typer.Option("table", "--output", "-o"),
-):
-    """List spans for a trace.
-
-    Shows all spans within a trace, including type, method, latency,
-    status, and schema validation result. Use a trace ID from
-    `observal ops traces` output.
-
-    Examples:
-
-        observal ops spans abc123-trace-id
-
-        observal ops spans abc123-trace-id --output json
-    """
-    _spans_impl(trace_id, output)
-
-
-def _spans_impl(trace_id, output):
-    query = """query($traceId: String!) {
-        trace(traceId: $traceId) {
-            traceId name
-            spans {
-                spanId type name method latencyMs status
-                toolSchemaValid toolsAvailable
-            }
-        }
-    }"""
-
-    with spinner("Querying spans..."):
-        result = _graphql_query(query, {"traceId": trace_id})
-        trace_data = result.get("data", {}).get("trace")
-
-    if not trace_data:
-        rprint(f"[yellow]Trace {trace_id} not found.[/yellow]")
-        raise typer.Exit(1)
-
-    if output == "json":
-        output_json(trace_data)
-        return
-
-    rprint(f"\n[bold]Trace:[/bold] {trace_data['traceId']}: {trace_data.get('name', '')}\n")
-
-    spans_data = trace_data.get("spans", [])
-    if not spans_data:
-        rprint("[dim]No spans.[/dim]")
-        return
-
-    table = Table(show_lines=False, padding=(0, 1))
-    table.add_column("#", style="dim", width=3)
-    table.add_column("Span ID", style="dim", max_width=14)
-    table.add_column("Type")
-    table.add_column("Name", no_wrap=True)
-    table.add_column("Method")
-    table.add_column("Latency", justify="right")
-    table.add_column("Status")
-    table.add_column("Schema")
-    for i, s in enumerate(spans_data, 1):
-        schema = (
-            "[green]✓[/green]"
-            if s.get("toolSchemaValid") is True
-            else ("[red]✗[/red]" if s.get("toolSchemaValid") is False else "[dim]--[/dim]")
-        )
-        latency = f"{s['latencyMs']}ms" if s.get("latencyMs") else "--"
-        st = s.get("status", "")
-        st_display = f"[red]{st}[/red]" if st == "error" else f"[green]{st}[/green]" if st == "success" else st
-        table.add_row(
-            str(i),
-            s["spanId"][:12] + "…",
-            s.get("type", ""),
-            s.get("name", ""),
-            s.get("method", "") or "--",
-            latency,
-            st_display,
-            schema,
-        )
-    console.print(table)
-
-
 # ═══════════════════════════════════════════════════════════
 # self_app: CLI self-management commands
 # ═══════════════════════════════════════════════════════════
 
 self_app = typer.Typer(
     name="self",
-    help="CLI self-management commands (upgrade, downgrade, rollback, status)",
+    help=(
+        "CLI self-management commands (upgrade, downgrade, rollback, status)\n\n"
+        "Examples:\n"
+        "  observal self status\n"
+        "  observal self upgrade\n"
+        "  observal self rollback"
+    ),
     no_args_is_help=True,
 )
 
 
-def _do_install(install_info, target_version: str, direction: str) -> None:
-    """Execute the actual version change. Delegates to upgrade_executor module."""
-    # Lazy import to avoid circular dependency (upgrade_executor imports from version_check)
+def _do_install(install_info, target_version: str, direction: str, output: OutputMode | str = "table") -> None:
+    """Execute and verify one CLI version change."""
     from observal_cli.upgrade_executor import execute
 
-    execute(install_info, target_version, direction, spinner)
+    output = _command_value(output)
+    progress = spinner if output != "json" else lambda _message=None: nullcontext()
+    capture = redirect_stdout(StringIO()) if output == "json" else nullcontext()
+    try:
+        with capture:
+            execute(install_info, target_version, direction, progress, interactive=output != "json")
+    except CliError:
+        raise
+    except typer.Abort:
+        raise
+    except typer.Exit as error:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            f"CLI {direction} failed.",
+            operation=f"{direction.title()} Observal CLI",
+            resource="CLI installation",
+            remediation="Review the release, install method, and filesystem permissions, then retry.",
+            detail=repr(error),
+        )
+    except Exception as error:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            f"CLI {direction} failed.",
+            operation=f"{direction.title()} Observal CLI",
+            resource="CLI installation",
+            remediation="Check network access, the install method, and filesystem permissions, then retry.",
+            detail=repr(error),
+        )
+
+
+def _managed_install(install, operation: str) -> None:
+    from observal_cli.install_detector import InstallMethod
+
+    if install.method not in (InstallMethod.HOMEBREW, InstallMethod.SYSTEM_PACKAGE):
+        return
+    manager = install.managed_by or "the system package manager"
+    fail(
+        ErrorCategory.CONFLICT,
+        f"Observal is managed by {manager}.",
+        operation=operation,
+        resource="CLI installation",
+        remediation=f"Use `{manager} upgrade observal` or the equivalent package-manager command.",
+    )
 
 
 @self_app.command()
 def upgrade(
     version: str | None = typer.Option(
-        None, "--version", "-v", help="Target version to upgrade to (e.g. 0.9.0). Defaults to latest stable."
+        None, "--version", "-v", help="Target version to upgrade to. Defaults to the latest stable release."
     ),
-    pre: bool = typer.Option(False, "--pre", help="Include pre-release versions when resolving latest"),
+    pre: bool = typer.Option(False, "--pre", help="Include prerelease versions when resolving latest"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip interactive confirmation prompt"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
-    """Upgrade the observal CLI to the latest (or specified) version.
-
-    Downloads the new binary from GitHub releases, verifies its SHA-256
-    checksum, and atomically replaces the current binary. A backup of
-    the old version is kept for rollback.
-
-    Managed installs (Homebrew, system packages) are detected and
-    blocked with guidance to use the package manager instead.
+    """Upgrade the Observal CLI to the latest or specified version.
 
     Examples:
-        observal self upgrade
-        observal self upgrade --version 0.9.0
-        observal self upgrade --pre
         observal self upgrade --force
+        observal self upgrade --version 2.5.0 --force --output json
+        observal self upgrade --pre --force
     """
     from packaging.version import InvalidVersion, Version
 
     from observal_cli import install_detector, version_check
-    from observal_cli.install_detector import InstallMethod
     from observal_cli.upgrade_lock import UpgradeLockError, acquire_lock, release_lock
 
+    force = _command_value(force)
+    output = _command_value(output)
     current = version_check.get_current_version()
     install = install_detector.detect()
+    _managed_install(install, "Upgrade Observal CLI")
 
-    # Block managed installs
-    if install.method in (InstallMethod.HOMEBREW, InstallMethod.SYSTEM_PACKAGE):
-        mgr = install.managed_by or "your package manager"
-        rprint(f"[yellow]Observal is managed by {mgr}.[/yellow]")
-        rprint(f"[dim]Upgrade with: {mgr} upgrade observal[/dim]")
-        raise typer.Exit(1)
-
-    # Resolve target
     if version:
         try:
-            Version(version)
+            target = str(Version(version))
         except InvalidVersion:
-            rprint(f"[red]Invalid version: {version}[/red]")
-            raise typer.Exit(1)
-        target = version
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Invalid target version: {version}.",
+                operation="Upgrade Observal CLI",
+                resource="target version",
+                remediation="Use a release version such as 2.5.0.",
+            )
     else:
-        with spinner("Checking for updates..."):
-            rel = version_check._fetch_from_github(include_pre=pre)
-        if not rel:
-            rprint("[red]Failed to fetch latest release from GitHub.[/red]")
-            raise typer.Exit(1)
-        target = rel["latest_version"]
+        with _command_progress(output, "Checking for updates..."):
+            release = version_check._fetch_from_github(include_pre=pre)
+        if not release or not release.get("latest_version"):
+            fail(
+                ErrorCategory.UNAVAILABLE,
+                "Could not fetch the latest CLI release from GitHub.",
+                operation="Upgrade Observal CLI",
+                resource="GitHub releases",
+                remediation="Check network access and retry, or provide --version.",
+            )
+        try:
+            target = str(Version(release["latest_version"]))
+        except InvalidVersion:
+            fail(
+                ErrorCategory.UNAVAILABLE,
+                "GitHub returned an invalid CLI release version.",
+                operation="Upgrade Observal CLI",
+                resource="GitHub releases",
+                remediation="Retry later or provide a known release with --version.",
+            )
 
     if target == current:
-        rprint(f"[green]Already on v{current} (latest).[/green]")
-        raise typer.Exit(0)
+        result = {
+            "action": "upgrade",
+            "status": "up_to_date",
+            "current_version": current,
+            "target_version": target,
+            "install_method": install.method.value,
+            "path": str(install.path),
+        }
+        if output == "json":
+            output_json(result)
+        else:
+            rprint(f"[green]Already on v{esc(current)} (latest).[/green]")
+        return
 
     try:
         if Version(target) < Version(current):
-            rprint(f"[yellow]v{target} is older than current v{current}.[/yellow]")
-            rprint(f"[dim]Use: observal self downgrade --version {target}[/dim]")
-            raise typer.Exit(1)
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Upgrade target v{target} is older than current v{current}.",
+                operation="Upgrade Observal CLI",
+                resource="target version",
+                remediation=f"Use `observal self downgrade --version {target}` instead.",
+            )
     except InvalidVersion:
         pass
 
-    # Confirm
+    if output == "json" and not force:
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON mode cannot prompt before upgrading the CLI.",
+            operation="Upgrade Observal CLI",
+            resource="CLI installation",
+            remediation="Add --force to confirm the upgrade.",
+        )
     if not force:
-        rprint(f"  Current: [dim]v{current}[/dim]")
-        rprint(f"  Target:  [green]v{target}[/green]")
-        rprint(f"  Method:  [dim]{install.method.value} ({install.path})[/dim]")
+        rprint(f"  Current: [dim]v{esc(current)}[/dim]")
+        rprint(f"  Target:  [green]v{esc(target)}[/green]")
+        rprint(f"  Method:  [dim]{esc(install.method.value)} ({esc(install.path)})[/dim]")
         if not typer.confirm("\nProceed with upgrade?"):
             raise typer.Abort()
 
-    # Lock + execute
     try:
         lock = acquire_lock("cli")
-    except UpgradeLockError as e:
-        rprint(f"[red]{e}[/red]")
-        raise typer.Exit(1)
+    except UpgradeLockError as error:
+        fail(
+            ErrorCategory.CONFLICT,
+            "Another CLI version change is already running.",
+            operation="Upgrade Observal CLI",
+            resource="CLI upgrade lock",
+            remediation="Wait for it to finish, then retry.",
+            detail=repr(error),
+        )
     try:
-        _do_install(install, target, direction="upgrade")
+        _do_install(install, target, direction="upgrade", output=output)
     finally:
         release_lock(lock)
+
+    if output == "json":
+        output_json(
+            {
+                "action": "upgrade",
+                "status": "completed",
+                "from_version": current,
+                "to_version": target,
+                "install_method": install.method.value,
+                "path": str(install.path),
+            }
+        )
 
 
 @self_app.command()
 def downgrade(
-    version: str | None = typer.Option(None, "--version", "-v", help="Target version to downgrade to (required)"),
-    list_versions: bool = typer.Option(
-        False, "--list", "-l", help="List all available versions with compatibility status"
-    ),
+    version: str | None = typer.Option(None, "--version", "-v", help="Target version to downgrade to"),
+    list_versions: bool = typer.Option(False, "--list", "-l", help="List available releases"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
-    """Downgrade the observal CLI to a previous version.
-
-    Downloads and installs a specific older version from GitHub releases.
-
-    Use --list to see all available versions with their publication dates
-    and compatibility status.
+    """Downgrade the Observal CLI to a previous version.
 
     Examples:
-        observal self downgrade --version 0.7.0
-        observal self downgrade --list
-        observal self downgrade --version 0.7.0 --force
+        observal self downgrade --list --output json
+        observal self downgrade --version 2.4.0 --force --output json
     """
     from packaging.version import InvalidVersion, Version
 
     from observal_cli import install_detector, version_check
-    from observal_cli.install_detector import InstallMethod
     from observal_cli.upgrade_lock import UpgradeLockError, acquire_lock, release_lock
 
+    force = _command_value(force)
+    output = _command_value(output)
     current = version_check.get_current_version()
 
+    if list_versions and version:
+        fail(
+            ErrorCategory.VALIDATION,
+            "Choose either --list or --version, not both.",
+            operation="Downgrade Observal CLI",
+            resource="downgrade mode",
+            remediation="Remove one of the conflicting options.",
+        )
     if list_versions:
-        releases = version_check.fetch_all_releases()
+        with _command_progress(output, "Fetching releases..."):
+            releases = version_check.fetch_all_releases()
         if not releases:
-            rprint("[red]Failed to fetch releases from GitHub.[/red]")
-            raise typer.Exit(1)
-
+            fail(
+                ErrorCategory.UNAVAILABLE,
+                "Could not fetch CLI releases from GitHub.",
+                operation="List Observal CLI releases",
+                resource="GitHub releases",
+                remediation="Check network access and retry.",
+            )
+        items = [
+            {
+                **release,
+                "current": str(release.get("version", "")) == current,
+            }
+            for release in releases
+        ]
+        if output == "json":
+            output_json({"current_version": current, "items": items})
+            return
         table = Table(title="Available Versions")
         table.add_column("Version", style="bold")
         table.add_column("Published")
         table.add_column("Status")
-
-        for r in releases:
-            status = ""
-            if r["version"] == current:
-                status = "← current"
-            table.add_row(r["version"], r.get("published_at", "")[:10], status)
-
-        from rich.console import Console
-
-        Console().print(table)
-        raise typer.Exit(0)
+        for release in items:
+            table.add_row(
+                esc(release.get("version", "")),
+                esc(str(release.get("published_at") or "")[:10]),
+                "← current" if release["current"] else "",
+            )
+        console.print(table)
+        return
 
     if not version:
-        rprint("[red]--version is required for downgrade.[/red]")
-        rprint("[dim]Use --list to see available versions.[/dim]")
-        raise typer.Exit(1)
-
+        fail(
+            ErrorCategory.VALIDATION,
+            "A target version is required for downgrade.",
+            operation="Downgrade Observal CLI",
+            resource="target version",
+            remediation="Provide --version or use --list.",
+        )
     try:
         target = Version(version)
     except InvalidVersion:
-        rprint(f"[red]Invalid version: {version}[/red]")
-        raise typer.Exit(1)
-
-    # Enforce version floor - cannot go below 1.0.0
-    if target < Version(version_check.VERSION_FLOOR):
-        rprint(
-            f"[bold red]\u2716 Cannot downgrade below v{version_check.VERSION_FLOOR}.[/bold red]\n"
-            f"  Versioning is not supported on earlier releases.\n"
-            f"  Minimum allowed version: [cyan]v{version_check.VERSION_FLOOR}[/cyan]"
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Invalid target version: {version}.",
+            operation="Downgrade Observal CLI",
+            resource="target version",
+            remediation="Use a release version such as 2.4.0.",
         )
-        raise typer.Exit(1)
 
+    if target < Version(version_check.VERSION_FLOOR):
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Cannot downgrade below v{version_check.VERSION_FLOOR}.",
+            operation="Downgrade Observal CLI",
+            resource="target version",
+            remediation=f"Choose v{version_check.VERSION_FLOOR} or newer.",
+        )
     try:
         if target >= Version(current):
-            rprint(f"[yellow]v{version} is not older than current v{current}.[/yellow]")
-            rprint("[dim]Use: observal self upgrade[/dim]")
-            raise typer.Exit(1)
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Downgrade target v{target} is not older than current v{current}.",
+                operation="Downgrade Observal CLI",
+                resource="target version",
+                remediation="Choose an older release or use `observal self upgrade`.",
+            )
     except InvalidVersion:
         pass
 
     install = install_detector.detect()
-    if install.method in (InstallMethod.HOMEBREW, InstallMethod.SYSTEM_PACKAGE):
-        mgr = install.managed_by or "your package manager"
-        rprint(f"[yellow]Observal is managed by {mgr}.[/yellow]")
-        raise typer.Exit(1)
-
+    _managed_install(install, "Downgrade Observal CLI")
+    if output == "json" and not force:
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON mode cannot prompt before downgrading the CLI.",
+            operation="Downgrade Observal CLI",
+            resource="CLI installation",
+            remediation="Add --force to confirm the downgrade.",
+        )
     if not force:
-        rprint(f"  Current: [dim]v{current}[/dim]")
-        rprint(f"  Target:  [yellow]v{version}[/yellow]")
+        rprint(f"  Current: [dim]v{esc(current)}[/dim]")
+        rprint(f"  Target:  [yellow]v{esc(target)}[/yellow]")
         if not typer.confirm("\nProceed with downgrade?"):
             raise typer.Abort()
 
     try:
         lock = acquire_lock("cli")
-    except UpgradeLockError as e:
-        rprint(f"[red]{e}[/red]")
-        raise typer.Exit(1)
+    except UpgradeLockError as error:
+        fail(
+            ErrorCategory.CONFLICT,
+            "Another CLI version change is already running.",
+            operation="Downgrade Observal CLI",
+            resource="CLI upgrade lock",
+            remediation="Wait for it to finish, then retry.",
+            detail=repr(error),
+        )
 
-    # Releases before v1.10.4 silently auto-updated on startup. Pin their
-    # legacy setting before installation so the next command cannot undo an
-    # intentional downgrade. Restore the prior value if installation fails.
     pin_legacy_auto_update = target < Version("1.10.4")
     previous_auto_update = None
     try:
         if pin_legacy_auto_update:
             previous_auto_update = config.load().get("auto_update", True)
             config.save({"auto_update": False})
-        _do_install(install, version, direction="downgrade")
-    except BaseException:
+        _do_install(install, str(target), direction="downgrade", output=output)
+    except BaseException as install_error:
         if pin_legacy_auto_update:
             try:
                 config.save({"auto_update": previous_auto_update})
             except (Exception, SystemExit) as restore_error:
-                rprint(f"[yellow]Warning: could not restore auto-update setting: {restore_error}[/yellow]")
+                fail(
+                    ErrorCategory.UNAVAILABLE,
+                    "CLI downgrade failed and the automatic-update setting could not be restored.",
+                    operation="Downgrade Observal CLI",
+                    resource="automatic-update setting",
+                    remediation="Restore auto_update to its previous value, then inspect the failed installation.",
+                    detail=f"install={install_error!r}; restore={restore_error!r}",
+                )
         raise
     finally:
         release_lock(lock)
 
-    if pin_legacy_auto_update:
+    if output == "json":
+        output_json(
+            {
+                "action": "downgrade",
+                "status": "completed",
+                "from_version": current,
+                "to_version": str(target),
+                "install_method": install.method.value,
+                "path": str(install.path),
+                "automatic_updates_disabled": pin_legacy_auto_update,
+            }
+        )
+    elif pin_legacy_auto_update:
         rprint("[dim]Automatic updates disabled to keep this legacy version pinned.[/dim]")
 
 
 @self_app.command()
-def rollback():
-    """Restore the CLI to the version before the last upgrade/downgrade.
-
-    Copies the backed-up binary (saved during the previous upgrade) back
-    over the current one. Only available for binary installs.
+def rollback(
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
+):
+    """Restore the CLI binary saved before the last version change.
 
     Examples:
         observal self rollback
+        observal self rollback --force --output json
     """
-    from observal_cli import install_detector
-    from observal_cli.install_detector import InstallMethod
-
-    install = install_detector.detect()
-    backup = config.CONFIG_DIR / "bin" / "observal.prev"
-
-    if not backup.exists():
-        rprint("[red]No backup found. Nothing to rollback to.[/red]")
-        raise typer.Exit(1)
-
-    if install.method != InstallMethod.BINARY:
-        rprint("[yellow]Rollback only supported for binary installs.[/yellow]")
-        rprint(f"[dim]For {install.managed_by}: install the previous version explicitly.[/dim]")
-        raise typer.Exit(1)
-
     import os
     import shutil
 
-    target_path = install.path
-    rprint(f"  Restore: {backup} → {target_path}")
-    if not typer.confirm("Proceed?"):
-        raise typer.Abort()
+    from observal_cli import install_detector
+    from observal_cli.install_detector import InstallMethod
+    from observal_cli.upgrade_lock import UpgradeLockError, acquire_lock, release_lock
 
-    shutil.copy2(str(backup), str(target_path))
-    os.chmod(str(target_path), 0o755)
-    rprint("[green]✓ Rolled back to previous version.[/green]")
+    force = _command_value(force)
+    output = _command_value(output)
+    install = install_detector.detect()
+    backup = config.CONFIG_DIR / "bin" / "observal.prev"
+    if not backup.is_file():
+        fail(
+            ErrorCategory.NOT_FOUND,
+            "No CLI rollback backup was found.",
+            operation="Rollback Observal CLI",
+            resource=str(backup),
+            remediation="Run a successful binary upgrade or downgrade before rollback.",
+        )
+    if install.method != InstallMethod.BINARY:
+        fail(
+            ErrorCategory.CONFLICT,
+            "Rollback is only supported for standalone binary installations.",
+            operation="Rollback Observal CLI",
+            resource="CLI installation",
+            remediation="Install the previous version with the current package manager.",
+        )
+    if output == "json" and not force:
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON mode cannot prompt before rolling back the CLI.",
+            operation="Rollback Observal CLI",
+            resource="CLI installation",
+            remediation="Add --force to confirm rollback.",
+        )
+
+    target = Path(install.path)
+    if not force:
+        rprint(f"  Restore: {esc(backup)} → {esc(target)}")
+        if not typer.confirm("Proceed?"):
+            raise typer.Abort()
+
+    try:
+        lock = acquire_lock("cli")
+    except UpgradeLockError as error:
+        fail(
+            ErrorCategory.CONFLICT,
+            "Another CLI version change is already running.",
+            operation="Rollback Observal CLI",
+            resource="CLI upgrade lock",
+            remediation="Wait for it to finish, then retry.",
+            detail=repr(error),
+        )
+
+    temporary: Path | None = None
+    try:
+        with NamedTemporaryFile(dir=target.parent, prefix=".observal-rollback-", delete=False) as file:
+            temporary = Path(file.name)
+        shutil.copy2(backup, temporary)
+        os.chmod(temporary, 0o755)
+        temporary.replace(target)
+    except OSError as error:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            "Could not restore the previous CLI binary.",
+            operation="Rollback Observal CLI",
+            resource=str(target),
+            remediation="Check filesystem permissions and retry.",
+            detail=repr(error),
+        )
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+        release_lock(lock)
+
+    result = {"action": "rollback", "status": "completed", "backup": str(backup), "path": str(target)}
+    if output == "json":
+        output_json(result)
+    else:
+        rprint("[green]✓ Rolled back to previous version.[/green]")
 
 
 @self_app.command()
-def status():
-    """Show current CLI version, install method, and update availability.
-
-    Checks GitHub for the latest release and shows whether an update is
-    available. Also displays the server's minimum CLI version requirement
-    if connected.
+def status(
+    output: OutputMode = typer.Option("table", "--output", "-o"),
+):
+    """Show the CLI version, install method, and update availability.
 
     Examples:
         observal self status
+        observal self status --output json
     """
-    from observal_cli import version_check
+    from observal_cli import install_detector, version_check
 
+    output = _command_value(output)
     current = version_check.get_current_version()
-    rprint(f"  Version:  [bold]v{current}[/bold]")
-
-    from observal_cli import install_detector
-
     install = install_detector.detect()
-    rprint(f"  Install:  [dim]{install.method.value} ({install.path})[/dim]")
+    with _command_progress(output, "Checking for updates..."):
+        release = version_check._fetch_from_github()
 
-    # Always check (bypass OBSERVAL_NO_UPDATE_CHECK for explicit status command)
-    with spinner("Checking for updates..."):
-        rel = version_check._fetch_from_github()
+    latest = release.get("latest_version") if release else None
+    update_available = version_check._is_newer(latest, current) if latest else None
+    result = {
+        "current_version": current,
+        "install_method": install.method.value,
+        "path": str(install.path),
+        "writable": install.writable,
+        "managed_by": install.managed_by,
+        "github_available": release is not None,
+        "latest_version": latest,
+        "update_available": update_available,
+    }
+    if output == "json":
+        output_json(result)
+        return
 
-    if rel:
-        latest = rel["latest_version"]
-        if version_check._is_newer(latest, current):
-            rprint(f"  Latest:   [green]v{latest}[/green] (update available)")
+    rprint(f"  Version:  [bold]v{esc(current)}[/bold]")
+    rprint(f"  Install:  [dim]{esc(install.method.value)} ({esc(install.path)})[/dim]")
+    if latest:
+        suffix = "update available" if update_available else "up to date"
+        rprint(f"  Latest:   [green]v{esc(latest)}[/green] ({suffix})")
+        if update_available:
             rprint("\n  Run: [bold]observal self upgrade[/bold]")
-        else:
-            rprint(f"  Latest:   [green]v{latest}[/green] (up to date)")
     else:
         rprint("  Latest:   [dim]could not reach GitHub[/dim]")
 

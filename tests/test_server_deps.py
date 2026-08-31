@@ -280,13 +280,11 @@ def test_download_file_preserves_destination_permission_error(
     assert events[-2:] == [("response exit", failure), ("progress exit", failure)]
 
 
-def test_verify_checksum_allows_missing_entry_without_reading_file(runtime: SimpleNamespace) -> None:
+def test_verify_checksum_rejects_missing_published_entry_without_reading_file(runtime: SimpleNamespace) -> None:
     missing = runtime.tmp / "missing.tar.gz"
 
-    assert deps._verify_checksum(missing, {"other.tar.gz": "digest"}) is True
-    assert runtime.console.messages == [
-        "[yellow]Warning:[/yellow] No checksum found for missing.tar.gz, skipping verification"
-    ]
+    assert deps._verify_checksum(missing, {"other.tar.gz": "digest"}) is False
+    assert runtime.console.messages == ["[red]No checksum published for missing.tar.gz.[/red]"]
 
 
 def test_verify_checksum_accepts_large_matching_file(runtime: SimpleNamespace) -> None:
@@ -357,9 +355,10 @@ def test_fetch_checksums_handles_http_failures_with_exact_warning(
         get = MagicMock(return_value=response)
     monkeypatch.setattr(deps.httpx, "get", get)
 
-    assert deps._fetch_checksums() == {}
+    with pytest.raises(RuntimeError, match="Could not fetch dependency checksums"):
+        deps._fetch_checksums()
     assert get.call_count == 1
-    assert runtime.console.messages == ["[yellow]Warning:[/yellow] Could not fetch checksums, skipping verification"]
+    assert runtime.console.messages == []
 
 
 def test_fetch_checksums_handles_timeout(runtime: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -367,8 +366,9 @@ def test_fetch_checksums_handles_timeout(runtime: SimpleNamespace, monkeypatch: 
     timeout = httpx.ReadTimeout("slow", request=request)
     monkeypatch.setattr(deps.httpx, "get", MagicMock(side_effect=timeout))
 
-    assert deps._fetch_checksums() == {}
-    assert runtime.console.messages == ["[yellow]Warning:[/yellow] Could not fetch checksums, skipping verification"]
+    with pytest.raises(RuntimeError, match="Could not fetch dependency checksums"):
+        deps._fetch_checksums()
+    assert runtime.console.messages == []
 
 
 def test_fetch_checksums_preserves_non_http_failure(
@@ -390,13 +390,14 @@ def test_extract_tarball_uses_gzip_mode_and_destination(monkeypatch: pytest.Monk
     destination = tmp_path / "staging"
     archive = MagicMock()
     archive.__enter__.return_value = archive
+    archive.getmembers.return_value = []
     opened = MagicMock(return_value=archive)
     monkeypatch.setattr(deps.tarfile, "open", opened)
 
     assert deps._extract_tarball(tarball, destination) is None
 
     opened.assert_called_once_with(tarball, "r:gz")
-    archive.extractall.assert_called_once_with(path=destination)
+    archive.extractall.assert_called_once_with(path=destination, filter="data")
     archive.__exit__.assert_called_once_with(None, None, None)
 
 
@@ -587,16 +588,16 @@ def test_install_dependencies_skips_present_service_and_installs_others_in_url_o
     ]
 
 
-def test_install_dependencies_force_bypasses_detection_and_empty_checksums_skip_verification(
+def test_install_dependencies_force_still_requires_published_checksum(
     runtime: SimpleNamespace,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[object] = []
     url = "https://downloads.example/clickhouse.tar.gz"
     installed = MagicMock(side_effect=blocked("is_installed"))
-    verify = MagicMock(side_effect=blocked("_verify_checksum"))
+    verify = MagicMock(return_value=True)
     monkeypatch.setattr(deps, "get_dep_urls", lambda: {"clickhouse": url})
-    monkeypatch.setattr(deps, "_fetch_checksums", lambda: {})
+    monkeypatch.setattr(deps, "_fetch_checksums", lambda: {"clickhouse.tar.gz": "digest"})
     monkeypatch.setattr(deps, "is_installed", installed)
     monkeypatch.setattr(deps, "_verify_checksum", verify)
     monkeypatch.setattr(deps, "_download_file", lambda _url, path, _label: path.write_bytes(b"archive"))
@@ -610,7 +611,7 @@ def test_install_dependencies_force_bypasses_detection_and_empty_checksums_skip_
     assert deps.install_dependencies(force=True) is None
 
     installed.assert_not_called()
-    verify.assert_not_called()
+    verify.assert_called_once()
     assert (runtime.bin_dir / "clickhouse").read_bytes() == b"binary"
     assert stat.S_IMODE((runtime.bin_dir / "clickhouse").stat().st_mode) & 0o111 == 0o111
     assert runtime.console.messages == [
@@ -680,9 +681,10 @@ def test_install_dependencies_preserves_move_permission_error_without_success_me
     events: list[object] = []
     failure = PermissionError("destination denied")
     monkeypatch.setattr(deps, "get_dep_urls", lambda: {"redis": "https://downloads.example/redis.tar.gz"})
-    monkeypatch.setattr(deps, "_fetch_checksums", lambda: {})
+    monkeypatch.setattr(deps, "_fetch_checksums", lambda: {"redis.tar.gz": "digest"})
     monkeypatch.setattr(deps, "is_installed", lambda _service: False)
     monkeypatch.setattr(deps, "_download_file", lambda _url, path, _label: path.write_bytes(b"archive"))
+    monkeypatch.setattr(deps, "_verify_checksum", lambda _path, _checksums: True)
 
     def extract(_tarball: Path, staging: Path) -> None:
         (staging / "redis-server").write_bytes(b"binary")
@@ -742,11 +744,11 @@ def test_install_single_force_installs_and_flattens_nested_binary_path(
     events: list[object] = []
     url = "https://downloads.example/redis-linux-x64.tar.gz"
     installed = MagicMock(side_effect=blocked("is_installed"))
-    verify = MagicMock(side_effect=blocked("_verify_checksum"))
+    verify = MagicMock(return_value=True)
     download = MagicMock(side_effect=lambda _url, path, _label: path.write_bytes(b"archive"))
     monkeypatch.setattr(deps, "is_installed", installed)
     monkeypatch.setattr(deps, "get_dep_urls", lambda: {"redis": url})
-    monkeypatch.setattr(deps, "_fetch_checksums", lambda: {})
+    monkeypatch.setattr(deps, "_fetch_checksums", lambda: {"redis-linux-x64.tar.gz": "digest"})
     monkeypatch.setattr(deps, "_download_file", download)
     monkeypatch.setattr(deps, "_verify_checksum", verify)
 
@@ -761,7 +763,7 @@ def test_install_single_force_installs_and_flattens_nested_binary_path(
     assert deps.install_single("redis", force=True) is None
 
     installed.assert_not_called()
-    verify.assert_not_called()
+    verify.assert_called_once()
     download.assert_called_once()
     assert download.call_args.args[0] == url
     assert download.call_args.args[1].name == "redis-linux-x64.tar.gz"

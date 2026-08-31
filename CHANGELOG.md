@@ -4,17 +4,29 @@
 <!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 DoomsCoder <vedantkakade05@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Changelog
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.13.0] - 2026-08-23
+
+### Features
+
+- add help and error contracts ([#1690](https://github.com/Observal/Observal/pull/1690))
+- make Observal agent-ready ([#1691](https://github.com/Observal/Observal/pull/1691))
+- revamp registry home ([#1692](https://github.com/Observal/Observal/pull/1692))
 
 ### Fixes
 
-- return real token and credit usage from the user dashboard, and show Credit Usage for harnesses that meter in credits such as Kiro ([#1670](https://github.com/Observal/Observal/issues/1670))
+- repair the OSS-Fuzz build before submitting upstream to google ([#1689](https://github.com/Observal/Observal/pull/1689))
+- avoid duplicate Observal skills in Pi ([#1663](https://github.com/Observal/Observal/pull/1663))
+
+### Maintenance
+
+- standardize table and JSON output modes ([#1687](https://github.com/Observal/Observal/pull/1687))
 
 ## [1.12.1] - 2026-08-09
 
@@ -66,8 +78,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Features
+
+- add an authenticated JSON API escape hatch and mixed Registry component bulk submission
+- standardize dedicated list JSON output with `items`, `total`, `page`, and `page_size`
+- make mutation retry behavior explicit and reserve automatic transient retries for reads
+
+### Breaking changes
+
+- dedicated list commands that previously returned top-level arrays now return the standard list envelope
+
 ### Security
 
+- remove shell command construction from Kiro end-to-end tests
 - add JWT algorithm agility, file-backed credentials, secure package bindings, signed release tags, verification guidance, and a security assurance case
 
 ### Fixes
@@ -78,6 +101,7 @@ All notable changes to this project will be documented in this file.
 - move the inbox filter rail to the right
 - require explicit Kiro session identity and keep aged recovery non-final
 - keep intentional CLI downgrades pinned when targeting legacy releases ([#1672](https://github.com/Observal/Observal/pull/1672))
+- avoid duplicate bundled Observal skill conflicts when Codex and Pi are installed together ([#1601](https://github.com/Observal/Observal/issues/1601))
 
 ## [1.11.0] - 2026-08-02
 

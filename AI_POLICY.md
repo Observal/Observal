@@ -12,33 +12,36 @@ This policy tells you what is expected when AI tools are part of your workflow.
 
 ---
 
-## Autonomous coding agents are not permitted
+## Fully autonomous contributions without human authorship are not permitted
 
-**Tools like Devin, SWE-agent, OpenHands, and similar autonomous agents that write and submit code without meaningful human authorship are not allowed to contribute to this project.**
+**Unattended agents that independently make material implementation choices and submit code without meaningful human direction, review, and accountability are not allowed to contribute to this project.**
+
+Interactive coding agents and assistants, including Claude Code, Pi, Cursor, Copilot, and similar tools, are allowed when an accountable human directs the work, reviews the complete change, can explain it, and explicitly authorizes publication. The distinction is meaningful human authorship and accountability, not whether the tool can edit files, run commands, commit, push, or open a pull request.
 
 This is not a quality judgement, it is a legal one.
 
-The [US Copyright Office's January 2025 report on AI copyrightability](https://www.copyright.gov/ai/Copyright-and-Artificial-Intelligence-Part-2-Copyrightability-Report.pdf) explicitly confirms that purely AI-generated code, where the AI made all material creative choices in response to a task description, has **no copyright owner**. Not you, not the AI company.
+The [US Copyright Office's January 2025 report on AI copyrightability](https://www.copyright.gov/ai/Copyright-and-Artificial-Intelligence-Part-2-Copyrightability-Report.pdf) explains that material without sufficient human-authored expressive elements may not qualify for copyright protection. Copyrightability is fact-specific, and prompting alone does not necessarily establish human authorship.
 
-This creates three structural problems for this project:
+For this project, unattended submissions create three structural risks:
 
-1. **The CLA is invalidated.** Our CLA requires you to assert that the contribution is your original creation and that you have the right to license it. You cannot make that assertion for code an autonomous agent wrote.
+1. **The CLA may be unsupported.** Our CLA requires the contributor to assert that the contribution is their original creation and that they have the right to license it. An unattended submission provides no accountable human who can make and support that assertion.
 
-2. **The license chain breaks.** Apache-2.0 is a copyright license. It works by a copyright holder granting rights. If a contribution has no copyright owner, the license cannot cover it, creating a licensing hole in the codebase that cannot be retroactively fixed.
+2. **The license chain becomes uncertain.** Apache-2.0 depends on contributors having rights they can grant. Insufficient human authorship can leave the project unable to establish a reliable licensing chain for the contribution.
 
 3. **Training data provenance is unknowable.** Autonomous agents may reproduce verbatim or substantially similar GPL-licensed code from their training data without attribution, a risk confirmed by active litigation (_Doe 1 v. GitHub, Inc._, N.D. Cal. 2022) and studied by the [Software Freedom Conservancy](https://sfconservancy.org/blog/2022/feb/03/github-copilot-copyleft-gpl/) and [FSF](https://www.fsf.org/news/publication-of-the-fsf-funded-white-papers-on-questions-around-copilot).
 
-This is the same position taken by [curl](https://curl.se/dev/contribute.html) and documented by the FSF and SFC. **Any PR identified as having been submitted by an autonomous agent will be closed immediately.**
+This is the same position taken by [curl](https://curl.se/dev/contribute.html) and documented by the FSF and SFC. **Any PR produced and submitted by an unattended agent without an accountable human author will be closed immediately.**
 
 > [!NOTE]
-> Using AI tools as a _coding assistant_, where you write, review, and are accountable for the code, is explicitly welcome. The distinction is human authorship and accountability, not whether AI was involved.
+> Using an interactive AI coding tool under human direction is explicitly welcome. A human may ask the tool to edit code, run checks, prepare commits, push a branch, draft pull request content, or publish an approved pull request. The human must review the result, make or approve the material choices, accept responsibility for the contribution, and satisfy the CLA.
 
 ---
 
 ## What is allowed
 
-- Using AI tools (Copilot, Cursor, Claude, etc.) to write, refactor, or review code, provided you review and own the result
-- Using AI tools to help understand the codebase, generate test cases, or draft documentation
+- Using AI tools (Copilot, Cursor, Claude Code, Pi, etc.) to write, refactor, review, or test code, provided you direct the work and review and own the result
+- Using AI tools to help understand the codebase, generate test cases, draft documentation, or prepare pull request content
+- Authorizing an interactive coding agent to commit, push, create or update a pull request, or perform other repository actions after you have reviewed the relevant changes and content
 - Submitting AI-assisted contributions, provided all requirements below are met
 
 ---
@@ -69,9 +72,10 @@ If AI tools made a nontrivial contribution to your PR, state so in the PR descri
 
 ## What is not allowed
 
-- Autonomous coding agents submitting PRs (see above)
-- Using AI tools to write GitHub comments, including filling in the PR template
+- Unattended coding agents choosing work, implementing it, and submitting PRs without meaningful human direction and review
+- Publishing AI-generated GitHub comments, review replies, or PR template content without human review and explicit approval
 - Submitting output you have not read and understood
+- Claiming human authorship when no accountable human made or approved the material creative choices
 - Repeating the same AI-generated mistakes across multiple PRs after being told about them
 
 > [!WARNING]

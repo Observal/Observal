@@ -84,7 +84,7 @@ Observal ships with two opt-in extras for the Python install:
 | Extra     | What it adds                                   | When to install                                              |
 | --------- | ---------------------------------------------- | ------------------------------------------------------------ |
 | `sandbox` | Docker SDK (for sandbox execution)             | If you run agents inside Observal sandboxes                  |
-| `migrate` | `asyncpg` (for the `observal migrate` command) | If you operate the server and run DB migrations from the CLI |
+| `migrate` | `pyarrow` (for `observal server migrate`) | If you move registry and telemetry data between deployments |
 | `all`     | Both of the above                              | If you do both                                               |
 
 Install an extra:

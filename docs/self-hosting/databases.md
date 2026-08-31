@@ -26,15 +26,13 @@ Observal runs two DBs with very different jobs.
 
 Managed by Alembic. The server applies pending migrations automatically on startup. Migration files live in `observal-server/alembic/versions/`.
 
-Run migrations manually if needed:
+For Docker Compose deployments, run the init service manually when needed:
 
 ```bash
-observal migrate
+docker compose -f docker/docker-compose.yml run --rm observal-init
 ```
 
-(Requires the `migrate` extra: `uv tool install 'observal-cli[migrate]'`.)
-
-For rolling deploys, run `observal migrate` once as a pre-deploy step before bringing up the new API image.
+The init service applies Alembic and ClickHouse migrations before API startup. `observal server migrate` moves data between deployments; it does not apply schema migrations.
 
 ### Reset
 

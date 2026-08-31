@@ -67,6 +67,8 @@ def parse_clickhouse_url(url: str) -> tuple[str, str, str, str]:
         raw = url
         default_port = 8123
     parsed = urlparse(raw)
+    if not parsed.hostname:
+        raise ValueError("ClickHouse URL requires a hostname")
     scheme = "https" if raw.startswith("https") else "http"
     http_url = f"{scheme}://{parsed.hostname}:{parsed.port or default_port}"
     db = (parsed.path or "/").strip("/") or "default"

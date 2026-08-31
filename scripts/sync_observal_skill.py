@@ -34,10 +34,6 @@ SKILL_PATH = ROOT / "observal_cli" / "skills" / "observal" / "references" / "com
 BEGIN_SENTINEL = "<!-- BEGIN AUTO-GENERATED COMMAND REFERENCE -->"
 END_SENTINEL = "<!-- END AUTO-GENERATED COMMAND REFERENCE -->"
 
-# Hidden top-level groups: present in the CLI but not useful in the skill.
-# `server` requires extra deps and is dev-only.
-_HIDDEN_GROUPS = {"server"}
-
 
 def _first_line(text: str | None) -> str:
     """Return the first non-empty line of help text, stripped."""
@@ -76,8 +72,6 @@ def _walk(prefix: str, group_app: typer.Typer, lines: list[str], depth: int = 0)
     indent = "  " * depth
     for sub in sorted(group_app.registered_groups, key=lambda g: g.name or ""):
         name = sub.name or ""
-        if depth == 0 and name in _HIDDEN_GROUPS:
-            continue
         full = f"{prefix} {name}".strip()
         summary = _group_help(sub)
         lines.append(f"{indent}- `{full}`: {summary}" if summary else f"{indent}- `{full}`")
@@ -116,8 +110,6 @@ def generate_reference() -> str:
     # Group sections.
     for group in sorted(app.registered_groups, key=lambda g: g.name or ""):
         name = group.name or ""
-        if name in _HIDDEN_GROUPS:
-            continue
         summary = _group_help(group)
         header = f"**`observal {name}`**"
         if summary:

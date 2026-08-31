@@ -98,7 +98,7 @@ class TestSelfUpgrade:
         """--version 1.3.0 should attempt install of that version."""
         install_called = {"version": None}
 
-        def mock_do_install(info, target, direction):
+        def mock_do_install(info, target, direction, output):
             install_called["version"] = target
 
         monkeypatch.setattr("observal_cli.cmd_ops._do_install", mock_do_install)
@@ -146,7 +146,7 @@ class TestSelfDowngrade:
         monkeypatch.setattr("observal_cli.install_detector.detect", lambda: info)
         monkeypatch.setattr(
             "observal_cli.cmd_ops._do_install",
-            lambda i, target, direction: install_called.update(i=i, target=target, direction=direction),
+            lambda i, target, direction, output: install_called.update(i=i, target=target, direction=direction),
         )
 
         app = _get_app()
@@ -164,7 +164,7 @@ class TestSelfDowngrade:
         monkeypatch.setattr("observal_cli.install_detector.detect", lambda: info)
         monkeypatch.setattr(
             "observal_cli.cmd_ops._do_install",
-            lambda i, target, direction: install_called.update(i=i, target=target, direction=direction),
+            lambda i, target, direction, output: install_called.update(i=i, target=target, direction=direction),
         )
 
         app = _get_app()
@@ -207,11 +207,10 @@ class TestSelfDowngrade:
 
         result = runner.invoke(_get_app(), ["self", "downgrade", "--version", "1.1.0", "--force"])
 
-        assert isinstance(result.exception, RuntimeError)
-        assert str(result.exception) == "install failed"
+        assert result.exit_code == 9
         assert save_calls == [{"auto_update": False}, {"auto_update": True}]
-        assert "could not restore auto-update setting" in result.output
-        assert "permission denied" in result.output
+        assert "automatic-update setting" in result.output
+        assert "not be restored" in result.output
 
     def test_modern_downgrade_does_not_change_auto_update(
         self, mock_install_uv, mock_lock, mock_auto_update_config, monkeypatch
@@ -283,7 +282,7 @@ class TestSelfRollback:
 
         app = _get_app()
         result = runner.invoke(app, ["self", "rollback"])
-        assert "No backup found" in result.output
+        assert "No CLI rollback backup" in result.output
 
 
 class TestSelfStatus:

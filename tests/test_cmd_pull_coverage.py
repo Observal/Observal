@@ -10,6 +10,7 @@ import json
 import stat
 import subprocess
 import sys
+import tomllib
 from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
@@ -148,9 +149,7 @@ def _invoke(
     return RUNNER.invoke(app, args)
 
 
-def test_warn_component_conflicts_reports_only_other_agent_versions(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
+def test_component_conflicts_report_only_other_agent_versions(monkeypatch: pytest.MonkeyPatch) -> None:
     import observal_cli.lockfile as lockfile
 
     registry = {
@@ -175,7 +174,7 @@ def test_warn_component_conflicts_reports_only_other_agent_versions(
     read_registry = MagicMock(return_value=({}, registry))
     monkeypatch.setattr(lockfile, "read_registry_lockfile", read_registry)
 
-    cmd_pull._warn_component_conflicts(
+    conflicts = cmd_pull._component_conflicts(
         "cursor",
         "incoming",
         [
@@ -184,13 +183,12 @@ def test_warn_component_conflicts_reports_only_other_agent_versions(
         ],
     )
 
-    output = capsys.readouterr().out
-    assert "Version conflict detected" in output
-    assert "mcp shared: v2.0.0 (this agent) vs v1.0.0 (from older-agent)" in output
-    assert "v0.1.0" not in output
+    assert conflicts == ["mcp shared: v2.0.0 (this agent) vs v1.0.0 (from older-agent)"]
 
     read_registry.side_effect = OSError("broken lockfile")
-    cmd_pull._warn_component_conflicts("cursor", "incoming", [])
+    with pytest.raises(typer.Exit) as error:
+        cmd_pull._component_conflicts("cursor", "incoming", [])
+    assert error.value.exit_code == 9
 
 
 def test_resolve_hook_paths_uses_path_fallback_only_in_quoted_commands(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -215,7 +213,7 @@ def test_resolve_hook_paths_uses_path_fallback_only_in_quoted_commands(monkeypat
     assert which.call_args_list == [call("observal-hook.sh"), call("observal-stop-hook.sh")]
 
 
-def test_collect_mcp_env_vars_prompts_deduplicates_and_tolerates_fetch_failures(
+def test_collect_mcp_env_vars_prompts_and_deduplicates(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     detail = {
@@ -223,8 +221,6 @@ def test_collect_mcp_env_vars_prompts_deduplicates_and_tolerates_fetch_failures(
         "component_links": [
             {"component_type": "mcp", "component_id": "mcp-1", "component_name": "duplicate"},
             {"component_type": "mcp", "component_id": "mcp-2", "component_name": ""},
-            {"component_type": "mcp", "component_id": "mcp-3", "component_name": "broken"},
-            {"component_type": "mcp", "component_id": "mcp-4", "component_name": "empty"},
             {"component_type": "skill", "component_id": "skill-1"},
         ],
     }
@@ -246,13 +242,11 @@ def test_collect_mcp_env_vars_prompts_deduplicates_and_tolerates_fetch_failures(
                     {"name": "REGION", "required": False},
                 ],
             }
-        if path.endswith("mcp-3"):
-            raise SystemExit(1)
         return {"environment_variables": []}
 
     prompt = MagicMock(side_effect=["", "optional-value", "typed-secret"])
     monkeypatch.setattr(cmd_pull.client, "get", get)
-    monkeypatch.setattr(cmd_pull, "text_input", prompt)
+    monkeypatch.setattr(cmd_pull, "password_input", prompt)
 
     values = cmd_pull._collect_mcp_env_vars(
         detail,
@@ -264,8 +258,8 @@ def test_collect_mcp_env_vars_prompts_deduplicates_and_tolerates_fetch_failures(
         "mcp-2": {"ASK": "typed-secret", "REGION": "eu-west-1"},
     }
     assert prompt.call_args_list == [
-        call("  EMPTY [dim](optional)[/dim] (press Enter to skip)", default=""),
-        call("  FILLED (press Enter to skip)", default=""),
+        call("  EMPTY [dim](optional)[/dim] (press Enter to skip)"),
+        call("  FILLED (press Enter to skip)"),
         call("  ASK"),
     ]
     output = capsys.readouterr().out
@@ -287,7 +281,7 @@ def test_collect_mcp_env_vars_no_prompt_uses_only_known_overrides(monkeypatch: p
         },
     )
     prompt = MagicMock(side_effect=AssertionError("prompted in no-prompt mode"))
-    monkeypatch.setattr(cmd_pull, "text_input", prompt)
+    monkeypatch.setattr(cmd_pull, "password_input", prompt)
 
     assert cmd_pull._collect_mcp_env_vars(
         detail,
@@ -298,7 +292,7 @@ def test_collect_mcp_env_vars_no_prompt_uses_only_known_overrides(monkeypatch: p
     assert cmd_pull._collect_mcp_env_vars({}, no_prompt=True) == {}
 
 
-def test_collect_mcp_headers_prompts_deduplicates_and_tolerates_fetch_failures(
+def test_collect_mcp_headers_prompts_and_deduplicates(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     detail = {
@@ -306,8 +300,6 @@ def test_collect_mcp_headers_prompts_deduplicates_and_tolerates_fetch_failures(
         "component_links": [
             {"component_type": "mcp", "component_id": "mcp-1"},
             {"component_type": "mcp", "component_id": "mcp-2", "component_name": ""},
-            {"component_type": "mcp", "component_id": "mcp-3"},
-            {"component_type": "mcp", "component_id": "mcp-4"},
             {"component_type": "hook", "component_id": "hook-1"},
         ],
     }
@@ -329,13 +321,11 @@ def test_collect_mcp_headers_prompts_deduplicates_and_tolerates_fetch_failures(
                     {"name": "X-Region", "required": False},
                 ],
             }
-        if path.endswith("mcp-3"):
-            raise RuntimeError("listing unavailable")
         return {"headers": []}
 
     prompt = MagicMock(side_effect=["", "optional-value", "required-value"])
     monkeypatch.setattr(cmd_pull.client, "get", get)
-    monkeypatch.setattr(cmd_pull, "text_input", prompt)
+    monkeypatch.setattr(cmd_pull, "password_input", prompt)
 
     values = cmd_pull._collect_mcp_headers(
         detail,
@@ -347,8 +337,8 @@ def test_collect_mcp_headers_prompts_deduplicates_and_tolerates_fetch_failures(
         "mcp-2": {"X-Required": "required-value", "X-Region": "eu"},
     }
     assert prompt.call_args_list == [
-        call("  X-Skip [dim](optional)[/dim] (press Enter to skip)", default=""),
-        call("  X-Filled (press Enter to skip)", default=""),
+        call("  X-Skip [dim](optional)[/dim] (press Enter to skip)"),
+        call("  X-Filled (press Enter to skip)"),
         call("  X-Required"),
     ]
     output = capsys.readouterr().out
@@ -365,7 +355,7 @@ def test_collect_mcp_headers_no_prompt_uses_only_known_overrides(monkeypatch: py
         lambda _path: {"headers": [{"name": "Required"}, {"name": "Optional", "required": False}]},
     )
     prompt = MagicMock(side_effect=AssertionError("prompted in no-prompt mode"))
-    monkeypatch.setattr(cmd_pull, "text_input", prompt)
+    monkeypatch.setattr(cmd_pull, "password_input", prompt)
 
     assert cmd_pull._collect_mcp_headers(
         detail,
@@ -416,8 +406,9 @@ def test_write_file_handles_toml_json_strings_and_empty_content(tmp_path: Path) 
 
     json_path = tmp_path / "broken.json"
     json_path.write_text("not-json")
-    assert cmd_pull._write_file(json_path, {"servers": {"new": {"command": "npx"}}}, merge_mcp=True) == "merged"
-    assert json.loads(json_path.read_text()) == {"servers": {"new": {"command": "npx"}}}
+    with pytest.raises(ValueError, match="unreadable JSON"):
+        cmd_pull._write_file(json_path, {"servers": {"new": {"command": "npx"}}}, merge_mcp=True)
+    assert json_path.read_text() == "not-json"
 
     empty_path = tmp_path / "empty.json"
     assert cmd_pull._write_file(empty_path, {}) == "created"
@@ -431,7 +422,7 @@ def test_write_file_handles_toml_json_strings_and_empty_content(tmp_path: Path) 
 
 def test_write_file_yaml_merges_or_preserves_existing_content(tmp_path: Path) -> None:
     path = tmp_path / "goose.yaml"
-    path.write_text(yaml.safe_dump({"provider": "anthropic", "extensions": ["invalid section"]}))
+    path.write_text(yaml.safe_dump({"provider": "anthropic", "extensions": {"old": {"type": "stdio"}}}))
     assert (
         cmd_pull._write_file(
             path,
@@ -442,7 +433,7 @@ def test_write_file_yaml_merges_or_preserves_existing_content(tmp_path: Path) ->
     )
     assert yaml.safe_load(path.read_text()) == {
         "provider": "anthropic",
-        "extensions": {"github": {"type": "stdio"}},
+        "extensions": {"old": {"type": "stdio"}, "github": {"type": "stdio"}},
     }
 
     replace_path = tmp_path / "replace.yml"
@@ -458,12 +449,14 @@ def test_write_file_yaml_merges_or_preserves_existing_content(tmp_path: Path) ->
 
     malformed = tmp_path / "malformed.yaml"
     malformed.write_text("extensions: [unterminated\n")
-    assert cmd_pull._write_file(malformed, {"extensions": {"new": {}}}, merge_mcp=True) == ("skipped (unreadable YAML)")
+    with pytest.raises(ValueError, match="unreadable YAML"):
+        cmd_pull._write_file(malformed, {"extensions": {"new": {}}}, merge_mcp=True)
     assert malformed.read_text() == "extensions: [unterminated\n"
 
     unexpected = tmp_path / "unexpected.yaml"
     unexpected.write_text("- one\n- two\n")
-    assert cmd_pull._write_file(unexpected, {"extensions": {}}, merge_mcp=True) == ("skipped (unexpected YAML)")
+    with pytest.raises(ValueError, match="top level"):
+        cmd_pull._write_file(unexpected, {"extensions": {}}, merge_mcp=True)
     assert unexpected.read_text() == "- one\n- two\n"
 
     created = tmp_path / "new.yaml"
@@ -549,15 +542,20 @@ def test_resolve_path_maps_project_home_and_rejects_traversal(
     for unsafe in ("../outside.txt", str(outside / "absolute.txt"), "link/escaped.txt"):
         with pytest.raises(typer.Exit) as caught:
             cmd_pull._resolve_path(unsafe, target)
-        assert caught.value.exit_code == 1
+        assert caught.value.exit_code == 7
     output = capsys.readouterr().out
-    assert "escapes target directory" in output
+    assert "escapes the target directory" in output
 
 
 def test_parse_model_overrides_and_saved_model_delegate(monkeypatch: pytest.MonkeyPatch) -> None:
-    assert cmd_pull._parse_model_overrides(
-        [" default-one ", "codex = gpt-5", "=missing", "kiro=", " default-two ", ""]
-    ) == ("default-two", {"codex": "gpt-5"})
+    assert cmd_pull._parse_model_overrides([" default-one ", "codex = gpt-5", " default-two "]) == (
+        "default-two",
+        {"codex": "gpt-5"},
+    )
+    for invalid in ("=missing", "kiro=", ""):
+        with pytest.raises(typer.Exit) as error:
+            cmd_pull._parse_model_overrides([invalid])
+        assert error.value.exit_code == 7
 
     adapter = MagicMock()
     adapter.saved_model.return_value = "saved-model"
@@ -660,15 +658,16 @@ def test_collect_install_options_handles_catalog_and_model_format_failures(
     choices = MagicMock(return_value=[])
     monkeypatch.setattr(catalog, "model_choices_for_picker", choices)
     monkeypatch.setattr(cmd_pull, "select_one", lambda *_args, **_kwargs: "auto (let the harness decide)")
-    assert cmd_pull._collect_install_options(
-        "demo",
-        scope=None,
-        model_default=None,
-        model_overrides={},
-        tools=None,
-        no_prompt=False,
-    ) == {"model": ""}
-    choices.assert_called_once_with({"models": []}, "demo")
+    with pytest.raises(RuntimeError, match="offline"):
+        cmd_pull._collect_install_options(
+            "demo",
+            scope=None,
+            model_default=None,
+            model_overrides={},
+            tools=None,
+            no_prompt=False,
+        )
+    choices.assert_not_called()
 
 
 def test_collect_install_options_no_prompt_uses_registry_default_scope(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -810,9 +809,7 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
     run = MagicMock()
 
     def run_command(command: list[str], **_kwargs):
-        if command[0] == "missing":
-            raise FileNotFoundError(command[0])
-        return subprocess.CompletedProcess(command, 0 if command[0] == "good" else 7, "", "tool failed\n")
+        return subprocess.CompletedProcess(command, 0, "", "")
 
     run.side_effect = run_command
     monkeypatch.setattr(cmd_pull.subprocess, "run", run)
@@ -828,15 +825,10 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
         "claude-code=selected-model",
         "--tools",
         "Read,Write",
-        "--refresh-models",
         "--env",
         "API_KEY='secret'",
-        "--env",
-        "=discarded",
         "--header",
         'Authorization="Bearer token"',
-        "--header",
-        "=discarded",
         "--version",
         "1.4.0",
     )
@@ -872,7 +864,7 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
             "version": "1.4.0",
         },
     )
-    boundaries.invalidate.assert_called_once_with()
+    boundaries.invalidate.assert_not_called()
 
     assert json.loads(mcp_path.read_text()) == {
         "mcpServers": {
@@ -958,9 +950,7 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
         "Pulled claude-code config (10 files)",
         "server warning",
         "snippet warning",
-        "Registering MCP servers",
-        "missing not found",
-        "tool failed",
+        "Registered MCP servers",
     ):
         assert visible in result.output
 
@@ -1085,12 +1075,8 @@ def test_pull_partial_skill_failure_stops_metadata_updates_without_rolling_back_
 
     result = _invoke(pull_app, target)
 
-    assert result.exit_code == 1
-    assert "Failed to install skill 'git-failure'" in result.output
-    assert "Failed to install skill 'direct-failure'" in result.output
-    assert "Skill installation failed" in result.output
-    assert "• git-failure" in result.output
-    assert "• direct-failure" in result.output
+    assert result.exit_code == 9
+    assert "Failed to install 2 agent skill(s)" in result.output
     assert (target / "agent.md").read_text() == "written before skills\n"
     boundaries.upsert.assert_not_called()
     boundaries.snapshot.assert_not_called()
@@ -1098,7 +1084,7 @@ def test_pull_partial_skill_failure_stops_metadata_updates_without_rolling_back_
     boundaries.emit.assert_not_called()
 
 
-def test_pull_lockfile_and_snapshot_failures_do_not_hide_success(
+def test_pull_lockfile_failure_is_not_reported_as_success(
     pull_app: typer.Typer,
     boundaries: SimpleNamespace,
     tmp_path: Path,
@@ -1111,7 +1097,8 @@ def test_pull_lockfile_and_snapshot_failures_do_not_hide_success(
 
     result = _invoke(pull_app, target, reference="name-only")
 
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 9
+    assert "installation tracking failed" in result.output
     assert (target / "agent.md").read_text() == "agent\n"
     boundaries.local_name.assert_called_once_with(
         "claude-code",
@@ -1121,22 +1108,16 @@ def test_pull_lockfile_and_snapshot_failures_do_not_hide_success(
         scope="project",
         directory=str(target.resolve()),
     )
-    boundaries.adapter.persist_active_agent.assert_called_once_with("agent-uuid", "agent-uuid", None)
-    boundaries.emit.assert_called_once_with(
-        "agent.pull",
-        resource_type="agent",
-        resource_id="agent-uuid",
-        resource_name="agent-uuid",
-        detail="harness=claude-code",
-        sensitivity="high",
-    )
+    boundaries.snapshot.assert_not_called()
+    boundaries.adapter.persist_active_agent.assert_not_called()
+    boundaries.emit.assert_not_called()
 
 
 @pytest.mark.parametrize(
     ("snippet", "message", "metadata_written"),
     [
-        ({}, "empty config snippet", False),
-        ({"scope": "project", "mcp_config": {"content": {}}}, "No files to write", True),
+        ({}, "empty agent configuration", False),
+        ({"scope": "project", "mcp_config": {"content": {}}}, "no writable files", False),
     ],
 )
 def test_pull_rejects_empty_or_unsupported_snippets(
@@ -1151,7 +1132,7 @@ def test_pull_rejects_empty_or_unsupported_snippets(
 
     result = _invoke(pull_app, tmp_path / "project")
 
-    assert result.exit_code == 1
+    assert result.exit_code == 9
     assert message.lower() in result.output.lower()
     assert boundaries.upsert.called is metadata_written
     assert boundaries.emit.called is metadata_written
@@ -1169,8 +1150,8 @@ def test_pull_required_and_unknown_harness_validation_stops_before_http(
 
     boundaries.get_adapter.side_effect = KeyError("unknown harness")
     unknown = _invoke(pull_app, tmp_path / "project", harness="unknown")
-    assert unknown.exit_code == 1
-    assert isinstance(unknown.exception, KeyError)
+    assert unknown.exit_code == 7
+    assert "Unknown harness" in unknown.output
     boundaries.get.assert_not_called()
     boundaries.post.assert_not_called()
 
@@ -1193,9 +1174,9 @@ def test_pull_server_scope_validation_failure_leaves_filesystem_clean(
 
     result = _invoke(pull_app, target, "--scope", "workspace")
 
-    assert result.exit_code == 1
-    assert "Invalid scope: workspace" in result.output
-    assert seen["options"] == {"scope": "workspace", "local_name": "local-reviewer"}
+    assert result.exit_code == 7
+    assert "Unknown install scope" in result.output
+    assert seen == {}
     assert list(target.iterdir()) == []
     boundaries.upsert.assert_not_called()
 
@@ -1212,8 +1193,170 @@ def test_pull_path_traversal_stops_before_lockfile_update(
 
     result = _invoke(pull_app, target)
 
-    assert result.exit_code == 1
-    assert "escapes target directory" in result.output
+    assert result.exit_code == 7
+    assert "escapes the target directory" in result.output
     assert not (tmp_path.parent / "escape.sh").exists()
     boundaries.upsert.assert_not_called()
     boundaries.emit.assert_not_called()
+
+
+def test_parse_assignments_rejects_missing_names_and_values():
+    assert cmd_pull._parse_assignments(["TOKEN='secret'"], "environment variable") == {"TOKEN": "secret"}
+    for invalid in ("TOKEN", "=secret", "TOKEN="):
+        with pytest.raises(typer.Exit) as error:
+            cmd_pull._parse_assignments([invalid], "environment variable")
+        assert error.value.exit_code == 7
+
+
+def test_toml_merge_is_idempotent_for_existing_server(tmp_path: Path):
+    path = tmp_path / "config.toml"
+    first = {"mcp_servers": {"github": {"command": "old"}}}
+    second = {"mcp_servers": {"github": {"command": "new"}}}
+
+    cmd_pull._write_file(path, first)
+    cmd_pull._write_file(path, second, merge_mcp=True)
+    cmd_pull._write_file(path, second, merge_mcp=True)
+
+    assert tomllib.loads(path.read_text()) == second
+    assert path.read_text().count("[mcp_servers.github]") == 1
+
+
+def test_pull_json_returns_stable_file_and_setup_result_without_secrets(
+    pull_app: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+):
+    target = tmp_path / "project"
+    boundaries.post.return_value = {
+        "config_snippet": {
+            "agent_profile": {"path": "agent.md", "content": "agent\n"},
+            "mcp_setup_commands": [[sys.executable, "-c", "pass"]],
+        },
+        "warnings": ["server warning"],
+    }
+
+    result = _invoke(
+        pull_app,
+        target,
+        "--env",
+        "TOKEN=secret-value",
+        "--header",
+        "Authorization=Bearer secret-value",
+        "--output",
+        "json",
+    )
+
+    assert result.exit_code == 0, result.output
+    assert result.stderr == ""
+    payload = json.loads(result.output)
+    assert payload["agent"]["qualified_name"] == "acme/reviewer"
+    assert payload["harness"] == "claude-code"
+    assert payload["dry_run"] is False
+    assert payload["files"] == [{"path": str(target.resolve() / "agent.md"), "status": "created"}]
+    assert payload["warnings"] == ["server warning"]
+    assert payload["setup_commands"][0]["status"] == "completed"
+    assert "secret-value" not in result.output
+    boundaries.upsert.assert_called_once()
+
+
+def test_pull_json_dry_run_has_no_write_or_metadata_side_effects(
+    pull_app: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+):
+    target = tmp_path / "project"
+    boundaries.post.return_value = {
+        "config_snippet": {
+            "agent_profile": {"path": "agent.md", "content": "agent\n"},
+            "mcp_setup_commands": [["claude", "mcp", "add", "server"]],
+        }
+    }
+
+    result = _invoke(pull_app, target, "--dry-run", "--output", "json")
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["dry_run"] is True
+    assert payload["files"][0]["status"] == "would write"
+    assert payload["setup_commands"][0]["status"] == "would_run"
+    assert not target.exists()
+    boundaries.upsert.assert_not_called()
+    boundaries.emit.assert_not_called()
+
+
+def test_pull_setup_failure_does_not_record_installation(
+    pull_app: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    target = tmp_path / "project"
+    boundaries.post.return_value = {
+        "config_snippet": {
+            "agent_profile": {"path": "agent.md", "content": "agent\n"},
+            "mcp_setup_commands": [["broken", "mcp", "add"]],
+        }
+    }
+    monkeypatch.setattr(
+        cmd_pull.subprocess,
+        "run",
+        MagicMock(return_value=subprocess.CompletedProcess(["broken"], 2, "", "failed")),
+    )
+
+    result = _invoke(pull_app, target)
+
+    assert result.exit_code == 9
+    assert (target / "agent.md").is_file()
+    boundaries.upsert.assert_not_called()
+    boundaries.emit.assert_not_called()
+
+
+def test_pull_snapshot_failure_is_visible_warning(
+    pull_app: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+):
+    target = tmp_path / "project"
+    boundaries.snapshot.side_effect = RuntimeError("snapshot failed")
+    boundaries.post.return_value = {"config_snippet": {"agent_profile": {"path": "agent.md", "content": "agent\n"}}}
+
+    result = _invoke(pull_app, target, "--output", "json")
+
+    assert result.exit_code == 0, result.output
+    assert any(
+        "Local layer snapshot could not be refreshed" in warning for warning in json.loads(result.output)["warnings"]
+    )
+    boundaries.upsert.assert_called_once()
+
+
+def test_pull_rejects_malformed_existing_config_without_overwrite(
+    pull_app: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+):
+    target = tmp_path / "project"
+    path = target / "mcp.json"
+    path.parent.mkdir(parents=True)
+    path.write_text("not-json")
+    boundaries.post.return_value = {
+        "config_snippet": {"mcp_config": {"path": "mcp.json", "content": {"mcpServers": {"new": {}}}}}
+    }
+
+    result = _invoke(pull_app, target)
+
+    assert result.exit_code == 6
+    assert path.read_text() == "not-json"
+    boundaries.upsert.assert_not_called()
+
+
+def test_pull_rejects_irrelevant_model_refresh_before_http(
+    pull_app: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+):
+    result = _invoke(pull_app, tmp_path / "project", "--refresh-models")
+
+    assert result.exit_code == 7
+    assert "requires the interactive model picker" in result.output
+    boundaries.resolve.assert_not_called()
+    boundaries.get.assert_not_called()

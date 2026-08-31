@@ -3,79 +3,136 @@
 <!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# observal doctor
+# `observal doctor`
 
-Diagnose harness compatibility and session telemetry setup. Run this when session data is not appearing or a harness integration is unhealthy.
+Diagnose local Observal state, repair managed telemetry instrumentation, remove managed instrumentation, and work with redacted support bundles.
 
-## Synopsis
+All five workflows support `--output table|json`. JSON mode never prompts or emits human banners.
 
-```bash
-observal doctor [--yes]
-```
+## Commands
 
-## What it checks
+| Command | Purpose |
+| --- | --- |
+| `doctor` | Diagnose configuration, Registry metadata, skills, and harness telemetry |
+| `doctor patch` | Install or update Observal-managed telemetry instrumentation |
+| `doctor cleanup` | Remove Observal-managed telemetry instrumentation |
+| `doctor support bundle` | Generate a redacted diagnostic archive |
+| `doctor support inspect` | Inspect a diagnostic archive without extracting it |
 
-- The Observal server is configured and reachable.
-- Every UUID in the active registry's lockfile section still resolves on the server.
-- Canonical names, namespaces, slugs, and statuses match server metadata.
-- Observal session hooks or extensions are present.
-- UUID-attributed Kiro hooks match their locked agents.
-- Local session delivery state is healthy.
-
-MCP commands and remote URLs are not inspected or rewritten for telemetry.
-
-## Examples
+## Diagnose
 
 ```bash
-observal doctor
-observal doctor --yes
+observal doctor --output json
 ```
 
-Doctor asks before applying repairs. `--yes` confirms them non-interactively. Canonical registry metadata is updated from the server without changing installed version pins. Harness repairs only replace Observal-managed hooks and preserve user hooks.
+Doctor checks:
 
-The version 2 lockfile groups installations under normalized server URLs in a top-level `registries` object. Switching servers selects a separate registry section while preserving installations from other registries.
+* Local authentication configuration and server health
+* Registry lockfile metadata against the active Registry
+* Managed hooks, plugins, or extensions for all registered harnesses
+* UUID-attributed Kiro Agent hooks
+* Bundled Observal skill installation
+
+JSON diagnosis exits zero when the checks ran successfully. Health is reported through `healthy`, `issues`, and `warnings`:
+
+```json
+{
+  "healthy": false,
+  "issues": ["Cannot reach the configured server"],
+  "warnings": ["Cursor session push hooks are not installed"],
+  "lockfile_changes": [],
+  "skill_missing": [],
+  "fix_attempted": false,
+  "patch": null
+}
+```
+
+Human mode retains health-check behavior: unresolved issues exit nonzero. Warnings alone remain successful.
+
+Apply fixable warnings and canonical lockfile metadata without prompting:
+
+```bash
+observal doctor --yes --output json
+```
+
+Installed version pins are not changed. Only Observal-managed telemetry entries are updated.
+
+## Patch
+
+Preview every registered harness:
+
+```bash
+observal doctor patch --all-harnesses --dry-run --output json
+```
+
+Patch selected harnesses:
+
+```bash
+observal doctor patch --harness claude-code --harness kiro --output json
+```
+
+Exactly one target mode is required: `--all-harnesses` or one or more `--harness` options. JSON returns one result per harness:
+
+```json
+{
+  "action": "patch",
+  "dry_run": false,
+  "changed": true,
+  "targets": [
+    {"harness": "kiro", "changed": true}
+  ]
+}
+```
+
+Patch is idempotent. It preserves unrelated hooks and configuration. Configuration writes are atomic. Invalid or unreadable harness files fail loudly rather than being replaced.
+
+For Pi, patch installs the bundled TypeScript extension at `~/.pi/agent/extensions/observal.ts` and removes the legacy npm package registration. MCP commands and remote URLs are never wrapped or rewritten.
+
+## Cleanup
+
+Preview cleanup:
+
+```bash
+observal doctor cleanup --dry-run --output json
+```
+
+Remove instrumentation from one harness:
+
+```bash
+observal doctor cleanup --harness goose --yes --output json
+```
+
+Remove instrumentation from all registered harnesses except selected entries:
+
+```bash
+observal doctor cleanup --exclude kiro --yes --output json
+```
+
+Cleanup removes only Observal-managed hooks, plugins, extensions, and legacy telemetry settings. User-owned hooks remain. Human mode confirms before writing unless `--yes` is present. JSON cleanup requires `--yes` unless it is a dry run.
+
+Unknown harnesses, conflicting selections, malformed configuration, and write failures are surfaced before success is reported.
+
+## Support bundles
+
+```bash
+observal doctor support bundle --output json
+observal doctor support inspect ./observal-support.tar.gz --output json
+```
+
+See [Support bundles](support.md) for archive contents, redaction, offline behavior, and inspection limits.
 
 ## Exit codes
 
 | Code | Meaning |
 | --- | --- |
-| 0 | All checks passed |
-| 1 | At least one check failed |
-| 3 | No harness configs found |
-
-# observal doctor patch
-
-Install session telemetry hooks for selected harnesses.
-
-## Synopsis
-
-```bash
-observal doctor patch [--all-harnesses] [--harness <harness>] [--dry-run]
-```
-
-## Options
-
-| Option | Description |
-| --- | --- |
-| `--all-harnesses` | Target every supported harness |
-| `--harness <harness>` | Target a harness; repeat to select several |
-| `--dry-run` / `-n` | Show hook changes without writing files |
-
-You must choose `--all-harnesses` or at least one `--harness`.
-
-## Examples
-
-```bash
-observal doctor patch --all-harnesses
-observal doctor patch --harness claude-code
-observal doctor patch --harness kiro --harness copilot-cli
-observal doctor patch --all-harnesses --dry-run
-```
-
-The command is idempotent. Existing Observal hooks are retained, missing hooks are installed, stale Kiro UUID hooks are repaired, and MCP configuration is left untouched. For Pi, Doctor copies the bundled TypeScript extension directly to `~/.pi/agent/extensions/observal.ts` and removes the legacy npm package registration. Restart the harness after applying changes.
+| 3 | Authentication is required for patching |
+| 5 | Support bundle or requested bundle file not found |
+| 6 | Output archive already exists |
+| 7 | Invalid harness selection, malformed harness file, invalid bundle, or missing confirmation |
+| 9 | Server, collector, or filesystem unavailable |
 
 ## Related
 
-- [`observal scan`](scan.md): read-only local inventory
-- [`observal agent pull`](pull.md): install a complete agent
-- [Session tracking and reconciliation](../core-concepts/session-tracking.md): session ingestion architecture
+* [`observal scan`](scan.md): read-only harness inventory
+* [`observal agent pull`](pull.md): install a complete Agent
+* [Session tracking](../core-concepts/session-tracking.md): telemetry delivery architecture

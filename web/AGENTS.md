@@ -33,7 +33,7 @@ The web UI is one of three ways to interact with Observal, alongside the CLI and
 
 OKLCH color space with semantic tokens: `background`, `foreground`, `card`, `border`, `primary`, `secondary`, `accent`, `destructive`, `success`, `warning`, `info`.
 
-Themes include light, dark, midnight, forest, sunset, solarized, dracula, nord, monokai, gruvbox, catppuccin, tokyo night, one dark, and rose pine. Tokens are defined in `app.css` and switched by `ThemeProvider` in `src/lib/theme.tsx`.
+The product ships two composed themes: dark (default) and light. Tokens are defined in `app.css` and switched by `ThemeProvider` in `src/lib/theme.tsx`. Unsupported legacy theme values stored by older builds migrate to dark.
 
 Typography uses local fonts only. Tailwind CSS 4 reads tokens directly from CSS.
 

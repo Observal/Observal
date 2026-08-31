@@ -301,6 +301,7 @@ async def test_saml_create_generates_encrypts_persists_and_audits(monkeypatch, d
             "idp_entity_id": "https://idp.example.test/entity",
             "idp_sso_url": "https://idp.example.test/sso",
             "idp_x509_cert": IDP_CERT,
+            "active": False,
         },
         db=db,
         current_user=_user(),
@@ -318,7 +319,7 @@ async def test_saml_create_generates_encrypts_persists_and_audits(monkeypatch, d
     assert config.sp_acs_url == expected_acs
     assert config.jit_provisioning is True
     assert config.default_role == "user"
-    assert config.active is True
+    assert config.active is False
     db.commit.assert_awaited_once()
     db.refresh.assert_awaited_once_with(config)
     assert PRIVATE_KEY not in json.dumps(response)

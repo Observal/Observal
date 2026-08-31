@@ -11,16 +11,17 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import sys
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
-import typer
 import yaml
 from typer.testing import CliRunner
 
+from observal_cli.errors import CliError, ErrorCategory
 from observal_cli.main import app as cli_app
 
 if TYPE_CHECKING:
@@ -47,6 +48,10 @@ def _patch_config():
     with (
         patch("observal_cli.config.get_or_exit", return_value=_FAKE_CONFIG),
         patch("observal_cli.config.load", return_value=_FAKE_CONFIG),
+        patch(
+            "observal_cli.cmd_pull.subprocess.run",
+            return_value=subprocess.CompletedProcess(["claude"], 0, "", ""),
+        ),
     ):
         yield
 
@@ -265,7 +270,7 @@ class TestPullClaudeCode:
                 cli_app, ["agent", "pull", "abc123", "--harness", "claude-code", "--dir", str(tmp_path), "--no-prompt"]
             )
 
-        assert "Registering MCP servers" in result.output
+        assert "Registered MCP servers" in result.output
 
     def test_dry_run_shows_setup_commands_without_running(self, tmp_path: Path):
         with _patch_config(), _patch_get_agent(), _patch_post(_claude_code_snippet()):
@@ -616,7 +621,7 @@ class TestPullEdgeCases:
                 cli_app, ["agent", "pull", "abc123", "--harness", "cursor", "--dir", str(tmp_path), "--no-prompt"]
             )
         assert result.exit_code != 0
-        assert "empty config snippet" in result.output.lower()
+        assert "empty agent configuration" in result.output.lower()
 
     def test_resolve_alias_is_called(self, tmp_path: Path):
         """The command should call config.resolve_alias for the agent_id."""
@@ -814,7 +819,7 @@ class TestAgentAdd:
         _make_agent_yaml(tmp_path)
         result = runner.invoke(
             cli_app,
-            ["agent", "add", "mcp", "aaaa-bbbb-cccc", "--dir", str(tmp_path)],
+            ["agent", "add", "mcp", "11111111-1111-1111-1111-111111111111", "--dir", str(tmp_path)],
         )
         assert result.exit_code == 0, result.output
         assert "Added" in result.output
@@ -822,7 +827,7 @@ class TestAgentAdd:
         data = yaml.safe_load((tmp_path / "observal-agent.yaml").read_text())
         assert len(data["components"]) == 1
         assert data["components"][0]["component_type"] == "mcp"
-        assert data["components"][0]["component_id"] == "aaaa-bbbb-cccc"
+        assert data["components"][0]["component_id"] == "11111111-1111-1111-1111-111111111111"
 
     def test_rejects_invalid_component_type(self, tmp_path: Path):
         """Invalid component_type exits non-zero."""
@@ -832,19 +837,19 @@ class TestAgentAdd:
             ["agent", "add", "widget", "some-id", "--dir", str(tmp_path)],
         )
         assert result.exit_code != 0
-        assert "Invalid component type" in result.output
+        assert "Unknown agent component type" in result.output
 
     def test_prevents_duplicate_component(self, tmp_path: Path):
         """Adding the same component twice exits non-zero."""
         _make_agent_yaml(
             tmp_path,
             components=[
-                {"component_type": "skill", "component_id": "abc-123"},
+                {"component_type": "skill", "component_id": "22222222-2222-2222-2222-222222222222"},
             ],
         )
         result = runner.invoke(
             cli_app,
-            ["agent", "add", "skill", "abc-123", "--dir", str(tmp_path)],
+            ["agent", "add", "skill", "22222222-2222-2222-2222-222222222222", "--dir", str(tmp_path)],
         )
         assert result.exit_code != 0
         assert "already exists" in result.output
@@ -853,7 +858,7 @@ class TestAgentAdd:
         """Fails if observal-agent.yaml does not exist."""
         result = runner.invoke(
             cli_app,
-            ["agent", "add", "mcp", "some-id", "--dir", str(tmp_path)],
+            ["agent", "add", "mcp", "33333333-3333-3333-3333-333333333333", "--dir", str(tmp_path)],
         )
         assert result.exit_code != 0
         assert "not found" in result.output
@@ -936,7 +941,12 @@ class TestAgentBuild:
         )
 
         def mock_get(path, **kwargs):
-            raise typer.Exit(code=1)
+            raise CliError(
+                ErrorCategory.NOT_FOUND,
+                "Component not found.",
+                "Validate agent",
+                resource=path,
+            )
 
         with (
             _patch_config(),
@@ -948,7 +958,7 @@ class TestAgentBuild:
                 ["agent", "build", "--dir", str(tmp_path)],
             )
         assert result.exit_code != 0
-        assert "failed validation" in result.output
+        assert "validation failed" in result.output
         assert "mcp:bad-id" in result.output
 
     def test_reports_server_scope_issues(self, tmp_path: Path):
@@ -982,7 +992,7 @@ class TestAgentBuild:
                 ["agent", "build", "--dir", str(tmp_path)],
             )
         assert result.exit_code != 0
-        assert "failed validation" in result.output
+        assert "validation failed" in result.output
         assert "Component belongs to another teamspace" in result.output
 
     def test_fails_if_no_yaml(self, tmp_path: Path):
@@ -1014,7 +1024,7 @@ class TestAgentPublish:
         assert result.exit_code == 0, result.output
         assert "Agent submitted!" in result.output
         assert "new-agent-uuid" in result.output
-        assert "observal pull tester/test-agent" in result.output
+        assert "observal agent pull tester/test-agent" in result.output
         # A public publish stays in the review queue, so the CLI must say so.
         assert "an admin must approve it" in result.output
 
@@ -1047,7 +1057,7 @@ class TestAgentPublish:
             )
         assert result.exit_code == 0, result.output
         assert "Agent submitted!" in result.output
-        assert "observal pull platform/test-agent" in result.output
+        assert "observal agent pull platform/test-agent" in result.output
         assert "must approve" not in result.output
 
         payload = mock_post_fn.call_args[0][1]

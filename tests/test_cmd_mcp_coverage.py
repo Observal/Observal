@@ -15,6 +15,7 @@ from typer.testing import CliRunner
 
 import observal_cli.cmd_mcp as mcp
 from observal_cli import lockfile
+from observal_cli.errors import CliError, ErrorCategory
 from observal_cli.main import app
 
 runner = CliRunner()
@@ -57,7 +58,9 @@ def test_parse_env_file_and_interactive_env_entry(tmp_path, monkeypatch):
         {"name": "API_KEY", "description": "", "required": True},
         {"name": "TOKEN", "description": "", "required": True},
     ]
-    assert mcp._parse_env_file(str(tmp_path / "missing.env")) == []
+    with pytest.raises(CliError) as missing:
+        mcp._parse_env_file(str(tmp_path / "missing.env"))
+    assert missing.value.category is ErrorCategory.NOT_FOUND
 
     answers = iter(["api_key", "API key", "optional", "", ""])
     monkeypatch.setattr(mcp, "text_input", lambda *_args, **_kwargs: next(answers))
@@ -275,8 +278,8 @@ def test_submit_direct_interactive_reviews_dependencies(monkeypatch):
 @pytest.mark.parametrize(
     ("lines", "message"),
     [
-        ([EOFError], "No input received"),
-        (["{not-json", ""], "Invalid JSON"),
+        ([EOFError], "No MCP configuration was provided"),
+        (["{not-json", ""], "not valid JSON"),
     ],
 )
 def test_submit_direct_rejects_missing_or_invalid_json(lines, message, monkeypatch, capsys):
@@ -293,7 +296,7 @@ def test_submit_direct_rejects_missing_or_invalid_json(lines, message, monkeypat
     with pytest.raises(typer.Exit) as exc:
         mcp._submit_impl(None, None, None, True, direct_config=True)
 
-    assert exc.value.exit_code == 1
+    assert exc.value.exit_code == 7
     assert message in capsys.readouterr().out
 
 
@@ -625,7 +628,12 @@ def test_list_json_filters_sorts_limits_and_caches(monkeypatch):
 
     assert result.exit_code == 0, result.output
     rendered = json.loads(result.output)
-    assert [item["name"] for item in rendered] == ["Alpha"]
+    assert [item["name"] for item in rendered["items"]] == ["Alpha"]
+    assert {key: rendered[key] for key in ("total", "page", "page_size")} == {
+        "total": 1,
+        "page": 1,
+        "page_size": 1,
+    }
     get.assert_called_once_with(
         "/api/v1/mcps",
         params={
@@ -635,10 +643,10 @@ def test_list_json_filters_sorts_limits_and_caches(monkeypatch):
             "team_id": "team-1",
         },
     )
-    save.assert_called_once_with([data[1]])
+    save.assert_called_once_with([data[1]], "mcp")
 
 
-def test_list_plain_table_empty_and_interactive(monkeypatch, capsys):
+def test_list_table_empty_and_interactive(monkeypatch, capsys):
     save = Mock()
     monkeypatch.setattr(mcp.config, "save_last_results", save)
     item = _registry_item()
@@ -648,7 +656,7 @@ def test_list_plain_table_empty_and_interactive(monkeypatch, capsys):
     assert "No MCP servers found" in capsys.readouterr().out
 
     monkeypatch.setattr(mcp.client, "get", Mock(return_value=[item]))
-    mcp._list_impl(None, None, 50, "version", "plain")
+    mcp._list_impl(None, None, 50, "version", "table")
     assert "mcp-1" in capsys.readouterr().out
 
     mcp._list_impl(None, None, 50, "unknown", "table")
@@ -673,9 +681,9 @@ def test_list_plain_table_empty_and_interactive(monkeypatch, capsys):
     show.assert_not_called()
 
 
-def test_my_mcp_outputs_and_empty_state(monkeypatch):
+def test_my_mcp_outputs_reject_plain_and_empty_state(monkeypatch):
     item = _registry_item()
-    get = Mock(side_effect=[[], [item], [item], [item]])
+    get = Mock(side_effect=[[], [item], [item]])
     monkeypatch.setattr(mcp.client, "get", get)
     save = Mock()
     monkeypatch.setattr(mcp.config, "save_last_results", save)
@@ -685,10 +693,12 @@ def test_my_mcp_outputs_and_empty_state(monkeypatch):
     as_json = runner.invoke(app, ["registry", "mcp", "my", "--output", "json"])
     table = runner.invoke(app, ["registry", "mcp", "my"])
 
-    assert empty.exit_code == plain.exit_code == as_json.exit_code == table.exit_code == 0
+    assert empty.exit_code == as_json.exit_code == table.exit_code == 0
+    assert plain.exit_code == 2
+    assert "Error" in plain.output
+    assert "plain" in plain.output
     assert "You have no MCP servers" in empty.output
-    assert "search-mcp" in plain.output
-    assert json.loads(as_json.output)[0]["id"] == "mcp-1"
+    assert json.loads(as_json.output)["items"][0]["id"] == "mcp-1"
     assert "My MCPs" in table.output
     assert save.call_count == 3
 
@@ -760,12 +770,8 @@ def test_install_raw_passes_version_env_headers_and_placeholders(monkeypatch):
             "1.1.0",
             "--env",
             "API_KEY='secret'",
-            "--env",
-            "=ignored",
             "--header",
             'Authorization="Bearer token"',
-            "--header",
-            "=ignored",
         ],
     )
 
@@ -786,7 +792,7 @@ def test_install_raw_passes_version_env_headers_and_placeholders(monkeypatch):
     )
 
 
-def test_install_interactive_prompts_and_tracks_lockfile(monkeypatch, capsys):
+def test_install_interactive_prompts_without_claiming_local_install(monkeypatch, capsys):
     listing = _registry_item(
         environment_variables=[
             {"name": "REQ_FLAG", "description": "Flag", "required": True},
@@ -846,24 +852,14 @@ def test_install_interactive_prompts_and_tracks_lockfile(monkeypatch, capsys):
         "H_OPT_FLAG": "optional-flag-header",
         "H_OPT_PROMPT": "optional-header",
     }
-    upsert.assert_called_once_with(
-        "cursor",
-        component_type="mcp",
-        name="Search MCP",
-        component_id="mcp-1",
-        version="1.2.3",
-        scope="user",
-        namespace="alice",
-        slug="search-mcp",
-        local_name="search-mcp",
-    )
+    upsert.assert_not_called()
     output = capsys.readouterr().out
     assert "Add to:" in output
     assert "Warning:" in output
     assert output.count("Run setup") == 1
 
 
-def test_install_env_file_no_prompt_warns_and_ignores_lock_failure(tmp_path, monkeypatch, capsys):
+def test_install_env_file_no_prompt_warns_without_lockfile_write(tmp_path, monkeypatch, capsys):
     env_file = tmp_path / ".env"
     env_file.write_text('FILE_TOKEN="from-file"\n# comment\n', encoding="utf-8")
     listing = _registry_item(
@@ -898,12 +894,7 @@ def test_install_env_file_no_prompt_warns_and_ignores_lock_failure(tmp_path, mon
     assert "MISSING" in output
 
 
-def test_submit_example_and_edit_all_flags(monkeypatch):
-    example = runner.invoke(app, ["registry", "mcp", "submit", "--example"])
-    assert example.exit_code == 0
-    assert "filesystem" in example.output
-    assert "postgres" in example.output
-
+def test_edit_all_flags(monkeypatch):
     monkeypatch.setattr(mcp.client, "resolve_registry_reference", Mock(return_value="resolved"))
     monkeypatch.setattr(
         mcp.client,
@@ -913,7 +904,7 @@ def test_submit_example_and_edit_all_flags(monkeypatch):
 
     def post(path, *args, **kwargs):
         if path.endswith("/start-edit"):
-            raise SystemExit(1)
+            return {}
         raise AssertionError(path)
 
     monkeypatch.setattr(mcp.client, "post", post)
@@ -1033,38 +1024,34 @@ def test_edit_split_json_and_no_parsed_changes(monkeypatch):
         ["registry", "mcp", "edit", "old"],
         input="{}\n\ny\n",
     )
-    assert empty.exit_code == 1
-    assert "No changes could be parsed" in empty.output
+    assert empty.exit_code == 7
+    assert "No MCP changes could be parsed" in empty.output
 
 
-def test_edit_save_failure_handles_cancel_failure(monkeypatch):
+def test_edit_save_failure_preserves_category(monkeypatch):
     monkeypatch.setattr(mcp.client, "resolve_registry_reference", Mock(return_value="resolved"))
     monkeypatch.setattr(
         mcp.client,
         "get",
         Mock(return_value={"id": "resolved", "name": "old", "status": "draft"}),
     )
-    paths = []
-
-    def post(path, *args, **kwargs):
-        paths.append(path)
-        if path.endswith("/cancel-edit"):
-            raise SystemExit(1)
-        return {}
-
+    post = Mock(return_value={})
     monkeypatch.setattr(mcp.client, "post", post)
-    monkeypatch.setattr(mcp.client, "put", Mock(side_effect=SystemExit(1)))
+    unavailable = CliError(
+        ErrorCategory.UNAVAILABLE,
+        "Registry unavailable.",
+        operation="Edit MCP server",
+        resource="MCP registry",
+    )
+    monkeypatch.setattr(mcp.client, "put", Mock(side_effect=unavailable))
 
     result = runner.invoke(
         app,
         ["registry", "mcp", "edit", "old", "--description", "new"],
     )
 
-    assert result.exit_code == 1
-    assert paths == [
-        "/api/v1/mcps/resolved/start-edit",
-        "/api/v1/mcps/resolved/cancel-edit",
-    ]
+    assert result.exit_code == 9
+    post.assert_called_once_with("/api/v1/mcps/resolved/start-edit")
 
 
 def test_mcp_co_author_commands_include_delete_boundary(monkeypatch):
@@ -1082,17 +1069,24 @@ def test_mcp_co_author_commands_include_delete_boundary(monkeypatch):
     )
     removed = runner.invoke(
         app,
-        ["registry", "mcp", "co-authors", "remove", "mcp-1", "user-1"],
+        [
+            "registry",
+            "mcp",
+            "co-authors",
+            "remove",
+            "mcp-1",
+            "22222222-2222-2222-2222-222222222222",
+        ],
     )
 
     assert listed.exit_code == added.exit_code == removed.exit_code == 0
     assert "dev@example.com" in listed.output
-    get.assert_called_once_with("/mcps/mcp-1/co-authors")
+    get.assert_called_once_with("/api/v1/mcps/mcp-1/co-authors")
     post.assert_called_once_with(
-        "/mcps/mcp-1/co-authors",
+        "/api/v1/mcps/mcp-1/co-authors",
         json_data={"email": "dev@example.com"},
     )
-    delete.assert_called_once_with("/mcps/mcp-1/co-authors/user-1")
+    delete.assert_called_once_with("/api/v1/mcps/mcp-1/co-authors/22222222-2222-2222-2222-222222222222")
 
 
 def test_mcp_archive_is_the_destructive_listing_lifecycle(monkeypatch):
@@ -1107,3 +1101,134 @@ def test_mcp_archive_is_the_destructive_listing_lifecycle(monkeypatch):
     assert archived.exit_code == restored.exit_code == 0
     assert patch.call_args_list[0].args == ("/api/v1/mcps/resolved/archive",)
     assert patch.call_args_list[1].args == ("/api/v1/mcps/resolved/unarchive",)
+
+
+def test_submit_json_is_clean_and_returns_server_result(monkeypatch):
+    monkeypatch.setattr(mcp.client, "post", Mock(return_value={"id": "mcp-1", "name": "search", "status": "pending"}))
+
+    result = runner.invoke(
+        app,
+        [
+            "registry",
+            "mcp",
+            "submit",
+            "--yes",
+            "--name",
+            "search",
+            "--category",
+            "search",
+            "--output",
+            "json",
+        ],
+        input='{"command":"npx","args":["server"]}\n\n',
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout) == {"id": "mcp-1", "name": "search", "status": "pending"}
+
+
+def test_install_json_returns_operation_result_without_lockfile_write(monkeypatch):
+    listing = _registry_item()
+    response = {"config_snippet": {"mcpServers": {"search": {"command": "npx"}}}, "warnings": []}
+    monkeypatch.setattr(mcp.client, "resolve_registry_reference", Mock(return_value="resolved"))
+    monkeypatch.setattr(mcp.client, "get", Mock(return_value=listing))
+    monkeypatch.setattr(mcp.client, "post", Mock(return_value=response))
+    monkeypatch.setattr(lockfile, "local_registry_name", Mock(return_value="search"))
+    upsert = Mock()
+    monkeypatch.setattr(lockfile, "upsert_standalone", upsert)
+
+    result = runner.invoke(
+        app,
+        ["registry", "mcp", "install", "alice/search", "--harness", "cursor", "--output", "json"],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout) == response
+    upsert.assert_not_called()
+
+
+def test_edit_json_is_noninteractive_and_returns_server_result(monkeypatch):
+    monkeypatch.setattr(mcp.client, "resolve_registry_reference", Mock(return_value="resolved"))
+    monkeypatch.setattr(mcp.client, "get", Mock(return_value={"status": "draft"}))
+    monkeypatch.setattr(mcp.client, "post", Mock(return_value={}))
+    monkeypatch.setattr(mcp.client, "put", Mock(return_value={"id": "mcp-1", "name": "search", "status": "draft"}))
+
+    result = runner.invoke(
+        app,
+        ["registry", "mcp", "edit", "alice/search", "--description", "Updated", "--output", "json"],
+    )
+
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout)["status"] == "draft"
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["list", "--category", "ai"],
+        ["list", "--sort", "unknown"],
+        ["install", "alice/search", "--harness", "unknown"],
+        ["install", "alice/search", "--harness", "cursor", "--env", "MISSING_SEPARATOR"],
+        ["install", "alice/search", "--harness", "cursor", "--raw", "--output", "json"],
+    ],
+)
+def test_mcp_validation_uses_stable_exit_code(arguments, monkeypatch):
+    get = Mock()
+    monkeypatch.setattr(mcp.client, "get", get)
+
+    result = runner.invoke(app, ["registry", "mcp", *arguments])
+
+    assert result.exit_code == 7
+    get.assert_not_called()
+
+
+def test_mcp_table_and_detail_escape_registry_markup(monkeypatch):
+    hostile = "Clean [/tmp] array[0] [bold]literal[/bold]"
+    item = _registry_item(name=hostile, slug=hostile, description=hostile)
+    monkeypatch.setattr(mcp.client, "get", Mock(side_effect=[[item], item]))
+    monkeypatch.setattr(mcp.client, "resolve_registry_reference", Mock(return_value="resolved"))
+
+    listed = runner.invoke(app, ["registry", "mcp", "list"])
+    shown = runner.invoke(app, ["registry", "mcp", "show", "resolved"])
+
+    assert listed.exit_code == shown.exit_code == 0
+    assert hostile in listed.output
+    assert hostile in shown.output
+
+
+def test_approved_mcp_edit_json_requires_and_uses_explicit_bump(monkeypatch):
+    monkeypatch.setattr(mcp.client, "resolve_registry_reference", Mock(return_value="resolved"))
+    monkeypatch.setattr(
+        mcp.client,
+        "get",
+        Mock(return_value={"status": "approved", "version": "1.2.3", "description": "Old"}),
+    )
+    post = Mock(return_value={"id": "mcp-1", "name": "search", "version": "1.3.0"})
+    monkeypatch.setattr(mcp.client, "post", post)
+
+    missing = runner.invoke(
+        app,
+        ["registry", "mcp", "edit", "alice/search", "--description", "New", "--output", "json"],
+    )
+    published = runner.invoke(
+        app,
+        [
+            "registry",
+            "mcp",
+            "edit",
+            "alice/search",
+            "--description",
+            "New",
+            "--bump",
+            "minor",
+            "--changelog",
+            "Changed",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert missing.exit_code == 7
+    assert published.exit_code == 0
+    assert json.loads(published.stdout)["version"] == "1.3.0"
+    assert post.call_args.args[1]["version"] == "1.3.0"

@@ -13,7 +13,7 @@ Every file Observal reads or writes on the client (`~/.observal/`) and in each h
 | --- | --- | --- |
 | `config.json` | CLI config (server URL, access token, user info, timeout) | `0600` |
 | `aliases.json` | User-defined shortcuts (`@my-mcp` → UUID) | `0600` |
-| `last_results.json` | Last `list` / `show` output - enables row-number references | `0600` |
+| `last_results.json` | Latest typed list output, enabling row-number references | `0600` |
 | `telemetry_buffer.db` | Durable SQLite outbox for Python session exporters awaiting contiguous server acknowledgement | `0600` |
 | `opencode_session_outbox/` | Per-session durable OpenCode plugin batches and acknowledged line state | `0600` files |
 | `pi_session_outbox/` | Durable pending Pi extension batches | `0600` files |
@@ -28,14 +28,16 @@ Every file Observal reads or writes on the client (`~/.observal/`) and in each h
   "access_token": "ey...",
   "refresh_token": "ey...",
   "user_id": "f9f3...",
-  "user_name": "alice@example.com",
-  "output": "table",
-  "color": "auto",
-  "timeout": 30
+  "user_name": "Alice",
+  "username": "alice",
+  "timeout": 30,
+  "update_check": true,
+  "update_check_interval": 86400,
+  "update_check_repo": ""
 }
 ```
 
-Override any field at runtime with `observal config set <key> <value>` or with an env var (see [Environment variables](environment-variables.md)).
+Authentication and identity fields are managed by `observal auth`. The `config set` command accepts only `server_url`, `timeout`, `update_check`, `update_check_interval`, and `update_check_repo`. Supported environment variables override persisted values for the current invocation; see [Environment variables](environment-variables.md).
 
 ### Durable session outbox
 
@@ -49,12 +51,26 @@ Use `observal ops telemetry status` to inspect pending batch count, disk use, ol
 
 ```json
 {
-  "my-mcp":   "498c17ac-1234-4567-89ab-cdef01234567",
-  "reviewer": "a01c5..."
+  "my-mcp": "498c17ac-1234-4567-89ab-cdef01234567",
+  "reviewer": "alice/reviewer"
 }
 ```
 
-Use anywhere that accepts `<id-or-name>` by prefixing with `@`.
+Use anywhere that accepts a compatible reference by prefixing the alias with `@`.
+
+### `last_results.json` schema
+
+```json
+{
+  "item_type": "skill",
+  "ids": ["498c17ac-1234-4567-89ab-cdef01234567"],
+  "names": {
+    "reviewer": "498c17ac-1234-4567-89ab-cdef01234567"
+  }
+}
+```
+
+Each list invocation replaces this cache, including an empty result. Numeric row references are valid only for the component type that produced the latest list.
 
 ## harness-side
 
@@ -102,17 +118,9 @@ Use anywhere that accepts `<id-or-name>` by prefixing with `@`.
 | --- | --- |
 | `AGENTS.md` | Rules (rules-only integration) |
 
-## Backups
+## Safe writes
 
-Every config modification by `observal doctor patch` or `observal agent pull` creates a timestamped `.bak` file next to the original:
-
-```
-~/.claude/settings.json.20260421_143055.bak
-.kiro/settings/mcp.json.20260421_143055.bak
-.cursor/mcp.json.20260421_143055.bak
-```
-
-Restore by moving the `.bak` back in place.
+`observal doctor patch` and `observal doctor cleanup` write each managed configuration file atomically and preserve unrelated entries. Use `--dry-run --output json` to review planned harness changes before writing. Agent Pull reports every created or merged file in its result.
 
 ## File permissions
 
@@ -120,5 +128,5 @@ Client-side files under `~/.observal/` are created with mode `0600` (owner read/
 
 ## Related
 
-* [Environment variables](environment-variables.md) - env-var override for every config field
+* [Environment variables](environment-variables.md) - supported runtime overrides
 * [`observal config`](../cli/config.md), CLI surface for editing

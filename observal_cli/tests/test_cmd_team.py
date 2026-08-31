@@ -132,7 +132,7 @@ def test_team_delete_requires_confirmation_without_yes():
 def test_team_leave_posts_leave_endpoint():
     uid = "11111111-1111-1111-1111-111111111111"
     with patch("observal_cli.cmd_team.client.post", return_value={}) as mock_post:
-        result = runner.invoke(app, ["team", "leave", uid])
+        result = runner.invoke(app, ["team", "leave", uid, "--yes"])
     assert result.exit_code == 0, result.output
     assert mock_post.call_args.args[0] == f"/api/v1/teams/{uid}/leave"
 
@@ -168,7 +168,7 @@ def test_team_invite_create_list_and_revoke():
     assert invite_id in listed.output
 
     with patch("observal_cli.cmd_team.client.post", return_value={"state": "revoked"}) as mock_post:
-        revoked = runner.invoke(app, ["team", "invite", "revoke", uid, invite_id])
+        revoked = runner.invoke(app, ["team", "invite", "revoke", uid, invite_id, "--yes"])
     assert revoked.exit_code == 0, revoked.output
     assert mock_post.call_args.args[0] == f"/api/v1/teams/{uid}/invites/{invite_id}/revoke"
 

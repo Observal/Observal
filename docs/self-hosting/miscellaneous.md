@@ -23,9 +23,9 @@ Controls the product name and images shown in the web UI.
 
 ## harness Allowlist {#harness-allowlist}
 
-Restrict which harnesses are available in the platform. When set, only the listed harnesses appear in install dropdowns, agent compatibility tags, and the `observal pull` target selection.
+Restrict which harnesses are available in the platform. When set, only the listed harnesses appear in install dropdowns, agent compatibility tags, and `observal agent pull` target selection.
 
-**Affects:** The harness dropdown on agent detail pages, component install commands, agent builder harness selection, and `observal pull --harness` validation. harnesses not in the allowlist are hidden from all users.
+**Affects:** The harness dropdown on agent detail pages, component install commands, agent builder harness selection, and `observal agent pull --harness` validation. Harnesses outside the allowlist are hidden from all users.
 
 | Value | Effect |
 |-------|--------|
@@ -37,11 +37,11 @@ Restrict which harnesses are available in the platform. When set, only the liste
 
 **When to set:** Your deployment standardizes on specific harnesses and you don't want users confused by irrelevant options. Also useful for reducing noise in the registry when agents only need to support a subset of harnesses.
 
-**CLI behavior:** When set, `observal pull <agent>` without `--harness` defaults to the first harness in the allowlist (the "default harness"). Users can still specify any allowed harness explicitly.
+**CLI behavior:** `observal agent pull` still requires `--harness`. The selected harness must be allowed by the server.
 
 ## Default harness {#default-harness}
 
-The harness pre-selected in install dropdowns and used as the default for `observal pull` when no `--harness` flag is provided.
+The harness pre-selected in web installation controls. The CLI still requires an explicit `--harness`.
 
 | Value | Effect |
 |-------|--------|

@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import re
 
-from loguru import logger as optic
-
 from observal_shared.harness_registry import HARNESS_REGISTRY
 from services.harness import BaseHarnessAdapter, ConfigContext, register_adapter
 from services.harness.helpers import (
@@ -47,7 +45,6 @@ class KiroAdapter(BaseHarnessAdapter):
         return f"{match.group(1)}.{match.group(2)}{match.group(3) or ''}"
 
     def format_config(self, ctx: ConfigContext) -> dict:
-        optic.trace("ctx={}", ctx)
         safe_name = ctx.safe_name
         options = ctx.options
         platform = ctx.platform

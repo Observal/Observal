@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import json
 from contextlib import nullcontext
 from pathlib import Path
 
@@ -30,7 +29,7 @@ from observal_cli.harness import (
     get_adapter,
     get_all_adapters,
 )
-from observal_cli.render import console, spinner
+from observal_cli.render import OutputMode, console, output_json, spinner
 
 # ── harness home directory paths (for status display) ────────────────
 
@@ -54,7 +53,7 @@ def register_scan(app: typer.Typer):
     @app.command(name="scan")
     def scan(
         harness: str | None = typer.Option(None, "--harness", "-i", help="Filter to a specific harness"),
-        output: str = typer.Option("table", "--output", "-o", help="Output format: table or json"),
+        output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
     ):
         """Show a read-only inventory of your local harness setup.
 
@@ -81,8 +80,12 @@ def register_scan(app: typer.Typer):
                 get_adapter(harness)
             except KeyError:
                 valid = sorted(get_all_adapters().keys())
-                rprint(f"[red]Unknown harness: {harness}[/red]")
-                rprint(f"Valid harnesses: {', '.join(valid)}")
+                if output == "json":
+                    typer.echo(f"Unknown harness: {harness}", err=True)
+                    typer.echo(f"Valid harnesses: {', '.join(valid)}", err=True)
+                else:
+                    rprint(f"[red]Unknown harness: {harness}[/red]")
+                    rprint(f"Valid harnesses: {', '.join(valid)}")
                 raise typer.Exit(1)
 
         adapters = {harness: get_adapter(harness)} if harness else get_all_adapters()
@@ -159,7 +162,7 @@ def register_scan(app: typer.Typer):
 
         if total == 0 and not ide_status:
             if output == "json":
-                print(json.dumps({"harnesses": [], "mcps": [], "skills": [], "hooks": [], "agents": []}, indent=2))
+                output_json({"harnesses": [], "mcps": [], "skills": [], "hooks": [], "agents": []})
                 return
             rprint("[yellow]No harness configurations found.[/yellow]")
             raise typer.Exit(1)
@@ -173,7 +176,7 @@ def register_scan(app: typer.Typer):
                 "hooks": [vars(h) for h in all_hooks],
                 "agents": [vars(a) for a in all_agents],
             }
-            print(json.dumps(out_data, indent=2))
+            output_json(out_data)
             return
 
         rprint(f"\n[bold]Observal Scan[/bold] - {total} components discovered\n")

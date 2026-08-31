@@ -7,8 +7,8 @@ Allows remote CLI users (admins) to tail server logs without SSH.
 Streams from the in-memory ring buffer with optional level/text filtering.
 
 Usage:
-    observal logs --remote
-    observal logs --remote --level WARNING --filter clickhouse
+    observal ops logs --remote
+    observal ops logs --remote --level WARNING --filter clickhouse
     curl -N -H "Authorization: Bearer <token>" https://host/api/v1/admin/logs/stream
 """
 
@@ -129,7 +129,7 @@ async def stream_logs(
 
     Starts with a backfill of the last 50 matching entries.
     Sends ``: keepalive`` comments every 15 s.
-    Compatible with curl -N, EventSource, and ``observal logs --remote``.
+    Compatible with curl -N, EventSource, and ``observal ops logs --remote``.
     """
     optic.info("SSE log stream opened (level={}, filter='{}')", level, filter)
 

@@ -53,9 +53,9 @@ Four roles, RBAC-enforced on every endpoint.
 Manage users:
 
 ```bash
-observal admin users
-observal admin reset-password <email>          # interactive or --generate
-observal admin delete-user <email>
+observal admin users --output json
+observal admin reset-password <email> --generate --output json
+observal admin delete-user <email> --force --output json
 ```
 
 Change a role via the web UI (`/settings/users`) or the API (`PUT /api/v1/admin/users/{id}/role`).
@@ -86,10 +86,10 @@ observal doctor patch --all-harnesses        # instrument everything
 Authors submit. Reviewers approve. Approved items appear in the public listing.
 
 ```bash
-observal admin review list                    # pending submissions
-observal admin review show <id>
-observal admin review approve <id>
-observal admin review reject <id> --reason "missing env var docs"
+observal admin review list --output json
+observal admin review show <id> --output json
+observal admin review approve <id> --output json
+observal admin review reject <id> --reason "missing env var docs" --output json
 ```
 
 What reviewers look for:

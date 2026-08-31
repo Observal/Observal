@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
+from observal_cli.errors import CliError, ErrorCategory
 from observal_cli.main import app as cli_app
 
 runner = CliRunner()
@@ -80,8 +81,8 @@ class TestEditMcpInteractive:
         ):
             result = runner.invoke(cli_app, ["registry", "mcp", "edit", "test-mcp"], input="\n")
 
-        assert result.exit_code == 1
-        assert "No input" in _plain(result.output)
+        assert result.exit_code == 7
+        assert "No MCP updates" in _plain(result.output)
 
     def test_edit_interactive_invalid_json_exits(self):
         """Invalid JSON in interactive mode exits with error."""
@@ -95,8 +96,8 @@ class TestEditMcpInteractive:
         ):
             result = runner.invoke(cli_app, ["registry", "mcp", "edit", "test-mcp"], input="not json at all{{\n\n")
 
-        assert result.exit_code == 1
-        assert "Invalid JSON" in _plain(result.output)
+        assert result.exit_code == 7
+        assert "not valid JSON" in _plain(result.output)
 
     def test_edit_interactive_user_declines(self):
         """User declining confirmation aborts."""
@@ -241,6 +242,50 @@ class TestEditMcpVersionPublish:
         assert result.exit_code == 0, _plain(result.output)
         assert "2.0.0" in _plain(result.output)
 
+    def test_edit_approved_json_bump_uses_empty_optional_changelog(self):
+        mock_client = MagicMock()
+        mock_client.resolve_registry_reference.return_value = "resolved"
+        mock_client.get.return_value = {
+            "id": "abc-123",
+            "status": "approved",
+            "name": "my-mcp",
+            "version": "1.2.3",
+            "description": "Current",
+        }
+        mock_client.post.return_value = {"name": "my-mcp", "version": "1.2.4"}
+
+        with (
+            _patch_config(),
+            _patch_config_load(),
+            _patch_resolve_alias(),
+            patch("observal_cli.cmd_mcp.client", mock_client),
+            patch("observal_cli.cmd_mcp.spinner", MagicMock()),
+            patch("observal_cli.cmd_mcp.text_input") as prompt,
+        ):
+            result = runner.invoke(
+                cli_app,
+                [
+                    "registry",
+                    "mcp",
+                    "edit",
+                    "my-mcp",
+                    "--description",
+                    "Updated",
+                    "--bump",
+                    "patch",
+                    "--output",
+                    "json",
+                ],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output)["version"] == "1.2.4"
+        prompt.assert_not_called()
+        mock_client.post.assert_called_once_with(
+            "/api/v1/mcps/resolved/versions",
+            {"version": "1.2.4", "description": "Updated"},
+        )
+
     def test_edit_approved_publish_failure(self):
         """Failure to publish a new version exits with error."""
         config_json = json.dumps({"command": "npx", "args": ["-y", "server"]})
@@ -290,19 +335,20 @@ class TestSubmitCommand:
             )
 
         output = _plain(result.output)
-        assert "--config is now the default" in output
+        assert "JSON paste is already the default" in output
 
     def test_submit_draft_and_submit_together_fails(self):
         """Cannot use --draft and --submit together."""
         with _patch_config(), _patch_config_load():
             result = runner.invoke(cli_app, ["registry", "mcp", "submit", "--draft", "--submit", "abc-123"])
 
-        assert result.exit_code == 1
-        assert "Cannot use" in _plain(result.output)
+        assert result.exit_code == 7
+        assert "Draft creation" in _plain(result.output)
 
     def test_submit_draft_for_review(self):
         """--submit flag submits an existing draft for review."""
         mock_client = MagicMock()
+        mock_client.resolve_registry_reference.return_value = "resolved-draft"
         mock_client.post.return_value = {"id": "abc-123", "name": "my-mcp"}
 
         with (
@@ -316,6 +362,8 @@ class TestSubmitCommand:
 
         assert result.exit_code == 0, _plain(result.output)
         assert "Draft submitted" in _plain(result.output) or "submitted" in _plain(result.output).lower()
+        mock_client.resolve_registry_reference.assert_called_once_with("mcp", "abc-123")
+        mock_client.post.assert_called_once_with("/api/v1/mcps/resolved-draft/submit")
 
     def test_submit_yes_mode_uses_parsed_description(self):
         """In --yes mode, parsed description from registry format is used."""
@@ -394,8 +442,8 @@ class TestEditMcpEdgeCases:
                 cli_app, ["registry", "mcp", "edit", "test-mcp", "--from-file", "/nonexistent/file.json"]
             )
 
-        assert result.exit_code == 1
-        assert "not found" in _plain(result.output).lower() or "File not found" in _plain(result.output)
+        assert result.exit_code == 5
+        assert "not found" in _plain(result.output).lower()
 
     def test_edit_from_file_invalid_json(self, tmp_path):
         """--from-file with invalid JSON exits with error."""
@@ -409,16 +457,20 @@ class TestEditMcpEdgeCases:
         ):
             result = runner.invoke(cli_app, ["registry", "mcp", "edit", "test-mcp", "--from-file", str(bad_file)])
 
-        assert result.exit_code == 1
-        assert "Invalid JSON" in _plain(result.output)
+        assert result.exit_code == 7
+        assert "not valid JSON" in _plain(result.output)
 
-    def test_edit_draft_save_failure_cancels_edit(self):
-        """Draft save failure triggers cancel-edit and exits with error."""
+    def test_edit_draft_save_failure_preserves_error(self):
+        """Draft save failures propagate without hiding their category."""
         mock_client = MagicMock()
         mock_client.get.return_value = {"id": "abc-123", "status": "draft", "name": "my-mcp"}
-        mock_client.post.return_value = {}  # start-edit succeeds
-        # Client raises SystemExit (typer.Exit) on API failure
-        mock_client.put.side_effect = SystemExit(1)
+        mock_client.post.return_value = {}
+        mock_client.put.side_effect = CliError(
+            ErrorCategory.UNAVAILABLE,
+            "Registry unavailable.",
+            operation="Edit MCP server",
+            resource="MCP registry",
+        )
 
         with (
             _patch_config(),
@@ -429,13 +481,12 @@ class TestEditMcpEdgeCases:
         ):
             result = runner.invoke(cli_app, ["registry", "mcp", "edit", "test-mcp", "--name", "new-name"])
 
-        assert result.exit_code == 1
-        # Verify cancel-edit was attempted
+        assert result.exit_code == 9
         cancel_calls = [c for c in mock_client.post.call_args_list if "cancel-edit" in str(c)]
-        assert len(cancel_calls) == 1
+        assert cancel_calls == []
 
-    def test_edit_non_semver_version_fallback(self):
-        """Non-semver version string falls back to 0.2.0."""
+    def test_edit_rejects_invalid_registry_version(self):
+        """An invalid registry version is an unavailable server contract."""
         config_json = json.dumps({"command": "npx", "args": ["-y", "server"]})
 
         mock_client = MagicMock()
@@ -459,14 +510,18 @@ class TestEditMcpEdgeCases:
                 cli_app, ["registry", "mcp", "edit", "my-mcp"], input=f"{config_json}\n\ny\nChangelog\n"
             )
 
-        assert result.exit_code == 0, _plain(result.output)
-        assert "0.2.0" in _plain(result.output)
+        assert result.exit_code == 9
+        assert "invalid current MCP version" in _plain(result.output)
 
-    def test_edit_status_fetch_failure_falls_through(self):
-        """If status fetch fails, edit proceeds with draft flow."""
+    def test_edit_status_fetch_failure_propagates(self):
+        """A status fetch failure prevents an unsafe draft mutation."""
         mock_client = MagicMock()
-        # Client raises SystemExit (typer.Exit) on connection/API failure
-        mock_client.get.side_effect = SystemExit(1)
+        mock_client.get.side_effect = CliError(
+            ErrorCategory.UNAVAILABLE,
+            "Registry unavailable.",
+            operation="Edit MCP server",
+            resource="MCP registry",
+        )
         mock_client.post.return_value = {}
         mock_client.put.return_value = {"name": "test-mcp", "status": "draft"}
 
@@ -479,8 +534,8 @@ class TestEditMcpEdgeCases:
         ):
             result = runner.invoke(cli_app, ["registry", "mcp", "edit", "test-mcp", "--description", "New desc"])
 
-        assert result.exit_code == 0, _plain(result.output)
-        assert "Updated" in _plain(result.output) or "updated" in _plain(result.output).lower()
+        assert result.exit_code == 9
+        mock_client.put.assert_not_called()
 
     def test_edit_interactive_registry_format_extracts_name_and_desc(self):
         """Registry format in interactive mode extracts name and description into updates."""

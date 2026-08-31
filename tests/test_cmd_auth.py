@@ -23,6 +23,7 @@ import typer
 from typer.testing import CliRunner
 
 import observal_cli.cmd_auth as auth
+from observal_cli.errors import CliError, ErrorCategory, ExitCode
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -242,7 +243,6 @@ def test_version_check_blocks_mismatch_with_correct_remediation(
     expected_text: str,
     upgrade_result: str | None,
     monkeypatch: pytest.MonkeyPatch,
-    printed: list[str],
 ) -> None:
     import observal_cli.install_detector as install_detector
     import observal_cli.version_check as version_check
@@ -252,11 +252,12 @@ def test_version_check_blocks_mismatch_with_correct_remediation(
     upgrade = MagicMock(return_value=upgrade_result)
     monkeypatch.setattr(install_detector, "upgrade_command", upgrade)
 
-    with pytest.raises(typer.Exit) as exc_info:
+    with pytest.raises(CliError) as exc_info:
         auth._ensure_cli_matches_server(SERVER_URL)
 
-    assert exc_info.value.exit_code == 1
-    assert expected_text in "\n".join(printed)
+    assert exc_info.value.exit_code == ExitCode.VERSION
+    assert exc_info.value.category is ErrorCategory.VERSION
+    assert expected_text in (exc_info.value.remediation or "")
     if upgrade_result is None:
         upgrade.assert_not_called()
     else:
@@ -288,26 +289,26 @@ def _prepare_login(
 
 
 @pytest.mark.parametrize(
-    ("error", "message"),
+    ("error", "category", "message"),
     [
-        (httpx.ConnectError("connection refused"), "Connection failed"),
-        (RuntimeError("bad health response"), "Server error"),
+        (httpx.ConnectError("connection refused"), ErrorCategory.UNAVAILABLE, "Cannot reach"),
+        (RuntimeError("bad health response"), ErrorCategory.UNEXPECTED, "health check failed"),
     ],
 )
 def test_login_stops_when_health_check_fails(
     error: Exception,
+    category: ErrorCategory,
     message: str,
     monkeypatch: pytest.MonkeyPatch,
-    printed: list[str],
 ) -> None:
     monkeypatch.setattr(auth.config, "load", lambda: {})
     monkeypatch.setattr(auth.httpx, "get", MagicMock(side_effect=error))
 
-    with pytest.raises(typer.Exit) as exc_info:
+    with pytest.raises(CliError) as exc_info:
         auth.login(SERVER_URL, "ada@example.test", VALID_PASSWORD, None, False, False)
 
-    assert exc_info.value.exit_code == 1
-    assert message in "\n".join(printed)
+    assert exc_info.value.category is category
+    assert message in exc_info.value.message
 
 
 def test_login_initializes_fresh_server_and_persists_only_returned_tokens(
@@ -378,33 +379,81 @@ def test_login_fresh_server_rejects_mismatched_confirmation(
 
 
 @pytest.mark.parametrize(
-    ("status", "body", "should_raise", "message"),
+    ("status", "body", "category"),
     [
-        (400, "Already Initialized by another request", False, "just initialized"),
-        (500, "database unavailable", True, "Setup failed"),
+        (400, "Already Initialized by another request", ErrorCategory.CONFLICT),
+        (500, "database unavailable", ErrorCategory.UNAVAILABLE),
     ],
 )
 def test_login_handles_admin_initialization_failures(
     status: int,
     body: str,
-    should_raise: bool,
-    message: str,
+    category: ErrorCategory,
     monkeypatch: pytest.MonkeyPatch,
-    printed: list[str],
 ) -> None:
     _prepare_login(monkeypatch, initialized=False)
     monkeypatch.setattr(auth.httpx, "post", lambda *_args, **_kwargs: _response(status, text=body))
     save = MagicMock()
     monkeypatch.setattr(auth.config, "save", save)
 
-    if should_raise:
-        with pytest.raises(typer.Exit):
-            auth.login(SERVER_URL, "ada@example.test", VALID_PASSWORD, "Ada", False, False)
-    else:
+    with pytest.raises(CliError) as exc_info:
         auth.login(SERVER_URL, "ada@example.test", VALID_PASSWORD, "Ada", False, False)
 
     save.assert_not_called()
-    assert message in "\n".join(printed)
+    assert exc_info.value.category is category
+
+
+def test_human_login_prompts_with_blank_localhost_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    stale = "http://localhost:8000"
+    selected = "http://localhost"
+    monkeypatch.setattr(auth.config, "load", lambda: {"server_url": stale})
+    monkeypatch.setattr("observal_cli.lockfile.migrate_lockfile_v1", MagicMock())
+    monkeypatch.setattr(
+        auth.httpx,
+        "get",
+        MagicMock(side_effect=[_response(200, {"initialized": True}), _response(200, {})]),
+    )
+    monkeypatch.setattr(auth, "_ensure_cli_matches_server", MagicMock())
+    prompt = MagicMock(return_value="")
+    monkeypatch.setattr(auth, "text_input", prompt)
+    password_login = MagicMock()
+    monkeypatch.setattr(auth, "_do_password_login", password_login)
+
+    auth.login(None, "ada", VALID_PASSWORD, None, False, False)
+
+    prompt.assert_called_once_with("Server URL (leave blank for http://localhost)", default="")
+    password_login.assert_called_once_with(
+        selected, "ada", VALID_PASSWORD, output=auth.OutputMode.table, run_setup=True
+    )
+
+
+def test_json_login_recovers_stale_local_port_without_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    stale = "http://localhost:8000"
+    monkeypatch.setattr(auth.config, "load", lambda: {"server_url": stale})
+    monkeypatch.setattr("observal_cli.lockfile.migrate_lockfile_v1", MagicMock())
+    monkeypatch.setattr(
+        auth.httpx,
+        "get",
+        MagicMock(
+            side_effect=[
+                httpx.ConnectError("stale port"),
+                _response(200, {"initialized": True}),
+                _response(200, {}),
+            ]
+        ),
+    )
+    monkeypatch.setattr(auth, "_ensure_cli_matches_server", MagicMock())
+    prompt = MagicMock(side_effect=AssertionError("JSON mode must not prompt"))
+    monkeypatch.setattr(auth, "text_input", prompt)
+    password_login = MagicMock()
+    monkeypatch.setattr(auth, "_do_password_login", password_login)
+
+    auth.login(None, "ada", VALID_PASSWORD, None, False, False, output=auth.OutputMode.json)
+
+    prompt.assert_not_called()
+    password_login.assert_called_once_with(
+        "http://localhost", "ada", VALID_PASSWORD, output=auth.OutputMode.json, run_setup=False
+    )
 
 
 def test_login_with_credentials_routes_to_password_authentication(
@@ -420,7 +469,9 @@ def test_login_with_credentials_routes_to_password_authentication(
 
     auth.login(f"{SERVER_URL}/", "ada", VALID_PASSWORD, None, False, False)
 
-    password_login.assert_called_once_with(SERVER_URL, "ada", VALID_PASSWORD)
+    password_login.assert_called_once_with(
+        SERVER_URL, "ada", VALID_PASSWORD, output=auth.OutputMode.table, run_setup=True
+    )
     migrate.assert_called_once_with(SERVER_URL)
 
 
@@ -451,6 +502,8 @@ def test_login_method_menu_routes_browser_flows(
         SERVER_URL,
         direct_sso=expected_direct,
         provider=expected_provider,
+        output=auth.OutputMode.table,
+        run_setup=True,
     )
 
 
@@ -473,7 +526,13 @@ def test_login_sso_flags_bypass_method_prompt(
     auth.login(SERVER_URL, None, None, None, sso, saml)
 
     quick_choice.assert_not_called()
-    device_login.assert_called_once_with(SERVER_URL, direct_sso=True, provider=provider)
+    device_login.assert_called_once_with(
+        SERVER_URL,
+        direct_sso=True,
+        provider=provider,
+        output=auth.OutputMode.table,
+        run_setup=True,
+    )
 
 
 def test_login_sso_only_server_forces_browser_flow(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -483,7 +542,45 @@ def test_login_sso_only_server_forces_browser_flow(monkeypatch: pytest.MonkeyPat
 
     auth.login(SERVER_URL, None, None, None, False, False)
 
-    device_login.assert_called_once_with(SERVER_URL, direct_sso=True, provider=None)
+    device_login.assert_called_once_with(
+        SERVER_URL,
+        direct_sso=True,
+        provider=None,
+        output=auth.OutputMode.table,
+        run_setup=True,
+    )
+
+
+def test_quick_choice_restores_terminal_before_printing_selection(monkeypatch: pytest.MonkeyPatch) -> None:
+    import termios
+    import tty
+
+    import rich
+
+    from observal_cli import prompts
+
+    events: list[object] = []
+    stdin = SimpleNamespace(
+        isatty=lambda: True,
+        fileno=lambda: 7,
+        read=MagicMock(return_value="1"),
+    )
+    monkeypatch.setattr(prompts.sys, "stdin", stdin)
+    monkeypatch.setattr(termios, "tcgetattr", lambda _fd: ["saved"])
+    monkeypatch.setattr(tty, "setraw", lambda fd: events.append(("raw", fd)))
+    monkeypatch.setattr(
+        termios,
+        "tcsetattr",
+        lambda fd, when, settings: events.append(("restore", fd, when, settings)),
+    )
+    monkeypatch.setattr(rich, "print", lambda *values, **kwargs: events.append(("print", values, kwargs)))
+
+    assert prompts.quick_choice("Login method", ["1", "2"]) == "1"
+
+    assert events[0] == ("print", ("  Login method: ",), {"end": "", "flush": True})
+    assert events[1] == ("raw", 7)
+    assert events[2][0] == "restore"
+    assert events[3] == ("print", ("1",), {})
 
 
 def test_login_password_menu_prompts_for_identifier_and_password(
@@ -498,7 +595,9 @@ def test_login_password_menu_prompts_for_identifier_and_password(
 
     auth.login(SERVER_URL, None, None, None, False, False)
 
-    password_login.assert_called_once_with(SERVER_URL, "ada", VALID_PASSWORD)
+    password_login.assert_called_once_with(
+        SERVER_URL, "ada", VALID_PASSWORD, output=auth.OutputMode.table, run_setup=True
+    )
 
 
 def test_login_ignores_unavailable_public_config(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -511,24 +610,26 @@ def test_login_ignores_unavailable_public_config(monkeypatch: pytest.MonkeyPatch
 
     auth.login(SERVER_URL, None, None, None, False, False)
 
-    password_login.assert_called_once_with(SERVER_URL, "ada", VALID_PASSWORD)
+    password_login.assert_called_once_with(
+        SERVER_URL, "ada", VALID_PASSWORD, output=auth.OutputMode.table, run_setup=True
+    )
 
 
-def test_login_reports_unavailable_saml_before_credential_fallback(
+def test_login_rejects_unavailable_explicit_saml(
     monkeypatch: pytest.MonkeyPatch,
-    printed: list[str],
 ) -> None:
     _prepare_login(monkeypatch, public={"saml_enabled": False})
     password_login = MagicMock()
     monkeypatch.setattr(auth, "_do_password_login", password_login)
 
-    auth.login(SERVER_URL, "ada", VALID_PASSWORD, None, False, True)
+    with pytest.raises(CliError) as exc_info:
+        auth.login(SERVER_URL, "ada", VALID_PASSWORD, None, False, True)
 
-    assert "SAML SSO is not configured" in "\n".join(printed)
-    password_login.assert_called_once_with(SERVER_URL, "ada", VALID_PASSWORD)
+    assert exc_info.value.category is ErrorCategory.VALIDATION
+    password_login.assert_not_called()
 
 
-def test_login_sso_only_uses_single_fallback_after_unavailable_saml(
+def test_login_sso_only_rejects_unavailable_explicit_saml(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _prepare_login(monkeypatch, public={"sso_only": True, "saml_enabled": False})
@@ -537,10 +638,12 @@ def test_login_sso_only_uses_single_fallback_after_unavailable_saml(
     monkeypatch.setattr(auth, "quick_choice", choice)
     monkeypatch.setattr(auth, "_do_device_flow_login", device_login)
 
-    auth.login(SERVER_URL, None, None, None, False, True)
+    with pytest.raises(CliError) as exc_info:
+        auth.login(SERVER_URL, None, None, None, False, True)
 
-    choice.assert_called_once_with("Login method", ["1"])
-    device_login.assert_called_once_with(SERVER_URL, direct_sso=True, provider=None)
+    assert exc_info.value.category is ErrorCategory.VALIDATION
+    choice.assert_not_called()
+    device_login.assert_not_called()
 
 
 def test_logout_revokes_remote_session_then_removes_every_local_token(
@@ -569,10 +672,7 @@ def test_logout_revokes_remote_session_then_removes_every_local_token(
         headers={"Authorization": f"Bearer {ACCESS_TOKEN}"},
         timeout=5,
     )
-    assert json.loads(auth.config.CONFIG_FILE.read_text()) == {
-        "server_url": f"{SERVER_URL}/",
-        "output": "json",
-    }
+    assert json.loads(auth.config.CONFIG_FILE.read_text()) == {"server_url": f"{SERVER_URL}/"}
     output = "\n".join(printed)
     assert "Logged out" in output
     assert ACCESS_TOKEN not in output
@@ -633,16 +733,17 @@ def test_whoami_renders_profile_panel(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_whoami_json_delegates_to_safe_json_renderer(monkeypatch: pytest.MonkeyPatch) -> None:
-    import observal_cli.render as render
-
     user = _user(username="")
     output_json = MagicMock()
+    spinner = MagicMock()
     monkeypatch.setattr(auth.client, "get", lambda _path: user)
-    monkeypatch.setattr(render, "output_json", output_json)
+    monkeypatch.setattr(auth, "output_json", output_json)
+    monkeypatch.setattr(auth, "spinner", spinner)
 
     auth.whoami("json")
 
     output_json.assert_called_once_with(user)
+    spinner.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -653,7 +754,6 @@ def test_whoami_json_delegates_to_safe_json_renderer(monkeypatch: pytest.MonkeyP
         (True, 500.0, "[yellow]ok"),
         (True, 1000.0, "[red]ok"),
         (True, 1500.0, "[red]ok"),
-        (False, 0.0, "unreachable"),
     ],
 )
 def test_status_reports_health_and_auth_state(
@@ -677,7 +777,28 @@ def test_status_reports_health_and_auth_state(
     assert expected in output
 
 
-def test_status_reports_pending_outbox_while_offline(
+def test_status_returns_unavailable_when_server_is_offline(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(auth.config, "load", lambda: {"server_url": SERVER_URL, "access_token": ACCESS_TOKEN})
+    monkeypatch.setattr(auth.client, "health", lambda: (False, 0.0))
+
+    with pytest.raises(CliError) as exc_info:
+        auth.status()
+
+    assert exc_info.value.category is ErrorCategory.UNAVAILABLE
+    assert exc_info.value.exit_code == ExitCode.UNAVAILABLE
+
+
+def test_status_returns_auth_when_credentials_are_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(auth.config, "load", lambda: {"server_url": SERVER_URL})
+
+    with pytest.raises(CliError) as exc_info:
+        auth.status()
+
+    assert exc_info.value.category is ErrorCategory.AUTH
+    assert exc_info.value.exit_code == ExitCode.AUTH
+
+
+def test_status_reports_pending_outbox(
     monkeypatch: pytest.MonkeyPatch,
     printed: list[str],
 ) -> None:
@@ -689,21 +810,20 @@ def test_status_reports_pending_outbox_while_offline(
         "oldest_pending": "2026-01-02 03:04:05",
     }
     monkeypatch.setitem(sys.modules, "observal_cli.telemetry_buffer", telemetry_buffer)
-    monkeypatch.setattr(auth.config, "load", lambda: {})
-    monkeypatch.setattr(auth.client, "health", lambda: (False, 0.0))
+    monkeypatch.setattr(auth.config, "load", lambda: {"server_url": SERVER_URL, "access_token": ACCESS_TOKEN})
+    monkeypatch.setattr(auth.client, "health", lambda: (True, 42.0))
 
     auth.status()
 
     output = "\n".join(printed)
-    assert "Auth:    [red]not set" in output
     assert "2 pending" in output
     assert "2.0 KiB" in output
     assert "2026-01-02 03:04:05 UTC" in output
-    assert "observal doctor" in output
 
 
-def test_status_ignores_broken_outbox_stats(
+def test_status_reports_broken_outbox_stats(
     monkeypatch: pytest.MonkeyPatch,
+    printed: list[str],
 ) -> None:
     telemetry_buffer = ModuleType("observal_cli.telemetry_buffer")
 
@@ -712,25 +832,27 @@ def test_status_ignores_broken_outbox_stats(
 
     telemetry_buffer.stats = broken_stats  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "observal_cli.telemetry_buffer", telemetry_buffer)
-    monkeypatch.setattr(auth.config, "load", lambda: {})
-    monkeypatch.setattr(auth.client, "health", lambda: (False, 0.0))
+    monkeypatch.setattr(auth.config, "load", lambda: {"server_url": SERVER_URL, "access_token": ACCESS_TOKEN})
+    monkeypatch.setattr(auth.client, "health", lambda: (True, 42.0))
 
     auth.status()
+
+    assert "status unavailable" in "\n".join(printed)
 
 
 def test_change_password_requires_saved_session(
     monkeypatch: pytest.MonkeyPatch,
-    printed: list[str],
 ) -> None:
     password_input = MagicMock()
     monkeypatch.setattr(auth.config, "load", lambda: {})
     monkeypatch.setattr(auth, "password_input", password_input)
 
-    with pytest.raises(typer.Exit):
+    with pytest.raises(CliError) as exc_info:
         auth.change_password()
 
     password_input.assert_not_called()
-    assert "Not logged in" in "\n".join(printed)
+    assert exc_info.value.category is ErrorCategory.AUTH
+    assert "authenticated session" in exc_info.value.message
 
 
 def test_change_password_sends_current_and_validated_password_with_bearer_token(
@@ -738,19 +860,17 @@ def test_change_password_sends_current_and_validated_password_with_bearer_token(
     printed: list[str],
 ) -> None:
     current_password = "CurrentPassword1!"
-    put = MagicMock(return_value=_response())
+    put = MagicMock(return_value={"message": "Password changed"})
     monkeypatch.setattr(auth.config, "load", lambda: {"server_url": SERVER_URL, "access_token": ACCESS_TOKEN})
     monkeypatch.setattr(auth, "password_input", MagicMock(side_effect=[current_password, VALID_PASSWORD]))
     monkeypatch.setattr(auth, "_prompt_password", lambda _prompt: VALID_PASSWORD)
-    monkeypatch.setattr(auth.httpx, "put", put)
+    monkeypatch.setattr(auth.client, "put", put)
 
     auth.change_password()
 
     put.assert_called_once_with(
-        f"{SERVER_URL}/api/v1/auth/profile/password",
-        json={"current_password": current_password, "new_password": VALID_PASSWORD},
-        headers={"Authorization": f"Bearer {ACCESS_TOKEN}"},
-        timeout=30,
+        "/api/v1/auth/profile/password",
+        {"current_password": current_password, "new_password": VALID_PASSWORD},
     )
     output = "\n".join(printed)
     assert "Password changed successfully" in output
@@ -775,30 +895,29 @@ def test_change_password_rejects_mismatched_confirmation(
 
 
 @pytest.mark.parametrize(
-    ("response", "detail"),
+    ("category", "message"),
     [
-        (_response(400, {"detail": "Current password is incorrect"}), "Current password is incorrect"),
-        (_response(500, text="upstream unavailable"), "upstream unavailable"),
+        (ErrorCategory.VALIDATION, "Current password is incorrect"),
+        (ErrorCategory.UNAVAILABLE, "The server returned HTTP 500"),
     ],
 )
-def test_change_password_surfaces_server_detail_without_secrets(
-    response: httpx.Response,
-    detail: str,
+def test_change_password_preserves_client_errors_without_secrets(
+    category: ErrorCategory,
+    message: str,
     monkeypatch: pytest.MonkeyPatch,
-    printed: list[str],
 ) -> None:
+    error = CliError(category, message, operation="Change password", resource="user account")
     monkeypatch.setattr(auth.config, "load", lambda: {"server_url": SERVER_URL, "access_token": ACCESS_TOKEN})
     monkeypatch.setattr(auth, "password_input", MagicMock(side_effect=["CurrentPassword1!", VALID_PASSWORD]))
     monkeypatch.setattr(auth, "_prompt_password", lambda _prompt: VALID_PASSWORD)
-    monkeypatch.setattr(auth.httpx, "put", lambda *_args, **_kwargs: response)
+    monkeypatch.setattr(auth.client, "put", MagicMock(side_effect=error))
 
-    with pytest.raises(typer.Exit):
+    with pytest.raises(CliError) as exc_info:
         auth.change_password()
 
-    output = "\n".join(printed)
-    assert detail in output
-    assert ACCESS_TOKEN not in output
-    assert VALID_PASSWORD not in output
+    assert exc_info.value is error
+    assert ACCESS_TOKEN not in exc_info.value.message
+    assert VALID_PASSWORD not in exc_info.value.message
 
 
 def test_set_username_validates_before_request(
@@ -808,30 +927,42 @@ def test_set_username_validates_before_request(
     put = MagicMock()
     monkeypatch.setattr(auth.client, "put", put)
 
-    with pytest.raises(typer.Exit):
+    with pytest.raises(CliError) as exc_info:
         auth.set_username("Invalid Namespace")
 
     put.assert_not_called()
+    assert exc_info.value.category is ErrorCategory.VALIDATION
     assert auth.NAMESPACE_RULE_TEXT in "\n".join(printed)
 
 
 def test_set_username_updates_profile(monkeypatch: pytest.MonkeyPatch, printed: list[str]) -> None:
     put = MagicMock(return_value={"username": "ada.dev"})
+    save = MagicMock()
     monkeypatch.setattr(auth.client, "put", put)
+    monkeypatch.setattr(auth.config, "save", save)
 
     auth.set_username("ada.dev")
 
     put.assert_called_once_with("/api/v1/auth/profile/username", {"username": "ada.dev"})
+    save.assert_called_once_with({"username": "ada.dev"})
     assert "@ada.dev" in "\n".join(printed)
 
 
-def test_set_username_reports_client_error(monkeypatch: pytest.MonkeyPatch, printed: list[str]) -> None:
-    monkeypatch.setattr(auth.client, "put", MagicMock(side_effect=RuntimeError("name already used")))
+def test_set_username_preserves_client_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    error = CliError(
+        ErrorCategory.CONFLICT,
+        "Username already taken.",
+        operation="Update username",
+        resource="user account",
+        request_id="request-123",
+    )
+    monkeypatch.setattr(auth.client, "put", MagicMock(side_effect=error))
 
-    with pytest.raises(typer.Exit):
+    with pytest.raises(CliError) as exc_info:
         auth.set_username("ada.dev")
 
-    assert "name already used" in "\n".join(printed)
+    assert exc_info.value is error
+    assert exc_info.value.request_id == "request-123"
 
 
 @pytest.mark.parametrize(("package_result", "expected"), [("1.2.3", "1.2.3"), (RuntimeError("missing"), "dev")])
@@ -944,19 +1075,8 @@ def test_password_login_completes_mandatory_password_change(
     assert "web_url" not in save.call_args.args[0]
 
 
-@pytest.mark.parametrize(
-    ("new_password", "confirmation", "expected"),
-    [
-        ("LongEnough1!", "Different1!", "Passwords do not match"),
-        ("Short1!", "Short1!", "at least 8 characters"),
-    ],
-)
-def test_password_login_rejects_invalid_mandatory_password_change(
-    new_password: str,
-    confirmation: str,
-    expected: str,
+def test_password_login_rejects_mismatched_mandatory_password_change(
     monkeypatch: pytest.MonkeyPatch,
-    printed: list[str],
 ) -> None:
     monkeypatch.setattr(
         auth.httpx, "post", lambda *_args, **_kwargs: _response(200, _login_payload(must_change_password=True))
@@ -964,40 +1084,60 @@ def test_password_login_rejects_invalid_mandatory_password_change(
     put = MagicMock()
     save = MagicMock()
     monkeypatch.setattr(auth.httpx, "put", put)
-    monkeypatch.setattr(auth, "password_input", MagicMock(side_effect=[new_password, confirmation]))
+    monkeypatch.setattr(auth, "password_input", MagicMock(side_effect=[VALID_PASSWORD, "DifferentPassword2!"]))
     monkeypatch.setattr(auth.config, "save", save)
 
-    with pytest.raises(typer.Exit):
+    with pytest.raises(CliError) as exc_info:
         auth._do_password_login(SERVER_URL, "ada", "Temporary1!")
 
     put.assert_not_called()
     save.assert_not_called()
-    assert expected in "\n".join(printed)
+    assert exc_info.value.category is ErrorCategory.VALIDATION
+    assert "do not match" in exc_info.value.message
+
+
+def test_password_login_rejects_weak_noninteractive_password(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        auth.httpx, "post", lambda *_args, **_kwargs: _response(200, _login_payload(must_change_password=True))
+    )
+    monkeypatch.setenv("OBSERVAL_NEW_PASSWORD", "Short1!")
+    put = MagicMock()
+    monkeypatch.setattr(auth.httpx, "put", put)
+
+    with pytest.raises(CliError) as exc_info:
+        auth._do_password_login(SERVER_URL, "ada", "Temporary1!")
+
+    put.assert_not_called()
+    assert exc_info.value.category is ErrorCategory.VALIDATION
+    assert "security requirements" in exc_info.value.message
 
 
 @pytest.mark.parametrize(
-    ("response", "detail"),
+    ("response", "category", "message"),
     [
-        (_response(401, {"detail": "Invalid credentials"}), "Invalid credentials"),
-        (_response(502, text="bad gateway"), "bad gateway"),
+        (_response(401, {"detail": "Invalid credentials"}), ErrorCategory.AUTH, "Authentication failed"),
+        (_response(502, text="bad gateway"), ErrorCategory.UNAVAILABLE, "HTTP 502"),
     ],
 )
-def test_password_login_surfaces_http_errors_without_saving(
+def test_password_login_categorizes_http_errors_without_saving(
     response: httpx.Response,
-    detail: str,
+    category: ErrorCategory,
+    message: str,
     monkeypatch: pytest.MonkeyPatch,
-    printed: list[str],
 ) -> None:
     save = MagicMock()
     monkeypatch.setattr(auth.httpx, "post", lambda *_args, **_kwargs: response)
     monkeypatch.setattr(auth.config, "save", save)
 
-    with pytest.raises(typer.Exit):
+    with pytest.raises(CliError) as exc_info:
         auth._do_password_login(SERVER_URL, "ada", VALID_PASSWORD)
 
     save.assert_not_called()
-    assert detail in "\n".join(printed)
-    assert VALID_PASSWORD not in "\n".join(printed)
+    assert exc_info.value.category is category
+    assert message in exc_info.value.message
+    assert VALID_PASSWORD not in exc_info.value.message
 
 
 def test_device_flow_rewrites_local_verification_url_and_saves_authorized_session(
@@ -1054,6 +1194,39 @@ def test_device_flow_rewrites_local_verification_url_and_saves_authorized_sessio
     assert REFRESH_TOKEN not in output
 
 
+def test_device_flow_json_emits_events_and_skips_setup(
+    monkeypatch: pytest.MonkeyPatch,
+    device_runtime: tuple[_Clock, MagicMock],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        auth.httpx,
+        "post",
+        MagicMock(
+            side_effect=[
+                _response(200, _device_authorization()),
+                _response(200, _login_payload()),
+            ]
+        ),
+    )
+    monkeypatch.setattr(auth, "_fetch_endpoints", lambda _url: {})
+    monkeypatch.setattr(auth.config, "save", MagicMock())
+    setup = MagicMock()
+    monkeypatch.setattr(auth, "_post_login_setup", setup)
+
+    auth._do_device_flow_login(SERVER_URL, direct_sso=True, provider="oidc", output="json", run_setup=False)
+
+    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert events[0]["event"] == "authorization_required"
+    assert events[0]["verification_uri"] == f"{SERVER_URL}/device"
+    assert events[1]["event"] == "authenticated"
+    assert events[1]["user"]["email"] == "ada@example.test"
+    assert "private-device-code" not in str(events)
+    assert ACCESS_TOKEN not in str(events)
+    assert REFRESH_TOKEN not in str(events)
+    setup.assert_not_called()
+
+
 def test_device_flow_keeps_local_url_for_local_server(
     monkeypatch: pytest.MonkeyPatch,
     device_runtime: tuple[_Clock, MagicMock],
@@ -1074,33 +1247,31 @@ def test_device_flow_keeps_local_url_for_local_server(
     browser_open.assert_called_once_with("http://localhost/device?code=ABCD-EFGH")
 
 
-def test_device_flow_reports_authorization_request_error(
+def test_device_flow_categorizes_authorization_request_error(
     monkeypatch: pytest.MonkeyPatch,
-    printed: list[str],
 ) -> None:
     monkeypatch.setattr(auth.httpx, "post", lambda *_args, **_kwargs: _response(503, text="unavailable"))
 
-    with pytest.raises(typer.Exit):
+    with pytest.raises(CliError) as exc_info:
         auth._do_device_flow_login(SERVER_URL)
 
-    output = "\n".join(printed)
-    assert "Device authorization failed (503)" in output
-    assert "unavailable" in output
+    assert exc_info.value.category is ErrorCategory.UNAVAILABLE
+    assert exc_info.value.http_status == 503
 
 
 @pytest.mark.parametrize(
-    ("error", "expected"),
+    ("error", "category", "expected"),
     [
-        ("expired_token", "Device code expired"),
-        ("access_denied", "Authorization was denied"),
-        ("server_error", "error: server_error"),
+        ("expired_token", ErrorCategory.AUTH, "authorization code expired"),
+        ("access_denied", ErrorCategory.PERMISSION, "authorization was denied"),
+        ("server_error", ErrorCategory.VALIDATION, "HTTP 400"),
     ],
 )
 def test_device_flow_stops_on_terminal_poll_error(
     error: str,
+    category: ErrorCategory,
     expected: str,
     monkeypatch: pytest.MonkeyPatch,
-    printed: list[str],
     device_runtime: tuple[_Clock, MagicMock],
 ) -> None:
     monkeypatch.setattr(
@@ -1114,10 +1285,11 @@ def test_device_flow_stops_on_terminal_poll_error(
         ),
     )
 
-    with pytest.raises(typer.Exit):
+    with pytest.raises(CliError) as exc_info:
         auth._do_device_flow_login(SERVER_URL)
 
-    assert expected in "\n".join(printed)
+    assert exc_info.value.category is category
+    assert expected in exc_info.value.message
 
 
 def test_device_flow_polls_pending_until_success(
@@ -1148,7 +1320,6 @@ def test_device_flow_polls_pending_until_success(
 
 def test_device_flow_retries_network_errors_until_timeout(
     monkeypatch: pytest.MonkeyPatch,
-    printed: list[str],
     device_runtime: tuple[_Clock, MagicMock],
 ) -> None:
     request = httpx.Request("POST", SERVER_URL)
@@ -1164,11 +1335,12 @@ def test_device_flow_retries_network_errors_until_timeout(
         ),
     )
 
-    with pytest.raises(typer.Exit):
+    with pytest.raises(CliError) as exc_info:
         auth._do_device_flow_login(SERVER_URL)
 
     assert device_runtime[0].sleeps == [1, 1]
-    assert "Authorization timed out" in "\n".join(printed)
+    assert exc_info.value.category is ErrorCategory.UNAVAILABLE
+    assert "timed out" in exc_info.value.message
 
 
 @pytest.mark.parametrize(
@@ -1210,6 +1382,31 @@ def test_device_flow_uses_platform_browser_launcher(
     assert f"{SERVER_URL}/device?code=ABCD-EFGH" in launched
 
 
+def test_device_flow_uses_xdg_open_when_wslpath_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    device_runtime: tuple[_Clock, MagicMock],
+) -> None:
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
+    monkeypatch.setattr(subprocess, "run", MagicMock(side_effect=FileNotFoundError("wslpath")))
+    popen = MagicMock()
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    monkeypatch.setattr(
+        auth.httpx,
+        "post",
+        MagicMock(
+            side_effect=[
+                _response(200, _device_authorization()),
+                _response(400, {"error": "expired_token"}),
+            ]
+        ),
+    )
+
+    with pytest.raises(typer.Exit):
+        auth._do_device_flow_login(SERVER_URL)
+
+    assert popen.call_args.args[0][0] == "xdg-open"
+
+
 def test_device_flow_browser_failure_keeps_manual_flow_available(
     monkeypatch: pytest.MonkeyPatch,
     printed: list[str],
@@ -1233,50 +1430,61 @@ def test_device_flow_browser_failure_keeps_manual_flow_available(
     assert "Please open the URL manually" in "\n".join(printed)
 
 
-@pytest.mark.parametrize(
-    ("access_token", "refresh_token", "expected_access", "expected_refresh"),
-    [
-        ("abcdefghijklmno", "123456789012345", "abcdefgh...lmno", "12345678...2345"),
-        ("short", "tiny", "***", "***"),
-    ],
-)
-def test_config_show_masks_tokens_and_removes_legacy_key(
-    access_token: str,
-    refresh_token: str,
-    expected_access: str,
-    expected_refresh: str,
+def test_config_show_json_never_exposes_token_fragments(
     config_cli: typer.Typer,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     stored = {
         "server_url": SERVER_URL,
-        "access_token": access_token,
-        "refresh_token": refresh_token,
-        "api_key": "legacy-secret",
+        "access_token": ACCESS_TOKEN,
+        "refresh_token": REFRESH_TOKEN,
+        "api_key": "hooks-secret",
+        "timeout": 30,
     }
-    print_json = MagicMock()
     monkeypatch.setattr(auth.config, "load", lambda: stored)
-    monkeypatch.setattr(auth.console, "print_json", print_json)
+
+    result = CliRunner().invoke(config_cli, ["config", "show", "--output", "json"])
+
+    assert result.exit_code == 0, result.output
+    rendered = json.loads(result.output)
+    assert rendered == {
+        "server_url": SERVER_URL,
+        "timeout": 30,
+        "access_token_configured": True,
+        "refresh_token_configured": True,
+        "hooks_token_configured": True,
+    }
+    assert ACCESS_TOKEN not in result.output
+    assert REFRESH_TOKEN not in result.output
+    assert "hooks-secret" not in result.output
+
+
+def test_config_show_defaults_to_table(
+    config_cli: typer.Typer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    print_table = MagicMock()
+    monkeypatch.setattr(auth.config, "load", lambda: {"server_url": SERVER_URL, "timeout": 30})
+    monkeypatch.setattr(auth.console, "print", print_table)
 
     result = CliRunner().invoke(config_cli, ["config", "show"])
 
     assert result.exit_code == 0, result.output
-    rendered = json.loads(print_json.call_args.args[0])
-    assert rendered == {
-        "server_url": SERVER_URL,
-        "access_token": expected_access,
-        "refresh_token": expected_refresh,
-    }
-    assert stored["access_token"] == access_token
-    assert stored["refresh_token"] == refresh_token
-    assert stored["api_key"] == "legacy-secret"
+    print_table.assert_called_once()
+    assert isinstance(print_table.call_args.args[0], auth.Table)
 
 
 @pytest.mark.parametrize(
     ("key", "value", "saved_value"),
-    [("color", "YES", True), ("color", "no", False), ("output", "json", "json")],
+    [
+        ("update_check", "YES", True),
+        ("update_check", "off", False),
+        ("timeout", "60", 60),
+        ("update_check_interval", "120", 120),
+        ("update_check_repo", "Observal/Observal", "Observal/Observal"),
+    ],
 )
-def test_config_set_normalizes_boolean_values(
+def test_config_set_normalizes_supported_values(
     key: str,
     value: str,
     saved_value: object,
@@ -1285,14 +1493,52 @@ def test_config_set_normalizes_boolean_values(
 ) -> None:
     save = MagicMock()
     monkeypatch.setattr(auth.config, "save", save)
+    monkeypatch.setattr(auth.config, "load", lambda: {key: saved_value})
 
-    result = CliRunner().invoke(config_cli, ["config", "set", key, value])
+    result = CliRunner().invoke(config_cli, ["config", "set", key, value, "--output", "json"])
 
     assert result.exit_code == 0, result.output
     save.assert_called_once_with({key: saved_value})
+    assert json.loads(result.output) == {
+        "key": key,
+        "value": saved_value,
+        "persisted": True,
+        "effective": saved_value,
+    }
 
 
-def test_config_set_server_migrates_previous_lockfile(
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("output", "json"),
+        ("color", "false"),
+        ("access_token", "secret"),
+        ("unknown", "value"),
+        ("update_check", "maybe"),
+        ("timeout", "zero"),
+        ("timeout", "0"),
+        ("update_check_interval", "59"),
+        ("server_url", "registry.example.test"),
+        ("server_url", "https://user:password@registry.example.test"),
+        ("update_check_repo", "missing-slash"),
+    ],
+)
+def test_config_set_rejects_unsupported_or_invalid_values(
+    key: str,
+    value: str,
+    config_cli: typer.Typer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    save = MagicMock()
+    monkeypatch.setattr(auth.config, "save", save)
+
+    result = CliRunner().invoke(config_cli, ["config", "set", key, value])
+
+    assert result.exit_code == ExitCode.VALIDATION
+    save.assert_not_called()
+
+
+def test_config_set_server_normalizes_and_migrates_previous_lockfile(
     config_cli: typer.Typer,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1300,84 +1546,173 @@ def test_config_set_server_migrates_previous_lockfile(
 
     migrate = MagicMock()
     save = MagicMock()
-    monkeypatch.setattr(auth.config, "load", lambda: {"server_url": "https://old.example.test"})
+    monkeypatch.setattr(auth.config, "load_persisted", lambda: {"server_url": "https://old.example.test"})
+    monkeypatch.setattr(auth.config, "load", lambda: {"server_url": SERVER_URL})
     monkeypatch.setattr(auth.config, "save", save)
     monkeypatch.setattr(lockfile, "migrate_lockfile_v1", migrate)
 
-    result = CliRunner().invoke(config_cli, ["config", "set", "server_url", SERVER_URL])
+    result = CliRunner().invoke(config_cli, ["config", "set", "server_url", f"{SERVER_URL}/"])
 
     assert result.exit_code == 0, result.output
     migrate.assert_called_once_with("https://old.example.test")
     save.assert_called_once_with({"server_url": SERVER_URL})
 
 
-def test_config_path_prints_config_location(
+def test_config_set_server_categorizes_lockfile_migration_failure(
     config_cli: typer.Typer,
-    printed: list[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    result = CliRunner().invoke(config_cli, ["config", "path"])
+    import observal_cli.lockfile as lockfile
 
-    assert result.exit_code == 0, result.output
-    assert str(auth.config.CONFIG_FILE) in printed
+    save = MagicMock()
+    monkeypatch.setattr(auth.config, "load_persisted", lambda: {"server_url": "https://old.example.test"})
+    monkeypatch.setattr(lockfile, "migrate_lockfile_v1", MagicMock(side_effect=RuntimeError("bad lockfile")))
+    monkeypatch.setattr(auth.config, "save", save)
+
+    result = CliRunner().invoke(config_cli, ["config", "set", "server_url", SERVER_URL])
+
+    assert result.exit_code == ExitCode.VALIDATION
+    save.assert_not_called()
+
+
+def test_config_path_supports_bare_and_json_output(config_cli: typer.Typer) -> None:
+    plain = CliRunner().invoke(config_cli, ["config", "path"])
+    structured = CliRunner().invoke(config_cli, ["config", "path", "--output", "json"])
+
+    assert plain.exit_code == structured.exit_code == 0
+    assert plain.output.strip() == str(auth.config.CONFIG_FILE)
+    assert json.loads(structured.output) == {
+        "path": str(auth.config.CONFIG_FILE),
+        "exists": auth.config.CONFIG_FILE.exists(),
+    }
 
 
 def test_config_alias_sets_and_removes_mapping(
     config_cli: typer.Typer,
     monkeypatch: pytest.MonkeyPatch,
-    printed: list[str],
 ) -> None:
     aliases = {"old": "old-id"}
     save_aliases = MagicMock()
     monkeypatch.setattr(auth.config, "load_aliases", lambda: dict(aliases))
     monkeypatch.setattr(auth.config, "save_aliases", save_aliases)
 
-    set_result = CliRunner().invoke(config_cli, ["config", "alias", "agent", "agent-id"])
-    remove_result = CliRunner().invoke(config_cli, ["config", "alias", "old"])
+    set_result = CliRunner().invoke(
+        config_cli,
+        ["config", "alias", "agent", "alice/agent", "--output", "json"],
+    )
+    remove_result = CliRunner().invoke(config_cli, ["config", "alias", "old", "--output", "json"])
 
-    assert set_result.exit_code == 0, set_result.output
-    assert remove_result.exit_code == 0, remove_result.output
+    assert set_result.exit_code == remove_result.exit_code == 0
     assert save_aliases.call_args_list == [
-        call({"old": "old-id", "agent": "agent-id"}),
+        call({"old": "old-id", "agent": "alice/agent"}),
         call({}),
     ]
-    assert any("@agent" in message for message in printed)
-    assert any("Removed @old" in message for message in printed)
+    assert json.loads(set_result.output) == {
+        "action": "set",
+        "alias": "agent",
+        "target": "alice/agent",
+        "changed": True,
+    }
+    assert json.loads(remove_result.output) == {
+        "action": "removed",
+        "alias": "old",
+        "target": "old-id",
+        "changed": True,
+    }
 
 
-def test_config_alias_reports_missing_mapping(
+def test_config_alias_missing_removal_is_idempotent(
     config_cli: typer.Typer,
     monkeypatch: pytest.MonkeyPatch,
-    printed: list[str],
 ) -> None:
     save_aliases = MagicMock()
     monkeypatch.setattr(auth.config, "load_aliases", lambda: {})
     monkeypatch.setattr(auth.config, "save_aliases", save_aliases)
 
-    result = CliRunner().invoke(config_cli, ["config", "alias", "missing"])
+    result = CliRunner().invoke(config_cli, ["config", "alias", "missing", "--output", "json"])
 
     assert result.exit_code == 0, result.output
-    save_aliases.assert_called_once_with({})
-    assert any("not found" in message for message in printed)
+    save_aliases.assert_not_called()
+    assert json.loads(result.output) == {
+        "action": "removed",
+        "alias": "missing",
+        "target": None,
+        "changed": False,
+    }
+
+
+@pytest.mark.parametrize("name", ["@alias", "1", "has space", "has/slash", "a" * 65])
+def test_config_alias_rejects_invalid_names(
+    name: str,
+    config_cli: typer.Typer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    save_aliases = MagicMock()
+    monkeypatch.setattr(auth.config, "save_aliases", save_aliases)
+
+    result = CliRunner().invoke(config_cli, ["config", "alias", name, "target"])
+
+    assert result.exit_code == ExitCode.VALIDATION
+    save_aliases.assert_not_called()
 
 
 @pytest.mark.parametrize("aliases", [{}, {"zeta": "2", "alpha": "1"}])
-def test_config_aliases_lists_sorted_or_empty_state(
+def test_config_aliases_has_stable_json_shape(
     aliases: dict[str, str],
     config_cli: typer.Typer,
     monkeypatch: pytest.MonkeyPatch,
-    printed: list[str],
 ) -> None:
     monkeypatch.setattr(auth.config, "load_aliases", lambda: aliases)
+
+    result = CliRunner().invoke(config_cli, ["config", "aliases", "--output", "json"])
+
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output) == {
+        "items": [{"alias": name, "target": target} for name, target in sorted(aliases.items())],
+        "total": len(aliases),
+        "page": 1,
+        "page_size": len(aliases),
+    }
+
+
+def test_config_aliases_defaults_to_table(
+    config_cli: typer.Typer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    print_table = MagicMock()
+    monkeypatch.setattr(auth.config, "load_aliases", lambda: {"alpha": "alice/agent"})
+    monkeypatch.setattr(auth.console, "print", print_table)
 
     result = CliRunner().invoke(config_cli, ["config", "aliases"])
 
     assert result.exit_code == 0, result.output
-    if aliases:
-        alpha = next(index for index, message in enumerate(printed) if "@alpha" in message)
-        zeta = next(index for index, message in enumerate(printed) if "@zeta" in message)
-        assert alpha < zeta
-    else:
-        assert any("No aliases set" in message for message in printed)
+    print_table.assert_called_once()
+    assert isinstance(print_table.call_args.args[0], auth.Table)
+
+
+def test_config_storage_is_atomic_private_and_rejects_malformed_json(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config_file = tmp_path / "config.json"
+    aliases_file = tmp_path / "aliases.json"
+    monkeypatch.setattr(auth.config, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(auth.config, "CONFIG_FILE", config_file)
+    monkeypatch.setattr(auth.config, "ALIASES_FILE", aliases_file)
+
+    auth.config.save({"server_url": SERVER_URL, "output": "json", "color": True})
+    auth.config.save_aliases({"agent": "alice/agent"})
+
+    assert json.loads(config_file.read_text()) == {"server_url": SERVER_URL}
+    assert json.loads(aliases_file.read_text()) == {"agent": "alice/agent"}
+    assert config_file.stat().st_mode & 0o777 == 0o600
+    assert aliases_file.stat().st_mode & 0o777 == 0o600
+    assert list(tmp_path.glob(".*.json.*")) == []
+
+    aliases_file.write_text("not json")
+    with pytest.raises(CliError) as exc_info:
+        auth.config.load_aliases()
+    assert exc_info.value.category is ErrorCategory.VALIDATION
 
 
 def test_post_login_setup_installs_skills_snapshots_and_runs_doctor(

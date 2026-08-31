@@ -7,15 +7,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 import tarfile
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import TYPE_CHECKING
 
 from loguru import logger as optic
 
 if TYPE_CHECKING:
     from datetime import datetime
-    from pathlib import Path
 
 
 def _sha256_file(path: Path) -> str:
@@ -124,8 +126,20 @@ def read_manifest(path: Path) -> dict:
 
 
 def write_manifest(path: Path, data: dict) -> None:
-    """Write a JSON manifest file."""
-    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    """Atomically write a private JSON manifest."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False) as file:
+            temporary = Path(file.name)
+            file.write(json.dumps(data, indent=2) + "\n")
+            file.flush()
+            os.fsync(file.fileno())
+        temporary.chmod(0o600)
+        temporary.replace(path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def pack_pg_archive(
@@ -139,9 +153,18 @@ def pack_pg_archive(
 ) -> None:
     """Pack PG export files into a tar.gz archive."""
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(output_path, "w:gz") as tar:
-        tar.add(str(manifest_path), arcname="manifest.json")
-        tar.add(str(migration_manifest_path), arcname="migration_manifest.json")
-        for table in insert_order:
-            jsonl_file = pg_dir / f"{table}.jsonl"
-            tar.add(str(jsonl_file), arcname=f"pg/{table}.jsonl")
+    temporary = None
+    try:
+        with NamedTemporaryFile(dir=output_path.parent, prefix=f".{output_path.name}.", delete=False) as file:
+            temporary = Path(file.name)
+        with tarfile.open(temporary, "w:gz") as tar:
+            tar.add(str(manifest_path), arcname="manifest.json")
+            tar.add(str(migration_manifest_path), arcname="migration_manifest.json")
+            for table in insert_order:
+                jsonl_file = pg_dir / f"{table}.jsonl"
+                tar.add(str(jsonl_file), arcname=f"pg/{table}.jsonl")
+        temporary.chmod(0o600)
+        temporary.replace(output_path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)

@@ -13,8 +13,6 @@ Generates full config when a user installs an agent for OpenCode, including:
 
 from __future__ import annotations
 
-from loguru import logger as optic
-
 from observal_shared.harness_registry import HARNESS_REGISTRY
 from services.harness import BaseHarnessAdapter, ConfigContext, McpConfigContext, register_adapter
 from services.harness.helpers import (
@@ -50,7 +48,6 @@ class OpenCodeAdapter(BaseHarnessAdapter):
         return model if "/" in model else f"{provider}/{model}"
 
     def format_config(self, ctx: ConfigContext) -> dict:
-        optic.trace("ctx={}", ctx)
         safe_name = ctx.safe_name
         options = ctx.options
         mcp_configs = ctx.mcp_configs

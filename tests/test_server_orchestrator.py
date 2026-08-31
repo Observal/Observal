@@ -136,6 +136,8 @@ class TestSecretsAndEnvironment:
         monkeypatch.setattr(orchestrator_module, "generate_secret", generate)
 
         orch = Orchestrator(port=9000, host="localhost")
+        assert orch._secrets is None
+        orch._secrets = orch._load_or_create_secrets()
 
         secrets_file = isolated_runtime.root / ".secrets"
         assert orch.port == 9000
@@ -160,6 +162,7 @@ class TestSecretsAndEnvironment:
         monkeypatch.setattr(orchestrator_module, "generate_secret", generate)
 
         orch = Orchestrator()
+        orch._secrets = orch._load_or_create_secrets()
 
         assert orch._secrets == {
             "EXTRA": "a=b",
@@ -184,6 +187,7 @@ class TestSecretsAndEnvironment:
         monkeypatch.setattr(orchestrator_module, "generate_secret", generate)
 
         orch = Orchestrator()
+        orch._secrets = orch._load_or_create_secrets()
 
         assert orch._secrets == {"POSTGRES_PASSWORD": "postgres", "SECRET_KEY": "jwt"}
         assert secrets_file.read_text() == content
@@ -902,87 +906,54 @@ class TestFirstRunDetection:
 
 
 class TestMigrations:
-    def configure_migration_paths(
-        self,
-        orch: Orchestrator,
-        server_dir: Path,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
+    def configure_migration_paths(self, orch: Orchestrator, server_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(orch, "_build_env", lambda: {"DB": "test"})
         monkeypatch.setattr(orch, "_find_server_dir", lambda: server_dir)
         monkeypatch.setattr(orch, "_find_python", lambda: "/python")
 
-    def test_missing_alembic_configuration_skips_subprocess(
-        self,
-        tmp_path: Path,
-        isolated_runtime: SimpleNamespace,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
+    def test_missing_alembic_configuration_fails_closed(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         run = MagicMock()
         monkeypatch.setattr(orchestrator_module.subprocess, "run", run)
         orch = Orchestrator()
         self.configure_migration_paths(orch, tmp_path, monkeypatch)
 
-        orch.run_migrations()
+        with pytest.raises(ServiceError, match="Alembic configuration"):
+            orch.run_migrations()
 
         run.assert_not_called()
-        assert "skipping migrations" in isolated_runtime.console.text()
 
-    def test_successful_migration_runs_upgrade_head(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_success_applies_postgres_and_clickhouse_migrations(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         (tmp_path / "alembic.ini").write_text("[alembic]")
-        run = MagicMock(return_value=completed())
+        run = MagicMock(side_effect=[completed(), completed()])
         monkeypatch.setattr(orchestrator_module.subprocess, "run", run)
         orch = Orchestrator()
         self.configure_migration_paths(orch, tmp_path, monkeypatch)
 
         orch.run_migrations()
 
-        run.assert_called_once_with(
+        assert [item.args[0] for item in run.call_args_list] == [
             ["/python", "-m", "alembic", "upgrade", "head"],
-            cwd=str(tmp_path),
-            env={"DB": "test"},
-            capture_output=True,
-            text=True,
-        )
+            ["/python", "-m", "services.clickhouse.migrations"],
+        ]
 
-    @pytest.mark.parametrize("message", ["Can't locate revision abc", "Target database is not up to date"])
-    def test_revision_state_errors_stamp_head(
-        self,
-        message: str,
-        tmp_path: Path,
-        monkeypatch: pytest.MonkeyPatch,
+    @pytest.mark.parametrize("failure_index", [0, 1])
+    def test_migration_failure_never_stamps_schema(
+        self, failure_index: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         (tmp_path / "alembic.ini").write_text("[alembic]")
-        run = MagicMock(side_effect=[completed(1, stderr=message), completed()])
+        results = [completed(), completed()]
+        results[failure_index] = completed(1, stderr="migration crashed")
+        run = MagicMock(side_effect=results)
         monkeypatch.setattr(orchestrator_module.subprocess, "run", run)
         orch = Orchestrator()
         self.configure_migration_paths(orch, tmp_path, monkeypatch)
 
-        orch.run_migrations()
+        with pytest.raises(ServiceError, match="migration failed"):
+            orch.run_migrations()
 
-        assert run.call_args_list[1] == call(
-            ["/python", "-m", "alembic", "stamp", "head"],
-            cwd=str(tmp_path),
-            env={"DB": "test"},
-            capture_output=True,
-        )
-
-    def test_other_migration_errors_are_reported_without_stamping(
-        self,
-        tmp_path: Path,
-        isolated_runtime: SimpleNamespace,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        (tmp_path / "alembic.ini").write_text("[alembic]")
-        run = MagicMock(return_value=completed(1, stderr="migration crashed"))
-        monkeypatch.setattr(orchestrator_module.subprocess, "run", run)
-        orch = Orchestrator()
-        self.configure_migration_paths(orch, tmp_path, monkeypatch)
-
-        orch.run_migrations()
-
-        assert run.call_count == 1
-        assert "Migration issue: migration crashed" in isolated_runtime.console.text()
+        assert not any("stamp" in item.args[0] for item in run.call_args_list)
 
 
 class TestBootstrapAndCliConfiguration:
@@ -999,14 +970,19 @@ class TestBootstrapAndCliConfiguration:
                 SimpleNamespace(status_code=200),
             ]
         )
-        post = MagicMock(return_value=SimpleNamespace(status_code=200))
+        credentials = {
+            "access_token": "access",
+            "refresh_token": "refresh",
+            "user": {"id": "user-id"},
+        }
+        post = MagicMock(return_value=SimpleNamespace(status_code=200, json=lambda: credentials))
         sleep = MagicMock()
         monkeypatch.setattr(orchestrator_module.time, "time", MagicMock(side_effect=[0, 0, 1, 2, 3]))
         monkeypatch.setattr(orchestrator_module.time, "sleep", sleep)
         monkeypatch.setattr(orchestrator_module.httpx, "get", get)
         monkeypatch.setattr(orchestrator_module.httpx, "post", post)
 
-        Orchestrator(port=9123)._auto_bootstrap()
+        assert Orchestrator(port=9123)._auto_bootstrap() == credentials
 
         assert get.call_count == 4
         assert sleep.call_args_list == [call(0.5), call(0.5), call(0.5)]
@@ -1036,8 +1012,8 @@ class TestBootstrapAndCliConfiguration:
         [
             (SimpleNamespace(status_code=400), ""),
             (SimpleNamespace(status_code=503), "Bootstrap returned 503"),
-            (httpx.ConnectError("offline"), "Could not reach API"),
-            (httpx.ReadTimeout("slow"), "Could not reach API"),
+            (httpx.ConnectError("offline"), "Could not complete API bootstrap"),
+            (httpx.ReadTimeout("slow"), "Could not complete API bootstrap"),
         ],
     )
     def test_bootstrap_handles_idempotent_warning_and_network_results(
@@ -1056,38 +1032,45 @@ class TestBootstrapAndCliConfiguration:
 
         assert message in isolated_runtime.console.text()
 
-    @pytest.mark.parametrize(
-        ("config", "saved"),
-        [
-            ({"server_url": "http://localhost:9000", "access_token": "token"}, False),
-            ({"server_url": "http://old", "access_token": "token"}, True),
-            ({"server_url": "http://localhost:9000"}, True),
-        ],
-    )
-    def test_configure_cli_updates_only_stale_or_unauthenticated_config(
-        self,
-        config: dict[str, str],
-        saved: bool,
-        monkeypatch: pytest.MonkeyPatch,
+    def test_configure_cli_preserves_current_login_without_placeholder_tokens(
+        self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         from observal_cli import config as cli_config
 
         save = MagicMock()
-        monkeypatch.setattr(cli_config, "load", lambda: config)
+        remove = MagicMock()
+        monkeypatch.setattr(
+            cli_config, "load", lambda: {"server_url": "http://localhost:9000", "access_token": "token"}
+        )
         monkeypatch.setattr(cli_config, "save", save)
+        monkeypatch.setattr(cli_config, "remove", remove)
 
-        Orchestrator(port=9000)._configure_cli()
+        Orchestrator(port=9000)._configure_cli(None)
 
-        if saved:
-            save.assert_called_once_with(
-                {
-                    "server_url": "http://localhost:9000",
-                    "access_token": "embedded",
-                    "api_key": "embedded",
-                }
-            )
-        else:
-            save.assert_not_called()
+        save.assert_not_called()
+        remove.assert_not_called()
+
+    def test_configure_cli_persists_real_bootstrap_tokens(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from observal_cli import config as cli_config
+
+        save = MagicMock()
+        remove = MagicMock()
+        monkeypatch.setattr(cli_config, "load", lambda: {"server_url": "http://old", "access_token": "old"})
+        monkeypatch.setattr(cli_config, "save", save)
+        monkeypatch.setattr(cli_config, "remove", remove)
+        credentials = {"access_token": "access", "refresh_token": "refresh", "user": {"id": "user-id"}}
+
+        Orchestrator(port=9000)._configure_cli(credentials)
+
+        remove.assert_called_once_with("access_token", "refresh_token", "api_key")
+        save.assert_called_once_with(
+            {
+                "server_url": "http://localhost:9000",
+                "access_token": "access",
+                "refresh_token": "refresh",
+                "user_id": "user-id",
+            }
+        )
 
 
 class TestHookInstallation:
@@ -1130,9 +1113,11 @@ class TestHookInstallation:
         monkeypatch.setattr(settings_reconciler, "reconcile", MagicMock(side_effect=PermissionError("read only")))
         monkeypatch.setattr(cmd_doctor, "_patch_kiro", MagicMock(side_effect=RuntimeError("broken")))
 
-        Orchestrator()._install_hooks()
+        warnings = Orchestrator()._install_hooks()
 
         assert "hooks installed" not in isolated_runtime.console.text()
+        assert len(warnings) == 2
+        assert all("doctor patch" in warning for warning in warnings)
 
 
 class TestFullLifecycle:
@@ -1153,9 +1138,19 @@ class TestFullLifecycle:
             calls.append(("start_api", foreground))
 
         monkeypatch.setattr(orch, "start_api", start_api)
-        monkeypatch.setattr(orch, "_auto_bootstrap", lambda: calls.append("bootstrap"))
-        monkeypatch.setattr(orch, "_configure_cli", lambda: calls.append("configure_cli"))
-        monkeypatch.setattr(orch, "_install_hooks", lambda: calls.append("install_hooks"))
+
+        def bootstrap():
+            calls.append("bootstrap")
+            return {"access_token": "access", "refresh_token": "refresh"}
+
+        monkeypatch.setattr(orch, "_auto_bootstrap", bootstrap)
+        monkeypatch.setattr(orch, "_configure_cli", lambda credentials: calls.append(("configure_cli", credentials)))
+
+        def install_hooks():
+            calls.append("install_hooks")
+            return []
+
+        monkeypatch.setattr(orch, "_install_hooks", install_hooks)
 
     @pytest.mark.parametrize("foreground", [False, True])
     def test_start_all_runs_services_and_setup_in_order(
@@ -1179,9 +1174,9 @@ class TestFullLifecycle:
             "start_clickhouse",
             "start_redis",
             "run_migrations",
-            ("start_api", not foreground),
+            ("start_api", foreground),
             "bootstrap",
-            "configure_cli",
+            ("configure_cli", {"access_token": "access", "refresh_token": "refresh"}),
             "install_hooks",
         ]
         assert isolated_runtime.keys_dir.is_dir()
@@ -1217,10 +1212,10 @@ class TestFullLifecycle:
         stop = MagicMock()
         monkeypatch.setattr(orch, "stop_all", stop)
 
-        with pytest.raises(SystemExit) as error:
+        with pytest.raises(ServiceError) as error:
             orch.start_all(foreground=False)
 
-        assert error.value.code == 1
+        assert str(failure) in str(error.value)
         stop.assert_called_once_with()
         assert str(failure) in isolated_runtime.console.text()
         assert "Cleaning up" in isolated_runtime.console.text()
@@ -1263,6 +1258,8 @@ class TestStatusAndReset:
         get = MagicMock(side_effect=[SimpleNamespace(status_code=200), SimpleNamespace(status_code=200)])
         monkeypatch.setattr(orchestrator_module.subprocess, "run", run)
         monkeypatch.setattr(orchestrator_module.httpx, "get", get)
+        isolated_runtime.bins["redis_cli"].parent.mkdir(parents=True, exist_ok=True)
+        isolated_runtime.bins["redis_cli"].touch()
         orch = Orchestrator(port=9000)
         monkeypatch.setattr(orch, "_pg_is_initialized", lambda: True)
 
@@ -1285,6 +1282,7 @@ class TestStatusAndReset:
     def test_status_reports_uninitialized_and_unhealthy_services(
         self,
         api_connect_error: bool,
+        isolated_runtime: SimpleNamespace,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         run = MagicMock(return_value=completed(stdout=""))
@@ -1292,6 +1290,8 @@ class TestStatusAndReset:
         get = MagicMock(side_effect=[httpx.ConnectError("offline"), api_result])
         monkeypatch.setattr(orchestrator_module.subprocess, "run", run)
         monkeypatch.setattr(orchestrator_module.httpx, "get", get)
+        isolated_runtime.bins["redis_cli"].parent.mkdir(parents=True, exist_ok=True)
+        isolated_runtime.bins["redis_cli"].touch()
         orch = Orchestrator()
         monkeypatch.setattr(orch, "_pg_is_initialized", lambda: False)
 
@@ -1305,11 +1305,15 @@ class TestStatusAndReset:
         }
         assert run.call_count == 1
 
-    def test_status_reports_initialized_postgres_that_is_not_ready(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_status_reports_initialized_postgres_that_is_not_ready(
+        self, isolated_runtime: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         run = MagicMock(side_effect=[completed(1), completed(stdout="NO")])
         get = MagicMock(side_effect=[SimpleNamespace(status_code=503), SimpleNamespace(status_code=503)])
         monkeypatch.setattr(orchestrator_module.subprocess, "run", run)
         monkeypatch.setattr(orchestrator_module.httpx, "get", get)
+        isolated_runtime.bins["redis_cli"].parent.mkdir(parents=True, exist_ok=True)
+        isolated_runtime.bins["redis_cli"].touch()
         orch = Orchestrator()
         monkeypatch.setattr(orch, "_pg_is_initialized", lambda: True)
 
@@ -1333,6 +1337,7 @@ class TestStatusAndReset:
         import shutil
 
         orch = Orchestrator()
+        orch._secrets = orch._load_or_create_secrets()
         for path in (isolated_runtime.data["postgres"], isolated_runtime.data["redis"]):
             path.mkdir(parents=True)
         secrets_file = isolated_runtime.root / ".secrets"

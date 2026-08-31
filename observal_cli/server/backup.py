@@ -39,7 +39,8 @@ def create_backup(compose_dir: Path, from_version: str) -> Path:
     """
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
     backup_dir = BACKUPS_DIR / f"v{from_version}-{ts}"
-    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_dir.mkdir(parents=True, exist_ok=False, mode=0o700)
+    backup_dir.chmod(0o700)
 
     # PostgreSQL backup (custom format for selective restore)
     pg_dump_path = backup_dir / "pg.dump"
@@ -66,6 +67,7 @@ def create_backup(compose_dir: Path, from_version: str) -> Path:
         raise RuntimeError(f"pg_dump failed: {result.stderr.decode()[:200]}")
 
     pg_dump_path.write_bytes(result.stdout)
+    pg_dump_path.chmod(0o600)
     if pg_dump_path.stat().st_size < 100:
         shutil.rmtree(backup_dir, ignore_errors=True)
         raise RuntimeError("pg_dump produced empty/tiny file - backup may be invalid")
@@ -95,6 +97,7 @@ def create_backup(compose_dir: Path, from_version: str) -> Path:
         )
         if result.returncode == 0:
             ch_schema_path.write_text(result.stdout)
+            ch_schema_path.chmod(0o600)
             rprint(f"[dim]  ClickHouse schema: {len(result.stdout)} bytes[/dim]")
         else:
             rprint("[yellow]  ClickHouse schema export failed (non-critical)[/yellow]")

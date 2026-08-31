@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 0xSHSH <156781261+0xSHSH@users.noreply.github.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn>
 # SPDX-License-Identifier: Apache-2.0
 
 """Behavioral coverage for the doctor CLI commands and untested state branches."""
@@ -15,7 +16,6 @@ from unittest.mock import MagicMock, call
 
 import httpx
 import pytest
-import typer
 from typer.testing import CliRunner
 
 import observal_cli.cmd_doctor as doctor_module
@@ -143,12 +143,11 @@ class TestDoctorDiagnosis:
         monkeypatch.setattr(doctor_module.typer, "confirm", confirm)
         monkeypatch.setattr(doctor_module.sys, "stdin", SimpleNamespace(isatty=lambda: True))
 
-        with pytest.raises(typer.Exit) as exc:
-            doctor_module.doctor(SimpleNamespace(invoked_subcommand=None), yes=False)
+        doctor_module.doctor(SimpleNamespace(invoked_subcommand=None), yes=False, output="table")
 
-        assert exc.value.exit_code == 0
         confirm.assert_called_once_with(
-            "Fix all issues? (configures telemetry + installs AI skill for all detected harnesses)", default=True
+            "Fix all warnings? (configures telemetry and installs AI skills for detected harnesses)",
+            default=True,
         )
         isolated_runtime.process.assert_not_called()
         assert "observal doctor patch --all-harnesses" in _plain(capsys.readouterr().out)
@@ -166,9 +165,9 @@ class TestDoctorDiagnosis:
         ]
         plan = SimpleNamespace(changes=changes, warnings=[], apply=MagicMock())
         quiet_diagnosis.planner.return_value = plan
-        run = MagicMock(return_value=SimpleNamespace(returncode=0))
+        patch_targets = MagicMock(return_value={"action": "patch", "changed": True})
         install_skill = MagicMock()
-        monkeypatch.setattr(subprocess, "run", run)
+        monkeypatch.setattr(doctor_module, "_patch_targets", patch_targets)
         monkeypatch.setattr(skill_installer, "install_observal_skill", install_skill)
 
         result = runner.invoke(doctor_module.doctor_app, ["--yes"])
@@ -180,17 +179,7 @@ class TestDoctorDiagnosis:
         assert "...and 2 more change(s)" in output
         assert "Reconciled 12 lockfile field(s)" in output
         plan.apply.assert_called_once_with()
-        run.assert_called_once()
-        assert run.call_args.args[0] == [
-            doctor_module.sys.executable,
-            "-m",
-            "observal_cli.main",
-            "doctor",
-            "patch",
-            "--all-harnesses",
-        ]
-        assert run.call_args.kwargs["timeout"] == 60
-        assert run.call_args.kwargs["env"]["PYTHONIOENCODING"] == "utf-8"
+        patch_targets.assert_called_once_with(list(doctor_module._VALID_HARNESSES), dry_run=False, output="table")
         install_skill.assert_called_once_with()
 
     def test_lockfile_planning_failure_is_reported_as_an_issue(
@@ -224,7 +213,11 @@ class TestConfigAndSkillDiagnosis:
         (tmp_path / ".kiro").mkdir()
         registry = {
             "unsupported": {"display_name": "Unsupported", "config_dir": ".unsupported", "skills": {}},
-            "kiro": {"display_name": "Kiro", "config_dir": ".kiro", "skills": {}},
+            "kiro": {
+                "display_name": "Kiro",
+                "config_dir": ".kiro",
+                "skills": {"user": "~/.kiro/skills/{name}/SKILL.md"},
+            },
             "absent": {
                 "display_name": "Absent",
                 "config_dir": ".absent",
@@ -464,7 +457,7 @@ class TestHarnessDiagnosisState:
 
         doctor_module._check_codex(issues, warnings)
 
-        assert issues == []
+        assert issues == [f"{config_path}: cannot read Codex configuration: denied"]
         assert warnings == []
 
     def test_copilot_detects_current_project_hook(self, tmp_path: Path):
@@ -561,8 +554,8 @@ class TestDoctorPatchCommand:
     def test_requires_a_target_before_loading_config(self, runner: CliRunner, patch_dispatch: SimpleNamespace):
         result = runner.invoke(doctor_module.doctor_app, ["patch"])
 
-        assert result.exit_code == 1
-        assert "Specify --all-harnesses or --harness <name>" in _plain(result.output)
+        assert result.exit_code == 7
+        assert "requires a target harness" in _plain(result.output)
         patch_dispatch.config_load.assert_not_called()
         patch_dispatch.ensure_loaded.assert_not_called()
 
@@ -571,16 +564,16 @@ class TestDoctorPatchCommand:
 
         result = runner.invoke(doctor_module.doctor_app, ["patch", "--harness", "pi"])
 
-        assert result.exit_code == 1
-        assert "Not configured. Run observal auth login first." in _plain(result.output)
+        assert result.exit_code == 3
+        assert "authentication is not configured" in _plain(result.output)
         patch_dispatch.ensure_loaded.assert_not_called()
         patch_dispatch.get_adapter.assert_not_called()
 
     def test_rejects_unknown_harness_with_valid_choices(self, runner: CliRunner, patch_dispatch: SimpleNamespace):
         result = runner.invoke(doctor_module.doctor_app, ["patch", "--harness", "unknown"])
 
-        assert result.exit_code == 1
-        assert "Unknown harness: unknown. Valid: claude-code, pi" in _plain(result.output)
+        assert result.exit_code == 7
+        assert "Unknown harness: unknown" in _plain(result.output)
         patch_dispatch.ensure_loaded.assert_not_called()
 
     def test_selected_harnesses_dispatch_in_order_and_emit_audit(
@@ -620,7 +613,7 @@ class TestDoctorPatchCommand:
         result = runner.invoke(doctor_module.doctor_app, ["patch", "--all-harnesses", "--dry-run"])
 
         assert result.exit_code == 0
-        assert "Dry run - no changes made." in _plain(result.output)
+        assert "Dry run, no changes made." in _plain(result.output)
         assert patch_dispatch.get_adapter.call_args_list == [call("claude-code"), call("pi")]
         for adapter in adapters.values():
             adapter.patch_hooks.assert_called_once_with(True)
@@ -646,22 +639,30 @@ class TestDoctorPatchCommand:
 
         result = runner.invoke(doctor_module.doctor_app, ["patch", "--harness", "pi"])
 
-        assert result.exit_code == 1
-        assert isinstance(result.exception, NotSupportedError)
-        assert str(result.exception) == "pi does not support patch_hooks"
+        assert result.exit_code == 7
+        assert "pi does not support patch_hooks" in _plain(result.output)
         assert "Patch complete" not in _plain(result.output)
         patch_dispatch.audit.assert_not_called()
 
 
 @pytest.fixture
 def cleanup_dispatch(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
+    import observal_cli.audit as audit_module
+
     ensure_loaded = MagicMock()
     get_adapter = MagicMock()
     valid_harnesses = MagicMock(return_value=["claude-code", "pi"])
+    audit = MagicMock()
     monkeypatch.setattr(doctor_module, "ensure_loaded", ensure_loaded)
     monkeypatch.setattr(doctor_module, "get_adapter", get_adapter)
     monkeypatch.setattr(doctor_module, "get_valid_harnesses", valid_harnesses)
-    return SimpleNamespace(ensure_loaded=ensure_loaded, get_adapter=get_adapter, valid_harnesses=valid_harnesses)
+    monkeypatch.setattr(audit_module, "emit_cli_audit", audit)
+    return SimpleNamespace(
+        ensure_loaded=ensure_loaded,
+        get_adapter=get_adapter,
+        valid_harnesses=valid_harnesses,
+        audit=audit,
+    )
 
 
 class TestDoctorCleanupCommand:
@@ -672,11 +673,11 @@ class TestDoctorCleanupCommand:
         adapter.cleanup_hooks.return_value = True
         cleanup_dispatch.get_adapter.return_value = adapter
 
-        result = runner.invoke(doctor_module.doctor_app, ["cleanup", "--harness", "claude-code"])
+        result = runner.invoke(doctor_module.doctor_app, ["cleanup", "--harness", "claude-code", "--yes"])
 
         assert result.exit_code == 0
         assert "Cleanup complete. Restart your harness sessions" in _plain(result.output)
-        cleanup_dispatch.valid_harnesses.assert_not_called()
+        cleanup_dispatch.valid_harnesses.assert_called_once_with()
         cleanup_dispatch.ensure_loaded.assert_called_once_with()
         cleanup_dispatch.get_adapter.assert_called_once_with("claude-code")
         adapter.cleanup_hooks.assert_called_once_with(False)
@@ -709,30 +710,28 @@ class TestDoctorCleanupCommand:
         result = runner.invoke(doctor_module.doctor_app, ["cleanup", "--harness", "unknown"])
         output = _plain(result.output)
 
-        assert result.exit_code == 0
+        assert result.exit_code == 7
         assert "Unknown harness: unknown" in output
-        assert "Nothing to clean up - no Observal artifacts found." in output
 
     def test_no_changes_reports_nothing_to_clean(self, runner: CliRunner, cleanup_dispatch: SimpleNamespace):
         adapter = MagicMock()
         adapter.cleanup_hooks.return_value = False
         cleanup_dispatch.get_adapter.return_value = adapter
 
-        result = runner.invoke(doctor_module.doctor_app, ["cleanup", "--harness", "pi"])
+        result = runner.invoke(doctor_module.doctor_app, ["cleanup", "--harness", "pi", "--yes"])
 
         assert result.exit_code == 0
-        assert "Nothing to clean up - no Observal artifacts found." in _plain(result.output)
+        assert "Nothing to clean up, no Observal artifacts found." in _plain(result.output)
 
     def test_unsupported_cleanup_failure_is_not_hidden(self, runner: CliRunner, cleanup_dispatch: SimpleNamespace):
         adapter = MagicMock()
         adapter.cleanup_hooks.side_effect = NotSupportedError("pi", "cleanup_hooks")
         cleanup_dispatch.get_adapter.return_value = adapter
 
-        result = runner.invoke(doctor_module.doctor_app, ["cleanup", "--harness", "pi"])
+        result = runner.invoke(doctor_module.doctor_app, ["cleanup", "--harness", "pi", "--yes"])
 
-        assert result.exit_code == 1
-        assert isinstance(result.exception, NotSupportedError)
-        assert str(result.exception) == "pi does not support cleanup_hooks"
+        assert result.exit_code == 7
+        assert "pi does not support cleanup_hooks" in _plain(result.output)
         assert "Cleanup complete" not in _plain(result.output)
 
 
@@ -765,29 +764,22 @@ class TestCleanupStateEdges:
         assert json.loads(settings.read_text(encoding="utf-8")) == {}
 
     @pytest.mark.parametrize(
-        ("relative_path", "cleanup", "message"),
+        ("relative_path", "cleanup"),
         [
-            (".claude/settings.json", doctor_module._cleanup_claude_code, "Failed to read settings"),
-            (".pi/agent/settings.json", doctor_module._cleanup_pi, "Cannot read"),
-            (".cursor/hooks.json", doctor_module._cleanup_cursor, "Failed to read hooks"),
-            (".codex/hooks.json", doctor_module._cleanup_codex, "Failed to read hooks"),
+            (".claude/settings.json", doctor_module._cleanup_claude_code),
+            (".pi/agent/settings.json", doctor_module._cleanup_pi),
+            (".cursor/hooks.json", doctor_module._cleanup_cursor),
+            (".codex/hooks.json", doctor_module._cleanup_codex),
         ],
     )
-    def test_invalid_cleanup_files_fail_open_without_mutation(
-        self,
-        tmp_path: Path,
-        capsys: pytest.CaptureFixture[str],
-        relative_path: str,
-        cleanup,
-        message: str,
-    ):
+    def test_invalid_cleanup_files_fail_without_mutation(self, tmp_path: Path, relative_path: str, cleanup):
         path = tmp_path / relative_path
         path.parent.mkdir(parents=True)
         path.write_text("invalid", encoding="utf-8")
 
-        assert cleanup(dry_run=False) is False
+        with pytest.raises(json.JSONDecodeError):
+            cleanup(dry_run=False)
         assert path.read_text(encoding="utf-8") == "invalid"
-        assert message in _plain(capsys.readouterr().out)
 
     @pytest.mark.parametrize(
         "cleanup",
@@ -839,12 +831,10 @@ class TestPatchStateEdges:
         monkeypatch.setattr(doctor_module, "ensure_loaded", MagicMock())
         monkeypatch.setattr(doctor_module, "get_adapter", MagicMock(return_value=adapter))
 
-        assert doctor_module._patch_kiro(dry_run=False) is False
-        output = _plain(capsys.readouterr().out)
-        assert "Missing locked profile" in output
-        assert "Cannot read" in output
-        assert "Already up to date" in output
-        adapter.rewrite_agent_profile.assert_called_once_with({"hooks": {}}, agent_id="current-profile")
+        with pytest.raises(json.JSONDecodeError):
+            doctor_module._patch_kiro(dry_run=False)
+        assert "Missing locked profile" in _plain(capsys.readouterr().out)
+        adapter.rewrite_agent_profile.assert_not_called()
 
     def test_cursor_missing_directory_and_invalid_file_dry_run_do_not_write(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
@@ -856,9 +846,9 @@ class TestPatchStateEdges:
         hooks.parent.mkdir()
         hooks.write_text("invalid", encoding="utf-8")
 
-        assert doctor_module._patch_cursor(dry_run=True) is True
+        with pytest.raises(json.JSONDecodeError):
+            doctor_module._patch_cursor(dry_run=True)
         assert hooks.read_text(encoding="utf-8") == "invalid"
-        assert "Would install hooks" in _plain(capsys.readouterr().out)
 
     def test_antigravity_missing_detection_and_invalid_file_dry_run_do_not_write(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -876,9 +866,9 @@ class TestPatchStateEdges:
         hooks.write_text("invalid", encoding="utf-8")
         resolver.return_value = config_dir
 
-        assert doctor_module._patch_antigravity(dry_run=True) is True
+        with pytest.raises(json.JSONDecodeError):
+            doctor_module._patch_antigravity(dry_run=True)
         assert hooks.read_text(encoding="utf-8") == "invalid"
-        assert "Would install hooks" in _plain(capsys.readouterr().out)
 
     def test_pi_missing_detection_and_invalid_settings_failure(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -892,7 +882,7 @@ class TestPatchStateEdges:
         settings.write_text("invalid", encoding="utf-8")
         monkeypatch.setattr(doctor_module, "_pi_extension_source", lambda: "source")
 
-        with pytest.raises(RuntimeError, match=r"Cannot update .*settings.json"):
+        with pytest.raises(json.JSONDecodeError):
             doctor_module._patch_pi(dry_run=False)
         assert not (pi_dir / "extensions" / "observal.ts").exists()
 
@@ -945,8 +935,94 @@ class TestPatchStateEdges:
     ):
         path = tmp_path / relative_path
         path.parent.mkdir(parents=True)
-        path.write_text("stale", encoding="utf-8")
+        content = "{}" if patcher is doctor_module._patch_copilot_cli else "stale"
+        path.write_text(content, encoding="utf-8")
 
         assert patcher(dry_run=True) is True
-        assert path.read_text(encoding="utf-8") == "stale"
+        assert path.read_text(encoding="utf-8") == content
         assert message in _plain(capsys.readouterr().out)
+
+
+def test_doctor_json_returns_findings_with_success_exit(runner, quiet_diagnosis):
+    def issue(issues: list[str], warnings: list[str]) -> None:
+        issues.append("configuration is broken")
+        warnings.append("hooks are stale")
+
+    quiet_diagnosis.checks["_check_observal_config"].side_effect = issue
+
+    result = runner.invoke(doctor_module.doctor_app, ["--output", "json"])
+
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)
+    assert data["healthy"] is False
+    assert data["issues"] == ["configuration is broken"]
+    assert data["warnings"] == ["hooks are stale"]
+    assert data["fix_attempted"] is False
+    assert "Observal Doctor" not in result.stdout
+
+
+def test_doctor_patch_and_cleanup_json_results(runner, patch_dispatch, cleanup_dispatch, monkeypatch):
+    patch_adapters = {name: MagicMock() for name in ("claude-code", "pi")}
+    patch_adapters["claude-code"].patch_hooks.return_value = False
+    patch_adapters["pi"].patch_hooks.return_value = True
+    patch_dispatch.get_adapter.side_effect = patch_adapters.__getitem__
+    monkeypatch.setattr(doctor_module, "get_adapter", patch_dispatch.get_adapter)
+
+    patch_result = runner.invoke(
+        doctor_module.doctor_app,
+        ["patch", "--all-harnesses", "--dry-run", "--output", "json"],
+    )
+
+    assert patch_result.exit_code == 0
+    assert json.loads(patch_result.stdout) == {
+        "action": "patch",
+        "dry_run": True,
+        "changed": True,
+        "targets": [
+            {"harness": "claude-code", "changed": False},
+            {"harness": "pi", "changed": True},
+        ],
+    }
+
+    cleanup_adapter = MagicMock()
+    cleanup_adapter.cleanup_hooks.return_value = True
+    cleanup_dispatch.get_adapter.return_value = cleanup_adapter
+    monkeypatch.setattr(doctor_module, "get_adapter", cleanup_dispatch.get_adapter)
+    cleanup_result = runner.invoke(
+        doctor_module.doctor_app,
+        ["cleanup", "--harness", "pi", "--yes", "--output", "json"],
+    )
+
+    assert cleanup_result.exit_code == 0
+    assert json.loads(cleanup_result.stdout) == {
+        "action": "cleanup",
+        "dry_run": False,
+        "changed": True,
+        "targets": [{"harness": "pi", "changed": True}],
+    }
+    assert "Cleanup complete" not in cleanup_result.stdout
+
+
+def test_doctor_command_inventory_and_json_cleanup_confirmation():
+    from click import Group
+    from typer.main import get_command
+
+    from observal_cli.main import app
+
+    doctor = get_command(app).commands["doctor"]
+
+    def leaves(command, path=()):
+        if not isinstance(command, Group) or command.invoke_without_command:
+            yield " ".join(path) or "doctor", command
+        if isinstance(command, Group):
+            for name, child in command.commands.items():
+                yield from leaves(child, (*path, name))
+
+    rows = list(leaves(doctor))
+    assert len(rows) == 5
+    assert all(any(parameter.name == "output" for parameter in command.params) for _name, command in rows)
+
+    result = CliRunner().invoke(app, ["doctor", "cleanup", "--harness", "pi", "--output", "json"])
+    assert result.exit_code == 7
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["error"]["category"] == "validation"

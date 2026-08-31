@@ -149,7 +149,7 @@ async def upsert_saml_config(
             sp_x509_cert=cert_pem,
             jit_provisioning=body.get("jit_provisioning", True),
             default_role=body.get("default_role", "user"),
-            active=True,
+            active=body.get("active", True),
         )
         db.add(config)
     else:

@@ -789,6 +789,12 @@ def test_agent_queries_resolve_paths_scopes_local_aliases_and_ambiguity(isolated
     assert lockfile.get_agent_by_name("missing", "kiro") is None
 
 
+def test_get_all_entries_returns_empty_without_a_configured_registry(monkeypatch, isolated_lockfile):
+    monkeypatch.setattr(config, "load", lambda: {"server_url": ""})
+
+    assert lockfile.get_all_entries() == []
+
+
 def test_get_all_entries_flattens_copies_and_filters_harnesses(isolated_lockfile):
     agent = {"name": "agent", "id": "agent-1", "scope": "user"}
     standalone = {"type": "skill", "name": "skill", "id": "skill-1", "scope": "user"}

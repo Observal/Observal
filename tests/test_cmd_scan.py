@@ -226,14 +226,14 @@ def test_unknown_harness_filter_lists_sorted_choices(scan_env) -> None:
     ]
 
 
-def test_short_filter_alias_scans_only_selected_static_home_and_plain_falls_back_to_tables(scan_env) -> None:
+def test_short_filter_alias_scans_only_selected_static_home(scan_env) -> None:
     (scan_env.home / ".cursor").mkdir()
     cursor = _adapter()
     skipped = _adapter()
     scan_env.get_one.return_value = cursor
     scan_env.get_all.return_value = {"cursor": cursor, "kiro": skipped}
 
-    result = _invoke("-i", "cursor", "-o", "plain")
+    result = _invoke("-i", "cursor", "-o", "table")
 
     assert result.exit_code == 0, result.exception
     assert scan_env.get_one.call_args_list == [call("cursor"), call("cursor")]

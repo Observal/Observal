@@ -3,187 +3,49 @@
 # SPDX-License-Identifier: Apache-2.0
 name: observal-agents
 command: observal
-description: Create, update, version, and manage Observal agents. Use when the user wants to create a new agent, update an existing one, release a new version, scaffold a YAML project, add components, build, publish, bulk-create, archive, delete, or restore agents.
-version: 2.0.0
+description: "Creates, authors, validates, publishes, updates, versions, pulls, archives, restores, transfers, and manages co-authors for Observal Agents. Use when the user wants to build or install an Agent, change an Agent definition, publish a draft, release a version, or manage Agent ownership."
+version: 2.2.0
 owner: observal
 ---
 
-# Observal Agents: Agent Lifecycle Management
+# Managing Observal Agents
 
-## Critical Rules
+## Execution contract
 
-1. **EXECUTE commands**: run them in your shell. Set timeout to 60 seconds.
-2. **Use single quotes** for `--prompt` and `--description` values.
-3. **Pass `--output json`** on list/show/versions commands.
-4. **Pass `--yes`** on destructive commands (`archive`, `delete`, `unarchive`, `bulk-create`).
-5. **Resolve 409:** `observal agent publish --update` for in-place edits, `observal agent release --bump` for reviewed releases.
-6. **When in doubt about a flag, run `<command> --help` first.**
+1. Execute commands with a 60 second timeout.
+2. **Use machine output by default:** add `--output json` whenever supported. Parse list results from `items` and pagination fields.
+3. Use `--help` before acting when a path or flag is uncertain.
+4. Keep workflows noninteractive. Supply required fields, `--no-prompt`, and confirmation flags.
+5. Use UUIDs or `qualified_name` values returned by JSON. Never automate with row numbers.
+6. Prefer native `agent init`, `agent add`, and `agent build` over hand-written scaffolding or custom validation.
+7. Verify every publish, release, pull, ownership, and lifecycle mutation.
+8. Never print MCP environment values, headers, tokens, or other secrets.
+9. Mutations are sent once. After an uncertain transport failure, read Agent state before retrying.
 
----
+## Choose the workflow
 
-## Procedure: Create Agent
+| User intent | Workflow |
+| --- | --- |
+| Find or inspect an Agent | Discover and inspect |
+| Install an existing Agent into a harness | Pull and verify |
+| Create a simple Agent in one call | Direct create |
+| Author an Agent with components or files | Init, add, build, publish |
+| Change the current listing without a new reviewed version | Update in place |
+| Publish a reviewed patch, minor, or major version | Release |
+| Create many Agents from a prepared file | Bulk create |
+| Archive, restore, transfer, or manage co-authors | Lifecycle and collaboration |
 
-Required: `--name`, `--description`, `--prompt`. Optional: `--model`, `--harness` (repeatable), `--prompt-file`, `--from-file`.
+Read [Agent workflows](references/agent-workflows.md) completely before executing the selected workflow.
 
-Before choosing a model, query the registry for every selected harness and pick an available exact model:
+## State rules
 
-```bash
-observal registry models --harness kiro --output plain
-observal registry models --harness claude-code --output plain
-```
+- `create` without complete flags starts a wizard. Agents must provide all required inputs or use a file.
+- `publish --update` changes the current Agent in place.
+- `release --bump` creates a reviewed version. Do not use update when the user asked for a release.
+- Public teamspace publication may remain private with a pending visibility or listing review. Report the actual returned status.
+- Pull success requires checking `files`, `warnings`, and `setup_commands`. Partial setup is not success.
+- A 409 is a decision point, not a generic retry signal. Read current state before choosing update or release.
 
-> **WARNING:** Without `--name` and `--prompt`, the command launches an interactive wizard. Always pass at least `--name`, `--description`, and `--prompt`.
+## Completion
 
-```bash
-observal agent create \
-  --name AGENT_NAME \
-  --description 'Short description' \
-  --prompt 'System prompt content' \
-  --model claude-sonnet-4-6 \
-  --harness kiro --harness claude-code
-```
-
-Error branching:
-- **`409`**: switch to Procedure: Update Agent or Release Agent Version.
-- **`422`**: missing required field. Check message, fix, retry.
-- **`Connection failed`**: server unreachable; use `observal-advanced` skill's Local Fallback.
-
----
-
-## Procedure: Update Agent
-
-Skips review queue. Overwrites in place.
-
-1. Write `observal-agent.yaml`. **Critical:** include `model_config_json: {}` and `external_mcps: []` literally.
-   ```bash
-   mkdir -p /tmp/myagent && cat > /tmp/myagent/observal-agent.yaml << 'EOF'
-   name: existing-agent-name
-   version: "1.0.0"
-   description: "Updated description"
-   model_name: claude-sonnet-4-6
-   model_config_json: {}
-   models_by_harness: {}
-   external_mcps: []
-   prompt: |
-     Updated system prompt here.
-   supported_harnesses:
-     - kiro
-     - claude-code
-   components: []
-   EOF
-   ```
-2. Push: `observal agent publish --update --dir /tmp/myagent`
-3. Confirm: `observal agent show existing-agent-name --output json`
-
----
-
-## Procedure: Release Agent Version
-
-Goes through review queue. Use for "new version", "bump", or "release".
-
-1. Write `observal-agent.yaml` (same schema as Update Agent).
-2. Release:
-   ```bash
-   observal agent release AGENT_NAME --bump patch --dir /tmp/myagent
-   ```
-   Bump types: `patch`, `minor`, `major`.
-3. Verify: `observal agent versions AGENT_NAME --output json`
-
----
-
-## Procedure: Author Agent Locally
-
-1. Scaffold with flags (no YAML hand-writing):
-   ```bash
-   observal agent init --dir ./my-agent --name AGENT_NAME --description 'Short description' --prompt 'System prompt' --model claude-sonnet-4 --harness kiro --harness claude-code
-   ```
-   Use `--prompt-file ./PROMPT.md` for long prompts. Omit flags only when the user wants the wizard.
-2. Find components, then add by UUID:
-   ```bash
-   observal registry mcp list --search 'github docker' --output json
-   observal registry skill list --search 'frontend design' --output json
-   observal registry skill list --team platform-tools --output json
-   observal agent add mcp COMPONENT_UUID --dir ./my-agent
-   observal agent add skill COMPONENT_UUID --dir ./my-agent
-   ```
-3. Validate: `observal agent build --dir ./my-agent`
-4. Publish: `observal agent publish --dir ./my-agent`
-   - `--draft` saves without submitting. `--submit` submits a saved draft.
-   - Use `--team TEAM_HANDLE --visibility public` for a public teamspace agent.
-   - Use `--team TEAM_HANDLE --visibility team` for a private agent visible only to team members.
-
----
-
-## Procedure: Bulk Create
-
-```bash
-observal agent bulk-create --from-file agents.json --dry-run --yes
-observal agent bulk-create --from-file agents.json --yes
-```
-
----
-
-## Procedure: Archive / Restore
-
-```bash
-observal agent archive AGENT_NAME --yes
-observal agent delete AGENT_NAME --yes
-observal agent transfer-owner AGENT_NAME @username -y
-observal agent unarchive AGENT_NAME --yes
-```
-
----
-
-## Browse Agents
-
-```bash
-observal agent list --output json
-observal agent list --namespace platform-tools --output json
-observal agent list --team platform-tools --output json
-observal agent list --search 'incident resolution' --output json
-observal agent list --search keyword --output json
-observal agent list --page 2 --limit 20 --output json
-observal agent my --output json
-observal agent show AGENT_NAME --output json
-observal agent versions AGENT_NAME --output json
-```
-
-After `list`, use row numbers (1, 2, 3...) in subsequent commands. Team members see approved private teamspace agents in normal results. `--team TEAM_HANDLE` narrows to what that teamspace owns. Direct references use `TEAM_HANDLE/AGENT_SLUG`.
-
----
-
-## Procedure: Manage Co-Authors
-
-Co-authors have full edit and publish access (equal to owner).
-
-```bash
-# List co-authors
-observal agent co-authors list <agent-id-or-name>
-
-# Add by email or username
-observal agent co-authors add <agent-id-or-name> user@example.com
-observal agent co-authors add <agent-id-or-name> @username
-
-# Remove by user UUID (from list output)
-observal agent co-authors remove <agent-id-or-name> <user-uuid>
-```
-
-
-
-## Error Reference
-
-| Error | Fix |
-|-------|-----|
-| `409` / `already have an agent named` | Use `publish --update` or `release --bump` |
-| `422` `model_config_json` | Add `model_config_json: {}` to YAML |
-| `422` `external_mcps` | Add `external_mcps: []` to YAML |
-| `422` `system prompt is required` | Add `--prompt` or `prompt:` in YAML |
-
----
-
-## Output Contract
-
-1. One sentence stating intent.
-2. The exact command in a fenced code block.
-3. The result: success or specific error.
-4. The next action, or "done".
+Report the canonical Agent identity, resulting status and version, files changed for local operations, warnings, and the smallest next action. Verify with `agent show`, `agent versions`, or `scan` when the mutation response is not sufficient.

@@ -3,7 +3,9 @@
 
 # Fuzzing
 
-Observal is fuzzed continuously by [Google OSS-Fuzz](https://google.github.io/oss-fuzz/).
+Observal is fuzzed with [Atheris](https://github.com/google/atheris) and is being
+submitted to [Google OSS-Fuzz](https://google.github.io/oss-fuzz/) for continuous
+fuzzing; the upstream project is not live yet.
 The fuzz targets live here so they are versioned alongside the code they
 exercise; OSS-Fuzz only stores the three-file project configuration, which is
 mirrored under `fuzz/oss-fuzz/`.
@@ -15,7 +17,7 @@ mirrored under `fuzz/oss-fuzz/`.
 | `session_jsonl_fuzzer` | Harness session transcripts: `ingest_classify` on the write path, `parse_raw_events` on the read path |
 | `session_structure_fuzzer` | Same pipeline, driven by Hypothesis-generated transcript records instead of raw bytes |
 | `secrets_redactor_fuzzer` | `services.secrets_redactor.redact_secrets`, applied to every line and preview before storage |
-| `support_redaction_fuzzer` | `observal_cli.support.redaction`, the single chokepoint for `observal support bundle` |
+| `support_redaction_fuzzer` | `observal_cli.support.redaction`, the single chokepoint for `observal doctor support bundle` |
 
 Every target runs entirely in-process. None of them opens a socket, reads
 credentials, touches PostgreSQL, ClickHouse or Redis, or depends on the clock,
@@ -77,15 +79,20 @@ inside the container the report came from.
    other exception is a finding.
 4. Bound the input size. Slow inputs are reported as timeouts rather than as
    bugs.
-5. Add a seed corpus under `corpus/<name>_fuzzer/` and a dictionary at
+5. Declare any third-party import in the `fuzz` dependency group in
+   `pyproject.toml` and commit the refreshed `uv.lock`. OSS-Fuzz installs that
+   group into the base image's system interpreter, which is the only
+   environment PyInstaller resolves imports against; a package that is merely
+   importable in a local virtualenv is silently omitted from the built target.
+6. Add a seed corpus under `corpus/<name>_fuzzer/` and a dictionary at
    `dictionaries/<name>_fuzzer.dict`. Both are optional and both are picked up
    automatically.
-6. Corpus files are raw fuzzer input, not source. Nothing may rewrite them.
+7. Corpus files are raw fuzzer input, not source. Nothing may rewrite them.
    `scripts/update_spdx_copyright.py` skips `fuzz/corpus/**`, and `REUSE.toml`
    carries their licensing instead. `session_jsonl_fuzzer` reads
    its first byte, so a stray header would repoint the whole corpus at one
    parser; `tests/test_fuzz_targets.py` asserts every parser still has a seed.
-7. Keep seed corpora free of anything that looks like a credential. The
+8. Keep seed corpora free of anything that looks like a credential. The
    repository runs Gitleaks and a pre-commit secret scan; put distinctive vendor
    prefixes in the dictionary, where they are too short to match a scanner rule,
    and use zero-entropy placeholders in corpus files.

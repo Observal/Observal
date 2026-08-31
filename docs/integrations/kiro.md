@@ -124,7 +124,7 @@ Observal writes the telemetry hooks inside each Kiro agent JSON:
 ```
 
 On non-Windows platforms, generated server config may use `python3` instead of
-`python`. During `observal pull`, the CLI rewrites Observal hook commands to use
+`python`. During `observal agent pull`, the CLI rewrites Observal hook commands to use
 the active Python interpreter.
 
 ### Attribution

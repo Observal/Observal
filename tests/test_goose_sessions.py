@@ -348,8 +348,9 @@ def test_adapter_resolves_a_hook_payload_to_the_mirror(tmp_path: Path):
 
 def test_adapter_discovers_recent_sessions_with_parent_links(tmp_path: Path):
     _make_db(tmp_path)
-    _add_session(tmp_path, "parent")
-    _add_session(tmp_path, "child", parent="parent")
+    updated_at = time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())
+    _add_session(tmp_path, "parent", updated_at=updated_at)
+    _add_session(tmp_path, "child", parent="parent", updated_at=updated_at)
     _add_message(tmp_path, "parent")
     _add_message(tmp_path, "child")
 

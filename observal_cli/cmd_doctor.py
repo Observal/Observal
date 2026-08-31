@@ -6,6 +6,7 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn>
 # SPDX-License-Identifier: Apache-2.0
 
 """observal doctor: diagnose and patch harness settings for Observal session telemetry.
@@ -18,18 +19,24 @@ import hashlib
 import json
 import os
 import sys
+from contextlib import nullcontext, redirect_stdout
+from io import StringIO
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 import typer
 from loguru import logger as optic
 from rich import print as rprint
+from typer.models import OptionInfo
 
 from observal_cli import config
+from observal_cli.errors import ErrorCategory, fail
 from observal_cli.harness import ensure_loaded, get_adapter
 from observal_cli.harness_specs.claude_code_hooks_spec import (
     MANAGED_ENV_KEYS,
     get_desired_hooks,
 )
+from observal_cli.render import OutputMode, esc, output_json
 from observal_cli.shared.utils import (
     is_observal_hook_entry as _is_observal_hook_entry,
 )
@@ -41,7 +48,15 @@ from observal_cli.shared.utils import (
 )
 from observal_shared.harness_registry import get_valid_harnesses
 
-doctor_app = typer.Typer(help="Diagnose and patch harness settings for Observal telemetry")
+doctor_app = typer.Typer(
+    help=(
+        "Diagnose and patch harness settings for Observal telemetry\n\n"
+        "Examples:\n"
+        "  observal doctor\n"
+        "  observal doctor patch --all-harnesses\n"
+        "  observal doctor cleanup --harness claude-code --dry-run"
+    )
+)
 
 
 # ── Helpers ──────────────────────────────────────────────────
@@ -50,9 +65,42 @@ doctor_app = typer.Typer(help="Diagnose and patch harness settings for Observal 
 def _load_json(path: Path) -> dict | None:
     optic.trace("path={}", path)
     try:
-        return _load_jsonc(path)
-    except Exception:
+        data = _load_jsonc(path)
+        return data if isinstance(data, dict) else None
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return None
+
+
+def _read_json_object(path: Path) -> dict:
+    data = json.loads(path.read_text())
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} must contain a JSON object")
+    return data
+
+
+def _value(value):
+    return value.default if isinstance(value, OptionInfo) else value
+
+
+def _capture(output: OutputMode | str):
+    return redirect_stdout(StringIO()) if _value(output) == "json" else nullcontext()
+
+
+def _atomic_write(path: Path, content: str) -> None:
+    temporary: Path | None = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        existing_mode = path.stat().st_mode if path.exists() else None
+        with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False) as file:
+            temporary = Path(file.name)
+            file.write(content)
+        if existing_mode is not None:
+            os.chmod(temporary, existing_mode)
+        temporary.replace(path)
+    except OSError:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+        raise
 
 
 # ── Diagnose command ─────────────────────────────────────────
@@ -60,162 +108,132 @@ def _load_json(path: Path) -> dict | None:
 
 @doctor_app.callback(invoke_without_command=True)
 def doctor(
-    ctx: typer.Context, yes: bool = typer.Option(False, "--yes", "-y", help="Auto-fix all issues without prompting")
+    ctx: typer.Context,
+    yes: bool = typer.Option(False, "--yes", "-y", help="Auto-fix all warnings without prompting"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
-    """Diagnose harness settings and offer to configure telemetry + AI skill."""
+    """Diagnose local configuration, Registry metadata, and harness telemetry."""
     if ctx.invoked_subcommand is not None:
         return
 
+    output = _value(output)
+    yes = _value(yes)
     issues: list[str] = []
     warnings: list[str] = []
     lockfile_plan = None
+    lockfile_changes: list[dict] = []
+    skill_missing: list[str] = []
+    fix_attempted = False
+    patch_result: dict | None = None
 
-    rprint("[bold]Observal Doctor[/bold]\n")
-
-    # 1. Check Observal config
-    rprint("[cyan]Checking Observal config...[/cyan]")
-    _check_observal_config(issues, warnings)
-
-    rprint("[cyan]Checking registry lockfile...[/cyan]")
-    try:
-        from observal_cli.lockfile_reconcile import plan_lockfile_reconciliation
-
-        lockfile_plan = plan_lockfile_reconciliation()
-        if lockfile_plan.changes:
-            warnings.append(f"Registry metadata drift found in {len(lockfile_plan.changes)} lockfile field(s).")
-            for change in lockfile_plan.changes[:10]:
-                rprint(f"  [dim]{change.label}: {change.field} {change.old!r} → {change.new!r}[/dim]")
-            if len(lockfile_plan.changes) > 10:
-                rprint(f"  [dim]...and {len(lockfile_plan.changes) - 10} more change(s)[/dim]")
-        issues.extend(lockfile_plan.warnings)
-    except Exception as exc:
-        issues.append(f"Lockfile reconciliation failed: {exc}")
-
-    # 2. Check Claude Code
-    rprint("[cyan]Checking Claude Code...[/cyan]")
-    _check_claude_code(issues, warnings)
-
-    # 3. Check Kiro
-    rprint("[cyan]Checking Kiro...[/cyan]")
-    _check_kiro(issues, warnings)
-
-    # 4. Check Pi
-    rprint("[cyan]Checking Pi...[/cyan]")
-    _check_pi(issues, warnings)
-
-    # 5. Check Cursor
-    rprint("[cyan]Checking Cursor...[/cyan]")
-    _check_cursor(issues, warnings)
-
-    # 6. Check Codex
-    rprint("[cyan]Checking Codex...[/cyan]")
-    _check_codex(issues, warnings)
-
-    # 7. Check Copilot (VS Code)
-    rprint("[cyan]Checking Copilot (VS Code)...[/cyan]")
-    _check_copilot(issues, warnings)
-
-    # 8. Check Copilot CLI
-    rprint("[cyan]Checking Copilot CLI...[/cyan]")
-    _check_copilot_cli(issues, warnings)
-
-    # 9. Check OpenCode
-    rprint("[cyan]Checking OpenCode...[/cyan]")
-    _check_opencode(issues, warnings)
-
-    # 10. Check Antigravity
-    rprint("[cyan]Checking Antigravity...[/cyan]")
-    _check_antigravity(issues, warnings)
-
-    # 11. Check Goose
-    rprint("[cyan]Checking Goose...[/cyan]")
-    _check_goose(issues, warnings)
-
-    # 12. Check if observal skill is installed
-    skill_missing = _check_observal_skill_missing()
-    if skill_missing:
-        warnings.append(
-            f"Observal AI skill not installed for: {', '.join(skill_missing)}. "
-            "LLMs won't have /observal commands available."
+    with _capture(output):
+        rprint("[bold]Observal Doctor[/bold]\n")
+        checks = (
+            ("Observal config", _check_observal_config),
+            ("Claude Code", _check_claude_code),
+            ("Kiro", _check_kiro),
+            ("Pi", _check_pi),
+            ("Cursor", _check_cursor),
+            ("Codex", _check_codex),
+            ("Copilot (VS Code)", _check_copilot),
+            ("Copilot CLI", _check_copilot_cli),
+            ("OpenCode", _check_opencode),
+            ("Antigravity", _check_antigravity),
+            ("Goose", _check_goose),
         )
 
-    # Report
-    rprint("")
-    if not issues and not warnings:
-        rprint("[bold green]All clear![/bold green] No issues found.")
-        raise typer.Exit(0)
+        rprint("[cyan]Checking Registry lockfile...[/cyan]")
+        try:
+            from observal_cli.lockfile_reconcile import plan_lockfile_reconciliation
 
-    if issues:
-        rprint(f"[bold red]{len(issues)} issue(s):[/bold red]")
-        for i, issue in enumerate(issues, 1):
-            rprint(f"  [red]{i}.[/red] {issue}")
+            lockfile_plan = plan_lockfile_reconciliation()
+            lockfile_changes = [
+                {
+                    "label": change.label,
+                    "field": change.field,
+                    "old": change.old,
+                    "new": change.new,
+                }
+                for change in lockfile_plan.changes
+            ]
+            if lockfile_changes:
+                warnings.append(f"Registry metadata drift found in {len(lockfile_changes)} lockfile field(s).")
+                for change in lockfile_changes[:10]:
+                    rprint(
+                        f"  [dim]{esc(change['label'])}: {esc(change['field'])} "
+                        f"{esc(repr(change['old']))} → {esc(repr(change['new']))}[/dim]"
+                    )
+                if len(lockfile_changes) > 10:
+                    rprint(f"  [dim]...and {len(lockfile_changes) - 10} more change(s)[/dim]")
+            issues.extend(str(warning) for warning in lockfile_plan.warnings)
+        except Exception as error:
+            issues.append(f"Lockfile reconciliation failed: {error}")
 
-    if warnings:
-        rprint(f"\n[bold yellow]{len(warnings)} warning(s):[/bold yellow]")
-        for i, warning in enumerate(warnings, 1):
-            rprint(f"  [yellow]{i}.[/yellow] {warning}")
+        for label, check in checks:
+            rprint(f"[cyan]Checking {label}...[/cyan]")
+            check(issues, warnings)
 
-    # Offer to fix everything in one go
-    fixable = len(warnings) > 0
-    should_fix = yes
-    if fixable and not yes and sys.stdin.isatty():
+        skill_missing = _check_observal_skill_missing()
+        if skill_missing:
+            warnings.append(
+                f"Observal AI skill not installed for: {', '.join(skill_missing)}. "
+                "LLMs will not have Observal commands available."
+            )
+
         rprint("")
-        should_fix = typer.confirm(
-            "Fix all issues? (configures telemetry + installs AI skill for all detected harnesses)", default=True
-        )
-    if fixable and should_fix:
-        import subprocess
+        if not issues and not warnings:
+            rprint("[bold green]All clear![/bold green] No issues found.")
+        else:
+            if issues:
+                rprint(f"[bold red]{len(issues)} issue(s):[/bold red]")
+                for index, issue in enumerate(issues, 1):
+                    rprint(f"  [red]{index}.[/red] {esc(issue)}")
+            if warnings:
+                rprint(f"\n[bold yellow]{len(warnings)} warning(s):[/bold yellow]")
+                for index, warning in enumerate(warnings, 1):
+                    rprint(f"  [yellow]{index}.[/yellow] {esc(warning)}")
 
-        if lockfile_plan and lockfile_plan.changes:
-            lockfile_plan.apply()
-            rprint(f"[green]✓ Reconciled {len(lockfile_plan.changes)} lockfile field(s)[/green]")
+        fixable = bool(warnings)
+        should_fix = fixable and yes
+        if fixable and not yes and output != "json" and sys.stdin.isatty():
+            rprint("")
+            should_fix = typer.confirm(
+                "Fix all warnings? (configures telemetry and installs AI skills for detected harnesses)",
+                default=True,
+            )
+        if should_fix:
+            fix_attempted = True
+            if lockfile_plan and lockfile_plan.changes:
+                lockfile_plan.apply()
+                rprint(f"[green]✓ Reconciled {len(lockfile_plan.changes)} lockfile field(s)[/green]")
+            patch_result = _patch_targets(list(_VALID_HARNESSES), dry_run=False, output=output)
+            from observal_cli.skill_installer import install_observal_skill
 
-        env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-        subprocess.run(
-            [sys.executable, "-m", "observal_cli.main", "doctor", "patch", "--all-harnesses"],
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=60,
-            env=env,
-        )
-        # Install the observal skill
-        from observal_cli.skill_installer import install_observal_skill
+            install_observal_skill()
+        elif fixable and output != "json":
+            rprint("[dim]  Run [bold]observal doctor patch --all-harnesses[/bold] anytime to fix.[/dim]")
 
-        install_observal_skill()
-    elif fixable and not should_fix:
-        rprint("[dim]  Run [bold]observal doctor patch --all-harnesses[/bold] anytime to fix.[/dim]")
-
-    raise typer.Exit(1 if issues else 0)
+    result = {
+        "healthy": not issues and not warnings,
+        "issues": issues,
+        "warnings": warnings,
+        "lockfile_changes": lockfile_changes,
+        "skill_missing": skill_missing,
+        "fix_attempted": fix_attempted,
+        "patch": patch_result,
+    }
+    if output == "json":
+        output_json(result)
+        return
+    if issues:
+        raise typer.Exit(1)
 
 
 def _check_observal_skill_missing() -> list[str]:
     """Return list of harness display names where the observal skill is not installed."""
-    from observal_shared.harness_registry import HARNESS_REGISTRY
+    from observal_cli.skill_installer import missing_observal_skill_harnesses
 
-    skill_source = Path(__file__).parent / "skills" / "observal" / "SKILL.md"
-    if not skill_source.exists():
-        return []
-
-    _extra_user_paths: dict[str, str] = {"kiro": "~/.kiro/skills/{name}/SKILL.md"}
-    missing: list[str] = []
-
-    for harness, spec in HARNESS_REGISTRY.items():
-        skill_spec = spec.get("skills") or {}
-        user_path = skill_spec.get("user") or _extra_user_paths.get(harness)
-        if not user_path:
-            continue
-
-        resolved = user_path.replace("{name}", "observal")
-        dest = Path(resolved.replace("~", str(Path.home())))
-        ide_config_dir = Path.home() / spec.get("config_dir", "")
-        if not ide_config_dir.exists():
-            continue
-
-        if not dest.exists():
-            missing.append(spec["display_name"])
-
-    return missing
+    return missing_observal_skill_harnesses()
 
 
 def _check_observal_config(issues: list, warnings: list):
@@ -314,7 +332,7 @@ def _check_kiro(issues: list, warnings: list):
     has_session_push = False
     for af in agent_profiles:
         try:
-            agent_data = json.loads(af.read_text())
+            agent_data = _read_json_object(af)
         except Exception:
             continue
         hooks = agent_data.get("hooks", {})
@@ -464,8 +482,8 @@ def _check_codex(issues: list, warnings: list):
             content = config_path.read_text()
             if "codex_hooks = false" in content:
                 issues.append(f"{config_path}: `codex_hooks = false`. Observal hooks will not fire.")
-        except OSError:
-            pass
+        except OSError as error:
+            issues.append(f"{config_path}: cannot read Codex configuration: {error}")
 
 
 def _check_copilot(issues: list, warnings: list):
@@ -683,55 +701,148 @@ def _check_goose(issues: list, warnings: list):
 # ── Cleanup command ──────────────────────────────────────────
 
 
+def _valid_targets(values: list[str], operation: str, valid_harnesses: list[str] | None = None) -> list[str]:
+    valid = tuple(valid_harnesses or get_valid_harnesses())
+    unknown = [value for value in values if value not in valid]
+    if unknown:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Unknown harness: {unknown[0]}.",
+            operation=operation,
+            resource="harness",
+            remediation=f"Choose from: {', '.join(valid)}.",
+        )
+    return list(dict.fromkeys(values))
+
+
+def _adapter_change(target: str, action: str, dry_run: bool, output: OutputMode | str) -> bool:
+    from observal_cli.harness.protocol import NotSupportedError
+
+    try:
+        with _capture(output):
+            adapter = get_adapter(target)
+            method = adapter.patch_hooks if action == "patch" else adapter.cleanup_hooks
+            return bool(method(dry_run))
+    except NotSupportedError as error:
+        fail(
+            ErrorCategory.VALIDATION,
+            str(error),
+            operation=f"Doctor {action}",
+            resource=target,
+            remediation="Choose a harness that supports managed telemetry hooks.",
+        )
+    except (json.JSONDecodeError, ValueError) as error:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Cannot {action} {target}: a harness configuration file is invalid JSON.",
+            operation=f"Doctor {action}",
+            resource=target,
+            remediation="Repair the harness configuration and retry.",
+            detail=repr(error),
+        )
+    except (OSError, RuntimeError) as error:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            f"Cannot {action} {target} harness files.",
+            operation=f"Doctor {action}",
+            resource=target,
+            remediation="Check filesystem paths and permissions, then retry.",
+            detail=repr(error),
+        )
+
+
+def _patch_targets(targets: list[str], *, dry_run: bool, output: OutputMode | str) -> dict:
+    ensure_loaded()
+    rows = []
+    for target in targets:
+        rows.append({"harness": target, "changed": _adapter_change(target, "patch", dry_run, output)})
+    changed = any(row["changed"] for row in rows)
+    if changed and not dry_run:
+        from observal_cli.audit import emit_cli_audit
+
+        emit_cli_audit(
+            "doctor.patch",
+            resource_type="harness",
+            detail=f"harnesses={','.join(targets)}, hooks=true",
+            sensitivity="high",
+        )
+    return {"action": "patch", "dry_run": dry_run, "changed": changed, "targets": rows}
+
+
+def _cleanup_targets(targets: list[str], *, dry_run: bool, output: OutputMode | str) -> dict:
+    ensure_loaded()
+    rows = []
+    for target in targets:
+        rows.append({"harness": target, "changed": _adapter_change(target, "cleanup", dry_run, output)})
+    changed = any(row["changed"] for row in rows)
+    if changed and not dry_run:
+        from observal_cli.audit import emit_cli_audit
+
+        emit_cli_audit(
+            "doctor.cleanup",
+            resource_type="harness",
+            detail=f"harnesses={','.join(targets)}, hooks=true",
+            sensitivity="high",
+        )
+    return {"action": "cleanup", "dry_run": dry_run, "changed": changed, "targets": rows}
+
+
 @doctor_app.command(name="cleanup")
 def doctor_cleanup(
-    harness: str = typer.Option(
-        None,
-        "--harness",
-        "-i",
-        help="Target harness only (claude-code, kiro, cursor, codex, copilot, copilot-cli, opencode, antigravity, goose, pi). Default: all.",
-    ),
-    exclude: list[str] = typer.Option(
-        [],
-        "--exclude",
-        "-x",
-        help="Exclude specific harness(s) from cleanup (repeatable).",
-    ),
-    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would be removed without doing it"),
+    harness: str | None = typer.Option(None, "--harness", "-i", help="Target one harness. Default: all."),
+    exclude: list[str] = typer.Option([], "--exclude", "-x", help="Exclude a harness (repeatable)"),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview without writing"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
-    """Remove ALL Observal hooks, env vars, and legacy telemetry config.
+    """Remove Observal-managed telemetry artifacts while preserving user configuration.
 
-    Removes Observal-managed hooks, plugins, and extensions while preserving
-    unrelated harness configuration. Useful when you want to uninstall
-    Observal instrumentation without removing harness config files.
-
-    \b
     Examples:
-      observal doctor cleanup                          # Clean all supported harnesses
-      observal doctor cleanup --harness claude-code        # Claude Code only
-      observal doctor cleanup --harness kiro               # Kiro only
-      observal doctor cleanup --harness claude-code --dry-run  # Preview without changes
+      observal doctor cleanup --dry-run
+      observal doctor cleanup --harness claude-code --yes
+      observal doctor cleanup --yes --output json
     """
-    optic.trace("harness={}, exclude={}, dry_run={}", harness, exclude, dry_run)
-    targets = [harness] if harness else get_valid_harnesses()
-    targets = [t for t in targets if t not in exclude]
-    any_changes = False
+    output = _value(output)
+    yes = _value(yes)
+    dry_run = _value(dry_run)
+    harness = _value(harness)
+    exclude = _value(exclude)
+    valid_harnesses = get_valid_harnesses()
+    exclude = _valid_targets(list(exclude), "Clean up Doctor instrumentation", valid_harnesses)
+    selected = (
+        _valid_targets([harness], "Clean up Doctor instrumentation", valid_harnesses) if harness else valid_harnesses
+    )
+    targets = [target for target in selected if target not in exclude]
+    if not targets:
+        fail(
+            ErrorCategory.VALIDATION,
+            "Doctor cleanup has no target harnesses.",
+            operation="Clean up Doctor instrumentation",
+            resource="harness selection",
+            remediation="Remove the conflicting exclusion or select another harness.",
+        )
+    if not dry_run and output == "json" and not yes:
+        fail(
+            ErrorCategory.VALIDATION,
+            "JSON mode cannot prompt before removing telemetry instrumentation.",
+            operation="Clean up Doctor instrumentation",
+            resource="harness instrumentation",
+            remediation="Add --yes to confirm cleanup.",
+        )
+    if not dry_run and output != "json" and not yes:
+        typer.confirm("Remove Observal-managed telemetry instrumentation?", abort=True)
 
-    rprint("[bold]Observal Doctor - Cleanup[/bold]\n")
-
-    ensure_loaded()
-    for target in targets:
-        try:
-            changed = get_adapter(target).cleanup_hooks(dry_run)
-        except KeyError:
-            rprint(f"[yellow]Unknown harness: {target}[/yellow]")
-            continue
-        any_changes = changed or any_changes
-
-    if any_changes and not dry_run:
-        rprint("\n[green]✓ Cleanup complete.[/green] Restart your harness sessions to take effect.")
-    elif not any_changes:
-        rprint("\n[dim]Nothing to clean up - no Observal artifacts found.[/dim]")
+    with _capture(output):
+        rprint("[bold]Observal Doctor: Cleanup[/bold]\n")
+        result = _cleanup_targets(targets, dry_run=dry_run, output=output)
+        if dry_run:
+            rprint("\n[yellow]Dry run, no changes made.[/yellow]")
+        elif result["changed"]:
+            rprint("\n[green]✓ Cleanup complete.[/green] Restart your harness sessions to take effect.")
+        else:
+            rprint("\n[dim]Nothing to clean up, no Observal artifacts found.[/dim]")
+    if output == "json":
+        output_json(result)
 
 
 def _cleanup_claude_code(dry_run: bool) -> bool:
@@ -742,11 +853,7 @@ def _cleanup_claude_code(dry_run: bool) -> bool:
         rprint("  [dim]No settings.json found - skipping[/dim]")
         return False
 
-    try:
-        data = json.loads(settings_path.read_text())
-    except (json.JSONDecodeError, OSError) as e:
-        rprint(f"  [red]Failed to read settings: {e}[/red]")
-        return False
+    data = _read_json_object(settings_path)
 
     changed = False
 
@@ -780,7 +887,7 @@ def _cleanup_claude_code(dry_run: bool) -> bool:
             changed = True
     if removed_events:
         verb = "Would remove" if dry_run else "Removed"
-        rprint(f"  {verb} hooks: {', '.join(removed_events)}")
+        rprint(f"  {verb} hooks: {esc(', '.join(removed_events))}")
 
     if changed and not dry_run:
         # Clean up empty sections
@@ -788,8 +895,8 @@ def _cleanup_claude_code(dry_run: bool) -> bool:
             data.pop("env", None)
         if not data.get("hooks"):
             data.pop("hooks", None)
-        settings_path.write_text(json.dumps(data, indent=2) + "\n")
-        rprint(f"  [green]Written {settings_path}[/green]")
+        _atomic_write(settings_path, json.dumps(data, indent=2) + "\n")
+        rprint(f"  [green]Written {esc(settings_path)}[/green]")
 
     if not changed:
         rprint("  [dim]No Observal artifacts found[/dim]")
@@ -807,10 +914,7 @@ def _cleanup_kiro(dry_run: bool) -> bool:
 
     changed = False
     for agent_profile in sorted(agents_dir.glob("*.json")):
-        try:
-            agent_data = json.loads(agent_profile.read_text())
-        except (json.JSONDecodeError, OSError):
-            continue
+        agent_data = _read_json_object(agent_profile)
 
         agent_changed = False
 
@@ -832,9 +936,9 @@ def _cleanup_kiro(dry_run: bool) -> bool:
         if agent_changed:
             changed = True
             verb = "Would clean" if dry_run else "Cleaned"
-            rprint(f"  {verb} {agent_profile.name}")
+            rprint(f"  {verb} {esc(agent_profile.name)}")
             if not dry_run:
-                agent_profile.write_text(json.dumps(agent_data, indent=2) + "\n")
+                _atomic_write(agent_profile, json.dumps(agent_data, indent=2) + "\n")
 
     if not changed:
         rprint("  [dim]No Observal artifacts found in Kiro agents[/dim]")
@@ -849,16 +953,12 @@ def _cleanup_pi(dry_run: bool) -> bool:
     changed = extension_path.exists()
     if extension_path.exists():
         verb = "Would remove" if dry_run else "Removed"
-        rprint(f"  {verb} {extension_path}")
+        rprint(f"  {verb} {esc(extension_path)}")
         if not dry_run:
             extension_path.unlink()
 
     if settings_path.exists():
-        try:
-            settings = json.loads(settings_path.read_text())
-        except (json.JSONDecodeError, OSError) as exc:
-            rprint(f"  [red]Cannot read {settings_path}: {exc}[/red]")
-            return changed
+        settings = _read_json_object(settings_path)
         packages = settings.get("packages", [])
         cleaned = [package for package in packages if not _is_legacy_pi_package(package)]
         if cleaned != packages:
@@ -867,7 +967,7 @@ def _cleanup_pi(dry_run: bool) -> bool:
             rprint(f"  {verb} legacy npm:observal-pi package registration")
             if not dry_run:
                 settings["packages"] = cleaned
-                settings_path.write_text(json.dumps(settings, indent=2) + "\n")
+                _atomic_write(settings_path, json.dumps(settings, indent=2) + "\n")
 
     if not changed:
         rprint("  [dim]No Observal Pi extension found[/dim]")
@@ -882,11 +982,7 @@ def _cleanup_cursor(dry_run: bool) -> bool:
         rprint("  [dim]No ~/.cursor/hooks.json found - skipping[/dim]")
         return False
 
-    try:
-        data = json.loads(hooks_path.read_text())
-    except (json.JSONDecodeError, OSError) as e:
-        rprint(f"  [red]Failed to read hooks: {e}[/red]")
-        return False
+    data = _read_json_object(hooks_path)
 
     hooks = data.get("hooks", {})
     changed = False
@@ -911,12 +1007,12 @@ def _cleanup_cursor(dry_run: bool) -> bool:
 
     if changed:
         verb = "Would remove" if dry_run else "Removed"
-        rprint(f"  {verb} hooks: {', '.join(removed_events)}")
+        rprint(f"  {verb} hooks: {esc(', '.join(removed_events))}")
         if not dry_run:
             if not data.get("hooks"):
                 data.pop("hooks", None)
-            hooks_path.write_text(json.dumps(data, indent=2) + "\n")
-            rprint(f"  [green]Written {hooks_path}[/green]")
+            _atomic_write(hooks_path, json.dumps(data, indent=2) + "\n")
+            rprint(f"  [green]Written {esc(hooks_path)}[/green]")
     else:
         rprint("  [dim]No Observal artifacts found[/dim]")
 
@@ -932,11 +1028,7 @@ def _cleanup_codex(dry_run: bool) -> bool:
         rprint("  [dim]No ~/.codex/hooks.json found - skipping[/dim]")
         return False
 
-    try:
-        data = json.loads(hooks_path.read_text())
-    except (json.JSONDecodeError, OSError) as e:
-        rprint(f"  [red]Failed to read hooks: {e}[/red]")
-        return False
+    data = _read_json_object(hooks_path)
 
     hooks = data.get("hooks", {})
     changed = False
@@ -962,12 +1054,12 @@ def _cleanup_codex(dry_run: bool) -> bool:
 
     if changed:
         verb = "Would remove" if dry_run else "Removed"
-        rprint(f"  {verb} hooks: {', '.join(removed_events)}")
+        rprint(f"  {verb} hooks: {esc(', '.join(removed_events))}")
         if not dry_run:
             if not data.get("hooks"):
                 data.pop("hooks", None)
-            hooks_path.write_text(json.dumps(data, indent=2) + "\n")
-            rprint(f"  [green]Written {hooks_path}[/green]")
+            _atomic_write(hooks_path, json.dumps(data, indent=2) + "\n")
+            rprint(f"  [green]Written {esc(hooks_path)}[/green]")
     else:
         rprint("  [dim]No Observal artifacts found[/dim]")
 
@@ -988,7 +1080,7 @@ def _cleanup_copilot(dry_run: bool) -> bool:
     for hooks_path in targets:
         if hooks_path.exists():
             verb = "Would remove" if dry_run else "Removed"
-            rprint(f"  {verb} {hooks_path}")
+            rprint(f"  {verb} {esc(hooks_path)}")
             if not dry_run:
                 hooks_path.unlink()
             changed = True
@@ -997,7 +1089,7 @@ def _cleanup_copilot(dry_run: bool) -> bool:
         existing = ps1_path.read_text()
         if "copilot_vscode_session_push" in existing or "hooks.session_push --harness copilot" in existing:
             verb = "Would remove" if dry_run else "Removed"
-            rprint(f"  {verb} {ps1_path}")
+            rprint(f"  {verb} {esc(ps1_path)}")
             if not dry_run:
                 ps1_path.unlink()
             changed = True
@@ -1018,7 +1110,7 @@ def _cleanup_copilot_cli(dry_run: bool) -> bool:
         return False
 
     verb = "Would remove" if dry_run else "Removed"
-    rprint(f"  {verb} {hooks_path}")
+    rprint(f"  {verb} {esc(hooks_path)}")
     if not dry_run:
         hooks_path.unlink()
 
@@ -1035,7 +1127,7 @@ def _cleanup_opencode(dry_run: bool) -> bool:
         return False
 
     verb = "Would remove" if dry_run else "Removed"
-    rprint(f"  {verb} {plugin_path}")
+    rprint(f"  {verb} {esc(plugin_path)}")
     if not dry_run:
         plugin_path.unlink()
 
@@ -1057,9 +1149,12 @@ def _cleanup_goose(dry_run: bool) -> bool:
         return False
 
     hooks_path = hooks_file()
-    data = _load_json(hooks_path) if hooks_path.is_file() else None
-    data = data if isinstance(data, dict) else {}
-    existing_hooks = data.get("hooks") if isinstance(data.get("hooks"), dict) else {}
+    data = _read_json_object(hooks_path) if hooks_path.is_file() else {}
+    if not isinstance(data, dict):
+        raise ValueError(f"{hooks_path} must contain a JSON object")
+    existing_hooks = data.get("hooks", {})
+    if not isinstance(existing_hooks, dict):
+        raise ValueError(f"{hooks_path} hooks must be a JSON object")
 
     # _patch_goose preserves user rules in this plugin, so cleanup must not delete them.
     foreign = {}
@@ -1077,13 +1172,13 @@ def _cleanup_goose(dry_run: bool) -> bool:
 
     if foreign:
         verb = "Would remove" if dry_run else "Removed"
-        rprint(f"  {verb} Observal hooks from {hooks_path} (kept {len(foreign)} foreign event(s))")
+        rprint(f"  {verb} Observal hooks from {esc(hooks_path)} (kept {len(foreign)} foreign event(s))")
         if not dry_run:
-            hooks_path.write_text(json.dumps({**data, "hooks": foreign}, indent=2) + "\n")
+            _atomic_write(hooks_path, json.dumps({**data, "hooks": foreign}, indent=2) + "\n")
         return True
 
     verb = "Would remove" if dry_run else "Removed"
-    rprint(f"  {verb} {path}")
+    rprint(f"  {verb} {esc(path)}")
     if not dry_run:
         shutil.rmtree(path)
 
@@ -1098,57 +1193,61 @@ _VALID_HARNESSES = get_valid_harnesses()
 
 @doctor_app.command(name="patch")
 def doctor_patch(
-    all_harnesses: bool = typer.Option(False, "--all-harnesses", help="Target every detected harness"),
-    harness: list[str] = typer.Option([], "--harness", "-i", help="Target specific harness (repeatable)"),
-    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Show what would change without writing"),
+    all_harnesses: bool = typer.Option(False, "--all-harnesses", help="Target every registered harness"),
+    harness: list[str] = typer.Option([], "--harness", "-i", help="Target a harness (repeatable)"),
+    dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview without writing"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
-    """Install Observal session telemetry hooks for selected harnesses.
+    """Install Observal-managed session telemetry for selected harnesses.
 
-    \b
     Examples:
-      observal doctor patch --all-harnesses
-      observal doctor patch --harness claude-code
       observal doctor patch --all-harnesses --dry-run
+      observal doctor patch --harness claude-code
+      observal doctor patch --all-harnesses --output json
     """
-    optic.trace("harnesses={}, all_harnesses={}", harness, all_harnesses)
-
+    output = _value(output)
+    all_harnesses = _value(all_harnesses)
+    harness = _value(harness)
+    dry_run = _value(dry_run)
+    if all_harnesses and harness:
+        fail(
+            ErrorCategory.VALIDATION,
+            "Choose either --all-harnesses or --harness, not both.",
+            operation="Patch Doctor instrumentation",
+            resource="harness selection",
+            remediation="Remove one of the conflicting target options.",
+        )
     if not all_harnesses and not harness:
-        rprint("[red]Specify --all-harnesses or --harness <name>[/red]")
-        raise typer.Exit(1)
+        fail(
+            ErrorCategory.VALIDATION,
+            "Doctor patch requires a target harness.",
+            operation="Patch Doctor instrumentation",
+            resource="harness selection",
+            remediation="Add --all-harnesses or at least one --harness.",
+        )
+    targets = list(_VALID_HARNESSES) if all_harnesses else _valid_targets(list(harness), "Patch Doctor instrumentation")
 
     cfg = config.load()
-    server_url = cfg.get("server_url")
-    if not server_url:
-        rprint("[red]Not configured. Run [bold]observal auth login[/bold] first.[/red]")
-        raise typer.Exit(1)
-
-    targets = list(harness) if harness else _VALID_HARNESSES if all_harnesses else []
-    for t in targets:
-        if t not in _VALID_HARNESSES:
-            rprint(f"[red]Unknown harness: {t}. Valid: {', '.join(_VALID_HARNESSES)}[/red]")
-            raise typer.Exit(1)
-
-    any_changes = False
-    rprint("[bold]Observal Doctor - Patch[/bold]\n")
-
-    ensure_loaded()
-    for target in targets:
-        any_changes = get_adapter(target).patch_hooks(dry_run) or any_changes
-
-    if dry_run:
-        rprint("\n[yellow]Dry run - no changes made.[/yellow]")
-    elif any_changes:
-        rprint("\n[green]✓ Patch complete.[/green] Restart your harness sessions to pick up changes.")
-        from observal_cli.audit import emit_cli_audit
-
-        emit_cli_audit(
-            "doctor.patch",
-            resource_type="harness",
-            detail=f"harnesses={','.join(targets)}, hooks=true",
-            sensitivity="high",
+    if not cfg.get("server_url"):
+        fail(
+            ErrorCategory.AUTH,
+            "Observal authentication is not configured.",
+            operation="Patch Doctor instrumentation",
+            resource="CLI configuration",
+            remediation="Run `observal auth login` and retry.",
         )
-    else:
-        rprint("\n[dim]Everything already up to date.[/dim]")
+
+    with _capture(output):
+        rprint("[bold]Observal Doctor: Patch[/bold]\n")
+        result = _patch_targets(targets, dry_run=dry_run, output=output)
+        if dry_run:
+            rprint("\n[yellow]Dry run, no changes made.[/yellow]")
+        elif result["changed"]:
+            rprint("\n[green]✓ Patch complete.[/green] Restart your harness sessions to pick up changes.")
+        else:
+            rprint("\n[dim]Everything already up to date.[/dim]")
+    if output == "json":
+        output_json(result)
 
 
 def _patch_claude_code(dry_run: bool) -> bool:
@@ -1169,7 +1268,7 @@ def _patch_claude_code(dry_run: bool) -> bool:
 
     if changes:
         for c in changes:
-            rprint(f"  {c}")
+            rprint(f"  {esc(c)}")
         return True
     else:
         rprint("  [dim]Already up to date[/dim]")
@@ -1204,21 +1303,17 @@ def _patch_kiro(dry_run: bool) -> bool:
                 continue
             profile = Path(directory) / ".kiro" / "agents" / f"{local_name}.json"
         if not profile.exists():
-            rprint(f"  [yellow]Missing locked profile: {profile}[/yellow]")
+            rprint(f"  [yellow]Missing locked profile: {esc(profile)}[/yellow]")
             continue
-        try:
-            current = json.loads(profile.read_text())
-        except (json.JSONDecodeError, OSError) as exc:
-            rprint(f"  [yellow]Cannot read {profile}: {exc}[/yellow]")
-            continue
+        current = _read_json_object(profile)
         desired = adapter.rewrite_agent_profile(json.loads(json.dumps(current)), agent_id=agent_id)
         if desired == current:
             continue
         changed = True
         verb = "Would repair" if dry_run else "Repaired"
-        rprint(f"  {verb} {profile}")
+        rprint(f"  {verb} {esc(profile)}")
         if not dry_run:
-            profile.write_text(json.dumps(desired, indent=2) + "\n")
+            _atomic_write(profile, json.dumps(desired, indent=2) + "\n")
     if not changed:
         rprint("  [dim]Already up to date[/dim]")
     return changed
@@ -1251,10 +1346,7 @@ def _patch_cursor(dry_run: bool) -> bool:
     # Load existing hooks.json if present
     existing = {}
     if hooks_path.exists():
-        try:
-            existing = json.loads(hooks_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            pass
+        existing = _read_json_object(hooks_path)
 
     # Check if already patched
     existing_hooks = existing.get("hooks", {})
@@ -1286,10 +1378,10 @@ def _patch_cursor(dry_run: bool) -> bool:
     result = {"version": 1, "hooks": merged_hooks}
 
     if not dry_run:
-        hooks_path.write_text(json.dumps(result, indent=2) + "\n")
+        _atomic_write(hooks_path, json.dumps(result, indent=2) + "\n")
 
     verb = "Would install" if dry_run else "Installed"
-    rprint(f"  {verb} hooks in {hooks_path}")
+    rprint(f"  {verb} hooks in {esc(hooks_path)}")
     return True
 
 
@@ -1313,10 +1405,7 @@ def _patch_antigravity(dry_run: bool) -> bool:
 
     existing: dict = {}
     if hooks_path.exists():
-        try:
-            existing = json.loads(hooks_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            existing = {}
+        existing = _read_json_object(hooks_path)
 
     if _OBSERVAL_HOOK_NAME in existing:
         rprint("  [dim]Already up to date[/dim]")
@@ -1324,10 +1413,10 @@ def _patch_antigravity(dry_run: bool) -> bool:
 
     existing.update(desired)
     if not dry_run:
-        hooks_path.write_text(json.dumps(existing, indent=2) + "\n")
+        _atomic_write(hooks_path, json.dumps(existing, indent=2) + "\n")
 
     verb = "Would install" if dry_run else "Installed"
-    rprint(f"  {verb} hooks in {hooks_path}")
+    rprint(f"  {verb} hooks in {esc(hooks_path)}")
     return True
 
 
@@ -1349,10 +1438,7 @@ def _patch_pi(dry_run: bool) -> bool:
     settings_path = pi_dir / "settings.json"
     settings: dict = {}
     if settings_path.exists():
-        try:
-            settings = json.loads(settings_path.read_text())
-        except (json.JSONDecodeError, OSError) as exc:
-            raise RuntimeError(f"Cannot update {settings_path}: {exc}") from exc
+        settings = _read_json_object(settings_path)
     packages = settings.get("packages", [])
     cleaned_packages = [package for package in packages if not _is_legacy_pi_package(package)]
     settings_changed = cleaned_packages != packages
@@ -1365,14 +1451,14 @@ def _patch_pi(dry_run: bool) -> bool:
         verb = "Would install" if current is None else "Would update"
         if not dry_run:
             extension_path.parent.mkdir(parents=True, exist_ok=True)
-            extension_path.write_text(source)
+            _atomic_write(extension_path, source)
             verb = "Installed" if current is None else "Updated"
-        rprint(f"  {verb} {extension_path}")
+        rprint(f"  {verb} {esc(extension_path)}")
 
     if settings_changed:
         if not dry_run:
             settings["packages"] = cleaned_packages
-            settings_path.write_text(json.dumps(settings, indent=2) + "\n")
+            _atomic_write(settings_path, json.dumps(settings, indent=2) + "\n")
         verb = "Would remove" if dry_run else "Removed"
         rprint(f"  {verb} legacy npm:observal-pi package registration")
 
@@ -1396,10 +1482,7 @@ def _patch_codex(dry_run: bool) -> bool:
     # Load existing hooks.json if present
     existing: dict = {}
     if hooks_path.exists():
-        try:
-            existing = json.loads(hooks_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            pass
+        existing = _read_json_object(hooks_path)
 
     # Check if already patched
     existing_hooks = existing.get("hooks", {})
@@ -1421,11 +1504,8 @@ def _patch_codex(dry_run: bool) -> bool:
     # Also check if codex_hooks flag needs enabling
     needs_flag = False
     if config_path.exists():
-        try:
-            content = config_path.read_text()
-            if "codex_hooks" not in content or "codex_hooks = false" in content:
-                needs_flag = True
-        except OSError:
+        content = config_path.read_text()
+        if "codex_hooks" not in content or "codex_hooks = false" in content:
             needs_flag = True
     else:
         needs_flag = True
@@ -1452,10 +1532,10 @@ def _patch_codex(dry_run: bool) -> bool:
 
         if not dry_run:
             codex_dir.mkdir(parents=True, exist_ok=True)
-            hooks_path.write_text(json.dumps(result, indent=2) + "\n")
+            _atomic_write(hooks_path, json.dumps(result, indent=2) + "\n")
 
         verb = "Would install" if dry_run else "Installed"
-        rprint(f"  {verb} hooks in {hooks_path}")
+        rprint(f"  {verb} hooks in {esc(hooks_path)}")
 
     # Enable codex_hooks flag in config.toml
     if needs_flag:
@@ -1467,12 +1547,12 @@ def _patch_codex(dry_run: bool) -> bool:
                     content = content.replace("codex_hooks = false", "codex_hooks = true")
                 elif "codex_hooks" not in content:
                     content = f"codex_hooks = true\n{content}"
-                config_path.write_text(content)
+                _atomic_write(config_path, content)
             else:
-                config_path.write_text("codex_hooks = true\n")
+                _atomic_write(config_path, "codex_hooks = true\n")
 
         verb = "Would enable" if dry_run else "Enabled"
-        rprint(f"  {verb} codex_hooks flag in {config_path}")
+        rprint(f"  {verb} codex_hooks flag in {esc(config_path)}")
 
     return True
 
@@ -1498,10 +1578,7 @@ def _patch_copilot(dry_run: bool) -> bool:
 
     existing: dict = {}
     if hooks_path.exists():
-        try:
-            existing = json.loads(hooks_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            pass
+        existing = _read_json_object(hooks_path)
 
     existing_hooks = existing.get("hooks", {})
     needs_hook_update = False
@@ -1533,10 +1610,10 @@ def _patch_copilot(dry_run: bool) -> bool:
 
         if not dry_run:
             hooks_dir.mkdir(parents=True, exist_ok=True)
-            hooks_path.write_text(json.dumps(result, indent=2) + "\n")
+            _atomic_write(hooks_path, json.dumps(result, indent=2) + "\n")
 
         verb = "Would install" if dry_run else "Installed"
-        rprint(f"  {verb} hooks in {hooks_path}")
+        rprint(f"  {verb} hooks in {esc(hooks_path)}")
         any_changes = True
     else:
         rprint("  [dim]Hooks already up to date[/dim]")
@@ -1583,9 +1660,9 @@ def _patch_copilot(dry_run: bool) -> bool:
     if needs_ps1_update:
         if not dry_run:
             hooks_dir.mkdir(parents=True, exist_ok=True)
-            ps1_path.write_text(ps1_content)
+            _atomic_write(ps1_path, ps1_content)
         verb = "Would install" if dry_run else "Installed"
-        rprint(f"  {verb} PowerShell wrapper at {ps1_path}")
+        rprint(f"  {verb} PowerShell wrapper at {esc(ps1_path)}")
         any_changes = True
 
     return any_changes
@@ -1606,10 +1683,7 @@ def _patch_copilot_cli(dry_run: bool) -> bool:
     # Load existing hook file if present
     existing: dict = {}
     if hooks_path.exists():
-        try:
-            existing = json.loads(hooks_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            pass
+        existing = _read_json_object(hooks_path)
 
     # Check if already patched
     existing_hooks = existing.get("hooks", {})
@@ -1642,10 +1716,10 @@ def _patch_copilot_cli(dry_run: bool) -> bool:
 
     if not dry_run:
         hooks_dir.mkdir(parents=True, exist_ok=True)
-        hooks_path.write_text(json.dumps(result, indent=2) + "\n")
+        _atomic_write(hooks_path, json.dumps(result, indent=2) + "\n")
 
     verb = "Would install" if dry_run else "Installed"
-    rprint(f"  {verb} hooks in {hooks_path}")
+    rprint(f"  {verb} hooks in {esc(hooks_path)}")
     return True
 
 
@@ -1670,7 +1744,7 @@ def _patch_opencode(dry_run: bool) -> bool:
 
     if not dry_run:
         plugins_dir.mkdir(parents=True, exist_ok=True)
-        plugin_path.write_text(plugin_source)
+        _atomic_write(plugin_path, plugin_source)
 
     verb = (
         "Would update"
@@ -1681,7 +1755,7 @@ def _patch_opencode(dry_run: bool) -> bool:
         if existing_hash
         else "Installed"
     )
-    rprint(f"  {verb} plugin at {plugin_path}")
+    rprint(f"  {verb} plugin at {esc(plugin_path)}")
     return True
 
 
@@ -1710,12 +1784,12 @@ def _patch_goose(dry_run: bool) -> bool:
     manifest_path = manifest_file()
     desired = build_hooks()["hooks"]
 
-    existing = _load_json(hooks_path) if hooks_path.exists() else None
+    existing = _read_json_object(hooks_path) if hooks_path.exists() else {}
     if not isinstance(existing, dict):
-        existing = {}
+        raise ValueError(f"{hooks_path} must contain a JSON object")
     existing_hooks = existing.get("hooks", {})
     if not isinstance(existing_hooks, dict):
-        existing_hooks = {}
+        raise ValueError(f"{hooks_path} hooks must be a JSON object")
 
     # Keep any hook rules the user added to this plugin, replace only ours.
     merged = dict(existing_hooks)
@@ -1736,9 +1810,9 @@ def _patch_goose(dry_run: bool) -> bool:
 
     if not dry_run:
         hooks_path.parent.mkdir(parents=True, exist_ok=True)
-        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
-        hooks_path.write_text(json.dumps({**existing, "hooks": merged}, indent=2) + "\n")
+        _atomic_write(manifest_path, json.dumps(manifest, indent=2) + "\n")
+        _atomic_write(hooks_path, json.dumps({**existing, "hooks": merged}, indent=2) + "\n")
 
     verb = "Would install" if dry_run else "Installed"
-    rprint(f"  {verb} hook plugin at {hooks_path.parent.parent}")
+    rprint(f"  {verb} hook plugin at {esc(hooks_path.parent.parent)}")
     return True

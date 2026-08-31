@@ -62,10 +62,10 @@ Use either command plus args for stdio, or URL for remote MCP. Do not put secret
 
 ## CLI example
 
-Run the submit command with the example flag to print a ready-to-edit payload:
+Paste a configuration like the examples above into the submit command:
 
 ```bash
-observal registry mcp submit --example
+observal registry mcp submit
 ```
 
 ## Sources

@@ -3,94 +3,45 @@
 # SPDX-License-Identifier: Apache-2.0
 name: observal-admin
 command: observal
-description: Observal admin operations including user management, server settings, submission review queue, security events, audit logs, and SSO configuration. Use when the user needs to manage users, approve or reject submissions, view security events, or configure SAML/SCIM.
-version: 2.0.0
+description: "Administers Observal users, settings, diagnostics, review queues, security events, audit logs, SAML, SCIM, local server services, upgrades, rollback, and database migrations. Use when the user needs privileged governance, submission decisions, identity configuration, security investigation, or server operations."
+version: 2.2.0
 owner: observal
 ---
 
-# Observal Admin Operations
+# Administering Observal
 
-All commands require the `admin` role. SAML, SCIM, and audit-log commands require admin role.
+Core administration requires an admin role. Review actions also work for authorized global reviewers and teamspace owners or reviewers.
 
-## Critical Rules
+## Execution contract
 
-1. **EXECUTE commands**: run them in your shell. Set timeout to 60 seconds.
-2. **Pass `--output json`** on list/show commands.
-3. **Pass `--yes` or `--force`** on destructive commands.
-4. **If 403 is returned**, confirm role with `observal auth whoami --output json`.
+1. Execute commands with a 60 second timeout, except documented long-running server and migration operations.
+2. **Use machine output by default:** add `--output json` whenever supported. Parse list results from `items` and pagination fields.
+3. Run `--help` before acting when a path, role requirement, confirmation flag, or destination option is uncertain.
+4. Read current state before privileged mutations. Use the smallest required authority.
+5. Supply `--force` or another documented confirmation flag for noninteractive destructive operations.
+6. Verify review decisions, role changes, identity settings, server upgrades, rollback, and imports.
+7. Never repeat generated passwords, SCIM tokens, certificates, submitted headers, database URLs, environment values, or sensitive audit content.
+8. Fail openly. Do not bypass the CLI through direct database changes or hand-written migration SQL.
+9. Never blindly retry privileged mutations. Read resulting state after an uncertain failure.
 
----
+## Choose the workflow
 
-## Procedure: Settings & Diagnostics
+| User intent | Read |
+| --- | --- |
+| Users, settings, diagnostics, reviews, security, audit, SAML, or SCIM | [Governance and identity](references/governance-and-identity.md) |
+| Local services, versions, upgrades, rollback, reset, or data migration | [Server operations](references/server-operations.md) |
 
-```bash
-observal admin settings --output json
-observal admin set KEY VALUE
-observal admin diagnostics --output json
-observal admin trace-privacy
-observal admin trace-privacy-set true
-observal admin cache-clear
-```
+Read the selected reference completely before executing.
 
----
+## Safety rules
 
-## Procedure: User Management
+- Permission denial is a result, not a reason to escalate automatically. Report the required role.
+- Review only the returned UUID requested by the user. Never act on table position or an unrelated queue item.
+- Treat one-time password and token responses as secrets from the moment they are returned.
+- Export and import destinations must be explicit. Validate an archive before import.
+- Use the project's migration commands. Never replace them with ad hoc SQL.
+- A server command is successful only when the final status confirms the requested service or version state.
 
-```bash
-observal admin users --output json
-observal admin create-user EMAIL NAME --role user --output json
-observal admin reset-password EMAIL --generate
-observal admin set-role EMAIL admin
-observal admin delete-user EMAIL --force
-```
+## Completion
 
----
-
-## Procedure: Review Queue
-
-```bash
-observal admin review list --output json
-observal admin review list --type mcp --output json
-observal admin review show REVIEW_ID --output json
-observal admin review approve REVIEW_ID
-observal admin review approve REVIEW_ID --agent
-observal admin review reject REVIEW_ID --reason 'Not reproducible'
-```
-
-`--agent` and `--bundle` disambiguate when an ID could refer to multiple entity types.
-
----
-
-## Procedure: Security & Audit
-
-```bash
-observal admin security-events --limit 50 --output json
-observal admin audit-log --limit 100 --output json
-observal admin audit-log-export --file audit.csv
-```
-
----
-
-## Procedure: SSO
-
-```bash
-observal admin saml-config --output json
-observal admin saml-config-set \
-  --idp-entity-id ID \
-  --idp-sso-url URL \
-  --idp-x509-cert /path/to/cert.pem \
-  --active
-observal admin saml-config-delete --force
-observal admin scim-tokens --output json
-observal admin scim-token-create --description 'Okta'
-observal admin scim-token-revoke TOKEN_ID --force
-```
-
----
-
-## Output Contract
-
-1. One sentence stating intent.
-2. The exact command in a fenced code block.
-3. The result: success / specific error.
-4. The next action, or "done".
+Report the affected resource by safe identifier, resulting state, request ID for failures, and any required follow-up. Redact secret values even when the command returned them successfully.

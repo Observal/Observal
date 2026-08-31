@@ -21,9 +21,8 @@ import hashlib
 import json
 import os
 import tarfile
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import httpx
 import pytest
 from typer.testing import CliRunner
 
@@ -143,15 +142,6 @@ def _full_server_response() -> dict:
     }
 
 
-def _mock_httpx_response(data: dict, status_code: int = 200) -> MagicMock:
-    """Create a mock httpx.Response."""
-    resp = MagicMock(spec=httpx.Response)
-    resp.status_code = status_code
-    resp.json.return_value = data
-    resp.raise_for_status.return_value = None
-    return resp
-
-
 # ── Required directories in the archive ──────────────────────────────
 
 REQUIRED_PREFIXES = [
@@ -190,17 +180,11 @@ class TestSupportBundleIntegration:
         """Generate a bundle archive and return its path."""
         output = tmp_path / "integration-test-bundle.tar.gz"
         server_resp = _full_server_response()
-        mock_cfg = {"server_url": "http://localhost:8000", "access_token": "test-token"}
 
         with (
-            patch("observal_cli.cmd_support.config.get_or_exit", return_value=mock_cfg),
-            patch("observal_cli.cmd_support.config.get_timeout", return_value=30),
-            patch(
-                "observal_cli.cmd_support.httpx.post",
-                return_value=_mock_httpx_response(server_resp),
-            ),
+            patch("observal_cli.cmd_support.client.post", return_value=server_resp),
         ):
-            result = runner.invoke(app, ["doctor", "support", "bundle", "--output", str(output)])
+            result = runner.invoke(app, ["doctor", "support", "bundle", "--file", str(output)])
 
         assert result.exit_code == 0, f"Bundle command failed: {result.output}"
         assert output.exists(), "Archive file was not created"
@@ -354,7 +338,7 @@ class TestSupportBundleIntegration:
 
         flags = manifest_data["flags_used"]
         assert isinstance(flags, dict)
-        assert "output" in flags
+        assert "file" in flags
         assert "logs_since" in flags
         assert "include_system" in flags
 
@@ -541,19 +525,13 @@ class TestBundleWithoutSystem:
     def test_no_system_directory(self, tmp_path):
         output = tmp_path / "no-system-bundle.tar.gz"
         server_resp = _full_server_response()
-        mock_cfg = {"server_url": "http://localhost:8000", "access_token": "test-token"}
 
         with (
-            patch("observal_cli.cmd_support.config.get_or_exit", return_value=mock_cfg),
-            patch("observal_cli.cmd_support.config.get_timeout", return_value=30),
-            patch(
-                "observal_cli.cmd_support.httpx.post",
-                return_value=_mock_httpx_response(server_resp),
-            ),
+            patch("observal_cli.cmd_support.client.post", return_value=server_resp),
         ):
             result = runner.invoke(
                 app,
-                ["doctor", "support", "bundle", "--output", str(output), "--no-include-system"],
+                ["doctor", "support", "bundle", "--file", str(output), "--no-include-system"],
             )
 
         assert result.exit_code == 0

@@ -2,13 +2,13 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""observal logs - live log viewer.
+"""observal ops logs: live log viewer.
 
-observal logs                  # follow local dev.log
-observal logs --remote         # stream from hosted server via SSE
-observal logs --level WARNING  # only warnings and above
-observal logs --filter ingest  # grep for 'ingest'
-observal logs --no-color       # disable ANSI colors
+observal ops logs                  # follow local dev.log
+observal ops logs --remote         # stream from hosted server via SSE
+observal ops logs --level WARNING  # only warnings and above
+observal ops logs --filter ingest  # grep for 'ingest'
+observal ops logs --no-color       # disable ANSI colors
 
 """
 
@@ -22,8 +22,21 @@ from pathlib import Path
 import typer
 from rich.console import Console
 from rich.text import Text
+from typer.models import OptionInfo
 
-logs_app = typer.Typer(name="logs", help="Live log viewer (open in a separate tab)")
+from observal_cli.errors import ErrorCategory, fail
+from observal_cli.render import OutputMode, output_json_line
+
+logs_app = typer.Typer(
+    name="logs",
+    help=(
+        "Live log viewer (open in a separate tab)\n\n"
+        "Examples:\n"
+        "  observal ops logs\n"
+        "  observal ops logs --remote\n"
+        "  observal ops logs --level WARNING --no-follow"
+    ),
+)
 
 LOG_PATH = Path.home() / ".observal" / "logs" / "dev.log"
 
@@ -90,7 +103,54 @@ def _print_entry(console: Console, entry: dict, *, no_color: bool) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _stream_remote(console: Console, *, level: str, filter_text: str, no_color: bool) -> None:
+def _recent_remote(
+    console: Console,
+    *,
+    level: str,
+    filter_text: str,
+    lines: int,
+    no_color: bool,
+    output: OutputMode | str = "table",
+) -> None:
+    """Fetch and print a finite batch of recent server logs."""
+    if lines == 0:
+        return
+
+    from observal_cli import client
+
+    params: dict = {"level": level, "limit": lines}
+    if filter_text:
+        params["filter"] = filter_text
+    result = client.get(
+        "/api/v1/admin/logs",
+        params,
+        operation="Read recent server logs",
+        resource="server logs",
+    )
+    entries = result.get("entries") if isinstance(result, dict) else None
+    if not isinstance(entries, list) or not all(isinstance(entry, dict) for entry in entries):
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            "The server returned an invalid recent logs response.",
+            operation="Read recent server logs",
+            resource="server logs",
+            remediation="Check server health and version compatibility, then retry.",
+        )
+    for entry in entries:
+        if output == "json":
+            output_json_line({"event": "log", "source": "remote", "log": entry})
+        else:
+            _print_entry(console, entry, no_color=no_color)
+
+
+def _stream_remote(
+    console: Console,
+    *,
+    level: str,
+    filter_text: str,
+    no_color: bool,
+    output: OutputMode | str = "table",
+) -> None:
     """Connect to the server's SSE log stream and print entries."""
     import httpx
 
@@ -106,7 +166,8 @@ def _stream_remote(console: Console, *, level: str, filter_text: str, no_color: 
     if filter_text:
         params["filter"] = filter_text
 
-    console.print(f"[dim]Connecting to {base_url} …[/dim]")
+    if output != "json":
+        console.print(f"[dim]Connecting to {base_url} …[/dim]")
 
     try:
         with httpx.stream(
@@ -120,34 +181,79 @@ def _stream_remote(console: Console, *, level: str, filter_text: str, no_color: 
             timeout=None,
         ) as resp:
             if resp.status_code == 401:
-                console.print("[red]Authentication failed.[/red] Run `observal auth login`.")
-                raise typer.Exit(1)
+                fail(
+                    ErrorCategory.AUTH,
+                    "Authentication failed while streaming logs.",
+                    operation="Stream server logs",
+                    resource="server log stream",
+                    remediation="Run `observal auth login` and retry.",
+                    http_status=401,
+                )
             if resp.status_code == 403:
-                console.print("[red]Admin access required.[/red] Only admins can stream server logs.")
-                raise typer.Exit(1)
+                fail(
+                    ErrorCategory.PERMISSION,
+                    "Administrator access is required to stream server logs.",
+                    operation="Stream server logs",
+                    resource="server log stream",
+                    remediation="Use an administrator account or read local logs.",
+                    http_status=403,
+                )
             if resp.status_code != 200:
-                console.print(f"[red]Server returned {resp.status_code}[/red]")
-                raise typer.Exit(1)
+                fail(
+                    ErrorCategory.UNAVAILABLE,
+                    f"The server log stream returned HTTP {resp.status_code}.",
+                    operation="Stream server logs",
+                    resource="server log stream",
+                    remediation="Check server health and retry.",
+                    http_status=resp.status_code,
+                )
 
-            console.print("[dim]- Streaming (Ctrl+C to stop) -[/dim]\n")
+            if output != "json":
+                console.print("[dim]- Streaming (Ctrl+C to stop) -[/dim]\n")
 
             for line in resp.iter_lines():
                 if not line:
                     continue
                 if line.startswith(": "):
                     continue  # SSE keepalive comment
-                if line.startswith("data: "):
+                if line.startswith("data:"):
+                    raw = line[5:].lstrip()
                     try:
-                        entry = json.loads(line[6:])
+                        entry = json.loads(raw)
+                    except (json.JSONDecodeError, ValueError) as error:
+                        fail(
+                            ErrorCategory.UNAVAILABLE,
+                            "The server log stream returned malformed JSON.",
+                            operation="Stream server logs",
+                            resource="server log stream",
+                            remediation="Check server health and version compatibility.",
+                            detail=repr(error),
+                        )
+                    if not isinstance(entry, dict):
+                        fail(
+                            ErrorCategory.UNAVAILABLE,
+                            "The server log stream returned an invalid record.",
+                            operation="Stream server logs",
+                            resource="server log stream",
+                            remediation="Check server health and version compatibility.",
+                        )
+                    if output == "json":
+                        output_json_line({"event": "log", "source": "remote", "log": entry})
+                    else:
                         _print_entry(console, entry, no_color=no_color)
-                    except (json.JSONDecodeError, ValueError):
-                        console.print(line[6:])
-    except httpx.ConnectError:
-        console.print("[red]Cannot connect.[/red] Is the server running?")
-        raise typer.Exit(1)
+    except httpx.TransportError as error:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            "Cannot connect to the server log stream.",
+            operation="Stream server logs",
+            resource="server log stream",
+            remediation="Check server connectivity and retry.",
+            detail=repr(error),
+        )
     except KeyboardInterrupt:
-        console.print("\n[dim]Stopped.[/dim]")
-        sys.exit(0)
+        if output != "json":
+            console.print("\n[dim]Stopped.[/dim]")
+        return
 
 
 # ---------------------------------------------------------------------------
@@ -157,12 +263,15 @@ def _stream_remote(console: Console, *, level: str, filter_text: str, no_color: 
 
 @logs_app.callback(invoke_without_command=True)
 def logs(
-    level: str = typer.Option("DEBUG", "--level", "-l", help="Minimum level (TRACE, DEBUG, INFO, WARNING, ERROR)"),
+    level: str = typer.Option(
+        "DEBUG", "--level", "-l", help="Minimum level (TRACE, DEBUG, INFO, WARNING, ERROR, CRITICAL)"
+    ),
     filter_text: str = typer.Option("", "--filter", "-f", help="Only show lines containing this text"),
-    lines: int = typer.Option(20, "--lines", "-n", help="Recent lines to show before following"),
+    lines: int = typer.Option(20, "--lines", "-n", min=0, help="Recent lines to show before following"),
     no_follow: bool = typer.Option(False, "--no-follow", help="Print recent lines and exit"),
     remote: bool = typer.Option(False, "--remote", "-r", help="Stream from the connected server via SSE"),
     no_color: bool = typer.Option(False, "--no-color", help="Disable colored output"),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Live-follow Observal logs.
 
@@ -172,19 +281,41 @@ def logs(
     For Docker deployments, local mode won't work because the log file
     is inside the container.  Always use --remote for hosted instances.
     """
+    output = output.default if isinstance(output, OptionInfo) else output
+    level = level.strip().upper()
+    if level not in _LEVEL_RANK:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Unknown log level: {level}.",
+            operation="Stream logs",
+            resource="log level",
+            remediation=f"Choose from: {', '.join(_LEVEL_RANK)}.",
+        )
     console = Console(stderr=True, no_color=no_color)
 
     if remote:
-        _stream_remote(console, level=level, filter_text=filter_text, no_color=no_color)
+        if no_follow:
+            _recent_remote(
+                console,
+                level=level,
+                filter_text=filter_text,
+                lines=lines,
+                no_color=no_color,
+                output=output,
+            )
+        else:
+            _stream_remote(console, level=level, filter_text=filter_text, no_color=no_color, output=output)
         return
 
     # Local file mode
-    if not LOG_PATH.exists():
-        console.print(
-            f"[yellow]No log file at {LOG_PATH}[/yellow]\n"
-            + "[dim]Try [bold]observal logs --remote[/bold] to stream from a hosted server.[/dim]"
+    if not LOG_PATH.is_file():
+        fail(
+            ErrorCategory.NOT_FOUND,
+            f"Local log file not found: {LOG_PATH}.",
+            operation="Read local logs",
+            resource=str(LOG_PATH),
+            remediation="Use `observal ops logs --remote` for a hosted server.",
         )
-        raise typer.Exit(1)
 
     min_rank = _level_rank(level)
 
@@ -194,23 +325,38 @@ def logs(
             return False
         return not (filter_text and filter_text.lower() not in line.lower())
 
+    def _emit_local(line: str) -> None:
+        raw = line.rstrip("\n")
+        if output == "json":
+            output_json_line({"event": "log", "source": "local", "level": _parse_level(raw), "line": raw})
+        else:
+            _print_line(console, raw, no_color=no_color)
+
     # Show last N lines
     try:
         from collections import deque
 
         with open(LOG_PATH) as f:
             all_lines = list(deque(f, maxlen=lines)) if lines > 0 else []
-    except OSError:
-        all_lines = []
+    except OSError as error:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            f"Could not read local log file: {LOG_PATH}.",
+            operation="Read local logs",
+            resource=str(LOG_PATH),
+            remediation="Check file permissions and retry.",
+            detail=repr(error),
+        )
 
     for line in all_lines:
         if _should_show(line):
-            _print_line(console, line.rstrip("\n"), no_color=no_color)
+            _emit_local(line)
 
     if no_follow:
         return
 
-    console.print(f"\n[dim]- Following {LOG_PATH} (Ctrl+C to stop) -[/dim]\n")
+    if output != "json":
+        console.print(f"\n[dim]- Following {LOG_PATH} (Ctrl+C to stop) -[/dim]\n")
 
     try:
         with open(LOG_PATH) as f:
@@ -219,9 +365,20 @@ def logs(
                 line = f.readline()
                 if line:
                     if _should_show(line):
-                        _print_line(console, line.rstrip("\n"), no_color=no_color)
+                        _emit_local(line)
                 else:
                     time.sleep(0.1)
+    except OSError as error:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            f"Could not follow local log file: {LOG_PATH}.",
+            operation="Follow local logs",
+            resource=str(LOG_PATH),
+            remediation="Check file permissions and retry.",
+            detail=repr(error),
+        )
     except KeyboardInterrupt:
+        if output == "json":
+            return
         console.print("\n[dim]Stopped.[/dim]")
         sys.exit(0)

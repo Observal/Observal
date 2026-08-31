@@ -3,13 +3,89 @@
 
 from __future__ import annotations
 
+import shlex
 from unittest.mock import patch
 
+import pytest
+from click import Group
+from typer.main import get_command
 from typer.testing import CliRunner
 
 from observal_cli.main import app
 
 runner = CliRunner()
+
+
+def _command_tree(command, path="observal"):
+    yield path, command
+    if isinstance(command, Group):
+        for name, child in command.commands.items():
+            yield from _command_tree(child, f"{path} {name}")
+
+
+def _help_examples(help_text: str) -> list[str]:
+    marker = "Examples:" if "Examples:" in help_text else "Example:"
+    if marker not in help_text:
+        return []
+
+    lines = help_text.split(marker, 1)[1].splitlines()
+    examples: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index].strip()
+        index += 1
+        if line != "observal" and not line.startswith("observal "):
+            continue
+        parts = [line]
+        while parts[-1].endswith("\\") and index < len(lines):
+            parts[-1] = parts[-1][:-1].rstrip()
+            parts.append(lines[index].strip())
+            index += 1
+        examples.append(" ".join(parts))
+    return examples
+
+
+def _parse_without_invoking(command, args: list[str], parent=None) -> None:
+    """Parse a command chain without invoking command callbacks."""
+    ctx = command.make_context(command.name or "observal", args, parent=parent)
+    try:
+        if isinstance(command, Group):
+            protected = list(getattr(ctx, "_protected_args", ()))
+            remaining = [*protected, *ctx.args]
+            if remaining:
+                _, child, child_args = command.resolve_command(ctx, remaining)
+                _parse_without_invoking(child, child_args, parent=ctx)
+    finally:
+        ctx.close()
+
+
+def _assert_example_parses(command, path: str, example: str) -> None:
+    tokens = shlex.split(example, comments=True)
+    prefix = shlex.split(path)
+    args = tokens[len(prefix) :]
+    for operator in ("|", ">", ">>"):
+        if operator in args:
+            args = args[: args.index(operator)]
+    _parse_without_invoking(command, args)
+
+
+def test_every_cli_help_screen_has_copyable_examples():
+    for path, command in _command_tree(get_command(app)):
+        examples = _help_examples(command.help or "")
+        assert 1 <= len(examples) <= 3, path
+        assert all(example == path or example.startswith(f"{path} ") for example in examples), path
+        for example in examples:
+            _assert_example_parses(command, path, example)
+
+
+@pytest.mark.parametrize("component", ["mcp", "skill", "hook", "sandbox"])
+def test_submit_rejects_removed_example_flag(component):
+    with patch("observal_cli.client.post") as post:
+        result = runner.invoke(app, ["registry", component, "submit", "--example"])
+
+    assert result.exit_code == 2
+    assert "No such option" in result.output
+    post.assert_not_called()
 
 
 def test_skill_submit_flags_post_payload(tmp_path):

@@ -1,166 +1,82 @@
 <!-- SPDX-FileCopyrightText: 2026 Gokulkrishnan <gokulkri247@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# observal prompt
+# `observal registry prompt`
 
-Manage reusable prompts in the registry.
+Manage reusable prompt templates in the Registry. Prompts can be submitted, listed, rendered, edited, archived, restored, transferred, and shared with co-authors. Standalone prompt installation has been removed; attach prompts to agents instead.
 
-Prompts are reusable templates that can be rendered with variables, installed into supported harnesses, and shared through the Observal registry.
-
-## Subcommands
+## Commands
 
 | Command | Description |
 | --- | --- |
-| [`prompt submit`](#observal-prompt-submit) | Submit a new prompt for review |
-| [`prompt list`](#observal-prompt-list) | List approved prompts |
-| [`prompt my`](#observal-prompt-my) | List your own prompts |
-| [`prompt show`](#observal-prompt-show) | Show prompt details |
-| [`prompt render`](#observal-prompt-render) | Render a prompt template with variables |
-| [`prompt install`](#observal-prompt-install) | Get install config for a prompt |
-| [`prompt edit`](#observal-prompt-edit) | Edit an existing prompt |
+| `submit` | Submit a prompt or save a draft |
+| `list` | List approved visible prompts |
+| `my` | List your prompts across all statuses |
+| `show` | Show one prompt and its template |
+| `render` | Render a prompt with variables |
+| `edit` | Edit a draft, pending, or rejected prompt |
+| `archive` | Archive an approved prompt |
+| `unarchive` | Restore an archived prompt |
+| `transfer-owner` | Transfer ownership |
+| `co-authors` | List, add, or remove co-authors |
 
----
+All structured commands support table and JSON output.
 
-## `observal prompt submit`
-
-Submit a new prompt to the registry for review and approval.
-
-### Synopsis
-
-```bash
-observal prompt submit
-```
-
-### Options
-
-| Option | Description |
-| --- | --- |
-| `--from-file`, `-f` | Load prompt content from a file |
-| `--draft` | Save prompt as draft |
-| `--submit` | Submit prompt directly for review |
-
-Prompts can include template variables and metadata that allow them to be reused across agents and harness integrations.
-
----
-
-## `observal prompt list`
-
-List all approved prompts available in the registry.
-
-### Synopsis
+## Submit
 
 ```bash
-observal prompt list
+observal registry prompt submit \
+  --name review \
+  --description "Review code" \
+  --category code-review \
+  --template "Review {{code}}" \
+  --output json
+
+observal registry prompt submit --from-file prompt.json --output json
+observal registry prompt submit --submit acme/review --output json
 ```
 
-### Options
+JSON mode never prompts. A plain template file requires explicit name, description, and category options. A JSON file may contain the complete payload.
 
-| Option | Description |
-| --- | --- |
-| `--category`, `-c` | Filter prompts by category |
-| `--search`, `-s` | Search prompts by keyword |
-| `--output`, `-o` | Output format |
+Valid categories are `system-prompt`, `code-review`, `code-generation`, `testing`, `documentation`, `debugging`, and `general`.
 
-Use this command to browse reusable prompts published by the community.
-
----
-
-## `observal prompt my`
-
-List prompts created by the authenticated user, including drafts and pending submissions.
-
-### Synopsis
+## List and show
 
 ```bash
-observal prompt my
+observal registry prompt list --category code-review --output json
+observal registry prompt my --output json
+observal registry prompt show acme/review --output json
 ```
 
-### Options
+Row numbers are scoped to the latest Prompt list. Empty Prompt lists clear previous Prompt row references. Human output escapes template text so bracketed content is rendered literally.
 
-| Option | Description |
-| --- | --- |
-| `--output`, `-o` | Output format |
-
-Useful for managing your own prompt submissions and checking review status.
-
----
-
-## `observal prompt show`
-
-Display detailed information about a specific prompt.
-
-### Synopsis
+## Render
 
 ```bash
-observal prompt show <id-or-name>
+observal registry prompt render acme/review --var code=main.py --output json
 ```
 
-Shows metadata, template variables, author information, and installation details.
+Every variable must use `key=value` syntax with a non-empty key. JSON returns the direct server result. Human output prints the rendered prompt as literal text.
 
----
-
-## `observal prompt render`
-
-Render a prompt template using variables.
-
-### Synopsis
+## Edit
 
 ```bash
-observal prompt render <id-or-name> --var language=python
+observal registry prompt edit acme/review --description "Updated" --output json
+observal registry prompt edit acme/review --from-file updates.json --output json
 ```
 
-### Options
+Invalid categories, versions, files, and edit-lock conflicts preserve their shared error category and stable exit code.
 
-| Option | Description |
-| --- | --- |
-| `--var`, `-v` | Pass template variables |
+## Agent usage
 
-Use this command to preview the final rendered prompt before installation or usage.
-
----
-
-## `observal prompt install`
-
-Get installation configuration for a prompt.
-
-### Synopsis
+Prompts are agent components rather than standalone harness installations:
 
 ```bash
-observal prompt install <id-or-name> --harness vscode [--raw]
+observal agent add prompt <prompt-uuid>
+observal agent build
 ```
 
-### Options
+## Related
 
-| Option | Description |
-| --- | --- |
-| `--harness`, `-i` | Target harness for installation |
-| `--raw` | Output raw configuration |
-
-This command outputs configuration snippets that can be used in supported harnesses and agent workflows.
-
----
-
-## `observal prompt edit`
-
-Edit an existing draft, pending, or rejected prompt.
-
-### Synopsis
-
-```bash
-observal prompt edit <id-or-name>
-```
-
-### Options
-
-| Option | Description |
-| --- | --- |
-| `--from-file`, `-f` | Load prompt content from a file |
-| `--name`, `-n` | Update prompt name |
-| `--description`, `-d` | Update prompt description |
-| `--version`, `-v` | Update prompt version |
-| `--category`, `-c` | Update prompt category |
-| `--template`, `-t` | Update prompt template |
-
-Allows updating metadata, variables, descriptions, and prompt content before approval.
-
----
+* [`observal registry`](registry.md): complete Registry reference
+* [`observal agent`](agent.md): compose and publish agents

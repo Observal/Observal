@@ -173,12 +173,39 @@ def test_permanent_rejection_is_quarantined_without_blocking_later_sessions(tmp_
             raise base.PermanentIngestRejectionError(422)
         return {"acknowledged_line": 0, "acknowledged_offset": len("valid")}
 
-    assert base.drain_outbox(config(), home=tmp_path, db_path=db, post=post)
+    rejections = []
+    assert base.drain_outbox(config(), home=tmp_path, db_path=db, post=post, rejections=rejections)
+    assert rejections == [("claude-code", "bad", 422)]
     assert telemetry_buffer.pending(destination="http://server", user_id="user", db_path=db) == []
     assert telemetry_buffer.stats(db_path=db)["failed"] == 1
     rejected = json.loads(db.with_suffix(".rejected.jsonl").read_text())
     assert rejected["session_id"] == "bad"
     assert rejected["reason"].endswith("status 422")
+
+
+def test_reconcile_delivery_reports_rejection_without_advancing_cursor(tmp_path: Path, monkeypatch):
+    disable_payload_metadata(monkeypatch)
+    source_path = tmp_path / "session.jsonl"
+    source_path.write_text('{"role":"user"}\n')
+    source = SessionSource("kiro", "bad", source_path)
+    db = tmp_path / "outbox.db"
+    rejections = []
+
+    delivered = base.drain_session_source(
+        source,
+        config(),
+        hook_event="Reconcile",
+        final=True,
+        home=tmp_path,
+        db_path=db,
+        post=lambda _payload, _config: (_ for _ in ()).throw(base.PermanentIngestRejectionError(422)),
+        rejections=rejections,
+    )
+
+    assert delivered is False
+    assert rejections == [("kiro", "bad", 422)]
+    assert base.read_cursor(source.checkpoint_key, home=tmp_path) == (0, 0)
+    assert telemetry_buffer.pending(destination="http://server", user_id="user", db_path=db) == []
 
 
 def test_spool_only_never_blocks_hook_on_network(tmp_path: Path, monkeypatch):

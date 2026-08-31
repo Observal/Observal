@@ -1,145 +1,123 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# observal self
+# `observal self`
 
-Manage the CLI binary itself: upgrade, downgrade, rollback, and check status.
+Inspect or change the installed CLI version.
 
-## Subcommands
+All four workflows support `--output table|json`. JSON upgrade, downgrade, and rollback require `--force` and never prompt.
 
-| Command | Description |
+## Commands
+
+| Command | Purpose |
 | --- | --- |
-| [`self upgrade`](#observal-self-upgrade) | Upgrade to the latest CLI version |
-| [`self downgrade`](#observal-self-downgrade) | Downgrade to a specific older version |
-| [`self rollback`](#observal-self-rollback) | Restore the version before the last upgrade/downgrade |
-| [`self status`](#observal-self-status) | Show version, install method, and update availability |
+| `upgrade` | Install the latest or a specified newer CLI release |
+| `downgrade` | List releases or install an older release |
+| `rollback` | Restore the standalone binary saved before the last version change |
+| `status` | Show current version, install method, and update availability |
 
----
+The destructive uninstall workflow has been removed.
 
-## `observal self upgrade`
-
-Upgrade the CLI to the latest (or a specified) version from GitHub Releases. Downloads the binary, verifies its SHA-256 checksum, and atomically replaces the current binary. A backup is kept for rollback.
+## Status
 
 ```bash
-observal self upgrade
-observal self upgrade --version 0.9.0
-observal self upgrade --pre
-observal self upgrade --force
+observal self status --output json
 ```
 
-| Option | Short | Default | Description |
-| --- | --- | --- | --- |
-| `--version` | `-v` | latest stable | Target version (e.g. 0.9.0) |
-| `--pre` | | false | Include pre-release versions when resolving latest |
-| `--force` | `-f` | false | Skip interactive confirmation |
+JSON returns:
 
-**Managed installs:** If Observal was installed via Homebrew or a system package manager, the command detects this and tells you to upgrade through that manager instead.
-
-**Concurrency safety:** An upgrade lock prevents two CLI processes from upgrading simultaneously. Stale locks (from crashed processes) are automatically detected and cleaned up after 30 minutes.
-
-After upgrade:
-
-```
-✓ Upgraded to v0.9.0
-  Backup saved: ~/.observal/bin/observal.prev
+```json
+{
+  "current_version": "2.4.0",
+  "install_method": "uv_tool",
+  "path": "/home/user/.local/bin/observal",
+  "writable": true,
+  "managed_by": "uv",
+  "github_available": true,
+  "latest_version": "2.5.0",
+  "update_available": true
+}
 ```
 
----
+The command always checks GitHub. An unreachable GitHub service remains a successful local status result with `github_available: false`, `latest_version: null`, and `update_available: null`.
 
-## `observal self downgrade`
+## Upgrade
 
-Downgrade the CLI to a specific older version. Warns if the target version is below the server's minimum supported CLI version.
+Install the latest stable release:
 
 ```bash
-observal self downgrade --version 0.7.0
-observal self downgrade --list
-observal self downgrade --version 0.7.0 --force
+observal self upgrade --force --output json
 ```
 
-| Option | Short | Default | Description |
-| --- | --- | --- | --- |
-| `--version` | `-v` | (required) | Target version to downgrade to |
-| `--list` | `-l` | false | List all available versions with compatibility status |
-| `--force` | `-f` | false | Skip confirmation and MIN_CLI_VERSION warning |
-
-**Version listing** (`--list`) shows all GitHub releases with their publication dates and whether they're compatible with your connected server:
-
-```
-         Available Versions
-┌─────────┬────────────┬────────────────────────┐
-│ Version │ Published  │ Status                 │
-├─────────┼────────────┼────────────────────────┤
-│ 0.9.0   │ 2026-05-20 │ ← current              │
-│ 0.8.0   │ 2026-05-01 │                        │
-│ 0.7.0   │ 2026-04-15 │ (server minimum)       │
-│ 0.6.0   │ 2026-04-01 │ ⚠ below server minimum │
-└─────────┴────────────┴────────────────────────┘
-```
-
-**MIN_CLI_VERSION check:** If the connected server advertises a minimum CLI version and your target is below it, you'll see a warning that API calls may fail. Use `--force` to proceed anyway.
-
----
-
-## `observal self rollback`
-
-Restore the CLI to the version you had before the last upgrade or downgrade. Copies the backed-up binary over the current one.
+Install a specific release:
 
 ```bash
-observal self rollback
+observal self upgrade --version 2.5.0 --force --output json
 ```
 
-Only available for binary installs. If Observal is managed by Homebrew or a package manager, you'll need to install the previous version explicitly through that tool.
-
----
-
-## `observal self status`
-
-Show the current CLI version, how it was installed, and whether an update is available.
+Include prereleases when resolving the latest version:
 
 ```bash
-observal self status
+observal self upgrade --pre --force --output json
 ```
 
-Output:
+A completed JSON result contains the prior version, target version, install method, and executable path. When the current version already matches the target, status is `up_to_date` and no installation occurs.
 
-```
-  Version:  v0.8.0
-  Install:  binary (~/.local/bin/observal)
-  Latest:   v0.9.0 (update available)
+The command rejects invalid versions and targets older than the current version. Homebrew and system-package installations must be upgraded through their package manager.
 
-  Run: observal self upgrade
+## Downgrade
 
-  Server minimum: v0.7.0
-```
+List available releases:
 
-Always checks GitHub for the latest version (ignores `OBSERVAL_NO_UPDATE_CHECK`).
-
----
-
-## Version negotiation
-
-The CLI and server negotiate feature availability based on their respective versions. When the CLI connects to the server:
-
-1. The CLI sends its version via the `X-Observal-CLI-Version` header
-2. The server responds with its version and minimum CLI requirement
-3. The effective version is `min(cli_version, server_version)`
-4. Features are gated based on the effective version
-
-This means upgrading either side independently is safe: you just won't get new features until both sides support them. Downgrading below the server's minimum CLI version will cause API calls to fail.
-
-## Update banner
-
-When running any CLI command, a non-blocking background check queries GitHub for the latest release. If a newer version is available, a banner appears at the bottom of the output:
-
-```
-Update available: v0.8.0 → v0.9.0 • observal self upgrade
+```bash
+observal self downgrade --list --output json
 ```
 
-The banner is suppressed in CI environments, non-TTY output, and during `self` or `server` commands. This check runs at most once every 24 hours and never blocks the command. Disable with `OBSERVAL_NO_UPDATE_CHECK=1`.
+JSON returns `current_version` and release `items`, each with a `current` boolean.
 
----
+Install an older release:
+
+```bash
+observal self downgrade --version 2.4.0 --force --output json
+```
+
+`--list` and `--version` are mutually exclusive. The target must be older than the current version and at least the CLI version floor. Homebrew and system-package installations must use their package manager.
+
+Releases before 1.10.4 are pinned by disabling their legacy automatic-update setting. The JSON result reports this as `automatic_updates_disabled`.
+
+## Rollback
+
+```bash
+observal self rollback --force --output json
+```
+
+Rollback is available only for standalone binary installations with `~/.observal/bin/observal.prev`. It acquires the same version-change lock as upgrade and downgrade, copies the backup to a temporary file, restores executable permissions, and atomically replaces the current binary.
+
+Package-managed installations must install their previous version through the package manager.
+
+## Installation safety
+
+Upgrade and downgrade:
+
+1. Acquire a process lock so version changes cannot overlap.
+2. Use the detected installation method.
+3. Verify standalone binary downloads against the published SHA-256 checksum.
+4. Replace standalone binaries atomically and retain the previous binary for rollback.
+5. Execute the installed binary and verify that it reports the requested version.
+
+Human mode may explicitly confirm an unsigned binary. JSON mode never prompts and refuses standalone installation when the release has no published checksum.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| 5 | Rollback backup not found |
+| 6 | Package-managed install or another version change holds the lock |
+| 7 | Invalid version, direction, conflicting mode, or missing `--force` in JSON mode |
+| 9 | GitHub, download, installer, checksum, verification, or filesystem failure |
 
 ## Related
 
-* [`observal server`](server.md) for server-side upgrades (separate from CLI)
-* [Environment variables](../reference/environment-variables.md) for `OBSERVAL_NO_UPDATE_CHECK`
+* [`observal server`](server.md): manage server stack versions separately
+* [Upgrades](../self-hosting/upgrades.md): server and CLI upgrade procedures
+* [Environment variables](../reference/environment-variables.md): update-check settings

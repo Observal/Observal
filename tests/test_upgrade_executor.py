@@ -88,8 +88,8 @@ def test_execute_selects_installer_then_verifies(
     info = install_info(method)
     spinner = RecordingSpinner()
 
-    def install(*args: object) -> None:
-        events.append(("install", args))
+    def install(*args: object, **kwargs: object) -> None:
+        events.append(("install", args, kwargs))
 
     def verify(*args: object) -> None:
         events.append(("verify", args))
@@ -109,8 +109,9 @@ def test_execute_selects_installer_then_verifies(
             spinner,
         )
     )
+    installer_kwargs = {"interactive": True} if method == InstallMethod.BINARY else {}
     assert events == [
-        ("install", installer_args),
+        ("install", installer_args, installer_kwargs),
         ("verify", (info, "2.4.1", "upgrade")),
     ]
 
@@ -312,8 +313,8 @@ def test_binary_install_resolves_platform_and_runs_stages_in_order(
         events.append(("download", url, actual_spinner, name))
         return b"new binary"
 
-    def verify(content: bytes, checksums: dict[str, str], name: str) -> None:
-        events.append(("verify", content, checksums, name))
+    def verify(content: bytes, checksums: dict[str, str], name: str, *, interactive: bool = True) -> None:
+        events.append(("verify", content, checksums, name, interactive))
 
     def replace(
         actual_info: InstallInfo,
@@ -344,7 +345,7 @@ def test_binary_install_resolves_platform_and_runs_stages_in_order(
         "release json",
         ("checksums", assets),
         ("download", artifact_url, spinner, artifact_name),
-        ("verify", b"new binary", {artifact_name: "digest"}, artifact_name),
+        ("verify", b"new binary", {artifact_name: "digest"}, artifact_name, True),
         ("replace", info, b"new binary", "2.4.1", system.lower(), suffix),
     ]
 
@@ -589,6 +590,24 @@ def test_verify_checksum_requires_explicit_consent_when_missing(
 
     confirm.assert_called_once_with("Install without verification?", default=False)
     assert messages == ["[yellow]No checksum available for verification.[/yellow]"]
+
+
+def test_verify_checksum_rejects_missing_checksum_without_prompt(
+    messages: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    confirm = MagicMock(side_effect=blocked("typer.confirm"))
+    monkeypatch.setattr(executor.typer, "confirm", confirm)
+
+    with pytest.raises(typer.Exit) as error:
+        executor._verify_checksum(b"unsigned", {}, "artifact", interactive=False)
+
+    assert error.value.exit_code == 1
+    confirm.assert_not_called()
+    assert messages == [
+        "[yellow]No checksum available for verification.[/yellow]",
+        "[red]Non-interactive installation requires a published checksum.[/red]",
+    ]
 
 
 def test_replace_binary_backs_up_and_atomically_replaces_in_order(

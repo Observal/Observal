@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import json
 from contextlib import nullcontext
 from io import StringIO
 from pathlib import Path
@@ -12,11 +13,17 @@ from types import SimpleNamespace
 
 import pytest
 import typer
+from click import Group
 from rich.console import Console
+from typer.main import get_command
+from typer.testing import CliRunner
 
 from observal_cli import cmd_ops as ops
 from observal_cli.install_detector import InstallInfo, InstallMethod
+from observal_cli.main import app as cli_app
 from observal_cli.upgrade_lock import UpgradeLockError
+
+runner = CliRunner()
 
 
 class FakeConsole:
@@ -50,11 +57,14 @@ def cli(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     monkeypatch.setattr(ops, "console", fake_console)
     monkeypatch.setattr(ops, "spinner", lambda *args, **kwargs: nullcontext())
     monkeypatch.setattr(ops, "relative_time", lambda value: f"relative:{value}")
-    monkeypatch.setattr(ops.config, "resolve_alias", lambda value: value)
-    monkeypatch.setattr(ops.config, "save_last_results", saved_results.append)
+    monkeypatch.setattr(ops.config, "resolve_alias", lambda value, expected_type=None: value)
+    monkeypatch.setattr(
+        ops.config,
+        "save_last_results",
+        lambda items, item_type=None: saved_results.append((items, item_type)),
+    )
     monkeypatch.setattr(ops, "password_input", blocked("password_input"))
     monkeypatch.setattr(ops.typer, "confirm", blocked("confirm"))
-    monkeypatch.setattr(ops.time, "sleep", blocked("sleep"))
     for method in ("get", "get_text", "post", "put", "delete"):
         monkeypatch.setattr(ops.client, method, blocked(f"client.{method}"))
 
@@ -108,7 +118,7 @@ def test_review_list_filters_caches_and_renders_rows(cli, monkeypatch):
     ops.review_list("mcp", "components", "table")
 
     assert calls == [("/api/v1/review", {"type": "mcp", "tab": "components"})]
-    assert cli.saved == [reviews]
+    assert cli.saved == [(reviews, "review")]
     table = cli.console.renderables[0]
     assert table.title == "Pending Reviews (2)"
     assert table.columns[1]._cells == ["mcp", "agent"]
@@ -132,6 +142,7 @@ def test_review_list_supports_json_and_empty_results(cli, monkeypatch):
 
     assert calls == [("/api/v1/review", None), ("/api/v1/review", None)]
     assert cli.json == [[{"id": "one"}]]
+    assert cli.saved == [([{"id": "one"}], "review"), ([], "review")]
     assert "No pending reviews" in cli.text()
 
 
@@ -155,7 +166,7 @@ def test_review_show_resolves_and_renders_validation_details(cli, monkeypatch):
         ],
     }
     calls = []
-    monkeypatch.setattr(ops.config, "resolve_alias", lambda value: f"resolved-{value}")
+    monkeypatch.setattr(ops.config, "resolve_alias", lambda value, expected_type=None: f"resolved-{value}")
     monkeypatch.setattr(ops.client, "get", lambda path: calls.append(path) or item)
 
     ops.review_show("1", "table")
@@ -207,8 +218,8 @@ def test_review_reject_rejects_blank_reasons(cli):
     with pytest.raises(typer.Exit) as exc_info:
         ops.review_reject("item", "   ", False, False)
 
-    assert exc_info.value.exit_code == 1
-    assert "cannot be empty" in cli.text()
+    assert exc_info.value.exit_code == 7
+    assert "1 to 5,000 characters" in cli.text()
 
 
 @pytest.mark.parametrize(
@@ -276,101 +287,8 @@ def test_telemetry_status_tolerates_unavailable_local_stats(cli, monkeypatch):
     ops.telemetry_status()
 
     assert "unknown" in cli.text()
-    assert "Durable Session Outbox" not in cli.text()
-
-
-def test_telemetry_test_posts_a_synthetic_tool_call(cli, monkeypatch):
-    calls = []
-    monkeypatch.setattr(ops.client, "post", lambda path, body: calls.append((path, body)) or {"ingested": 1})
-
-    ops.telemetry_test()
-
-    assert calls[0][0] == "/api/v1/telemetry/events"
-    assert calls[0][1]["tool_calls"] == [
-        {
-            "mcp_server_id": "test-mcp",
-            "tool_name": "test_tool",
-            "status": "success",
-            "latency_ms": 42,
-            "harness": "test",
-        }
-    ]
-    assert "Ingested: 1" in cli.text()
-
-
-def test_metrics_renders_agent_metrics_and_resolves_alias(cli, monkeypatch):
-    calls = []
-    monkeypatch.setattr(ops.config, "resolve_alias", lambda value: "agent-id")
-    monkeypatch.setattr(
-        ops.client,
-        "get",
-        lambda path: (
-            calls.append(path)
-            or {
-                "total_interactions": 12,
-                "total_downloads": 9,
-                "acceptance_rate": 0.8,
-                "avg_tool_calls": 2.5,
-                "avg_latency_ms": 19.6,
-            }
-        ),
-    )
-
-    ops._metrics("alias", "agent", "table", False)
-    ops._metrics_impl("alias", "agent", "json", False)
-
-    assert calls == ["/api/v1/agents/agent-id/metrics", "/api/v1/agents/agent-id/metrics"]
-    assert cli.json == [
-        {
-            "total_interactions": 12,
-            "total_downloads": 9,
-            "acceptance_rate": 0.8,
-            "avg_tool_calls": 2.5,
-            "avg_latency_ms": 19.6,
-        }
-    ]
-    output = cli.text()
-    assert "Interactions:   12" in output
-    assert "Downloads:      9" in output
-    assert "Acceptance:     [green]80.0%" in output
-    assert "Avg latency:    20ms" in output
-
-
-def test_metrics_renders_mcp_metrics_and_supports_json(cli, monkeypatch):
-    responses = [
-        {
-            "total_downloads": 4,
-            "total_calls": 10,
-            "error_rate": 0.02,
-            "avg_latency_ms": 7.8,
-            "p50_latency_ms": 3,
-            "p90_latency_ms": 8,
-            "p99_latency_ms": 20,
-        },
-        {"total_calls": 11},
-    ]
-    calls = []
-    monkeypatch.setattr(ops.client, "get", lambda path: calls.append(path) or responses.pop(0))
-
-    ops._metrics_impl("mcp-id", "mcp", "table", False)
-    ops._metrics_impl("mcp-id", "mcp", "json", False)
-
-    assert calls == ["/api/v1/mcps/mcp-id/metrics", "/api/v1/mcps/mcp-id/metrics"]
-    assert "Total calls: 10" in cli.text()
-    assert "Error rate:  [yellow]2.00%" in cli.text()
-    assert "Latency p50/p90/p99: 3/8/20ms" in cli.text()
-    assert cli.json == [{"total_calls": 11}]
-
-
-def test_metrics_watch_refreshes_until_interrupted(cli, monkeypatch):
-    monkeypatch.setattr(ops.client, "get", lambda path: {"total_calls": 1})
-    monkeypatch.setattr(ops.time, "sleep", raises(KeyboardInterrupt()))
-
-    ops._metrics_impl("mcp-id", "mcp", "table", True)
-
-    assert cli.console.clear_count == 1
-    assert "Watching metrics for mcp-id" in cli.text()
-    assert "Stopped" in cli.text()
+    assert "Durable Session Outbox" in cli.text()
+    assert "Unavailable" in cli.text()
 
 
 def test_top_renders_tables_json_and_empty_states(cli, monkeypatch):
@@ -415,26 +333,29 @@ def test_rate_accepts_uuid_without_lookup(cli, monkeypatch):
     assert "Rated" in cli.text()
 
 
-@pytest.mark.parametrize(
-    ("listing_type", "endpoint"),
-    [("agent", "/api/v1/agents/builder"), ("skill", "/api/v1/skills/builder")],
-)
-def test_resolve_listing_id_looks_up_non_uuid_names(cli, monkeypatch, listing_type, endpoint):
+@pytest.mark.parametrize("listing_type", ["agent", "skill"])
+def test_resolve_listing_id_looks_up_non_uuid_names(cli, monkeypatch, listing_type):
     calls = []
-    monkeypatch.setattr(ops.client, "get", lambda path: calls.append(path) or {"id": "resolved-id"})
+    monkeypatch.setattr(ops.client, "resolve_registry_reference", lambda item_type, value: "builder")
+
+    def get(path, params=None):
+        calls.append((path, params))
+        return {"id": "resolved-id"}
+
+    monkeypatch.setattr(ops.client, "get", get)
 
     assert ops._resolve_listing_id("builder", listing_type) == "resolved-id"
-    assert calls == [endpoint]
+    assert calls == [
+        ("/api/v1/registry/resolve", {"type": listing_type, "identifier": "builder"}),
+    ]
 
 
-def test_resolve_listing_id_reports_lookup_failures(cli, monkeypatch):
+def test_resolve_listing_id_propagates_lookup_failures(cli, monkeypatch):
+    monkeypatch.setattr(ops.client, "resolve_registry_reference", lambda item_type, value: "missing")
     monkeypatch.setattr(ops.client, "get", raises(RuntimeError("missing")))
 
-    with pytest.raises(typer.Exit) as exc_info:
+    with pytest.raises(RuntimeError, match="missing"):
         ops._resolve_listing_id("missing", "prompt")
-
-    assert exc_info.value.exit_code == 1
-    assert "Could not find prompt named 'missing'" in cli.text()
 
 
 def test_rate_update_fetches_the_review_and_only_sends_supplied_fields(cli, monkeypatch):
@@ -459,8 +380,8 @@ def test_rate_update_requires_at_least_one_change(cli, monkeypatch):
     with pytest.raises(typer.Exit) as exc_info:
         ops._rate_update(listing_id, "mcp", None, None, None)
 
-    assert exc_info.value.exit_code == 1
-    assert "Nothing to update" in cli.text()
+    assert exc_info.value.exit_code == 7
+    assert "No feedback changes were provided" in cli.text()
 
 
 def test_rate_delete_fetches_then_deletes_the_review(cli, monkeypatch):
@@ -469,7 +390,7 @@ def test_rate_delete_fetches_then_deletes_the_review(cli, monkeypatch):
     monkeypatch.setattr(ops.client, "get", lambda path: calls.append(("get", path)) or {"id": "review-id"})
     monkeypatch.setattr(ops.client, "delete", lambda path: calls.append(("delete", path)))
 
-    ops._rate_delete(listing_id, "mcp")
+    ops._rate_delete(listing_id, "mcp", yes=True)
 
     assert calls == [
         ("get", f"/api/v1/feedback/mine/mcp/{listing_id}"),
@@ -489,9 +410,10 @@ def test_feedback_renders_summary_and_review_comments(cli, monkeypatch):
 
     monkeypatch.setattr(ops.client, "get", fake_get)
 
-    ops._feedback("item", "mcp", "table")
+    listing_id = "11111111-1111-1111-1111-111111111111"
+    ops._feedback(listing_id, "mcp", "table")
 
-    assert calls == ["/api/v1/feedback/mcp/item", "/api/v1/feedback/summary/item"]
+    assert calls == [f"/api/v1/feedback/mcp/{listing_id}", f"/api/v1/feedback/summary/{listing_id}"]
     assert "[bold]4.4[/bold]/5 (2 reviews)" in cli.text()
     assert "great" in cli.text()
 
@@ -507,8 +429,9 @@ def test_feedback_supports_json_and_empty_results(cli, monkeypatch):
     )
     monkeypatch.setattr(ops.client, "get", lambda path: next(responses))
 
-    ops._feedback_impl("item", "agent", "json")
-    ops._feedback_impl("item", "agent", "table")
+    listing_id = "11111111-1111-1111-1111-111111111111"
+    ops._feedback_impl(listing_id, "agent", "json")
+    ops._feedback_impl(listing_id, "agent", "table")
 
     assert cli.json == [{"summary": {"average_rating": 4, "total_reviews": 1}, "reviews": [{"rating": 4}]}]
     assert "No feedback yet" in cli.text()
@@ -537,18 +460,24 @@ def test_admin_settings_handles_table_json_and_empty_states(cli, monkeypatch):
 
 def test_admin_set_updates_the_named_setting(cli, monkeypatch):
     calls = []
-    monkeypatch.setattr(ops.client, "put", lambda path, body: calls.append((path, body)))
+    monkeypatch.setattr(
+        ops.client,
+        "put",
+        lambda path, body: calls.append((path, body)) or {"key": "retention", "value": "90"},
+    )
 
     ops.admin_set("retention", "90")
 
     assert calls == [("/api/v1/admin/settings/retention", {"value": "90"})]
-    assert "retention = 90" in cli.text()
+    assert "Updated retention" in cli.text()
+    assert "90" not in cli.text()
 
 
 def test_admin_users_renders_all_roles_and_supports_json(cli, monkeypatch):
     users = [
+        {"id": "super-id", "email": "s@example.test", "name": "S", "role": "super_admin"},
         {"id": "admin-id", "email": "a@example.test", "name": "A", "role": "admin"},
-        {"id": "developer-id", "email": "d@example.test", "name": "D", "role": "developer"},
+        {"id": "reviewer-id", "email": "r@example.test", "name": "R", "role": "reviewer"},
         {"id": "user-id", "email": "u@example.test", "name": "U", "role": "user"},
     ]
     monkeypatch.setattr(ops.client, "get", lambda path: users)
@@ -557,9 +486,19 @@ def test_admin_users_renders_all_roles_and_supports_json(cli, monkeypatch):
     ops.admin_users("json")
 
     table = cli.console.renderables[0]
-    assert table.title == "Users (3)"
-    assert table.columns[1]._cells == ["a@example.test", "d@example.test", "u@example.test"]
-    assert table.columns[3]._cells == ["[green]admin[/green]", "[cyan]developer[/cyan]", "[white]user[/white]"]
+    assert table.title == "Users (4)"
+    assert table.columns[1]._cells == [
+        "s@example.test",
+        "a@example.test",
+        "r@example.test",
+        "u@example.test",
+    ]
+    assert table.columns[3]._cells == [
+        "[magenta]super_admin[/magenta]",
+        "[green]admin[/green]",
+        "[cyan]reviewer[/cyan]",
+        "[white]user[/white]",
+    ]
     assert cli.json == [users]
 
 
@@ -610,7 +549,7 @@ def test_admin_reset_password_reports_missing_users(cli, monkeypatch):
     with pytest.raises(typer.Exit) as exc_info:
         ops.admin_reset_password("missing@example.test", True)
 
-    assert exc_info.value.exit_code == 1
+    assert exc_info.value.exit_code == 5
     assert "User not found" in cli.text()
 
 
@@ -648,7 +587,7 @@ def test_admin_reset_password_validates_interactive_confirmation(cli, monkeypatc
     with pytest.raises(typer.Exit) as exc_info:
         ops.admin_reset_password("alice@example.test", False)
 
-    assert exc_info.value.exit_code == 1
+    assert exc_info.value.exit_code == 7
     assert "Passwords do not match" in cli.text()
 
 
@@ -677,7 +616,7 @@ def test_admin_delete_user_reports_missing_users(cli, monkeypatch):
     with pytest.raises(typer.Exit) as exc_info:
         ops.admin_delete_user("missing@example.test", True)
 
-    assert exc_info.value.exit_code == 1
+    assert exc_info.value.exit_code == 5
     assert "User not found" in cli.text()
 
 
@@ -741,7 +680,7 @@ def test_admin_saml_config_handles_unconfigured_json_and_configured_values(cli, 
         "idp_sso_url": "https://idp.test/sso",
         "idp_slo_url": None,
         "sp_entity_id": "sp",
-        "saml_active": True,
+        "active": True,
         "jit_provisioning": False,
     }
     responses = iter([{}, configured, configured])
@@ -754,7 +693,7 @@ def test_admin_saml_config_handles_unconfigured_json_and_configured_values(cli, 
     output = cli.text()
     assert "SAML SSO is not configured" in output
     assert "idp_entity_id: idp" in output
-    assert "saml_active: [green]Yes" in output
+    assert "active: [green]Yes" in output
     assert "jit_provisioning: [red]No" in output
     assert cli.json == [configured]
 
@@ -774,7 +713,7 @@ def test_admin_saml_config_set_sends_all_supplied_values(cli, monkeypatch):
         (
             "/api/v1/admin/saml-config",
             {
-                "saml_active": True,
+                "active": True,
                 "jit_provisioning": False,
                 "idp_entity_id": "idp",
                 "idp_sso_url": "https://idp.test/sso",
@@ -851,11 +790,12 @@ def test_admin_scim_token_revoke_confirms_and_deletes(cli, monkeypatch):
     monkeypatch.setattr(ops.typer, "confirm", lambda prompt, abort: confirmations.append((prompt, abort)))
     monkeypatch.setattr(ops.client, "delete", calls.append)
 
-    ops.admin_scim_token_revoke("abcdefgh-1234", False)
+    token_id = "11111111-1111-1111-1111-111111111111"
+    ops.admin_scim_token_revoke(token_id, False)
 
-    assert confirmations == [("Revoke SCIM token abcdefgh...?", True)]
-    assert calls == ["/api/v1/admin/scim-tokens/abcdefgh-1234"]
-    assert "abcdefgh... revoked" in cli.text()
+    assert confirmations == [("Revoke SCIM token 11111111...?", True)]
+    assert calls == [f"/api/v1/admin/scim-tokens/{token_id}"]
+    assert "11111111... revoked" in cli.text()
 
 
 def test_admin_security_events_encodes_filters_and_renders_event_styles(cli, monkeypatch):
@@ -878,12 +818,21 @@ def test_admin_security_events_encodes_filters_and_renders_event_styles(cli, mon
         {"event_type": "view", "severity": "info", "outcome": "unknown", "detail": None},
         {"event_type": "other", "severity": "custom", "outcome": "other"},
     ]
-    monkeypatch.setattr(ops.client, "get", lambda path: calls.append(path) or {"events": events})
+    monkeypatch.setattr(ops.client, "get", lambda path, params=None: calls.append((path, params)) or {"events": events})
 
     ops.admin_security_events("login", "critical", "alice@example.test", 25, "table")
 
     assert calls == [
-        "/api/v1/admin/security-events?limit=25&event_type=login&severity=critical&actor_email=alice%40example.test"
+        (
+            "/api/v1/admin/security-events",
+            {
+                "limit": 25,
+                "offset": 0,
+                "event_type": "login",
+                "severity": "critical",
+                "actor_email": "alice@example.test",
+            },
+        )
     ]
     table = cli.console.renderables[0]
     assert table.title == "Security Events (4)"
@@ -904,7 +853,7 @@ def test_admin_security_events_encodes_filters_and_renders_event_styles(cli, mon
 
 def test_admin_security_events_supports_json_and_empty_results(cli, monkeypatch):
     responses = iter([{"events": []}, []])
-    monkeypatch.setattr(ops.client, "get", lambda path: next(responses))
+    monkeypatch.setattr(ops.client, "get", lambda path, params=None: next(responses))
 
     ops.admin_security_events(None, None, None, 50, "json")
     ops.admin_security_events(None, None, None, 50, "table")
@@ -927,12 +876,21 @@ def test_admin_audit_log_encodes_filters_and_renders_resources(cli, monkeypatch)
         },
         {"created_at": "2026-06-02T12:00:00Z", "action": "login", "resource_type": "user"},
     ]
-    monkeypatch.setattr(ops.client, "get", lambda path: calls.append(path) or entries)
+    monkeypatch.setattr(ops.client, "get", lambda path, params=None: calls.append((path, params)) or entries)
 
     ops.admin_audit_log("agent.update", "alice@example.test", "agent", 10, "table")
 
     assert calls == [
-        "/api/v1/admin/audit-log?limit=10&action=agent.update&actor_email=alice%40example.test&resource_type=agent"
+        (
+            "/api/v1/admin/audit-log",
+            {
+                "limit": 10,
+                "offset": 0,
+                "action": "agent.update",
+                "actor": "alice@example.test",
+                "resource_type": "agent",
+            },
+        )
     ]
     table = cli.console.renderables[0]
     assert table.title == "Audit Log (2 entries)"
@@ -942,7 +900,7 @@ def test_admin_audit_log_encodes_filters_and_renders_resources(cli, monkeypatch)
 
 def test_admin_audit_log_supports_json_and_empty_results(cli, monkeypatch):
     responses = iter([[{"action": "login"}], []])
-    monkeypatch.setattr(ops.client, "get", lambda path: next(responses))
+    monkeypatch.setattr(ops.client, "get", lambda path, params=None: next(responses))
 
     ops.admin_audit_log(None, None, None, 50, "json")
     ops.admin_audit_log(None, None, None, 50, "table")
@@ -951,32 +909,33 @@ def test_admin_audit_log_supports_json_and_empty_results(cli, monkeypatch):
     assert "No audit log entries found" in cli.text()
 
 
-def test_admin_audit_log_export_prints_or_writes_csv(cli, monkeypatch):
+def test_admin_audit_log_export_prints_or_writes_csv(cli, monkeypatch, tmp_path):
     responses = iter(["a,b\n1,2\n", "a,b\n3,4\n"])
     calls = []
-    writes = []
+    echoes = []
 
-    def get_text(path, *, content_type):
-        calls.append((path, content_type))
+    def get_text(path, params=None, *, content_type):
+        calls.append((path, params, content_type))
         return next(responses)
 
     monkeypatch.setattr(ops.client, "get_text", get_text)
-    monkeypatch.setattr(
-        Path,
-        "write_text",
-        lambda self, data, *args, **kwargs: writes.append((str(self), data)),
-    )
+    monkeypatch.setattr(ops.typer, "echo", lambda value, nl=False: echoes.append((value, nl)))
+    destination = tmp_path / "audit.csv"
 
     ops.admin_audit_log_export("login", "alice@example.test", None)
-    ops.admin_audit_log_export(None, None, "audit.csv")
+    ops.admin_audit_log_export(None, None, str(destination))
 
     assert calls == [
-        ("/api/v1/admin/audit-log/export?action=login&actor_email=alice%40example.test", "text/csv"),
-        ("/api/v1/admin/audit-log/export", "text/csv"),
+        (
+            "/api/v1/admin/audit-log/export",
+            {"action": "login", "actor": "alice@example.test"},
+            "text/csv",
+        ),
+        ("/api/v1/admin/audit-log/export", None, "text/csv"),
     ]
-    assert "a,b\n1,2\n" in cli.lines
-    assert writes == [("audit.csv", "a,b\n3,4\n")]
-    assert "Audit log exported to audit.csv" in cli.text()
+    assert echoes == [("a,b\n1,2\n", False)]
+    assert destination.read_text() == "a,b\n3,4\n"
+    assert f"Audit log exported to {destination}" in cli.text()
 
 
 @pytest.mark.parametrize(("enabled", "label"), [(True, "enabled"), (False, "disabled")])
@@ -1005,12 +964,12 @@ def test_admin_trace_privacy_set_uses_the_server_result(cli, monkeypatch, enable
 
 def test_admin_cache_clear_posts_to_the_clear_endpoint(cli, monkeypatch):
     calls = []
-    monkeypatch.setattr(ops.client, "post", lambda path: calls.append(path))
+    monkeypatch.setattr(ops.client, "post", lambda path: calls.append(path) or {"cleared": 4})
 
     ops.admin_cache_clear()
 
     assert calls == ["/api/v1/admin/cache/clear"]
-    assert "All caches cleared" in cli.text()
+    assert "Cleared 4 cached entries" in cli.text()
 
 
 def test_admin_set_role_reports_missing_users(cli, monkeypatch):
@@ -1019,7 +978,7 @@ def test_admin_set_role_reports_missing_users(cli, monkeypatch):
     with pytest.raises(typer.Exit) as exc_info:
         ops.admin_set_role("missing@example.test", "admin")
 
-    assert exc_info.value.exit_code == 1
+    assert exc_info.value.exit_code == 5
     assert "User not found" in cli.text()
 
 
@@ -1040,18 +999,6 @@ def test_admin_set_role_updates_the_matching_user(cli, monkeypatch):
 
     assert calls == [("/api/v1/admin/users/user-id/role", {"role": "admin"})]
     assert "alice@example.test is now admin" in cli.text()
-
-
-def test_graphql_query_builds_payload_with_optional_variables(cli, monkeypatch):
-    calls = []
-    monkeypatch.setattr(ops.client, "post", lambda path, body: calls.append((path, body)) or {"ok": True})
-
-    assert ops._graphql_query("query One") == {"ok": True}
-    assert ops._graphql_query("query Two", {"id": "trace"}) == {"ok": True}
-    assert calls == [
-        ("/api/v1/graphql", {"query": "query One"}),
-        ("/api/v1/graphql", {"query": "query Two", "variables": {"id": "trace"}}),
-    ]
 
 
 def test_traces_passes_filters_and_supports_json(cli, monkeypatch):
@@ -1109,17 +1056,6 @@ def test_render_sessions_summary_formats_counts_and_tokens(cli, monkeypatch):
 def test_render_sessions_detail_handles_failures_empty_sessions_events_and_subagents(cli, monkeypatch):
     sessions = [
         {
-            "session_id": "failed-session",
-            "prompt_count": 2,
-            "tool_result_count": 1,
-            "total_input_tokens": 1000,
-            "total_output_tokens": 20,
-            "platform": "kiro",
-            "user_name": "Alice",
-            "first_event_time": "first",
-            "model": "model-a",
-        },
-        {
             "session_id": "empty-session",
             "prompt_count": 0,
             "tool_result_count": 0,
@@ -1157,8 +1093,6 @@ def test_render_sessions_detail_handles_failures_empty_sessions_events_and_subag
 
     def fake_get(path):
         session_id = path.rsplit("/", 1)[1]
-        if session_id == "failed-session":
-            raise RuntimeError("detail unavailable")
         return details[session_id]
 
     monkeypatch.setattr(ops.client, "get", fake_get)
@@ -1166,10 +1100,6 @@ def test_render_sessions_detail_handles_failures_empty_sessions_events_and_subag
     ops._render_sessions_detail(sessions, full=True)
 
     output = render(cli.console.renderables[0])
-    assert "2 prompts" in output
-    assert "prompts: 2, tools: 1" in output
-    assert "tokens: 1.0k / 20" in output
-    assert "model: model-a" in output
     assert "prompts: 0, tools: 0" in output
     assert "search" in output
     assert "fallback-tool" in output
@@ -1187,78 +1117,6 @@ def test_format_tokens_compacts_large_counts(input_tokens, output_tokens, expect
     assert ops._format_tokens(input_tokens, output_tokens) == expected
 
 
-def test_spans_reports_missing_traces(cli, monkeypatch):
-    monkeypatch.setattr(ops, "_graphql_query", lambda query, variables: {"data": {"trace": None}})
-
-    with pytest.raises(typer.Exit) as exc_info:
-        ops._spans("missing", "table")
-
-    assert exc_info.value.exit_code == 1
-    assert "Trace missing not found" in cli.text()
-
-
-def test_spans_supports_json_and_empty_span_lists(cli, monkeypatch):
-    traces = iter(
-        [
-            {"traceId": "trace", "name": "one", "spans": [{"spanId": "span"}]},
-            {"traceId": "trace", "name": "empty", "spans": []},
-        ]
-    )
-    monkeypatch.setattr(
-        ops,
-        "_graphql_query",
-        lambda query, variables: {"data": {"trace": next(traces)}},
-    )
-
-    ops._spans_impl("trace", "json")
-    ops._spans_impl("trace", "table")
-
-    assert cli.json == [{"traceId": "trace", "name": "one", "spans": [{"spanId": "span"}]}]
-    assert "No spans" in cli.text()
-
-
-def test_spans_renders_schema_latency_and_status_variants(cli, monkeypatch):
-    trace = {
-        "traceId": "trace-id",
-        "name": "workflow",
-        "spans": [
-            {
-                "spanId": "span-success-123456",
-                "type": "tool",
-                "name": "search",
-                "method": "call",
-                "latencyMs": 12,
-                "status": "success",
-                "toolSchemaValid": True,
-            },
-            {
-                "spanId": "span-error-123456",
-                "type": "tool",
-                "name": "write",
-                "method": None,
-                "latencyMs": 0,
-                "status": "error",
-                "toolSchemaValid": False,
-            },
-            {
-                "spanId": "span-other-123456",
-                "type": "agent",
-                "name": "think",
-                "status": "pending",
-            },
-        ],
-    }
-    monkeypatch.setattr(ops, "_graphql_query", lambda query, variables: {"data": {"trace": trace}})
-
-    ops._spans_impl("trace-id", "table")
-
-    table = cli.console.renderables[0]
-    assert table.columns[4]._cells == ["call", "--", "--"]
-    assert table.columns[5]._cells == ["12ms", "--", "--"]
-    assert table.columns[6]._cells == ["[green]success[/green]", "[red]error[/red]", "pending"]
-    assert table.columns[7]._cells == ["[green]✓[/green]", "[red]✗[/red]", "[dim]--[/dim]"]
-
-
 def test_do_install_delegates_to_upgrade_executor(cli, monkeypatch):
     from observal_cli import upgrade_executor
 
@@ -1267,16 +1125,22 @@ def test_do_install_delegates_to_upgrade_executor(cli, monkeypatch):
     monkeypatch.setattr(
         upgrade_executor,
         "execute",
-        lambda info, target, direction, spinner: calls.append((info, target, direction, spinner)),
+        lambda info, target, direction, progress, interactive: calls.append(
+            (info, target, direction, progress, interactive)
+        ),
     )
 
     ops._do_install(install, "2.0.0", "upgrade")
 
-    assert calls == [(install, "2.0.0", "upgrade", ops.spinner)]
+    assert calls == [(install, "2.0.0", "upgrade", ops.spinner, True)]
 
 
-def install_info(method: InstallMethod = InstallMethod.UV_TOOL, managed_by: str | None = "uv") -> InstallInfo:
-    return InstallInfo(method=method, path=Path("/mock/observal"), writable=True, managed_by=managed_by)
+def install_info(
+    method: InstallMethod = InstallMethod.UV_TOOL,
+    managed_by: str | None = "uv",
+    path: Path | None = None,
+) -> InstallInfo:
+    return InstallInfo(method=method, path=path or Path("/mock/observal"), writable=True, managed_by=managed_by)
 
 
 def test_upgrade_rejects_invalid_versions(cli, monkeypatch):
@@ -1285,11 +1149,11 @@ def test_upgrade_rejects_invalid_versions(cli, monkeypatch):
     monkeypatch.setattr(version_check, "get_current_version", lambda: "1.0.0")
     monkeypatch.setattr(install_detector, "detect", lambda: install_info())
 
-    with pytest.raises(typer.Exit) as exc_info:
+    with pytest.raises(typer.Exit) as raised:
         ops.upgrade("not-a-version", False, True)
 
-    assert exc_info.value.exit_code == 1
-    assert "Invalid version" in cli.text()
+    assert raised.value.exit_code == 7
+    assert "Invalid target version" in cli.text()
 
 
 def test_upgrade_reports_release_lookup_failures(cli, monkeypatch):
@@ -1299,11 +1163,11 @@ def test_upgrade_reports_release_lookup_failures(cli, monkeypatch):
     monkeypatch.setattr(install_detector, "detect", lambda: install_info())
     monkeypatch.setattr(version_check, "_fetch_from_github", lambda include_pre: None)
 
-    with pytest.raises(typer.Exit) as exc_info:
+    with pytest.raises(typer.Exit) as raised:
         ops.upgrade(None, True, True)
 
-    assert exc_info.value.exit_code == 1
-    assert "Failed to fetch latest release" in cli.text()
+    assert raised.value.exit_code == 9
+    assert "Could not fetch" in cli.text()
 
 
 def test_upgrade_honors_declined_confirmation(cli, monkeypatch):
@@ -1328,14 +1192,14 @@ def test_upgrade_reports_lock_contention(cli, monkeypatch):
     monkeypatch.setattr(install_detector, "detect", lambda: install_info())
     monkeypatch.setattr(upgrade_lock, "acquire_lock", raises(UpgradeLockError("busy")))
 
-    with pytest.raises(typer.Exit) as exc_info:
+    with pytest.raises(typer.Exit) as raised:
         ops.upgrade("1.1.0", False, True)
 
-    assert exc_info.value.exit_code == 1
-    assert "busy" in cli.text()
+    assert raised.value.exit_code == 6
+    assert "already running" in cli.text()
 
 
-def test_upgrade_installs_and_releases_the_lock_with_nonstandard_current_version(cli, monkeypatch):
+def test_upgrade_installs_releases_lock_and_returns_json(cli, monkeypatch):
     from observal_cli import install_detector, upgrade_lock, version_check
 
     calls = []
@@ -1344,15 +1208,30 @@ def test_upgrade_installs_and_releases_the_lock_with_nonstandard_current_version
     monkeypatch.setattr(install_detector, "detect", lambda: info)
     monkeypatch.setattr(upgrade_lock, "acquire_lock", lambda scope: calls.append(("acquire", scope)) or "lock")
     monkeypatch.setattr(upgrade_lock, "release_lock", lambda lock: calls.append(("release", lock)))
-    monkeypatch.setattr(ops, "_do_install", lambda actual, target, direction: calls.append((actual, target, direction)))
+    monkeypatch.setattr(
+        ops,
+        "_do_install",
+        lambda actual, target, direction, output: calls.append((actual, target, direction, output)),
+    )
 
-    ops.upgrade("1.2.0", False, True)
+    ops.upgrade("1.2.0", False, True, "json")
 
     assert calls == [
         ("acquire", "cli"),
-        (info, "1.2.0", "upgrade"),
+        (info, "1.2.0", "upgrade", "json"),
         ("release", "lock"),
     ]
+    assert cli.json == [
+        {
+            "action": "upgrade",
+            "status": "completed",
+            "from_version": "development",
+            "to_version": "1.2.0",
+            "install_method": "uv_tool",
+            "path": "/mock/observal",
+        }
+    ]
+    assert cli.lines == []
 
 
 def test_downgrade_reports_empty_release_lists(cli, monkeypatch):
@@ -1361,49 +1240,53 @@ def test_downgrade_reports_empty_release_lists(cli, monkeypatch):
     monkeypatch.setattr(version_check, "get_current_version", lambda: "2.0.0")
     monkeypatch.setattr(version_check, "fetch_all_releases", lambda: [])
 
-    with pytest.raises(typer.Exit) as exc_info:
+    with pytest.raises(typer.Exit) as raised:
         ops.downgrade(None, True, True)
 
-    assert exc_info.value.exit_code == 1
-    assert "Failed to fetch releases" in cli.text()
+    assert raised.value.exit_code == 9
+    assert "Could not fetch" in cli.text()
 
 
-def test_downgrade_list_marks_the_current_release(cli, monkeypatch):
+def test_downgrade_list_supports_table_and_json(cli, monkeypatch):
     from observal_cli import version_check
 
-    tables = []
+    releases = [
+        {"version": "2.0.0", "published_at": "2026-06-02"},
+        {"version": "1.9.0", "published_at": "2026-06-01"},
+    ]
     monkeypatch.setattr(version_check, "get_current_version", lambda: "2.0.0")
-    monkeypatch.setattr(
-        version_check,
-        "fetch_all_releases",
-        lambda: [
-            {"version": "2.0.0", "published_at": "2026-06-02"},
-            {"version": "1.9.0", "published_at": "2026-06-01"},
-        ],
-    )
-    monkeypatch.setattr(Console, "print", lambda self, table: tables.append(table))
+    monkeypatch.setattr(version_check, "fetch_all_releases", lambda: releases)
 
-    with pytest.raises(typer.Exit) as exc_info:
-        ops.downgrade(None, True, True)
+    ops.downgrade(None, True, True, "table")
+    ops.downgrade(None, True, True, "json")
 
-    assert exc_info.value.exit_code == 0
-    assert tables[0].columns[0]._cells == ["2.0.0", "1.9.0"]
-    assert tables[0].columns[2]._cells == ["← current", ""]
+    table = cli.console.renderables[0]
+    assert table.columns[0]._cells == ["2.0.0", "1.9.0"]
+    assert table.columns[2]._cells == ["← current", ""]
+    assert cli.json == [
+        {
+            "current_version": "2.0.0",
+            "items": [
+                {**releases[0], "current": True},
+                {**releases[1], "current": False},
+            ],
+        }
+    ]
 
 
 @pytest.mark.parametrize(
     ("version", "message"),
-    [("invalid", "Invalid version"), ("0.9.0", "Cannot downgrade below")],
+    [("invalid", "Invalid target version"), ("0.9.0", "Cannot downgrade below")],
 )
 def test_downgrade_validates_target_versions(cli, monkeypatch, version, message):
     from observal_cli import version_check
 
     monkeypatch.setattr(version_check, "get_current_version", lambda: "2.0.0")
 
-    with pytest.raises(typer.Exit) as exc_info:
+    with pytest.raises(typer.Exit) as raised:
         ops.downgrade(version, False, True)
 
-    assert exc_info.value.exit_code == 1
+    assert raised.value.exit_code == 7
     assert message in cli.text()
 
 
@@ -1411,16 +1294,12 @@ def test_downgrade_blocks_managed_installations(cli, monkeypatch):
     from observal_cli import install_detector, version_check
 
     monkeypatch.setattr(version_check, "get_current_version", lambda: "2.0.0")
-    monkeypatch.setattr(
-        install_detector,
-        "detect",
-        lambda: install_info(InstallMethod.SYSTEM_PACKAGE, "apt"),
-    )
+    monkeypatch.setattr(install_detector, "detect", lambda: install_info(InstallMethod.SYSTEM_PACKAGE, "apt"))
 
-    with pytest.raises(typer.Exit) as exc_info:
+    with pytest.raises(typer.Exit) as raised:
         ops.downgrade("1.10.4", False, True)
 
-    assert exc_info.value.exit_code == 1
+    assert raised.value.exit_code == 6
     assert "managed by apt" in cli.text()
 
 
@@ -1442,11 +1321,11 @@ def test_downgrade_reports_lock_contention(cli, monkeypatch):
     monkeypatch.setattr(install_detector, "detect", lambda: install_info())
     monkeypatch.setattr(upgrade_lock, "acquire_lock", raises(UpgradeLockError("busy")))
 
-    with pytest.raises(typer.Exit) as exc_info:
+    with pytest.raises(typer.Exit) as raised:
         ops.downgrade("1.10.4", False, True)
 
-    assert exc_info.value.exit_code == 1
-    assert "busy" in cli.text()
+    assert raised.value.exit_code == 6
+    assert "already running" in cli.text()
 
 
 def test_downgrade_installs_when_current_version_is_nonstandard(cli, monkeypatch):
@@ -1458,88 +1337,89 @@ def test_downgrade_installs_when_current_version_is_nonstandard(cli, monkeypatch
     monkeypatch.setattr(install_detector, "detect", lambda: info)
     monkeypatch.setattr(upgrade_lock, "acquire_lock", lambda scope: "lock")
     monkeypatch.setattr(upgrade_lock, "release_lock", lambda lock: calls.append(("release", lock)))
-    monkeypatch.setattr(ops, "_do_install", lambda actual, target, direction: calls.append((actual, target, direction)))
+    monkeypatch.setattr(
+        ops,
+        "_do_install",
+        lambda actual, target, direction, output: calls.append((actual, target, direction, output)),
+    )
 
     ops.downgrade("1.10.4", False, True)
 
-    assert calls == [(info, "1.10.4", "downgrade"), ("release", "lock")]
+    assert calls == [(info, "1.10.4", "downgrade", "table"), ("release", "lock")]
 
 
-def backup_root(monkeypatch, exists: bool):
-    backup = SimpleNamespace(exists=lambda: exists)
-
-    class Root:
-        def __truediv__(self, part):
-            assert part == "bin"
-            return Bin()
-
-    class Bin:
-        def __truediv__(self, part):
-            assert part == "observal.prev"
-            return backup
-
-    monkeypatch.setattr(ops.config, "CONFIG_DIR", Root())
+def backup_path(monkeypatch, tmp_path: Path, exists: bool) -> Path:
+    monkeypatch.setattr(ops.config, "CONFIG_DIR", tmp_path)
+    backup = tmp_path / "bin" / "observal.prev"
+    if exists:
+        backup.parent.mkdir(parents=True)
+        backup.write_bytes(b"previous binary")
     return backup
 
 
-def test_rollback_reports_missing_backups(cli, monkeypatch):
+def test_rollback_reports_missing_backups(cli, monkeypatch, tmp_path):
     from observal_cli import install_detector
 
-    backup_root(monkeypatch, False)
+    backup_path(monkeypatch, tmp_path, False)
     monkeypatch.setattr(install_detector, "detect", lambda: install_info(InstallMethod.BINARY, "curl"))
 
-    with pytest.raises(typer.Exit) as exc_info:
+    with pytest.raises(typer.Exit) as raised:
         ops.rollback()
 
-    assert exc_info.value.exit_code == 1
-    assert "No backup found" in cli.text()
+    assert raised.value.exit_code == 5
+    assert "No CLI rollback backup" in cli.text()
 
 
-def test_rollback_rejects_non_binary_installs(cli, monkeypatch):
+def test_rollback_rejects_non_binary_installs(cli, monkeypatch, tmp_path):
     from observal_cli import install_detector
 
-    backup_root(monkeypatch, True)
+    backup_path(monkeypatch, tmp_path, True)
     monkeypatch.setattr(install_detector, "detect", lambda: install_info())
 
-    with pytest.raises(typer.Exit) as exc_info:
+    with pytest.raises(typer.Exit) as raised:
         ops.rollback()
 
-    assert exc_info.value.exit_code == 1
-    assert "only supported for binary installs" in cli.text()
+    assert raised.value.exit_code == 6
+    assert "only supported for standalone binary" in cli.text()
 
 
-def test_rollback_honors_declined_confirmation(cli, monkeypatch):
+def test_rollback_honors_declined_confirmation(cli, monkeypatch, tmp_path):
     from observal_cli import install_detector
 
-    backup_root(monkeypatch, True)
-    monkeypatch.setattr(install_detector, "detect", lambda: install_info(InstallMethod.BINARY, "curl"))
+    backup_path(monkeypatch, tmp_path, True)
+    monkeypatch.setattr(
+        install_detector,
+        "detect",
+        lambda: install_info(InstallMethod.BINARY, "curl", tmp_path / "observal"),
+    )
     monkeypatch.setattr(ops.typer, "confirm", lambda prompt: False)
 
     with pytest.raises(typer.Abort):
         ops.rollback()
 
 
-def test_rollback_copies_backup_and_restores_executable_mode(cli, monkeypatch):
-    import os
-    import shutil
+def test_rollback_atomically_restores_binary_and_returns_json(cli, monkeypatch, tmp_path):
+    from observal_cli import install_detector, upgrade_lock
 
-    from observal_cli import install_detector
-
-    backup = backup_root(monkeypatch, True)
-    info = install_info(InstallMethod.BINARY, "curl")
+    backup = backup_path(monkeypatch, tmp_path, True)
+    target = tmp_path / "observal"
+    target.write_bytes(b"current binary")
+    monkeypatch.setattr(
+        install_detector,
+        "detect",
+        lambda: install_info(InstallMethod.BINARY, "curl", target),
+    )
     calls = []
-    monkeypatch.setattr(install_detector, "detect", lambda: info)
-    monkeypatch.setattr(ops.typer, "confirm", lambda prompt: True)
-    monkeypatch.setattr(shutil, "copy2", lambda source, target: calls.append(("copy", source, target)))
-    monkeypatch.setattr(os, "chmod", lambda target, mode: calls.append(("chmod", target, mode)))
+    monkeypatch.setattr(upgrade_lock, "acquire_lock", lambda scope: calls.append(("acquire", scope)) or "lock")
+    monkeypatch.setattr(upgrade_lock, "release_lock", lambda lock: calls.append(("release", lock)))
 
-    ops.rollback()
+    ops.rollback(True, "json")
 
-    assert calls == [
-        ("copy", str(backup), str(info.path)),
-        ("chmod", str(info.path), 0o755),
-    ]
-    assert "Rolled back to previous version" in cli.text()
+    assert target.read_bytes() == backup.read_bytes()
+    assert target.stat().st_mode & 0o777 == 0o755
+    assert calls == [("acquire", "cli"), ("release", "lock")]
+    assert cli.json == [{"action": "rollback", "status": "completed", "backup": str(backup), "path": str(target)}]
+    assert cli.lines == []
 
 
 @pytest.mark.parametrize(
@@ -1564,3 +1444,351 @@ def test_status_reports_update_availability(cli, monkeypatch, release, newer, me
     assert "Version:  [bold]v1.0.0" in output
     assert "uv_tool" in output
     assert message in output
+
+
+def test_self_status_json_and_command_inventory(cli, monkeypatch):
+    from observal_cli import install_detector, version_check
+
+    monkeypatch.setattr(version_check, "get_current_version", lambda: "1.0.0")
+    monkeypatch.setattr(version_check, "_fetch_from_github", lambda: {"latest_version": "2.0.0"})
+    monkeypatch.setattr(version_check, "_is_newer", lambda latest, current: True)
+    monkeypatch.setattr(install_detector, "detect", lambda: install_info())
+
+    ops.status("json")
+
+    assert cli.json == [
+        {
+            "current_version": "1.0.0",
+            "install_method": "uv_tool",
+            "path": "/mock/observal",
+            "writable": True,
+            "managed_by": "uv",
+            "github_available": True,
+            "latest_version": "2.0.0",
+            "update_available": True,
+        }
+    ]
+    assert cli.lines == []
+
+    command = get_command(cli_app).commands["self"]
+    assert set(command.commands) == {"upgrade", "downgrade", "rollback", "status"}
+    assert all(any(parameter.name == "output" for parameter in child.params) for child in command.commands.values())
+
+
+def test_self_json_mutations_require_force(cli, monkeypatch, tmp_path):
+    from observal_cli import install_detector, version_check
+
+    monkeypatch.setattr(version_check, "get_current_version", lambda: "2.0.0")
+    monkeypatch.setattr(install_detector, "detect", lambda: install_info())
+
+    with pytest.raises(typer.Exit) as upgrade_error:
+        ops.upgrade("3.0.0", False, False, "json")
+    with pytest.raises(typer.Exit) as downgrade_error:
+        ops.downgrade("1.10.4", False, False, "json")
+
+    backup_path(monkeypatch, tmp_path, True)
+    monkeypatch.setattr(
+        install_detector,
+        "detect",
+        lambda: install_info(InstallMethod.BINARY, "curl", tmp_path / "observal"),
+    )
+    with pytest.raises(typer.Exit) as rollback_error:
+        ops.rollback(False, "json")
+
+    assert [upgrade_error.value.exit_code, downgrade_error.value.exit_code, rollback_error.value.exit_code] == [7, 7, 7]
+    assert cli.lines == [
+        "[red]JSON mode cannot prompt before upgrading the CLI.[/red]",
+        "[red]JSON mode cannot prompt before downgrading the CLI.[/red]",
+        "[red]JSON mode cannot prompt before rolling back the CLI.[/red]",
+    ]
+
+
+def test_self_json_install_failure_suppresses_executor_output(cli, monkeypatch):
+    from observal_cli import upgrade_executor
+
+    def fail_install(*args, **kwargs):
+        print("sensitive installer detail")
+        raise typer.Exit(1)
+
+    monkeypatch.setattr(upgrade_executor, "execute", fail_install)
+
+    with pytest.raises(typer.Exit) as raised:
+        ops._do_install(object(), "2.0.0", "upgrade", "json")
+
+    assert raised.value.exit_code == 9
+    assert "sensitive installer detail" not in cli.text()
+    assert cli.lines == ["[red]CLI upgrade failed.[/red]"]
+
+
+def test_every_remaining_ops_workflow_has_output_and_dead_commands_are_removed():
+    command = get_command(cli_app).commands["ops"]
+
+    def leaves(group):
+        for name, child in group.commands.items():
+            if isinstance(child, Group) and child.commands:
+                yield from leaves(child)
+            else:
+                yield name, child
+
+    rows = list(leaves(command))
+    assert len(rows) == 11
+    assert all(any(parameter.name == "output" for parameter in leaf.params) for _name, leaf in rows)
+    assert "metrics" not in command.commands
+    assert "spans" not in command.commands
+    assert "test" not in command.commands["telemetry"].commands
+
+
+def test_telemetry_status_json_combines_server_and_outbox(cli, monkeypatch):
+    from observal_cli import telemetry_buffer
+
+    server = {"status": "ok", "tool_call_events": 2, "agent_interaction_events": 3}
+    monkeypatch.setattr(ops.client, "get", lambda path: server)
+    monkeypatch.setattr(
+        telemetry_buffer,
+        "stats",
+        lambda: {
+            "pending": 1,
+            "failed": 0,
+            "sent": 0,
+            "total": 1,
+            "oldest_pending": None,
+            "last_sync": None,
+            "bytes": 64,
+        },
+    )
+
+    ops.telemetry_status("json")
+
+    assert cli.json == [{"server": server, "outbox": {"available": True, **telemetry_buffer.stats()}}]
+    assert cli.lines == []
+
+
+def test_feedback_mutations_return_direct_json(cli, monkeypatch):
+    listing_id = "11111111-1111-1111-1111-111111111111"
+    post = []
+    put = []
+    delete = []
+    monkeypatch.setattr(
+        ops.client,
+        "post",
+        lambda path, body: post.append((path, body)) or {"id": "feedback-1", "rating": 5},
+    )
+    monkeypatch.setattr(ops.client, "get", lambda path: {"id": "feedback-1"})
+    monkeypatch.setattr(
+        ops.client,
+        "put",
+        lambda path, body: put.append((path, body)) or {"id": "feedback-1", "rating": 4},
+    )
+    monkeypatch.setattr(
+        ops.client,
+        "delete",
+        lambda path: delete.append(path) or {},
+    )
+
+    ops._rate_impl(listing_id, 5, "mcp", "great", False, "json")
+    ops._rate_update(listing_id, "mcp", 4, None, None, "json")
+    ops._rate_delete(listing_id, "mcp", yes=True, output="json")
+
+    assert cli.json == [
+        {"id": "feedback-1", "rating": 5},
+        {"id": "feedback-1", "rating": 4},
+        {},
+    ]
+    assert post[0][0] == "/api/v1/feedback"
+    assert put == [("/api/v1/feedback/feedback-1", {"rating": 4})]
+    assert delete == ["/api/v1/feedback/feedback-1"]
+    assert cli.lines == []
+
+
+def test_traces_detail_json_uses_current_session_endpoints(cli, monkeypatch):
+    sessions = [{"session_id": "session/one", "platform": "kiro"}]
+    detail = {"session_id": "session/one", "events": [{"event_name": "tool_call"}]}
+    calls = []
+
+    def get(path, params=None):
+        calls.append((path, params))
+        return sessions if path == "/api/v1/sessions" else detail
+
+    monkeypatch.setattr(ops.client, "get", get)
+
+    ops._traces_impl("kiro", 7, 5, False, True, "json")
+
+    assert calls == [
+        ("/api/v1/sessions", {"limit": 5, "platform": "kiro", "days": 7}),
+        ("/api/v1/sessions/session%2Fone", None),
+    ]
+    assert cli.json == [{"view": "span", "items": [{"summary": sessions[0], "detail": detail}]}]
+
+
+def test_trace_detail_failure_propagates(cli, monkeypatch):
+    monkeypatch.setattr(ops.client, "get", raises(RuntimeError("detail unavailable")))
+
+    with pytest.raises(RuntimeError, match="detail unavailable"):
+        ops._render_sessions_detail([{"session_id": "session"}], full=True)
+
+
+def test_ops_type_validation_is_categorized(cli):
+    with pytest.raises(typer.Exit) as raised:
+        ops._top_impl("unknown", "json")
+
+    assert raised.value.exit_code == 7
+    assert "Unknown ranking type" in cli.text()
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        [
+            "ops",
+            "rate-update",
+            "11111111-1111-1111-1111-111111111111",
+            "--output",
+            "json",
+        ],
+        [
+            "ops",
+            "rate-delete",
+            "11111111-1111-1111-1111-111111111111",
+            "--output",
+            "json",
+        ],
+        ["ops", "traces", "--platform", "unknown", "--output", "json"],
+        ["ops", "insights", "generate", "agent", "--version", "bad", "--output", "json"],
+        ["ops", "logs", "--level", "verbose", "--output", "json"],
+    ],
+)
+def test_ops_json_validation_uses_shared_error_boundary(arguments):
+    result = runner.invoke(cli_app, arguments)
+
+    assert result.exit_code == 7
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["error"]["category"] == "validation"
+
+
+def test_every_admin_workflow_has_output_contract():
+    command = get_command(cli_app).commands["admin"]
+
+    def leaves(group):
+        for name, child in group.commands.items():
+            if isinstance(child, Group) and child.commands:
+                yield from leaves(child)
+            else:
+                yield name, child
+
+    rows = list(leaves(command))
+    assert len(rows) == 24
+    assert all(any(parameter.name == "output" for parameter in leaf.params) for _name, leaf in rows)
+
+
+def test_admin_mutations_return_json_without_human_output(cli, monkeypatch):
+    user = {"id": "user-id", "email": "alice@example.test", "name": "Alice", "role": "user"}
+    put_results = {
+        "/api/v1/admin/settings/secret": {"key": "secret", "value": "<redacted>", "is_sensitive": True},
+        "/api/v1/admin/users/user-id/password": {"message": "Password reset", "generated_password": "secret"},
+        "/api/v1/admin/trace-privacy": {"trace_privacy": True},
+        "/api/v1/admin/users/user-id/role": {"id": "user-id", "email": "alice@example.test", "role": "admin"},
+    }
+    monkeypatch.setattr(ops.client, "get", lambda path: [user])
+    monkeypatch.setattr(ops.client, "put", lambda path, body: put_results[path])
+    monkeypatch.setattr(ops.client, "delete", lambda path: {})
+    monkeypatch.setattr(
+        ops.client,
+        "post",
+        lambda path, body=None: (
+            {"cleared": 2}
+            if path == "/api/v1/admin/cache/clear"
+            else {"id": "review-id", "name": "component", "status": "approved"}
+        ),
+    )
+
+    ops.admin_set("secret", "never-echo", "json")
+    ops.admin_reset_password("alice@example.test", True, "json")
+    ops.admin_delete_user("alice@example.test", True, "json")
+    ops.admin_trace_privacy_set(True, "json")
+    ops.admin_cache_clear("json")
+    ops.admin_set_role("alice@example.test", "admin", "json")
+    ops.review_approve("review-id", False, False, "json")
+
+    assert cli.json == [
+        {"key": "secret", "value": "<redacted>", "is_sensitive": True},
+        {"message": "Password reset", "generated_password": "secret"},
+        {"deleted": True, "id": "user-id", "email": "alice@example.test"},
+        {"trace_privacy": True},
+        {"cleared": 2},
+        {"id": "user-id", "email": "alice@example.test", "role": "admin"},
+        {"id": "review-id", "name": "component", "status": "approved"},
+    ]
+    assert "never-echo" not in cli.text()
+    assert cli.lines == []
+
+
+def test_admin_secret_creation_mutations_return_direct_json(cli, monkeypatch):
+    responses = iter(
+        [
+            {"id": "saml-id", "active": False},
+            {"id": "token-id", "token": "one-time-token", "description": "Okta"},
+        ]
+    )
+    monkeypatch.setattr(ops.client, "put", lambda path, body: next(responses))
+    monkeypatch.setattr(ops.client, "post", lambda path, body: next(responses))
+
+    ops.admin_saml_config_set("idp", "https://idp.test/sso", None, "certificate", None, True, False, "json")
+    ops.admin_scim_token_create("Okta", "json")
+
+    assert cli.json == [
+        {"id": "saml-id", "active": False},
+        {"id": "token-id", "token": "one-time-token", "description": "Okta"},
+    ]
+    assert cli.lines == []
+
+
+def test_admin_audit_json_export_stdout_and_atomic_file(cli, monkeypatch, tmp_path):
+    export = {"audit_trail": [{"event_id": "event-1"}], "record_count": 1}
+    calls = []
+    monkeypatch.setattr(ops.client, "get", lambda path, params=None: calls.append((path, params)) or export)
+    destination = tmp_path / "audit.json"
+
+    ops.admin_audit_log_export("login", "alice@example.test", None, "json")
+    ops.admin_audit_log_export(None, None, str(destination), "json")
+
+    assert calls == [
+        (
+            "/api/v1/admin/audit-log/export",
+            {"action": "login", "actor": "alice@example.test", "format": "json"},
+        ),
+        ("/api/v1/admin/audit-log/export", {"format": "json"}),
+    ]
+    assert cli.json == [
+        export,
+        {"path": str(destination), "format": "json", "record_count": 1},
+    ]
+    assert json.loads(destination.read_text()) == export
+    assert cli.lines == []
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["admin", "delete-user", "alice@example.test", "--output", "json"],
+        ["admin", "reset-password", "alice@example.test", "--output", "json"],
+        ["admin", "saml-config-delete", "--output", "json"],
+        [
+            "admin",
+            "scim-token-revoke",
+            "11111111-1111-1111-1111-111111111111",
+            "--output",
+            "json",
+        ],
+        ["admin", "create-user", "a@example.test", "Alice", "--role", "unknown", "--output", "json"],
+        ["admin", "review", "approve", "item", "--agent", "--bundle", "--output", "json"],
+        ["admin", "review", "list", "--type", "unknown", "--output", "json"],
+        ["admin", "saml-config-set", "--output", "json"],
+        ["admin", "audit-log", "--source", "unknown", "--output", "json"],
+    ],
+)
+def test_admin_json_validation_uses_shared_error_boundary(arguments):
+    result = runner.invoke(cli_app, arguments)
+
+    assert result.exit_code == 7
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["error"]["category"] == "validation"

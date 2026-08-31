@@ -87,7 +87,7 @@ class TestPromptSubmit:
             "version": "2.0.0",
             "description": "JSON desc",
             "owner": "jsonowner",
-            "category": "utility",
+            "category": "general",
             "template": "JSON {{template}}",
         }
         prompt_json.write_text(json.dumps(payload))
@@ -102,7 +102,7 @@ class TestPromptSubmit:
             url, submitted_payload = mock_post.call_args[0]
             assert url == "/api/v1/prompts/submit"
             assert submitted_payload["name"] == "json-prompt"
-            assert submitted_payload["category"] == "utility"
+            assert submitted_payload["category"] == "general"
             assert submitted_payload["template"] == "JSON {{template}}"
 
 
@@ -202,8 +202,8 @@ class TestPromptEdgeCases:
     def test_mutually_exclusive_flags(self):
         """Using --draft and --submit together should fail fast."""
         result = runner.invoke(cli_app, ["registry", "prompt", "submit", "--draft", "--submit", "p1"])
-        assert result.exit_code == 1
-        assert "Cannot use --draft and --submit together" in result.output
+        assert result.exit_code == 7
+        assert "Draft creation" in result.output
 
     def test_list_empty_results(self):
         """List should handle empty result set gracefully."""
@@ -213,13 +213,20 @@ class TestPromptEdgeCases:
             assert result.exit_code == 0
             assert "No prompts found." in result.output
 
+    def test_submit_file_not_found(self):
+        """Submitting from a nonexistent file should use the not-found contract."""
+        result = runner.invoke(cli_app, ["registry", "prompt", "submit", "--from-file", "nope.json"])
+
+        assert result.exit_code == 5
+        assert "not found" in result.output
+
     def test_edit_file_not_found(self):
-        """Editing from a non-existent file should show a clear error and exit 1."""
+        """Editing from a non-existent file should show a clear error and exit 5."""
         with _patch_resolve_alias():
             result = runner.invoke(cli_app, ["registry", "prompt", "edit", "p123", "--from-file", "nope.json"])
 
-            assert result.exit_code == 1
-            assert "File not found" in result.output
+            assert result.exit_code == 5
+            assert "not found" in result.output
 
     def test_install_command_missing(self):
         """Prompt install should fail fast because the command does not exist."""
@@ -228,19 +235,83 @@ class TestPromptEdgeCases:
         assert result.exit_code == 2
         assert "No such command 'install'" in result.output
 
-    def test_select_one_integration_gap(self):
-        """Document that category passed via CLI is not validated client-side (integration gap).
-
-        The CLI currently forwards whatever `--category` value is provided to the server
-        without validating it against `VALID_PROMPT_CATEGORIES`. This test asserts the
-        client call contains the provided (invalid) category value.
-        """
+    def test_invalid_category_fails_before_request(self):
+        """Prompt category validation is local and deterministic."""
         mock_data = []
         with _patch_get(mock_data) as mock_get, patch("observal_cli.config.save_last_results"):
             result = runner.invoke(cli_app, ["registry", "prompt", "list", "--category", "invalid-category"])
 
-            assert result.exit_code == 0
-            mock_get.assert_called_once()
-            _, kwargs = mock_get.call_args
-            params = kwargs.get("params") or {}
-            assert params.get("category") == "invalid-category"
+            assert result.exit_code == 7
+            mock_get.assert_not_called()
+
+
+def test_prompt_submit_json_is_noninteractive_and_clean():
+    response = {"id": "prompt-1", "name": "review", "status": "pending"}
+    with _patch_config_load(), _patch_post(response):
+        result = runner.invoke(
+            cli_app,
+            [
+                "registry",
+                "prompt",
+                "submit",
+                "--name",
+                "review",
+                "--description",
+                "Review code",
+                "--category",
+                "code-review",
+                "--template",
+                "Review {{code}}",
+                "--output",
+                "json",
+            ],
+        )
+
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout) == response
+
+
+def test_prompt_render_json_and_variable_validation():
+    response = {"rendered": "Review array[0] literally"}
+    with _patch_resolve_alias(), _patch_post(response) as post:
+        rendered = runner.invoke(
+            cli_app,
+            ["registry", "prompt", "render", "review", "--var", "code=array[0]", "--output", "json"],
+        )
+        invalid = runner.invoke(cli_app, ["registry", "prompt", "render", "review", "--var", "broken"])
+
+    assert rendered.exit_code == 0
+    assert json.loads(rendered.stdout) == response
+    assert invalid.exit_code == 7
+    assert post.call_count == 1
+
+
+def test_prompt_edit_json_returns_server_result():
+    response = {"id": "prompt-1", "name": "review", "status": "pending"}
+    with _patch_resolve_alias(), _patch_post({}), _patch_put(response):
+        result = runner.invoke(
+            cli_app,
+            ["registry", "prompt", "edit", "review", "--description", "Updated", "--output", "json"],
+        )
+
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout) == response
+
+
+def test_prompt_show_escapes_template_markup():
+    hostile = "Clean [/tmp] and keep [bold] literal"
+    item = {
+        "id": "prompt-1",
+        "name": "review",
+        "slug": "review",
+        "version": "1.0.0",
+        "status": "approved",
+        "category": "general",
+        "description": hostile,
+        "template": hostile,
+    }
+    with _patch_resolve_alias(), _patch_get(item):
+        result = runner.invoke(cli_app, ["registry", "prompt", "show", "review"])
+
+    assert result.exit_code == 0, result.output
+    assert hostile in result.output

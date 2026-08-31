@@ -394,6 +394,7 @@ def drain_outbox(
     db_path: Path | None = None,
     post: Callable[[dict, dict], dict | None] | None = None,
     repairs: list[tuple[str, str]] | None = None,
+    rejections: list[tuple[str, str, int]] | None = None,
 ) -> bool:
     """Drain durable batches for the configured server/user until blocked."""
     from observal_cli import telemetry_buffer
@@ -422,6 +423,8 @@ def drain_outbox(
             acknowledgement = post_batch(item.payload, config)
         except PermanentIngestRejectionError as exc:
             quarantine_path = telemetry_buffer.quarantine(item, str(exc), db_path=db_path)
+            if rejections is not None:
+                rejections.append((item.harness, item.session_id, exc.status_code))
             log_error(
                 f"quarantined rejected {item.harness} session {item.session_id} batch at {quarantine_path}",
                 home=home,
@@ -482,6 +485,7 @@ def drain_session_source(
     db_path: Path | None = None,
     post: Callable[[dict, dict], dict | None] | None = None,
     checkpoint_fetch: Callable[[SessionSource, dict], dict | None] | None = None,
+    rejections: list[tuple[str, str, int]] | None = None,
     _repair_attempts: int = 0,
 ) -> bool:
     """Spool all complete source records, then deliver them through the outbox."""
@@ -492,9 +496,19 @@ def drain_session_source(
     if source.path is None or not destination or not user_id:
         return False
 
-    # A failed pre-drain never prevents newly observed local records from being spooled.
+    def source_was_rejected() -> bool:
+        return bool(
+            rejections
+            and any(
+                harness == source.harness and session_id == source.session_id for harness, session_id, _ in rejections
+            )
+        )
+
+    # A transient pre-drain failure never prevents new local records from being spooled.
     if not spool_only:
-        drain_outbox(config, home=home, db_path=db_path, post=post)
+        drain_outbox(config, home=home, db_path=db_path, post=post, rejections=rejections)
+        if source_was_rejected():
+            return False
 
     if recover_from_server:
         recovered = recover_cursor_from_server(source, config, home=home, fetch=checkpoint_fetch)
@@ -553,7 +567,14 @@ def drain_session_source(
         if spool_only:
             return True
         repairs: list[tuple[str, str]] = []
-        delivered = drain_outbox(config, home=home, db_path=db_path, post=post, repairs=repairs)
+        delivered = drain_outbox(
+            config,
+            home=home,
+            db_path=db_path,
+            post=post,
+            repairs=repairs,
+            rejections=rejections,
+        )
         if final and (source.harness, source.session_id) in repairs and _repair_attempts < 1:
             return drain_session_source(
                 source,
@@ -567,9 +588,10 @@ def drain_session_source(
                 db_path=db_path,
                 post=post,
                 checkpoint_fetch=checkpoint_fetch,
+                rejections=rejections,
                 _repair_attempts=_repair_attempts + 1,
             )
-        if bytes_read or (final and delivered):
+        if bytes_read or (final and delivered and not source_was_rejected()):
             write_cursor(
                 source.checkpoint_key,
                 byte_offset,
@@ -577,7 +599,7 @@ def drain_session_source(
                 finalized=final and delivered,
                 home=home,
             )
-        return delivered
+        return delivered and not source_was_rejected()
 
     # Attribute trailing blank-line bytes to the last real record checkpoint.
     end_byte_offsets[-1] = byte_offset + bytes_read
@@ -623,7 +645,14 @@ def drain_session_source(
     if spool_only:
         return True
     repairs = []
-    delivered = drain_outbox(config, home=home, db_path=db_path, post=post, repairs=repairs)
+    delivered = drain_outbox(
+        config,
+        home=home,
+        db_path=db_path,
+        post=post,
+        repairs=repairs,
+        rejections=rejections,
+    )
     if final and (source.harness, source.session_id) in repairs and _repair_attempts < 1:
         return drain_session_source(
             source,
@@ -637,9 +666,10 @@ def drain_session_source(
             db_path=db_path,
             post=post,
             checkpoint_fetch=checkpoint_fetch,
+            rejections=rejections,
             _repair_attempts=_repair_attempts + 1,
         )
-    return delivered
+    return delivered and not source_was_rejected()
 
 
 # ---------------------------------------------------------------------------

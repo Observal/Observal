@@ -5,17 +5,57 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
+
 import typer
+from packaging.version import InvalidVersion, Version
 from rich import print as rprint
 from rich.panel import Panel
 from rich.table import Table
 
 from observal_cli import client
-from observal_cli.render import console, esc, output_json, relative_time, spinner, status_badge
+from observal_cli.errors import ErrorCategory, fail
+from observal_cli.render import (
+    OutputMode,
+    console,
+    esc,
+    output_json,
+    output_json_line,
+    relative_time,
+    spinner,
+    status_badge,
+)
 
-insights_app = typer.Typer(help="Agent insight reports")
+insights_app = typer.Typer(
+    help=(
+        "Agent insight reports\n\n"
+        "Examples:\n"
+        "  observal ops insights list alice/my-agent\n"
+        "  observal ops insights show alice/my-agent latest\n"
+        "  observal ops insights generate alice/my-agent"
+    )
+)
 
 _registry_name_cache: str | None = None
+
+
+def _progress(output: OutputMode | str, message: str):
+    return nullcontext() if output == "json" else spinner(message)
+
+
+def _version(value: str | None, label: str) -> str | None:
+    if value is None:
+        return None
+    try:
+        return str(Version(value))
+    except InvalidVersion:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Invalid {label}: {value}.",
+            operation="Generate agent insight report",
+            resource=label,
+            remediation="Use a semantic version such as 1.2.3.",
+        )
 
 
 def _registry_name() -> str:
@@ -44,8 +84,13 @@ def _resolve_agent_id(agent_id: str) -> str:
 
 def _select_report_id(reports: list[dict], report_ref: str | None) -> str:
     if not reports:
-        rprint("[dim]No insight reports found.[/dim]")
-        raise typer.Exit(1)
+        fail(
+            ErrorCategory.NOT_FOUND,
+            "No insight reports were found for this agent.",
+            operation="Show agent insight report",
+            resource="agent insight reports",
+            remediation="Generate a report first.",
+        )
 
     if not report_ref or report_ref == "latest":
         completed = next((report for report in reports if report.get("status") == "completed"), None)
@@ -55,21 +100,33 @@ def _select_report_id(reports: list[dict], report_ref: str | None) -> str:
         index = int(report_ref)
         if 1 <= index <= len(reports):
             return str(reports[index - 1]["id"])
-        rprint(f"[red]Report row {index} is out of range.[/red]")
-        rprint(f"[dim]Choose a row from 1 to {len(reports)}.[/dim]")
-        raise typer.Exit(1)
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Insight report row {index} is out of range.",
+            operation="Show agent insight report",
+            resource="insight report row",
+            remediation=f"Choose a row from 1 to {len(reports)}.",
+        )
 
     matches = [report for report in reports if str(report.get("id", "")).lower().startswith(report_ref.lower())]
     if len(matches) == 1:
         return str(matches[0]["id"])
     if matches:
-        rprint(f"[red]Report prefix '{report_ref}' is ambiguous.[/red]")
-        rprint("[dim]Use the row number from `observal ops insights list <agent>` instead.[/dim]")
-        raise typer.Exit(1)
+        fail(
+            ErrorCategory.CONFLICT,
+            f"Insight report prefix is ambiguous: {report_ref}.",
+            operation="Show agent insight report",
+            resource="insight report",
+            remediation="Use a row number from `observal ops insights list <agent>`.",
+        )
 
-    rprint(f"[red]Report '{report_ref}' was not found for this agent.[/red]")
-    rprint("[dim]Use the row number from `observal ops insights list <agent>` instead.[/dim]")
-    raise typer.Exit(1)
+    fail(
+        ErrorCategory.NOT_FOUND,
+        f"Insight report not found: {report_ref}.",
+        operation="Show agent insight report",
+        resource="insight report",
+        remediation="Use a row number from `observal ops insights list <agent>`.",
+    )
 
 
 def _resolve_report_for_show(target: str, report_ref: str | None) -> dict:
@@ -82,7 +139,7 @@ def _resolve_report_for_show(target: str, report_ref: str | None) -> dict:
 @insights_app.command(name="list")
 def insights_list(
     agent_id: str = typer.Argument(..., help="Agent ID, name, or @alias"),
-    output: str = typer.Option("table", "--output", "-o"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
     """List insight reports for an agent.
 
@@ -92,7 +149,7 @@ def insights_list(
 
         observal ops insights list my-agent --output json
     """
-    with spinner("Fetching insight reports..."):
+    with _progress(output, "Fetching insight reports..."):
         resolved = _resolve_agent_id(agent_id)
         data = client.get(f"/api/v1/agents/{resolved}/insights/reports")
     if output == "json":
@@ -109,27 +166,27 @@ def insights_list(
     table.add_column("Sessions", justify="right")
     table.add_column("Completed")
     for i, r in enumerate(data, 1):
-        start = r.get("period_start", "")[:10]
-        end = r.get("period_end", "")[:10]
+        start = str(r.get("period_start") or "")[:10]
+        end = str(r.get("period_end") or "")[:10]
         table.add_row(
             str(i),
             status_badge(r.get("status", "")),
-            str(r.get("agent_version") or "-"),
-            f"{start} → {end}",
+            esc(r.get("agent_version") or "-"),
+            f"{esc(start)} → {esc(end)}",
             str(r.get("sessions_analyzed", 0)),
             relative_time(r.get("completed_at")),
         )
     console.print(table)
     rprint()
-    rprint(f"[dim]Open latest completed: [cyan]observal ops insights show {agent_id}[/cyan][/dim]")
-    rprint(f"[dim]Open row 1: [cyan]observal ops insights show {agent_id} 1[/cyan][/dim]")
+    rprint(f"[dim]Open latest completed: [cyan]observal ops insights show {esc(agent_id)}[/cyan][/dim]")
+    rprint(f"[dim]Open row 1: [cyan]observal ops insights show {esc(agent_id)} 1[/cyan][/dim]")
 
 
 @insights_app.command(name="show")
 def insights_show(
     target: str = typer.Argument(..., help="Agent name, agent ID, or @alias"),
     report_ref: str | None = typer.Argument(None, help="Report row number, report ID prefix, or 'latest'"),
-    output: str = typer.Option("table", "--output", "-o"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
     section: str | None = typer.Option(None, "--section", "-s", help="Show only a specific section"),
 ):
     """Show an insight report with pretty-printed narrative.
@@ -141,51 +198,81 @@ def insights_show(
         observal ops insights show my-agent 3
 
         observal ops insights show my-agent --section suggestions
-
-        observal ops insights show my-agent 3 --output json
     """
-    with spinner("Fetching report..."):
+    with _progress(output, "Fetching report..."):
         data = _resolve_report_for_show(target, report_ref)
     if output == "json":
-        output_json(data)
+        if section:
+            narrative = data.get("narrative") or {}
+            if not isinstance(narrative, dict):
+                fail(
+                    ErrorCategory.UNAVAILABLE,
+                    "The insight report narrative has an invalid shape.",
+                    operation="Show agent insight report",
+                    resource="insight report",
+                    remediation="Regenerate the report or check server compatibility.",
+                )
+            if section not in narrative:
+                fail(
+                    ErrorCategory.VALIDATION,
+                    f"Unknown insight report section: {section}.",
+                    operation="Show agent insight report",
+                    resource="insight report section",
+                    remediation=f"Choose from: {', '.join(narrative.keys())}.",
+                )
+            output_json({"report_id": data.get("id"), "section": section, "data": narrative[section]})
+        else:
+            output_json(data)
         return
     if data.get("status") != "completed":
         rprint(f"  Status: {status_badge(data.get('status', 'unknown'))}")
         if data.get("progress_phase"):
             rprint(
-                f"  Phase: [cyan]{str(data.get('progress_phase')).replace('_', ' ')}[/cyan] "
+                f"  Phase: [cyan]{esc(str(data.get('progress_phase')).replace('_', ' '))}[/cyan] "
                 f"({data.get('progress_percent', 0)}%)"
             )
         if data.get("progress_message"):
-            rprint(f"  [dim]{data['progress_message']}[/dim]")
+            rprint(f"  [dim]{esc(data['progress_message'])}[/dim]")
         if data.get("error_message"):
-            rprint(f"  [red]Error:[/red] {data['error_message']}")
+            rprint(f"  [red]Error:[/red] {esc(data['error_message'])}")
         return
 
     narrative = data.get("narrative") or {}
+    if not isinstance(narrative, dict):
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            "The insight report narrative has an invalid shape.",
+            operation="Show agent insight report",
+            resource="insight report",
+            remediation="Regenerate the report or check server compatibility.",
+        )
     registry_match = narrative.get("registry_match")
     if not isinstance(registry_match, dict):
         registry_match = None
     if section:
         if section not in narrative:
-            rprint(f"[red]Section '{section}' not found.[/red]")
-            rprint(f"[dim]Available: {', '.join(narrative.keys())}[/dim]")
-            raise typer.Exit(1)
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Unknown insight report section: {section}.",
+                operation="Show agent insight report",
+                resource="insight report section",
+                remediation=f"Choose from: {', '.join(narrative.keys())}.",
+            )
         _render_section(section, narrative[section])
         if section == "suggestions":
             _render_registry_match_note(registry_match)
         return
 
     # Header
-    start = data.get("period_start", "")[:10]
-    end = data.get("period_end", "")[:10]
+    start = str(data.get("period_start") or "")[:10]
+    end = str(data.get("period_end") or "")[:10]
     rprint()
     version = data.get("agent_version") or "unknown"
     comparison = data.get("comparison_agent_version")
-    comparison_text = f"  Compared to: v{comparison}" if comparison else ""
-    rprint(f"  [bold]Insight Report[/bold]  v{version}  {start} → {end}")
+    comparison_text = f"  Compared to: v{esc(comparison)}" if comparison else ""
+    rprint(f"  [bold]Insight Report[/bold]  v{esc(version)}  {esc(start)} → {esc(end)}")
     rprint(
-        f"  Sessions: {data.get('sessions_analyzed', 0)}  Model: {data.get('llm_model_used', 'unknown')}"
+        f"  Sessions: {data.get('sessions_analyzed', 0)}  Model: {esc(data.get('llm_model_used', 'unknown'))}"
         f"{comparison_text}"
     )
     rich = (data.get("metrics") or {}).get("rich") or {}
@@ -252,9 +339,11 @@ def _render_section(name: str, data: dict | str | None):
     if renderer:
         renderer(title, data)
     elif isinstance(data, str):
-        console.print(Panel(data, title=f"[bold]{title}[/bold]", border_style="blue", expand=False))
+        console.print(Panel(esc(data), title=f"[bold]{esc(title)}[/bold]", border_style="blue", expand=False))
     elif isinstance(data, dict) and "narrative" in data:
-        console.print(Panel(data["narrative"], title=f"[bold]{title}[/bold]", border_style="blue", expand=False))
+        console.print(
+            Panel(esc(data["narrative"]), title=f"[bold]{esc(title)}[/bold]", border_style="blue", expand=False)
+        )
 
 
 def _render_at_a_glance(title: str, data: dict):
@@ -575,10 +664,10 @@ _RENDERERS = {
 @insights_app.command(name="generate")
 def insights_generate(
     agent_id: str = typer.Argument(..., help="Agent ID, name, or @alias"),
-    period_days: int = typer.Option(14, "--period", "-p", help="Analysis period in days"),
+    period_days: int = typer.Option(14, "--period", "-p", min=1, max=365, help="Analysis period in days"),
     agent_version: str | None = typer.Option(None, "--version", "-v", help="Agent version to analyze"),
     compare_version: str | None = typer.Option(None, "--compare", help="Baseline agent version for A/B comparison"),
-    output: str = typer.Option("table", "--output", "-o"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
     wait: bool = typer.Option(False, "--wait", help="Poll until the report completes"),
 ):
     """Trigger generation of a new insight report.
@@ -589,22 +678,23 @@ def insights_generate(
 
         observal ops insights generate my-agent --period 30
     """
+    agent_version = _version(agent_version, "agent version")
+    compare_version = _version(compare_version, "comparison version")
+
     # Pre-check: verify insights is configured before queuing
-    with spinner("Checking insights configuration..."):
+    with _progress(output, "Checking insights configuration..."):
         status = client.get("/api/v1/insights/status")
     if not status.get("available"):
         reason = status.get("reason", "Insights is not configured.")
-        rprint(f"[red]✗ Insights not available:[/red] {reason}")
-        rprint()
-        rprint("  Configure with:")
-        rprint("    [cyan]observal admin set insights.model_sections anthropic/claude-3-5-sonnet-20241022[/cyan]")
-        rprint("    [cyan]observal admin set insights.api_key <your-api-key>[/cyan]")
-        rprint()
-        rprint("  [dim]Any LiteLLM-compatible model string works (OpenAI, Anthropic, Bedrock, Gemini, Ollama).[/dim]")
-        rprint("  [dim]See: https://docs.litellm.ai/docs/providers[/dim]")
-        raise typer.Exit(1)
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            f"Insights is unavailable: {reason}",
+            operation="Generate agent insight report",
+            resource="insights service",
+            remediation="Configure insights.model_sections and insights.api_key, then retry.",
+        )
 
-    with spinner("Generating insight report..."):
+    with _progress(output, "Generating insight report..."):
         resolved = _resolve_agent_id(agent_id)
         body = {"period_days": period_days}
         if agent_version:
@@ -613,31 +703,59 @@ def insights_generate(
             body["comparison_agent_version"] = compare_version
         data = client.post(f"/api/v1/agents/{resolved}/insights/reports", body)
 
-    if wait and output != "json":
+    if wait:
         import time
 
         report_id = str(data.get("id"))
+        if output == "json":
+            output_json_line({"event": "queued", "report": data})
         for _ in range(120):
             current = client.get(f"/api/v1/agents/{resolved}/insights/reports/{report_id}")
             phase = str(current.get("progress_phase") or current.get("status") or "queued").replace("_", " ")
             percent = current.get("progress_percent", 0)
-            rprint(f"\r  {status_badge(current.get('status', 'pending'))} {phase} ({percent}%)", end="")
+            if output == "json":
+                output_json_line({"event": "progress", "report": current})
+            else:
+                rprint(f"\r  {status_badge(current.get('status', 'pending'))} {esc(phase)} ({percent}%)", end="")
             if current.get("status") in {"completed", "failed"}:
-                rprint()
+                if output != "json":
+                    rprint()
                 data = current
                 break
             time.sleep(3)
+        else:
+            fail(
+                ErrorCategory.UNAVAILABLE,
+                "Timed out waiting for the insight report.",
+                operation="Generate agent insight report",
+                resource="insight report",
+                remediation="Use `observal ops insights show <agent> latest` to check it later.",
+            )
+
+        if data.get("status") == "failed":
+            fail(
+                ErrorCategory.UNAVAILABLE,
+                "Insight report generation failed.",
+                operation="Generate agent insight report",
+                resource="insight report",
+                remediation="Inspect the report error and insights provider configuration.",
+                detail=str(data.get("error_message") or ""),
+            )
+        if output == "json":
+            return
 
     if output == "json":
         output_json(data)
         return
     rprint(f"[green]✓ Report queued[/green] (status: {status_badge(data.get('status', 'pending'))})")
-    rprint(f"  ID: [dim]{data.get('id', '')}[/dim]")
+    rprint(f"  ID: [dim]{esc(data.get('id', ''))}[/dim]")
     if data.get("agent_version"):
-        rprint(f"  Version: v{data.get('agent_version')}")
+        rprint(f"  Version: v{esc(data.get('agent_version'))}")
     if data.get("comparison_agent_version"):
-        rprint(f"  Compare: v{data.get('comparison_agent_version')}")
+        rprint(f"  Compare: v{esc(data.get('comparison_agent_version'))}")
     rprint(f"  Period: {str(data.get('period_start', ''))[:10]} → {str(data.get('period_end', ''))[:10]}")
     if data.get("progress_phase"):
-        rprint(f"  Phase: {str(data.get('progress_phase')).replace('_', ' ')} ({data.get('progress_percent', 0)}%)")
+        rprint(
+            f"  Phase: {esc(str(data.get('progress_phase')).replace('_', ' '))} ({data.get('progress_percent', 0)}%)"
+        )
     rprint("[dim]  Run `observal ops insights show <agent>` when complete.[/dim]")

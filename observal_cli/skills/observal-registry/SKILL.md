@@ -3,248 +3,46 @@
 # SPDX-License-Identifier: Apache-2.0
 name: observal-registry
 command: observal
-description: Submit, browse, install, edit, archive, restore, transfer, and version MCPs, skills, hooks, prompts, and sandboxes in the Observal registry, and get components recommended for the current user. Use when the user wants to submit a component, install one, edit a draft, publish a new version, browse the component library, or asks what they should install or are missing.
-version: 2.1.0
+description: "Searches, recommends, bulk-submits, installs, edits, versions, archives, restores, transfers, and manages co-authors for Observal MCP servers, skills, hooks, prompts, and sandboxes. Use when the user wants to find components, publish one or many they control, install them into a harness, or manage their lifecycle."
+version: 2.3.0
 owner: observal
 ---
 
-# Observal Registry: Component CRUD
-
-## Critical Rules
-
-1. **EXECUTE commands**: run them in your shell. Set timeout to 60 seconds.
-2. **Pass `--output json`** on list/show commands.
-3. **Pass `--yes`** on destructive lifecycle commands (`archive`, `unarchive`) and MCP JSON submit when defaults are acceptable.
-4. **When in doubt about a flag, run `<command> --help` first.**
-5. **`--from-file` does NOT exist on `mcp submit`**: that flag is on `mcp edit`.
-
----
-## Procedure: Browse Registry
-
-Use natural-language keywords with `--search`; do not require exact whole-query matches.
-
-```bash
-observal registry mcp list --category developer-tools --output json
-observal registry mcp list --namespace platform-tools --output json
-observal registry skill list --namespace platform-tools --output json
-observal registry skill list --team platform-tools --search 'frontend design' --output json
-observal registry skill list --task-type code-review --harness claude-code --output json
-observal registry hook list --event UserPromptSubmit --output json
-observal registry prompt list --category coding --output json
-observal registry sandbox list --runtime docker --output json
-
-observal registry mcp my --output json
-observal registry skill my --output json
-observal registry prompt my --output json
-
-observal registry mcp show NAME --output json
-observal registry hook show NAME --output json
-```
-
-After `list`, use row numbers (1, 2, 3...) in subsequent commands. Add `--interactive` for fuzzy picker. Team members see approved private teamspace items in the same lists. Use `--team TEAM_HANDLE` to list only what that teamspace owns, including its private items when you are a member. Direct references use `TEAM_HANDLE/ITEM_SLUG`. Skill search covers descriptions, task types, target agents, slash commands, source paths, delivery mode, and SKILL.md content.
-
-**MCP categories:** `browser-automation`, `cloud-platforms`, `code-execution`, `communication`, `databases`, `developer-tools`, `devops`, `file-systems`, `finance`, `knowledge-memory`, `monitoring`, `multimedia`, `productivity`, `search`, `security`, `version-control`, `ai-ml`, `data-analytics`, `general`
-
-**Skill task types:** `code-review`, `code-generation`, `testing`, `documentation`, `debugging`, `refactoring`, `deployment`, `security-audit`, `performance`, `general`
-
----
-## Procedure: Recommend Components For This User
-
-Use when the user asks what to install, what is worth trying, or what they are missing. Ranked against the signed-in user's own sessions, so check here before browsing — it beats guessing keywords for `list --search`. `--refresh` recomputes the profile instead of using the 24h cache: slower, so only when recent work changed and results look stale.
-
-```bash
-observal registry recommend --output json
-observal registry recommend --limit 12 --type mcp --refresh --output json
-```
-
-| Field | Meaning |
-|-------|---------|
-| `personalized` | `true` = ranked against this user's sessions. `false` = popularity only |
-| `profile_sessions` | How many sessions the profile was built from |
-| `topics` | Dominant work areas detected (e.g. `databases`, `frontend`) |
-| `items[].reason` | Why this was picked. Quote it; do not invent a better reason |
-| `items[].matched_on` | The user's own terms that matched |
-
-**What you may claim:** `personalized: false` → say plainly there is no session history yet and these are simply the most-used components; never present them as tailored. `items: []` → say either nothing in the registry is visible to them or they already installed or dismissed it all; this is not an error, so do not report it as one. `profile_sessions` under ~5 → give the answer, and say the profile is thin.
-
-```bash
-observal registry recommend dismiss skill NAMESPACE/SLUG
-observal registry recommend dismiss mcp NAMESPACE/SLUG --action not_relevant
-observal registry recommend dismiss hook NAMESPACE/SLUG --action installed
-```
-
-Dismissals are per-user and permanent until overwritten, so confirm before dismissing. A work profile is visible only to its owner: no flag or server route exposes another user's recommendations, so if asked, say it is unavailable rather than improvising a workaround.
-
----
-## Procedure: Submit Component
-
-### MCP
-
-Paste the MCP JSON config. Optionally include `--git` so Observal clones the repo and detects local OCI setup for Dockerfile, Containerfile, or compose `build:`.
-
-```bash
-observal registry mcp submit --example
-observal registry mcp submit --name my-mcp --category developer-tools --yes
-observal registry mcp submit --git https://github.com/org/mcp-server --name my-mcp --category developer-tools --yes
-observal registry mcp submit --name internal-mcp --category developer-tools --team platform-tools --visibility team --yes
-```
-
-The command still expects pasted JSON. If a local image must be built, follow the returned setup instructions, for example `docker build -t name:latest .`. Manual installs also print these setup instructions before the MCP can be used.
-
-### Skill
-
-There are two delivery modes for skills:
-
-**Git-based** (server validates SKILL.md from repo, recommended for open-source):
-```bash
-observal registry skill submit --example
-observal registry skill submit --skill-md ./SKILL.md --git-url https://github.com/org/repo --git-ref main --name my-skill --description 'What it does' --task-type general
-observal registry skill submit --skill-md ./SKILL.md --git-url https://github.com/org/repo --name internal-skill --description 'Team skill' --task-type general --team platform-tools --visibility team
-```
-
-**Registry direct** (inline SKILL.md + optional script, no git repo needed):
-```bash
-observal registry skill submit --skill-md ./SKILL.md --delivery-mode registry_direct --name my-skill --description 'What it does' --task-type general --harness claude-code
-observal registry skill submit --skill-md ./SKILL.md --script ./run.sh --delivery-mode registry_direct --name my-skill --description 'What it does' --task-type general
-```
-
-On install, registry_direct skills write `<skill-name>/SKILL.md` and `<skill-name>/scripts/<filename>` into the harness skills directory.
-
-**Decision guide:**
-- Use git-based when: you have a public repo, want CI on updates, need multi-file skills
-- Use registry_direct when: the skill is self-contained, generated by insights, or has no external repo
-
-### Hook
-
-```bash
-observal registry hook submit --example
-observal registry hook submit --name guard --description 'Guard prompts' --event UserPromptSubmit --handler-command './guard.sh' --execution-mode sync --timeout 10 --scope agent --harness claude-code
-observal registry hook submit --from-file hook.json --script ./pre-commit.sh
-```
-
-Optional: `--source-url URL --source-ref main`, `--requires dep1 --requires dep2`. Timeout caps: blocking 30s, sync 10s, async 60s.
-
-**Hook events:** `Start`, `Stop`, `UserPromptSubmit`, `SubagentComplete`, `ToolResult`, `Error`
-**Execution modes:** `blocking` (waits for completion), `sync` (waits, shorter timeout), `async` (fire and forget)
-**Handler types:** `script` (runs a shell script), `http` (calls a webhook URL)
-
-### Prompt
-
-```bash
-observal registry prompt submit --name frontend-brief --description 'Frontend design brief' --category general --template 'Design {{component}} accessibly'
-observal registry prompt submit --from-file prompt.json
-```
-
-### Sandbox
-
-```bash
-observal registry sandbox submit --example
-observal registry sandbox submit --name node-runner --description 'Node sandbox' --runtime-type docker --image node:22-alpine --resource-limits '{"memory_mb":512}' --runtime-config '{}' --network-policy none --entrypoint node --harness claude-code
-observal registry sandbox submit --name lxc-runner --description 'LXC sandbox' --runtime-type lxc --image images:ubuntu/22.04 --runtime-config '{"profile":"default"}' --network-policy none --entrypoint 'sh' --harness kiro
-observal registry sandbox submit --from-file sandbox.json
-```
-
-All types support `--example` to print ready-to-edit example payloads, `--draft` to save without review, and `--submit NAME` to submit an existing draft.
-
----
-## Procedure: Install Component
-
-```bash
-observal registry mcp install NAME --harness kiro
-observal registry mcp install NAME --harness claude-code --raw
-observal registry mcp install NAME --harness cursor --version 2.1.0
-observal registry skill install NAME --harness kiro --scope user
-observal registry skill install NAME --harness claude-code --scope project
-observal registry skill install NAME --harness claude-code --version 1.2.0
-observal registry hook install NAME --harness kiro
-observal registry hook install NAME --harness claude-code --platform darwin --dir .
-```
-
-**Flags (all install commands):**
-- `--harness` (required): target harness
-- `--version <semver>`: install a specific version instead of latest
-- `--raw`: output JSON only (MCP)
-- `--scope user|project`: install scope (skill)
-
----
-
-## Procedure: Edit Component
-
-**Warning:** Editing an approved listing triggers a version bump flow. For draft/pending/rejected items, edits in place with an optimistic lock.
-
-```bash
-observal registry mcp edit NAME --from-file updates.json
-observal registry mcp edit NAME --name new-name --description 'New desc'
-observal registry skill edit NAME --from-file updates.json
-observal registry hook edit NAME --version 1.2.0 --event Stop
-observal registry prompt edit NAME --template 'New template body'
-observal registry sandbox edit NAME --image python:3.12-slim
-```
-
----
-
-## Procedure: Publish Component Version
-
-```bash
-observal registry version publish mcp NAME --version 1.2.0 --description 'What changed'
-observal registry version publish skill NAME --version 0.3.0 --description 'New tasks'
-observal registry version publish hook NAME --version 1.0.1 --description 'Bug fix'
-observal registry version publish prompt NAME --version 2.0.0 --description 'Rewrite'
-observal registry version publish sandbox NAME --version 1.1.0 --description 'New image' --extra '{"runtime_type":"docker","image":"python:3.12-slim","resource_limits":{"timeout":60}}'
-observal registry version publish sandbox NAME --version 1.2.0 --description 'LXC profile' --extra '{"runtime_type":"lxc","image":"images:ubuntu/22.04","runtime_config":{"profile":"default"}}'
-
-observal registry version list mcp NAME --output json
-```
-
----
-
-## Procedure: Archive / Restore Component
-
-```bash
-observal registry mcp archive NAME --yes
-observal registry skill archive NAME --yes
-observal registry hook archive NAME --yes
-observal registry prompt archive NAME --yes
-observal registry sandbox archive NAME --yes
-
-observal registry mcp unarchive NAME --yes
-observal registry skill unarchive NAME --yes
-observal registry mcp transfer-owner NAME @username -y
-observal registry skill transfer-owner NAME @username -y
-```
-
----
-
-## Procedure: Manage Co-Authors
-
-Co-authors have equal access to the component owner (edit, publish, manage co-authors).
-
-```bash
-# List
-observal registry mcp co-authors list <id-or-name>
-observal registry skill co-authors list <id-or-name>
-
-# Add
-observal registry skill co-authors add <id-or-name> user@example.com
-
-# Remove
-observal registry hook co-authors remove <id-or-name> <user-uuid>
-```
-
-
-## Error Reference
-
-| Error | Fix |
-|-------|-----|
-| `--from-file` not on `mcp submit` | Paste JSON, optionally with `--git`, or use `--draft` |
-| `412 Edit lock held` | Wait a few minutes, retry |
-| Hook `timeout` | Caps: blocking 30s, sync 10s, async 60s |
-
----
-
-## Output Contract
-
-1. One sentence stating intent.
-2. The exact command in a fenced code block.
-3. The result: success / specific error.
-4. The next action, or "done".
+# Managing Registry Components
+
+## Execution contract
+
+1. Execute commands with a 60 second timeout.
+2. **Use machine output by default:** add `--output json` whenever supported. Parse list results from `items` and pagination fields.
+3. Run the leaf command's `--help` when any path, flag, enum, or payload shape is uncertain.
+4. Supply all required inputs and confirmation flags. Do not leave an agent waiting at a prompt.
+5. Reuse returned UUIDs and `qualified_name` values. Never automate with row numbers or ambiguous bare names.
+6. Verify installs, submissions, edits, versions, ownership changes, and lifecycle transitions.
+7. Submit or modify only components the user owns or is authorized to manage.
+8. Never expose environment values, headers, tokens, private source data, or submitted secret fields.
+9. Mutations are sent once. After an uncertain transport failure, read component state before retrying.
+
+## Choose the workflow
+
+| User intent | Read |
+| --- | --- |
+| Find, inspect, recommend, or install components | [Discovery and installation](references/discovery-and-installation.md) |
+| Submit one component or a mixed bulk file | [Component submission](references/component-submission.md) |
+| Edit, version, archive, restore, transfer, or manage co-authors | [Registry lifecycle](references/registry-lifecycle.md) |
+
+Read only the selected reference, and read it completely before executing.
+
+## Registry rules
+
+- Search with the user's natural-language terms, then narrow by type, namespace, team, harness, or category only when useful.
+- Open-ended requests such as "what am I missing?" use personalized recommendations before keyword search.
+- `personalized: false` means popularity fallback, not a personal recommendation.
+- Team members can see authorized private teamspace items. Use `TEAM_HANDLE/ITEM_SLUG` for direct references.
+- Draft, pending, rejected, and approved items have different edit behavior. Read status before mutating.
+- A successful submit can still be pending review. Report the returned status instead of saying it is published.
+- Bulk files are structurally validated before mutation. Inspect every per-entry result and verify uncertain retries by canonical identity.
+- Prefer an existing installed dependency or native CLI path. Do not invent wrappers or telemetry variables.
+
+## Completion
+
+Report component type, canonical identity, version, status, target harness or scope when applicable, warnings, and any review or setup step still required.

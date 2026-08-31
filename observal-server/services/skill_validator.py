@@ -98,6 +98,15 @@ async def _discover_skill_path(client: httpx.AsyncClient, git_url: str, git_ref:
     return None
 
 
+def _normalize_skill_path(skill_path: str | None) -> str:
+    clean_path = (skill_path or "/").strip("/")
+    if clean_path.casefold() == "skill.md":
+        return ""
+    if clean_path.casefold().endswith("/skill.md"):
+        return clean_path.rsplit("/", 1)[0]
+    return clean_path
+
+
 def _build_raw_url(git_url: str, skill_path: str, git_ref: str) -> str:
     """Build a raw content URL for SKILL.md.
 
@@ -105,7 +114,7 @@ def _build_raw_url(git_url: str, skill_path: str, git_ref: str) -> str:
     Falls back to appending /raw/<ref>/<path> for other hosts (e.g. GitLab).
     """
     optic.trace("building raw URL for skill at {}", skill_path)
-    skill_path = skill_path.strip("/")
+    skill_path = _normalize_skill_path(skill_path)
     skill_md = f"{skill_path}/SKILL.md" if skill_path else "SKILL.md"
 
     m = _GITHUB_RE.match(git_url.rstrip("/"))
@@ -220,6 +229,7 @@ async def validate_skill_md(
         SkillValidationError: if SKILL.md cannot be fetched or is invalid.
     """
     optic.trace("building raw URL for skill at {}", skill_path)
+    skill_path = _normalize_skill_path(skill_path) or "/"
     raw_url = _build_raw_url(git_url, skill_path, git_ref)
 
     try:

@@ -11,23 +11,7 @@ import { ErrorBoundary } from "@/components/shared/error-boundary";
 import { VersionMismatchBanner } from "@/components/shared/version-mismatch-banner";
 import "@/app.css";
 
-const THEMES = [
-  "light",
-  "dark",
-  "midnight",
-  "forest",
-  "sunset",
-  "solarized-dark",
-  "solarized-light",
-  "dracula",
-  "nord",
-  "monokai",
-  "gruvbox",
-  "catppuccin",
-  "tokyo-night",
-  "one-dark",
-  "rose-pine",
-];
+const THEMES = ["dark", "light"];
 
 function RootComponent() {
   const [queryClient] = useState(makeQueryClient);
@@ -35,7 +19,7 @@ function RootComponent() {
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <ThemeProvider defaultTheme="system" themes={THEMES}>
+        <ThemeProvider defaultTheme="dark" themes={THEMES}>
           <Outlet />
           <VersionMismatchBanner />
         </ThemeProvider>

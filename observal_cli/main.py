@@ -26,6 +26,7 @@ if os.path.isdir(_shared) and _shared not in sys.path:
 import typer
 
 from observal_cli.cmd_auth import version_callback
+from observal_cli.errors import ErrorHandlingGroup
 
 
 def _check_package_conflict() -> None:
@@ -68,7 +69,14 @@ def _version_option(value: bool):
 
 app = typer.Typer(
     name="observal",
-    help="Observal: MCP Server & Agent Registry CLI",
+    cls=ErrorHandlingGroup,
+    help=(
+        "Observal: MCP Server & Agent Registry CLI\n\n"
+        "Examples:\n"
+        "  observal scan\n"
+        "  observal agent list\n"
+        "  observal registry mcp list"
+    ),
     no_args_is_help=True,
     rich_markup_mode="rich",
     pretty_exceptions_enable=False,
@@ -100,7 +108,7 @@ def main(
 
     _migrate_legacy_mcp_configs()
 
-    # One-time migration: .observal/agent markers → lockfile.json
+    # One-time local state migrations
     _try_lockfile_migration()
 
 
@@ -122,13 +130,28 @@ def _migrate_legacy_mcp_configs() -> None:
             rprint(f"  [dim]{path}[/dim]")
 
 
-def _try_lockfile_migration() -> None:
-    """One-time migration of .observal/agent markers to lockfile.json.
+def _sync_bundled_skills() -> None:
+    """Hash-check and synchronize bundled skills before every command."""
+    try:
+        from observal_cli.skill_installer import sync_observal_skills
 
-    Runs only when: lockfile.json doesn't exist but config.json DOES
-    (meaning the user has previously logged in but never had a lockfile).
-    Skips entirely if ~/.observal/ doesn't exist yet (fresh install).
-    """
+        sync_observal_skills()
+    except OSError as error:
+        from observal_cli.errors import ErrorCategory, fail
+
+        fail(
+            ErrorCategory.PERMISSION if isinstance(error, PermissionError) else ErrorCategory.UNEXPECTED,
+            "Bundled Observal skills could not be synchronized.",
+            operation="Synchronize bundled skills",
+            resource="installed Observal skills",
+            remediation="Reinstall the CLI or check harness skill-directory permissions, then retry.",
+            detail=repr(error),
+        )
+
+
+def _try_lockfile_migration() -> None:
+    """Synchronize bundled skills, then migrate legacy agent markers when needed."""
+    _sync_bundled_skills()
     try:
         from observal_cli.lockfile import CONFIG_DIR, LOCKFILE_PATH, migrate_agent_markers
 
@@ -144,8 +167,10 @@ def _try_lockfile_migration() -> None:
 # ── Register command groups ──────────────────────────────
 
 from observal_cli.cmd_agent import agent_app
+from observal_cli.cmd_api import register_api
 from observal_cli.cmd_archive import add_archive_commands
 from observal_cli.cmd_auth import auth_app, register_config
+from observal_cli.cmd_bulk import bulk_app
 from observal_cli.cmd_co_authors import make_co_authors_typer
 from observal_cli.cmd_component import version_app
 from observal_cli.cmd_doctor import doctor_app
@@ -171,7 +196,6 @@ from observal_cli.cmd_skill import skill_app
 from observal_cli.cmd_support import support_app
 from observal_cli.cmd_team import team_app
 from observal_cli.cmd_transfer import add_transfer_owner_command
-from observal_cli.cmd_uninstall import register_uninstall
 
 # ═══════════════════════════════════════════════════════════
 # registry_app: Component registry parent group
@@ -179,7 +203,13 @@ from observal_cli.cmd_uninstall import register_uninstall
 
 registry_app = typer.Typer(
     name="registry",
-    help="Component registry (MCPs, skills, hooks, prompts, sandboxes)",
+    help=(
+        "Component registry (MCPs, skills, hooks, prompts, sandboxes)\n\n"
+        "Examples:\n"
+        "  observal registry mcp list\n"
+        "  observal registry skill list\n"
+        "  observal registry recommend"
+    ),
     no_args_is_help=True,
 )
 
@@ -191,6 +221,7 @@ registry_app.add_typer(sandbox_app, name="sandbox")
 registry_app.add_typer(models_app, name="models")
 registry_app.add_typer(version_app, name="version")
 registry_app.add_typer(recommend_app, name="recommend")
+registry_app.add_typer(bulk_app, name="bulk")
 
 # ── Co-authors and ownership sub-commands ─────────────────
 mcp_app.add_typer(make_co_authors_typer("mcps"), name="co-authors")
@@ -216,6 +247,7 @@ app.add_typer(auth_app, name="auth")
 
 # ── Primary user workflows (root) ─────────────────────────
 register_config(app)
+register_api(app)
 register_scan(app)
 register_outdated(app)
 
@@ -240,24 +272,18 @@ ops_app.add_typer(logs_app, name="logs")
 ops_app.add_typer(insights_app, name="insights")
 # support → doctor support (diagnostic bundles, related to doctor troubleshooting)
 doctor_app.add_typer(support_app, name="support")
-# uninstall → self uninstall (CLI lifecycle alongside upgrade/downgrade/rollback)
-register_uninstall(self_app)
 # migrate → server migrate (operator infra tooling)
 
 # Reconcile (push local sessions to server)
-from observal_cli.cmd_reconcile_cli import reconcile_app
+from observal_cli.cmd_reconcile_cli import register_reconcile
 
-app.add_typer(reconcile_app, name="reconcile")
+register_reconcile(app)
 
 # Server management (embedded + Docker)
-try:
-    from observal_cli.cmd_server import server_app
+from observal_cli.cmd_server import server_app
 
-    server_app.add_typer(migrate_app, name="migrate")
-    app.add_typer(server_app, name="server")
-except ImportError:
-    # server deps not installed; register migrate at top level as fallback
-    app.add_typer(migrate_app, name="migrate")
+server_app.add_typer(migrate_app, name="migrate")
+app.add_typer(server_app, name="server")
 
 
 def _show_update_banner() -> None:

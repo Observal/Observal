@@ -111,7 +111,7 @@ Skip ClickHouse schema migrations on server startup.
 | Value | Effect |
 |-------|--------|
 | `false` (default) | Schema migrations run automatically on every startup |
-| `true` | Skip DDL; use when migrations are handled separately (e.g., `observal migrate`) |
+| `true` | Skip DDL when a separate deployment migration job applies ClickHouse migrations |
 
 **When to enable:** Large ClickHouse clusters where DDL operations are slow or require coordination, or when running multiple API replicas (only one should run migrations).
 

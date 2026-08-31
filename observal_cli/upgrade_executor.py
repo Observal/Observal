@@ -30,7 +30,14 @@ from observal_cli.install_detector import InstallInfo, InstallMethod
 GITHUB_REPO = "Observal/Observal"
 
 
-def execute(install_info: InstallInfo, target_version: str, direction: str, spinner) -> None:
+def execute(
+    install_info: InstallInfo,
+    target_version: str,
+    direction: str,
+    spinner,
+    *,
+    interactive: bool = True,
+) -> None:
     """Execute the actual version change for uv/pip/binary installs.
 
     Args:
@@ -38,6 +45,7 @@ def execute(install_info: InstallInfo, target_version: str, direction: str, spin
         target_version: Target version string (e.g. "0.7.0").
         direction: "upgrade" or "downgrade".
         spinner: Context manager for progress display.
+        interactive: Whether checksum fallback may ask for confirmation.
     """
     if install_info.method == InstallMethod.UV_TOOL:
         _install_via_uv(target_version, direction, spinner)
@@ -46,7 +54,7 @@ def execute(install_info: InstallInfo, target_version: str, direction: str, spin
     elif install_info.method == InstallMethod.PIP:
         _install_via_pip(target_version, direction, spinner)
     elif install_info.method == InstallMethod.BINARY:
-        _install_binary(install_info, target_version, direction, spinner)
+        _install_binary(install_info, target_version, direction, spinner, interactive=interactive)
     else:
         rprint(f"[red]Cannot {direction} - unsupported install method: {install_info.method.value}[/red]")
         raise typer.Exit(1)
@@ -96,7 +104,14 @@ def _install_via_pip(target_version: str, direction: str, spinner) -> None:
         raise typer.Exit(1)
 
 
-def _install_binary(install_info: InstallInfo, target_version: str, direction: str, spinner) -> None:
+def _install_binary(
+    install_info: InstallInfo,
+    target_version: str,
+    direction: str,
+    spinner,
+    *,
+    interactive: bool = True,
+) -> None:
     """Download and install standalone binary with checksum verification."""
     system = platform.system().lower()
     machine = platform.machine().lower()
@@ -142,7 +157,7 @@ def _install_binary(install_info: InstallInfo, target_version: str, direction: s
     bin_content = _download_binary(assets[artifact_name], spinner, artifact_name)
 
     # Verify checksum
-    _verify_checksum(bin_content, checksums, artifact_name)
+    _verify_checksum(bin_content, checksums, artifact_name, interactive=interactive)
 
     # Backup and replace
     _replace_binary(install_info, bin_content, target_version, system, suffix)
@@ -179,7 +194,13 @@ def _download_binary(download_url: str, spinner, artifact_name: str) -> bytes:
     return bin_resp.content
 
 
-def _verify_checksum(content: bytes, checksums: dict[str, str], artifact_name: str) -> None:
+def _verify_checksum(
+    content: bytes,
+    checksums: dict[str, str],
+    artifact_name: str,
+    *,
+    interactive: bool = True,
+) -> None:
     """Verify SHA-256 checksum. Aborts on mismatch."""
     actual_hash = hashlib.sha256(content).hexdigest()
     expected_hash = checksums.get(artifact_name)
@@ -192,6 +213,9 @@ def _verify_checksum(content: bytes, checksums: dict[str, str], artifact_name: s
         rprint(f"[dim]SHA-256 verified: {actual_hash[:16]}...[/dim]")
     else:
         rprint("[yellow]No checksum available for verification.[/yellow]")
+        if not interactive:
+            rprint("[red]Non-interactive installation requires a published checksum.[/red]")
+            raise typer.Exit(1)
         if not typer.confirm("Install without verification?", default=False):
             raise typer.Abort()
 

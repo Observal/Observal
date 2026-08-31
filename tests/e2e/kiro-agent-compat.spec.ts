@@ -3,30 +3,41 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { test, expect } from "@playwright/test";
-import { execSync } from "child_process";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+} from "node:fs";
 import { getApiKey, API_BASE } from "./helpers";
+import { runCommand } from "./command";
 
-const CWD = execSync("git rev-parse --show-toplevel", {
-  encoding: "utf-8",
-}).trim();
+const KIRO_PULL_DIR = "/tmp/kiro-compat-pull";
+const CLAUDE_PULL_DIR = "/tmp/cc-compat-pull";
 
-function run(cmd: string): string {
-  return execSync(cmd, {
-    encoding: "utf-8",
-    timeout: 30_000,
-    cwd: CWD,
-  });
+function resetDirectory(path: string): void {
+  rmSync(path, { recursive: true, force: true });
+  mkdirSync(path, { recursive: true });
+}
+
+function listFiles(path: string): string {
+  return existsSync(path)
+    ? readdirSync(path, { recursive: true })
+        .map(String)
+        .sort()
+        .join("\n")
+    : "";
 }
 
 test.describe("Kiro Agent Cross-Compatibility", () => {
   let agentId: string;
 
   test.beforeAll(async () => {
-    // Get an existing agent or skip
     const apiKey = await getApiKey();
     const agents = await fetch(`${API_BASE}/api/v1/agents`, {
       headers: { "Authorization": `Bearer ${apiKey}` },
-    }).then((r) => r.json());
+    }).then((response) => response.json());
 
     if (agents.length > 0) {
       agentId = agents[0].id;
@@ -40,10 +51,9 @@ test.describe("Kiro Agent Cross-Compatibility", () => {
     const config = await fetch(
       `${API_BASE}/api/v1/agents/${agentId}/install?ide=kiro`,
       { headers: { "Authorization": `Bearer ${apiKey}` } },
-    ).then((r) => r.json());
+    ).then((response) => response.json());
 
     expect(config).toBeTruthy();
-    // Config should contain config_snippet with Kiro-appropriate fields
     const snippet = config.config_snippet ?? config;
     expect(snippet).toBeTruthy();
   });
@@ -55,72 +65,61 @@ test.describe("Kiro Agent Cross-Compatibility", () => {
     const config = await fetch(
       `${API_BASE}/api/v1/agents/${agentId}/install?ide=claude-code`,
       { headers: { "Authorization": `Bearer ${apiKey}` } },
-    ).then((r) => r.json());
+    ).then((response) => response.json());
 
     expect(config).toBeTruthy();
   });
 
   test("pull for Kiro writes .kiro/ directory structure", () => {
     test.skip(!agentId, "No agents available");
-
-    run("rm -rf /tmp/kiro-compat-pull && mkdir -p /tmp/kiro-compat-pull");
+    resetDirectory(KIRO_PULL_DIR);
 
     try {
-      run(
-        `observal pull ${agentId} --harness kiro --dir /tmp/kiro-compat-pull 2>&1`,
-      );
-    } catch (e: unknown) {
-      // Pull might fail if agent has no components — that's OK for this test
-      const err = e as { stdout?: string; message?: string };
-      console.log("Pull output:", err.stdout ?? err.message);
-    }
+      runCommand("observal", [
+        "agent",
+        "pull",
+        agentId,
+        "--harness",
+        "kiro",
+        "--dir",
+        KIRO_PULL_DIR,
+        "--no-prompt",
+      ]);
 
-    // Check what files were created
-    try {
-      const files = run(
-        "find /tmp/kiro-compat-pull -type f 2>/dev/null",
-      ).trim();
+      const files = listFiles(KIRO_PULL_DIR);
+      expect(files).toBeTruthy();
       console.log("Kiro pull created files:", files);
 
-      // If MCP config was generated, verify it's valid JSON
-      try {
-        const mcpConfig = run(
-          "cat /tmp/kiro-compat-pull/.kiro/settings/mcp.json 2>/dev/null",
-        );
-        JSON.parse(mcpConfig); // Should not throw
-      } catch {
-        // MCP config might not exist if agent has no MCP components
+      const mcpPath = `${KIRO_PULL_DIR}/.kiro/settings/mcp.json`;
+      if (existsSync(mcpPath)) {
+        JSON.parse(readFileSync(mcpPath, "utf-8"));
       }
-    } catch {
-      // No files created — agent might have no components
+    } finally {
+      rmSync(KIRO_PULL_DIR, { recursive: true, force: true });
     }
-
-    run("rm -rf /tmp/kiro-compat-pull");
   });
 
   test("pull for Claude Code writes .claude/ directory structure", () => {
     test.skip(!agentId, "No agents available");
-
-    run("rm -rf /tmp/cc-compat-pull && mkdir -p /tmp/cc-compat-pull");
-
-    try {
-      run(
-        `observal pull ${agentId} --harness claude-code --dir /tmp/cc-compat-pull 2>&1`,
-      );
-    } catch (e: unknown) {
-      const err = e as { stdout?: string; message?: string };
-      console.log("Pull output:", err.stdout ?? err.message);
-    }
+    resetDirectory(CLAUDE_PULL_DIR);
 
     try {
-      const files = run(
-        "find /tmp/cc-compat-pull -type f 2>/dev/null",
-      ).trim();
+      runCommand("observal", [
+        "agent",
+        "pull",
+        agentId,
+        "--harness",
+        "claude-code",
+        "--dir",
+        CLAUDE_PULL_DIR,
+        "--no-prompt",
+      ]);
+
+      const files = listFiles(CLAUDE_PULL_DIR);
+      expect(files).toBeTruthy();
       console.log("Claude Code pull created files:", files);
-    } catch {
-      // No files — OK
+    } finally {
+      rmSync(CLAUDE_PULL_DIR, { recursive: true, force: true });
     }
-
-    run("rm -rf /tmp/cc-compat-pull");
   });
 });
