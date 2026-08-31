@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 import asyncio
-import uuid  # noqa: TC003
+import uuid
 from datetime import UTC, timedelta
 from datetime import datetime as dt
 
@@ -18,7 +18,13 @@ from loguru import logger as optic
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002
 
-from api.deps import apply_visibility_filter, get_db, optional_current_user, require_role
+from api.deps import (
+    apply_visibility_filter,
+    get_db,
+    has_admin_trace_access,
+    optional_current_user,
+    require_role,
+)
 from api.sanitize import escape_like
 from models.agent import Agent, AgentStatus, AgentVersion
 from models.agent_component import AgentComponent
@@ -39,7 +45,9 @@ from schemas.dashboard import (
     LeaderboardItem,
     OverviewStats,
     SandboxStats,
+    TokenByEntity,
     TokenStats,
+    TokenTimePoint,
     TopAgentItem,
     TopItem,
     TrendPoint,
@@ -537,11 +545,208 @@ async def trends(
 # ---------------------------------------------------------------------------
 
 
+async def _mcp_token_rows(
+    session_where: str,
+    days: int,
+    user_filter: str,
+    params: dict[str, str],
+) -> list[TokenByEntity]:
+    """Token usage attributed to MCP servers, keyed on ``mcp__<server>__<tool>``.
+
+    Tokens and credits are metered per session, not per tool call, so a session
+    is attributed in full to every MCP server it used. Totals across servers can
+    therefore exceed the overall total and must not be summed. Credits are left
+    at 0 for the same reason: per-server credit spend is not derivable.
+    """
+    rows = await _ch_json(
+        "SELECT "
+        "server, "
+        "sum(session_input) AS input_tokens, "
+        "sum(session_output) AS output_tokens, "
+        "count() AS traces "
+        "FROM ( "
+        "  SELECT session_id, "
+        "    max(input_tokens) AS session_input, "
+        "    max(output_tokens) AS session_output "
+        "  FROM session_stats_agg FINAL " + session_where + "  GROUP BY session_id "
+        ") AS s "
+        "INNER JOIN ( "
+        "  SELECT DISTINCT session_id, splitByString('__', tool_name)[2] AS server "
+        "  FROM session_events "
+        "  WHERE startsWith(tool_name, 'mcp__') "
+        f"    AND timestamp > now() - INTERVAL {int(days)} DAY "
+        "    AND timestamp < now() + INTERVAL 1 DAY " + user_filter + ") AS t "
+        "USING (session_id) "
+        "WHERE server != '' "
+        "GROUP BY server "
+        "ORDER BY (input_tokens + output_tokens) DESC, traces DESC "
+        "LIMIT 10",
+        params or None,
+    )
+    return [
+        TokenByEntity(
+            id=str(row.get("server") or ""),
+            name=str(row.get("server") or ""),
+            input=int(row.get("input_tokens") or 0),
+            output=int(row.get("output_tokens") or 0),
+            total=int(row.get("input_tokens") or 0) + int(row.get("output_tokens") or 0),
+            traces=int(row.get("traces") or 0),
+        )
+        for row in rows
+    ]
+
+
+async def _resolve_agent_names(db: AsyncSession, agent_ids: set[str]) -> dict[str, str]:
+    """Map agent UUID strings to display names, ignoring non-UUID identifiers."""
+    if not agent_ids:
+        return {}
+    agent_uuids = []
+    for agent_id in agent_ids:
+        try:
+            agent_uuids.append(uuid.UUID(agent_id))
+        except ValueError:
+            continue
+    if not agent_uuids:
+        return {}
+    try:
+        result = await db.execute(select(Agent.id, Agent.name).where(Agent.id.in_(agent_uuids)))
+        return {str(row[0]): row[1] for row in result.all()}
+    except Exception:
+        optic.opt(exception=True).warning("agent name resolution failed for token stats")
+        return {}
+
+
 @router.get("/dashboard/tokens", response_model=TokenStats)
-async def token_stats(range_: str | None = Query(None, alias="range")):
-    optic.trace("range={}", range_)
+async def token_stats(
+    range_: str | None = Query(None, alias="range"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    """Token and credit usage for the caller's sessions.
+
+    Reads the pre-aggregated ``session_stats_agg`` table. Harnesses that report
+    raw token counts (Claude Code, Codex, ...) populate the token columns;
+    Kiro only reports ``total_credits``, so both are returned and the
+    ``has_token_data`` / ``has_credit_data`` flags tell the UI which to show.
+
+    Non-admin callers (and admins under ``security.trace_privacy``) only see
+    their own sessions.
+    """
+    optic.trace("range={}, user_id={}", range_, current_user.id)
+    days = _range_days(range_)
+
+    # Mirror the traces view: exclude subagent rollups and sessions with no
+    # prompts so totals line up with the session list the user sees.
+    where = [
+        "session_id != ''",
+        "parent_session_id = ''",
+        "prompt_count > 0",
+        f"last_event_time > now() - INTERVAL {int(days)} DAY",
+    ]
+    params: dict[str, str] = {}
+    event_user_filter = ""
+    if not has_admin_trace_access(current_user):
+        where.append("user_id = {uid:String}")
+        params["param_uid"] = str(current_user.id)
+        event_user_filter = "    AND user_id = {uid:String} "
+    where_clause = "WHERE " + " AND ".join(where) + " "
+
+    # total_credits is a per-session max (the CLI sends a cumulative session
+    # total), so summing across distinct sessions is correct.
+    totals_coro = _ch_json(
+        "SELECT "
+        "sum(input_tokens) AS input_tokens, "
+        "sum(output_tokens) AS output_tokens, "
+        "sum(cache_read_tokens) AS cache_read_tokens, "
+        "sum(cache_write_tokens) AS cache_write_tokens, "
+        "sum(total_credits) AS credits, "
+        "count() AS traces, "
+        "countIf(total_credits > 0) AS credit_traces "
+        "FROM session_stats_agg FINAL " + where_clause,
+        params or None,
+    )
+    # Aliases must not repeat the aggregate in ORDER BY: ClickHouse resolves the
+    # alias first and rejects the nested aggregate (ILLEGAL_AGGREGATION).
+    by_agent_coro = _ch_json(
+        "SELECT "
+        "agent_id, "
+        "sum(input_tokens) AS input_tokens, "
+        "sum(output_tokens) AS output_tokens, "
+        "sum(total_credits) AS credits, "
+        "count() AS traces "
+        "FROM session_stats_agg FINAL " + where_clause + "AND agent_id != '' "
+        "GROUP BY agent_id "
+        "ORDER BY (input_tokens + output_tokens) DESC, credits DESC, traces DESC "
+        "LIMIT 10",
+        params or None,
+    )
+    over_time_coro = _ch_json(
+        "SELECT "
+        "toDate(last_event_time) AS day, "
+        "sum(input_tokens) AS input_tokens, "
+        "sum(output_tokens) AS output_tokens, "
+        "sum(total_credits) AS credits "
+        "FROM session_stats_agg FINAL " + where_clause + "GROUP BY day ORDER BY day",
+        params or None,
+    )
+
+    totals_rows, agent_rows, time_rows, mcp_rows = await asyncio.gather(
+        totals_coro,
+        by_agent_coro,
+        over_time_coro,
+        _mcp_token_rows(where_clause, days, event_user_filter, params),
+    )
+
+    totals = totals_rows[0] if totals_rows else {}
+    total_input = int(totals.get("input_tokens") or 0)
+    total_output = int(totals.get("output_tokens") or 0)
+    total_cache_read = int(totals.get("cache_read_tokens") or 0)
+    total_cache_write = int(totals.get("cache_write_tokens") or 0)
+    total_credits = float(totals.get("credits") or 0.0)
+    traces = int(totals.get("traces") or 0)
+    credit_traces = int(totals.get("credit_traces") or 0)
+    total_tokens = total_input + total_output
+
+    agent_names = await _resolve_agent_names(db, {str(r.get("agent_id") or "") for r in agent_rows})
+
+    by_agent = [
+        TokenByEntity(
+            id=str(row.get("agent_id") or ""),
+            name=agent_names.get(str(row.get("agent_id") or ""), str(row.get("agent_id") or "")),
+            input=int(row.get("input_tokens") or 0),
+            output=int(row.get("output_tokens") or 0),
+            total=int(row.get("input_tokens") or 0) + int(row.get("output_tokens") or 0),
+            traces=int(row.get("traces") or 0),
+            credits=round(float(row.get("credits") or 0.0), 6),
+        )
+        for row in agent_rows
+    ]
+
+    over_time = [
+        TokenTimePoint(
+            date=str(row.get("day") or ""),
+            input=int(row.get("input_tokens") or 0),
+            output=int(row.get("output_tokens") or 0),
+            credits=round(float(row.get("credits") or 0.0), 6),
+        )
+        for row in time_rows
+    ]
+
     return TokenStats(
-        total_input=0, total_output=0, total_tokens=0, avg_per_trace=0, by_agent=[], by_mcp=[], over_time=[]
+        total_input=total_input,
+        total_output=total_output,
+        total_tokens=total_tokens,
+        avg_per_trace=round(total_tokens / traces, 2) if traces else 0.0,
+        by_agent=by_agent,
+        by_mcp=mcp_rows,
+        over_time=over_time,
+        total_cache_read=total_cache_read,
+        total_cache_write=total_cache_write,
+        total_credits=round(total_credits, 6),
+        avg_credits_per_trace=round(total_credits / credit_traces, 6) if credit_traces else 0.0,
+        total_traces=traces,
+        has_token_data=total_tokens > 0,
+        has_credit_data=total_credits > 0,
     )
 
 

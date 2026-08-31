@@ -10,6 +10,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixes
+
+- return real token and credit usage from the user dashboard, and show Credit Usage for harnesses that meter in credits such as Kiro ([#1670](https://github.com/Observal/Observal/issues/1670))
+
 ## [1.12.1] - 2026-08-09
 
 ### Fixes

@@ -80,12 +80,16 @@ class TokenByEntity(BaseModel):
     output: int
     total: int
     traces: int
+    # Harnesses that meter in credits instead of tokens (Kiro) report spend here.
+    # Always 0 for ``by_mcp``: credits are metered per session, not per tool call.
+    credits: float = 0.0
 
 
 class TokenTimePoint(BaseModel):
     date: str
     input: int
     output: int
+    credits: float = 0.0
 
 
 class TokenStats(BaseModel):
@@ -96,6 +100,16 @@ class TokenStats(BaseModel):
     by_agent: list[TokenByEntity]
     by_mcp: list[TokenByEntity]
     over_time: list[TokenTimePoint]
+    total_cache_read: int = 0
+    total_cache_write: int = 0
+    # Kiro reports credits rather than raw token counts.
+    total_credits: float = 0.0
+    avg_credits_per_trace: float = 0.0
+    total_traces: int = 0
+    # False when no session in range carried raw token counts, so the UI can
+    # show credits instead of a misleading row of zeros.
+    has_token_data: bool = False
+    has_credit_data: bool = False
 
 
 # --- harness usage ---
