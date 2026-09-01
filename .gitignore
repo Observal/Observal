@@ -95,3 +95,9 @@ scripts/seed_demo.py
 # DuckDB analytics store (local dev / tests)
 *.duckdb
 *.duckdb.wal
+
+# StateM workflow artifacts
+.statem/
+progress.md
+scratchpad.md
+statem.yaml

@@ -66,6 +66,7 @@ def _make_version(
     v.reviewed_at = None
     v.created_at = datetime.now(UTC)
     v.components = []
+    v.success_criteria = None
     return v
 
 
@@ -82,6 +83,7 @@ def _make_agent(owner_id: uuid.UUID | None = None, *, with_approved_version: boo
     agent.owner = "testuser"
     agent.created_by = owner_id
     agent.co_authors = []
+    agent.success_criteria = None
 
     if with_approved_version:
         ver = _make_version(agent.id)

@@ -84,6 +84,7 @@ dev = [
     "pyyaml",
     "typer",
     "rich",
+    "hypothesis>=6.167.1",
 ]
 
 [tool.coverage.run]
