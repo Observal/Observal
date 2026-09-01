@@ -156,7 +156,7 @@ async def get_retention_stats(current_user: User = Depends(require_role(UserRole
 
     response = await _query(
         "SELECT count(DISTINCT session_id) AS cnt, "
-        "if(cnt > 0, dateDiff('day', min(timestamp), now()), 0) AS age "
+        "if(cnt > 0, date_diff('day', min(timestamp), now()::TIMESTAMP), 0) AS age "
         "FROM session_events WHERE project_id = {pid:String} FORMAT JSON",
         {"param_pid": DEFAULT_PROJECT_ID},
     )

@@ -322,6 +322,7 @@ async def test_create_version_happy_path():
         patch("api.routes.agent_versions.compute_supported_harnesses", return_value=["claude-code"]),
         patch("api.routes.agent_versions.generate_agent_config", return_value={"mcpServers": {}}),
         patch("api.routes.agent_versions.audit", new=AsyncMock()),
+        patch("api.routes.agent_versions.inbox", new=AsyncMock()),
         patch("services.agent_snapshot.build_yaml_snapshot", new=AsyncMock(return_value="snapshot")),
     ):
         result = await _create_agent_version(
@@ -477,6 +478,7 @@ async def test_create_version_co_author_allowed():
         patch("api.routes.agent_versions.compute_supported_harnesses", return_value=[]),
         patch("api.routes.agent_versions.generate_agent_config", return_value={}),
         patch("api.routes.agent_versions.audit", new=AsyncMock()),
+        patch("api.routes.agent_versions.inbox", new=AsyncMock()),
         patch("services.agent_snapshot.build_yaml_snapshot", new=AsyncMock(return_value="snapshot")),
     ):
         result = await _create_agent_version(
@@ -526,6 +528,7 @@ async def test_create_version_warns_multiple_pending():
         patch("api.routes.agent_versions.compute_supported_harnesses", return_value=[]),
         patch("api.routes.agent_versions.generate_agent_config", return_value={}),
         patch("api.routes.agent_versions.audit", new=AsyncMock()),
+        patch("api.routes.agent_versions.inbox", new=AsyncMock()),
         patch("services.agent_snapshot.build_yaml_snapshot", new=AsyncMock(return_value="snapshot")),
     ):
         result = await _create_agent_version(
@@ -568,6 +571,7 @@ async def test_review_version_approve_updates_latest():
     with (
         patch("api.routes.agent_versions._load_agent", new=AsyncMock(return_value=agent)),
         patch("api.routes.agent_versions.audit", new=AsyncMock()),
+        patch("api.routes.agent_versions.inbox", new=AsyncMock()),
     ):
         result = await _review_agent_version(
             agent_id=str(agent.id),
@@ -603,6 +607,7 @@ async def test_review_version_reject_stores_reason():
     with (
         patch("api.routes.agent_versions._load_agent", new=AsyncMock(return_value=agent)),
         patch("api.routes.agent_versions.audit", new=AsyncMock()),
+        patch("api.routes.agent_versions.inbox", new=AsyncMock()),
     ):
         result = await _review_agent_version(
             agent_id=str(agent.id),

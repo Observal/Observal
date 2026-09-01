@@ -461,6 +461,7 @@ async def test_review_version_approve_updates_latest():
     with (
         patch(RESOLVE_SEAM, new=AsyncMock(return_value=listing)),
         patch("api.routes.component_versions.audit", new=AsyncMock()),
+        patch("api.routes.component_versions.inbox", new=AsyncMock()),
     ):
         result = await _review_version(
             listing_id=str(listing.id),
@@ -501,6 +502,7 @@ async def test_review_version_reject_stores_reason():
     with (
         patch(RESOLVE_SEAM, new=AsyncMock(return_value=listing)),
         patch("api.routes.component_versions.audit", new=AsyncMock()),
+        patch("api.routes.component_versions.inbox", new=AsyncMock()),
     ):
         result = await _review_version(
             listing_id=str(listing.id),

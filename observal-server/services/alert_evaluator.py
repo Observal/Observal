@@ -32,10 +32,10 @@ async def _query_error_rate(target_type: str, target_id: str, lookback_minutes: 
     try:
         r = await _query(sql, params)
         r.raise_for_status()
-        text = r.text.strip()
-        if not text:
+        rows = r.json().get("data", [])
+        if not rows:
             return None
-        return float(text)
+        return float(next(iter(rows[0].values())))
     except Exception as e:
         optic.error("ClickHouse error_rate query failed: {}", e)
         return None
@@ -52,10 +52,10 @@ async def _query_latency_p99(target_type: str, target_id: str, lookback_minutes:
     try:
         r = await _query(sql, params)
         r.raise_for_status()
-        text = r.text.strip()
-        if not text:
+        rows = r.json().get("data", [])
+        if not rows:
             return None
-        return float(text)
+        return float(next(iter(rows[0].values())))
     except Exception as e:
         optic.error("ClickHouse latency_p99 query failed: {}", e)
         return None
@@ -65,9 +65,13 @@ async def _query_token_usage(target_type: str, target_id: str, lookback_minutes:
     """Query total token usage from JSONL session aggregates."""
     optic.trace("querying token usage for {} {}", target_type, target_id)
     sql = (
-        "SELECT sum(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens) AS token_usage "
+        # coalesce: DuckDB sum() over an empty window is NULL (ClickHouse
+        # returned 0), and float(None) would abort the query -> a below-
+        # threshold token_usage alert would never fire on zero usage.
+        "SELECT coalesce(sum(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens), 0) AS token_usage "
         "FROM session_stats_agg FINAL "
-        "WHERE last_event_time > now() - INTERVAL {lookback:UInt32} MINUTE"
+        # lookback arrives as a str; CAST avoids DuckDB STRING * INTERVAL errors.
+        "WHERE last_event_time > now()::TIMESTAMP - (CAST($lookback AS INTEGER) * INTERVAL '1 minute')"
     )
     params: dict[str, str] = {"param_lookback": str(lookback_minutes)}
     if target_type == "agent":
@@ -76,10 +80,10 @@ async def _query_token_usage(target_type: str, target_id: str, lookback_minutes:
     try:
         r = await _query(sql, params)
         r.raise_for_status()
-        text = r.text.strip()
-        if not text:
+        rows = r.json().get("data", [])
+        if not rows:
             return None
-        return float(text)
+        return float(next(iter(rows[0].values())))
     except Exception as e:
         optic.error("ClickHouse token_usage query failed: {}", e)
         return None

@@ -107,17 +107,17 @@ async def detect_layer_groups(
             ) AS agent_version,
             layer_hash,
             count() AS sessions,
-            uniq(user_id) AS users,
+            count(DISTINCT user_id) AS users,
             avg(prompt_count) AS avg_prompts,
             avg(tool_call_count) AS avg_tool_calls,
-            avg(toFloat64(last_event_time - first_event_time)) AS avg_duration_seconds,
+            avg((epoch_ms(last_event_time) - epoch_ms(first_event_time)) / 1000.0) AS avg_duration_seconds,
             sum(total_credits) / count() AS avg_cost,
             sum(input_tokens + output_tokens) / count() AS avg_tokens,
             -- Tool error proxy: sessions with high tool_result vs tool_call ratio
             -- (more results than calls = retries/errors)
-            countIf(tool_result_count > tool_call_count * 1.5) / count() AS tool_error_rate,
+            count(*) FILTER (WHERE tool_result_count > tool_call_count * 1.5) / count(*) AS tool_error_rate,
             -- Success proxy: sessions that complete (have a stop event) with reasonable duration
-            countIf(event_count > 5 AND prompt_count >= 1) / count() AS success_proxy
+            count(*) FILTER (WHERE event_count > 5 AND prompt_count >= 1) / count(*) AS success_proxy
         FROM session_stats_agg FINAL
         WHERE (agent_id = {agent_id:String} OR agent_id = {agent_name:String})
           AND last_event_time >= {t_start:String}
@@ -160,11 +160,14 @@ async def detect_layer_groups(
             "layer_hash": row["layer_hash"],
             "sessions": int(row.get("sessions", 0)),
             "users": int(row.get("users", 0)),
-            "avg_prompts": round(float(row.get("avg_prompts", 0)), 1),
-            "avg_tool_calls": round(float(row.get("avg_tool_calls", 0)), 1),
-            "avg_duration_seconds": round(float(row.get("avg_duration_seconds", 0)), 0),
-            "avg_cost": round(float(row.get("avg_cost", 0)), 4),
-            "avg_tokens": int(float(row.get("avg_tokens", 0))),
+            # `or 0` guards: DuckDB aggregates are NULL over empty/NULL-only
+            # groups (ClickHouse returned 0), e.g. sessions where every event
+            # is rendered=0 leave first/last_event_time NULL.
+            "avg_prompts": round(float(row.get("avg_prompts") or 0), 1),
+            "avg_tool_calls": round(float(row.get("avg_tool_calls") or 0), 1),
+            "avg_duration_seconds": round(float(row.get("avg_duration_seconds") or 0), 0),
+            "avg_cost": round(float(row.get("avg_cost") or 0), 4),
+            "avg_tokens": int(float(row.get("avg_tokens") or 0)),
             "tool_error_rate": round(float(row.get("tool_error_rate", 0)), 3),
             "success_proxy": round(float(row.get("success_proxy", 0)), 3),
         }

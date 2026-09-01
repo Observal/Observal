@@ -49,7 +49,7 @@ _DIFF_SQL = """
     FORMAT JSON
 """
 _BASELINE_SQL = """
-    INSERT INTO layer_snapshots (hash, project_id, user_id, harness, content, file_count, total_size, lockfile_hash)
+    INSERT OR REPLACE INTO layer_snapshots (hash, project_id, user_id, harness, content, file_count, total_size, lockfile_hash)
     VALUES (
         {hash:String},
         {project_id:String},

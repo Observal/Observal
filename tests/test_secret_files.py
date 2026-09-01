@@ -39,6 +39,8 @@ def test_server_boot_and_cli_tokens_use_secret_files(tmp_path, monkeypatch):
     from config import _secret_overrides
     from observal_cli import config as cli_config
 
+    monkeypatch.chdir(tmp_path)
+
     app_secret = tmp_path / "app-secret"
     app_secret.write_text("a" * 32)
     token = tmp_path / "token"

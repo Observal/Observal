@@ -196,7 +196,7 @@ async def get_adoption(
 
     # Monthly active users from session aggregates (last 12 months)
     rows = await _ch_json(
-        "SELECT toStartOfMonth(first_event_time) AS month, "
+        "SELECT date_trunc('month', first_event_time) AS month, "
         "count(DISTINCT user_id) AS active "
         "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 12 MONTH "
@@ -213,7 +213,7 @@ async def get_adoption(
     current_rows = await _ch_json(
         "SELECT count(DISTINCT user_id) AS active "
         "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
-        "AND first_event_time >= toStartOfMonth(now())",
+        "AND first_event_time >= date_trunc('month', now()::TIMESTAMP)",
     )
     active_users = int(current_rows[0]["active"]) if current_rows else 0
     current_pct = round((active_users / total_users) * 100, 1) if total_users > 0 else 0.0
@@ -468,7 +468,7 @@ async def get_velocity(
 ):
     """Weekly trace counts with baseline comparison."""
     rows = await _ch_json(
-        "SELECT toStartOfWeek(first_event_time) AS week, count() AS traces "
+        "SELECT date_trunc('week', first_event_time) AS week, count() AS traces "
         "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 12 WEEK "
         "GROUP BY week ORDER BY week",
@@ -543,7 +543,7 @@ async def get_top_agents(
 
     # Weekly trend (last 6 weeks) per agent
     trend_rows = await _ch_json(
-        "SELECT agent_id, toStartOfWeek(first_event_time) AS week, count() AS cnt "
+        "SELECT agent_id, date_trunc('week', first_event_time) AS week, count() AS cnt "
         "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
         "AND agent_id != '' AND first_event_time >= now() - INTERVAL 6 WEEK "
         "GROUP BY agent_id, week ORDER BY agent_id, week",
@@ -817,7 +817,7 @@ async def get_cost_summary(
         )
 
     monthly_rows = await _ch_json(
-        "SELECT toStartOfMonth(first_event_time) AS month "
+        "SELECT date_trunc('month', first_event_time) AS month "
         "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 12 MONTH "
         "GROUP BY month ORDER BY month",
@@ -949,7 +949,7 @@ async def get_strategic_insights(
     # Completion proxy per model from session aggregates.
     model_success_rows = await _ch_json(
         "SELECT model, "
-        "countIf(event_count > 5 AND prompt_count >= 1) AS successes, "
+        "count(*) FILTER (WHERE event_count > 5 AND prompt_count >= 1) AS successes, "
         "count() AS total "
         "FROM session_stats_agg FINAL "
         "WHERE project_id = '{project_id}' AND model != '' "
@@ -1038,7 +1038,7 @@ async def get_strategic_insights(
         "SELECT harness, "
         "round(avg(dateDiff('millisecond', first_event_time, last_event_time))) AS avg_time_ms, "
         "count() AS sessions, "
-        "countIf(event_count > 2) AS completed "
+        "count(*) FILTER (WHERE event_count > 2) AS completed "
         "FROM session_stats_agg FINAL "
         "WHERE project_id = '{project_id}' AND harness != '' "
         "AND first_event_time != last_event_time "
@@ -1078,7 +1078,7 @@ async def get_strategic_insights(
     # 6. Automatable task estimation (simple tasks = low tokens + high success)
     auto_rows = await _ch_json(
         "SELECT "
-        "countIf((input_tokens + output_tokens) < 3000 AND event_count <= 5) AS simple, "
+        "count(*) FILTER (WHERE (input_tokens + output_tokens) < 3000 AND event_count <= 5) AS simple, "
         "count() AS total "
         "FROM session_stats_agg FINAL "
         "WHERE project_id = '{project_id}' "
@@ -1137,7 +1137,7 @@ async def get_developer_breakdown(
     user_rows = await _ch_json(
         "SELECT user_id, "
         "count() AS sessions, "
-        "sumIf(input_tokens + output_tokens, input_tokens IS NOT NULL) AS tokens "
+        "sum(input_tokens + output_tokens) FILTER (WHERE input_tokens IS NOT NULL) AS tokens "
         "FROM session_stats_agg FINAL "
         "WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 30 DAY "
@@ -1576,7 +1576,7 @@ async def generate_ai_insights(
     # 6. Automatable estimate
     auto_rows = await _ch_json(
         "SELECT "
-        "countIf((input_tokens + output_tokens) < 3000 AND event_count <= 5) AS simple, "
+        "count(*) FILTER (WHERE (input_tokens + output_tokens) < 3000 AND event_count <= 5) AS simple, "
         "count() AS total "
         "FROM session_stats_agg FINAL "
         "WHERE project_id = '{project_id}' "

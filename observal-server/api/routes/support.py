@@ -122,25 +122,26 @@ async def _collect_versions(db: AsyncSession) -> dict:
     try:
         resp = await _query("SELECT version()")
         if resp.status_code == 200:
-            result["clickhouse_version"] = resp.text.strip()
+            rows = resp.json().get("data", [])
+            result["duckdb_version"] = str(rows[0]["version()"]) if rows else "unknown"
         else:
-            result["clickhouse_version"] = f"error: HTTP {resp.status_code}"
+            result["duckdb_version"] = f"error: {resp.text[:120]}"
     except Exception as exc:
-        result["clickhouse_version"] = f"error: {type(exc).__name__}"
+        result["duckdb_version"] = f"error: {type(exc).__name__}"
 
     # ClickHouse table list
     try:
         resp = await _query(
-            "SELECT name FROM system.tables WHERE database = {db:String} FORMAT JSON",
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' FORMAT JSON",
             {"param_db": CLICKHOUSE_DB},
         )
         if resp.status_code == 200:
             rows = resp.json().get("data", [])
-            result["clickhouse_tables"] = [r["name"] for r in rows]
+            result["duckdb_tables"] = [r["table_name"] for r in rows]
         else:
-            result["clickhouse_tables"] = []
+            result["duckdb_tables"] = []
     except Exception as exc:
-        result["clickhouse_tables"] = f"error: {type(exc).__name__}"
+        result["duckdb_tables"] = f"error: {type(exc).__name__}"
 
     return result
 
@@ -259,21 +260,21 @@ async def _collect_aggregates(db: AsyncSession) -> dict:
     # ClickHouse table counts (no FINAL - fast approximate counts)
     try:
         resp = await _query(
-            "SELECT name FROM system.tables WHERE database = {db:String} FORMAT JSON",
+            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' FORMAT JSON",
             {"param_db": CLICKHOUSE_DB},
         )
         if resp.status_code == 200:
-            ch_tables = [r["name"] for r in resp.json().get("data", [])]
+            ch_tables = [r["table_name"] for r in resp.json().get("data", [])]
             for table_name in ch_tables:
                 if not _SAFE_TABLE_NAME_RE.match(table_name):
                     result["ch_table_counts"][table_name] = "error: unsafe table name, skipped"
                     continue
                 try:
-                    count_resp = await _query(f"SELECT count() FROM `{table_name}` FORMAT JSON")
+                    count_resp = await _query(f'SELECT count(*) AS cnt FROM "{table_name}" FORMAT JSON')
                     if count_resp.status_code == 200:
                         count_data = count_resp.json().get("data", [])
                         if count_data:
-                            result["ch_table_counts"][table_name] = count_data[0].get("count()", 0)
+                            result["ch_table_counts"][table_name] = count_data[0].get("cnt", 0)
                         else:
                             result["ch_table_counts"][table_name] = 0
                     else:
