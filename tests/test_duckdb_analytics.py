@@ -425,3 +425,59 @@ def test_concurrent_reads_and_writes(duckdb_db):
     asyncio.run(main())
     resp = asyncio.run(_query("SELECT count(*) AS c FROM session_events"))
     assert resp.json()["data"][0]["c"] == 200
+
+
+# ── Engine compression profile ───────────────────────────────────────────────
+
+
+def test_new_database_gets_zstd_engine_compression(duckdb_db):
+    """Fresh databases are created with the compressed profile: latest storage
+    version + zstd on every VARCHAR column (marker table present, real segments
+    ZSTD after a write)."""
+    from services.duckdb import _get_con, _query, insert_session_events
+
+    resp = asyncio.run(_query("SELECT profile FROM duckdb_engine_profile"))
+    assert resp.json()["data"] == [{"profile": "zstd-v1"}]
+    resp = asyncio.run(_query("SELECT value FROM duckdb_settings() WHERE name='force_compression'"))
+    assert resp.json()["data"] == [{"value": "zstd"}]
+
+    # A write of long lines (>4096B) must land as ZSTD, never Uncompressed.
+    rows = [_event(f"big{i}", 0, raw_line="x" * 5000) for i in range(10)]
+    asyncio.run(insert_session_events(rows))
+    con = _get_con()
+    con.execute("CHECKPOINT")
+    codecs = {
+        row[0]
+        for row in con.execute(
+            "SELECT compression FROM pragma_storage_info('session_events') WHERE column_name='raw_line'"
+        ).fetchall()
+    }
+    assert "ZSTD" in codecs
+    assert "Uncompressed" not in codecs
+
+
+def test_legacy_database_keeps_auto_compression(tmp_path, monkeypatch):
+    """A database file created by older code (no profile marker) must be opened
+    without forcing zstd - on old storage versions that silently falls back to
+    UNCOMPRESSED writes, a storage regression."""
+    import duckdb
+    from config import settings
+    from services.duckdb import close_con
+    from services.duckdb.client import _get_con
+
+    path = tmp_path / "legacy.duckdb"
+    con = duckdb.connect(str(path))  # old code: default config, no marker
+    con.execute("CREATE TABLE t (raw_line VARCHAR)")
+    con.execute("INSERT INTO t SELECT repeat('z', 5000) FROM range(10)")
+    con.execute("CHECKPOINT")
+    con.close()
+
+    close_con()
+    monkeypatch.setattr(settings, "DUCKDB_PATH", str(path))
+    monkeypatch.setattr(settings, "DUCKDB_READ_ONLY", False)
+    try:
+        con = _get_con()
+        value = con.execute("SELECT value FROM duckdb_settings() WHERE name='force_compression'").fetchone()[0]
+        assert value == "auto"
+    finally:
+        close_con()

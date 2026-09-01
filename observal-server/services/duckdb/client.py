@@ -111,6 +111,82 @@ class QueryResult:
             raise AnalyticsQueryError(f"DuckDB query failed ({self.status_code}): {self.text[:500]}")
 
 
+# Engine-level compression profile for the analytics store.
+#
+# DuckDB's stock settings silently under-compress real telemetry:
+# * the default storage_compatibility_version (v0.10.2) makes the string
+#   dictionary/FSST codecs reject any string >= 4096 bytes, so whole segments
+#   fall back to Uncompressed (large model "thinking" lines are stored raw);
+# * the ZSTD string codec is registered but can never win the automatic
+#   chooser (dict_fsst ties its size estimate and wins the tiebreak).
+#
+# New database files are therefore created with three engine-level knobs that
+# give ClickHouse-grade ZSTD on every VARCHAR column while staying transparent
+# to the SQL layer (LIKE / JSONExtract / incremental appends all work
+# unchanged):
+#   - storage_compatibility_version='latest' (connect config; the storage
+#     version is pinned in the file header at creation and cannot be changed
+#     later, so this must happen on first open),
+#   - ROW_GROUP_SIZE 2048 (attach option; small row groups keep ZSTD blocks
+#     small so trace replay decompresses ~2K rows instead of a 122880-row
+#     group),
+#   - SET force_compression='zstd' (block-level ZSTD on every VARCHAR column).
+#
+# Pre-existing files are detected via a marker table rather than file
+# existence: the init container may create a fresh, compressed-profile file
+# before the API process opens it. A file created by older code has no marker
+# and keeps today's exact behavior (auto FSST compression) - forcing zstd on
+# such a file makes the codec's analyze step refuse and fall back to writing
+# UNCOMPRESSED segments, a silent storage regression.
+_ENGINE_PROFILE_TABLE = "duckdb_engine_profile"
+_ENGINE_PROFILE_VALUE = "zstd-v1"
+_ROW_GROUP_SIZE = 2048
+
+
+def _has_engine_profile(con: duckdb.DuckDBPyConnection) -> bool:
+    """True when the open database was created with the compressed profile."""
+    try:
+        row = con.execute(
+            f"SELECT 1 FROM {_ENGINE_PROFILE_TABLE} WHERE profile = ?",
+            [_ENGINE_PROFILE_VALUE],
+        ).fetchone()
+    except duckdb.Error:
+        return False
+    return row is not None
+
+
+def _open_duckdb(path: str, read_only: bool) -> duckdb.DuckDBPyConnection:
+    """Open the analytics store, applying the compressed profile to new files."""
+    if read_only:
+        # Read-only opens read whatever codec is on disk; no writes happen, so
+        # the profile (a write-time choice) is irrelevant.
+        return duckdb.connect(path, read_only=True)
+    # A WAL without a main file means an interrupted previous session; opening
+    # fresh would orphan it, so treat that as an existing database too.
+    fresh = not os.path.exists(path) and not os.path.exists(path + ".wal")
+    if fresh:
+        con = duckdb.connect(":memory:", config={"storage_compatibility_version": "latest"})
+        con.execute(f"ATTACH '{path}' AS observal (ROW_GROUP_SIZE {_ROW_GROUP_SIZE})")
+        con.execute("USE observal")
+        con.execute("SET force_compression='zstd'")
+        con.execute(f"CREATE TABLE {_ENGINE_PROFILE_TABLE} (profile VARCHAR)")
+        con.execute(f"INSERT INTO {_ENGINE_PROFILE_TABLE} VALUES (?)", [_ENGINE_PROFILE_VALUE])
+        return con
+    con = duckdb.connect(path, read_only=False)
+    if _has_engine_profile(con):
+        # File was created by current code (e.g. the init container); apply the
+        # per-connection zstd setting. ROW_GROUP_SIZE and the storage version
+        # are already pinned in the file.
+        con.execute("SET force_compression='zstd'")
+    else:
+        optic.warning(
+            "opening pre-existing DuckDB file without engine compression (path={}); "
+            "recreate the file to enable zstd + latest storage version",
+            path,
+        )
+    return con
+
+
 def _get_con() -> duckdb.DuckDBPyConnection:
     """Process-wide DuckDB connection (created lazily)."""
     global _con
@@ -121,7 +197,7 @@ def _get_con() -> duckdb.DuckDBPyConnection:
                 parent = os.path.dirname(os.path.abspath(path))
                 os.makedirs(parent, exist_ok=True)
             optic.debug("opening DuckDB database (path={}, read_only={})", path, settings.DUCKDB_READ_ONLY)
-            _con = duckdb.connect(path, read_only=settings.DUCKDB_READ_ONLY)
+            _con = _open_duckdb(path, settings.DUCKDB_READ_ONLY)
             # All TIMESTAMP columns store naive UTC (legacy DateTime64(3,'UTC')
             # semantics). Pinning the session zone makes now()::TIMESTAMP
             # produce naive UTC as well.
