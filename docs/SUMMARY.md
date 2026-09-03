@@ -34,6 +34,7 @@
 * [observal auth](cli/auth.md)
 * [observal config](cli/config.md)
 * [observal scan](cli/scan.md)
+* [observal share](cli/share.md)
 * [observal outdated](cli/outdated.md)
 * [observal reconcile](cli/reconcile.md)
 * [observal inbox](cli/inbox.md)
