@@ -5,8 +5,8 @@
 # SPDX-License-Identifier: Apache-2.0
 name: observal
 command: observal
-description: "Use when starting any task the organization may already have an approved skill, prompt, MCP server, or Agent for: reviewing code, a commit, a diff, or a pull request; writing tests or documentation; querying a database, API, or service; automating a browser or web page; running untrusted code; connecting to a SaaS tool; drafting, researching, or any other substantive work. The user will not mention Observal: the task type is the trigger. Check what is already installed, then run observal discover search as the first action, before reading the repository or working from scratch. Also use when the user wants to log in, configure Observal, inspect local harness setup, manage a teamspace or invitation, process inbox items, check installed registry items, or call an endpoint without a dedicated command."
-version: 2.10.0
+description: "Use when starting any task the organization may already have an approved skill, prompt, MCP server, or Agent for: reviewing code, a commit, a diff, or a pull request; writing tests or documentation; querying a database, API, or service; automating a browser or web page; running untrusted code; connecting to a SaaS tool; drafting, researching, or any other substantive work. The user will not mention Observal: the task type is the trigger. Check what is already installed, then run observal discover search as the first action, before reading the repository or working from scratch. Also use when the user wants to log in, configure Observal, inspect local harness setup, share or open a repository Agent share, manage a teamspace or invitation, process inbox items, check installed registry items, or call an endpoint without a dedicated command."
+version: 2.11.0
 owner: observal
 ---
 
@@ -53,7 +53,7 @@ Details and edge cases: [Discovery](references/discovery.md).
 | --- | --- |
 | Find and use an approved resource for the current task | [Discovery](references/discovery.md) |
 | Hand part of the task to another approved agent (registry or remote A2A) | [Discovery](references/discovery.md) |
-| Login, account, CLI config, scan, doctor, outdated, inbox | [Core workflows](references/core-workflows.md) |
+| Login, account, CLI config, scan, doctor, outdated, inbox, Agent shares | [Core workflows](references/core-workflows.md) |
 | Teamspaces, visibility review, members, requests, invitations | [Teamspace workflows](references/teamspaces.md) |
 | Exact command inventory or authenticated API escape hatch | [Generated command reference](references/commands.md) |
 | Create, edit, release, or pull an Agent | Use `observal-agents` |
