@@ -5,6 +5,7 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 # SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
+# SPDX-FileCopyrightText: 2026 Mradul Pal <mradulpal@outlook.com>
 # SPDX-License-Identifier: Apache-2.0
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -309,7 +310,45 @@ jobs:
           grep -q "image: ghcr.io/observal/observal-api:custom-worker" chart-dist/rendered-overrides.yaml
           grep -q "image: ghcr.io/observal/observal-web:custom-web" chart-dist/rendered-overrides.yaml
 
-# ── Job 6: Docker build ───────────────────────────────────────────────────────
+# ── Job 6: Helm test ──────────────────────────────────────────────────────────
+  helm-test:
+    name: helm-test
+    runs-on: ubuntu-latest
+    needs: changes
+    steps:
+      - name: Skip if no Helm changes
+        if: needs.changes.outputs.helm != 'true'
+        run: |
+          echo "::notice::No Helm changes detected, skipping helm-test"
+          echo "This job reports success to satisfy branch protection"
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        if: needs.changes.outputs.helm == 'true'
+
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4
+        if: needs.changes.outputs.helm == 'true'
+
+      - uses: helm/kind-action@fa81e57adff234b2908110485695db0f181f3c67 # v1.7.0
+        if: needs.changes.outputs.helm == 'true'
+        with:
+          cluster_name: observal-test
+
+      - name: Create observal namespace
+        if: needs.changes.outputs.helm == 'true'
+        run: kubectl create namespace observal
+
+      - name: Install Observal Helm chart
+        if: needs.changes.outputs.helm == 'true'
+        run: |
+          helm install observal infra/helm/observal \
+            --namespace observal \
+            --wait
+
+      - name: Run Helm tests
+        if: needs.changes.outputs.helm == 'true'
+        run: helm test observal -n observal
+
+# ── Job 7: Docker build ───────────────────────────────────────────────────────
   docker-build:
     name: docker-build
     runs-on: ubuntu-latest
@@ -337,7 +376,7 @@ jobs:
         if: needs.changes.outputs.docker == 'true'
         run: docker compose build
 
-# ── Job 7: Dependency audit ─────────────────────────────────────────────────
+# ── Job 8: Dependency audit ─────────────────────────────────────────────────
   dependency-audit:
     name: dependency-audit
     runs-on: ubuntu-latest
