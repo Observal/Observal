@@ -121,6 +121,25 @@ export function useAdminSettingsSchema() {
   return useQuery({ queryKey: ["admin", "settings", "schema"], queryFn: admin.settingsSchema });
 }
 
+export function useUsagePingStatus() {
+  return useQuery({
+    queryKey: ["admin", "usage-ping"],
+    queryFn: admin.usagePingStatus,
+  });
+}
+
+export function useUsagePingPreview() {
+  return useMutation({ mutationFn: admin.usagePingPreview });
+}
+
+export function useSendUsagePing() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: admin.sendUsagePing,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "usage-ping"] }),
+  });
+}
+
 export function useRestartStatus() {
   return useQuery({
     queryKey: ["admin", "restart-status"],

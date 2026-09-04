@@ -105,6 +105,38 @@ export interface RestartStatus {
 	keys: string[];
 }
 
+export interface UsagePingPayload {
+	schema_version: 1;
+	ping_id: string;
+	installation_id: string;
+	sent_at: string;
+	identity: { company_name: string; hostname: string };
+	instance: { version: string; deployment_type: string };
+	counts: Record<string, number>;
+	activity: Record<string, number>;
+	features: Record<string, boolean>;
+	harnesses: Record<string, number>;
+}
+
+export type UsagePingFrequency = "every_6_hours" | "daily" | "weekly";
+
+export interface UsagePingStatus {
+	enabled: boolean;
+	configured: boolean;
+	frequency: UsagePingFrequency;
+	collector_url: string;
+	installation_id: string | null;
+	last_attempt_at: string | null;
+	last_success_at: string | null;
+	last_error: string | null;
+	next_scheduled_at: string;
+}
+
+export interface UsagePingAdminResponse {
+	status: UsagePingStatus;
+	payload: UsagePingPayload | null;
+}
+
 // ── Insights ───────────────────────────────────────────────────────
 
 export interface InsightReportListItem {
