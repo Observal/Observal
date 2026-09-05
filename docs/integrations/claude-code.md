@@ -50,7 +50,7 @@ This writes credentials to `~/.observal/config.json`.
 ### 3. Pull an agent into Claude Code
 
 ```bash
-observal agent pull <agent-name> --harness claude-code
+observal pull <agent-name> --harness claude-code
 ```
 
 Claude Code's default scope is project scope. By default, the agent is written to `.claude/agents/{name}.md`.
@@ -58,7 +58,7 @@ Claude Code's default scope is project scope. By default, the agent is written t
 To install into the current user's Claude Code configuration:
 
 ```bash
-observal agent pull <agent-name> --harness claude-code --scope user
+observal pull <agent-name> --harness claude-code --scope user
 ```
 
 User agents are written to `~/.claude/agents/{name}.md`.
@@ -70,7 +70,7 @@ User agents are written to `~/.claude/agents/{name}.md`.
 | Purpose          | Project scope                    | User scope                         |
 | ---------------- | -------------------------------- | ---------------------------------- |
 | Agent profile    | `.claude/agents/{name}.md`       | `~/.claude/agents/{name}.md`       |
-| Skill definition | `.claude/skills/{name}/SKILL.md` | `~/.claude/skills/{name}/SKILL.md` |
+| Skill definition | —                                | `~/.claude/skills/{name}/SKILL.md` |
 | Hook config      | `.claude/settings.json`          | `~/.claude/settings.json`          |
 | MCP config       | `.mcp.json`                      | —                                  |
 
@@ -78,28 +78,27 @@ User agents are written to `~/.claude/agents/{name}.md`.
 
 ## Hook spec
 
-Observal installs session push hooks for `UserPromptSubmit` and `Stop`.
+Observal installs session-push hooks for `UserPromptSubmit` and `Stop`. Each event is configured as a matcher group containing Observal metadata and a nested `hooks` list. The command uses the Python interpreter associated with the Observal CLI installation.
+
+The generated configuration follows this structure:
 
 ```json
 {
   "hooks": {
     "UserPromptSubmit": [
       {
-        "type": "command",
-        "command": "python -m observal_cli.hooks.session_push --harness claude-code"
-      }
-    ],
-    "Stop": [
-      {
-        "type": "command",
-        "command": "python -m observal_cli.hooks.session_push --harness claude-code"
+        "_observal": "...",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "<observal-python> -m observal_cli.hooks.session_push --harness claude-code"
+          }
+        ]
       }
     ]
   }
 }
 ```
-
-The Claude Code adapter recognizes `PreToolUse`, `PostToolUse`, `Notification`, `Stop`, and `SubagentStop` hook events.
 
 ---
 
@@ -124,7 +123,7 @@ Observal generates Markdown agent profiles with YAML frontmatter:
 ```markdown
 ---
 name: my-agent
-model: claude-sonnet-4
+model: sonnet
 description: Agent description
 ---
 
@@ -135,13 +134,13 @@ Agent instructions go here.
 
 ## Skill file format
 
-Claude Code skills live at:
+Observal currently manages Claude Code skills at user scope:
 
-| Scope   | Path                               |
-| ------- | ---------------------------------- |
-| Project | `.claude/skills/{name}/SKILL.md`   |
-| User    | `~/.claude/skills/{name}/SKILL.md` |
+| Scope | Path |
+| ----- | ---- |
+| User  | `~/.claude/skills/{name}/SKILL.md` |
 
+Claude Code also supports project-scope skills at `.claude/skills/{name}/SKILL.md`, but these are not currently managed by Observal.
 ---
 
 ## MCP servers
@@ -154,7 +153,7 @@ Claude Code project MCP configuration is stored in:
 
 Observal can discover MCP servers from this configuration and supports both command-based and URL-based MCP configurations.
 
-When an agent contains MCP servers, `observal agent pull` generates the corresponding Claude Code MCP configuration.
+When an agent contains MCP servers, `observal pull` generates the corresponding Claude Code MCP configuration.
 
 ---
 
