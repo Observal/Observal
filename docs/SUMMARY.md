@@ -79,6 +79,7 @@
 * [Goose](integrations/goose.md)
 * [Kiro](integrations/kiro.md)
 * [OpenCode](integrations/opencode.md)
+* [Pi](integrations/pi.md)
 
 ## Reference
 
