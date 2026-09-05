@@ -240,6 +240,9 @@ jobs:
         if: matrix.os == 'windows'
         run: mv dist/observal.exe dist/${{ matrix.artifact }}
 
+      - name: Smoke-test binary
+        run: ./dist/${{ matrix.artifact }} --version
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ matrix.artifact }}
