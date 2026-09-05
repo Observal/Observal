@@ -83,8 +83,18 @@ To install into the current project:
 observal agent pull <agent-name> --harness pi --scope project
 ```
 
-Project pulls write the rules to `AGENTS.md` in the project root, and the
-agent's MCP servers and skills to `.pi/agents/{agent-name}/`.
+Project pulls write the rules to `AGENTS.md` in the project root, which Pi
+reads directly, and the agent's MCP servers and skills to
+`.pi/agents/{agent-name}/`. Pi loads project MCP servers from `.pi/mcp.json`
+and project skills from `.pi/skills/{name}/SKILL.md`, and `/agent` handles only
+user-scope profiles, so activate them by hand:
+
+```bash
+cp .pi/agents/<agent-name>/mcp.json .pi/mcp.json
+cp -r .pi/agents/<agent-name>/skills/. .pi/skills/
+```
+
+Merge instead of copying if `.pi/mcp.json` already lists other servers.
 
 ### 4. Install or refresh the telemetry extension
 
@@ -284,7 +294,8 @@ read, instead of being duplicated under `~/.pi/agent/skills/`.
 
 **One active agent at a time.** A user-scope pull does not activate the
 agent. Run `/agent` inside Pi, or copy the profile into `~/.pi/agent/` by hand.
-`/agent` does not see project-scope profiles under `.pi/agents/`.
+`/agent` does not see project-scope profiles under `.pi/agents/`; copy their
+`mcp.json` and `skills/` into `.pi/` as shown in Setup step 3.
 
 **`/agent` replaces the active files.** The first swap backs up your existing
 `AGENTS.md`, `SYSTEM.md`, `mcp.json`, `skills/`, and `sandboxes/` into the
@@ -296,10 +307,12 @@ changes to survive a swap.
 **The extension is shared per Pi install.** It is installed by `doctor patch`,
 not by each agent pull, and lives only in user scope.
 
-**Guidance files are scanned, with one exception.** Observal layers
-`AGENTS.md`, `.pi/SYSTEM.md`, and `.pi/APPEND_SYSTEM.md` as context and does
-not touch `SYSTEM.md` or `APPEND_SYSTEM.md`. A project-scope pull does write
-the project's `AGENTS.md`, because that file is the agent's rules in Pi.
+**Guidance files are scanned, with two exceptions.** Observal layers
+`AGENTS.md`, `.pi/SYSTEM.md`, and `.pi/APPEND_SYSTEM.md` as context. Scanning
+and `observal agent pull` never rewrite the project's `.pi/SYSTEM.md` or
+`.pi/APPEND_SYSTEM.md`. A project-scope pull does write the project's
+`AGENTS.md`, because that file is the agent's rules in Pi, and `/agent` swaps
+do replace the user-scope `~/.pi/agent/SYSTEM.md` as described above.
 
 **Attribution depends on the lockfile and `/agent`.** A profile copied by hand
 does not update `active_agent`, so its sessions keep whatever binding
