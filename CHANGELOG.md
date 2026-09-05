@@ -90,6 +90,7 @@ All notable changes to this project will be documented in this file.
 
 ### Security
 
+- bump gitpython to >=3.1.59 to fix PYSEC-2026-3785, -3786, -3787 and -3788
 - remove shell command construction from Kiro end-to-end tests
 - add JWT algorithm agility, file-backed credentials, secure package bindings, signed release tags, verification guidance, and a security assurance case
 
