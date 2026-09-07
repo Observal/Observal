@@ -30,7 +30,7 @@ from rich import print as rprint
 
 from observal_cli import client, config
 from observal_cli.constants import VALID_HARNESSES
-from observal_cli.errors import ErrorCategory, fail
+from observal_cli.errors import CliError, ErrorCategory, fail
 from observal_cli.harness import ensure_loaded, get_adapter
 from observal_cli.prompts import password_input, select_one
 from observal_cli.render import OutputMode, esc, output_json, spinner
@@ -114,8 +114,31 @@ def _resolve_hook_paths(content: str) -> str:
     return content
 
 
+def _component_input_definitions(listing: dict, field: str, kind: str, component: str) -> list[dict]:
+    definitions = listing.get(field, [])
+    if definitions is None:
+        definitions = []
+    if not isinstance(definitions, list) or any(
+        not isinstance(item, dict) or not isinstance(item.get("name"), str) or not item["name"].strip()
+        for item in definitions
+    ):
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            "The server returned invalid agent installation requirements.",
+            operation="Pull agent",
+            resource=component,
+            remediation="Check server compatibility and retry.",
+            result={"invalid_input_kind": kind, "component": component},
+        )
+    return definitions
+
+
 def _collect_mcp_env_vars(
-    agent_detail: dict, *, no_prompt: bool = False, env_overrides: dict[str, str] | None = None
+    agent_detail: dict,
+    *,
+    no_prompt: bool = False,
+    env_overrides: dict[str, str] | None = None,
+    missing_inputs: list[dict[str, str]] | None = None,
 ) -> dict[str, dict[str, str]]:
     """Discover MCP env vars from agent components and prompt the user for values.
 
@@ -146,13 +169,18 @@ def _collect_mcp_env_vars(
     for listing_id, display_name in mcp_ids:
         listing = client.get(f"/api/v1/mcps/{listing_id}")
 
-        ev_list = listing.get("environment_variables") or []
+        mcp_name = display_name or listing.get("name", listing_id[:8])
+        ev_list = _component_input_definitions(
+            listing,
+            "environment_variables",
+            "environment_variable",
+            mcp_name,
+        )
         if not ev_list:
             continue
 
         required = [ev for ev in ev_list if ev.get("required", True)]
         optional = [ev for ev in ev_list if not ev.get("required", True)]
-        mcp_name = display_name or listing.get("name", listing_id[:8])
         mcp_env: dict[str, str] = {}
 
         if no_prompt:
@@ -160,6 +188,8 @@ def _collect_mcp_env_vars(
             for ev in required + optional:
                 if ev["name"] in _overrides:
                     mcp_env[ev["name"]] = _overrides[ev["name"]]
+                elif ev.get("required", True) and missing_inputs is not None:
+                    missing_inputs.append({"kind": "environment_variable", "name": ev["name"], "component": mcp_name})
         else:
             if required:
                 rprint(f"\n[bold]{esc(mcp_name)}[/bold] requires {len(required)} environment variable(s):")
@@ -192,7 +222,11 @@ def _collect_mcp_env_vars(
 
 
 def _collect_mcp_headers(
-    agent_detail: dict, *, no_prompt: bool = False, header_overrides: dict[str, str] | None = None
+    agent_detail: dict,
+    *,
+    no_prompt: bool = False,
+    header_overrides: dict[str, str] | None = None,
+    missing_inputs: list[dict[str, str]] | None = None,
 ) -> dict[str, dict[str, str]]:
     """Discover MCP headers from agent components and prompt the user for values.
 
@@ -220,19 +254,21 @@ def _collect_mcp_headers(
     for listing_id, display_name in mcp_ids:
         listing = client.get(f"/api/v1/mcps/{listing_id}")
 
-        header_list = listing.get("headers") or []
+        mcp_name = display_name or listing.get("name", listing_id[:8])
+        header_list = _component_input_definitions(listing, "headers", "header", mcp_name)
         if not header_list:
             continue
 
         required = [h for h in header_list if h.get("required", True)]
         optional = [h for h in header_list if not h.get("required", True)]
-        mcp_name = display_name or listing.get("name", listing_id[:8])
         mcp_hdrs: dict[str, str] = {}
 
         if no_prompt:
             for h in required + optional:
                 if h["name"] in _overrides:
                     mcp_hdrs[h["name"]] = _overrides[h["name"]]
+                elif h.get("required", True) and missing_inputs is not None:
+                    missing_inputs.append({"kind": "header", "name": h["name"], "component": mcp_name})
         else:
             if required:
                 rprint(f"\n[bold]{esc(mcp_name)}[/bold] requires {len(required)} header(s):")
@@ -536,6 +572,36 @@ def _progress(output: OutputMode | str, message: str | None = None):
     return nullcontext() if output == "json" else spinner(message)
 
 
+def _pull_failure_result(
+    written: list[tuple[str, str]],
+    stage: str,
+    *,
+    setup_results: list[dict] | None = None,
+    **state: object,
+) -> dict:
+    """Build a secret-free description of pull side effects completed before failure."""
+    result: dict[str, object] = {
+        "partial": bool(written) and not bool(state.get("dry_run")),
+        "stage": stage,
+        "files": [{"path": path, "status": status} for path, status in written],
+    }
+    if setup_results is not None:
+        result["setup_commands"] = [
+            {
+                "executable": str(item.get("command", [""])[0]) if item.get("command") else "",
+                "status": item.get("status"),
+                "return_code": item.get("return_code"),
+            }
+            for item in setup_results
+        ]
+    result.update(state)
+    return result
+
+
+def _valid_setup_command(command: object) -> bool:
+    return isinstance(command, list) and bool(command) and all(isinstance(argument, str) for argument in command)
+
+
 def _parse_assignments(values: list[str] | None, label: str) -> dict[str, str]:
     parsed: dict[str, str] = {}
     for item in values or []:
@@ -787,6 +853,7 @@ def register_pull(app: typer.Typer):
           observal agent pull my-agent --harness claude-code --version 1.2.0
           observal agent pull my-agent --harness cursor --no-prompt --dry-run
         """
+        harness, scope, version = _validate_pull_inputs(harness, scope, version)
         if output == "json" and not no_prompt:
             fail(
                 ErrorCategory.VALIDATION,
@@ -795,7 +862,6 @@ def register_pull(app: typer.Typer):
                 resource="agent installation",
                 remediation="Add --no-prompt only when no secret values are required; otherwise use interactive table mode.",
             )
-        harness, scope, version = _validate_pull_inputs(harness, scope, version)
         env_overrides = _parse_assignments(env, "environment variable")
         header_overrides = _parse_assignments(header, "header")
         model_default, model_overrides = _parse_model_overrides(model or [])
@@ -844,10 +910,28 @@ def register_pull(app: typer.Typer):
         with _progress(output, "Fetching agent details..."):
             agent_detail = client.get(f"/api/v1/agents/{resolved}")
 
-        env_values = _collect_mcp_env_vars(agent_detail, no_prompt=no_prompt, env_overrides=env_overrides or None)
-        header_values = _collect_mcp_headers(
-            agent_detail, no_prompt=no_prompt, header_overrides=header_overrides or None
+        missing_inputs: list[dict[str, str]] = []
+        env_values = _collect_mcp_env_vars(
+            agent_detail,
+            no_prompt=no_prompt,
+            env_overrides=env_overrides or None,
+            missing_inputs=missing_inputs,
         )
+        header_values = _collect_mcp_headers(
+            agent_detail,
+            no_prompt=no_prompt,
+            header_overrides=header_overrides or None,
+            missing_inputs=missing_inputs,
+        )
+        if missing_inputs:
+            fail(
+                ErrorCategory.VALIDATION,
+                "Agent installation requires values that are unavailable in non-interactive mode.",
+                operation="Pull agent",
+                resource=agent_detail.get("qualified_name") or agent_detail.get("name") or resolved,
+                remediation="Use interactive table mode to enter credentials securely.",
+                result={"needs_input": True, "inputs": missing_inputs},
+            )
 
         if output != "json":
             rprint(f"\n[bold]Install options for [cyan]{esc(harness)}[/cyan]:[/bold]")
@@ -936,6 +1020,47 @@ def register_pull(app: typer.Typer):
 
         written: list[tuple[str, str]] = []  # (path, status)
 
+        def tracked_write(path: Path, content: str | dict, *, merge_mcp: bool = False) -> str:
+            try:
+                return _write_file_checked(path, content, merge_mcp=merge_mcp)
+            except CliError as error:
+                if error.result is None:
+                    error.result = _pull_failure_result(
+                        written,
+                        "write_files",
+                        failed_path=str(path),
+                    )
+                raise
+
+        def tracked_skill_install(skill_name: str, installer, **kwargs):
+            try:
+                with redirect_stdout(StringIO()) if output == "json" else nullcontext():
+                    return installer(**kwargs)
+            except CliError as error:
+                if error.result is None:
+                    error.result = _pull_failure_result(
+                        written,
+                        "install_skills",
+                        failed_skills=[skill_name],
+                        installation_tracked=False,
+                    )
+                raise
+            except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+                fail(
+                    ErrorCategory.UNAVAILABLE,
+                    f"Failed to install agent skill: {skill_name}.",
+                    operation="Pull agent",
+                    resource="agent skills",
+                    remediation="Check skill source access and local filesystem permissions, then retry.",
+                    detail=repr(error),
+                    result=_pull_failure_result(
+                        written,
+                        "install_skills",
+                        failed_skills=[skill_name],
+                        installation_tracked=False,
+                    ),
+                )
+
         # ── mcp_config with path key (Cursor/VSCode/Gemini) ─
         mcp_cfg = snippet.get("mcp_config")
         if mcp_cfg and isinstance(mcp_cfg, dict) and "path" in mcp_cfg:
@@ -943,7 +1068,7 @@ def register_pull(app: typer.Typer):
             if dry_run:
                 written.append((str(p), "would write"))
             else:
-                status = _write_file_checked(p, mcp_cfg["content"], merge_mcp=True)
+                status = tracked_write(p, mcp_cfg["content"], merge_mcp=True)
                 written.append((str(p), status))
 
         # ── hooks_config (Cursor/VSCode/Copilot/OpenCode/Gemini) ─
@@ -969,7 +1094,7 @@ def register_pull(app: typer.Typer):
             if dry_run:
                 written.append((str(p), "would write"))
             else:
-                status = _write_file_checked(p, content, merge_mcp=hooks_cfg.get("merge", False))
+                status = tracked_write(p, content, merge_mcp=hooks_cfg.get("merge", False))
                 written.append((str(p), status))
 
         # ── agent_profile (Kiro, Cursor) ────────────────────────
@@ -988,7 +1113,7 @@ def register_pull(app: typer.Typer):
             if dry_run:
                 written.append((str(p), "would write"))
             else:
-                status = _write_file_checked(p, agent_profile["content"])
+                status = tracked_write(p, agent_profile["content"])
                 written.append((str(p), status))
 
         # ── steering_file (Kiro) ───────────────────────────
@@ -998,7 +1123,7 @@ def register_pull(app: typer.Typer):
             if dry_run:
                 written.append((str(p), "would write"))
             else:
-                status = _write_file_checked(p, steering_file["content"])
+                status = tracked_write(p, steering_file["content"])
                 written.append((str(p), status))
 
         # ── hook_files (script files from hook components) ─────
@@ -1008,8 +1133,8 @@ def register_pull(app: typer.Typer):
             if dry_run:
                 written.append((str(p), "would write"))
             else:
-                existed = p.exists()
-                _write_file_checked(p, hf["content"])
+                status = tracked_write(p, hf["content"])
+                written.append((str(p), status))
                 if hf.get("executable"):
                     import os
 
@@ -1023,8 +1148,8 @@ def register_pull(app: typer.Typer):
                             resource=str(p),
                             remediation="Check file ownership and permissions.",
                             detail=repr(error),
+                            result=_pull_failure_result(written, "mark_hook_executable", failed_path=str(p)),
                         )
-                written.append((str(p), "updated" if existed else "created"))
 
         # ── prompt_files (native Copilot .github/prompts/*.prompt.md) ─
         for pf in snippet.get("prompt_files") or []:
@@ -1033,7 +1158,7 @@ def register_pull(app: typer.Typer):
                 written.append((str(p), "would write"))
             else:
                 existed = p.exists()
-                _write_file_checked(p, pf["content"])
+                tracked_write(p, pf["content"])
                 written.append((str(p), "updated" if existed else "created"))
 
         # ── Direct skill files ─────────────────────────
@@ -1042,7 +1167,7 @@ def register_pull(app: typer.Typer):
             if dry_run:
                 written.append((str(p), "would write"))
             else:
-                status = _write_file_checked(p, sf["content"])
+                status = tracked_write(p, sf["content"])
                 written.append((str(p), status))
 
         # ── Skills ────────────────────────────────────
@@ -1067,18 +1192,19 @@ def register_pull(app: typer.Typer):
                 continue
 
             if git_url:
-                with redirect_stdout(StringIO()) if output == "json" else nullcontext():
-                    result_path = install_skill_from_git(
-                        name=sc.get("name", "skill"),
-                        git_url=git_url,
-                        skill_path=sc.get("skill_path", "/"),
-                        git_ref=sc.get("git_ref", "main"),
-                        harness=harness,
-                        scope=scope_str,
-                        skill_md_content=sc.get("skill_md_content"),
-                        cwd=target_dir,
-                        dest=skill_dest,
-                    )
+                result_path = tracked_skill_install(
+                    sc_name,
+                    install_skill_from_git,
+                    name=sc.get("name", "skill"),
+                    git_url=git_url,
+                    skill_path=sc.get("skill_path", "/"),
+                    git_ref=sc.get("git_ref", "main"),
+                    harness=harness,
+                    scope=scope_str,
+                    skill_md_content=sc.get("skill_md_content"),
+                    cwd=target_dir,
+                    dest=skill_dest,
+                )
                 if result_path:
                     written.append((str(result_path), "cloned"))
                 else:
@@ -1090,17 +1216,18 @@ def register_pull(app: typer.Typer):
                         )
             else:
                 # Registry direct: SKILL.md content + optional script
-                with redirect_stdout(StringIO()) if output == "json" else nullcontext():
-                    result_path = install_skill_registry_direct(
-                        name=sc.get("name", "skill"),
-                        skill_md_content=sc.get("skill_md_content"),
-                        script_content=sc.get("script_content"),
-                        script_filename=sc.get("script_filename"),
-                        harness=harness,
-                        scope=scope_str,
-                        cwd=target_dir,
-                        dest=skill_dest,
-                    )
+                result_path = tracked_skill_install(
+                    sc_name,
+                    install_skill_registry_direct,
+                    name=sc.get("name", "skill"),
+                    skill_md_content=sc.get("skill_md_content"),
+                    script_content=sc.get("script_content"),
+                    script_filename=sc.get("script_filename"),
+                    harness=harness,
+                    scope=scope_str,
+                    cwd=target_dir,
+                    dest=skill_dest,
+                )
                 if result_path:
                     written.append((str(result_path), "installed"))
                 else:
@@ -1116,6 +1243,12 @@ def register_pull(app: typer.Typer):
                 resource="agent skills",
                 remediation="Check skill source access and content, then retry.",
                 detail=", ".join(failed_skills),
+                result=_pull_failure_result(
+                    written,
+                    "install_skills",
+                    failed_skills=failed_skills,
+                    installation_tracked=False,
+                ),
             )
 
         if not written:
@@ -1135,18 +1268,35 @@ def register_pull(app: typer.Typer):
         setup_cmds = snippet.get("mcp_setup_commands") or []
         if setup_cmds and not dry_run:
             for command in setup_cmds:
+                if not _valid_setup_command(command):
+                    setup_results.append({"command": [], "status": "failed", "return_code": None})
+                    setup_failures.append("invalid setup command")
+                    continue
                 try:
-                    process = subprocess.run(command, capture_output=True, text=True)
+                    process = subprocess.run(command, capture_output=True, text=True, timeout=60)
                 except FileNotFoundError:
                     setup_results.append({"command": command, "status": "failed", "return_code": None})
                     setup_failures.append(f"{command[0]} not found")
+                    continue
+                except subprocess.TimeoutExpired:
+                    setup_results.append({"command": command, "status": "failed", "return_code": None})
+                    setup_failures.append(f"{command[0]} timed out")
+                    continue
+                except OSError:
+                    setup_results.append({"command": command, "status": "failed", "return_code": None})
+                    setup_failures.append(f"{command[0]} could not start")
                     continue
                 status = "completed" if process.returncode == 0 else "failed"
                 setup_results.append({"command": command, "status": status, "return_code": process.returncode})
                 if process.returncode != 0:
                     setup_failures.append(f"{command[0]} exited with code {process.returncode}")
         elif setup_cmds:
-            setup_results = [{"command": command, "status": "would_run", "return_code": None} for command in setup_cmds]
+            for command in setup_cmds:
+                if not _valid_setup_command(command):
+                    setup_results.append({"command": [], "status": "failed", "return_code": None})
+                    setup_failures.append("invalid setup command")
+                else:
+                    setup_results.append({"command": command, "status": "would_run", "return_code": None})
 
         if setup_failures:
             fail(
@@ -1156,6 +1306,13 @@ def register_pull(app: typer.Typer):
                 resource="harness MCP registration",
                 remediation="Fix the reported command and pull the agent again.",
                 detail="; ".join(setup_failures),
+                result=_pull_failure_result(
+                    written,
+                    "run_setup_commands",
+                    setup_results=setup_results,
+                    dry_run=dry_run,
+                    installation_tracked=False,
+                ),
             )
 
         # Record installation state only after files and setup commands succeed.
@@ -1186,6 +1343,13 @@ def register_pull(app: typer.Typer):
                     resource="Observal lockfile",
                     remediation="Repair the local lockfile and pull the agent again.",
                     detail=repr(error),
+                    result=_pull_failure_result(
+                        written,
+                        "update_lockfile",
+                        setup_results=setup_results,
+                        installation_tracked=False,
+                        active_agent_persisted=False,
+                    ),
                 )
 
             try:
@@ -1205,6 +1369,13 @@ def register_pull(app: typer.Typer):
                     resource=f"{harness} active-agent state",
                     remediation="Fix harness configuration permissions and pull the agent again.",
                     detail=repr(error),
+                    result=_pull_failure_result(
+                        written,
+                        "persist_active_agent",
+                        setup_results=setup_results,
+                        installation_tracked=True,
+                        active_agent_persisted=False,
+                    ),
                 )
 
             from observal_cli.audit import emit_cli_audit

@@ -118,8 +118,24 @@ async def bulk_create_agents(
     created = 0
     skipped = 0
     errors = 0
+    seen_identities: set[tuple[str, str]] = set()
 
     for item in request.agents:
+        try:
+            identity = registry_identity(current_user, item.name)
+        except ValueError:
+            results.append(BulkResultItem(name=item.name, status="error", error="Agent name is invalid"))
+            errors += 1
+            continue
+
+        if identity in seen_identities:
+            results.append(
+                BulkResultItem(name=item.name, status="skipped", error="Agent name is duplicated in this batch")
+            )
+            skipped += 1
+            continue
+        seen_identities.add(identity)
+
         # Check for duplicate name
         if await _agent_name_exists(item.name, current_user, db):
             results.append(
@@ -129,6 +145,24 @@ async def bulk_create_agents(
             continue
 
         if request.dry_run:
+            try:
+                from services.agent_resolver import validate_component_ids
+
+                component_errors = await validate_component_ids(
+                    item.components,
+                    db,
+                    require_approved=False,
+                    current_user=current_user,
+                )
+                if component_errors:
+                    raise ValueError("component validation failed")
+            except Exception as exc:
+                optic.warning(
+                    "bulk dry-run validation failed for agent '{}': error_type={}", item.name, type(exc).__name__
+                )
+                results.append(BulkResultItem(name=item.name, status="error", error="Agent definition is invalid"))
+                errors += 1
+                continue
             results.append(BulkResultItem(name=item.name, status="created"))
             created += 1
             continue
@@ -155,8 +189,8 @@ async def bulk_create_agents(
             results.append(BulkResultItem(name=item.name, status="created", agent_id=agent.id))
             created += 1
         except Exception as exc:
-            optic.warning("bulk create failed for agent '{}': {}", item.name, exc)
-            results.append(BulkResultItem(name=item.name, status="error", error=str(exc)))
+            optic.warning("bulk create failed for agent '{}': error_type={}", item.name, type(exc).__name__)
+            results.append(BulkResultItem(name=item.name, status="error", error="Agent could not be created"))
             errors += 1
 
     if not request.dry_run and created > 0:
@@ -175,6 +209,7 @@ async def bulk_create_agents(
         created=created,
         skipped=skipped,
         errors=errors,
+        partial=errors > 0,
         dry_run=request.dry_run,
         results=results,
     )

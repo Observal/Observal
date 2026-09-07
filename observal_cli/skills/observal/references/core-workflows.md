@@ -108,11 +108,11 @@ Use only when no dedicated command exists. It preserves raw endpoint JSON and us
 
 ```bash
 observal api GET /api/v1/teams --output json
-observal api GET /api/v1/agents --param limit=10 --output json
+observal api GET /api/v1/agents --param limit=10 --param tag=review --param tag=security --output json
 observal api POST /api/v1/teams --from-file team.json --output json
 ```
 
-Mutation bodies come from one JSON object in a file or standard input. Full URLs and arbitrary authorization headers are rejected. Prefer dedicated commands for validation and confirmations.
+Mutation bodies accept any valid JSON value from a file or standard input, including arrays, scalars, and `null`. Repeated `--param` keys are preserved in order. Full URLs and arbitrary authorization headers are rejected. Prefer dedicated commands for validation and confirmations.
 
 ## Error handling
 

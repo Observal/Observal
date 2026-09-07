@@ -42,11 +42,11 @@ observal agent pull alice/reviewer --harness pi --version 1.2.3 --no-prompt --ou
 
 Unknown harnesses, unsupported scopes, malformed assignments, unused harness model overrides, unsupported model or tool options, and invalid versions fail locally with validation exit code 7.
 
-JSON mode cannot prompt and requires `--no-prompt`.
+JSON mode cannot prompt and requires `--no-prompt`. Missing required component values fail before config generation with `error.result.needs_input: true` and a list of names and component labels.
 
 ## Secrets
 
-Pull discovers required MCP environment variables and headers from the Agent's components. Interactive mode prompts for missing values. Non-interactive mode uses matching `--env` and `--header` assignments and leaves unprovided values for the generated config's placeholder behavior.
+Pull discovers required MCP environment variables and headers from the Agent's components. Interactive mode prompts for missing values. Non-interactive mode uses matching `--env` and `--header` assignments and stops before installation when any required value is missing. Optional values may remain unset.
 
 Values are sent only in the installation request and generated config. They are not included in JSON results, success messages, traces, or error details.
 
@@ -80,7 +80,7 @@ Pull performs these steps:
 8. Record Agent and component versions in the Registry-scoped lockfile.
 9. Refresh the local layer snapshot and active-Agent state.
 
-Failed skill installation or MCP setup prevents installation metadata from being recorded. A lockfile write failure is reported as exit code 9 instead of claiming success. A layer-snapshot failure is returned as a visible warning because the generated harness installation remains usable.
+Failed skill installation or MCP setup prevents installation metadata from being recorded. Setup commands have a 60-second timeout; a timeout is reported as a setup failure with exit code 9. A lockfile write failure is also reported as exit code 9 instead of claiming success. Failures after filesystem changes include safe partial state under `error.result`, including the stage, written file statuses, setup executable status, and tracking state. Setup arguments and secret values are omitted. A layer-snapshot failure is returned as a visible warning because the generated harness installation remains usable.
 
 ## JSON result
 

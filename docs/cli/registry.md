@@ -91,7 +91,7 @@ The file is a bare array or an object with a `components` array. Each entry cont
 }
 ```
 
-Dry run validates file structure without contacting submission endpoints. Execution structurally validates every entry before the first mutation, submits entries in order, reports conflicts as skipped, and returns per-entry IDs, canonical names, review status, and safe errors. Authentication, permission, rate-limit, version, and service failures stop the batch. JSON execution requires `--yes`.
+Dry run validates file structure without contacting submission endpoints. Execution structurally validates every entry before the first mutation, submits entries in order, reports conflicts as skipped, and returns per-entry IDs, canonical names, review status, and safe errors. Results include `partial`; item errors set it to `true` and exit with code 11, while conflicts counted as skips remain successful. Authentication, permission, rate-limit, version, and service failures stop the batch. JSON execution requires `--yes`.
 
 Re-running a partially completed file is safe only after inspecting results. Existing identities are skipped for component types that reject duplicates. Verify created items by returned UUID or `qualified_name`.
 
@@ -240,7 +240,7 @@ observal registry mcp show @fav --output json
 
 ### `observal registry mcp install`
 
-Generate a harness config snippet for an MCP server. This command does not write harness configuration or record an installation. Prompts for required environment variables and headers unless non-interactive or machine output is selected.
+Generate a harness config snippet for an MCP server. This command does not write harness configuration or record an installation. Interactive mode prompts for required environment variables and headers. JSON mode requires `--no-prompt` and rejects missing required values before config generation with `error.result.needs_input: true`.
 
 ```bash
 observal registry mcp install <id-or-name> --harness <harness> [options]
@@ -253,8 +253,8 @@ observal registry mcp install <id-or-name> --harness <harness> [options]
 | `--env` | `-e` | Environment value as `KEY=VALUE`; repeatable |
 | `--header` | | Header value as `KEY=VALUE`; repeatable |
 | `--env-file` | | Read environment values from a file |
-| `--no-prompt` | `-y` | Use supplied values and placeholders without prompting |
-| `--raw` | | Output only the bare config snippet for piping |
+| `--no-prompt` | `-y` | Use supplied values without prompting; JSON fails if required values are missing |
+| `--raw` | | Output only a bare config template; missing values remain explicit placeholders |
 | `--output` | `-o` | Output the complete operation result as table or JSON |
 
 ```bash

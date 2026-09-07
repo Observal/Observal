@@ -82,10 +82,11 @@ Consistent across all commands:
 | 8    | Rate limit reached                           |
 | 9    | Network, service, or dependency unavailable  |
 | 10   | CLI and server version mismatch              |
+| 11   | Batch completed with one or more item errors |
 
-Errors identify the failed operation, resource, remediation, and server request ID when available. Internal details appear only with `--debug`.
+Errors identify the failed operation, resource, remediation, and server request ID when available. Repairable failures may include a safe structured `result`; internal details appear only with `--debug`.
 
-When JSON output is selected, errors are written to stderr as one JSON object and stdout remains clean:
+When JSON output is selected, errors are written to stderr as one JSON object and stdout remains clean. Startup migrations and update notices never write to JSON stdout. A nonfatal startup migration warning is a structured `warning` object on stderr.
 
 ```json
 {

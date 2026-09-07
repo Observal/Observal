@@ -10,6 +10,7 @@ import importlib.metadata
 import json
 import os
 import sys
+from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, call, patch
@@ -22,7 +23,15 @@ from typer.testing import CliRunner
 
 from observal_cli import client
 from observal_cli.error_context import OPERATION_LABELS, RESOURCE_LABELS
-from observal_cli.errors import CliError, ErrorCategory, ErrorHandlingGroup, ExitCode, _uses_json_output, emit_error
+from observal_cli.errors import (
+    CliError,
+    ErrorCategory,
+    ErrorHandlingGroup,
+    ExitCode,
+    _uses_json_output,
+    _uses_machine_output,
+    emit_error,
+)
 from observal_cli.main import app
 
 _MISSING = object()
@@ -421,6 +430,44 @@ def test_error_renderer_exposes_detail_only_in_debug(capsys):
     assert payload["error"]["detail"] == "internal detail"
 
 
+def test_error_renderer_always_exposes_safe_structured_result(capsys):
+    error = CliError(
+        ErrorCategory.VALIDATION,
+        "Input is incomplete.",
+        operation="Install item",
+        detail="secret internal detail",
+        result={"needs_input": True, "inputs": [{"kind": "header", "name": "Authorization"}]},
+    )
+
+    emit_error(error, json_mode=True, debug=False)
+
+    payload = json.loads(capsys.readouterr().err)["error"]
+    assert payload["result"]["needs_input"] is True
+    assert "secret internal detail" not in json.dumps(payload)
+
+
+def test_every_leaf_command_exposes_json_machine_output():
+    from typer.main import get_command
+
+    root = get_command(app)
+    leaves = []
+
+    def walk(command):
+        if isinstance(command, Group):
+            for child in command.commands.values():
+                walk(child)
+        else:
+            leaves.append(command)
+
+    walk(root)
+    assert len(leaves) == 192
+    for command in leaves:
+        output = next((parameter for parameter in command.params if parameter.name == "output"), None)
+        assert output is not None, command.name
+        choices = {getattr(choice, "value", choice) for choice in getattr(output.type, "choices", ())}
+        assert "json" in choices, command.name
+
+
 def test_json_error_mode_distinguishes_format_from_file_destination():
     from typer.main import get_command
 
@@ -429,6 +476,14 @@ def test_json_error_mode_distinguishes_format_from_file_destination():
     assert _uses_json_output(root, ("agent", "show", "reviewer", "-ojson")) is True
     assert _uses_json_output(root, ("doctor", "support", "bundle", "--output", "json")) is True
     assert _uses_json_output(root, ("doctor", "support", "bundle", "--file", "json")) is False
+
+
+def test_machine_output_mode_includes_raw_json_commands_only():
+    from typer.main import get_command
+
+    root = get_command(app)
+    assert _uses_machine_output(root, ("registry", "mcp", "install", "item", "--harness", "pi", "--raw"))
+    assert not _uses_machine_output(root, ("registry", "mcp", "show", "--raw"))
 
 
 def test_json_error_mode_supports_typer_choice_without_click_inheritance():
@@ -454,6 +509,117 @@ def test_root_boundary_emits_json_usage_error_to_stderr():
     payload = json.loads(result.stderr)
     assert payload["error"]["category"] == "usage"
     assert payload["error"]["operation"] == "Run observal agent show"
+
+
+def test_package_conflict_uses_structured_json_error_boundary(monkeypatch):
+    import observal_cli.main as main
+
+    monkeypatch.setattr(importlib.metadata, "metadata", lambda _name: {"Name": "observal"})
+    monkeypatch.setattr(main, "_migrate_legacy_mcp_configs", lambda: None)
+    monkeypatch.setattr(main, "_try_lockfile_migration", lambda: None)
+
+    result = CliRunner().invoke(app, ["config", "path", "--output", "json"])
+
+    assert result.exit_code == ExitCode.CONFLICT
+    assert result.stdout == ""
+    error = json.loads(result.stderr)["error"]
+    assert error["category"] == "conflict"
+    assert error["operation"] == "Start Observal CLI"
+
+
+def test_startup_migration_notice_never_contaminates_json_stdout(monkeypatch):
+    import observal_cli.main as main
+
+    monkeypatch.setattr(client.config, "migrate_shimmed_mcp_configs", lambda: [Path("/tmp/legacy.json")])
+    monkeypatch.setattr(main, "_try_lockfile_migration", lambda: None)
+
+    result = CliRunner().invoke(app, ["config", "path", "--output", "json"])
+
+    assert result.exit_code == 0, result.stderr
+    assert json.loads(result.stdout)["path"]
+    assert "Migrated" not in result.stdout
+    assert result.stderr == ""
+
+
+def test_startup_migration_failure_is_a_structured_json_error(monkeypatch):
+    import observal_cli.main as main
+
+    def fail_migration():
+        raise RuntimeError("private migration detail")
+
+    monkeypatch.setattr(client.config, "migrate_shimmed_mcp_configs", fail_migration)
+    monkeypatch.setattr(main, "_try_lockfile_migration", lambda: None)
+
+    result = CliRunner().invoke(app, ["config", "path", "--output", "json"])
+
+    assert result.exit_code == ExitCode.UNAVAILABLE
+    assert result.stdout == ""
+    error = json.loads(result.stderr)["error"]
+    assert error["operation"] == "Migrate legacy MCP configuration"
+    assert "private migration detail" not in result.stderr
+
+
+def test_lockfile_migration_failure_emits_structured_warning_without_corrupting_stdout(tmp_path, monkeypatch):
+    import observal_cli.lockfile as lockfile
+    import observal_cli.main as main
+
+    config_dir = tmp_path / ".observal"
+    config_dir.mkdir()
+    monkeypatch.setattr(main, "_migrate_legacy_mcp_configs", lambda: None)
+    monkeypatch.setattr(main, "_sync_bundled_skills", lambda: None)
+    monkeypatch.setattr(lockfile, "CONFIG_DIR", config_dir)
+    monkeypatch.setattr(lockfile, "LOCKFILE_PATH", config_dir / "lockfile.json")
+    monkeypatch.setattr(lockfile, "migrate_agent_markers", MagicMock(side_effect=OSError("private path")))
+
+    result = CliRunner().invoke(app, ["config", "path", "--output", "json"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["path"]
+    warning = json.loads(result.stderr)["warning"]
+    assert warning["category"] == "local_state_migration"
+    assert "private path" not in result.stderr
+
+
+def test_raw_json_validation_uses_machine_error_contract(monkeypatch):
+    import observal_cli.main as main
+
+    monkeypatch.setattr(main, "_migrate_legacy_mcp_configs", lambda: None)
+    monkeypatch.setattr(main, "_try_lockfile_migration", lambda: None)
+
+    result = CliRunner().invoke(
+        app,
+        ["registry", "mcp", "install", "alice/search", "--harness", "unknown", "--raw"],
+    )
+
+    assert result.exit_code == ExitCode.VALIDATION
+    assert result.stdout == ""
+    assert json.loads(result.stderr)["error"]["category"] == "validation"
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["observal", "agent", "list", "--output", "json"],
+        ["observal", "registry", "mcp", "install", "item", "--harness", "pi", "--raw"],
+    ],
+)
+def test_update_banner_is_suppressed_for_tty_machine_output(monkeypatch, argv):
+    import observal_cli.main as main
+
+    class TTY(StringIO):
+        def isatty(self):
+            return True
+
+    stdout = TTY()
+    stderr = TTY()
+    monkeypatch.setattr(sys, "argv", argv)
+    monkeypatch.setattr(sys, "stdout", stdout)
+    monkeypatch.setattr(sys, "stderr", stderr)
+
+    main._show_update_banner()
+
+    assert stdout.getvalue() == ""
+    assert stderr.getvalue() == ""
 
 
 def test_missing_authentication_uses_stable_json_contract(monkeypatch):

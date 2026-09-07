@@ -33,7 +33,7 @@ observal registry bulk submit --from-file components.json --dry-run --output jso
 observal registry bulk submit --from-file components.json --yes --output json
 ```
 
-Each entry contains `type` plus the normal API submission fields. Supported types are `mcp`, `skill`, `hook`, `prompt`, and `sandbox`. Inspect `submitted`, `skipped`, `errors`, and every result. Authentication and service failures stop the batch. After an uncertain failure, verify by UUID or `qualified_name` before rerunning.
+Each entry contains `type` plus the normal API submission fields. Supported types are `mcp`, `skill`, `hook`, `prompt`, and `sandbox`. Inspect `submitted`, `skipped`, `errors`, `partial`, and every result. Actual item errors set `partial: true` and exit with code `11`; conflicts counted as skips remain successful. Authentication and service failures stop the batch. After an uncertain failure, verify by UUID or `qualified_name` before rerunning.
 
 ## MCP server
 

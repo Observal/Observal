@@ -28,7 +28,7 @@ from rich.table import Table
 
 from observal_cli import client, config
 from observal_cli.constants import AGENT_NAME_REGEX, VALID_HARNESSES
-from observal_cli.errors import CliError, ErrorCategory, fail
+from observal_cli.errors import CliError, ErrorCategory, exit_partial, fail
 from observal_cli.prompts import fuzzy_select, select_many, select_one, text_input
 from observal_cli.render import (
     OutputMode,
@@ -48,6 +48,7 @@ from observal_cli.render import (
 # ── Agent authoring constants ──────────────────────────────
 YAML_FILE = "observal-agent.yaml"
 VALID_COMPONENT_TYPES = {"mcp", "skill", "hook", "prompt", "sandbox"}
+_RESERVED_AGENT_SLUGS = {"archive", "draft", "install", "resolve", "restore", "submit", "unarchive", "versions"}
 
 # Common model choices for the interactive wizard
 _MODEL_CHOICES = [
@@ -66,6 +67,12 @@ def _slugify(raw: str) -> str:
     s = re.sub(r"[^a-z0-9_-]+", "-", s)
     s = re.sub(r"-{2,}", "-", s)
     return s.strip("-")
+
+
+def _bulk_agent_slug(raw: str) -> str:
+    """Mirror the server's canonical registry slug for duplicate preflight."""
+    slug = re.sub(r"[^a-z0-9_-]+", "-", raw.strip().lower()).strip("-_")
+    return slug[:64].rstrip("-_")
 
 
 def _validate_name(name: str) -> str | None:
@@ -620,6 +627,131 @@ def agent_bulk_create(
             resource=file_path,
             remediation="Replace scalar or array entries with agent definition objects.",
         )
+    if len(agents) > 50:
+        fail(
+            ErrorCategory.VALIDATION,
+            "Bulk agent files may contain at most 50 entries.",
+            operation="Bulk create agents",
+            resource=file_path,
+            remediation="Split the input into files of 50 entries or fewer.",
+        )
+
+    identities: dict[str, int] = {}
+    for index, item in enumerate(agents, 1):
+        name = item.get("name")
+        if not isinstance(name, str) or not name.strip():
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Bulk agent entry {index} requires a non-empty string name.",
+                operation="Bulk create agents",
+                resource=file_path,
+                remediation="Add a name to every agent definition.",
+            )
+        if len(name) > 255:
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Bulk agent entry {index} has a name longer than 255 characters.",
+                operation="Bulk create agents",
+                resource=file_path,
+                remediation="Shorten the agent name and retry.",
+            )
+        identity = _bulk_agent_slug(name)
+        if not identity:
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Bulk agent entry {index} has a name without letters or numbers.",
+                operation="Bulk create agents",
+                resource=file_path,
+                remediation="Use a name containing at least one letter or number.",
+            )
+        if identity in _RESERVED_AGENT_SLUGS:
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Bulk agent entry {index} resolves to reserved name: {identity}.",
+                operation="Bulk create agents",
+                resource=file_path,
+                remediation="Choose a non-reserved agent name.",
+            )
+        if identity in identities:
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Bulk agent entries {identities[identity]} and {index} resolve to the same name: {identity}.",
+                operation="Bulk create agents",
+                resource=file_path,
+                remediation="Keep one entry for each canonical agent name.",
+            )
+        identities[identity] = index
+
+        components = item.get("components", [])
+        if not isinstance(components, list):
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Bulk agent entry {index} components must be a list.",
+                operation="Bulk create agents",
+                resource=file_path,
+                remediation="Use a list of component reference objects.",
+            )
+        for component_index, component in enumerate(components, 1):
+            if not isinstance(component, dict):
+                fail(
+                    ErrorCategory.VALIDATION,
+                    f"Bulk agent entry {index} component {component_index} must be an object.",
+                    operation="Bulk create agents",
+                    resource=file_path,
+                    remediation="Replace scalar component references with objects.",
+                )
+            component_type = component.get("component_type", "mcp")
+            if component_type not in VALID_COMPONENT_TYPES or not str(component.get("component_id") or "").strip():
+                fail(
+                    ErrorCategory.VALIDATION,
+                    f"Bulk agent entry {index} component {component_index} is incomplete.",
+                    operation="Bulk create agents",
+                    resource=file_path,
+                    remediation="Provide a valid component_type and component_id.",
+                )
+        for field in ("version", "description", "owner", "prompt", "model_name"):
+            if field in item and not isinstance(item[field], str):
+                fail(
+                    ErrorCategory.VALIDATION,
+                    f"Bulk agent entry {index} field {field} has the wrong type.",
+                    operation="Bulk create agents",
+                    resource=file_path,
+                    remediation=f"Use a JSON string for {field}.",
+                )
+        if "model_config_json" in item and not isinstance(item["model_config_json"], dict):
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Bulk agent entry {index} field model_config_json has the wrong type.",
+                operation="Bulk create agents",
+                resource=file_path,
+                remediation="Use a JSON object for model_config_json.",
+            )
+        for field in ("supported_harnesses", "external_mcps"):
+            if field in item and not isinstance(item[field], list):
+                fail(
+                    ErrorCategory.VALIDATION,
+                    f"Bulk agent entry {index} field {field} has the wrong type.",
+                    operation="Bulk create agents",
+                    resource=file_path,
+                    remediation=f"Use a JSON list for {field}.",
+                )
+        if "supported_harnesses" in item and not all(isinstance(value, str) for value in item["supported_harnesses"]):
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Bulk agent entry {index} supported_harnesses must contain strings.",
+                operation="Bulk create agents",
+                resource=file_path,
+                remediation="Replace non-string harness values.",
+            )
+        if "external_mcps" in item and not all(isinstance(value, dict) for value in item["external_mcps"]):
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Bulk agent entry {index} external_mcps must contain objects.",
+                operation="Bulk create agents",
+                resource=file_path,
+                remediation="Replace non-object external MCP values.",
+            )
+
     if output == "json" and not (dry_run or yes):
         fail(
             ErrorCategory.VALIDATION,
@@ -652,8 +784,12 @@ def agent_bulk_create(
     if dry_run:
         with _progress(output, "Running dry-run..."):
             result = client.post("/api/v1/bulk/agents", {"agents": agents, "dry_run": True})
+        result = dict(result)
+        result["partial"] = result.get("errors", 0) > 0
         if output == "json":
             output_json(result)
+            if result["partial"]:
+                exit_partial()
             return
 
         results_table = Table(title="Dry-run results", show_lines=False, padding=(0, 1))
@@ -675,6 +811,8 @@ def agent_bulk_create(
             f"\n[bold]Summary:[/bold] {result.get('created', 0)} would be created, "
             f"{result.get('skipped', 0)} skipped, {result.get('errors', 0)} errors"
         )
+        if result["partial"]:
+            exit_partial()
         return
 
     # ── Confirmation ─────────────────────────────────────────
@@ -685,8 +823,12 @@ def agent_bulk_create(
     # ── Create ───────────────────────────────────────────────
     with _progress(output, "Creating agents..."):
         result = client.post("/api/v1/bulk/agents", {"agents": agents, "dry_run": False})
+    result = dict(result)
+    result["partial"] = result.get("errors", 0) > 0
     if output == "json":
         output_json(result)
+        if result["partial"]:
+            exit_partial()
         return
 
     results_table = Table(title="Bulk create results", show_lines=False, padding=(0, 1))
@@ -711,6 +853,8 @@ def agent_bulk_create(
         f"{result.get('created', 0)} created, {result.get('skipped', 0)} skipped, "
         f"{result.get('errors', 0)} errors"
     )
+    if result["partial"]:
+        exit_partial()
 
 
 @agent_app.command(name="list")
@@ -1413,7 +1557,7 @@ def agent_build(
             operation="Validate agent",
             resource=str(dir_path / YAML_FILE),
             remediation="Fix the reported component references or target scope and retry.",
-            detail=_json.dumps(result, default=str),
+            result=result,
         )
     if output == "json":
         output_json(result)
