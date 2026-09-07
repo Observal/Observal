@@ -356,8 +356,10 @@ async def pin_baseline(
 
     # Store/update baseline pin (use a dedicated table or settings)
     # For now, store in layer_snapshots with a special marker
+    # INSERT OR REPLACE preserves legacy ReplacingMergeTree upsert semantics:
+    # re-pinning a baseline overwrites the previous row.
     sql = """
-        INSERT INTO layer_snapshots (hash, project_id, user_id, harness, content, file_count, total_size, lockfile_hash)
+        INSERT OR REPLACE INTO layer_snapshots (hash, project_id, user_id, harness, content, file_count, total_size, lockfile_hash)
         VALUES (
             {hash:String},
             {project_id:String},

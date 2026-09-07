@@ -29,7 +29,16 @@ from observal_shared.secrets import resolve_secret
 class Settings(BaseSettings):
     # Infrastructure
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/observal"
+    # DEPRECATED: the analytics store is DuckDB now; kept so existing .env
+    # files still parse. Use DUCKDB_PATH.
     CLICKHOUSE_URL: str = "clickhouse://localhost:8123/observal"
+    # DuckDB analytics store (embedded, single-process read-write).
+    DUCKDB_PATH: str = "data/observal.duckdb"
+    DUCKDB_READ_ONLY: bool = False
+    # Run the arq background worker inside the API process. Required when the
+    # analytics store is embedded DuckDB: only one process may hold the file
+    # read-write, so the worker must share the API's process (and connection).
+    EMBEDDED_WORKER: bool = True
     REDIS_URL: str = "redis://localhost:6379"
     REDIS_SOCKET_TIMEOUT: float = 2.0
     REDIS_MAX_CONNECTIONS: int = 200
@@ -54,6 +63,7 @@ class Settings(BaseSettings):
     # Connection pool sizing (boot-time, pool created once at startup)
     DB_POOL_SIZE: int = 30
     DB_MAX_OVERFLOW: int = 50
+    # DEPRECATED: no-op with the DuckDB analytics store (embedded, no pool).
     CLICKHOUSE_MAX_CONNECTIONS: int = 100
     CLICKHOUSE_MAX_KEEPALIVE: int = 100
     CLICKHOUSE_TIMEOUT: float = 10.0

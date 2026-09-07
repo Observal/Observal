@@ -13,19 +13,29 @@ from pydantic import ValidationError
 from api.routes import ingest as ingest_route
 from api.routes.ingest import SessionIngestRequest
 from services import session_ingest
-from services.clickhouse import insert as clickhouse_insert
+from services.duckdb import insert as duckdb_insert
 
 
 @pytest.mark.asyncio
-async def test_canonical_insert_waits_for_clickhouse_commit(monkeypatch):
-    response = MagicMock()
-    response.raise_for_status.return_value = None
-    query = AsyncMock(return_value=response)
-    monkeypatch.setattr(clickhouse_insert._client, "_query", query)
+async def test_canonical_insert_uses_write_time_dedup(monkeypatch):
+    """DuckDB port: inserts are synchronous executemany batches with
+    INSERT OR REPLACE (write-time dedup replacing ClickHouse's
+    ReplacingMergeTree + async-insert buffer)."""
+    captured: dict = {}
 
-    await clickhouse_insert.insert_session_events([{"session_id": "session"}])
+    def capture(table, rows, *, columns=None, or_replace=False):
+        captured["table"] = table
+        captured["rows"] = rows
+        captured["or_replace"] = or_replace
+        return len(rows)
 
-    assert query.await_args.args[1]["wait_for_async_insert"] == "1"
+    monkeypatch.setattr(duckdb_insert, "insert_rows", capture)
+
+    await duckdb_insert.insert_session_events([{"session_id": "session"}])
+
+    assert captured["table"] == "session_events"
+    assert captured["or_replace"] is True
+    assert captured["rows"][0]["session_id"] == "session"
 
 
 @pytest.mark.asyncio

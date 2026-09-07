@@ -15,6 +15,33 @@ from observal_shared.migration.constants import DEFAULT_PROJECT_ID
 
 TIME_PURGE_TABLES = {"session_events": "timestamp"}
 
+# Unconditional retention formerly enforced by ClickHouse TTLs in DDL.
+# DuckDB has no table TTL, so this cron applies the same policy explicitly.
+GLOBAL_TIME_PURGE_TABLES = {"security_events": "timestamp", "audit_log": "timestamp"}
+GLOBAL_RETENTION_DAYS = 730
+RAW_LINE_RETENTION_DAYS = 30
+
+
+async def _purge_global_tables() -> None:
+    """Apply the legacy ClickHouse DDL TTLs: 730d for audit/security logs and
+    the 30-day column TTL on session_events.raw_line."""
+    from services.duckdb import _query
+
+    now = datetime.now(UTC)
+    cutoff = (now - timedelta(days=GLOBAL_RETENTION_DAYS)).strftime("%Y-%m-%d %H:%M:%S.000")
+    for table, time_col in GLOBAL_TIME_PURGE_TABLES.items():
+        resp = await _query(f"DELETE FROM {table} WHERE {time_col} < $cutoff", {"cutoff": cutoff})
+        if resp.status_code != 200:
+            optic.warning("global retention purge failed on table {}: {}", table, resp.text[:200])
+
+    raw_cutoff = (now - timedelta(days=RAW_LINE_RETENTION_DAYS)).strftime("%Y-%m-%d %H:%M:%S.000")
+    resp = await _query(
+        "UPDATE session_events SET raw_line = '' WHERE timestamp < $cutoff AND raw_line != ''",
+        {"cutoff": raw_cutoff},
+    )
+    if resp.status_code != 200:
+        optic.warning("raw_line retention scrub failed: {}", resp.text[:200])
+
 
 async def _delete_batch(table: str, time_col: str, project_id: str, cutoff_str: str) -> int:
     """Execute a lightweight delete and return one on success."""
@@ -101,7 +128,7 @@ async def _purge_count_based(project_id: str, max_trace_count: int) -> int:
     from services.clickhouse import _query
 
     sql = (
-        "SELECT toDate(timestamp) AS day, count(DISTINCT session_id) AS cnt "
+        "SELECT timestamp::DATE AS day, count(DISTINCT session_id) AS cnt "
         "FROM session_events WHERE project_id = {pid:String} "
         "AND timestamp >= now() - INTERVAL 730 DAY "
         "GROUP BY day ORDER BY day DESC LIMIT 730 FORMAT JSON"
@@ -128,6 +155,9 @@ async def _purge_count_based(project_id: str, max_trace_count: int) -> int:
 async def run_retention_purge(ctx: dict | None = None):
     """Run the configured retention policy for the deployment."""
     del ctx
+    # Legacy DDL TTLs apply regardless of the configurable retention policy.
+    await _purge_global_tables()
+
     if not await ds.get_bool("retention.enabled"):
         return
 

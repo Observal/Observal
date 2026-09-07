@@ -472,8 +472,8 @@ async def fetch_session_stats(
         SELECT
             session_id,
             max(credits) AS total_credits,
-            anyIf(harness, harness != '') AS harness,
-            anyIf(layer_hash, layer_hash IS NOT NULL AND layer_hash != '') AS layer_hash
+            any_value(harness) FILTER (WHERE harness != '') AS harness,
+            any_value(layer_hash) FILTER (WHERE layer_hash IS NOT NULL AND layer_hash != '') AS layer_hash
         FROM session_events FINAL
         WHERE (agent_id = {agent_id:String} OR agent_id = {agent_name:String})
           AND timestamp >= {t_start:String}

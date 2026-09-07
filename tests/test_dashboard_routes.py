@@ -180,12 +180,18 @@ async def test_overview_stats_returns_zeroes_for_empty_aggregates(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_overview_stats_exposes_null_clickhouse_aggregate_as_invalid(monkeypatch):
+async def test_overview_stats_treats_null_duckdb_aggregate_as_zero(monkeypatch):
+    """DuckDB sum() returns NULL over an empty set (ClickHouse returned 0).
+
+    A fresh deployment must not 500 on its own dashboard; NULL aggregates are
+    surfaced as 0 instead of raising.
+    """
     db = _db(scalar_values=[0, 0, 0])
     monkeypatch.setattr(dashboard, "_ch_json", AsyncMock(side_effect=[[{"cnt": None}], []]))
 
-    with pytest.raises(TypeError):
-        await dashboard.overview_stats(range_="7d", db=db, current_user=None)
+    stats = await dashboard.overview_stats(range_="7d", db=db, current_user=None)
+    assert stats.total_tool_calls == 0
+    assert stats.total_agent_interactions == 0
 
 
 @pytest.mark.asyncio

@@ -26,10 +26,10 @@ test.describe("Kiro CLI Commands", () => {
     );
   });
 
-  test("observal doctor --harness kiro runs without errors", () => {
+  test("observal doctor runs without errors", () => {
     const output = runCommand(
       "observal",
-      ["doctor", "--harness", "kiro"],
+      ["doctor"],
       { allowFailure: true },
     );
     expect(output).toBeTruthy();

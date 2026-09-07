@@ -108,7 +108,7 @@ class TestQueryMetric:
 
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
-        mock_resp.text = "0.05\n"
+        mock_resp.json.return_value = {"data": [{"error_rate": 0.05}]}
         with patch(
             "services.alert_evaluator._query",
             new_callable=AsyncMock,
@@ -123,7 +123,7 @@ class TestQueryMetric:
 
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
-        mock_resp.text = "250.5\n"
+        mock_resp.json.return_value = {"data": [{"latency_p99": 250.5}]}
         with patch(
             "services.alert_evaluator._query",
             new_callable=AsyncMock,
@@ -138,7 +138,7 @@ class TestQueryMetric:
 
         mock_resp = MagicMock()
         mock_resp.raise_for_status = MagicMock()
-        mock_resp.text = "50000\n"
+        mock_resp.json.return_value = {"data": [{"token_usage": 50000.0}]}
         with patch(
             "services.alert_evaluator._query",
             new_callable=AsyncMock,
