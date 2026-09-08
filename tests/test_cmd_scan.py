@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Anupam Kumar <anupam9594.kumar@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 VishnuM049 <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Behavioral tests for the ``observal scan`` command."""
@@ -18,7 +19,25 @@ import typer
 from typer.testing import CliRunner
 
 import observal_cli.cmd_scan as cmd_scan
+import observal_cli.discovery.collector as discovery_collector
 from observal_cli import client, config
+from observal_cli.discovery.collector import DiscoveryScanCollection, HarnessStatus
+from observal_cli.discovery.models import (
+    ComponentType,
+    Confidence,
+    DiagnosticCode,
+    DiagnosticSeverity,
+    DiscoveryCandidate,
+    DiscoveryDiagnostic,
+    DiscoveryEvidence,
+    DiscoveryScope,
+    ProviderKind,
+    ProviderResult,
+    RegistrationStatus,
+    RegistryStatus,
+    SupportStatus,
+)
+from observal_cli.discovery.normalize import build_candidates
 from observal_cli.harness import (
     DiscoveredAgent,
     DiscoveredHook,
@@ -27,6 +46,7 @@ from observal_cli.harness import (
     NotSupportedError,
     ScanResult,
 )
+from observal_cli.harness.cursor import CursorAdapter
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -111,6 +131,24 @@ def _mcp(
         description=f"Description for {name}",
         source=source,
     )
+
+
+def test_discovery_table_helpers_redact_secrets_and_absolute_paths(tmp_path: Path) -> None:
+    secret = "ordinary-sensitive-value"
+    mcp = _mcp(
+        "remote",
+        source=str(tmp_path / "outside" / "mcp.json"),
+        command="npx",
+        args=["--token", secret],
+    )
+
+    launch = cmd_scan._safe_discovery_mcp_launch(mcp)
+    source = cmd_scan._safe_discovery_source(mcp.source, home=tmp_path / "home", project_dir=tmp_path / "project")
+
+    assert secret not in launch
+    assert "<secret>" in launch
+    assert str(tmp_path) not in source
+    assert source == "<external>/mcp.json"
 
 
 def _skill(name: str, source: str) -> DiscoveredSkill:
@@ -208,6 +246,308 @@ def test_register_scan_owns_command_and_option_aliases() -> None:
     assert parameters["harness"].default.param_decls == (f"{long_prefix}harness", "-i")
     assert parameters["output"].default.param_decls == (f"{long_prefix}output", "-o")
     assert parameters["output"].default.default == "table"
+    assert parameters["discover"].default.param_decls == (f"{long_prefix}discover",)
+    assert parameters["discover"].default.default is False
+
+
+def test_discover_json_uses_versioned_contract_and_never_calls_mutations(scan_env, monkeypatch) -> None:
+    candidate = DiscoveryCandidate(
+        component_type=ComponentType.MCP,
+        local_name="search",
+        correlation_identity="npm:search",
+        launch_fingerprint="sha256:" + "1" * 64,
+        support_status=SupportStatus.SUPPORTED,
+        registration_status=RegistrationStatus.ELIGIBLE,
+        registry_status=RegistryStatus.NO_EXACT_MATCH,
+        confidence=Confidence.HIGH,
+    )
+    collection = DiscoveryScanCollection(
+        harnesses=[HarnessStatus("kiro", "installed")],
+        candidates=[candidate],
+        diagnostics=[
+            DiscoveryDiagnostic(
+                DiagnosticCode.EXECUTABLE_MISSING,
+                DiagnosticSeverity.WARNING,
+                "npm",
+                None,
+                "npm executable is unavailable",
+            )
+        ],
+    )
+    collect = Mock(return_value=collection)
+    mutation = Mock(side_effect=AssertionError("discover output must not mutate"))
+    register = Mock(side_effect=AssertionError("JSON discovery must not enter registration"))
+    monkeypatch.setattr(cmd_scan, "collect_discovery_scan", collect)
+    monkeypatch.setattr(cmd_scan, "register_discovery_candidates", register)
+    monkeypatch.setattr(client, "post", mutation)
+
+    result = _invoke("--discover", "--output", "json")
+
+    assert result.exit_code == 0, result.exception
+    payload = json.loads(result.output)
+    assert payload["discovery_schema_version"] == 1
+    assert payload["candidates"][0]["local_name"] == "search"
+    assert payload["candidates"][0]["registry_status"] == "no_exact_match"
+    assert payload["diagnostics"][0]["code"] == "executable_missing"
+    collect.assert_called_once_with({}, home=scan_env.home, project_dir=scan_env.project, harness_filtered=False)
+    mutation.assert_not_called()
+    register.assert_not_called()
+    scan_env.http_get.assert_not_called()
+    scan_env.rprint.assert_not_called()
+
+
+def test_discover_json_never_reports_invalid_portable_source_as_eligible(scan_env, monkeypatch) -> None:
+    evidence = DiscoveryEvidence(
+        component=DiscoveredHook(
+            "unsafe-hook",
+            "UnsupportedEvent",
+            "command",
+            {"command": "/Users/alice/private/hook.sh", "args": []},
+            "Unsafe local hook",
+            "test",
+        ),
+        provider=ProviderKind.HARNESS,
+        scope=DiscoveryScope.PROJECT,
+        harness="kiro",
+        display_path="<project>/.kiro/hooks/unsafe.json",
+    )
+    candidate = build_candidates([evidence])[0]
+    collection = DiscoveryScanCollection(candidates=[candidate])
+    register = Mock(side_effect=AssertionError("JSON discovery must not enter registration"))
+    mutation = Mock(side_effect=AssertionError("JSON discovery must not mutate"))
+    monkeypatch.setattr(cmd_scan, "collect_discovery_scan", Mock(return_value=collection))
+    monkeypatch.setattr(cmd_scan, "register_discovery_candidates", register)
+    monkeypatch.setattr(client, "post", mutation)
+
+    result = _invoke("--discover", "--output", "json")
+
+    assert result.exit_code == 0, result.exception
+    serialized = json.loads(result.output)["candidates"][0]
+    assert serialized["support_status"] == "unsupported"
+    assert serialized["registration_status"] == "incomplete"
+    assert serialized["registration_status"] != "eligible"
+    assert serialized["reason_codes"] == ["unsupported_launch"]
+    assert serialized["missing_fields"] == ["event"]
+    register.assert_not_called()
+    mutation.assert_not_called()
+
+
+def test_discover_json_rejects_unsupported_mcp_transport_end_to_end(scan_env, monkeypatch) -> None:
+    config_path = scan_env.project / ".cursor" / "mcp.json"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "remote": {
+                        "url": "https://example.test/mcp",
+                        "transport": "websocket",
+                    }
+                }
+            }
+        )
+    )
+    adapter = CursorAdapter()
+    scan_env.get_all.return_value = {"cursor": adapter}
+    empty_provider = Mock(return_value=ProviderResult())
+    monkeypatch.setattr(discovery_collector, "discover_npm", empty_provider)
+    monkeypatch.setattr(discovery_collector, "discover_pipx", empty_provider)
+    monkeypatch.setattr(discovery_collector, "discover_uv", empty_provider)
+    mutation = Mock(side_effect=AssertionError("unsupported transport must not mutate"))
+    monkeypatch.setattr(client, "post", mutation)
+
+    result = _invoke("--discover", "--output", "json")
+
+    assert result.exit_code == 0, result.exception
+    payload = json.loads(result.output)
+    assert len(payload["candidates"]) == 1
+    candidate = payload["candidates"][0]
+    assert candidate["local_name"] == "remote"
+    assert candidate["launch_fingerprint"] is None
+    assert candidate["support_status"] == "unsupported"
+    assert candidate["registration_status"] == "incomplete"
+    assert candidate["missing_fields"] == ["portable_launch"]
+    assert "unsupported_launch" in candidate["reason_codes"]
+    assert any(item["code"] == "unsupported_launch" for item in payload["diagnostics"])
+    mutation.assert_not_called()
+
+
+def test_discover_table_renders_candidates_and_diagnostics_without_legacy_registry_query(scan_env, monkeypatch) -> None:
+    candidate = DiscoveryCandidate(
+        component_type=None,
+        local_name="package-tool",
+        correlation_identity="pypi:package-tool",
+        launch_fingerprint="sha256:" + "2" * 64,
+        support_status=SupportStatus.UNSUPPORTED,
+        registration_status=RegistrationStatus.NOT_APPLICABLE,
+        confidence=Confidence.LOW,
+    )
+    collection = DiscoveryScanCollection(
+        candidates=[candidate],
+        diagnostics=[
+            DiscoveryDiagnostic(
+                DiagnosticCode.REGISTRY_AUTH_REQUIRED,
+                DiagnosticSeverity.WARNING,
+                "registry",
+                None,
+                "Registry authentication is required",
+            )
+        ],
+    )
+    collect = Mock(return_value=collection)
+    monkeypatch.setattr(cmd_scan, "collect_discovery_scan", collect)
+
+    result = _invoke("--harness", "kiro", "--discover")
+
+    assert result.exit_code == 0, result.exception
+    assert [table.title for table in scan_env.tables] == [
+        "Discovery Candidates (1)",
+        "Discovery Diagnostics (1)",
+    ]
+    assert scan_env.tables[0].rows == [("unknown", "package-tool", "not_tracked", "not_checked", "not_applicable")]
+    collect.assert_called_once_with(
+        {"kiro": scan_env.get_one.return_value},
+        home=scan_env.home,
+        project_dir=scan_env.project,
+        harness_filtered=True,
+    )
+    scan_env.http_get.assert_not_called()
+
+
+def test_discover_table_non_tty_never_enters_registration(scan_env, monkeypatch) -> None:
+    candidate = DiscoveryCandidate(
+        component_type=ComponentType.AGENT,
+        local_name="helper",
+        correlation_identity=None,
+        launch_fingerprint=None,
+        support_status=SupportStatus.SUPPORTED,
+        registration_status=RegistrationStatus.ELIGIBLE,
+        registry_status=RegistryStatus.NO_EXACT_MATCH,
+    )
+    monkeypatch.setattr(
+        cmd_scan,
+        "collect_discovery_scan",
+        Mock(return_value=DiscoveryScanCollection(candidates=[candidate])),
+    )
+    monkeypatch.setattr(cmd_scan, "_stdin_is_tty", Mock(return_value=False))
+    register = Mock(side_effect=AssertionError("non-TTY discovery must not enter registration"))
+    monkeypatch.setattr(cmd_scan, "register_discovery_candidates", register)
+
+    result = _invoke("--discover")
+
+    assert result.exit_code == 0, result.exception
+    register.assert_not_called()
+
+
+def test_discover_table_invokes_registration_only_for_tty(scan_env, monkeypatch) -> None:
+    candidate = DiscoveryCandidate(
+        component_type=ComponentType.AGENT,
+        local_name="helper",
+        correlation_identity=None,
+        launch_fingerprint=None,
+        support_status=SupportStatus.SUPPORTED,
+        registration_status=RegistrationStatus.ELIGIBLE,
+        registry_status=RegistryStatus.NO_EXACT_MATCH,
+    )
+    collection = DiscoveryScanCollection(candidates=[candidate])
+    monkeypatch.setattr(cmd_scan, "collect_discovery_scan", Mock(return_value=collection))
+    monkeypatch.setattr(cmd_scan, "_stdin_is_tty", Mock(return_value=True))
+    register = Mock(return_value=[SimpleNamespace(failed=False)])
+    render = Mock()
+    monkeypatch.setattr(cmd_scan, "register_discovery_candidates", register)
+    monkeypatch.setattr(cmd_scan, "render_registration_results", render)
+
+    result = _invoke("--discover")
+
+    assert result.exit_code == 0, result.exception
+    register.assert_called_once_with([candidate], output="table", stdin_is_tty=True)
+    render.assert_called_once_with(register.return_value)
+
+
+def test_failed_discovery_registration_sets_nonzero_final_exit(scan_env, monkeypatch) -> None:
+    candidate = DiscoveryCandidate(
+        component_type=ComponentType.AGENT,
+        local_name="helper",
+        correlation_identity=None,
+        launch_fingerprint=None,
+        support_status=SupportStatus.SUPPORTED,
+        registration_status=RegistrationStatus.ELIGIBLE,
+        registry_status=RegistryStatus.NO_EXACT_MATCH,
+    )
+    monkeypatch.setattr(
+        cmd_scan,
+        "collect_discovery_scan",
+        Mock(return_value=DiscoveryScanCollection(candidates=[candidate])),
+    )
+    monkeypatch.setattr(cmd_scan, "_stdin_is_tty", Mock(return_value=True))
+    monkeypatch.setattr(
+        cmd_scan,
+        "register_discovery_candidates",
+        Mock(return_value=[SimpleNamespace(failed=True)]),
+    )
+    monkeypatch.setattr(cmd_scan, "render_registration_results", Mock())
+
+    result = _invoke("--discover")
+
+    assert result.exit_code == 1
+
+
+def test_discover_json_empty_state_includes_schema_and_diagnostics(scan_env, monkeypatch) -> None:
+    collection = DiscoveryScanCollection(
+        diagnostics=[
+            DiscoveryDiagnostic(
+                DiagnosticCode.EXECUTABLE_MISSING,
+                DiagnosticSeverity.WARNING,
+                "npm",
+                None,
+                "npm executable is unavailable",
+            )
+        ]
+    )
+    monkeypatch.setattr(cmd_scan, "collect_discovery_scan", Mock(return_value=collection))
+
+    result = _invoke("--discover", "--output", "json")
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == {
+        "discovery_schema_version": 1,
+        "harnesses": [],
+        "mcps": [],
+        "skills": [],
+        "hooks": [],
+        "agents": [],
+        "candidates": [],
+        "diagnostics": [
+            {
+                "code": "executable_missing",
+                "severity": "warning",
+                "provider": "npm",
+                "source": None,
+                "message": "npm executable is unavailable",
+            }
+        ],
+    }
+
+
+def test_discover_table_shows_diagnostics_before_no_findings_exit(scan_env, monkeypatch) -> None:
+    collection = DiscoveryScanCollection(
+        diagnostics=[
+            DiscoveryDiagnostic(
+                DiagnosticCode.EXECUTABLE_MISSING,
+                DiagnosticSeverity.WARNING,
+                "npm",
+                None,
+                "npm executable is unavailable",
+            )
+        ]
+    )
+    monkeypatch.setattr(cmd_scan, "collect_discovery_scan", Mock(return_value=collection))
+
+    result = _invoke("--discover")
+
+    assert result.exit_code == 1
+    assert [table.title for table in scan_env.tables] == ["Discovery Diagnostics (1)"]
+    assert scan_env.rprint.call_args_list[-1] == call("[yellow]No harness configurations found.[/yellow]")
 
 
 def test_unknown_harness_filter_lists_sorted_choices(scan_env) -> None:
@@ -257,7 +597,7 @@ def test_missing_harness_roots_have_deterministic_empty_states(scan_env, output:
     adapter.resolve_home_dir.assert_called_once_with()
     adapter.scan_home.assert_not_called()
     adapter.detect_hooks.assert_not_called()
-    adapter.scan_project.assert_called_once_with(scan_env.home)
+    assert adapter.scan_project.call_args_list == [call(scan_env.project), call(scan_env.home)]
     if output == "json":
         assert result.exit_code == 0
         assert json.loads(result.output) == {
@@ -273,17 +613,22 @@ def test_missing_harness_roots_have_deterministic_empty_states(scan_env, output:
         scan_env.rprint.assert_called_once_with("[yellow]No harness configurations found.[/yellow]")
 
 
-def test_home_project_mcp_is_found_even_when_the_harness_home_is_absent(scan_env) -> None:
-    adapter = _adapter(project_result=ScanResult(mcps=[_mcp("home-project", source="home-project", args=["serve"])]))
+def test_current_project_is_scanned_even_when_the_harness_home_is_absent(scan_env) -> None:
+    adapter = _adapter(
+        project_results=[
+            ScanResult(mcps=[_mcp("project-server", source="project", args=["serve"])]),
+            ScanResult(),
+        ]
+    )
     scan_env.get_all.return_value = {"cursor": adapter}
 
     result = _invoke()
 
     assert result.exit_code == 0, result.exception
     adapter.scan_home.assert_not_called()
-    adapter.scan_project.assert_called_once_with(scan_env.home)
+    assert adapter.scan_project.call_args_list == [call(scan_env.project), call(scan_env.home)]
     assert [table.title for table in scan_env.tables] == ["MCP Servers (1)"]
-    assert scan_env.tables[0].rows == [("home-project", "npx serve", "home-project")]
+    assert scan_env.tables[0].rows == [("project-server", "npx serve", "project")]
     assert scan_env.spinner_calls == []
 
 
@@ -376,21 +721,37 @@ def test_json_normalizes_components_and_mcp_precedence_across_all_scan_scopes(sc
 
     assert result.exit_code == 0, result.exception
     payload = json.loads(result.output)
+    assert list(payload) == ["harnesses", "mcps", "skills", "hooks", "agents"]
     assert payload["harnesses"] == [
         {"name": "cursor", "hooks": "partial"},
         {"name": "kiro", "hooks": "missing"},
     ]
     assert [item["name"] for item in payload["mcps"]] == [
-        "shared",
-        "home-only",
-        "project-only",
-        "kiro-only",
         "extra-only",
+        "home-only",
+        "kiro-only",
+        "project-only",
+        "shared",
+        "shared",
+        "shared",
     ]
-    assert payload["mcps"][0] == vars(shared_home)
-    assert [item["name"] for item in payload["skills"]] == ["home-skill", "project-skill"]
-    assert [item["name"] for item in payload["hooks"]] == ["home-hook", "project-hook"]
-    assert [item["name"] for item in payload["agents"]] == ["home-agent", "project-agent"]
+    shared = [item for item in payload["mcps"] if item["name"] == "shared"]
+    assert [item["args"] for item in shared] == [["home"], [], ["project"]]
+    assert [item["name"] for item in payload["skills"]] == [
+        "home-skill",
+        "ignored-extra-skill",
+        "project-skill",
+    ]
+    assert [item["name"] for item in payload["hooks"]] == [
+        "home-hook",
+        "ignored-extra-hook",
+        "project-hook",
+    ]
+    assert [item["name"] for item in payload["agents"]] == [
+        "home-agent",
+        "ignored-extra-agent",
+        "project-agent",
+    ]
     assert scan_env.spinner_calls == []
     assert scan_env.tables == []
     scan_env.console_print.assert_not_called()
@@ -499,8 +860,8 @@ def test_hook_status_styles_and_missing_hook_suggestion(scan_env, tmp_path: Path
     table = scan_env.tables[0]
     assert table.rows == [
         ("installed", "[green]installed[/green]"),
-        ("partial", "[yellow]partial[/yellow]"),
         ("missing", "[red]missing[/red]"),
+        ("partial", "[yellow]partial[/yellow]"),
         ("unsupported", "[red]n/a[/red]"),
     ]
     assert any("doctor patch" in str(args) for args in scan_env.rprint.call_args_list)
@@ -582,7 +943,9 @@ def test_all_registered_components_skip_the_unregistered_table(scan_env, tmp_pat
 
 
 @pytest.mark.parametrize("response_mode", ["exception", "error-status"])
-def test_registry_request_failures_leave_components_unregistered(scan_env, tmp_path: Path, response_mode: str) -> None:
+def test_registry_request_failures_leave_registration_state_unavailable(
+    scan_env, tmp_path: Path, response_mode: str
+) -> None:
     root = tmp_path / "registry-failure-root"
     root.mkdir()
     adapter = _adapter(
@@ -607,8 +970,7 @@ def test_registry_request_failures_leave_components_unregistered(scan_env, tmp_p
     result = _invoke()
 
     assert result.exit_code == 0, result.exception
-    table = next(table for table in scan_env.tables if table.title == "Unregistered Components (3)")
-    assert table.rows == [("mcp", "local-mcp"), ("skill", "local-skill"), ("agent", "local-agent")]
+    assert not any(table.title.startswith("Unregistered Components") for table in scan_env.tables)
 
 
 def test_optional_config_failure_does_not_prevent_local_results(scan_env, tmp_path: Path) -> None:

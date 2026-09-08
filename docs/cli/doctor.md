@@ -133,6 +133,6 @@ See [Support bundles](support.md) for archive contents, redaction, offline behav
 
 ## Related
 
-* [`observal scan`](scan.md): read-only harness inventory
+* [`observal scan`](scan.md): read-only inventory by default; `--discover` adds rich evidence and optional draft registration
 * [`observal agent pull`](pull.md): install a complete Agent
 * [Session tracking](../core-concepts/session-tracking.md): telemetry delivery architecture

@@ -5,6 +5,7 @@
 # SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 VishnuM049 <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Agent CLI commands."""
@@ -21,13 +22,21 @@ from uuid import UUID
 import typer
 import yaml
 from loguru import logger as optic
-from packaging.version import InvalidVersion, Version
 from rich import print as rprint
 from rich.panel import Panel
 from rich.table import Table
 
 from observal_cli import client, config
-from observal_cli.constants import AGENT_NAME_REGEX, VALID_HARNESSES
+from observal_cli.agent_drafts import (
+    AgentDefinitionError,
+    build_agent_payload,
+    create_agent_draft,
+    normalize_agent_version,
+    validate_agent_definition,
+    validate_agent_harnesses,
+    validate_agent_name,
+)
+from observal_cli.constants import VALID_HARNESSES
 from observal_cli.errors import CliError, ErrorCategory, fail
 from observal_cli.prompts import fuzzy_select, select_many, select_one, text_input
 from observal_cli.render import (
@@ -70,12 +79,10 @@ def _slugify(raw: str) -> str:
 
 def _validate_name(name: str) -> str | None:
     """Return error message if name is invalid, else None."""
-    if not name:
-        return "Agent name is required."
-    if len(name) > 64:
-        return "Agent name must be at most 64 characters."
-    if not AGENT_NAME_REGEX.match(name):
-        return "Must start with a letter/digit and contain only lowercase letters, digits, hyphens, underscores."
+    try:
+        validate_agent_name(name)
+    except AgentDefinitionError as error:
+        return error.message
     return None
 
 
@@ -91,11 +98,11 @@ def _progress(output: OutputMode | str, message: str | None = None):
 
 def _validate_version(value: str, *, operation: str) -> str:
     try:
-        return str(Version(value))
-    except InvalidVersion:
+        return normalize_agent_version(value)
+    except AgentDefinitionError as error:
         fail(
             ErrorCategory.VALIDATION,
-            f"Invalid semantic version: {value}.",
+            error.message,
             operation=operation,
             resource="agent version",
             remediation="Use a semantic version such as 1.2.3.",
@@ -103,16 +110,16 @@ def _validate_version(value: str, *, operation: str) -> str:
 
 
 def _validate_harnesses(values: list[str], *, operation: str) -> list[str]:
-    invalid = [value for value in values if value not in VALID_HARNESSES]
-    if invalid:
+    try:
+        return validate_agent_harnesses(values)
+    except AgentDefinitionError as error:
         fail(
             ErrorCategory.VALIDATION,
-            f"Unknown harness: {invalid[0]}.",
+            error.message,
             operation=operation,
             resource="agent harnesses",
             remediation=f"Choose from: {', '.join(VALID_HARNESSES)}.",
         )
-    return values
 
 
 def _validate_component_id(value: str) -> str:
@@ -228,37 +235,44 @@ def _load_agent_yaml(directory: Path, *, operation: str = "Read agent definition
     return data
 
 
+def _create_agent_draft_or_fail(payload: dict) -> dict:
+    try:
+        return create_agent_draft(payload)
+    except AgentDefinitionError as error:
+        fail(
+            ErrorCategory.VALIDATION,
+            error.message,
+            operation="Save agent draft",
+            resource=f"agent {error.field}",
+            remediation="Correct the draft fields and retry.",
+        )
+
+
 def _validate_agent_definition(data: dict, *, operation: str) -> dict:
-    name = data.get("name")
-    error = _validate_name(name) if isinstance(name, str) else "Agent name is required."
-    if error:
+    try:
+        return validate_agent_definition(data)
+    except AgentDefinitionError as error:
+        resource = {
+            "name": "agent name",
+            "version": "agent version",
+            "supported_harnesses": "agent harnesses",
+            "components": "agent components",
+        }.get(error.field, "agent definition")
+        remediation = {
+            "name": "Use lowercase letters, digits, hyphens, or underscores.",
+            "version": "Use a semantic version such as 1.2.3.",
+            "supported_harnesses": "Use a YAML list of registered harness names.",
+            "components": "Use a YAML list of component reference objects.",
+        }.get(error.field, "Fix the agent definition and retry.")
+        if error.field == "supported_harnesses" and error.message.startswith("Unknown harness:"):
+            remediation = f"Choose from: {', '.join(VALID_HARNESSES)}."
         fail(
             ErrorCategory.VALIDATION,
-            error,
+            error.message,
             operation=operation,
-            resource="agent name",
-            remediation="Use lowercase letters, digits, hyphens, or underscores.",
+            resource=resource,
+            remediation=remediation,
         )
-    data["version"] = _validate_version(str(data.get("version") or "1.0.0"), operation=operation)
-    harnesses = data.get("supported_harnesses", [])
-    if not isinstance(harnesses, list) or not all(isinstance(value, str) for value in harnesses):
-        fail(
-            ErrorCategory.VALIDATION,
-            "Agent supported_harnesses must be a list of names.",
-            operation=operation,
-            resource="agent harnesses",
-            remediation="Use a YAML list of registered harness names.",
-        )
-    data["supported_harnesses"] = _validate_harnesses(harnesses, operation=operation)
-    if not isinstance(data.get("components", []), list):
-        fail(
-            ErrorCategory.VALIDATION,
-            "Agent components must be a list.",
-            operation=operation,
-            resource="agent components",
-            remediation="Use a YAML list of component reference objects.",
-        )
-    return data
 
 
 def _save_agent_yaml(directory: Path, data: dict, *, operation: str = "Write agent definition") -> Path:
@@ -1472,18 +1486,7 @@ def agent_publish(
     dir_path = Path(directory)
     data = _validate_agent_definition(_load_agent_yaml(dir_path, operation="Publish agent"), operation="Publish agent")
 
-    payload = {
-        "name": data["name"],
-        "version": data.get("version", "1.0.0"),
-        "description": data.get("description", ""),
-        "owner": data.get("owner", ""),
-        "model_name": data.get("model_name", "claude-sonnet-4"),
-        "models_by_harness": data.get("models_by_harness", {}) or {},
-        "prompt": data.get("prompt", ""),
-        "supported_harnesses": data.get("supported_harnesses", []),
-        "components": data.get("components", []),
-        "success_criteria": data.get("success_criteria"),
-    }
+    payload = build_agent_payload(data)
 
     if update:
         # The update endpoint refuses both fields by design: visibility has its own
@@ -1514,7 +1517,7 @@ def agent_publish(
 
     if draft:
         with _progress(output, "Saving draft..."):
-            result = client.post("/api/v1/agents/draft", payload)
+            result = _create_agent_draft_or_fail(payload)
         if output == "json":
             output_json(result)
             return

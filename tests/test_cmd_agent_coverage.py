@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Observal Contributors
+# SPDX-FileCopyrightText: 2026 VishnuM049 <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Focused coverage for the agent CLI command group."""
@@ -860,18 +861,41 @@ def test_agent_publish_saves_complete_draft_payload(tmp_path, monkeypatch):
         "name": definition["name"],
         "version": definition["version"],
         "description": definition["description"],
+        "category": None,
         "owner": definition["owner"],
         "model_name": definition["model_name"],
+        "model_config_json": {},
         "models_by_harness": definition["models_by_harness"],
         "prompt": definition["prompt"],
         "supported_harnesses": definition["supported_harnesses"],
+        "mcp_server_ids": [],
         "components": definition["components"],
+        "external_mcps": [],
         "success_criteria": definition["success_criteria"],
         "visibility": "team",
         "team_id": "team-1",
     }
     target.assert_called_once_with(payload, "platform", "team")
     post.assert_called_once_with("/api/v1/agents/draft", payload)
+
+
+def test_agent_publish_draft_translates_builder_error(tmp_path, monkeypatch):
+    from observal_cli.agent_drafts import AgentDefinitionError
+
+    _write_agent_yaml(tmp_path)
+    post = Mock(side_effect=AssertionError("validation must happen before HTTP"))
+    monkeypatch.setattr(agent.client, "post", post)
+    monkeypatch.setattr(
+        agent,
+        "create_agent_draft",
+        Mock(side_effect=AgentDefinitionError("components", "Agent components are invalid.")),
+    )
+
+    result = _invoke("publish", "--dir", str(tmp_path), "--draft", "--output", "json")
+
+    assert result.exit_code == 7
+    assert "Agent components are invalid." in result.output
+    post.assert_not_called()
 
 
 @pytest.mark.parametrize(

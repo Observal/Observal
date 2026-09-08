@@ -3,11 +3,16 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 VishnuM049 <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
 import time
 import uuid
+from collections.abc import Callable
+from dataclasses import dataclass
+from enum import StrEnum
+from typing import TypeVar
 from urllib.parse import quote, urlparse, urlunparse
 
 import httpx
@@ -27,6 +32,53 @@ _version_enforced: bool = False
 
 # Subcommands exempt from version enforcement (user needs these to fix mismatches)
 _EXEMPT_SUBCOMMANDS = frozenset({"self", "server"})
+
+
+class OptionalLookupStatus(StrEnum):
+    FOUND = "found"
+    NOT_FOUND = "not_found"
+
+
+@dataclass(frozen=True)
+class OptionalLookupResult:
+    status: OptionalLookupStatus
+    data: object | None = None
+
+
+class MutationStatus(StrEnum):
+    SUCCESS = "success"
+    CONFLICT = "conflict"
+    UNCERTAIN = "uncertain"
+
+
+@dataclass(frozen=True)
+class MutationResult:
+    """Typed outcome for a single, never-retried mutation attempt."""
+
+    status: MutationStatus
+    data: dict | None = None
+    error: CliError | None = None
+
+
+_MutationValue = TypeVar("_MutationValue", bound=dict)
+
+
+def run_mutation_once(mutation: Callable[[], _MutationValue]) -> MutationResult:
+    """Run one mutation and classify conflict or uncertain-write outcomes.
+
+    Validation, authentication, and permission errors retain the normal shared
+    client exception contract. Callers may reconcile conflict and unavailable
+    outcomes using safe GET requests, but must never retry ``mutation``.
+    """
+
+    try:
+        return MutationResult(MutationStatus.SUCCESS, data=mutation())
+    except CliError as error:
+        if error.category is ErrorCategory.CONFLICT:
+            return MutationResult(MutationStatus.CONFLICT, error=error)
+        if error.category is ErrorCategory.UNAVAILABLE:
+            return MutationResult(MutationStatus.UNCERTAIN, error=error)
+        raise
 
 
 def _get_cli_version() -> str:
@@ -265,12 +317,12 @@ def _request_with_retry(
     *,
     params: dict | None = None,
     json: object | None = None,
+    allow_auth_refresh: bool = True,
 ) -> httpx.Response:
     """Execute HTTP with transient retries for GET requests only.
 
-    On 401, attempts a token refresh and retries once. Mutations are never
-    retried after a transient response because their server state may be
-    unknown.
+    On 401, safe requests may refresh and retry once. Mutations disable that
+    replay because their server state may be unknown.
     """
     optic.trace("method={}, url={}", method, url)
     timeout = config.get_timeout()
@@ -290,7 +342,7 @@ def _request_with_retry(
         r = func(url, **kwargs)
 
         # Auto-refresh on 401
-        if r.status_code == 401 and attempt == 0 and _try_refresh_token():
+        if r.status_code == 401 and attempt == 0 and allow_auth_refresh and _try_refresh_token():
             # Update headers with new token and retry
             cfg = config.load()
             headers["Authorization"] = f"Bearer {cfg['access_token']}"
@@ -397,15 +449,26 @@ def _request(
     resource: str,
     params: dict | None = None,
     json_data: object | None = None,
+    allow_auth_refresh: bool | None = None,
 ) -> httpx.Response:
     base, headers = _client()
+    if allow_auth_refresh is None:
+        allow_auth_refresh = method.lower() == "get"
     request_kwargs: dict = {}
     if params is not None:
         request_kwargs["params"] = params
     if json_data is not None:
         request_kwargs["json"] = json_data
     try:
-        return _request_with_retry(method, f"{base}{path}", headers, **request_kwargs)
+        if allow_auth_refresh:
+            return _request_with_retry(method, f"{base}{path}", headers, **request_kwargs)
+        return _request_with_retry(
+            method,
+            f"{base}{path}",
+            headers,
+            allow_auth_refresh=False,
+            **request_kwargs,
+        )
     except httpx.HTTPStatusError as error:
         _handle_error(error, path, operation=operation, resource=resource)
     except (httpx.ReadTimeout, httpx.ConnectTimeout) as error:
@@ -487,6 +550,40 @@ def get(
     return _json_response(response, operation=operation, resource=resource)
 
 
+def get_optional(
+    path: str,
+    params: dict | None = None,
+    *,
+    operation: str | None = None,
+    resource: str | None = None,
+) -> OptionalLookupResult:
+    """GET authenticated JSON while treating only HTTP 404 as optional absence."""
+
+    optic.trace("path={}, params={}", path, params)
+    operation, resource = _error_context(
+        operation,
+        resource,
+        default_operation=f"Fetch optional {path}",
+        default_resource=path,
+    )
+    base, headers = _client()
+    request_kwargs = {"params": params} if params is not None else {}
+    try:
+        response = _request_with_retry("get", f"{base}{path}", headers, **request_kwargs)
+    except httpx.HTTPStatusError as error:
+        if error.response.status_code == 404:
+            return OptionalLookupResult(OptionalLookupStatus.NOT_FOUND)
+        _handle_error(error, path, operation=operation, resource=resource)
+    except (httpx.ReadTimeout, httpx.ConnectTimeout) as error:
+        _handle_timeout(path, operation=operation, resource=resource, detail=repr(error))
+    except httpx.ConnectError as error:
+        _handle_connect(operation=operation, resource=resource, detail=repr(error))
+    return OptionalLookupResult(
+        OptionalLookupStatus.FOUND,
+        _json_response(response, operation=operation, resource=resource),
+    )
+
+
 def get_text(
     path: str,
     params: dict | None = None,
@@ -552,7 +649,14 @@ def post(
         default_operation=f"Create or act on {path}",
         default_resource=path,
     )
-    response = _request("post", path, operation=operation, resource=resource, json_data=json_data)
+    response = _request(
+        "post",
+        path,
+        operation=operation,
+        resource=resource,
+        json_data=json_data,
+        allow_auth_refresh=False,
+    )
     return _json_response(response, operation=operation, resource=resource, allow_empty=True)
 
 

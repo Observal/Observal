@@ -18,6 +18,7 @@ import re
 import subprocess
 import sys
 import tomllib
+from collections.abc import Mapping
 from contextlib import nullcontext, redirect_stdout
 from io import StringIO
 from pathlib import Path
@@ -82,6 +83,64 @@ def _component_conflicts(harness: str, agent_name: str, components: list[dict]) 
                     f"(this agent) vs v{existing_version} (from {existing_agent})"
                 )
     return conflicts
+
+
+def _installed_mcp_definitions(snippet: Mapping[str, object], adapter: object) -> dict[str, Mapping[str, object]]:
+    """Extract structured MCP definitions that the pull path actually installed."""
+
+    documents: list[Mapping[str, object]] = []
+    mcp_config = snippet.get("mcp_config")
+    if isinstance(mcp_config, Mapping):
+        content = mcp_config.get("content") if "path" in mcp_config else mcp_config
+        if isinstance(content, Mapping):
+            documents.append(content)
+    agent_profile = snippet.get("agent_profile")
+    if isinstance(agent_profile, Mapping) and isinstance(agent_profile.get("content"), Mapping):
+        documents.append(agent_profile["content"])
+
+    definitions: dict[str, Mapping[str, object]] = {}
+    extractor = getattr(adapter, "extract_mcp_servers", None)
+    if not callable(extractor):
+        return definitions
+    for document in documents:
+        extracted = extractor(dict(document))
+        if not isinstance(extracted, Mapping):
+            continue
+        for name, definition in extracted.items():
+            if isinstance(name, str) and isinstance(definition, Mapping):
+                definitions[name] = definition
+    return definitions
+
+
+def _attach_component_launch_fingerprints(
+    components: list[dict], snippet: Mapping[str, object], adapter: object
+) -> None:
+    """Persist exact portable MCP identities; omit anything that cannot be reproduced."""
+
+    from observal_cli.discovery.models import LaunchKind
+    from observal_cli.discovery.normalize import normalize_mcp_definition
+
+    definitions = _installed_mcp_definitions(snippet, adapter)
+    portable_kinds = {LaunchKind.NPM, LaunchKind.UV, LaunchKind.PIPX, LaunchKind.URL}
+    for component in components:
+        if component.get("type") != "mcp":
+            continue
+        names = {
+            value
+            for field in ("local_name", "slug", "name")
+            if isinstance((value := component.get(field)), str) and value
+        }
+        matching = [definition for name, definition in definitions.items() if name in names]
+        if len(matching) != 1:
+            continue
+        normalized = normalize_mcp_definition(matching[0])
+        if (
+            normalized.complete
+            and normalized.launch is not None
+            and normalized.launch.kind in portable_kinds
+            and normalized.launch_fingerprint is not None
+        ):
+            component["launch_fingerprint"] = normalized.launch_fingerprint
 
 
 def _resolve_hook_paths(content: str) -> str:
@@ -894,15 +953,24 @@ def register_pull(app: typer.Typer):
             )
         options["local_name"] = local_name
 
-        lock_components = [
-            {
+        lock_components = []
+        for link in agent_detail.get("component_links", []):
+            lock_component = {
                 "type": link.get("component_type", "unknown"),
                 "name": link.get("component_name", ""),
                 "id": str(link.get("component_id", "")),
                 "version": link.get("version_ref"),
             }
-            for link in agent_detail.get("component_links", [])
-        ]
+            for field in ("namespace", "slug", "qualified_name", "local_name"):
+                if link.get(field):
+                    lock_component[field] = link[field]
+            if (
+                "qualified_name" not in lock_component
+                and lock_component.get("namespace")
+                and lock_component.get("slug")
+            ):
+                lock_component["qualified_name"] = f"{lock_component['namespace']}/{lock_component['slug']}"
+            lock_components.append(lock_component)
         conflict_warnings = _component_conflicts(
             harness,
             agent_name=agent_detail.get("name", resolved),
@@ -923,6 +991,10 @@ def register_pull(app: typer.Typer):
                 f"/api/v1/agents/{resolved}/install",
                 install_body,
             )
+
+        installed_components = result.get("installed_components")
+        if isinstance(installed_components, list) and all(isinstance(item, Mapping) for item in installed_components):
+            lock_components = [dict(item) for item in installed_components]
 
         snippet = result.get("config_snippet", {})
         if not snippet:
@@ -1160,6 +1232,10 @@ def register_pull(app: typer.Typer):
 
         # Record installation state only after files and setup commands succeed.
         if not dry_run:
+            # Agent definitions, skills, and hooks do not have a compatible MCP
+            # launch identity. Nested MCPs receive a fingerprint only when the
+            # exact generated configuration can be canonicalized losslessly.
+            _attach_component_launch_fingerprints(lock_components, snippet, adapter)
             agent_uuid = agent_detail.get("id", resolved)
             agent_version = agent_detail.get("version") or agent_detail.get("latest_version")
 

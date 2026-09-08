@@ -14,6 +14,7 @@ from unittest.mock import Mock
 import pytest
 from typer.testing import CliRunner
 
+from observal_cli.discovery.models import DiagnosticCode
 from observal_cli.harness import NotSupportedError, ScanResult, SessionSource
 from observal_cli.harness.base import _check_feature
 from observal_cli.harness.claude_code import ClaudeCodeAdapter
@@ -125,7 +126,7 @@ def test_scan_home_resolves_default_home_and_normalizes_all_components(
     claude_dir = tmp_path / ".claude"
     claude_dir.mkdir()
 
-    settings_target = tmp_path / "targets" / "settings.json"
+    settings_target = claude_dir / "targets" / "settings.json"
     _write_json(
         settings_target,
         {"enabledPlugins": {"suite@market": True, "disabled@market": False}},
@@ -216,12 +217,6 @@ def test_scan_home_resolves_default_home_and_normalizes_all_components(
     ]
     assert _records(result.skills) == [
         {
-            "name": "suite/plugin-helper",
-            "description": "Plugin helper body",
-            "source": "plugin:suite",
-            "task_type": "general",
-        },
-        {
             "name": "alpha",
             "description": "Local helper",
             "source": "claude:skills",
@@ -231,6 +226,12 @@ def test_scan_home_resolves_default_home_and_normalizes_all_components(
             "name": "fallback",
             "description": "Fallback body",
             "source": "claude:skills",
+            "task_type": "general",
+        },
+        {
+            "name": "suite/plugin-helper",
+            "description": "Plugin helper body",
+            "source": "plugin:suite",
             "task_type": "general",
         },
     ]
@@ -354,7 +355,9 @@ def test_malformed_installed_registry_falls_back_to_plugin_cache(tmp_path: Path)
 
 
 def test_scan_project_follows_config_symlink_and_preserves_server_order(tmp_path: Path):
-    target = tmp_path / "config-target.json"
+    project = tmp_path / "project"
+    project.mkdir()
+    target = project / "config-target.json"
     _write_json(
         target,
         {
@@ -364,26 +367,24 @@ def test_scan_project_follows_config_symlink_and_preserves_server_order(tmp_path
             }
         },
     )
-    project = tmp_path / "project"
-    project.mkdir()
     (project / ".mcp.json").symlink_to(target)
     adapter = ClaudeCodeAdapter()
 
     assert _records(adapter.scan_project(project).mcps) == [
-        {
-            "name": "stdio",
-            "command": "python",
-            "args": ["server.py"],
-            "url": None,
-            "description": "Claude Code project MCP: stdio",
-            "source": "claude-code:project",
-        },
         {
             "name": "remote",
             "command": None,
             "args": [],
             "url": "https://project.example.test/mcp",
             "description": "Claude Code project MCP: remote",
+            "source": "claude-code:project",
+        },
+        {
+            "name": "stdio",
+            "command": "python",
+            "args": ["server.py"],
+            "url": None,
+            "description": "Claude Code project MCP: stdio",
             "source": "claude-code:project",
         },
     ]
@@ -408,62 +409,53 @@ def test_missing_malformed_and_unreadable_scan_configs_fail_soft(tmp_path: Path)
 
     claude_dir = tmp_path / ".claude"
     local_skill = claude_dir / "skills" / "ignored" / "SKILL.md"
-    _write_text(local_skill, "ignored without settings")
-    assert vars(adapter.scan_home(tmp_path)) == _empty_result()
+    _write_text(local_skill, "available without settings")
+    assert [item.name for item in adapter.scan_home(tmp_path).skills] == ["ignored"]
 
     _write_text(claude_dir / "settings.json", "{ malformed")
-    assert vars(adapter.scan_home(tmp_path)) == _empty_result()
+    assert [item.name for item in adapter.scan_home(tmp_path).skills] == ["ignored"]
     (claude_dir / "settings.json").unlink()
     (claude_dir / "settings.json").mkdir()
-    assert vars(adapter.scan_home(tmp_path)) == _empty_result()
+    assert [item.name for item in adapter.scan_home(tmp_path).skills] == ["ignored"]
 
     project_config = tmp_path / ".mcp.json"
     project_config.mkdir()
-    assert vars(adapter.scan_project(tmp_path)) == _empty_result()
+    project_result = adapter.scan_project(tmp_path)
+    assert project_result.mcps == []
+    assert [item.name for item in project_result.skills] == ["ignored"]
 
 
-@pytest.mark.parametrize(
-    ("settings", "error"),
-    [
-        ([], AttributeError),
-        ({"enabledPlugins": []}, AttributeError),
-    ],
-)
-def test_unsupported_settings_shapes_fail_loudly(tmp_path: Path, settings: object, error: type[Exception]):
+@pytest.mark.parametrize("settings", [[], {"enabledPlugins": []}])
+def test_unsupported_settings_shapes_are_diagnostic(tmp_path: Path, settings: object):
     _write_json(tmp_path / ".claude" / "settings.json", settings)
 
-    with pytest.raises(error):
-        ClaudeCodeAdapter().scan_home(tmp_path)
+    result = ClaudeCodeAdapter().discover_home(tmp_path)
+
+    assert DiagnosticCode.METADATA_MALFORMED in {item.code for item in result.diagnostics}
 
 
-@pytest.mark.parametrize(
-    ("config", "error"),
-    [
-        ([], TypeError),
-        ({"mcpServers": {"unsupported": "string"}}, AttributeError),
-    ],
-)
-def test_unsupported_project_mcp_shapes_fail_loudly(tmp_path: Path, config: object, error: type[Exception]):
+@pytest.mark.parametrize("config", [[], {"mcpServers": {"unsupported": "string"}}])
+def test_unsupported_project_mcp_shapes_are_diagnostic(tmp_path: Path, config: object):
     _write_json(tmp_path / ".mcp.json", config)
 
-    with pytest.raises(error):
-        ClaudeCodeAdapter().scan_project(tmp_path)
+    result = ClaudeCodeAdapter().discover_project(tmp_path)
+
+    assert DiagnosticCode.METADATA_MALFORMED in {item.code for item in result.diagnostics}
 
 
 @pytest.mark.parametrize(
-    ("component", "content", "error"),
+    ("component", "content"),
     [
-        ("installed", [], AttributeError),
-        ("metadata", [], AttributeError),
-        ("mcp", [], TypeError),
-        ("hooks", [], AttributeError),
+        ("installed", []),
+        ("metadata", []),
+        ("mcp", []),
+        ("hooks", []),
     ],
 )
-def test_unsupported_plugin_json_shapes_fail_loudly(
+def test_unsupported_plugin_json_shapes_are_diagnostic(
     tmp_path: Path,
     component: str,
     content: object,
-    error: type[Exception],
 ):
     claude_dir = tmp_path / ".claude"
     plugin_dir = tmp_path / "plugin"
@@ -479,8 +471,9 @@ def test_unsupported_plugin_json_shapes_fail_loudly(
     else:
         _write_json(plugin_dir / "hooks.json", content)
 
-    with pytest.raises(error):
-        ClaudeCodeAdapter().scan_home(tmp_path)
+    result = ClaudeCodeAdapter().discover_home(tmp_path)
+
+    assert DiagnosticCode.METADATA_MALFORMED in {item.code for item in result.diagnostics}
 
 
 def test_component_read_errors_are_isolated_with_exact_fallbacks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -506,23 +499,9 @@ def test_component_read_errors_are_isolated_with_exact_fallbacks(tmp_path: Path,
 
     result = ClaudeCodeAdapter().scan_home(tmp_path)
 
-    assert result.mcps == []
-    assert _records(result.skills) == [
-        {
-            "name": "suite/broken",
-            "description": "Skill from suite",
-            "source": "plugin:suite",
-            "task_type": "general",
-        },
-        {
-            "name": "broken",
-            "description": "Skill: broken",
-            "source": "claude:skills",
-            "task_type": "general",
-        },
-    ]
-    assert result.hooks == []
-    assert result.agents == []
+    assert vars(result) == _empty_result()
+    rich = ClaudeCodeAdapter().discover_home(tmp_path)
+    assert DiagnosticCode.PERMISSION_DENIED in {item.code for item in rich.diagnostics}
 
 
 def test_unreadable_installed_registry_uses_cache_but_unreadable_cache_metadata_is_soft(
@@ -557,7 +536,7 @@ def test_unreadable_installed_registry_uses_cache_but_unreadable_cache_metadata_
     ]
 
 
-def test_unreadable_cache_version_metadata_fails_loudly(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def test_unreadable_cache_version_metadata_is_diagnostic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     claude_dir = tmp_path / ".claude"
     _write_json(claude_dir / "settings.json", {"enabledPlugins": {"cached@market": True}})
     version = claude_dir / "plugins" / "cache" / "market" / "cached" / "1.0"
@@ -571,8 +550,9 @@ def test_unreadable_cache_version_metadata_fails_loudly(tmp_path: Path, monkeypa
 
     monkeypatch.setattr(Path, "stat", raise_for_version)
 
-    with pytest.raises(PermissionError, match="unreadable metadata"):
-        ClaudeCodeAdapter().scan_home(tmp_path)
+    result = ClaudeCodeAdapter().discover_home(tmp_path)
+
+    assert DiagnosticCode.PERMISSION_DENIED in {item.code for item in result.diagnostics}
 
 
 def test_empty_skills_and_agents_use_exact_defaults_and_sorted_order(tmp_path: Path):
@@ -829,7 +809,7 @@ def test_related_session_sources_preserve_parent_cwd_order_and_symlink_path(tmp_
     ]
 
 
-def test_scan_command_deduplicates_home_before_project_with_stable_scope_order(
+def test_scan_command_preserves_distinct_launches_with_stable_scope_order(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -870,14 +850,6 @@ def test_scan_command_deduplicates_home_before_project_with_stable_scope_order(
         "harnesses": [{"name": "claude-code", "hooks": "missing"}],
         "mcps": [
             {
-                "name": "shared",
-                "command": "home-command",
-                "args": ["home.js"],
-                "url": None,
-                "description": "Plugin: suite",
-                "source": "plugin:suite",
-            },
-            {
                 "name": "home-only",
                 "command": "home-only",
                 "args": [],
@@ -892,6 +864,22 @@ def test_scan_command_deduplicates_home_before_project_with_stable_scope_order(
                 "url": None,
                 "description": "Claude Code project MCP: project-only",
                 "source": "claude-code:project",
+            },
+            {
+                "name": "shared",
+                "command": "project-command",
+                "args": ["project.js"],
+                "url": None,
+                "description": "Claude Code project MCP: shared",
+                "source": "claude-code:project",
+            },
+            {
+                "name": "shared",
+                "command": "home-command",
+                "args": ["home.js"],
+                "url": None,
+                "description": "Plugin: suite",
+                "source": "plugin:suite",
             },
         ],
         "skills": [],

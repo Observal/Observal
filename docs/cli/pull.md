@@ -133,6 +133,6 @@ Human mode lists every created, updated, merged, installed, cloned, or planned p
 ## Related
 
 * [`observal agent`](agent.md): create and publish Agents
-* [`observal scan`](scan.md): inspect installed harness content
+* [`observal scan`](scan.md): inspect installed content and optionally classify untracked discoveries
 * [`observal outdated`](outdated.md): compare installed Agent versions
 * [`observal doctor`](doctor.md): verify hooks and local installation state

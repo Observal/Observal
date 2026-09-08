@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Observal Contributors
+# SPDX-FileCopyrightText: 2026 VishnuM049 <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 from __future__ import annotations
@@ -159,6 +160,35 @@ def test_submit_from_file_draft_preserves_payload_and_publish_target(tmp_path, m
     assert "unvalidated" in result.output
     publish_target.assert_called_once_with(payload, "platform", "team")
     post.assert_called_once_with("/api/v1/skills/draft", payload)
+
+
+def test_skill_draft_translates_builder_error_before_http(tmp_path, monkeypatch):
+    source = tmp_path / "skill.json"
+    source.write_text(
+        json.dumps(
+            {
+                "name": "file-skill",
+                "version": "1.0.0",
+                "description": "Loaded from JSON",
+                "task_type": "testing",
+                "delivery_mode": "registry_direct",
+                "skill_md_content": "# Test",
+            }
+        ),
+        encoding="utf-8",
+    )
+    post = Mock(side_effect=AssertionError("validation must happen before HTTP"))
+    monkeypatch.setattr(skill.client, "post", post)
+    monkeypatch.setattr(skill, "create_skill_draft", Mock(side_effect=skill.DraftPayloadError("invalid draft")))
+
+    result = runner.invoke(
+        app,
+        ["registry", "skill", "submit", "--from-file", str(source), "--draft", "--output", "json"],
+    )
+
+    assert result.exit_code == 7
+    assert '"category": "validation"' in result.output
+    post.assert_not_called()
 
 
 @pytest.mark.parametrize(

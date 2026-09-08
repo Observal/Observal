@@ -52,16 +52,22 @@ Only use keys accepted by `config set`. Authentication fields are managed by `au
 
 ## Local inventory and update checks
 
-`scan` is read-only and never writes harness files.
+The default `scan` is read-only and never prompts. Add `--discover` to include bounded npm, pipx, and uv evidence, local lockfile tracking, and authenticated exact Registry classification. Scanning never writes harness files or the installation lockfile.
 
 ```bash
 observal scan --output json
+observal scan --discover --output json
+observal scan --harness kiro --discover --output json
 observal scan --harness kiro --output json
 observal outdated --output json
 observal outdated --harness claude-code --no-report --output json
 ```
 
-For scan results, report detected harnesses, installed components, Agents, and unregistered items. For outdated results, inspect `items`, `summary`, and `report`. `--no-report` suppresses inbox reporting, not the Registry check.
+Discovery JSON and non-TTY runs never prompt or create drafts. In an interactive table session, `observal scan --discover` may offer portable, eligible candidates for Registry draft creation. Never bypass its three default-no confirmations: the user must request creation, confirm ownership or authorization for included content, and approve the sanitized draft summary. Discovery creates drafts only; it never publishes, submits for review, installs, or records drafts in the installation lockfile.
+
+For default scan results, report detected harnesses and installed components. Discover output additionally includes normalized `candidates`, typed tracking/Registry/readiness states, and non-fatal `diagnostics`. A harness-filtered discover run suppresses unrelated package-only candidates. Treat locally tracked candidates, Registry/auth uncertainty, ambiguity, incomplete evidence, unsupported launches, and package-only evidence as non-registrable. Existing owned drafts suppress repeat prompts. After an uncertain write or conflict, accept only GET reconciliation; never repeat the POST automatically.
+
+For outdated results, inspect `items`, `summary`, and `report`. `--no-report` suppresses inbox reporting, not the Registry check.
 
 ## Diagnosis and telemetry setup
 

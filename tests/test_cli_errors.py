@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 VishnuM049 <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Tests for the CLI HTTP client and its user-facing failures."""
@@ -715,6 +716,25 @@ def test_unauthorized_request_refreshes_and_retries_once(monkeypatch):
     refresh.assert_called_once_with()
 
 
+def test_post_never_replays_after_unauthorized_response(monkeypatch):
+    post = MagicMock(return_value=_response(401, data={"detail": "expired"}))
+    refresh = MagicMock(return_value=True)
+    monkeypatch.setattr(
+        client,
+        "_client",
+        lambda: ("https://registry.example.test", {"Authorization": "Bearer fake-access-token"}),
+    )
+    monkeypatch.setattr(client.httpx, "post", post)
+    monkeypatch.setattr(client, "_try_refresh_token", refresh)
+
+    with pytest.raises(CliError) as caught:
+        client.post("/api/v1/mcps/draft", {"name": "safe"})
+
+    assert caught.value.category is ErrorCategory.AUTH
+    post.assert_called_once()
+    refresh.assert_not_called()
+
+
 def test_unauthorized_request_never_refreshes_twice(monkeypatch):
     responses = [_response(401, data={"detail": "expired"}), _response(401, data={"detail": "still expired"})]
     get = MagicMock(side_effect=responses)
@@ -809,6 +829,77 @@ def test_http_wrappers_construct_authenticated_requests(monkeypatch, method):
     enforce.assert_called_once_with("https://registry.example.test")
 
 
+def test_optional_get_returns_typed_found_and_not_found_outcomes(monkeypatch):
+    monkeypatch.setattr(
+        client,
+        "_client",
+        lambda: ("https://registry.example.test", {"Authorization": "Bearer fake-access-token"}),
+    )
+    request = MagicMock(return_value=_response(200, data={"id": "item-1"}))
+    monkeypatch.setattr(client, "_request_with_retry", request)
+
+    found = client.get_optional("/api/v1/registry/resolve", params={"type": "mcp", "identifier": "me/search"})
+
+    assert found.status is client.OptionalLookupStatus.FOUND
+    assert found.data == {"id": "item-1"}
+    request.assert_called_once_with(
+        "get",
+        "https://registry.example.test/api/v1/registry/resolve",
+        {"Authorization": "Bearer fake-access-token"},
+        params={"type": "mcp", "identifier": "me/search"},
+    )
+
+    response = _response(404, data={"detail": "missing"})
+    missing = httpx.HTTPStatusError("missing", request=response.request, response=response)
+    request.side_effect = missing
+
+    not_found = client.get_optional("/api/v1/registry/resolve")
+
+    assert not_found == client.OptionalLookupResult(client.OptionalLookupStatus.NOT_FOUND)
+
+
+def test_optional_get_preserves_non_404_error_contract(monkeypatch):
+    response = _response(403, data={"detail": "forbidden"})
+    error = httpx.HTTPStatusError("forbidden", request=response.request, response=response)
+    monkeypatch.setattr(client, "_client", lambda: ("https://registry.example.test", {}))
+    monkeypatch.setattr(client, "_request_with_retry", MagicMock(side_effect=error))
+
+    with pytest.raises(CliError) as raised:
+        client.get_optional("/api/v1/registry/resolve")
+
+    assert raised.value.category is ErrorCategory.PERMISSION
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [httpx.ReadTimeout("slow request"), httpx.ConnectError("connection refused")],
+)
+def test_optional_get_preserves_transport_error_contract(monkeypatch, failure):
+    monkeypatch.setattr(client, "_client", lambda: ("https://registry.example.test", {}))
+    monkeypatch.setattr(client, "_request_with_retry", MagicMock(side_effect=failure))
+
+    with pytest.raises(CliError) as raised:
+        client.get_optional("/api/v1/registry/resolve")
+
+    assert raised.value.category is ErrorCategory.UNAVAILABLE
+
+
+def test_optional_get_rejects_malformed_found_json(monkeypatch):
+    response = httpx.Response(
+        200,
+        content=b"not-json",
+        headers={"Content-Type": "application/json"},
+        request=httpx.Request("GET", "https://registry.example.test/api/v1/registry/resolve"),
+    )
+    monkeypatch.setattr(client, "_client", lambda: ("https://registry.example.test", {}))
+    monkeypatch.setattr(client, "_request_with_retry", MagicMock(return_value=response))
+
+    with pytest.raises(CliError) as raised:
+        client.get_optional("/api/v1/registry/resolve")
+
+    assert raised.value.category is ErrorCategory.UNAVAILABLE
+
+
 def test_get_text_returns_validated_raw_response(monkeypatch):
     response = _response(200, text="a,b\n1,2\n", headers={"Content-Type": "text/csv; charset=utf-8"})
     request = MagicMock(return_value=response)
@@ -896,6 +987,7 @@ def test_request_json_forwards_method_query_and_body(monkeypatch):
         "patch",
         "https://registry.example.test/api/v1/items/id",
         {},
+        allow_auth_refresh=False,
         params={"notify": "true"},
         json={"name": "updated"},
     )

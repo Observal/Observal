@@ -12,7 +12,7 @@ methods they support; the feature gate runs before the override.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from observal_cli.harness.protocol import (
     METHOD_FEATURE_MAP,
@@ -22,6 +22,9 @@ from observal_cli.harness.protocol import (
     ScanResult,
     SessionSource,
 )
+
+if TYPE_CHECKING:
+    from observal_cli.discovery.models import AdapterDiscoveryResult
 
 
 def _get_features(harness_name: str) -> set[str]:
@@ -73,6 +76,40 @@ class BaseAdapter:
     def scan_project(self, project_dir: Path) -> ScanResult:
         _check_feature(self.harness_name, "scan_project")
         return ScanResult()
+
+    def discover_home(self, home: Path | None = None) -> AdapterDiscoveryResult:
+        """Wrap legacy user-scope records for adapters without rich parsers."""
+        from observal_cli.discovery.adapter_support import RichAdapterScanner
+        from observal_cli.discovery.models import DiscoveryScope
+
+        home = home or Path.home()
+        scanner = RichAdapterScanner(harness=self.harness_name, scope=DiscoveryScope.USER, root=home, home=home)
+        try:
+            result = self.scan_home(home)
+        except NotSupportedError:
+            result = ScanResult()
+        for component in (*result.mcps, *result.skills, *result.hooks, *result.agents):
+            scanner.add_component(component, home)
+        return scanner.finish()
+
+    def discover_project(self, project_dir: Path) -> AdapterDiscoveryResult:
+        """Wrap legacy project-scope records for adapters without rich parsers."""
+        from observal_cli.discovery.adapter_support import RichAdapterScanner
+        from observal_cli.discovery.models import DiscoveryScope
+
+        scanner = RichAdapterScanner(
+            harness=self.harness_name,
+            scope=DiscoveryScope.PROJECT,
+            root=project_dir,
+            project_dir=project_dir,
+        )
+        try:
+            result = self.scan_project(project_dir)
+        except NotSupportedError:
+            result = ScanResult()
+        for component in (*result.mcps, *result.skills, *result.hooks, *result.agents):
+            scanner.add_component(component, project_dir)
+        return scanner.finish()
 
     def get_hook_spec(self) -> HookSpec:
         _check_feature(self.harness_name, "get_hook_spec")

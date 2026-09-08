@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Observal Contributors
+# SPDX-FileCopyrightText: 2026 VishnuM049 <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 from __future__ import annotations
@@ -135,6 +136,23 @@ def test_configure_env_vars_tty_manual_skip_and_empty_file(monkeypatch):
     review.assert_called_once_with(detected)
 
 
+def test_mcp_draft_translates_builder_error_before_http(monkeypatch):
+    monkeypatch.setattr(mcp.config, "load", Mock(return_value={"username": "alice"}))
+    post = Mock(side_effect=AssertionError("validation must happen before HTTP"))
+    monkeypatch.setattr(mcp.client, "post", post)
+    monkeypatch.setattr(mcp, "create_mcp_draft", Mock(side_effect=mcp.DraftPayloadError("invalid draft")))
+
+    result = runner.invoke(
+        app,
+        ["registry", "mcp", "submit", "--draft", "--yes", "--output", "json"],
+        input=json.dumps({"mcpServers": {"safe": {"command": "npx", "args": ["safe"]}}}) + "\n\n",
+    )
+
+    assert result.exit_code == 7
+    assert '"category": "validation"' in result.output
+    post.assert_not_called()
+
+
 def test_submit_direct_remote_draft_with_git_source(monkeypatch):
     cfg = {
         "mcpServers": {
@@ -209,16 +227,8 @@ def test_submit_direct_remote_draft_with_git_source(monkeypatch):
         ],
         "git_url": "https://github.com/acme/search",
         "setup_instructions": "docker build -t search .",
-        "docker_image": "ghcr.io/acme/search:latest",
         "url": "https://mcp.example.com",
-        "headers": [
-            {
-                "name": "Authorization",
-                "value": "Bearer $TOKEN",
-                "description": "",
-                "required": True,
-            }
-        ],
+        "headers": [{"name": "Authorization", "description": "", "required": True}],
         "auto_approve": ["search"],
         "transport": "streamable-http",
         "client_analysis": {

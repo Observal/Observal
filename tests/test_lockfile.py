@@ -121,6 +121,45 @@ def test_read_missing_lockfile_returns_fresh_schema_without_writing(isolated_loc
     assert not isolated_lockfile.path.exists()
 
 
+def test_read_registry_snapshot_is_read_only_for_version_one(isolated_lockfile, monkeypatch):
+    original = json.dumps(
+        {
+            "lock_version": 1,
+            "harnesses": {"kiro": {"standalone": [{"type": "mcp", "name": "legacy"}]}},
+        },
+        indent=2,
+    )
+    isolated_lockfile.path.parent.mkdir(parents=True)
+    isolated_lockfile.path.write_text(original)
+    write = Mock(side_effect=AssertionError("snapshot must not migrate or write"))
+    monkeypatch.setattr(lockfile, "write_lockfile", write)
+
+    registry = lockfile.read_registry_snapshot(isolated_lockfile.server_url)
+
+    assert registry["harnesses"]["kiro"]["standalone"][0]["name"] == "legacy"
+    assert isolated_lockfile.path.read_text() == original
+    write.assert_not_called()
+
+
+def test_read_registry_snapshot_selects_only_requested_registry(isolated_lockfile):
+    first = "https://one.example"
+    second = "https://two.example"
+    data = {
+        "lock_version": 2,
+        "registries": {
+            first: {"server_url": first, "harnesses": {"kiro": {}}},
+            second: {"server_url": second, "harnesses": {"cursor": {}}},
+        },
+    }
+    isolated_lockfile.path.parent.mkdir(parents=True)
+    isolated_lockfile.path.write_text(json.dumps(data))
+
+    registry = lockfile.read_registry_snapshot("https://TWO.example/")
+
+    assert registry["server_url"] == second
+    assert set(registry["harnesses"]) == {"cursor"}
+
+
 def test_read_valid_lockfile_preserves_persisted_data(isolated_lockfile):
     data = registry_data(isolated_lockfile, {"kiro": {"agents": [], "standalone": []}})
     data["updated_at"] = "2025-01-01T00:00:00+00:00"
@@ -521,6 +560,115 @@ def test_agent_upsert_persists_complete_schema_and_component_pins(isolated_lockf
             }
         },
     }
+
+
+def test_upserts_persist_optional_launch_fingerprint_without_version_migration(isolated_lockfile):
+    from observal_cli.discovery.normalize import normalize_launch
+
+    normalized = normalize_launch(command="npx", arguments=["search", "--mode", "read"])
+    assert normalized.launch_fingerprint is not None
+
+    lockfile.upsert_agent(
+        "kiro",
+        name="Reviewer",
+        agent_id="agent-1",
+        version="1",
+        scope="user",
+        launch_fingerprint=normalized.launch_fingerprint,
+    )
+    lockfile.upsert_standalone(
+        "kiro",
+        component_type="mcp",
+        name="Search",
+        component_id="mcp-1",
+        version="1",
+        launch=normalized.launch,
+    )
+
+    data = raw_lockfile(isolated_lockfile)
+    section = data["registries"][isolated_lockfile.server_url]["harnesses"]["kiro"]
+    assert data["lock_version"] == 2
+    assert section["agents"][0]["launch_fingerprint"] == normalized.launch_fingerprint
+    assert section["standalone"][0]["launch_fingerprint"] == normalized.launch_fingerprint
+
+
+def test_upserts_omit_missing_fingerprints_and_reject_invalid_values(isolated_lockfile):
+    from observal_cli.discovery.normalize import normalize_launch
+
+    lockfile.upsert_agent("kiro", name="Legacy", agent_id="agent-1", version="1", scope="user")
+    assert (
+        "launch_fingerprint"
+        not in raw_lockfile(isolated_lockfile)["registries"][isolated_lockfile.server_url]["harnesses"]["kiro"][
+            "agents"
+        ][0]
+    )
+
+    before = isolated_lockfile.path.read_bytes()
+    with pytest.raises(ValueError, match="canonical SHA-256"):
+        lockfile.upsert_standalone(
+            "kiro",
+            component_type="mcp",
+            name="Unsafe",
+            component_id="mcp-1",
+            version="1",
+            launch_fingerprint="raw-secret",
+        )
+    assert isolated_lockfile.path.read_bytes() == before
+
+    normalized = normalize_launch(command="npx", arguments=["safe-package"])
+    with pytest.raises(ValueError, match="does not match"):
+        lockfile.upsert_agent(
+            "kiro",
+            name="Mismatch",
+            agent_id="agent-2",
+            version="1",
+            launch=normalized.launch,
+            launch_fingerprint="sha256:" + "0" * 64,
+        )
+    assert isolated_lockfile.path.read_bytes() == before
+
+
+def test_lockfile_writer_fingerprints_sanitized_launch_without_secret_values(isolated_lockfile):
+    from observal_cli.discovery.normalize import normalize_launch
+
+    first_secret = "secret-value-one"
+    second_secret = "secret-value-two"
+    first = normalize_launch(command="npx", arguments=["search", "--token", first_secret])
+    second = normalize_launch(command="npx", arguments=["search", "--token", second_secret])
+    assert first.launch is not None
+    assert first.launch_fingerprint is not None
+    assert second.launch_fingerprint == first.launch_fingerprint
+
+    lockfile.upsert_standalone(
+        "kiro",
+        component_type="mcp",
+        name="Search",
+        component_id="mcp-1",
+        version="1",
+        launch=first.launch,
+    )
+
+    contents = isolated_lockfile.path.read_text()
+    assert first_secret not in contents
+    assert second_secret not in contents
+    assert first.launch_fingerprint in contents
+
+
+def test_existing_version_two_entry_without_fingerprint_needs_no_migration(isolated_lockfile):
+    data = registry_data(
+        isolated_lockfile,
+        {"kiro": {"agents": [], "standalone": [{"type": "mcp", "id": "legacy", "name": "Legacy"}]}},
+    )
+    isolated_lockfile.path.parent.mkdir(parents=True)
+    isolated_lockfile.path.write_text(json.dumps(data), encoding="utf-8")
+
+    assert lockfile.read_lockfile() == data
+    assert (
+        "launch_fingerprint"
+        not in raw_lockfile(isolated_lockfile)["registries"][isolated_lockfile.server_url]["harnesses"]["kiro"][
+            "standalone"
+        ][0]
+    )
 
 
 def test_agent_upsert_replaces_by_scope_and_directory_without_duplicates(isolated_lockfile):
