@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import Mock, call
+from unittest.mock import Mock
 
 from observal_cli.discovery.adapter_support import RichAdapterScanner
 from observal_cli.discovery.bounded_walk import AggregateDiscoveryBudget
@@ -45,7 +45,7 @@ def _adapter(*, home: ScanResult | None = None, projects: list[ScanResult] | Non
     )
 
 
-def test_missing_home_does_not_suppress_current_project_scan(tmp_path) -> None:
+def test_missing_home_still_scans_current_project(tmp_path) -> None:
     home = tmp_path / "home"
     project = tmp_path / "project"
     home.mkdir()
@@ -56,16 +56,17 @@ def test_missing_home_does_not_suppress_current_project_scan(tmp_path) -> None:
     result = collect_legacy_scan({"cursor": adapter}, home=home, project_dir=project)
 
     adapter.scan_home.assert_not_called()
-    assert adapter.scan_project.call_args_list == [call(project), call(home)]
+    adapter.scan_project.assert_called_once_with(project)
     assert [item.name for item in result.mcps] == ["project-server"]
     assert result.has_findings
 
 
-def test_home_as_project_retains_every_component_type(tmp_path) -> None:
+def test_home_as_project_preserves_legacy_mcp_only_behavior(tmp_path) -> None:
     home = tmp_path / "home"
     project = tmp_path / "project"
     home.mkdir()
     project.mkdir()
+    (home / ".cursor").mkdir()
     secondary = ScanResult(
         mcps=[_mcp("secondary-mcp", "--home", "secondary")],
         skills=[DiscoveredSkill("secondary-skill", "", "secondary")],
@@ -77,12 +78,12 @@ def test_home_as_project_retains_every_component_type(tmp_path) -> None:
     result = collect_legacy_scan({"cursor": adapter}, home=home, project_dir=project)
 
     assert [item.name for item in result.mcps] == ["secondary-mcp"]
-    assert [item.name for item in result.skills] == ["secondary-skill"]
-    assert [item.name for item in result.hooks] == ["secondary-hook"]
-    assert [item.name for item in result.agents] == ["secondary-agent"]
+    assert result.skills == []
+    assert result.hooks == []
+    assert result.agents == []
 
 
-def test_same_mcp_name_keeps_distinct_launches_and_deduplicates_exact_launches(tmp_path) -> None:
+def test_legacy_scan_deduplicates_mcps_by_name(tmp_path) -> None:
     home = tmp_path / "home"
     project = tmp_path / "project"
     home.mkdir()
@@ -97,11 +98,10 @@ def test_same_mcp_name_keeps_distinct_launches_and_deduplicates_exact_launches(t
 
     assert [(item.name, item.args, item.source) for item in result.mcps] == [
         ("shared", ["server", "--first"], "home"),
-        ("shared", ["server", "--second"], "project"),
     ]
 
 
-def test_collection_order_is_independent_of_adapter_mapping_order(tmp_path) -> None:
+def test_legacy_collection_preserves_adapter_order(tmp_path) -> None:
     home = tmp_path / "home"
     project = tmp_path / "project"
     home.mkdir()
@@ -118,10 +118,10 @@ def test_collection_order_is_independent_of_adapter_mapping_order(tmp_path) -> N
     result = collect_legacy_scan({"z-harness": first, "a-harness": second}, home=home, project_dir=project)
 
     assert [(item.name, item.hooks) for item in result.harnesses] == [
-        ("a-harness", "missing"),
         ("z-harness", "partial"),
+        ("a-harness", "missing"),
     ]
-    assert [item.name for item in result.skills] == ["Alpha", "zeta"]
+    assert [item.name for item in result.skills] == ["zeta", "Alpha"]
 
 
 def test_rich_collection_shares_aggregate_limits_across_adapters(tmp_path) -> None:
@@ -222,7 +222,7 @@ def test_complete_discovery_pipeline_combines_providers_matches_lock_and_never_w
     assert result.candidates[0].tracking_status is TrackingStatus.TRACKED
     assert len(result.candidates[0].evidence) == 2
     assert [(item.name, item.hooks) for item in result.harnesses] == [("kiro", "installed")]
-    assert discover_uv.call_args.kwargs["existing_evidence"] == [harness_evidence, package_evidence]
+    discover_uv.assert_called_once_with(home=home)
     registry.assert_called_once_with(
         result.candidates, configuration={"server_url": "https://registry.test", "access_token": ""}
     )

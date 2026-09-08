@@ -119,6 +119,21 @@ def test_connection_string_credentials_are_removed_from_text() -> None:
     assert redacted == "failed to connect to https://example.test:8443/mcp"
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("postgres://alice:s3cret@db.test/app", "postgres://db.test/app"),
+        ("redis://:password@cache.test:6379/0", "redis://cache.test:6379/0"),
+        (
+            "failed at postgres://alice:s3cret@db.test/app",
+            "failed at postgres://db.test/app",
+        ),
+    ],
+)
+def test_non_http_url_credentials_are_removed(value: str, expected: str) -> None:
+    assert redact_text(value) == expected
+
+
 def test_private_keys_are_removed() -> None:
     begin_marker = "-----BEGIN PRIVATE" + " KEY-----"
     end_marker = "-----END PRIVATE" + " KEY-----"

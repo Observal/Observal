@@ -5,6 +5,7 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
+import ipaddress
 import json
 import logging
 import os
@@ -13,6 +14,7 @@ import shutil
 import tomllib
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from urllib.parse import urlsplit
 
 from observal_cli.errors import ErrorCategory, fail
 from observal_shared.secrets import resolve_secret
@@ -48,6 +50,49 @@ DEFAULTS = {
     "update_check_interval": 86400,  # seconds (24h)
     "update_check_repo": "",  # empty = Observal/Observal
 }
+
+
+def validate_server_url(value: object) -> str:
+    """Validate a Registry URL and require TLS except for loopback hosts."""
+
+    if not isinstance(value, str) or not (normalized := value.strip()):
+        raise ValueError("server URL is required")
+    try:
+        parsed = urlsplit(normalized)
+        _ = parsed.port
+    except ValueError as error:
+        raise ValueError("server URL has an invalid port") from error
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("server URL must be HTTP or HTTPS without credentials, query parameters, or fragments")
+    host = parsed.hostname.casefold()
+    try:
+        loopback = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        loopback = host == "localhost" or host.endswith(".localhost")
+    if parsed.scheme == "http" and not loopback:
+        raise ValueError("HTTP is allowed only for loopback server URLs")
+    return normalized.rstrip("/")
+
+
+def _validated_server_url_or_fail(value: object) -> str:
+    try:
+        return validate_server_url(value)
+    except ValueError as error:
+        fail(
+            ErrorCategory.VALIDATION,
+            "The configured server URL is unsafe or invalid.",
+            operation="Load CLI configuration",
+            resource="server_url",
+            remediation="Use HTTPS, or HTTP only for a loopback address such as http://localhost:8000.",
+            detail=str(error),
+        )
 
 
 def _unwrap_mcp_entry(entry: dict) -> bool:
@@ -229,6 +274,8 @@ def load() -> dict:
         if token:
             cfg["access_token"] = token
 
+    if cfg.get("server_url"):
+        cfg["server_url"] = _validated_server_url_or_fail(cfg["server_url"])
     return cfg
 
 

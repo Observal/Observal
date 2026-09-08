@@ -26,7 +26,7 @@ from observal_cli.discovery.models import (
     DiscoveryDiagnostic,
     DiscoveryEvidence,
 )
-from observal_cli.discovery.normalize import build_candidates, normalize_launch
+from observal_cli.discovery.normalize import build_candidates
 from observal_cli.discovery.providers import discover_npm, discover_pipx, discover_uv
 from observal_cli.discovery.redact import make_diagnostic
 from observal_cli.discovery.registry import classify_registry_candidates
@@ -113,27 +113,16 @@ def _scan_project(adapter: HarnessAdapter, project_dir: Path) -> ScanResult:
         return _empty_result()
 
 
-def _mcp_identity(mcp: DiscoveredMcp) -> tuple[object, ...]:
-    """Deduplicate only equivalent launches with the same local name."""
+def _mcp_identity(mcp: DiscoveredMcp) -> str:
+    """Preserve the legacy scan's name-based MCP deduplication."""
 
-    normalized = normalize_launch(command=mcp.command, arguments=mcp.args, url=mcp.url)
-    launch_identity: tuple[object, ...]
-    if normalized.launch_fingerprint is not None:
-        launch_identity = ("fingerprint", normalized.launch_fingerprint)
-    else:
-        launch_identity = (
-            "structured",
-            mcp.command or "",
-            tuple(mcp.args),
-            mcp.url or "",
-        )
-    return (mcp.name.casefold(), *launch_identity)
+    return mcp.name
 
 
 def _merge_result(
     collection: LegacyScanCollection,
     result: ScanResult,
-    seen_mcps: set[tuple[object, ...]],
+    seen_mcps: set[str],
 ) -> None:
     for mcp in result.mcps:
         identity = _mcp_identity(mcp)
@@ -278,7 +267,7 @@ def _legacy_from_evidence(
     harnesses: list[HarnessStatus],
 ) -> LegacyScanCollection:
     collection = LegacyScanCollection(harnesses=list(harnesses))
-    seen_mcps: set[tuple[object, ...]] = set()
+    seen_mcps: set[str] = set()
     result = ScanResult()
     for item in evidence:
         component = item.component
@@ -315,7 +304,7 @@ def collect_discovery_scan(
     npm_result = discover_npm(home=home)
     pipx_result = discover_pipx(home=home)
     existing = [*harness_result.evidence, *npm_result.evidence, *pipx_result.evidence]
-    uv_result = discover_uv(home=home, existing_evidence=existing)
+    uv_result = discover_uv(home=home)
     all_evidence = [*existing, *uv_result.evidence]
     candidates = build_candidates(all_evidence, suppress_package_only=harness_filtered)
 
@@ -373,19 +362,13 @@ def collect_legacy_scan(
     project_dir: Path,
     scan_context: ScanContextFactory | None = None,
 ) -> LegacyScanCollection:
-    """Collect default-scan results without suppressing project scopes.
-
-    A missing static harness home suppresses only that home scan and status;
-    the current project and the historical home-as-project scope are still
-    scanned independently.
-    """
+    """Collect default-scan results while keeping the current project independent."""
 
     context_factory: Callable[[str], ContextManager[None]] = scan_context or (lambda _message: nullcontext())
     collection = LegacyScanCollection()
-    seen_mcps: set[tuple[object, ...]] = set()
+    seen_mcps: set[str] = set()
 
-    for harness_name in sorted(adapters):
-        adapter = adapters[harness_name]
+    for harness_name, adapter in adapters.items():
         resolved_home = adapter.resolve_home_dir()
         if resolved_home is not None:
             home_dir = resolved_home
@@ -397,8 +380,8 @@ def collect_legacy_scan(
             home_dir = Path(configured_home.replace("~", str(home))) if configured_home else None
             home_argument = home
 
-        scan_home = home_dir is None or home_dir.is_dir()
-        if scan_home:
+        home_available = home_dir is None or home_dir.is_dir()
+        if home_available:
             with context_factory(f"Scanning {home_label}..."):
                 _merge_result(collection, _scan_home(adapter, home_argument), seen_mcps)
                 _merge_result(collection, _scan_project(adapter, project_dir), seen_mcps)
@@ -412,12 +395,12 @@ def collect_legacy_scan(
         else:
             _merge_result(collection, _scan_project(adapter, project_dir), seen_mcps)
 
-        if project_dir != home:
-            _merge_result(collection, _scan_project(adapter, home), seen_mcps)
+        if home_available and project_dir != home:
+            extra = _scan_project(adapter, home)
+            for mcp in extra.mcps:
+                identity = _mcp_identity(mcp)
+                if identity not in seen_mcps:
+                    collection.mcps.append(mcp)
+                    seen_mcps.add(identity)
 
-    collection.harnesses.sort(key=lambda item: item.name)
-    collection.mcps.sort(key=_sort_key)
-    collection.skills.sort(key=_sort_key)
-    collection.hooks.sort(key=_sort_key)
-    collection.agents.sort(key=_sort_key)
     return collection

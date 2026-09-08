@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import subprocess
 import sys
@@ -14,6 +15,7 @@ from observal_cli.discovery.providers._utils import (
     MAX_CAPTURED_OUTPUT_BYTES,
     MAX_METADATA_FILE_BYTES,
     CommandOutput,
+    _resolve_executable,
     run_bounded,
 )
 from observal_cli.discovery.providers.npm import discover_npm
@@ -120,6 +122,26 @@ def test_npm_decodes_invalid_utf8_metadata_with_replacement(tmp_path) -> None:
     assert result.diagnostics == []
 
 
+def test_default_command_runner_closes_pipe_streams(monkeypatch) -> None:
+    class Process:
+        def __init__(self) -> None:
+            self.stdout = io.BytesIO(b"stdout")
+            self.stderr = io.BytesIO(b"stderr")
+
+        def wait(self, timeout=None):
+            return 0
+
+    process = Process()
+    monkeypatch.setattr("observal_cli.discovery.providers._utils.subprocess.Popen", lambda *_args, **_kwargs: process)
+
+    output = run_bounded((sys.executable, "ignored"), 5.0)
+
+    assert output.stdout == b"stdout"
+    assert output.stderr == b"stderr"
+    assert process.stdout.closed
+    assert process.stderr.closed
+
+
 def test_default_command_runner_bounds_combined_output_memory() -> None:
     output = run_bounded(
         (sys.executable, "-c", f"import sys; sys.stdout.write('x' * {MAX_CAPTURED_OUTPUT_BYTES + 100})"),
@@ -174,6 +196,25 @@ def test_npm_does_not_return_untrusted_secret_like_metadata(tmp_path) -> None:
     assert secret not in repr(result)
     assert result.evidence[0].package_version is None
     assert result.evidence[0].launch.binary is None
+
+
+def test_executable_resolution_ignores_current_and_relative_path_entries(tmp_path, monkeypatch) -> None:
+    current = tmp_path / "project"
+    trusted = tmp_path / "bin"
+    current.mkdir()
+    trusted.mkdir()
+    monkeypatch.chdir(current)
+    monkeypatch.setattr(
+        "observal_cli.discovery.providers._utils.os.get_exec_path",
+        lambda: [".", str(current), "relative-bin", str(trusted)],
+    )
+    monkeypatch.setattr(
+        "observal_cli.discovery.providers._utils.shutil.which",
+        lambda command: str(trusted / "npm") if command == str(trusted / "npm") else None,
+    )
+
+    assert _resolve_executable("npm") == str(trusted / "npm")
+    assert _resolve_executable("./npm") is None
 
 
 def test_default_runner_rejects_an_unresolved_executable(monkeypatch) -> None:

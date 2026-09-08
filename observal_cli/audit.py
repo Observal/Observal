@@ -56,6 +56,7 @@ def emit_cli_audit(
                 json=event,
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=5.0,
+                trust_env=False,
             )
             if resp.status_code >= 400:
                 optic.debug("cli audit POST failed: status={}", resp.status_code)

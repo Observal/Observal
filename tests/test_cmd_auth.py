@@ -311,6 +311,18 @@ def test_login_stops_when_health_check_fails(
     assert message in exc_info.value.message
 
 
+def test_login_rejects_cleartext_non_loopback_server_before_network(monkeypatch) -> None:
+    monkeypatch.setattr(auth.config, "load", lambda: {})
+    get = MagicMock(side_effect=AssertionError("unsafe server must not be contacted"))
+    monkeypatch.setattr(auth.httpx, "get", get)
+
+    with pytest.raises(CliError) as error:
+        auth.login("http://registry.example.test", "ada@example.test", VALID_PASSWORD, None, False, False)
+
+    assert error.value.category is ErrorCategory.VALIDATION
+    get.assert_not_called()
+
+
 def test_login_initializes_fresh_server_and_persists_only_returned_tokens(
     monkeypatch: pytest.MonkeyPatch,
     printed: list[str],
@@ -341,6 +353,7 @@ def test_login_initializes_fresh_server_and_persists_only_returned_tokens(
         f"{SERVER_URL}/api/v1/auth/init",
         json={"email": "ada@example.test", "name": "Ada", "password": VALID_PASSWORD},
         timeout=30,
+        trust_env=False,
     )
     save.assert_called_once_with(
         {
@@ -671,6 +684,7 @@ def test_logout_revokes_remote_session_then_removes_every_local_token(
         json={"refresh_token": REFRESH_TOKEN},
         headers={"Authorization": f"Bearer {ACCESS_TOKEN}"},
         timeout=5,
+        trust_env=False,
     )
     assert json.loads(auth.config.CONFIG_FILE.read_text()) == {"server_url": f"{SERVER_URL}/"}
     output = "\n".join(printed)
@@ -1028,6 +1042,7 @@ def test_password_login_saves_tokens_and_profile(monkeypatch: pytest.MonkeyPatch
         f"{SERVER_URL}/api/v1/auth/login",
         json={"email": "ada", "password": VALID_PASSWORD},
         timeout=30,
+        trust_env=False,
     )
     response.raise_for_status.assert_called_once_with()
     fetch_endpoints.assert_called_once_with(SERVER_URL)
@@ -1071,6 +1086,7 @@ def test_password_login_completes_mandatory_password_change(
         json={"current_password": "Temporary1!", "new_password": VALID_PASSWORD},
         headers={"Authorization": f"Bearer {ACCESS_TOKEN}"},
         timeout=30,
+        trust_env=False,
     )
     assert "web_url" not in save.call_args.args[0]
 
@@ -1163,6 +1179,7 @@ def test_device_flow_rewrites_local_verification_url_and_saves_authorized_sessio
             f"{SERVER_URL}/api/v1/auth/device/authorize",
             json={"sso": True, "provider": "oidc"},
             timeout=10,
+            trust_env=False,
         ),
         call(
             f"{SERVER_URL}/api/v1/auth/device/token",
@@ -1171,6 +1188,7 @@ def test_device_flow_rewrites_local_verification_url_and_saves_authorized_sessio
                 "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
             },
             timeout=10,
+            trust_env=False,
         ),
     ]
     browser_open.assert_called_once_with(f"{SERVER_URL}/device?code=ABCD-EFGH")
@@ -1519,6 +1537,7 @@ def test_config_set_normalizes_supported_values(
         ("timeout", "0"),
         ("update_check_interval", "59"),
         ("server_url", "registry.example.test"),
+        ("server_url", "http://registry.example.test"),
         ("server_url", "https://user:password@registry.example.test"),
         ("update_check_repo", "missing-slash"),
     ],
@@ -2115,4 +2134,5 @@ def test_fetch_hooks_token_uses_authenticated_endpoint_with_safe_fallback(
         f"{SERVER_URL}/api/v1/auth/hooks-token",
         headers={"Authorization": f"Bearer {ACCESS_TOKEN}"},
         timeout=10,
+        trust_env=False,
     )

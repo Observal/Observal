@@ -683,7 +683,7 @@ class TestOpenCodeAdapter:
         ]
         assert [(hook.name, hook.source) for hook in result.hooks] == [("project-plugin", "opencode:project")]
 
-    def test_scan_json_deduplicates_with_global_scope_precedence(self, tmp_path, monkeypatch):
+    def test_scan_json_preserves_name_based_global_scope_precedence(self, tmp_path, monkeypatch):
         from typer.testing import CliRunner
 
         from observal_cli.main import app
@@ -715,14 +715,6 @@ class TestOpenCodeAdapter:
                     "url": None,
                     "description": "OpenCode MCP: shared",
                     "source": "opencode:global",
-                },
-                {
-                    "name": "shared",
-                    "command": "project-command",
-                    "args": ["project.js"],
-                    "url": None,
-                    "description": "OpenCode MCP: shared",
-                    "source": "opencode:project",
                 },
             ],
             "skills": [],

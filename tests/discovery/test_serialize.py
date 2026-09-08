@@ -25,6 +25,7 @@ from observal_cli.discovery.models import (
 from observal_cli.discovery.serialize import (
     DISCOVERY_SCHEMA_VERSION,
     candidate_to_dict,
+    component_to_dict,
     diagnostic_to_dict,
     discovery_to_dict,
     evidence_to_dict,
@@ -158,6 +159,15 @@ def test_diagnostic_serialization_never_emits_absolute_source_path(tmp_path: Pat
 
     assert result["source"] == "<external>/package.json"
     assert str(tmp_path) not in str(result)
+
+
+def test_serialization_redacts_secret_like_component_and_candidate_names() -> None:
+    secret = "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890abcd"
+    component = DiscoveredMcp(secret, "npx", [], None, "", "source")
+    candidate = DiscoveryCandidate(None, secret, None, None)
+
+    assert component_to_dict(component)["name"] == "<secret>"
+    assert candidate_to_dict(candidate)["local_name"] == "<secret>"
 
 
 def test_discovery_document_preserves_legacy_arrays_and_stable_order() -> None:

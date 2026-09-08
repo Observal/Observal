@@ -298,6 +298,18 @@ def login(
             text_input("Server URL (leave blank for http://localhost)", default="") or "http://localhost"
         ).rstrip("/")
 
+    try:
+        server_url = config.validate_server_url(server_url)
+    except ValueError as error:
+        fail(
+            ErrorCategory.VALIDATION,
+            "The server URL must use HTTPS, except for loopback development servers.",
+            operation="Authenticate with Observal",
+            resource="server URL",
+            remediation="Provide an HTTPS URL or a loopback URL such as http://localhost:8000.",
+            detail=str(error),
+        )
+
     candidates = [server_url]
     parsed_server = urlparse(server_url)
     if (
@@ -416,6 +428,7 @@ def login(
                     f"{server_url}/api/v1/auth/init",
                     json={"email": admin_email, "name": admin_name, "password": admin_password},
                     timeout=30,
+                    trust_env=False,
                 )
             if response.status_code == 400 and "already initialized" in response.text.lower():
                 fail(
@@ -600,6 +613,7 @@ def logout(
                     json={"refresh_token": refresh_token or None},
                     headers={"Authorization": f"Bearer {access_token}"},
                     timeout=5,
+                    trust_env=False,
                 )
                 revoked = response.is_success
             except httpx.HTTPError:
@@ -886,6 +900,7 @@ def _do_password_login(
                 f"{server_url}/api/v1/auth/login",
                 json={"email": email, "password": password},
                 timeout=30,
+                trust_env=False,
             )
         _raise_for_status(
             response,
@@ -946,6 +961,7 @@ def _do_password_login(
                     json={"current_password": password, "new_password": new_password},
                     headers={"Authorization": f"Bearer {data['access_token']}"},
                     timeout=30,
+                    trust_env=False,
                 )
             _raise_for_status(
                 changed,
@@ -990,6 +1006,7 @@ def _do_device_flow_login(
                 f"{server_url}/api/v1/auth/device/authorize",
                 json={"sso": direct_sso, "provider": provider},
                 timeout=10,
+                trust_env=False,
             )
         _raise_for_status(
             response,
@@ -1100,6 +1117,7 @@ def _do_device_flow_login(
                     "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
                 },
                 timeout=10,
+                trust_env=False,
             )
         except httpx.RequestError:
             if not json_mode:
@@ -1204,23 +1222,17 @@ def _normalize_config_value(key: str, value: str) -> object:
 
     normalized = value.strip()
     if key == "server_url":
-        parsed = urlparse(normalized)
-        if (
-            parsed.scheme not in {"http", "https"}
-            or not parsed.hostname
-            or parsed.username
-            or parsed.password
-            or parsed.query
-            or parsed.fragment
-        ):
+        try:
+            return config.validate_server_url(normalized)
+        except ValueError as error:
             fail(
                 ErrorCategory.VALIDATION,
-                "server_url must be an HTTP or HTTPS URL without embedded credentials.",
+                "server_url must use HTTPS, except for loopback development servers.",
                 operation="Update CLI configuration",
                 resource=key,
-                remediation="Provide a URL such as https://observal.example.com.",
+                remediation="Provide an HTTPS URL or a loopback URL such as http://localhost:8000.",
+                detail=str(error),
             )
-        return normalized.rstrip("/")
     if key in {"timeout", "update_check_interval"}:
         try:
             number = int(normalized)
@@ -1757,6 +1769,7 @@ def _fetch_hooks_token(server_url: str, access_token: str) -> str:
             f"{server_url.rstrip('/')}/api/v1/auth/hooks-token",
             headers={"Authorization": f"Bearer {access_token}"},
             timeout=10,
+            trust_env=False,
         )
         if r.status_code == 200:
             return r.json().get("access_token", access_token)

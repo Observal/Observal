@@ -218,6 +218,7 @@ def _fetch_from_server(server_url: str, token: str) -> dict | None:
                 "Authorization": f"Bearer {token}",
                 "User-Agent": f"observal-cli/{get_current_version()}",
             },
+            trust_env=False,
         )
         if resp.status_code != 200:
             return None

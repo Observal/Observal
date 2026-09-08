@@ -191,7 +191,7 @@ def _refresh_access_token(server_url: str, refresh_token: str, config_path: str)
 
     url = f"{server_url.rstrip('/')}/api/v1/auth/token/refresh"
     try:
-        with httpx.Client(timeout=5.0) as client:
+        with httpx.Client(timeout=5.0, trust_env=False) as client:
             resp = client.post(url, json={"refresh_token": refresh_token})
             if resp.status_code >= 300:
                 return None
@@ -239,7 +239,7 @@ def post_to_server_ack(
     line_count = len(payload.get("lines", []))
 
     try:
-        with httpx.Client(timeout=10.0) as client:
+        with httpx.Client(timeout=10.0, trust_env=False) as client:
             response = client.post(url, json=payload, headers=headers)
             if response.status_code == 401 and config:
                 refresh_token = config.get("refresh_token", "")
@@ -290,7 +290,7 @@ def get_server_checkpoint(source: SessionSource, config: dict) -> dict | None:
     url = f"{server_url}/api/v1/ingest/session/checkpoint"
     headers = {"Authorization": f"Bearer {token}"}
     try:
-        with httpx.Client(timeout=5.0) as client:
+        with httpx.Client(timeout=5.0, trust_env=False) as client:
             response = client.get(
                 url,
                 params={"session_id": source.session_id, "harness": source.harness},
@@ -801,7 +801,7 @@ def _maybe_upload_layer_snapshot(
             "Content-Type": "application/json",
         }
 
-        with httpx.Client(timeout=10.0) as client:
+        with httpx.Client(timeout=10.0, trust_env=False) as client:
             resp = client.post(url, json=payload, headers=headers)
             if resp.status_code < 300:
                 # Save locally: same content as what server now has
