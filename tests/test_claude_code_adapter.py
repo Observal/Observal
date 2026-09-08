@@ -809,7 +809,7 @@ def test_related_session_sources_preserve_parent_cwd_order_and_symlink_path(tmp_
     ]
 
 
-def test_scan_command_preserves_distinct_launches_with_stable_scope_order(
+def test_scan_command_preserves_name_based_home_scope_precedence(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
@@ -858,28 +858,20 @@ def test_scan_command_preserves_distinct_launches_with_stable_scope_order(
                 "source": "plugin:suite",
             },
             {
-                "name": "project-only",
-                "command": "project-only",
-                "args": [],
-                "url": None,
-                "description": "Claude Code project MCP: project-only",
-                "source": "claude-code:project",
-            },
-            {
-                "name": "shared",
-                "command": "project-command",
-                "args": ["project.js"],
-                "url": None,
-                "description": "Claude Code project MCP: shared",
-                "source": "claude-code:project",
-            },
-            {
                 "name": "shared",
                 "command": "home-command",
                 "args": ["home.js"],
                 "url": None,
                 "description": "Plugin: suite",
                 "source": "plugin:suite",
+            },
+            {
+                "name": "project-only",
+                "command": "project-only",
+                "args": [],
+                "url": None,
+                "description": "Claude Code project MCP: project-only",
+                "source": "claude-code:project",
             },
         ],
         "skills": [],

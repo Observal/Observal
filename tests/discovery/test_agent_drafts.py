@@ -78,8 +78,8 @@ def test_discovered_agent_converts_to_validated_in_memory_definition() -> None:
     assert validate_agent_definition(definition) == definition
 
 
-@pytest.mark.parametrize("version", ["1.0", "1.0.0rc1", "1.0.0+local", "1.0.0.0"])
-def test_agent_definition_rejects_versions_outside_server_semver_contract(version: str) -> None:
+@pytest.mark.parametrize("version", ["1.0", "1.0.0rc1", "1.0.0+local", "1.0.0.0", False, 0, []])
+def test_agent_definition_rejects_versions_outside_server_semver_contract(version: object) -> None:
     definition = _definition()
     definition["version"] = version
 

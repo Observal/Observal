@@ -47,6 +47,7 @@ _SECRET_ASSIGNMENT_RE = re.compile(
     r"authorization|client[-_]?secret)\b[\"']?\s*[:=]\s*[\"']?)([^\"'\s,;}]+)"
 )
 _AUTH_HEADER_RE = re.compile(r"(?i)(\b(?:authorization|proxy-authorization|cookie|set-cookie)\s*:\s*)([^\r\n]+)")
+_URL_USERINFO_RE = re.compile(r"(\b[A-Za-z][A-Za-z0-9+.-]*://)[^/@\s]*@")
 # Paths remain behavior-relevant launch data; dedicated matchers above still
 # catch prefixed tokens, JWTs, and private keys that contain dots or slashes.
 _HIGH_ENTROPY_RE = re.compile(r"^(?=.{32,}$)(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9_+=-]+$")
@@ -132,6 +133,7 @@ def redact_text(value: str) -> str:
 
     if _is_reference(value):
         return value
+    value = _URL_USERINFO_RE.sub(lambda match: match.group(1), value)
     if "://" in value and not any(character.isspace() for character in value):
         sanitized_url = sanitize_url(value)
         if sanitized_url is not None:

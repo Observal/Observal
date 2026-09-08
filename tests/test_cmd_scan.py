@@ -276,9 +276,7 @@ def test_discover_json_uses_versioned_contract_and_never_calls_mutations(scan_en
     )
     collect = Mock(return_value=collection)
     mutation = Mock(side_effect=AssertionError("discover output must not mutate"))
-    register = Mock(side_effect=AssertionError("JSON discovery must not enter registration"))
     monkeypatch.setattr(cmd_scan, "collect_discovery_scan", collect)
-    monkeypatch.setattr(cmd_scan, "register_discovery_candidates", register)
     monkeypatch.setattr(client, "post", mutation)
 
     result = _invoke("--discover", "--output", "json")
@@ -291,7 +289,6 @@ def test_discover_json_uses_versioned_contract_and_never_calls_mutations(scan_en
     assert payload["diagnostics"][0]["code"] == "executable_missing"
     collect.assert_called_once_with({}, home=scan_env.home, project_dir=scan_env.project, harness_filtered=False)
     mutation.assert_not_called()
-    register.assert_not_called()
     scan_env.http_get.assert_not_called()
     scan_env.rprint.assert_not_called()
 
@@ -313,10 +310,8 @@ def test_discover_json_never_reports_invalid_portable_source_as_eligible(scan_en
     )
     candidate = build_candidates([evidence])[0]
     collection = DiscoveryScanCollection(candidates=[candidate])
-    register = Mock(side_effect=AssertionError("JSON discovery must not enter registration"))
     mutation = Mock(side_effect=AssertionError("JSON discovery must not mutate"))
     monkeypatch.setattr(cmd_scan, "collect_discovery_scan", Mock(return_value=collection))
-    monkeypatch.setattr(cmd_scan, "register_discovery_candidates", register)
     monkeypatch.setattr(client, "post", mutation)
 
     result = _invoke("--discover", "--output", "json")
@@ -328,7 +323,6 @@ def test_discover_json_never_reports_invalid_portable_source_as_eligible(scan_en
     assert serialized["registration_status"] != "eligible"
     assert serialized["reason_codes"] == ["unsupported_launch"]
     assert serialized["missing_fields"] == ["event"]
-    register.assert_not_called()
     mutation.assert_not_called()
 
 
@@ -395,7 +389,9 @@ def test_discover_table_renders_candidates_and_diagnostics_without_legacy_regist
         ],
     )
     collect = Mock(return_value=collection)
+    mutation = Mock(side_effect=AssertionError("table discovery must not mutate"))
     monkeypatch.setattr(cmd_scan, "collect_discovery_scan", collect)
+    monkeypatch.setattr(client, "post", mutation)
 
     result = _invoke("--harness", "kiro", "--discover")
 
@@ -412,84 +408,7 @@ def test_discover_table_renders_candidates_and_diagnostics_without_legacy_regist
         harness_filtered=True,
     )
     scan_env.http_get.assert_not_called()
-
-
-def test_discover_table_non_tty_never_enters_registration(scan_env, monkeypatch) -> None:
-    candidate = DiscoveryCandidate(
-        component_type=ComponentType.AGENT,
-        local_name="helper",
-        correlation_identity=None,
-        launch_fingerprint=None,
-        support_status=SupportStatus.SUPPORTED,
-        registration_status=RegistrationStatus.ELIGIBLE,
-        registry_status=RegistryStatus.NO_EXACT_MATCH,
-    )
-    monkeypatch.setattr(
-        cmd_scan,
-        "collect_discovery_scan",
-        Mock(return_value=DiscoveryScanCollection(candidates=[candidate])),
-    )
-    monkeypatch.setattr(cmd_scan, "_stdin_is_tty", Mock(return_value=False))
-    register = Mock(side_effect=AssertionError("non-TTY discovery must not enter registration"))
-    monkeypatch.setattr(cmd_scan, "register_discovery_candidates", register)
-
-    result = _invoke("--discover")
-
-    assert result.exit_code == 0, result.exception
-    register.assert_not_called()
-
-
-def test_discover_table_invokes_registration_only_for_tty(scan_env, monkeypatch) -> None:
-    candidate = DiscoveryCandidate(
-        component_type=ComponentType.AGENT,
-        local_name="helper",
-        correlation_identity=None,
-        launch_fingerprint=None,
-        support_status=SupportStatus.SUPPORTED,
-        registration_status=RegistrationStatus.ELIGIBLE,
-        registry_status=RegistryStatus.NO_EXACT_MATCH,
-    )
-    collection = DiscoveryScanCollection(candidates=[candidate])
-    monkeypatch.setattr(cmd_scan, "collect_discovery_scan", Mock(return_value=collection))
-    monkeypatch.setattr(cmd_scan, "_stdin_is_tty", Mock(return_value=True))
-    register = Mock(return_value=[SimpleNamespace(failed=False)])
-    render = Mock()
-    monkeypatch.setattr(cmd_scan, "register_discovery_candidates", register)
-    monkeypatch.setattr(cmd_scan, "render_registration_results", render)
-
-    result = _invoke("--discover")
-
-    assert result.exit_code == 0, result.exception
-    register.assert_called_once_with([candidate], output="table", stdin_is_tty=True)
-    render.assert_called_once_with(register.return_value)
-
-
-def test_failed_discovery_registration_sets_nonzero_final_exit(scan_env, monkeypatch) -> None:
-    candidate = DiscoveryCandidate(
-        component_type=ComponentType.AGENT,
-        local_name="helper",
-        correlation_identity=None,
-        launch_fingerprint=None,
-        support_status=SupportStatus.SUPPORTED,
-        registration_status=RegistrationStatus.ELIGIBLE,
-        registry_status=RegistryStatus.NO_EXACT_MATCH,
-    )
-    monkeypatch.setattr(
-        cmd_scan,
-        "collect_discovery_scan",
-        Mock(return_value=DiscoveryScanCollection(candidates=[candidate])),
-    )
-    monkeypatch.setattr(cmd_scan, "_stdin_is_tty", Mock(return_value=True))
-    monkeypatch.setattr(
-        cmd_scan,
-        "register_discovery_candidates",
-        Mock(return_value=[SimpleNamespace(failed=True)]),
-    )
-    monkeypatch.setattr(cmd_scan, "render_registration_results", Mock())
-
-    result = _invoke("--discover")
-
-    assert result.exit_code == 1
+    mutation.assert_not_called()
 
 
 def test_discover_json_empty_state_includes_schema_and_diagnostics(scan_env, monkeypatch) -> None:
@@ -597,7 +516,7 @@ def test_missing_harness_roots_have_deterministic_empty_states(scan_env, output:
     adapter.resolve_home_dir.assert_called_once_with()
     adapter.scan_home.assert_not_called()
     adapter.detect_hooks.assert_not_called()
-    assert adapter.scan_project.call_args_list == [call(scan_env.project), call(scan_env.home)]
+    adapter.scan_project.assert_called_once_with(scan_env.project)
     if output == "json":
         assert result.exit_code == 0
         assert json.loads(result.output) == {
@@ -613,20 +532,15 @@ def test_missing_harness_roots_have_deterministic_empty_states(scan_env, output:
         scan_env.rprint.assert_called_once_with("[yellow]No harness configurations found.[/yellow]")
 
 
-def test_current_project_is_scanned_even_when_the_harness_home_is_absent(scan_env) -> None:
-    adapter = _adapter(
-        project_results=[
-            ScanResult(mcps=[_mcp("project-server", source="project", args=["serve"])]),
-            ScanResult(),
-        ]
-    )
+def test_current_project_is_scanned_when_the_harness_home_is_absent(scan_env) -> None:
+    adapter = _adapter(project_results=[ScanResult(mcps=[_mcp("project-server", source="project", args=["serve"])])])
     scan_env.get_all.return_value = {"cursor": adapter}
 
     result = _invoke()
 
     assert result.exit_code == 0, result.exception
     adapter.scan_home.assert_not_called()
-    assert adapter.scan_project.call_args_list == [call(scan_env.project), call(scan_env.home)]
+    adapter.scan_project.assert_called_once_with(scan_env.project)
     assert [table.title for table in scan_env.tables] == ["MCP Servers (1)"]
     assert scan_env.tables[0].rows == [("project-server", "npx serve", "project")]
     assert scan_env.spinner_calls == []
@@ -727,31 +641,17 @@ def test_json_normalizes_components_and_mcp_precedence_across_all_scan_scopes(sc
         {"name": "kiro", "hooks": "missing"},
     ]
     assert [item["name"] for item in payload["mcps"]] == [
-        "extra-only",
+        "shared",
         "home-only",
-        "kiro-only",
         "project-only",
-        "shared",
-        "shared",
-        "shared",
+        "extra-only",
+        "kiro-only",
     ]
     shared = [item for item in payload["mcps"] if item["name"] == "shared"]
-    assert [item["args"] for item in shared] == [["home"], [], ["project"]]
-    assert [item["name"] for item in payload["skills"]] == [
-        "home-skill",
-        "ignored-extra-skill",
-        "project-skill",
-    ]
-    assert [item["name"] for item in payload["hooks"]] == [
-        "home-hook",
-        "ignored-extra-hook",
-        "project-hook",
-    ]
-    assert [item["name"] for item in payload["agents"]] == [
-        "home-agent",
-        "ignored-extra-agent",
-        "project-agent",
-    ]
+    assert [item["args"] for item in shared] == [["home"]]
+    assert [item["name"] for item in payload["skills"]] == ["home-skill", "project-skill"]
+    assert [item["name"] for item in payload["hooks"]] == ["home-hook", "project-hook"]
+    assert [item["name"] for item in payload["agents"]] == ["home-agent", "project-agent"]
     assert scan_env.spinner_calls == []
     assert scan_env.tables == []
     scan_env.console_print.assert_not_called()
@@ -860,8 +760,8 @@ def test_hook_status_styles_and_missing_hook_suggestion(scan_env, tmp_path: Path
     table = scan_env.tables[0]
     assert table.rows == [
         ("installed", "[green]installed[/green]"),
-        ("missing", "[red]missing[/red]"),
         ("partial", "[yellow]partial[/yellow]"),
+        ("missing", "[red]missing[/red]"),
         ("unsupported", "[red]n/a[/red]"),
     ]
     assert any("doctor patch" in str(args) for args in scan_env.rprint.call_args_list)
@@ -903,9 +803,9 @@ def test_authenticated_registry_results_hide_registered_components_and_cap_rows(
     assert result.exit_code == 0, result.exception
     headers = {"Authorization": "Bearer token-value"}
     assert scan_env.http_get.call_args_list == [
-        call("https://registry.example/api/v1/mcp", headers=headers, timeout=5),
-        call("https://registry.example/api/v1/skills", headers=headers, timeout=5),
-        call("https://registry.example/api/v1/agents", headers=headers, timeout=5),
+        call("https://registry.example/api/v1/mcp", headers=headers, timeout=5, trust_env=False),
+        call("https://registry.example/api/v1/skills", headers=headers, timeout=5, trust_env=False),
+        call("https://registry.example/api/v1/agents", headers=headers, timeout=5, trust_env=False),
     ]
     unregistered = next(table for table in scan_env.tables if table.title == "Unregistered Components (33)")
     assert len(unregistered.rows) == 31

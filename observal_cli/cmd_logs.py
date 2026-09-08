@@ -179,6 +179,7 @@ def _stream_remote(
                 "X-Observal-CLI-Version": _get_cli_version(),
             },
             timeout=None,
+            trust_env=False,
         ) as resp:
             if resp.status_code == 401:
                 fail(

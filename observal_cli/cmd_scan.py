@@ -10,11 +10,10 @@
 # SPDX-FileCopyrightText: 2026 Madhumidha <madhumidha072005@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Local harness inventory with opt-in interactive draft registration."""
+"""Read-only local harness inventory and component discovery."""
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import typer
@@ -24,16 +23,11 @@ from rich.table import Table
 
 from observal_cli.discovery.collector import collect_discovery_scan, collect_legacy_scan
 from observal_cli.discovery.redact import redact_arguments, redact_text, sanitize_diagnostic_message, sanitize_url
-from observal_cli.discovery.registration import register_discovery_candidates, render_registration_results
-from observal_cli.discovery.serialize import discovery_to_dict, legacy_scan_to_dict, privacy_safe_path
+from observal_cli.discovery.serialize import discovery_to_dict, privacy_safe_path
 from observal_cli.harness import ensure_loaded, get_adapter, get_all_adapters
 from observal_cli.render import OutputMode, console, esc, output_json, spinner
 
 # ── CLI command ─────────────────────────────────────────────
-
-
-def _stdin_is_tty() -> bool:
-    return sys.stdin.isatty()
 
 
 def _safe_discovery_source(source: object, *, home: Path, project_dir: Path) -> str:
@@ -80,18 +74,16 @@ def register_scan(app: typer.Typer):
             help="Add bounded package evidence, local tracking, and authenticated Registry classification",
         ),
     ):
-        """Show local inventory and optionally register discovered drafts.
+        """Show a read-only inventory of local components and harness setup.
 
         Scans all harness home directories and the current project directory to
         discover agents, MCP servers, skills, and hooks. Shows installed
         session telemetry hooks. Use --discover for bounded package evidence,
-        local tracking state, authenticated Registry classification, and an
-        optional interactive draft-registration flow.
+        local tracking state, and authenticated Registry classification.
 
         Use --harness to filter to a specific harness (e.g. --harness kiro).
 
-        Scanning never modifies local files. JSON and non-interactive output
-        never create Registry drafts. To install hooks, run:
+        This command never modifies local or Registry state. To install hooks, run:
           observal doctor patch --all-harnesses
 
         Examples:
@@ -184,13 +176,13 @@ def register_scan(app: typer.Typer):
                 )
             else:
                 output_json(
-                    legacy_scan_to_dict(
-                        harnesses=harnesses,
-                        mcps=all_mcps,
-                        skills=all_skills,
-                        hooks=all_hooks,
-                        agents=all_agents,
-                    )
+                    {
+                        "harnesses": harnesses,
+                        "mcps": [vars(item) for item in all_mcps],
+                        "skills": [vars(item) for item in all_skills],
+                        "hooks": [vars(item) for item in all_hooks],
+                        "agents": [vars(item) for item in all_agents],
+                    }
                 )
             return
 
@@ -272,11 +264,6 @@ def register_scan(app: typer.Typer):
             console.print(tbl)
             rprint()
 
-        registration_results = []
-        if discover and _stdin_is_tty():
-            registration_results = register_discovery_candidates(candidates, output=output, stdin_is_tty=True)
-            render_registration_results(registration_results)
-
         if discover:
             if candidates:
                 tbl = Table(title=f"Discovery Candidates ({len(candidates)})", show_lines=False, padding=(0, 1))
@@ -288,7 +275,7 @@ def register_scan(app: typer.Typer):
                 for candidate in candidates:
                     tbl.add_row(
                         candidate.component_type.value if candidate.component_type else "unknown",
-                        esc(candidate.local_name),
+                        esc(redact_text(candidate.local_name)),
                         candidate.tracking_status.value,
                         candidate.registry_status.value,
                         candidate.registration_status.value,
@@ -311,7 +298,12 @@ def register_scan(app: typer.Typer):
 
                     def registered_names(endpoint: str) -> set[str] | None:
                         try:
-                            response = httpx.get(f"{server_url}/api/v1/{endpoint}", headers=headers, timeout=5)
+                            response = httpx.get(
+                                f"{server_url}/api/v1/{endpoint}",
+                                headers=headers,
+                                timeout=5,
+                                trust_env=False,
+                            )
                             if response.status_code != 200:
                                 return None
                             return {item.get("name", "") for item in response.json() if isinstance(item, dict)}
@@ -371,6 +363,3 @@ def register_scan(app: typer.Typer):
 
         if suggestions:
             rprint("[dim]" + " | ".join(suggestions) + "[/dim]")
-
-        if any(result.failed for result in registration_results):
-            raise typer.Exit(1)

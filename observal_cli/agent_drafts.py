@@ -56,7 +56,7 @@ _AGENT_VERSION_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 def normalize_agent_version(value: object, *, default: str = "1.0.0") -> str:
     """Normalize a version and enforce the server's strict ``x.y.z`` contract."""
 
-    raw = str(value or default)
+    raw = default if value is None or value == "" else str(value)
     try:
         normalized = str(Version(raw))
     except InvalidVersion as error:

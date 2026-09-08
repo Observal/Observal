@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -69,20 +70,42 @@ CommandRunner = Callable[[Sequence[str], float], CommandOutput]
 
 
 def _bounded_reader(stream, chunks: list[bytes], state: dict[str, int | bool], lock: threading.Lock) -> None:
-    while block := stream.read(64 * 1024):
-        with lock:
-            remaining = MAX_CAPTURED_OUTPUT_BYTES + 1 - int(state["size"])
-            if remaining > 0:
-                chunks.append(block[:remaining])
-                state["size"] = int(state["size"]) + min(len(block), remaining)
-            if len(block) > remaining:
-                state["oversized"] = True
+    try:
+        while block := stream.read(64 * 1024):
+            with lock:
+                remaining = MAX_CAPTURED_OUTPUT_BYTES + 1 - int(state["size"])
+                if remaining > 0:
+                    chunks.append(block[:remaining])
+                    state["size"] = int(state["size"]) + min(len(block), remaining)
+                if len(block) > remaining:
+                    state["oversized"] = True
+    except (OSError, ValueError):
+        return
+
+
+def _resolve_executable(command: str) -> str | None:
+    """Resolve an executable without searching the current directory."""
+
+    if os.path.isabs(command):
+        return shutil.which(command)
+    if os.path.dirname(command):
+        return None
+    current_directory = os.path.normcase(os.path.abspath(os.curdir))
+    for directory in os.get_exec_path():
+        if not directory or not os.path.isabs(directory):
+            continue
+        absolute_directory = os.path.abspath(directory)
+        if os.path.normcase(absolute_directory) == current_directory:
+            continue
+        if executable := shutil.which(os.path.join(absolute_directory, command)):
+            return os.path.abspath(executable)
+    return None
 
 
 def run_bounded(command: Sequence[str], timeout: float) -> CommandOutput:
     """Run an argument-array command while bounding memory used for output."""
 
-    if not command or not (executable := shutil.which(command[0])):
+    if not command or not (executable := _resolve_executable(command[0])):
         raise FileNotFoundError(command[0] if command else "")
     resolved_command = [executable, *command[1:]]
     process: Popen[bytes] = subprocess.Popen(
@@ -108,6 +131,9 @@ def run_bounded(command: Sequence[str], timeout: float) -> CommandOutput:
         process.wait()
         raise
     finally:
+        for stream in (process.stdout, process.stderr):
+            if stream is not None:
+                stream.close()
         for thread in threads:
             thread.join(timeout=1)
     return CommandOutput(

@@ -421,6 +421,7 @@ def test_fetch_from_server_returns_canonical_version_with_exact_request(
             "Authorization": "Bearer secret-token",
             "User-Agent": f"observal-cli/{current_version}",
         },
+        trust_env=False,
     )
 
 

@@ -135,7 +135,7 @@ def component_to_dict(component: object | None) -> dict[str, Any] | None:
     if isinstance(component, DiscoveredMcp):
         safe_arguments, _ = redact_arguments(component.args)
         return {
-            "name": component.name,
+            "name": redact_text(component.name),
             "command": redact_text(component.command) if component.command else None,
             "args": list(safe_arguments),
             "url": sanitize_url(component.url) if component.url else None,
@@ -144,25 +144,25 @@ def component_to_dict(component: object | None) -> dict[str, Any] | None:
         }
     if isinstance(component, DiscoveredSkill):
         return {
-            "name": component.name,
+            "name": redact_text(component.name),
             "description": redact_text(component.description),
             "source": _safe_display(component.source),
-            "task_type": component.task_type,
+            "task_type": redact_text(component.task_type),
         }
     if isinstance(component, DiscoveredHook):
         return {
-            "name": component.name,
-            "event": component.event,
-            "handler_type": component.handler_type,
+            "name": redact_text(component.name),
+            "event": redact_text(component.event),
+            "handler_type": redact_text(component.handler_type),
             "handler_config": _json_value(redact_value(component.handler_config)),
             "description": redact_text(component.description),
             "source": _safe_display(component.source),
         }
     if isinstance(component, DiscoveredAgent):
         return {
-            "name": component.name,
+            "name": redact_text(component.name),
             "description": redact_text(component.description),
-            "model_name": component.model_name,
+            "model_name": redact_text(component.model_name),
             "prompt": redact_text(component.prompt),
             "source_file": _safe_display(component.source_file),
         }
@@ -243,9 +243,11 @@ def candidate_sort_key(candidate: DiscoveryCandidate) -> tuple[Any, ...]:
 
 
 def candidate_to_dict(candidate: DiscoveryCandidate) -> dict[str, Any]:
+    from observal_cli.discovery.redact import redact_text
+
     return {
         "component_type": candidate.component_type.value if candidate.component_type else None,
-        "local_name": candidate.local_name,
+        "local_name": redact_text(candidate.local_name),
         "correlation_identity": candidate.correlation_identity,
         "launch_fingerprint": candidate.launch_fingerprint,
         "tracking_status": candidate.tracking_status.value,
@@ -292,25 +294,6 @@ def adapter_discovery_result_to_dict(result: AdapterDiscoveryResult) -> dict[str
     return {
         "evidence": [evidence_to_dict(item) for item in sorted(result.evidence, key=evidence_sort_key)],
         "diagnostics": [diagnostic_to_dict(item) for item in sorted(result.diagnostics, key=diagnostic_sort_key)],
-    }
-
-
-def legacy_scan_to_dict(
-    *,
-    harnesses: Sequence[Mapping[str, Any]],
-    mcps: Sequence[DiscoveredMcp],
-    skills: Sequence[DiscoveredSkill],
-    hooks: Sequence[DiscoveredHook],
-    agents: Sequence[DiscoveredAgent],
-) -> dict[str, Any]:
-    """Build the stable default-scan JSON shape without adding new keys."""
-
-    return {
-        "harnesses": sorted((dict(item) for item in harnesses), key=lambda item: str(item.get("name", ""))),
-        "mcps": [component_to_dict(item) for item in sorted(mcps, key=_legacy_component_sort_key)],
-        "skills": [component_to_dict(item) for item in sorted(skills, key=_legacy_component_sort_key)],
-        "hooks": [component_to_dict(item) for item in sorted(hooks, key=_legacy_component_sort_key)],
-        "agents": [component_to_dict(item) for item in sorted(agents, key=_legacy_component_sort_key)],
     }
 
 

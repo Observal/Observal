@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import ast
-import base64
 import importlib.metadata
 import json
 import os
@@ -133,6 +132,49 @@ def test_handle_error_preserves_request_id_and_http_status():
     assert raised.value.request_id == "request-123"
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("https://registry.example.test/", "https://registry.example.test"),
+        ("http://localhost:8000/", "http://localhost:8000"),
+        ("http://127.0.0.2:8000", "http://127.0.0.2:8000"),
+        ("http://[::1]:8000", "http://[::1]:8000"),
+    ],
+)
+def test_server_url_validation_allows_https_and_loopback_http(value, expected):
+    from observal_cli import config
+
+    assert config.validate_server_url(value) == expected
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "http://registry.example.test",
+        "http://10.0.0.8:8000",
+        "registry.example.test",
+        "https://user:password@registry.example.test",
+    ],
+)
+def test_server_url_validation_rejects_unsafe_values(value):
+    from observal_cli import config
+
+    with pytest.raises(ValueError):
+        config.validate_server_url(value)
+
+
+def test_config_load_rejects_insecure_environment_server(monkeypatch):
+    from observal_cli import config
+
+    monkeypatch.setattr(config, "load_persisted", lambda: {})
+    monkeypatch.setenv("OBSERVAL_SERVER_URL", "http://registry.example.test")
+
+    with pytest.raises(CliError) as error:
+        config.load()
+
+    assert error.value.category is ErrorCategory.VALIDATION
+
+
 def test_config_save_sets_permissions(tmp_path):
     """Config save sets 0o600 permissions."""
     from observal_cli import config
@@ -206,6 +248,35 @@ def test_client_builds_bearer_and_version_headers(monkeypatch):
     }
     get_config.assert_called_once_with()
     enforce.assert_called_once_with(base_url)
+
+
+def test_client_rejects_insecure_remote_http_before_sending_credentials(monkeypatch):
+    monkeypatch.setattr(
+        client.config,
+        "get_or_exit",
+        lambda: {"server_url": "http://registry.example.test", "access_token": "fake-access-token"},
+    )
+    enforce = MagicMock()
+    monkeypatch.setattr(client, "_enforce_version_once", enforce)
+
+    with pytest.raises(CliError) as error:
+        client._client()
+
+    assert error.value.category is ErrorCategory.VALIDATION
+    enforce.assert_not_called()
+
+
+def test_refresh_rejects_insecure_remote_http(monkeypatch):
+    post = MagicMock(side_effect=AssertionError("refresh token must not be sent over cleartext HTTP"))
+    monkeypatch.setattr(
+        client.config,
+        "load",
+        lambda: {"server_url": "http://registry.example.test", "refresh_token": "fake-refresh-token"},
+    )
+    monkeypatch.setattr(client.httpx, "post", post)
+
+    assert client._try_refresh_token() is False
+    post.assert_not_called()
 
 
 def test_request_requires_authenticated_configuration(monkeypatch):
@@ -597,6 +668,7 @@ def test_refresh_saves_rotated_tokens(monkeypatch):
         "https://registry.example.test/api/v1/auth/token/refresh",
         json={"refresh_token": "fake-old-refresh-token"},
         timeout=10,
+        trust_env=False,
     )
     save.assert_called_once_with(
         {
@@ -718,47 +790,31 @@ def test_unauthorized_request_refreshes_and_retries_once(monkeypatch):
     refresh.assert_called_once_with()
 
 
-def test_post_refreshes_expired_access_token_before_single_request(monkeypatch):
-    payload = base64.urlsafe_b64encode(json.dumps({"exp": 0}).encode()).decode().rstrip("=")
-    expired_token = f"header.{payload}.signature"
-    fresh_token = "fresh-access-token"
-    clients = iter(
-        [
-            ("https://registry.example.test", {"Authorization": f"Bearer {expired_token}"}),
-            ("https://registry.example.test", {"Authorization": f"Bearer {fresh_token}"}),
-        ]
-    )
-    post = MagicMock(return_value=_response(200, data={"ok": True}))
-    refresh = MagicMock(return_value=True)
-    monkeypatch.setattr(client, "_client", lambda: next(clients))
-    monkeypatch.setattr(client.config, "get_timeout", lambda: 30)
-    monkeypatch.setattr(client.httpx, "post", post)
-    monkeypatch.setattr(client, "_try_refresh_token", refresh)
+def test_post_refreshes_after_unauthorized_response(monkeypatch):
+    responses = iter([_response(401, data={"detail": "expired"}), _response(200, data={"ok": True})])
+    requests = []
 
-    assert client.post("/api/v1/mcps/draft", {"name": "safe"}) == {"ok": True}
+    def post(url, **kwargs):
+        requests.append((url, {**kwargs, "headers": dict(kwargs["headers"])}))
+        return next(responses)
 
-    refresh.assert_called_once_with()
-    post.assert_called_once()
-    assert post.call_args.kwargs["headers"]["Authorization"] == f"Bearer {fresh_token}"
-
-
-def test_post_never_replays_after_unauthorized_response(monkeypatch):
-    post = MagicMock(return_value=_response(401, data={"detail": "expired"}))
     refresh = MagicMock(return_value=True)
     monkeypatch.setattr(
         client,
         "_client",
-        lambda: ("https://registry.example.test", {"Authorization": "Bearer fake-access-token"}),
+        lambda: ("https://registry.example.test", {"Authorization": "Bearer fake-old-access-token"}),
     )
-    monkeypatch.setattr(client.httpx, "post", post)
+    monkeypatch.setattr(client.config, "get_timeout", lambda: 30)
+    monkeypatch.setattr(client.config, "load", lambda: {"access_token": "fake-new-access-token"})
     monkeypatch.setattr(client, "_try_refresh_token", refresh)
+    monkeypatch.setattr(client.httpx, "post", post)
 
-    with pytest.raises(CliError) as caught:
-        client.post("/api/v1/mcps/draft", {"name": "safe"})
+    assert client.post("/api/v1/mcps/draft", {"name": "safe"}) == {"ok": True}
 
-    assert caught.value.category is ErrorCategory.AUTH
-    post.assert_called_once()
-    refresh.assert_not_called()
+    assert len(requests) == 2
+    assert requests[0][1]["headers"]["Authorization"] == "Bearer fake-old-access-token"
+    assert requests[1][1]["headers"]["Authorization"] == "Bearer fake-new-access-token"
+    refresh.assert_called_once_with()
 
 
 def test_unauthorized_request_never_refreshes_twice(monkeypatch):
@@ -850,6 +906,7 @@ def test_http_wrappers_construct_authenticated_requests(monkeypatch, method):
             "X-Observal-CLI-Version": "3.2.1",
         },
         timeout=13,
+        trust_env=False,
         **payload,
     )
     enforce.assert_called_once_with("https://registry.example.test")
@@ -1013,7 +1070,6 @@ def test_request_json_forwards_method_query_and_body(monkeypatch):
         "patch",
         "https://registry.example.test/api/v1/items/id",
         {},
-        allow_auth_refresh=False,
         params={"notify": "true"},
         json={"name": "updated"},
     )
@@ -1251,6 +1307,7 @@ def test_registered_agent_policy_uses_bearer_header(monkeypatch):
         "https://registry.example.test/api/v1/admin/registered-agents-only",
         headers={"Authorization": "Bearer fake-access-token"},
         timeout=5,
+        trust_env=False,
     )
 
 
@@ -1304,6 +1361,7 @@ def test_registered_name_helpers_filter_empty_names(monkeypatch, function_name, 
         f"https://registry.example.test{path}",
         headers={"Authorization": "Bearer fake-access-token"},
         timeout=5,
+        trust_env=False,
     )
 
 
