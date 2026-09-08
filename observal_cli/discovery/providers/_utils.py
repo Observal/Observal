@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -81,8 +82,11 @@ def _bounded_reader(stream, chunks: list[bytes], state: dict[str, int | bool], l
 def run_bounded(command: Sequence[str], timeout: float) -> CommandOutput:
     """Run an argument-array command while bounding memory used for output."""
 
+    if not command or not (executable := shutil.which(command[0])):
+        raise FileNotFoundError(command[0] if command else "")
+    resolved_command = [executable, *command[1:]]
     process: Popen[bytes] = subprocess.Popen(
-        list(command),
+        resolved_command,
         shell=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

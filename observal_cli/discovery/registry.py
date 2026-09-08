@@ -168,7 +168,7 @@ def classify_registry_candidates(
     diagnostics: list[DiscoveryDiagnostic] = []
     registry_candidates = [candidate for candidate in candidates if candidate.component_type in _MY_PATHS]
     for candidate in candidates:
-        if candidate not in registry_candidates:
+        if candidate.component_type not in _MY_PATHS:
             _reset_registry_reasons(candidate)
             candidate.registry_status = RegistryStatus.NOT_CHECKED
             candidate.registration_status = RegistrationStatus.NOT_APPLICABLE

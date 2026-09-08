@@ -78,6 +78,17 @@ def test_discovered_agent_converts_to_validated_in_memory_definition() -> None:
     assert validate_agent_definition(definition) == definition
 
 
+@pytest.mark.parametrize("version", ["1.0", "1.0.0rc1", "1.0.0+local", "1.0.0.0"])
+def test_agent_definition_rejects_versions_outside_server_semver_contract(version: str) -> None:
+    definition = _definition()
+    definition["version"] = version
+
+    with pytest.raises(AgentDefinitionError) as raised:
+        validate_agent_definition(definition)
+
+    assert raised.value.field == "version"
+
+
 def test_discovered_agent_uses_yaml_payload_builder_and_draft_default_version() -> None:
     payload = build_discovered_agent_draft_payload(_candidate(), owner="alice")
 

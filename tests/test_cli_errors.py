@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import ast
+import base64
 import importlib.metadata
 import json
 import os
@@ -61,6 +62,7 @@ def isolated_client(monkeypatch):
     clock = SimpleNamespace(
         monotonic=MagicMock(return_value=100.0),
         sleep=MagicMock(side_effect=AssertionError("unexpected real retry delay")),
+        time=MagicMock(return_value=100.0),
     )
     monkeypatch.setattr(client, "time", clock)
     monkeypatch.setattr(client, "optic", MagicMock())
@@ -714,6 +716,30 @@ def test_unauthorized_request_refreshes_and_retries_once(monkeypatch):
     assert requests[0][1]["timeout"] == requests[1][1]["timeout"] == 21
     assert headers["Authorization"] == "Bearer fake-new-access-token"
     refresh.assert_called_once_with()
+
+
+def test_post_refreshes_expired_access_token_before_single_request(monkeypatch):
+    payload = base64.urlsafe_b64encode(json.dumps({"exp": 0}).encode()).decode().rstrip("=")
+    expired_token = f"header.{payload}.signature"
+    fresh_token = "fresh-access-token"
+    clients = iter(
+        [
+            ("https://registry.example.test", {"Authorization": f"Bearer {expired_token}"}),
+            ("https://registry.example.test", {"Authorization": f"Bearer {fresh_token}"}),
+        ]
+    )
+    post = MagicMock(return_value=_response(200, data={"ok": True}))
+    refresh = MagicMock(return_value=True)
+    monkeypatch.setattr(client, "_client", lambda: next(clients))
+    monkeypatch.setattr(client.config, "get_timeout", lambda: 30)
+    monkeypatch.setattr(client.httpx, "post", post)
+    monkeypatch.setattr(client, "_try_refresh_token", refresh)
+
+    assert client.post("/api/v1/mcps/draft", {"name": "safe"}) == {"ok": True}
+
+    refresh.assert_called_once_with()
+    post.assert_called_once()
+    assert post.call_args.kwargs["headers"]["Authorization"] == f"Bearer {fresh_token}"
 
 
 def test_post_never_replays_after_unauthorized_response(monkeypatch):

@@ -230,6 +230,46 @@ def test_complete_discovery_pipeline_combines_providers_matches_lock_and_never_w
     write.assert_not_called()
 
 
+def test_discovery_reports_malformed_lockfile_without_traceback(tmp_path, monkeypatch) -> None:
+    from observal_cli import config, lockfile
+
+    lock_path = tmp_path / "lockfile.json"
+    lock_path.write_text("{broken")
+    monkeypatch.setattr(lockfile, "LOCKFILE_PATH", lock_path)
+    monkeypatch.setattr(config, "load", Mock(return_value={"server_url": "https://registry.test"}))
+    monkeypatch.setattr("observal_cli.discovery.collector.discover_npm", Mock(return_value=ProviderResult()))
+    monkeypatch.setattr("observal_cli.discovery.collector.discover_pipx", Mock(return_value=ProviderResult()))
+    monkeypatch.setattr("observal_cli.discovery.collector.discover_uv", Mock(return_value=ProviderResult()))
+    monkeypatch.setattr("observal_cli.discovery.collector.classify_registry_candidates", Mock(return_value=[]))
+
+    result = collect_discovery_scan({}, home=tmp_path, project_dir=tmp_path)
+
+    assert [(item.provider, item.code) for item in result.diagnostics] == [
+        ("lockfile", DiagnosticCode.REGISTRY_UNAVAILABLE)
+    ]
+
+
+def test_discovery_reports_malformed_registry_url_without_traceback(tmp_path, monkeypatch) -> None:
+    from observal_cli import config, lockfile
+
+    lock_path = tmp_path / "lockfile.json"
+    lock_path.write_text('{"lock_version": 2, "registries": {}}')
+    monkeypatch.setattr(lockfile, "LOCKFILE_PATH", lock_path)
+    monkeypatch.setattr(config, "load", Mock(return_value={"server_url": "https://registry.test:notaport"}))
+    monkeypatch.setattr("observal_cli.discovery.collector.discover_npm", Mock(return_value=ProviderResult()))
+    monkeypatch.setattr("observal_cli.discovery.collector.discover_pipx", Mock(return_value=ProviderResult()))
+    monkeypatch.setattr("observal_cli.discovery.collector.discover_uv", Mock(return_value=ProviderResult()))
+    classify = Mock(return_value=[])
+    monkeypatch.setattr("observal_cli.discovery.collector.classify_registry_candidates", classify)
+
+    result = collect_discovery_scan({}, home=tmp_path, project_dir=tmp_path)
+
+    assert [(item.provider, item.code) for item in result.diagnostics] == [
+        ("lockfile", DiagnosticCode.REGISTRY_UNAVAILABLE)
+    ]
+    classify.assert_called_once_with([], configuration={})
+
+
 def test_harness_filtered_discovery_suppresses_unrelated_package_candidates(tmp_path, monkeypatch) -> None:
     from observal_cli import config, lockfile
 

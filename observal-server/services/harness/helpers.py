@@ -260,6 +260,15 @@ def _inject_agent_id(mcp_config: dict, agent_id: str):
             cfg["env"]["OBSERVAL_AGENT_ID"] = agent_id
 
 
+def installed_component_version(resolved_version: str | None, listing: object) -> str | None:
+    """Return the concrete selected version while preserving explicit pins."""
+
+    if resolved_version in (None, "latest"):
+        version = getattr(listing, "version", None)
+        return version if isinstance(version, str) else None
+    return resolved_version
+
+
 def local_registry_names(listings: dict) -> dict:
     """Use bare slugs unless this install contains the same slug from multiple namespaces."""
     slugs = Counter(registry_item_slug(listing) for listing in listings.values())

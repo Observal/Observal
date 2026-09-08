@@ -102,6 +102,26 @@ def test_non_untracked_candidate_never_prompts_or_invokes_mutation(monkeypatch, 
     post.assert_not_called()
 
 
+def test_invalid_target_is_skipped_without_aborting_later_candidates(monkeypatch) -> None:
+    invalid = _candidate("!!!")
+    valid = _candidate("Valid Agent")
+    _identity(monkeypatch)
+    monkeypatch.setattr(registration, "classify_registry_candidates", Mock(return_value=[]))
+    post = Mock(side_effect=AssertionError("declined candidate must not mutate"))
+    monkeypatch.setattr(registration.client, "post", post)
+    confirm = Mock(return_value=False)
+
+    results = register_discovery_candidates([invalid, valid], stdin_is_tty=True, confirm=confirm, configuration={})
+
+    assert [result.status for result in results] == [
+        RegistrationResultStatus.SKIPPED,
+        RegistrationResultStatus.DECLINED,
+    ]
+    assert "canonical Registry target" in results[0].message
+    confirm.assert_called_once_with("Create this Registry draft?", default=False)
+    post.assert_not_called()
+
+
 def test_decline_and_cancel_never_mutate(monkeypatch) -> None:
     _identity(monkeypatch)
     monkeypatch.setattr(registration, "classify_registry_candidates", Mock(return_value=[]))
