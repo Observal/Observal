@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 VishnuM049 <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Hook registry CLI commands."""
@@ -19,6 +20,7 @@ from rich import print as rprint
 from rich.table import Table
 
 from observal_cli import client, config
+from observal_cli.component_drafts import DraftPayloadError, create_hook_draft
 from observal_cli.constants import (
     HARNESS_CAPABILITIES,
     VALID_HARNESSES,
@@ -41,6 +43,20 @@ from observal_cli.render import (
     spinner,
     status_badge,
 )
+
+
+def _create_hook_draft_or_fail(payload: dict) -> dict:
+    try:
+        return create_hook_draft(payload)
+    except DraftPayloadError as error:
+        fail(
+            ErrorCategory.VALIDATION,
+            str(error),
+            operation="Save hook draft",
+            resource="hook draft payload",
+            remediation="Correct the draft fields and retry.",
+        )
+
 
 hook_app = typer.Typer(
     help=(
@@ -331,8 +347,7 @@ def hook_submit(
     client.add_publish_target(payload, team, visibility)
     submit_context = nullcontext() if output == "json" else spinner("Saving hook...")
     with submit_context:
-        endpoint = "/api/v1/hooks/draft" if draft else "/api/v1/hooks/submit"
-        result = client.post(endpoint, payload)
+        result = _create_hook_draft_or_fail(payload) if draft else client.post("/api/v1/hooks/submit", payload)
     if output == "json":
         output_json(result)
         return

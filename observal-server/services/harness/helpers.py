@@ -260,7 +260,7 @@ def _inject_agent_id(mcp_config: dict, agent_id: str):
             cfg["env"]["OBSERVAL_AGENT_ID"] = agent_id
 
 
-def _local_registry_names(listings: dict) -> dict:
+def local_registry_names(listings: dict) -> dict:
     """Use bare slugs unless this install contains the same slug from multiple namespaces."""
     slugs = Counter(registry_item_slug(listing) for listing in listings.values())
     duplicates = {slug for slug, count in slugs.items() if count > 1}
@@ -300,7 +300,7 @@ def _build_sandbox_mcp_entry(sandbox_listings: dict, harness: str) -> dict:
         return {}
 
     sandboxes_json = []
-    local_names = _local_registry_names(sandbox_listings)
+    local_names = local_registry_names(sandbox_listings)
     for _lid, listing in sandbox_listings.items():
         resource_limits = getattr(listing, "resource_limits", {}) or {}
         if not isinstance(resource_limits, dict):
@@ -373,7 +373,7 @@ def _build_mcp_configs(
     if adapter is None:
         raise ValueError(f"No adapter registered for harness: {harness!r}")
 
-    local_names = _local_registry_names(mcp_listings)
+    local_names = local_registry_names(mcp_listings)
     for comp in agent.components:
         if comp.component_type != "mcp":
             continue
@@ -416,7 +416,7 @@ def _build_skill_configs(
     """
     skill_listings = skill_listings or {}
     skills: list[dict] = []
-    local_names = _local_registry_names(skill_listings)
+    local_names = local_registry_names(skill_listings)
 
     for comp in agent.components:
         if comp.component_type != "skill":
@@ -464,7 +464,7 @@ def _build_hook_configs(
     """
     hook_listings = hook_listings or {}
     hooks: list[dict] = []
-    local_names = _local_registry_names(hook_listings)
+    local_names = local_registry_names(hook_listings)
 
     for comp in agent.components:
         if comp.component_type != "hook":
@@ -797,7 +797,7 @@ def _generate_prompt_files(
         return []
     names = component_names or {}
     files: list[dict] = []
-    local_names = _local_registry_names(prompt_listings)
+    local_names = local_registry_names(prompt_listings)
     for comp in getattr(agent, "components", []):
         if comp.component_type != "prompt":
             continue

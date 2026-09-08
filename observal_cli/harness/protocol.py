@@ -24,6 +24,8 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from observal_cli.discovery.models import AdapterDiscoveryResult
+
 
 # ── Feature → Method mapping ──────────────────────────────────────
 
@@ -220,6 +222,14 @@ class HarnessAdapter(Protocol):
         Raises:
             NotSupportedError: If this harness does not have mcp_servers feature.
         """
+        ...
+
+    def discover_home(self, home: Path | None = None) -> AdapterDiscoveryResult:
+        """Return rich user-scope evidence and expected-data diagnostics."""
+        ...
+
+    def discover_project(self, project_dir: Path) -> AdapterDiscoveryResult:
+        """Return rich project-scope evidence and expected-data diagnostics."""
         ...
 
     def get_hook_spec(self) -> HookSpec:

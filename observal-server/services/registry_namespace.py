@@ -5,22 +5,31 @@
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select, union_all, update
 
 # The namespace charset is shared with the CLI, which enforces it client-side.
 from observal_shared.namespace_rules import NAMESPACE_RULE_TEXT, is_valid_namespace
+from observal_shared.registry_slug import (
+    RESERVED_SLUGS as RESERVED_SLUGS,
+)
+from observal_shared.registry_slug import (
+    SLUG_RE as SLUG_RE,
+)
+from observal_shared.registry_slug import (
+    slugify as slugify,
+)
+from observal_shared.registry_slug import (
+    validate_slug as validate_slug,
+)
 
 if TYPE_CHECKING:
     import uuid
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
-SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 RESERVED_NAMESPACES = frozenset({"admin", "api", "auth", "registry", "root", "system", "teams", "users"})
-RESERVED_SLUGS = frozenset({"archive", "draft", "install", "resolve", "restore", "submit", "unarchive", "versions"})
 
 
 def validate_namespace(handle: str, *, allow_reserved: bool = False) -> str:
@@ -29,28 +38,6 @@ def validate_namespace(handle: str, *, allow_reserved: bool = False) -> str:
         raise ValueError(NAMESPACE_RULE_TEXT)
     if not allow_reserved and value in RESERVED_NAMESPACES:
         raise ValueError(f"Namespace '{value}' is reserved")
-    return value
-
-
-def slugify(value: str) -> str:
-    slug = re.sub(r"[^a-z0-9_-]+", "-", value.strip().lower()).strip("-_")
-    if not slug:
-        raise ValueError("Name must contain at least one letter or number")
-    if not slug[0].isalnum():
-        slug = f"item-{slug}"
-    slug = slug[:64].rstrip("-_")
-    return validate_slug(slug)
-
-
-def validate_slug(slug: str, *, allow_reserved: bool = False) -> str:
-    value = slug.strip().lower()
-    if not SLUG_RE.fullmatch(value):
-        raise ValueError(
-            "Slug must be at most 64 characters, start with a letter or number, "
-            "and contain only lowercase letters, numbers, hyphens, and underscores"
-        )
-    if not allow_reserved and value in RESERVED_SLUGS:
-        raise ValueError(f"Slug '{value}' is reserved")
     return value
 
 

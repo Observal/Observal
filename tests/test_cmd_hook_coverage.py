@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Observal Contributors
+# SPDX-FileCopyrightText: 2026 VishnuM049 <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 from __future__ import annotations
@@ -113,6 +114,35 @@ def test_submit_from_file_sets_owner_and_preserves_publish_target(tmp_path, monk
     expected = {**source_payload, "owner": "alice"}
     publish_target.assert_called_once_with(expected, "platform", "team")
     post.assert_called_once_with("/api/v1/hooks/draft", expected)
+
+
+def test_hook_draft_translates_builder_error_before_http(tmp_path, monkeypatch):
+    source = tmp_path / "hook.json"
+    source.write_text(
+        json.dumps(
+            {
+                "name": "file-hook",
+                "version": "1.0.0",
+                "description": "Loaded from a file",
+                "event": "Stop",
+                "handler_type": "command",
+                "handler_config": {"command": "true"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    post = Mock(side_effect=AssertionError("validation must happen before HTTP"))
+    monkeypatch.setattr(hook.client, "post", post)
+    monkeypatch.setattr(hook, "create_hook_draft", Mock(side_effect=hook.DraftPayloadError("invalid draft")))
+
+    result = runner.invoke(
+        app,
+        ["registry", "hook", "submit", "--from-file", str(source), "--draft", "--output", "json"],
+    )
+
+    assert result.exit_code == 7
+    assert '"category": "validation"' in result.output
+    post.assert_not_called()
 
 
 @pytest.mark.parametrize(
