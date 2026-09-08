@@ -66,6 +66,68 @@ class TestMcpValidation:
                 supported_harnesses=["notepad"],
             )
 
+    @pytest.mark.parametrize("transport", ["stdio", "sse", "streamable-http"])
+    def test_valid_mcp_transports_accepted(self, transport):
+        from schemas.mcp import McpDraftRequest, McpSubmitRequest, McpUpdateRequest
+
+        submit = McpSubmitRequest(
+            name="test-mcp",
+            version="1.0.0",
+            description="Description",
+            owner="testowner",
+            category="general",
+            url="https://example.test/mcp",
+            transport=transport,
+        )
+        assert submit.transport == transport
+        assert McpDraftRequest(name="test-mcp", transport=transport).transport == transport
+        assert McpUpdateRequest(transport=transport).transport == transport
+
+    @pytest.mark.parametrize("request_kind", ["submit", "draft", "update"])
+    def test_legacy_http_transport_normalizes_to_streamable_http(self, request_kind):
+        from schemas.mcp import McpDraftRequest, McpSubmitRequest, McpUpdateRequest
+
+        payload = {"transport": "http"}
+        if request_kind == "submit":
+            payload.update(
+                name="test-mcp",
+                version="1.0.0",
+                description="Description",
+                owner="testowner",
+                category="general",
+                url="https://example.test/mcp",
+            )
+            model = McpSubmitRequest
+        elif request_kind == "draft":
+            payload["name"] = "test-mcp"
+            model = McpDraftRequest
+        else:
+            model = McpUpdateRequest
+        assert model(**payload).transport == "streamable-http"
+
+    @pytest.mark.parametrize("request_kind", ["submit", "draft", "update"])
+    def test_noncanonical_mcp_transport_rejected(self, request_kind):
+        from schemas.mcp import McpDraftRequest, McpSubmitRequest, McpUpdateRequest
+
+        payload = {"transport": "websocket"}
+        if request_kind == "submit":
+            payload.update(
+                name="test-mcp",
+                version="1.0.0",
+                description="Description",
+                owner="testowner",
+                category="general",
+                url="https://example.test/mcp",
+            )
+            model = McpSubmitRequest
+        elif request_kind == "draft":
+            payload["name"] = "test-mcp"
+            model = McpDraftRequest
+        else:
+            model = McpUpdateRequest
+        with pytest.raises(ValueError, match="Invalid transport"):
+            model(**payload)
+
     def test_underscore_ide_normalized_to_hyphen(self):
         from schemas.mcp import McpSubmitRequest
 

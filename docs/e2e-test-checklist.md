@@ -146,8 +146,12 @@
 - [ ] As User C, leave ratings on the same agents/components
 - [ ] Verify aggregate rating summary displays correctly
 
-## 17. CLI -- Scan, Doctor & Patch
-- [ ] Run `observal scan` to discover harness configs (read-only)
+## 17. CLI -- Scan, Discovery, Doctor & Patch
+- [ ] Run `observal scan` to discover harness configs; verify it remains read-only and preserves legacy output
+- [ ] Run `observal scan --discover --output json`; verify candidates and redacted diagnostics appear without prompts or mutations
+- [ ] Run `observal scan --discover` in a TTY and with piped stdin; verify neither mode writes local or Registry state
+- [ ] Verify ambiguous, incomplete, unsupported, and Registry-unavailable candidates are reported as ineligible
+- [ ] Use the matching `registry <type> submit --draft` or `agent publish --draft` command to create a draft explicitly
 - [ ] Run `observal doctor patch --all-harnesses --dry-run` to preview instrumentation
 - [ ] Run `observal doctor patch --all-harnesses` to instrument harnesses
 - [ ] Run `observal doctor --output json` to check harness compatibility

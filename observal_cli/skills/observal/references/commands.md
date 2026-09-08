@@ -14,7 +14,7 @@ Every command available in the installed CLI. This block is generated from the T
 - `observal api`: Call an authenticated Observal JSON API endpoint.
 - `observal outdated`: Show installed agents and standalone components with their registry status.
 - `observal reconcile`: Backfill local session records missed by automatic hook delivery
-- `observal scan`: Show a read-only inventory of your local harness setup.
+- `observal scan`: Show a read-only inventory of local components and harness setup.
 
 **`observal admin`**: Core administration and submission review commands
 

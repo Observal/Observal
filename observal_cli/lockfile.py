@@ -17,20 +17,55 @@ from __future__ import annotations
 import fcntl
 import hashlib
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit, urlunsplit
 
 from loguru import logger as optic
 
 from observal_cli.config import CONFIG_DIR
 
+if TYPE_CHECKING:
+    from observal_cli.discovery.models import SanitizedLaunch
+
 LOCKFILE_PATH = CONFIG_DIR / "lockfile.json"
 _LOCKFILE_LOCK = CONFIG_DIR / "lockfile.lock"
 
 # Schema version: bump when the structure changes in a breaking way
 LOCK_VERSION = 2
+_LAUNCH_FINGERPRINT_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+
+def _validated_launch_fingerprint(
+    value: str | None,
+    launch: SanitizedLaunch | None = None,
+) -> str | None:
+    if launch is not None:
+        from observal_cli.discovery.normalize import fingerprint_launch
+
+        computed = fingerprint_launch(launch)
+        if value is not None and value != computed:
+            raise ValueError("launch_fingerprint does not match the canonical launch")
+        value = computed
+    if value is None:
+        return None
+    if not _LAUNCH_FINGERPRINT_RE.fullmatch(value):
+        raise ValueError("launch_fingerprint must be a canonical SHA-256 launch fingerprint")
+    return value
+
+
+def _upsert_launch_fingerprint(
+    existing: dict[str, Any] | None,
+    value: str | None,
+    launch: SanitizedLaunch | None,
+) -> str | None:
+    fingerprint = _validated_launch_fingerprint(value, launch)
+    if fingerprint is not None or value is not None or launch is not None:
+        return fingerprint
+    persisted = existing.get("launch_fingerprint") if existing else None
+    return persisted if isinstance(persisted, str) and _LAUNCH_FINGERPRINT_RE.fullmatch(persisted) else None
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +174,39 @@ def read_registry_lockfile(*, create: bool = False) -> tuple[dict, dict]:
     return data, registry
 
 
+def read_registry_snapshot(server_url: str | None) -> dict:
+    """Read one Registry section without migration or any filesystem writes.
+
+    Discovery is explicitly read-only, so it cannot use ``read_lockfile()``,
+    whose compatibility behavior may migrate an old version-1 file.
+    """
+
+    if not LOCKFILE_PATH.exists():
+        return {"server_url": server_url or "", "harnesses": {}}
+    try:
+        data = json.loads(LOCKFILE_PATH.read_text())
+    except (json.JSONDecodeError, OSError) as exc:
+        raise RuntimeError(f"Cannot read {LOCKFILE_PATH}: {exc}") from exc
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Invalid lockfile structure in {LOCKFILE_PATH}")
+    if data.get("lock_version") == 1:
+        harnesses = data.get("harnesses", {})
+        if not isinstance(harnesses, dict):
+            raise RuntimeError(f"Invalid lockfile structure in {LOCKFILE_PATH}")
+        return {"server_url": server_url or "", "harnesses": harnesses}
+    if data.get("lock_version") != LOCK_VERSION or not isinstance(data.get("registries"), dict):
+        raise RuntimeError(f"Unsupported lockfile version in {LOCKFILE_PATH}")
+    if not server_url:
+        return {"server_url": "", "harnesses": {}}
+    normalized = normalize_server_url(server_url)
+    registry = data["registries"].get(normalized)
+    if registry is None:
+        return {"server_url": normalized, "harnesses": {}}
+    if not isinstance(registry, dict) or not isinstance(registry.get("harnesses"), dict):
+        raise RuntimeError(f"Invalid lockfile structure in {LOCKFILE_PATH}")
+    return registry
+
+
 def _empty_lockfile() -> dict:
     return {
         "lock_version": LOCK_VERSION,
@@ -214,6 +282,8 @@ def upsert_agent(
     namespace: str | None = None,
     slug: str | None = None,
     local_name: str | None = None,
+    launch_fingerprint: str | None = None,
+    launch: SanitizedLaunch | None = None,
 ) -> None:
     """Add or update an agent entry in the lock file.
 
@@ -224,6 +294,9 @@ def upsert_agent(
     data, registry = read_registry_lockfile(create=True)
     harness_section = _ensure_harness(registry, harness)
     agents = harness_section["agents"]
+    existing_idx = _find_agent_idx(agents, agent_id, scope, directory)
+    existing = agents[existing_idx] if existing_idx is not None else None
+    fingerprint = _upsert_launch_fingerprint(existing, launch_fingerprint, launch)
 
     entry = {
         "name": name,
@@ -244,9 +317,10 @@ def upsert_agent(
         entry["qualified_name"] = f"{namespace}/{slug}"
     if local_name:
         entry["local_name"] = local_name
+    if fingerprint:
+        entry["launch_fingerprint"] = fingerprint
 
     # Find existing entry to update
-    existing_idx = _find_agent_idx(agents, agent_id, scope, directory)
     if existing_idx is not None:
         agents[existing_idx] = entry
     else:
@@ -303,12 +377,17 @@ def upsert_standalone(
     namespace: str | None = None,
     slug: str | None = None,
     local_name: str | None = None,
+    launch_fingerprint: str | None = None,
+    launch: SanitizedLaunch | None = None,
 ) -> None:
     """Add or update a standalone component (MCP, skill, hook, etc.) in the lock file."""
     optic.debug("upsert_standalone: harness={}, type={}, name={}", harness, component_type, name)
     data, registry = read_registry_lockfile(create=True)
     harness_section = _ensure_harness(registry, harness)
     standalone = harness_section["standalone"]
+    existing_idx = _find_standalone_idx(standalone, component_type, component_id, scope, directory)
+    existing = standalone[existing_idx] if existing_idx is not None else None
+    fingerprint = _upsert_launch_fingerprint(existing, launch_fingerprint, launch)
 
     entry: dict[str, Any] = {
         "type": component_type,
@@ -330,9 +409,10 @@ def upsert_standalone(
         entry["qualified_name"] = f"{namespace}/{slug}"
     if local_name:
         entry["local_name"] = local_name
+    if fingerprint:
+        entry["launch_fingerprint"] = fingerprint
 
     # Find existing entry to update (match on type + id + scope + directory)
-    existing_idx = _find_standalone_idx(standalone, component_type, component_id, scope, directory)
     if existing_idx is not None:
         standalone[existing_idx] = entry
     else:

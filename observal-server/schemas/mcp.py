@@ -12,6 +12,7 @@ from models.mcp import ListingStatus
 from schemas.constants import (
     VALID_MCP_CATEGORIES,
     VALID_MCP_FRAMEWORKS,
+    VALID_MCP_TRANSPORTS,
     Visibility,
     make_harness_list_validator,
     make_option_validator,
@@ -33,6 +34,14 @@ class McpHeader(BaseModel):
 def _coerce_env_vars(v):
     """Coerce None → [] so DB NULLs don't break serialization."""
     return v or []
+
+
+def _validate_transport(value: str | None) -> str | None:
+    if value == "http":
+        value = "streamable-http"
+    if value is not None and value not in VALID_MCP_TRANSPORTS:
+        raise ValueError(f"Invalid transport '{value}'. Valid options: {', '.join(VALID_MCP_TRANSPORTS)}")
+    return value
 
 
 class ClientAnalysis(BaseModel):
@@ -72,6 +81,8 @@ class McpSubmitRequest(BaseModel):
     client_analysis: ClientAnalysis | None = None
 
     _validate_category = field_validator("category")(make_option_validator("category", VALID_MCP_CATEGORIES))
+
+    _validate_transport = field_validator("transport")(_validate_transport)
 
     @field_validator("framework")
     @classmethod
@@ -114,6 +125,8 @@ class McpDraftRequest(BaseModel):
 
     _validate_ides = field_validator("supported_harnesses")(make_harness_list_validator())
 
+    _validate_transport = field_validator("transport")(_validate_transport)
+
 
 class McpUpdateRequest(BaseModel):
     name: str | None = None
@@ -136,6 +149,8 @@ class McpUpdateRequest(BaseModel):
     environment_variables: list[McpEnvVar] | None = None
     setup_instructions: str | None = None
     changelog: str | None = None
+
+    _validate_transport = field_validator("transport")(_validate_transport)
 
 
 class McpCustomFieldResponse(BaseModel):

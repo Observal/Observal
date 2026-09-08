@@ -287,9 +287,9 @@ class TestKiroSkillDiscovery:
         assert skills[0].source == "kiro:skills"
 
 
-class TestKiroMcpDeduplication:
-    def test_duplicate_mcp_names_deduplicated(self, tmp_path: Path):
-        """Same MCP name in global settings and agent file — only one entry kept."""
+class TestKiroMcpIdentity:
+    def test_same_name_mcp_evidence_is_preserved_across_sources(self, tmp_path: Path):
+        """Rich adapter evidence is not collapsed by bare local name."""
         kiro = tmp_path / ".kiro"
         _write_json(
             kiro / "settings" / "mcp.json",
@@ -303,7 +303,7 @@ class TestKiroMcpDeduplication:
             },
         )
         mcps, _, _, _ = _scan_kiro_home(kiro)
-        assert len([m for m in mcps if m.name == "shared-mcp"]) == 1
+        assert len([m for m in mcps if m.name == "shared-mcp"]) == 2
 
     def test_unique_mcps_all_kept(self, tmp_path: Path):
         kiro = tmp_path / ".kiro"

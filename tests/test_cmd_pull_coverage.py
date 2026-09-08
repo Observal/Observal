@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 VishnuM049 <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Focused boundary and behavior coverage for the agent pull command."""
@@ -22,6 +23,8 @@ import yaml
 from typer.testing import CliRunner
 
 import observal_cli.cmd_pull as cmd_pull
+from observal_cli.discovery.normalize import fingerprint_launch
+from observal_cli.harness.cursor import CursorAdapter
 
 RUNNER = CliRunner()
 
@@ -710,6 +713,8 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
                 "component_id": "mcp-1",
                 "component_name": "github",
                 "version_ref": "2.1.0",
+                "namespace": "acme",
+                "slug": "github",
             },
             {
                 "component_type": "skill",
@@ -924,7 +929,15 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
         scope="project",
         directory=str(target.resolve()),
         components=[
-            {"type": "mcp", "name": "github", "id": "mcp-1", "version": "2.1.0"},
+            {
+                "type": "mcp",
+                "name": "github",
+                "id": "mcp-1",
+                "version": "2.1.0",
+                "namespace": "acme",
+                "slug": "github",
+                "qualified_name": "acme/github",
+            },
             {"type": "skill", "name": "review-skill", "id": "skill-1", "version": "3.0.0"},
         ],
         namespace="acme",
@@ -953,6 +966,125 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
         "Registered MCP servers",
     ):
         assert visible in result.output
+
+
+def test_pull_preserves_component_links_when_install_response_has_no_component_records(
+    pull_app: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "project"
+    detail = _agent_detail(
+        component_links=[
+            {
+                "component_type": "skill",
+                "component_id": "skill-1",
+                "component_name": "review-skill",
+                "version_ref": "3.0.0",
+                "namespace": "acme",
+                "slug": "review-skill",
+            }
+        ]
+    )
+    boundaries.get.return_value = detail
+    boundaries.post.return_value = {
+        "config_snippet": {"agent_profile": {"path": "agent.md", "content": "agent\n"}},
+        "installed_components": [],
+    }
+
+    result = _invoke(pull_app, target)
+
+    assert result.exit_code == 0, result.output
+    assert boundaries.upsert.call_args.kwargs["components"] == [
+        {
+            "type": "skill",
+            "name": "review-skill",
+            "id": "skill-1",
+            "version": "3.0.0",
+            "namespace": "acme",
+            "slug": "review-skill",
+            "qualified_name": "acme/review-skill",
+        }
+    ]
+
+
+def test_pull_persists_nested_mcp_fingerprint_matching_discovery(
+    pull_app: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "project"
+    target.mkdir()
+    detail = _agent_detail(
+        mcp_links=[{"mcp_listing_id": "mcp-1", "mcp_name": "Search"}],
+        component_links=[
+            {
+                "component_type": "mcp",
+                "component_id": "mcp-1",
+                "component_name": "search",
+                "version_ref": "2.1.0",
+                "namespace": "acme",
+                "slug": "search",
+            }
+        ],
+    )
+    listing = {
+        "environment_variables": [{"name": "API_KEY"}],
+        "headers": [{"name": "Authorization"}],
+    }
+    boundaries.get.side_effect = lambda path: detail if path.endswith("agents/agent-uuid") else listing
+    definition = {
+        "command": "npx",
+        "args": ["-y", "example-mcp", "--mode", "read"],
+        "env": {"API_KEY": "first-secret", "OBSERVAL_AGENT_ID": "agent-uuid"},
+        "headers": {"Authorization": "Bearer first-secret"},
+        "type": "stdio",
+    }
+    boundaries.post.return_value = {
+        "config_snippet": {
+            "mcp_config": {
+                "path": ".cursor/mcp.json",
+                "content": {"mcpServers": {"search": definition}},
+            },
+            "agent_profile": {"path": ".cursor/agents/reviewer.md", "content": "Review\n"},
+        }
+    }
+    boundaries.adapter.extract_mcp_servers.side_effect = lambda config: config.get("mcpServers", {})
+
+    result = _invoke(pull_app, target, harness="cursor")
+
+    assert result.exit_code == 0, result.output
+    installed_component = boundaries.upsert.call_args.kwargs["components"][0]
+    assert installed_component["launch_fingerprint"].startswith("sha256:")
+
+    discovered = CursorAdapter().discover_project(target)
+    launch = next(item.launch for item in discovered.evidence if item.component.name == "search")
+    assert launch is not None
+    assert installed_component["launch_fingerprint"] == fingerprint_launch(launch)
+    assert "first-secret" not in repr(boundaries.upsert.call_args)
+
+
+def test_collision_safe_server_names_attach_distinct_mcp_fingerprints() -> None:
+    components = [
+        {"type": "mcp", "name": "search", "slug": "search", "local_name": "alice-search"},
+        {"type": "mcp", "name": "search", "slug": "search", "local_name": "bob-search"},
+    ]
+    snippet = {
+        "mcp_config": {
+            "mcpServers": {
+                "alice-search": {"command": "npx", "args": ["alice-search"]},
+                "bob-search": {"command": "npx", "args": ["bob-search"]},
+            }
+        }
+    }
+    adapter = MagicMock()
+    adapter.extract_mcp_servers.side_effect = lambda config: config.get("mcpServers", {})
+
+    cmd_pull._attach_component_launch_fingerprints(components, snippet, adapter)
+
+    assert components[0]["launch_fingerprint"].startswith("sha256:")
+    assert components[1]["launch_fingerprint"].startswith("sha256:")
+    assert components[0]["launch_fingerprint"] != components[1]["launch_fingerprint"]
 
 
 def test_pull_dry_run_previews_all_shapes_without_mutating_boundaries(

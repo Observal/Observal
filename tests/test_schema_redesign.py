@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Harishankar <harishankar0301@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 VishnuM049 <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Tests for the agent-centric schema redesign."""
@@ -512,6 +513,11 @@ class TestMcpValidationField:
         listing.name = "test-mcp"
         listing.status = ListingStatus.pending
         listing.mcp_validated = False
+        listing.versions = []
+        listing.transport = "stdio"
+        listing.command = "npx"
+        listing.url = None
+        listing.docker_image = None
 
         mock_db = _review_db()
         mock_user = MagicMock()
@@ -543,6 +549,11 @@ class TestMcpValidationField:
         listing.name = "validated-mcp"
         listing.status = ListingStatus.pending
         listing.mcp_validated = True
+        listing.versions = []
+        listing.transport = "stdio"
+        listing.command = "npx"
+        listing.url = None
+        listing.docker_image = None
 
         mock_db = _review_db()
         mock_user = MagicMock()

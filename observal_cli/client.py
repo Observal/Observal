@@ -3,11 +3,14 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 VishnuM049 <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
 import time
 import uuid
+from dataclasses import dataclass
+from enum import StrEnum
 from urllib.parse import quote, urlparse, urlunparse
 
 import httpx
@@ -29,6 +32,17 @@ _version_enforced: bool = False
 _EXEMPT_SUBCOMMANDS = frozenset({"self", "server"})
 
 
+class OptionalLookupStatus(StrEnum):
+    FOUND = "found"
+    NOT_FOUND = "not_found"
+
+
+@dataclass(frozen=True)
+class OptionalLookupResult:
+    status: OptionalLookupStatus
+    data: object | None = None
+
+
 def _get_cli_version() -> str:
     """Get current CLI version string for request headers."""
     try:
@@ -41,7 +55,17 @@ def _get_cli_version() -> str:
 
 def _client() -> tuple[str, dict]:
     cfg = config.get_or_exit()
-    base_url = cfg["server_url"].rstrip("/")
+    try:
+        base_url = config.validate_server_url(cfg["server_url"])
+    except ValueError as error:
+        fail(
+            ErrorCategory.VALIDATION,
+            "The configured server URL is unsafe or invalid.",
+            operation="Connect to Observal",
+            resource="server_url",
+            remediation="Use HTTPS, or HTTP only for a loopback address such as http://localhost:8000.",
+            detail=str(error),
+        )
     headers = {
         "Authorization": f"Bearer {cfg['access_token']}",
         "X-Observal-CLI-Version": _get_cli_version(),
@@ -230,8 +254,12 @@ def _try_refresh_token() -> bool:
     """
     cfg = config.load()
     refresh_token = cfg.get("refresh_token")
-    server_url = cfg.get("server_url", "").rstrip("/")
+    server_url = cfg.get("server_url", "")
     if not refresh_token or not server_url:
+        return False
+    try:
+        server_url = config.validate_server_url(server_url)
+    except ValueError:
         return False
 
     try:
@@ -239,6 +267,7 @@ def _try_refresh_token() -> bool:
             f"{server_url}/api/v1/auth/token/refresh",
             json={"refresh_token": refresh_token},
             timeout=10,
+            trust_env=False,
         )
         if r.status_code != 200:
             return False
@@ -268,15 +297,14 @@ def _request_with_retry(
 ) -> httpx.Response:
     """Execute HTTP with transient retries for GET requests only.
 
-    On 401, attempts a token refresh and retries once. Mutations are never
-    retried after a transient response because their server state may be
-    unknown.
+    On 401, refresh the access token and retry once. Other transient responses
+    are retried only for GET requests.
     """
     optic.trace("method={}, url={}", method, url)
     timeout = config.get_timeout()
     func = getattr(httpx, method)
 
-    kwargs: dict = {"headers": headers, "timeout": timeout}
+    kwargs: dict = {"headers": headers, "timeout": timeout, "trust_env": False}
     if params is not None:
         kwargs["params"] = params
     if json is not None:
@@ -487,6 +515,40 @@ def get(
     return _json_response(response, operation=operation, resource=resource)
 
 
+def get_optional(
+    path: str,
+    params: dict | None = None,
+    *,
+    operation: str | None = None,
+    resource: str | None = None,
+) -> OptionalLookupResult:
+    """GET authenticated JSON while treating only HTTP 404 as optional absence."""
+
+    optic.trace("path={}, params={}", path, params)
+    operation, resource = _error_context(
+        operation,
+        resource,
+        default_operation=f"Fetch optional {path}",
+        default_resource=path,
+    )
+    base, headers = _client()
+    request_kwargs = {"params": params} if params is not None else {}
+    try:
+        response = _request_with_retry("get", f"{base}{path}", headers, **request_kwargs)
+    except httpx.HTTPStatusError as error:
+        if error.response.status_code == 404:
+            return OptionalLookupResult(OptionalLookupStatus.NOT_FOUND)
+        _handle_error(error, path, operation=operation, resource=resource)
+    except (httpx.ReadTimeout, httpx.ConnectTimeout) as error:
+        _handle_timeout(path, operation=operation, resource=resource, detail=repr(error))
+    except httpx.ConnectError as error:
+        _handle_connect(operation=operation, resource=resource, detail=repr(error))
+    return OptionalLookupResult(
+        OptionalLookupStatus.FOUND,
+        _json_response(response, operation=operation, resource=resource),
+    )
+
+
 def get_text(
     path: str,
     params: dict | None = None,
@@ -619,6 +681,7 @@ def get_registered_agents_only() -> bool:
             f"{server_url}/api/v1/admin/registered-agents-only",
             headers={"Authorization": f"Bearer {token}"},
             timeout=5,
+            trust_env=False,
         )
         if r.status_code == 200:
             return r.json().get("registered_agents_only", False)
@@ -642,6 +705,7 @@ def get_registered_agent_names() -> set[str]:
             f"{server_url}/api/v1/agents",
             headers={"Authorization": f"Bearer {token}"},
             timeout=5,
+            trust_env=False,
         )
         if r.status_code == 200:
             return {item.get("name", "") for item in r.json() if item.get("name")}
@@ -665,6 +729,7 @@ def get_registered_mcp_names() -> set[str]:
             f"{server_url}/api/v1/mcp",
             headers={"Authorization": f"Bearer {token}"},
             timeout=5,
+            trust_env=False,
         )
         if r.status_code == 200:
             return {item.get("name", "") for item in r.json() if item.get("name")}

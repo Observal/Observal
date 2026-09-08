@@ -152,6 +152,7 @@ def _assert_remote_request(boundaries: SimpleNamespace, *, params: dict[str, str
             "X-Observal-CLI-Version": "4.2.1",
         },
         timeout=None,
+        trust_env=False,
     )
     boundaries.get_config.assert_called_once_with()
     boundaries.get_version.assert_called_once_with()

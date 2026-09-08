@@ -5,19 +5,18 @@
 
 from __future__ import annotations
 
-import json
 import time
 from pathlib import Path
 
+from observal_cli.discovery.adapter_support import RichAdapterScanner, project_legacy
+from observal_cli.discovery.models import AdapterDiscoveryResult, DiscoveryScope
 from observal_cli.harness import (
-    DiscoveredMcp,
     HookSpec,
     ScanResult,
     SessionSource,
     register_adapter,
 )
 from observal_cli.harness.base import BaseAdapter
-from observal_cli.shared.utils import extract_mcp_servers
 
 
 class CursorAdapter(BaseAdapter):
@@ -132,53 +131,48 @@ class CursorAdapter(BaseAdapter):
         return True
 
     def scan_home(self, home: Path | None = None) -> ScanResult:
-        home = home or Path.home()
-        mcp_file = home / ".cursor" / "mcp.json"
-        if not mcp_file.exists():
-            return ScanResult()
-        try:
-            data = json.loads(mcp_file.read_text())
-            servers = extract_mcp_servers(data)
-            mcps = []
-            for name, cfg in servers.items():
-                if isinstance(cfg, dict):
-                    mcps.append(
-                        DiscoveredMcp(
-                            name=name,
-                            command=cfg.get("command"),
-                            args=cfg.get("args", []),
-                            url=cfg.get("url"),
-                            description=f"Cursor global MCP: {name}",
-                            source="cursor:global",
-                        )
-                    )
-            return ScanResult(mcps=mcps)
-        except (json.JSONDecodeError, OSError):
-            return ScanResult()
+        return project_legacy(self.discover_home(home))
 
     def scan_project(self, project_dir: Path) -> ScanResult:
-        mcp_file = project_dir / ".cursor" / "mcp.json"
-        if not mcp_file.exists():
-            return ScanResult()
-        try:
-            data = json.loads(mcp_file.read_text())
-            servers = extract_mcp_servers(data)
-            mcps = []
-            for name, cfg in servers.items():
-                if isinstance(cfg, dict):
-                    mcps.append(
-                        DiscoveredMcp(
-                            name=name,
-                            command=cfg.get("command"),
-                            args=cfg.get("args", []),
-                            url=cfg.get("url"),
-                            description=f"Cursor project MCP: {name}",
-                            source="cursor:project",
-                        )
-                    )
-            return ScanResult(mcps=mcps)
-        except (json.JSONDecodeError, OSError):
-            return ScanResult()
+        return project_legacy(self.discover_project(project_dir))
+
+    def discover_home(self, home: Path | None = None) -> AdapterDiscoveryResult:
+        home = home or Path.home()
+        return self._discover_cursor_root(home / ".cursor", DiscoveryScope.USER, home=home)
+
+    def discover_project(self, project_dir: Path) -> AdapterDiscoveryResult:
+        return self._discover_cursor_root(
+            project_dir / ".cursor",
+            DiscoveryScope.PROJECT,
+            project_dir=project_dir,
+        )
+
+    def _discover_cursor_root(
+        self,
+        root: Path,
+        scope: DiscoveryScope,
+        *,
+        home: Path | None = None,
+        project_dir: Path | None = None,
+    ) -> AdapterDiscoveryResult:
+        scanner = RichAdapterScanner(
+            harness=self.harness_name,
+            scope=scope,
+            root=root,
+            home=home,
+            project_dir=project_dir,
+        )
+        source = "cursor:global" if scope is DiscoveryScope.USER else "cursor:project"
+        scanner.add_mcp_config(root / "mcp.json", source=source, description_prefix="Cursor MCP")
+        scanner.add_markdown_agents(root / "agents", source_prefix="Cursor agent")
+        scanner.add_skills(root / "skills", source="cursor:skills", prefix="Cursor skill")
+        hooks_file = root / "hooks.json"
+        hooks_data = scanner.read_json(hooks_file)
+        if hooks_data is not None:
+            scanner.add_hooks_mapping(
+                hooks_file, hooks_data.get("hooks", hooks_data), name_prefix="cursor", source=source
+            )
+        return scanner.finish()
 
     def get_hook_spec(self) -> HookSpec:
         return HookSpec(

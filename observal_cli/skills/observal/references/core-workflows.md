@@ -52,16 +52,20 @@ Only use keys accepted by `config set`. Authentication fields are managed by `au
 
 ## Local inventory and update checks
 
-`scan` is read-only and never writes harness files.
+Every `scan` mode is read-only and never prompts. Add `--discover` to include bounded npm, pipx, and uv evidence, local lockfile tracking, and authenticated exact Registry classification. Scanning never writes local or Registry state.
 
 ```bash
 observal scan --output json
+observal scan --discover --output json
+observal scan --harness kiro --discover --output json
 observal scan --harness kiro --output json
 observal outdated --output json
 observal outdated --harness claude-code --no-report --output json
 ```
 
-For scan results, report detected harnesses, installed components, Agents, and unregistered items. For outdated results, inspect `items`, `summary`, and `report`. `--no-report` suppresses inbox reporting, not the Registry check.
+Discovery never creates drafts. For default scan results, report detected harnesses and installed components. Discover output additionally includes normalized `candidates`, typed tracking/Registry/readiness states, and non-fatal `diagnostics`. A harness-filtered discover run suppresses unrelated package-only candidates. Treat locally tracked candidates, Registry/auth uncertainty, ambiguity, incomplete evidence, unsupported launches, and package-only evidence as non-registrable. Use the matching dedicated `registry <type> submit --draft` or `agent publish --draft` command when the user explicitly asks to create a draft.
+
+For outdated results, inspect `items`, `summary`, and `report`. `--no-report` suppresses inbox reporting, not the Registry check.
 
 ## Diagnosis and telemetry setup
 

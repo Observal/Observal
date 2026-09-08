@@ -308,6 +308,36 @@ async def install_agent(
         sandbox_listings=sandbox_listings_map,
     )
 
+    from services.harness.helpers import installed_component_version, local_registry_names
+
+    listing_maps = {
+        "mcp": mcp_listings_map,
+        "skill": skill_listings_map,
+        "hook": hook_listings_map,
+        "prompt": prompt_listings_map,
+        "sandbox": sandbox_listings_map,
+    }
+    local_names = {component_type: local_registry_names(listings) for component_type, listings in listing_maps.items()}
+    installed_components = []
+    for component in install_components:
+        listing = listing_maps.get(component.component_type, {}).get(component.component_id)
+        if listing is None:
+            continue
+        namespace = getattr(listing, "namespace", "") or ""
+        slug = getattr(listing, "slug", "") or ""
+        installed_components.append(
+            {
+                "type": component.component_type,
+                "name": getattr(listing, "name", "") or "",
+                "id": str(component.component_id),
+                "version": installed_component_version(component.resolved_version, listing),
+                "namespace": namespace,
+                "slug": slug,
+                "qualified_name": f"{namespace}/{slug}" if namespace and slug else "",
+                "local_name": local_names.get(component.component_type, {}).get(component.component_id, slug),
+            }
+        )
+
     # Capture agent.id before any DB operations that might expire the ORM
     # instance (e.g. savepoint rollback on duplicate download).
     resolved_agent_id = agent.id
@@ -336,7 +366,11 @@ async def install_agent(
 
     warnings = archived_warnings + setup_warnings + snippet.pop("_warnings", [])
     return AgentInstallResponse(
-        agent_id=resolved_agent_id, harness=req.harness, config_snippet=snippet, warnings=warnings
+        agent_id=resolved_agent_id,
+        harness=req.harness,
+        config_snippet=snippet,
+        installed_components=installed_components,
+        warnings=warnings,
     )
 
 
