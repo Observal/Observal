@@ -592,6 +592,39 @@ def test_upserts_persist_optional_launch_fingerprint_without_version_migration(i
     assert section["standalone"][0]["launch_fingerprint"] == normalized.launch_fingerprint
 
 
+def test_upserts_preserve_existing_fingerprints_when_launch_is_omitted(isolated_lockfile):
+    fingerprint = "sha256:" + "1" * 64
+    lockfile.upsert_agent(
+        "kiro",
+        name="Reviewer",
+        agent_id="agent-1",
+        version="1",
+        scope="user",
+        launch_fingerprint=fingerprint,
+    )
+    lockfile.upsert_standalone(
+        "kiro",
+        component_type="mcp",
+        name="Search",
+        component_id="mcp-1",
+        version="1",
+        launch_fingerprint=fingerprint,
+    )
+
+    lockfile.upsert_agent("kiro", name="Reviewer", agent_id="agent-1", version="2", scope="user")
+    lockfile.upsert_standalone(
+        "kiro",
+        component_type="mcp",
+        name="Search",
+        component_id="mcp-1",
+        version="2",
+    )
+
+    section = raw_lockfile(isolated_lockfile)["registries"][isolated_lockfile.server_url]["harnesses"]["kiro"]
+    assert section["agents"][0]["launch_fingerprint"] == fingerprint
+    assert section["standalone"][0]["launch_fingerprint"] == fingerprint
+
+
 def test_upserts_omit_missing_fingerprints_and_reject_invalid_values(isolated_lockfile):
     from observal_cli.discovery.normalize import normalize_launch
 

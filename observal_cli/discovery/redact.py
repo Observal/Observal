@@ -19,7 +19,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from observal_cli.discovery.models import DiagnosticCode, DiagnosticSeverity, DiscoveryDiagnostic
 from observal_cli.discovery.serialize import privacy_safe_path
 
-SECRET_PLACEHOLDER = "<secret>"
+REDACTION_MARKER = "<secret>"
 
 _SECRET_KEY_RE = re.compile(
     r"(?:^|[-_.])(?:api[-_]?key|access[-_]?key|secret(?:[-_]?key)?|token|password|passwd|pwd|credential|"
@@ -47,7 +47,9 @@ _SECRET_ASSIGNMENT_RE = re.compile(
     r"authorization|client[-_]?secret)\b[\"']?\s*[:=]\s*[\"']?)([^\"'\s,;}]+)"
 )
 _AUTH_HEADER_RE = re.compile(r"(?i)(\b(?:authorization|proxy-authorization|cookie|set-cookie)\s*:\s*)([^\r\n]+)")
-_HIGH_ENTROPY_RE = re.compile(r"^(?=.{32,}$)(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9_./+=-]+$")
+# Paths remain behavior-relevant launch data; dedicated matchers above still
+# catch prefixed tokens, JWTs, and private keys that contain dots or slashes.
+_HIGH_ENTROPY_RE = re.compile(r"^(?=.{32,}$)(?=.*[A-Za-z])(?=.*\d)[A-Za-z0-9_+=-]+$")
 
 
 def is_secret_name(name: str) -> bool:
@@ -136,13 +138,13 @@ def redact_text(value: str) -> str:
             return sanitized_url
 
     if is_secret_value(value):
-        return SECRET_PLACEHOLDER
+        return REDACTION_MARKER
 
-    redacted = _PRIVATE_KEY_RE.sub(SECRET_PLACEHOLDER, value)
-    redacted = _JWT_RE.sub(SECRET_PLACEHOLDER, redacted)
-    redacted = _TOKEN_PREFIX_RE.sub(SECRET_PLACEHOLDER, redacted)
-    redacted = _SECRET_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}{SECRET_PLACEHOLDER}", redacted)
-    redacted = _AUTH_HEADER_RE.sub(lambda match: f"{match.group(1)}{SECRET_PLACEHOLDER}", redacted)
+    redacted = _PRIVATE_KEY_RE.sub(REDACTION_MARKER, value)
+    redacted = _JWT_RE.sub(REDACTION_MARKER, redacted)
+    redacted = _TOKEN_PREFIX_RE.sub(REDACTION_MARKER, redacted)
+    redacted = _SECRET_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}{REDACTION_MARKER}", redacted)
+    redacted = _AUTH_HEADER_RE.sub(lambda match: f"{match.group(1)}{REDACTION_MARKER}", redacted)
 
     # Sanitize URLs embedded as complete whitespace-delimited values. This
     # covers connection strings and diagnostic URLs without attempting to
@@ -176,13 +178,13 @@ def redact_arguments(arguments: Sequence[str]) -> tuple[tuple[str, ...], bool]:
         if _SECRET_OPTION_RE.match(argument):
             if "=" in argument:
                 option, secret_value = argument.split("=", 1)
-                replacement = secret_value if _is_reference(secret_value) else SECRET_PLACEHOLDER
+                replacement = secret_value if _is_reference(secret_value) else REDACTION_MARKER
                 redacted.append(f"{option}={replacement}")
             else:
                 redacted.append(argument)
                 if index + 1 < len(values):
                     secret_value = values[index + 1]
-                    redacted.append(secret_value if _is_reference(secret_value) else SECRET_PLACEHOLDER)
+                    redacted.append(secret_value if _is_reference(secret_value) else REDACTION_MARKER)
                     index += 1
                 else:
                     safe = False
@@ -190,15 +192,15 @@ def redact_arguments(arguments: Sequence[str]) -> tuple[tuple[str, ...], bool]:
             if "=" in argument:
                 option, assignment = argument.split("=", 1)
                 name, separator, raw_value = assignment.partition("=")
-                replacement = raw_value if separator and _is_reference(raw_value) else SECRET_PLACEHOLDER
-                redacted.append(f"{option}={name}={replacement}" if name else f"{option}={SECRET_PLACEHOLDER}")
+                replacement = raw_value if separator and _is_reference(raw_value) else REDACTION_MARKER
+                redacted.append(f"{option}={name}={replacement}" if name else f"{option}={REDACTION_MARKER}")
             else:
                 redacted.append(argument)
                 if index + 1 < len(values):
                     assignment = values[index + 1]
                     name, separator, raw_value = assignment.partition("=")
-                    replacement = raw_value if separator and _is_reference(raw_value) else SECRET_PLACEHOLDER
-                    redacted.append(f"{name}={replacement}" if name else SECRET_PLACEHOLDER)
+                    replacement = raw_value if separator and _is_reference(raw_value) else REDACTION_MARKER
+                    redacted.append(f"{name}={replacement}" if name else REDACTION_MARKER)
                     index += 1
                 else:
                     safe = False
@@ -218,7 +220,7 @@ def _redact_mapping(value: Mapping[Any, Any], *, parent_key: str | None) -> dict
             if isinstance(item, str) and _is_reference(item):
                 result[key] = item
             else:
-                result[key] = SECRET_PLACEHOLDER
+                result[key] = REDACTION_MARKER
         else:
             result[key] = redact_value(item, key=key)
     return result
@@ -237,7 +239,7 @@ def redact_value(value: Any, *, key: str | None = None) -> Any:
         return privacy_safe_path(value)
     if isinstance(value, str):
         if key and is_secret_name(key) and not _is_reference(value):
-            return SECRET_PLACEHOLDER
+            return REDACTION_MARKER
         return redact_text(value)
     if value is None or isinstance(value, (bool, int, float)):
         return value

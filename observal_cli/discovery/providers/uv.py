@@ -65,7 +65,11 @@ def _parse_tool_list(output: str, context: ProviderContext) -> list[tuple[str, s
                 continue
             tools.append((name, version, []))
             continue
-        context.diagnostic(DiagnosticCode.METADATA_MALFORMED, "uv tool list contains an unrecognized record")
+        context.diagnostic(
+            DiagnosticCode.METADATA_MALFORMED,
+            "uv tool list contains an unrecognized record",
+            once=True,
+        )
     return sorted(
         [(name, version, tuple(sorted(set(apps), key=str.casefold))) for name, version, apps in tools],
         key=lambda item: item[0],

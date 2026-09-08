@@ -993,7 +993,11 @@ def register_pull(app: typer.Typer):
             )
 
         installed_components = result.get("installed_components")
-        if isinstance(installed_components, list) and all(isinstance(item, Mapping) for item in installed_components):
+        if (
+            isinstance(installed_components, list)
+            and installed_components
+            and all(isinstance(item, Mapping) for item in installed_components)
+        ):
             lock_components = [dict(item) for item in installed_components]
 
         snippet = result.get("config_snippet", {})

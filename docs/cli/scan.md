@@ -23,7 +23,7 @@ observal scan [--harness <harness>] [--discover] [--output table|json]
 | --- | --- |
 | `--harness <harness>`, `-i` | Scope harness evidence to one registered harness. Package evidence may enrich matching harness candidates, but unrelated package-only candidates are suppressed. |
 | `--discover` | Enable bounded rich discovery, package evidence, local tracking, exact Registry classification, and—only in an interactive table session—optional draft registration. |
-| `--output table|json`, `-o` | Select human-readable table output or versioned JSON. JSON never prompts or creates drafts. |
+| `--output table\|json`, `-o` | Select human-readable table output or versioned JSON. JSON never prompts or creates drafts. |
 
 With no flags, `observal scan` auto-detects registered harnesses and preserves the established read-only inventory output.
 

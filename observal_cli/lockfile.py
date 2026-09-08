@@ -56,6 +56,18 @@ def _validated_launch_fingerprint(
     return value
 
 
+def _upsert_launch_fingerprint(
+    existing: dict[str, Any] | None,
+    value: str | None,
+    launch: SanitizedLaunch | None,
+) -> str | None:
+    fingerprint = _validated_launch_fingerprint(value, launch)
+    if fingerprint is not None or value is not None or launch is not None:
+        return fingerprint
+    persisted = existing.get("launch_fingerprint") if existing else None
+    return persisted if isinstance(persisted, str) and _LAUNCH_FINGERPRINT_RE.fullmatch(persisted) else None
+
+
 # ---------------------------------------------------------------------------
 # Read / Write primitives
 # ---------------------------------------------------------------------------
@@ -282,6 +294,9 @@ def upsert_agent(
     data, registry = read_registry_lockfile(create=True)
     harness_section = _ensure_harness(registry, harness)
     agents = harness_section["agents"]
+    existing_idx = _find_agent_idx(agents, agent_id, scope, directory)
+    existing = agents[existing_idx] if existing_idx is not None else None
+    fingerprint = _upsert_launch_fingerprint(existing, launch_fingerprint, launch)
 
     entry = {
         "name": name,
@@ -302,11 +317,10 @@ def upsert_agent(
         entry["qualified_name"] = f"{namespace}/{slug}"
     if local_name:
         entry["local_name"] = local_name
-    if fingerprint := _validated_launch_fingerprint(launch_fingerprint, launch):
+    if fingerprint:
         entry["launch_fingerprint"] = fingerprint
 
     # Find existing entry to update
-    existing_idx = _find_agent_idx(agents, agent_id, scope, directory)
     if existing_idx is not None:
         agents[existing_idx] = entry
     else:
@@ -371,6 +385,9 @@ def upsert_standalone(
     data, registry = read_registry_lockfile(create=True)
     harness_section = _ensure_harness(registry, harness)
     standalone = harness_section["standalone"]
+    existing_idx = _find_standalone_idx(standalone, component_type, component_id, scope, directory)
+    existing = standalone[existing_idx] if existing_idx is not None else None
+    fingerprint = _upsert_launch_fingerprint(existing, launch_fingerprint, launch)
 
     entry: dict[str, Any] = {
         "type": component_type,
@@ -392,11 +409,10 @@ def upsert_standalone(
         entry["qualified_name"] = f"{namespace}/{slug}"
     if local_name:
         entry["local_name"] = local_name
-    if fingerprint := _validated_launch_fingerprint(launch_fingerprint, launch):
+    if fingerprint:
         entry["launch_fingerprint"] = fingerprint
 
     # Find existing entry to update (match on type + id + scope + directory)
-    existing_idx = _find_standalone_idx(standalone, component_type, component_id, scope, directory)
     if existing_idx is not None:
         standalone[existing_idx] = entry
     else:

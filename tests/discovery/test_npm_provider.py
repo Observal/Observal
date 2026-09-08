@@ -176,6 +176,14 @@ def test_npm_does_not_return_untrusted_secret_like_metadata(tmp_path) -> None:
     assert result.evidence[0].launch.binary is None
 
 
+def test_default_runner_rejects_an_unresolved_executable(monkeypatch) -> None:
+    monkeypatch.setattr("observal_cli.discovery.providers._utils.shutil.which", lambda _command: None)
+
+    result = discover_npm()
+
+    assert [item.code for item in result.diagnostics] == [DiagnosticCode.EXECUTABLE_MISSING]
+
+
 def test_npm_reports_missing_executable_and_timeout() -> None:
     def missing(command, timeout):
         raise FileNotFoundError

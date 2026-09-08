@@ -6,6 +6,8 @@
 # SPDX-FileCopyrightText: 2026 VishnuM049 <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
+import base64
+import json
 import logging
 import time
 import uuid
@@ -275,6 +277,25 @@ def _handle_timeout(
     )
 
 
+def _access_token_expires_soon(token: str, *, leeway_seconds: float = 30.0) -> bool:
+    """Inspect an unverified JWT expiry only to schedule a safe pre-request refresh."""
+
+    try:
+        payload_segment = token.split(".")[1]
+        padding = "=" * (-len(payload_segment) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(payload_segment + padding))
+        if not isinstance(payload, dict):
+            return False
+        expires_at = payload.get("exp")
+    except (IndexError, TypeError, ValueError):
+        return False
+    return (
+        isinstance(expires_at, (int, float))
+        and not isinstance(expires_at, bool)
+        and float(expires_at) <= time.time() + leeway_seconds
+    )
+
+
 def _try_refresh_token() -> bool:
     """Attempt to refresh the access token using the stored refresh token.
 
@@ -451,9 +472,14 @@ def _request(
     json_data: object | None = None,
     allow_auth_refresh: bool | None = None,
 ) -> httpx.Response:
-    base, headers = _client()
     if allow_auth_refresh is None:
         allow_auth_refresh = method.lower() == "get"
+    base, headers = _client()
+    authorization = headers.get("Authorization", "")
+    if not allow_auth_refresh and authorization.startswith("Bearer "):
+        access_token = authorization.removeprefix("Bearer ")
+        if _access_token_expires_soon(access_token) and _try_refresh_token():
+            base, headers = _client()
     request_kwargs: dict = {}
     if params is not None:
         request_kwargs["params"] = params

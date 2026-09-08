@@ -968,6 +968,46 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
         assert visible in result.output
 
 
+def test_pull_preserves_component_links_when_install_response_has_no_component_records(
+    pull_app: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+) -> None:
+    target = tmp_path / "project"
+    detail = _agent_detail(
+        component_links=[
+            {
+                "component_type": "skill",
+                "component_id": "skill-1",
+                "component_name": "review-skill",
+                "version_ref": "3.0.0",
+                "namespace": "acme",
+                "slug": "review-skill",
+            }
+        ]
+    )
+    boundaries.get.return_value = detail
+    boundaries.post.return_value = {
+        "config_snippet": {"agent_profile": {"path": "agent.md", "content": "agent\n"}},
+        "installed_components": [],
+    }
+
+    result = _invoke(pull_app, target)
+
+    assert result.exit_code == 0, result.output
+    assert boundaries.upsert.call_args.kwargs["components"] == [
+        {
+            "type": "skill",
+            "name": "review-skill",
+            "id": "skill-1",
+            "version": "3.0.0",
+            "namespace": "acme",
+            "slug": "review-skill",
+            "qualified_name": "acme/review-skill",
+        }
+    ]
+
+
 def test_pull_persists_nested_mcp_fingerprint_matching_discovery(
     pull_app: typer.Typer,
     boundaries: SimpleNamespace,

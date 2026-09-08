@@ -241,14 +241,24 @@ def register_discovery_candidates(
     for candidate in candidates:
         if candidate.registration_status is RegistrationStatus.ALREADY_EXISTS:
             target = candidate.registry_match.qualified_name if candidate.registry_match else None
-            results.append(_result_for_existing(candidate, target or _target(candidate, namespace)))
+            if target is None:
+                try:
+                    target = _target(candidate, namespace)
+                except RegistrationPayloadError as error:
+                    results.append(RegistrationResult(candidate, RegistrationResultStatus.SKIPPED, None, str(error)))
+                    continue
+            results.append(_result_for_existing(candidate, target))
             continue
         if not _is_promptable(candidate):
             results.append(
                 RegistrationResult(candidate, RegistrationResultStatus.SKIPPED, None, "Candidate is not eligible")
             )
             continue
-        target = _target(candidate, namespace)
+        try:
+            target = _target(candidate, namespace)
+        except RegistrationPayloadError as error:
+            results.append(RegistrationResult(candidate, RegistrationResultStatus.SKIPPED, None, str(error)))
+            continue
 
         # Refresh owned and exact state immediately before any user decision.
         classify_registry_candidates([candidate], configuration=configuration)

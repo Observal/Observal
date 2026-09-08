@@ -8,7 +8,7 @@ import pytest
 
 from observal_cli.discovery.models import DiagnosticCode, DiagnosticSeverity
 from observal_cli.discovery.redact import (
-    SECRET_PLACEHOLDER,
+    REDACTION_MARKER,
     make_diagnostic,
     redact_arguments,
     redact_text,
@@ -31,7 +31,7 @@ from observal_cli.harness import DiscoveredHook, DiscoveredMcp
     ],
 )
 def test_common_tokens_and_high_entropy_values_are_redacted(value: str) -> None:
-    assert redact_text(value) == SECRET_PLACEHOLDER
+    assert redact_text(value) == REDACTION_MARKER
 
 
 def test_references_and_behavioral_arguments_are_preserved() -> None:
@@ -39,6 +39,15 @@ def test_references_and_behavioral_arguments_are_preserved() -> None:
 
     assert safe
     assert arguments == ("--mode", "read", "--key-file", "fixtures/public.pem", "${API_KEY}")
+
+
+def test_long_path_arguments_remain_behavior_relevant() -> None:
+    path = "servers/mcp-filesystem/dist/index1.js"
+
+    arguments, safe = redact_arguments([path])
+
+    assert safe
+    assert arguments == (path,)
 
 
 def test_secret_options_are_redacted_in_equals_and_adjacent_forms() -> None:
@@ -115,7 +124,7 @@ def test_private_keys_are_removed() -> None:
     end_marker = "-----END PRIVATE" + " KEY-----"
     private_key = f"{begin_marker}\nprivate-material\n{end_marker}"
 
-    assert redact_text(private_key) == SECRET_PLACEHOLDER
+    assert redact_text(private_key) == REDACTION_MARKER
 
 
 def test_diagnostic_factory_redacts_exception_and_source_path(tmp_path: Path) -> None:

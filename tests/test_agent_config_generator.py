@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import uuid
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -22,6 +23,7 @@ from services.harness.helpers import (
     _inject_agent_id,
     _model_name_to_frontmatter,
     _sanitize_name,
+    installed_component_version,
 )
 
 # ── Helpers ───────────────────────────────────────────────────────
@@ -51,6 +53,14 @@ def _make_agent(
     agent.components = components or []
     agent.external_mcps = external_mcps or []
     return agent
+
+
+@pytest.mark.parametrize(
+    ("resolved_version", "expected"),
+    [(None, "2.3.4"), ("latest", "2.3.4"), ("1.5.0", "1.5.0")],
+)
+def test_installed_component_metadata_uses_concrete_versions(resolved_version, expected) -> None:
+    assert installed_component_version(resolved_version, SimpleNamespace(version="2.3.4")) == expected
 
 
 # ═══════════════════════════════════════════════════════════════════

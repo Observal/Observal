@@ -319,22 +319,36 @@ def collect_discovery_scan(
     all_evidence = [*existing, *uv_result.evidence]
     candidates = build_candidates(all_evidence, suppress_package_only=harness_filtered)
 
-    configuration: dict[str, object] | None = None
-    try:
-        configuration = config.load()
-    except CliError:
-        pass
-    registry = read_registry_snapshot(str(configuration.get("server_url") or "") if configuration else None)
-    for candidate in candidates:
-        apply_local_match(candidate, registry, project_directory=project_dir)
-
     diagnostics = [
         *harness_result.diagnostics,
         *npm_result.diagnostics,
         *pipx_result.diagnostics,
         *uv_result.diagnostics,
     ]
-    diagnostics.extend(classify_registry_candidates(candidates, configuration=configuration))
+    configuration: dict[str, object] | None = None
+    try:
+        configuration = config.load()
+    except CliError:
+        pass
+    classification_configuration = configuration
+    try:
+        registry = read_registry_snapshot(str(configuration.get("server_url") or "") if configuration else None)
+    except (RuntimeError, ValueError) as error:
+        registry = {"server_url": "", "harnesses": {}}
+        diagnostics.append(
+            make_diagnostic(
+                DiagnosticCode.REGISTRY_UNAVAILABLE,
+                DiagnosticSeverity.WARNING,
+                "lockfile",
+                "Local Registry tracking data is unavailable",
+            )
+        )
+        if isinstance(error, ValueError):
+            classification_configuration = {}
+    for candidate in candidates:
+        apply_local_match(candidate, registry, project_directory=project_dir)
+
+    diagnostics.extend(classify_registry_candidates(candidates, configuration=classification_configuration))
     severity_order = {"error": 0, "warning": 1, "info": 2}
     diagnostics.sort(
         key=lambda item: (severity_order[item.severity.value], item.provider, item.code.value, item.source or "")

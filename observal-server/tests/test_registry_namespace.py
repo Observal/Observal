@@ -157,14 +157,14 @@ async def test_resolver_accepts_qualified_and_rejects_ambiguous_bare_names():
 
 
 def test_harness_names_only_qualify_real_slug_collisions():
-    from services.harness.helpers import _local_registry_names
+    from services.harness.helpers import local_registry_names
 
     listings = {
         1: SimpleNamespace(name="Search", namespace="alice", slug="search"),
         2: SimpleNamespace(name="Search", namespace="bob", slug="search"),
         3: SimpleNamespace(name="Other", namespace="bob", slug="other"),
     }
-    assert _local_registry_names(listings) == {
+    assert local_registry_names(listings) == {
         1: "alice-search",
         2: "bob-search",
         3: "other",
@@ -174,13 +174,13 @@ def test_harness_names_only_qualify_real_slug_collisions():
 def test_harness_local_names_flatten_dots_without_colliding():
     """Local names key harness configs and land on disk, so dots are flattened —
     which makes `a.b` and `a-b` collapse together unless kept distinct."""
-    from services.harness.helpers import _local_registry_names
+    from services.harness.helpers import local_registry_names
 
     listings = {
         1: SimpleNamespace(name="Tool", namespace="legacy.handle", slug="tool"),
         2: SimpleNamespace(name="Tool", namespace="legacy-handle", slug="tool"),
     }
-    names = _local_registry_names(listings)
+    names = local_registry_names(listings)
     assert names[1] == "legacy-handle-tool"
     assert names[2] != names[1]
     assert "." not in names[1] and "." not in names[2]

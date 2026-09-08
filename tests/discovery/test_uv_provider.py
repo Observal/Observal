@@ -97,6 +97,15 @@ def test_uv_reports_malformed_listing_and_preserves_valid_tools(tmp_path) -> Non
     assert [item.code for item in result.diagnostics] == [DiagnosticCode.METADATA_MALFORMED]
 
 
+def test_uv_bounds_repeated_unrecognized_record_diagnostics(tmp_path) -> None:
+    root = tmp_path / "tools"
+    root.mkdir()
+
+    result = discover_uv(runner=_runner(root, "???\n!!!\n@@@\n"))
+
+    assert [item.code for item in result.diagnostics] == [DiagnosticCode.METADATA_MALFORMED]
+
+
 def test_uv_redacts_untrusted_application_metadata(tmp_path) -> None:
     root = tmp_path / "tools"
     root.mkdir()

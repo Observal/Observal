@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
@@ -49,14 +50,20 @@ def validate_agent_name(name: object) -> str:
     return name
 
 
+_AGENT_VERSION_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
+
+
 def normalize_agent_version(value: object, *, default: str = "1.0.0") -> str:
-    """Apply the semantic-version normalization used by YAML workflows."""
+    """Normalize a version and enforce the server's strict ``x.y.z`` contract."""
 
     raw = str(value or default)
     try:
-        return str(Version(raw))
+        normalized = str(Version(raw))
     except InvalidVersion as error:
         raise AgentDefinitionError("version", f"Invalid semantic version: {raw}.") from error
+    if not _AGENT_VERSION_RE.fullmatch(normalized):
+        raise AgentDefinitionError("version", f"Invalid semantic version: {raw}.")
+    return normalized
 
 
 def validate_agent_harnesses(values: object) -> list[str]:

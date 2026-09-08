@@ -308,7 +308,7 @@ async def install_agent(
         sandbox_listings=sandbox_listings_map,
     )
 
-    from services.harness.helpers import local_registry_names
+    from services.harness.helpers import installed_component_version, local_registry_names
 
     listing_maps = {
         "mcp": mcp_listings_map,
@@ -330,7 +330,7 @@ async def install_agent(
                 "type": component.component_type,
                 "name": getattr(listing, "name", "") or "",
                 "id": str(component.component_id),
-                "version": component.resolved_version,
+                "version": installed_component_version(component.resolved_version, listing),
                 "namespace": namespace,
                 "slug": slug,
                 "qualified_name": f"{namespace}/{slug}" if namespace and slug else "",
