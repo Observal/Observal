@@ -236,6 +236,26 @@ class TestChecks:
 
         assert any("older Observal CLI" in warning for warning in warnings)
 
+    def test_pi_warns_when_a_local_copy_duplicates_the_npm_package(self, tmp_path: Path):
+        write_json(tmp_path / ".pi/agent/settings.json", {"packages": ["npm:observal-pi"]})
+        legacy_extension(tmp_path)
+        warnings: list[str] = []
+
+        _check_pi([], warnings)
+
+        assert any("sent twice" in warning for warning in warnings)
+
+    def test_pi_is_silent_about_a_foreign_file_in_npm_mode(self, tmp_path: Path):
+        write_json(tmp_path / ".pi/agent/settings.json", {"packages": ["npm:observal-pi"]})
+        extension = tmp_path / ".pi/agent/extensions/observal.ts"
+        extension.parent.mkdir(parents=True)
+        extension.write_text("hand-written extension", encoding="utf-8")
+        warnings: list[str] = []
+
+        _check_pi([], warnings)
+
+        assert warnings == []
+
     def test_pi_warns_of_conflict_with_unmanaged_local_file(self, tmp_path: Path):
         extension = tmp_path / ".pi/agent/extensions/observal.ts"
         extension.parent.mkdir(parents=True)
@@ -489,6 +509,27 @@ class TestPatchFunctions:
 
         assert extension.read_text() == previous
         assert not extension.with_name("observal.ts.bak").exists()
+
+    def test_patch_pi_removes_a_local_copy_that_duplicates_npm(self, tmp_path: Path):
+        write_json(tmp_path / ".pi/agent/settings.json", {"packages": ["npm:observal-pi"]})
+        extension = legacy_extension(tmp_path)
+        previous = extension.read_text()
+
+        assert _patch_pi(dry_run=False) is True
+
+        assert not extension.exists()
+        assert extension.with_name("observal.ts.bak").read_text() == previous
+        assert _patch_pi(dry_run=False) is False
+
+    def test_patch_pi_leaves_a_foreign_file_alone_in_npm_mode(self, tmp_path: Path):
+        write_json(tmp_path / ".pi/agent/settings.json", {"packages": ["npm:observal-pi"]})
+        extension = tmp_path / ".pi/agent/extensions/observal.ts"
+        extension.parent.mkdir(parents=True)
+        extension.write_text("hand-written extension", encoding="utf-8")
+
+        assert _patch_pi(dry_run=False) is False
+
+        assert extension.read_text() == "hand-written extension"
 
     def test_patch_pi_never_overwrites_an_unmanaged_file(self, tmp_path: Path):
         extension = tmp_path / ".pi/agent/extensions/observal.ts"

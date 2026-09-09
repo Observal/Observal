@@ -103,6 +103,7 @@ All notable changes to this project will be documented in this file.
 
 - auto-install the bundled Pi telemetry extension during login and report stale npm or local installs (#1602)
 - migrate Pi telemetry extensions installed before version tracking, keeping a `.bak` copy (#1602)
+- remove a local Pi extension that duplicates a configured `npm:observal-pi`, which sent every session twice (#1602)
 - add an authenticated JSON API escape hatch and mixed Registry component bulk submission
 - standardize dedicated list JSON output with `items`, `total`, `page`, and `page_size`
 - make mutation retry behavior explicit and reserve automatic transient retries for reads
