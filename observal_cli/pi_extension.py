@@ -11,7 +11,9 @@ Two installation modes coexist:
     ~/.pi/agent/extensions/observal.ts, tracked by an adjacent
     .observal-extension.json manifest recording the CLI version it was
     installed from. A file at that path with no matching manifest is
-    treated as unmanaged and never overwritten.
+    either migrated (if it carries Observal's own header, i.e. it was
+    installed by a CLI predating this tracking) or treated as unmanaged
+    and never overwritten.
 
 npm takes priority: if it's configured (even if not yet downloaded by Pi),
 the local path is left untouched entirely.
@@ -24,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -41,16 +44,21 @@ CURRENT = "current"
 STALE = "stale"
 NEWER = "newer"
 UNMANAGED = "unmanaged"
+MIGRATABLE = "migratable"
 NPM_CURRENT = "npm_current"
 NPM_STALE = "npm_stale"
 NPM_UNPINNED = "npm_unpinned"
+
+# Present in every observal.ts this project has ever shipped. Used only to
+# recognize a pre-manifest install as ours; see _is_observal_authored.
+_SIGNATURE = "Observal session telemetry extension for Pi"
 
 
 @dataclass(frozen=True)
 class PiExtensionStatus:
     state: str
     message: str | None = None
-    action: str | None = None  # None | "install" | "refresh" | "adopt"
+    action: str | None = None  # None | "install" | "refresh" | "adopt" | "migrate"
 
 
 def pi_agent_dir(home: Path | None = None) -> Path:
@@ -69,6 +77,22 @@ def settings_path(home: Path | None = None) -> Path:
     return pi_agent_dir(home) / "settings.json"
 
 
+def backup_path(home: Path | None = None) -> Path:
+    """First free `observal.ts.bak[.N]` beside the extension.
+
+    Deliberately does not end in `.ts` so Pi's extension loader ignores it.
+    Callers that need to report the destination must read it before the copy,
+    since this returns a different name once the file exists.
+    """
+    base = extension_path(home)
+    candidate = base.with_name(f"{base.name}.bak")
+    index = 1
+    while candidate.exists():
+        candidate = base.with_name(f"{base.name}.bak.{index}")
+        index += 1
+    return candidate
+
+
 def extension_source() -> str:
     """Read the canonical extension source: bundled wheel copy, or dev source tree."""
     bundled = Path(__file__).parent / "_bundled" / "observal.ts"
@@ -77,6 +101,18 @@ def extension_source() -> str:
         if path.exists():
             return path.read_text()
     raise FileNotFoundError("Bundled Pi telemetry extension is missing")
+
+
+def _is_observal_authored(content: str) -> bool:
+    """Whether an untracked local file is one Observal itself installed.
+
+    CLI versions before install tracking wrote observal.ts with no manifest
+    beside it. Those are ours to refresh, but they are indistinguishable from
+    a hand-written extension by path alone, so match on the doc header that
+    every observal.ts we have shipped carries. A file without it belongs to
+    someone else and is never written to.
+    """
+    return _SIGNATURE in content
 
 
 def _atomic_write(path: Path, content: str) -> None:
@@ -212,11 +248,20 @@ def check_status(home: Path | None = None) -> PiExtensionStatus:
                 return PiExtensionStatus(NEWER)
             return PiExtensionStatus(CURRENT)
 
-    # No trustworthy manifest. Adopt silently if the content already matches
-    # what we'd install (covers pre-manifest installs from before this
-    # feature existed); otherwise this is a foreign file we must not touch.
+    # No trustworthy manifest (missing, corrupt, or an unparseable version).
+    # Adopt silently if the content already matches what we'd install; migrate
+    # it if it carries our own header, which means an older CLI wrote it before
+    # install tracking existed; otherwise it is a foreign file we must not touch.
     if installed == expected:
         return PiExtensionStatus(CURRENT, action="adopt")
+    if _is_observal_authored(installed):
+        return PiExtensionStatus(
+            MIGRATABLE,
+            f"{path} was installed by an older Observal CLI, before install tracking existed. "
+            f"Doctor can refresh it to {get_current_version()}, keeping a copy at "
+            f"{backup_path(home).name}.",
+            action="migrate",
+        )
     return PiExtensionStatus(
         UNMANAGED,
         f"{path} exists but is not managed by Observal. Remove it (or move it aside) and "
@@ -228,14 +273,18 @@ def check_status(home: Path | None = None) -> PiExtensionStatus:
 def install_or_refresh(*, dry_run: bool, home: Path | None = None) -> tuple[bool, str | None]:
     """Perform the recommended action, if any.
 
-    Returns (changed, action) where action is "install" | "refresh" | "adopt",
-    matching PiExtensionStatus.action, or (False, None) if nothing to do.
+    Returns (changed, action) where action is "install" | "refresh" | "adopt"
+    | "migrate", matching PiExtensionStatus.action, or (False, None) if there
+    is nothing to do. A "migrate" copies the untracked file aside first; read
+    backup_path() before calling if you need to report where it went.
     """
     status = check_status(home)
     if status.action is None:
         return False, None
     if dry_run:
         return True, status.action
+    if status.action == "migrate":
+        shutil.copy2(extension_path(home), backup_path(home))
     if status.action != "adopt":
         _atomic_write(extension_path(home), extension_source())
     _atomic_write(
@@ -248,7 +297,7 @@ def install_or_refresh(*, dry_run: bool, home: Path | None = None) -> tuple[bool
 def remove(*, dry_run: bool, home: Path | None = None) -> bool:
     """Remove an Observal-managed local install. Never touches npm config or unmanaged files."""
     status = check_status(home)
-    if status.state not in (CURRENT, STALE, NEWER):
+    if status.state not in (CURRENT, STALE, NEWER, MIGRATABLE):
         return False
     if not dry_run:
         extension_path(home).unlink(missing_ok=True)
