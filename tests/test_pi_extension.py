@@ -35,6 +35,17 @@ def read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def write_legacy_install(tmp_path: Path) -> Path:
+    """An observal.ts an older CLI wrote: our header, older body, no manifest."""
+    extension = pi_extension.extension_path(tmp_path)
+    extension.parent.mkdir(parents=True, exist_ok=True)
+    extension.write_text(
+        f"/**\n * {pi_extension._SIGNATURE}\n */\nconst old = true;\n",
+        encoding="utf-8",
+    )
+    return extension
+
+
 class TestCheckStatus:
     def test_not_detected_when_pi_agent_dir_is_missing(self, tmp_path: Path):
         status = pi_extension.check_status(home=tmp_path)
@@ -116,6 +127,46 @@ class TestCheckStatus:
         assert status.state == pi_extension.UNMANAGED
         assert status.action is None
         assert "not managed by Observal" in status.message
+
+    def test_bundled_source_carries_the_migration_signature(self):
+        # Guards the migration path: if the extension's doc header is ever
+        # reworded, pre-manifest installs silently stop being recognized.
+        assert pi_extension._SIGNATURE in pi_extension.extension_source()
+
+    def test_pre_manifest_observal_install_is_migratable_not_unmanaged(self, tmp_path: Path):
+        write_legacy_install(tmp_path)
+
+        status = pi_extension.check_status(home=tmp_path)
+
+        assert status.state == pi_extension.MIGRATABLE
+        assert status.action == "migrate"
+        assert "older Observal CLI" in status.message
+        assert pi_extension.backup_path(tmp_path).name in status.message
+
+    def test_corrupt_manifest_beside_our_file_is_migratable(self, tmp_path: Path):
+        write_legacy_install(tmp_path)
+        pi_extension.manifest_path(tmp_path).write_text("{not json", encoding="utf-8")
+
+        status = pi_extension.check_status(home=tmp_path)
+
+        assert status.state == pi_extension.MIGRATABLE
+
+    def test_unparseable_manifest_version_beside_our_file_is_migratable(self, tmp_path: Path):
+        write_legacy_install(tmp_path)
+        write_json(pi_extension.manifest_path(tmp_path), {"managed": True, "version": "not-a-version"})
+
+        status = pi_extension.check_status(home=tmp_path)
+
+        assert status.state == pi_extension.MIGRATABLE
+
+    def test_npm_mode_still_wins_over_a_migratable_local_file(self, tmp_path: Path):
+        write_legacy_install(tmp_path)
+        write_json(tmp_path / ".pi/agent/settings.json", {"packages": ["npm:observal-pi"]})
+
+        status = pi_extension.check_status(home=tmp_path)
+
+        assert status.state == pi_extension.NPM_UNPINNED
+        assert status.action is None
 
     def test_local_manifest_stale_reports_both_versions(self, tmp_path: Path):
         extension = tmp_path / ".pi/agent/extensions/observal.ts"
@@ -213,6 +264,55 @@ class TestInstallOrRefresh:
         assert extension.read_text() == source
         assert read_json(pi_extension.manifest_path(tmp_path))["version"] == CLI_VERSION
 
+    def test_migrate_backs_up_the_previous_file_then_refreshes(self, tmp_path: Path):
+        extension = write_legacy_install(tmp_path)
+        previous = extension.read_text()
+        backup = pi_extension.backup_path(tmp_path)
+
+        changed, action = pi_extension.install_or_refresh(dry_run=False, home=tmp_path)
+
+        assert (changed, action) == (True, "migrate")
+        assert extension.read_text() == pi_extension.extension_source()
+        assert backup.read_text() == previous
+        assert read_json(pi_extension.manifest_path(tmp_path))["version"] == CLI_VERSION
+
+    def test_migrate_dry_run_writes_nothing(self, tmp_path: Path):
+        extension = write_legacy_install(tmp_path)
+        previous = extension.read_text()
+
+        changed, action = pi_extension.install_or_refresh(dry_run=True, home=tmp_path)
+
+        assert (changed, action) == (True, "migrate")
+        assert extension.read_text() == previous
+        assert not pi_extension.backup_path(tmp_path).exists()
+        assert not pi_extension.manifest_path(tmp_path).exists()
+
+    def test_migrated_install_is_current_afterwards(self, tmp_path: Path):
+        write_legacy_install(tmp_path)
+
+        pi_extension.install_or_refresh(dry_run=False, home=tmp_path)
+
+        assert pi_extension.check_status(home=tmp_path).state == pi_extension.CURRENT
+
+    def test_backup_never_clobbers_an_existing_backup(self, tmp_path: Path):
+        extension = write_legacy_install(tmp_path)
+        occupied = extension.with_name(f"{extension.name}.bak")
+        occupied.write_text("an earlier backup", encoding="utf-8")
+
+        pi_extension.install_or_refresh(dry_run=False, home=tmp_path)
+
+        assert occupied.read_text() == "an earlier backup"
+        assert extension.with_name(f"{extension.name}.bak.1").exists()
+
+    def test_backup_is_not_a_loadable_ts_file(self, tmp_path: Path):
+        # Pi discovers extensions by *.ts; the backup must not be picked up.
+        write_legacy_install(tmp_path)
+
+        pi_extension.install_or_refresh(dry_run=False, home=tmp_path)
+
+        extensions_dir = pi_extension.extension_path(tmp_path).parent
+        assert [path.name for path in extensions_dir.glob("*.ts")] == ["observal.ts"]
+
 
 class TestRemove:
     @pytest.mark.parametrize(
@@ -229,6 +329,12 @@ class TestRemove:
         assert pi_extension.remove(dry_run=False, home=tmp_path) is True
         assert not extension.exists()
         assert not pi_extension.manifest_path(tmp_path).exists()
+
+    def test_removes_a_pre_manifest_install(self, tmp_path: Path):
+        extension = write_legacy_install(tmp_path)
+
+        assert pi_extension.remove(dry_run=False, home=tmp_path) is True
+        assert not extension.exists()
 
     def test_leaves_npm_configuration_alone(self, tmp_path: Path):
         settings = tmp_path / ".pi/agent/settings.json"
