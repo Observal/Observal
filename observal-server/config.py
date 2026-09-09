@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     # Outbound Git authentication
     GIT_CLONE_TOKEN: str | None = None
 
+    # Vendor usage-ping destination. The production default is intentionally
+    # fixed; overrides exist for development and isolated collector deployments.
+    USAGE_PING_URL: str = "https://usage.observal.io/api/v1/usage-pings"
+    USAGE_PING_DEPLOYMENT_TYPE: Literal["self-managed", "cloud", "development"] | None = None
+
     # Connection pool sizing (boot-time, pool created once at startup)
     DB_POOL_SIZE: int = 30
     DB_MAX_OVERFLOW: int = 50

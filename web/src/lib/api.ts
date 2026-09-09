@@ -49,6 +49,8 @@ import type {
 	DiagnosticsResponse,
 	RestartStatus,
 	SystemWarning,
+	UsagePingAdminResponse,
+	UsagePingStatus,
 	InsightReportListItem,
 	InsightReport,
 	InsightAppliedItems,
@@ -721,6 +723,9 @@ export const admin = {
 	settings: () =>
 		get<AdminSetting[] | Record<string, string>>("/admin/settings"),
 	settingsSchema: () => get<AdminSettingSection[]>("/admin/settings/schema"),
+	usagePingStatus: () => get<UsagePingStatus>("/admin/usage-ping/status"),
+	usagePingPreview: () => get<UsagePingAdminResponse>("/admin/usage-ping/preview"),
+	sendUsagePing: () => post<UsagePingAdminResponse>("/admin/usage-ping/send", {}),
 	updateSetting: (key: string, body: unknown) =>
 		put<unknown>(`/admin/settings/${key}`, body),
 	deleteSetting: (key: string) => del(`/admin/settings/${key}`),

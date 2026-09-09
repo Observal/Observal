@@ -44,3 +44,8 @@ _Was generative AI tooling used to co-author this PR?_
 
 - [ ] Yes(Please Specify the tool):
 - [ ] Was the generated code manually reviewed and tested?
+
+## Discord username (optional)
+_If you would like to be pinged when this PR is reviewed or merged, add your Discord username below._
+
+Discord username:

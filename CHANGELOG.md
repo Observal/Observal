@@ -12,6 +12,43 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.13.1] - 2026-09-05
+
+### Features
+
+- add configurable usage reporting ([#1701](https://github.com/Observal/Observal/pull/1701))
+
+### Fixes
+
+- keep UUIDs as text in SQLite tests ([#1704](https://github.com/Observal/Observal/pull/1704))
+- use npm trusted publishing ([#1715](https://github.com/Observal/Observal/pull/1715))
+- bundle harness model data ([#1716](https://github.com/Observal/Observal/pull/1716))
+
+### Documentation
+
+- add optional Discord field to PR template ([#1703](https://github.com/Observal/Observal/pull/1703))
+
+### Maintenance
+
+- Add kubeconform validation for Helm chart ([#1693](https://github.com/Observal/Observal/pull/1693))
+
+## [1.13.0] - 2026-08-23
+
+### Features
+
+- add help and error contracts ([#1690](https://github.com/Observal/Observal/pull/1690))
+- make Observal agent-ready ([#1691](https://github.com/Observal/Observal/pull/1691))
+- revamp registry home ([#1692](https://github.com/Observal/Observal/pull/1692))
+
+### Fixes
+
+- repair the OSS-Fuzz build before submitting upstream to google ([#1689](https://github.com/Observal/Observal/pull/1689))
+- avoid duplicate Observal skills in Pi ([#1663](https://github.com/Observal/Observal/pull/1663))
+
+### Maintenance
+
+- standardize table and JSON output modes ([#1687](https://github.com/Observal/Observal/pull/1687))
+
 ## [1.12.1] - 2026-08-09
 
 ### Fixes

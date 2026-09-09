@@ -64,6 +64,7 @@
 * [AWS deployment with Terraform](self-hosting/aws-terraform.md)
 * [GCP deployment with Terraform](self-hosting/gcp-terraform.md)
 * [Configuration](self-hosting/configuration.md)
+* [Usage reporting](self-hosting/usage-reporting.md)
 * [Ports and volumes](self-hosting/ports-and-volumes.md)
 * [Databases](self-hosting/databases.md)
 * [Authentication and SSO](self-hosting/authentication.md)

@@ -36,6 +36,11 @@ from ._router import router
 from .helpers import _validate_branding_app_name, _validate_branding_logo
 
 
+def _require_usage_ping_super_admin(key: str, current_user: User) -> None:
+    if key.startswith("usage_ping.") and current_user.role != UserRole.super_admin:
+        raise HTTPException(status_code=403, detail="Usage reporting can only be changed by a super administrator")
+
+
 async def _mark_restart_pending(db: AsyncSession, key: str) -> None:
     result = await db.execute(select(EnterpriseConfig).where(EnterpriseConfig.key == RESTART_PENDING_KEY))
     marker = result.scalar_one_or_none()
@@ -229,6 +234,7 @@ async def upsert_setting(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     optic.trace("key={}", key)
+    _require_usage_ping_super_admin(key, current_user)
     if key in ds.FILE_ONLY_KEYS:
         raise HTTPException(status_code=409, detail="Setting can only be managed through dedicated files")
     if ds.is_externally_managed(key):
@@ -242,6 +248,26 @@ async def upsert_setting(
         _validate_branding_logo(value)
     elif key == "branding.app_name":
         _validate_branding_app_name(value)
+    elif key == "usage_ping.company_name" and len(value) > 160:
+        raise HTTPException(status_code=422, detail="Company name cannot exceed 160 characters")
+    elif key == "usage_ping.frequency":
+        value = value.lower()
+        if value not in {"every_6_hours", "daily", "weekly"}:
+            raise HTTPException(
+                status_code=422, detail="Usage reporting frequency must be every_6_hours, daily, or weekly"
+            )
+    elif key == "usage_ping.enabled":
+        value = value.lower()
+        if value not in {"true", "false"}:
+            raise HTTPException(status_code=422, detail="Usage reporting must be true or false")
+        if value == "true":
+            company_name = (await ds.get("usage_ping.company_name")).strip()
+            public_url = (await ds.get("deployment.public_url")).strip()
+            if not company_name or not public_url:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Company name and deployment public URL are required before enabling usage reporting",
+                )
 
     sensitive = key in ds.SENSITIVE_KEYS
     store_value = ds.encrypt_value(value) if sensitive else value
@@ -307,6 +333,7 @@ async def delete_setting(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     optic.trace("key={}", key)
+    _require_usage_ping_super_admin(key, current_user)
     if ds.is_externally_managed(key):
         raise HTTPException(status_code=409, detail="Setting is externally managed by a secret file")
     result = await db.execute(select(EnterpriseConfig).where(EnterpriseConfig.key == key))

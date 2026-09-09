@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Tests for the team-scoped review queue at /api/v1/review.
@@ -185,7 +186,8 @@ async def _seed(sessions):
         co_authors=[],
     )
     agent_version = AgentVersion(
-        id=uuid.uuid4(),
+        # SQLite's NUMERIC affinity used to coerce this valid UUID to float('inf').
+        id=uuid.UUID("1e999999-9999-9999-9999-999999999999"),
         agent_id=agent.id,
         version="1.0.0",
         model_name="claude-sonnet-4-5",
