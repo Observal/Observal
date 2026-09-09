@@ -1558,7 +1558,10 @@ def _install_or_check_pi_extension():
         status = pi_extension.check_status()
         if status.state == pi_extension.NOT_DETECTED:
             return
-        if status.action in ("install", "refresh", "migrate"):
+        if status.action == "dedupe":
+            # Deleting a file mid-login is too surprising; doctor patch does it.
+            rprint(f"[yellow]{esc(status.message)}[/yellow]")
+        elif status.action in ("install", "refresh", "migrate"):
             # Resolve before the write: a migration copies the untracked file
             # aside, after which this returns the next free name instead.
             backup = pi_extension.backup_path() if status.action == "migrate" else None
