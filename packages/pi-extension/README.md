@@ -1,6 +1,7 @@
 <!--
 SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+<!-- SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com> -->
 SPDX-License-Identifier: Apache-2.0
 -->
 
@@ -14,7 +15,15 @@ Session telemetry extension for [Pi](https://pi.dev) that pushes conversation tr
 observal doctor patch --harness pi
 ```
 
-Doctor installs the bundled TypeScript extension directly at `~/.pi/agent/extensions/observal.ts`. It removes the legacy `npm:observal-pi` package registration to prevent duplicate loading.
+Doctor installs the bundled TypeScript extension directly at `~/.pi/agent/extensions/observal.ts` and records the CLI version it came from in `~/.pi/agent/extensions/.observal-extension.json`. `observal auth login` does the same automatically.
+
+Alternatively, register this package in `~/.pi/agent/settings.json`:
+
+```json
+{ "packages": ["npm:observal-pi"] }
+```
+
+The two modes are mutually exclusive. With the npm package registered, Observal never writes the local file; it only reports when a pinned version has fallen behind the CLI. Pi loads both channels if both are present, which sends every session twice, so doctor removes a local copy it recognizes as its own once npm is configured (keeping it as `observal.ts.bak`). A local file Observal did not write is always left alone.
 
 ## Prerequisites
 

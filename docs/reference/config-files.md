@@ -130,7 +130,7 @@ Each list invocation replaces this cache, including an empty result. Numeric row
 
 Two mutually exclusive installation modes are supported:
 
-- **npm**: `npm:observal-pi` is configured in `~/.pi/agent/settings.json` (with or without a pinned version, and whether or not Pi has downloaded it yet). Observal never writes to `extensions/observal.ts` in this mode — `observal doctor` only reports when a pinned version is older than the installed CLI, with a `pi update npm:observal-pi` reminder.
+- **npm**: `npm:observal-pi` is configured in `~/.pi/agent/settings.json` (with or without a pinned version, and whether or not Pi has downloaded it yet). Observal never installs `extensions/observal.ts` in this mode — `observal doctor` only reports when a pinned version is older than the installed CLI, with a `pi update npm:observal-pi` reminder. Pi loads a local `extensions/observal.ts` in addition to the npm package, so if one is left over from local mode every session is sent twice; `observal doctor patch` removes a local copy it recognizes as its own (keeping it as `observal.ts.bak`) and leaves a file Observal did not write alone.
 - **local**: no npm package is configured. `observal auth login` and `observal doctor patch` install the extension bundled with the CLI directly to `extensions/observal.ts`, recording the installed CLI version in the adjacent manifest. A later CLI upgrade refreshes both files atomically and prints a reminder to restart Pi or run `/reload`; a newer local install than the current CLI is left alone.
 
 ### Migrating installs from before version tracking
