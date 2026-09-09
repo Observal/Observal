@@ -1374,6 +1374,7 @@ _PI_ACTION_VERBS = {
     "install": ("Would install", "Installed"),
     "refresh": ("Would update", "Updated"),
     "adopt": ("Would record install metadata for", "Recorded install metadata for"),
+    "migrate": ("Would migrate", "Migrated"),
 }
 
 
@@ -1382,10 +1383,11 @@ def _patch_pi(dry_run: bool) -> bool:
     optic.trace("dry_run={}", dry_run)
     rprint("[cyan]Pi - session telemetry extension[/cyan]")
 
+    status = pi_extension.check_status()
+    backup = pi_extension.backup_path() if status.action == "migrate" else None
     changed, action = pi_extension.install_or_refresh(dry_run=dry_run)
 
     if not changed:
-        status = pi_extension.check_status()
         if status.state == pi_extension.NOT_DETECTED:
             rprint("  [dim]No ~/.pi/agent/ directory - skipping[/dim]")
         elif status.state in (pi_extension.NPM_CURRENT, pi_extension.NPM_UNPINNED, pi_extension.NPM_STALE):
@@ -1401,6 +1403,9 @@ def _patch_pi(dry_run: bool) -> bool:
     would_verb, done_verb = _PI_ACTION_VERBS[action]
     verb = would_verb if dry_run else done_verb
     rprint(f"  {verb} {esc(pi_extension.extension_path())}")
+    if backup is not None:
+        kept = "Would keep" if dry_run else "Kept"
+        rprint(f"  [dim]{kept} the previous file at {esc(backup)}[/dim]")
     if not dry_run and action != "adopt":
         rprint("  [dim]Restart pi or run /reload to activate[/dim]")
     return True

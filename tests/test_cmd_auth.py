@@ -1891,6 +1891,26 @@ def test_pi_extension_setup_adopts_silently(monkeypatch: pytest.MonkeyPatch, pri
     assert printed == []
 
 
+def test_pi_extension_setup_migrates_pre_manifest_install(monkeypatch: pytest.MonkeyPatch, printed: list[str]) -> None:
+    from pathlib import Path  # module-level import is TYPE_CHECKING-only
+
+    import observal_cli.pi_extension as pi_extension
+
+    status = pi_extension.PiExtensionStatus(pi_extension.MIGRATABLE, "older CLI", action="migrate")
+    monkeypatch.setattr(pi_extension, "check_status", lambda: status)
+    monkeypatch.setattr(pi_extension, "backup_path", lambda: Path("/home/u/.pi/agent/extensions/observal.ts.bak"))
+    install_or_refresh = MagicMock()
+    monkeypatch.setattr(pi_extension, "install_or_refresh", install_or_refresh)
+
+    auth._install_or_check_pi_extension()
+
+    install_or_refresh.assert_called_once_with(dry_run=False)
+    output = "\n".join(printed)
+    assert "Migrated the Pi telemetry extension" in output
+    assert "observal.ts.bak" in output
+    assert "reload" in output.lower()
+
+
 def test_pi_extension_setup_reports_stale_npm_without_installing_locally(
     monkeypatch: pytest.MonkeyPatch, printed: list[str]
 ) -> None:

@@ -1558,11 +1558,16 @@ def _install_or_check_pi_extension():
         status = pi_extension.check_status()
         if status.state == pi_extension.NOT_DETECTED:
             return
-        if status.action in ("install", "refresh"):
+        if status.action in ("install", "refresh", "migrate"):
+            # Resolve before the write: a migration copies the untracked file
+            # aside, after which this returns the next free name instead.
+            backup = pi_extension.backup_path() if status.action == "migrate" else None
             pi_extension.install_or_refresh(dry_run=False)
-            verb = "Installed" if status.action == "install" else "Updated"
+            verb = {"install": "Installed", "refresh": "Updated", "migrate": "Migrated"}[status.action]
             rprint(f"[green]✓ {verb} the Pi telemetry extension.[/green]")
-            if status.action == "refresh":
+            if backup is not None:
+                rprint(f"  [dim]Kept the previous file at {esc(backup)}.[/dim]")
+            if status.action != "install":
                 rprint("  [dim]Restart Pi or run /reload to activate.[/dim]")
         elif status.action == "adopt":
             pi_extension.install_or_refresh(dry_run=False)

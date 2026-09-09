@@ -92,6 +92,17 @@ def goose_home(isolated_home: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return isolated_home
 
 
+def legacy_extension(tmp_path: Path) -> Path:
+    """An observal.ts an older CLI wrote: our header, older body, no manifest."""
+    extension = tmp_path / ".pi/agent/extensions/observal.ts"
+    extension.parent.mkdir(parents=True, exist_ok=True)
+    extension.write_text(
+        f"/**\n * {pi_extension._SIGNATURE}\n */\nconst old = true;\n",
+        encoding="utf-8",
+    )
+    return extension
+
+
 class TestHookIdentification:
     def test_identifies_observal_hook_entries_and_groups(self):
         assert is_observal_hook_entry({"command": "python -m observal_cli.hooks.session_push"})
@@ -216,6 +227,14 @@ class TestChecks:
 
         assert warnings == []
         assert extension.read_text(encoding="utf-8") == "future content"
+
+    def test_pi_warns_that_a_pre_manifest_install_can_be_migrated(self, tmp_path: Path):
+        legacy_extension(tmp_path)
+        warnings: list[str] = []
+
+        _check_pi([], warnings)
+
+        assert any("older Observal CLI" in warning for warning in warnings)
 
     def test_pi_warns_of_conflict_with_unmanaged_local_file(self, tmp_path: Path):
         extension = tmp_path / ".pi/agent/extensions/observal.ts"
@@ -450,6 +469,27 @@ class TestPatchFunctions:
         manifest = read_json(tmp_path / ".pi/agent/extensions/.observal-extension.json")
         assert manifest["version"] == CLI_VERSION
 
+    def test_patch_pi_migrates_a_pre_manifest_install_and_keeps_a_backup(self, tmp_path: Path):
+        extension = legacy_extension(tmp_path)
+        previous = extension.read_text()
+
+        assert _patch_pi(dry_run=False) is True
+
+        assert extension.read_text() == pi_extension.extension_source()
+        assert extension.with_name("observal.ts.bak").read_text() == previous
+        manifest = read_json(tmp_path / ".pi/agent/extensions/.observal-extension.json")
+        assert manifest == {"managed": True, "version": CLI_VERSION}
+        assert _patch_pi(dry_run=False) is False
+
+    def test_patch_pi_dry_run_migration_writes_nothing(self, tmp_path: Path):
+        extension = legacy_extension(tmp_path)
+        previous = extension.read_text()
+
+        assert _patch_pi(dry_run=True) is True
+
+        assert extension.read_text() == previous
+        assert not extension.with_name("observal.ts.bak").exists()
+
     def test_patch_pi_never_overwrites_an_unmanaged_file(self, tmp_path: Path):
         extension = tmp_path / ".pi/agent/extensions/observal.ts"
         extension.parent.mkdir(parents=True)
@@ -618,6 +658,13 @@ class TestCleanupFunctions:
         assert _cleanup_pi(dry_run=False) is True
         assert not extension.exists()
         assert not manifest.exists()
+
+    def test_cleanup_pi_removes_a_pre_manifest_install(self, tmp_path: Path):
+        extension = legacy_extension(tmp_path)
+
+        assert _cleanup_pi(dry_run=False) is True
+
+        assert not extension.exists()
 
     def test_cleanup_pi_leaves_npm_registration_untouched(self, tmp_path: Path):
         settings = tmp_path / ".pi/agent/settings.json"
