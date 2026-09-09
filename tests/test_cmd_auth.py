@@ -1911,6 +1911,22 @@ def test_pi_extension_setup_migrates_pre_manifest_install(monkeypatch: pytest.Mo
     assert "reload" in output.lower()
 
 
+def test_pi_extension_setup_warns_about_a_duplicate_without_deleting(
+    monkeypatch: pytest.MonkeyPatch, printed: list[str]
+) -> None:
+    import observal_cli.pi_extension as pi_extension
+
+    status = pi_extension.PiExtensionStatus(pi_extension.NPM_DUPLICATE, "each session is sent twice", action="dedupe")
+    monkeypatch.setattr(pi_extension, "check_status", lambda: status)
+    install_or_refresh = MagicMock()
+    monkeypatch.setattr(pi_extension, "install_or_refresh", install_or_refresh)
+
+    auth._install_or_check_pi_extension()
+
+    install_or_refresh.assert_not_called()
+    assert any("sent twice" in message for message in printed)
+
+
 def test_pi_extension_setup_reports_stale_npm_without_installing_locally(
     monkeypatch: pytest.MonkeyPatch, printed: list[str]
 ) -> None:
