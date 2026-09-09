@@ -125,6 +125,7 @@ Each list invocation replaces this cache, including an empty result. Numeric row
 | --- | --- |
 | `~/.pi/agent/extensions/observal.ts` | Bundled telemetry extension, installed locally when npm isn't configured |
 | `~/.pi/agent/extensions/.observal-extension.json` | Manifest recording the CLI version the local extension was installed from |
+| `~/.pi/agent/extensions/observal.ts.bak` | Copy of a pre-tracking extension, kept when Observal migrates it |
 | `~/.pi/agent/settings.json` | Pi's own config; a `packages` entry of `npm:observal-pi[@version]` here selects the npm installation mode instead |
 
 Two mutually exclusive installation modes are supported:
@@ -132,7 +133,11 @@ Two mutually exclusive installation modes are supported:
 - **npm**: `npm:observal-pi` is configured in `~/.pi/agent/settings.json` (with or without a pinned version, and whether or not Pi has downloaded it yet). Observal never writes to `extensions/observal.ts` in this mode — `observal doctor` only reports when a pinned version is older than the installed CLI, with a `pi update npm:observal-pi` reminder.
 - **local**: no npm package is configured. `observal auth login` and `observal doctor patch` install the extension bundled with the CLI directly to `extensions/observal.ts`, recording the installed CLI version in the adjacent manifest. A later CLI upgrade refreshes both files atomically and prints a reminder to restart Pi or run `/reload`; a newer local install than the current CLI is left alone.
 
-If `extensions/observal.ts` exists without a matching manifest and its contents don't match the bundled source, Observal treats it as unmanaged and never overwrites or removes it — remove or move the file aside, then re-run `observal doctor patch --harness pi` to let Observal manage it.
+### Migrating installs from before version tracking
+
+CLI versions before the manifest existed wrote `extensions/observal.ts` with nothing beside it. Those installs are recognized by the doc header every Observal extension carries, and `observal auth login` or `observal doctor patch` migrates them: the existing file is copied to `observal.ts.bak` (`.bak.1`, `.bak.2`, … if that name is taken), the current extension is written in its place, and the manifest is created. The backup does not end in `.ts`, so Pi does not load it; delete it once you're satisfied with the upgrade.
+
+If `extensions/observal.ts` exists without a matching manifest, doesn't match the bundled source, and carries no Observal header, Observal treats it as unmanaged and never overwrites or removes it — remove or move the file aside, then re-run `observal doctor patch --harness pi` to let Observal manage it.
 
 ## Safe writes
 
