@@ -121,6 +121,20 @@ class TestCheckStatus:
         assert status.state == pi_extension.NPM_DUPLICATE
         assert status.action == "dedupe"
 
+    def test_npm_duplicate_recognized_by_manifest_when_header_is_gone(self, tmp_path: Path):
+        # The header match is only a fallback. A tracked install whose body no
+        # longer carries it is still ours, on the manifest's word alone.
+        write_json(tmp_path / ".pi/agent/settings.json", {"packages": ["npm:observal-pi"]})
+        extension = pi_extension.extension_path(tmp_path)
+        extension.parent.mkdir(parents=True)
+        extension.write_text("// header removed by hand\nconst x = 1;\n", encoding="utf-8")
+        write_json(pi_extension.manifest_path(tmp_path), {"managed": True, "version": CLI_VERSION})
+
+        status = pi_extension.check_status(home=tmp_path)
+
+        assert status.state == pi_extension.NPM_DUPLICATE
+        assert status.action == "dedupe"
+
     def test_npm_with_foreign_local_file_is_not_a_duplicate(self, tmp_path: Path):
         write_json(tmp_path / ".pi/agent/settings.json", {"packages": ["npm:observal-pi"]})
         extension = pi_extension.extension_path(tmp_path)
@@ -361,6 +375,7 @@ class TestInstallOrRefresh:
     def test_dedupe_removes_the_local_copy_and_keeps_a_backup(self, tmp_path: Path):
         write_json(tmp_path / ".pi/agent/settings.json", {"packages": ["npm:observal-pi"]})
         extension = write_legacy_install(tmp_path)
+        write_json(pi_extension.manifest_path(tmp_path), {"managed": True, "version": CLI_VERSION})
         previous = extension.read_text()
         backup = pi_extension.backup_path(tmp_path)
 
