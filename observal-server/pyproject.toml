@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
+# SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 [project]
@@ -23,7 +24,7 @@ dependencies = [
     "email-validator",
     "alembic",
     "httpx",
-    "gitpython>=3.1.58",
+    "gitpython>=3.1.59",
     "boto3",
     "litellm>=1.80.0,<1.90.0",
     # Required by LiteLLM for the `vertex_ai/*` models the insights settings
