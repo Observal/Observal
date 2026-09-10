@@ -1409,6 +1409,12 @@ def _patch_pi(dry_run: bool) -> bool:
         rprint(f"  [dim]{kept} the previous file at {esc(backup)}[/dim]")
     if not dry_run and action != "adopt":
         rprint("  [dim]Restart pi or run /reload to activate[/dim]")
+    if action == "dedupe" and not dry_run:
+        # The duplicate warning absorbed any stale-npm reminder. Now that the
+        # local copy is gone, re-read the state so that reminder still lands.
+        remaining = pi_extension.check_status()
+        if remaining.message:
+            rprint(f"  [yellow]{esc(remaining.message)}[/yellow]")
     return True
 
 

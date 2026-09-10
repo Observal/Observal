@@ -521,6 +521,17 @@ class TestPatchFunctions:
         assert extension.with_name("observal.ts.bak").read_text() == previous
         assert _patch_pi(dry_run=False) is False
 
+    def test_patch_pi_still_reports_a_stale_npm_package_after_deduping(self, capsys, tmp_path: Path):
+        # The duplicate warning absorbs the stale-npm reminder, so removing the
+        # local copy must not be the thing that hides it.
+        write_json(tmp_path / ".pi/agent/settings.json", {"packages": ["npm:observal-pi@0.0.1"]})
+        legacy_extension(tmp_path)
+
+        assert _patch_pi(dry_run=False) is True
+
+        output = capsys.readouterr().out
+        assert "pi update npm:observal-pi" in output
+
     def test_patch_pi_leaves_a_foreign_file_alone_in_npm_mode(self, tmp_path: Path):
         write_json(tmp_path / ".pi/agent/settings.json", {"packages": ["npm:observal-pi"]})
         extension = tmp_path / ".pi/agent/extensions/observal.ts"
