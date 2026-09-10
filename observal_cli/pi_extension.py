@@ -102,7 +102,7 @@ def extension_source() -> str:
     source_tree = Path(__file__).parents[1] / "packages" / "pi-extension" / "extensions" / "observal.ts"
     for path in (bundled, source_tree):
         if path.exists():
-            return path.read_text()
+            return path.read_text(encoding="utf-8")
     raise FileNotFoundError("Bundled Pi telemetry extension is missing")
 
 
@@ -190,7 +190,7 @@ def _is_observal_local_install(home: Path | None = None) -> bool:
     if manifest is not None and manifest.get("managed") is True:
         return True
     try:
-        return _is_observal_authored(path.read_text())
+        return _is_observal_authored(path.read_text(encoding="utf-8"))
     except OSError:
         return False
 
@@ -200,7 +200,7 @@ def _read_manifest(home: Path | None = None) -> dict | None:
     if not path.exists():
         return None
     try:
-        data = json.loads(path.read_text())
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
     return data if isinstance(data, dict) else None
@@ -266,7 +266,7 @@ def check_status(home: Path | None = None) -> PiExtensionStatus:
         )
 
     try:
-        installed = path.read_text()
+        installed = path.read_text(encoding="utf-8")
     except OSError as exc:
         raise OSError(f"{path}: {exc}") from exc
 
