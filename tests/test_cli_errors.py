@@ -217,7 +217,7 @@ def test_request_requires_authenticated_configuration(monkeypatch):
     monkeypatch.setattr(client, "_enforce_version_once", enforce)
 
     with pytest.raises(CliError) as error:
-        client.get("/api/v1/items")
+        client.post("/api/v1/items", {"name": "example"})
 
     assert error.value is failure
     get_config.assert_called_once_with()
@@ -775,7 +775,7 @@ def test_http_wrappers_construct_authenticated_requests(monkeypatch, method):
     monkeypatch.setattr(
         client.config,
         "get_or_exit",
-        lambda: {
+        lambda **_kwargs: {
             "server_url": "https://registry.example.test/",
             "access_token": "fake-access-token",
         },

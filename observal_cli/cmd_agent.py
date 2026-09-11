@@ -952,7 +952,7 @@ def agent_install(
     harness = _validate_harnesses([harness], operation="Generate agent installation")[0]
     resolved = client.resolve_registry_reference("agent", agent_id)
     with _progress("json" if raw else output, f"Generating {harness} config..."):
-        result = client.post(f"/api/v1/agents/{resolved}/install", {"harness": harness})
+        result = client.post_public(f"/api/v1/agents/{resolved}/install", {"harness": harness})
 
     snippet = result.get("config_snippet", {})
     if raw:

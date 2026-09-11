@@ -19,8 +19,8 @@ from api.deps import (
     commit_or_name_conflict,
     get_db,
     get_effective_component_permission,
+    get_registry_user,
     may_view_unapproved,
-    optional_current_user,
     require_role,
     resolve_listing,
     resolve_visible_listing,
@@ -234,7 +234,7 @@ async def list_mcps(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(optional_current_user),
+    current_user: User | None = Depends(get_registry_user),
 ):
     optic.debug("mcp list: search={}", search)
     stmt = (
@@ -302,7 +302,7 @@ async def my_mcps(
 async def get_mcp(
     listing_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(optional_current_user),
+    current_user: User | None = Depends(get_registry_user),
 ):
     optic.debug("mcp get: listing_id={}", listing_id)
     listing = await resolve_visible_listing(
@@ -326,7 +326,7 @@ async def install_mcp(
     req: McpInstallRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.user)),
+    current_user: User | None = Depends(get_registry_user),
 ):
     optic.debug("mcp install: listing_id={}", listing_id)
     listing = await resolve_visible_listing(
@@ -334,9 +334,13 @@ async def install_mcp(
     )
     if not listing:
         listing = await resolve_visible_listing(McpListing, listing_id, db, current_user)
-        if not listing or (
-            listing.status != ListingStatus.archived
-            and get_effective_component_permission(listing, current_user) != "owner"
+        if (
+            not listing
+            or current_user is None
+            or (
+                listing.status != ListingStatus.archived
+                and get_effective_component_permission(listing, current_user) != "owner"
+            )
         ):
             raise HTTPException(status_code=404, detail="Listing not found or not approved")
 
@@ -346,11 +350,12 @@ async def install_mcp(
     if listing.setup_instructions:
         warnings.append(f"MCP '{listing.name}' requires local setup before use:\n{listing.setup_instructions}")
 
-    db.add(McpDownload(listing_id=listing.id, user_id=current_user.id, harness=req.harness))
-    latest_version = getattr(listing, "latest_version", None)
-    if latest_version:
-        latest_version.download_count += 1
-    await commit_or_name_conflict(db, "listing")
+    if current_user is not None:
+        db.add(McpDownload(listing_id=listing.id, user_id=current_user.id, harness=req.harness))
+        latest_version = getattr(listing, "latest_version", None)
+        if latest_version:
+            latest_version.download_count += 1
+        await commit_or_name_conflict(db, "listing")
 
     from api.routes.config import derive_endpoints
 

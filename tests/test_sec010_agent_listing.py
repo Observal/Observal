@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for agent listing endpoint access.
 
-Verifies that anonymous callers are rejected and authenticated callers
-can list agents.
+Anonymous callers are rejected by default. The public registry dependency can
+admit guests while authenticated callers continue to receive their user scope.
 """
 
 import uuid
@@ -66,9 +66,31 @@ async def test_anonymous_rejected_from_list_agents():
 
 
 @pytest.mark.asyncio
+async def test_public_registry_guest_can_list_agents():
+    """The public registry dependency admits a guest without widening data scope."""
+    from api.deps import get_db, get_registry_user
+    from main import app
+
+    mock = _mock_db()
+
+    async def _fake_db():
+        yield mock
+
+    app.dependency_overrides[get_db] = _fake_db
+    app.dependency_overrides[get_registry_user] = lambda: None
+
+    try:
+        async with _make_client() as client:
+            response = await client.get("/api/v1/agents")
+        assert response.status_code == 200
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
 async def test_authenticated_user_can_list_agents():
     """Authenticated users get a 200 from the agent list endpoint."""
-    from api.deps import get_current_user, get_db
+    from api.deps import get_db, get_registry_user
     from main import app
 
     user = _user()
@@ -78,7 +100,7 @@ async def test_authenticated_user_can_list_agents():
         yield mock
 
     app.dependency_overrides[get_db] = _fake_db
-    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_registry_user] = lambda: user
 
     try:
         async with _make_client() as client:

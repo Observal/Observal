@@ -34,7 +34,7 @@ import {
   useCancelEdit,
   useTeams,
 } from "@/hooks/use-api";
-import { useAuthGuard } from "@/hooks/use-auth";
+import { useOptionalAuth } from "@/hooks/use-auth";
 import type { RegistryType } from "@/lib/api";
 import type { RegistryItem } from "@/lib/types";
 import {
@@ -192,8 +192,8 @@ function makeColumns(activeType: RegistryType): ColumnDef<RegistryItem>[] {
 export default function ComponentsPage() {
   const router = useRouter();
   const searchParams = useSearch({ from: "/_authed/components/" });
-  const { ready: authReady, role } = useAuthGuard();
-  const { data: teams = [] } = useTeams();
+  const { ready: authReady, role, isAuthenticated } = useOptionalAuth();
+  const { data: teams = [] } = useTeams(isAuthenticated);
   const activeType = searchParams.type ?? "mcps";
   const [search, setSearch] = useState(searchParams.search ?? "");
   const [debouncedSearch, setDebouncedSearch] = useState(searchParams.search ?? "");
@@ -231,10 +231,12 @@ export default function ComponentsPage() {
 
   const { data, isLoading, isError, error, refetch } = useRegistryList(activeType, registryFilters);
 
-  const { data: myItems } = useMyComponents(activeType);
+  const { data: myItems } = useMyComponents(activeType, isAuthenticated);
   const myDrafts = useMemo(
-    () => (myItems ?? []).filter((i) => ["draft", "pending", "rejected", "archived"].includes(i.status ?? "")),
-    [myItems],
+    () => isAuthenticated
+      ? (myItems ?? []).filter((i) => ["draft", "pending", "rejected", "archived"].includes(i.status ?? ""))
+      : [],
+    [isAuthenticated, myItems],
   );
 
   const submitMutation = useComponentSubmit(activeType);
@@ -347,33 +349,37 @@ export default function ComponentsPage() {
                 className="pl-9 h-9"
               />
             </div>
-            <PickerSelect
-              value={searchParams.team ?? ""}
-              onValueChange={(value) => updateFilters({ team: value || undefined })}
-              options={[
-                { value: "", label: "All visible teamspaces" },
-                ...teams.map((team) => ({ value: team.handle, label: `Team: ${team.name}` })),
-              ]}
-              placeholder="Teamspace"
-              className="w-[210px]"
-              inputClassName="h-9"
-            />
-            <UserSearchInput
-              value={publisherQuery}
-              onValueChange={(value) => {
-                setPublisherQuery(value);
-                if (searchParams.namespace && value !== searchParams.namespace && value !== `@${searchParams.namespace}`) {
-                  updateFilters({ namespace: undefined });
-                }
-              }}
-              onSelect={(user) => {
-                if (!user.username) return;
-                setPublisherQuery(`@${user.username}`);
-                updateFilters({ namespace: user.username });
-              }}
-              placeholder="Publisher"
-              className="h-9 w-[220px]"
-            />
+            {isAuthenticated && (
+              <>
+                <PickerSelect
+                  value={searchParams.team ?? ""}
+                  onValueChange={(value) => updateFilters({ team: value || undefined })}
+                  options={[
+                    { value: "", label: "All visible teamspaces" },
+                    ...teams.map((team) => ({ value: team.handle, label: `Team: ${team.name}` })),
+                  ]}
+                  placeholder="Teamspace"
+                  className="w-[210px]"
+                  inputClassName="h-9"
+                />
+                <UserSearchInput
+                  value={publisherQuery}
+                  onValueChange={(value) => {
+                    setPublisherQuery(value);
+                    if (searchParams.namespace && value !== searchParams.namespace && value !== `@${searchParams.namespace}`) {
+                      updateFilters({ namespace: undefined });
+                    }
+                  }}
+                  onSelect={(user) => {
+                    if (!user.username) return;
+                    setPublisherQuery(`@${user.username}`);
+                    updateFilters({ namespace: user.username });
+                  }}
+                  placeholder="Publisher"
+                  className="h-9 w-[220px]"
+                />
+              </>
+            )}
             {typeFilters.map((filter) => (
               <PickerSelect
                 key={filter.key}
@@ -633,7 +639,7 @@ export default function ComponentsPage() {
         )}
       </div>
 
-      <SubmitComponentDialog
+      {isAuthenticated && <SubmitComponentDialog
         key={editItem?.id ?? "new"}
         open={submitOpen}
         onOpenChange={(v) => {
@@ -674,7 +680,7 @@ export default function ComponentsPage() {
         }}
         isSubmitting={submitMutation.isPending || submitDraftMutation.isPending}
         isSavingDraft={saveDraftMutation.isPending || updateDraftMutation.isPending}
-      />
+      />}
     </>
   );
 }

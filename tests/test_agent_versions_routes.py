@@ -16,7 +16,7 @@ from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
 from pydantic import ValidationError
 
-from api.deps import get_current_user, get_db
+from api.deps import get_current_user, get_db, get_registry_user
 from api.routes import agent as agent_routes
 from api.routes import agent_versions as routes
 from models.agent import Agent, AgentStatus, AgentVersion
@@ -966,6 +966,7 @@ def _route_app(user, db) -> FastAPI:
     app = FastAPI()
     app.include_router(routes.agent_version_router, prefix="/api/v1/agents")
     app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_registry_user] = lambda: user
     app.dependency_overrides[get_db] = lambda: db
     return app
 

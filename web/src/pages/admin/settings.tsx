@@ -215,6 +215,7 @@ export default function SettingsPage() {
 	const {
 		ssoEnabled,
 		samlEnabled,
+		publicRegistryEnabled,
 		brandingLogo,
 		brandingAppName,
 		brandingWordmark,
@@ -228,6 +229,7 @@ export default function SettingsPage() {
 	const [tracePrivacy, setTracePrivacy] = useState(false);
 	const [tracePrivacyLoading, setTracePrivacyLoading] = useState(true);
 	const [tracePrivacyToggling, setTracePrivacyToggling] = useState(false);
+	const [publicRegistryToggling, setPublicRegistryToggling] = useState(false);
 	const [registeredAgentsOnly, setRegisteredAgentsOnly] = useState(false);
 	const [registeredAgentsOnlyLoading, setRegisteredAgentsOnlyLoading] =
 		useState(() => hasMinRole(getUserRole(), "super_admin"));
@@ -352,6 +354,24 @@ export default function SettingsPage() {
 			setTracePrivacyToggling(false);
 		}
 	}, []);
+
+	const handlePublicRegistryToggle = useCallback(async (checked: boolean) => {
+		setPublicRegistryToggling(true);
+		try {
+			await admin.updateSetting("deployment.public_registry_enabled", {
+				value: checked ? "true" : "false",
+			});
+			await queryClient.invalidateQueries({ queryKey: ["config", "public"] });
+			await refetch();
+			toast.success(`Public registry access ${checked ? "enabled" : "disabled"}`);
+		} catch (e) {
+			toast.error(
+				e instanceof Error ? e.message : "Failed to update public registry access",
+			);
+		} finally {
+			setPublicRegistryToggling(false);
+		}
+	}, [queryClient, refetch]);
 
 	const handleRegisteredAgentsOnlyToggle = useCallback(
 		async (checked: boolean) => {
@@ -987,6 +1007,30 @@ export default function SettingsPage() {
 					</div>
 				</section>
 
+				{/* Public registry access */}
+				<section className="animate-in">
+					<h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
+						<Eye className="h-3.5 w-3.5" />
+						Public Registry
+					</h3>
+					<div className="rounded-md border border-border bg-card px-4 py-3">
+						<div className="flex items-center justify-between gap-4">
+							<div className="flex-1">
+								<p className="text-sm font-medium">Allow public browsing and installs</p>
+								<p className="text-xs text-muted-foreground mt-0.5">
+									Signed-out visitors can browse and install approved public agents and components. Publishing, private content, telemetry, and administration still require sign-in.
+								</p>
+							</div>
+							<Switch
+								checked={publicRegistryEnabled}
+								onCheckedChange={handlePublicRegistryToggle}
+								disabled={publicRegistryToggling}
+								aria-label="Allow public registry browsing and installs"
+							/>
+						</div>
+					</div>
+				</section>
+
 				{/* Trace Privacy */}
 				<section className="animate-in">
 					<h3 className={`text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5 ${sectionHelpHeadingClass("Trace Privacy")}`} onClick={(event) => { if ((event.ctrlKey || event.metaKey) && openHelp(undefined, "Trace Privacy")) event.preventDefault(); }}>
@@ -1292,7 +1336,9 @@ export default function SettingsPage() {
 						{/* Add new setting form */}
 						{/* Unified sections, each setting stays in its section */}
 						{settingSections.filter((s) => !s.danger).map((section) => {
-								const visibleSettings = section.settings;
+								const visibleSettings = section.settings.filter(
+									(setting) => setting.key !== "deployment.public_registry_enabled",
+								);
 								if (visibleSettings.length === 0) return null;
 
 								if (section.title === "Agent Insights") {
@@ -1406,7 +1452,9 @@ export default function SettingsPage() {
 										<p className="text-xs text-foreground/60 mb-4">These settings can affect authentication, security, and data integrity.</p>
 										<div className="space-y-4">
 											{settingSections.filter((s) => s.danger).map((section) => {
-												const visibleDangerSettings = section.settings;
+												const visibleDangerSettings = section.settings.filter(
+													(setting) => setting.key !== "deployment.public_registry_enabled",
+												);
 												if (visibleDangerSettings.length === 0) return null;
 												return (
 												<details key={section.title} className="group rounded-md border-l-4 border-amber-500/60 border-2 border-border/70 bg-card">

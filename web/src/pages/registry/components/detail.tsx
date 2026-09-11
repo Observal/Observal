@@ -7,7 +7,7 @@
 
 
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
-import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
+import { useState, useEffect } from "react";
 import { Star, ArrowLeft, History, Loader2, ArrowDownToLine, Archive, ArchiveRestore, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -25,6 +25,7 @@ import {
   useWhoami,
 } from "@/hooks/use-api";
 import { getUserRole } from "@/lib/api";
+import { useOptionalAuth } from "@/hooks/use-auth";
 import { hasMinRole } from "@/hooks/use-role-guard";
 import type { RegistryType } from "@/lib/api";
 import type { FeedbackItem, RegistryItem, ComponentVersionSummary } from "@/lib/types";
@@ -121,27 +122,18 @@ export default function ComponentDetailPage({
   const type = (componentType ?? search.type ?? "mcps") as RegistryType;
   const navigate = useNavigate();
   const singularType = type === "sandboxes" ? "sandbox" : type.replace(/s$/, "");
+  const { isAuthenticated } = useOptionalAuth();
   const { data: item, isLoading, isError, error, refetch } = useRegistryItem(type, id);
   const { data: feedbackItems, refetch: refetchFeedback } = useFeedback(singularType, id);
   const { data: feedbackSummary, refetch: refetchSummary } = useFeedbackSummary(id);
-  const { data: myReview } = useMyFeedback(singularType, id);
-  const { data: rawMetrics } = useRegistryMetrics(type, id);
+  const { data: myReview } = useMyFeedback(singularType, id, isAuthenticated);
+  const { data: rawMetrics } = useRegistryMetrics(type, id, isAuthenticated);
   const { data: versionsData, isLoading: versionsLoading } = useComponentVersions(type, id);
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
   const { data: versionDetail } = useComponentVersionDetail(type, id, selectedVersion);
-  const { data: whoami } = useWhoami();
-  const { data: teams = [] } = useTeams();
+  const { data: whoami } = useWhoami(isAuthenticated);
+  const { data: teams = [] } = useTeams(isAuthenticated);
   const updateVisibility = useUpdateRegistryVisibility();
-
-  const storeSub = useCallback((cb: () => void) => {
-    window.addEventListener("storage", cb);
-    return () => window.removeEventListener("storage", cb);
-  }, []);
-  const isAuthenticated = useSyncExternalStore(
-    storeSub,
-    () => !!sessionStorage.getItem("observal_access_token"),
-    () => false,
-  );
   const canEdit = isAuthenticated && (item?.user_permission === "owner");
   const owningTeam = item?.team_id ? teams.find((team) => team.id === String(item.team_id)) : undefined;
   const personalTeam = teams.find((team) => team.is_personal && team.visibility === "private");
@@ -172,14 +164,22 @@ export default function ComponentDetailPage({
   // Co-authors
   const [coAuthors, setCoAuthors] = useState<CoAuthor[]>([]);
   useEffect(() => {
+    if (!isAuthenticated) {
+      setCoAuthors([]);
+      return;
+    }
+    const controller = new AbortController();
     const token = sessionStorage.getItem("observal_access_token");
     const headers: Record<string, string> = {};
     if (token) headers["Authorization"] = `Bearer ${token}`;
-    fetch(`/api/v1/${type}/${id}/co-authors`, { headers })
+    fetch(`/api/v1/${type}/${id}/co-authors`, { headers, signal: controller.signal })
       .then((r) => (r.ok ? r.json() : []))
-      .then((data) => setCoAuthors(data))
+      .then((data) => {
+        if (!controller.signal.aborted) setCoAuthors(data);
+      })
       .catch(() => {});
-  }, [type, id]);
+    return () => controller.abort();
+  }, [type, id, isAuthenticated]);
 
   const versions = versionsData?.items ?? [];
   // VersionDropdown expects AgentVersionSummary shape; ComponentVersionSummary is compatible
@@ -258,7 +258,7 @@ export default function ComponentDetailPage({
 
   const avgRating = feedbackSummary?.average_rating;
   const totalReviews = feedbackSummary?.total_reviews ?? 0;
-  const metricsEntries: [string, string][] = rawMetrics && typeof rawMetrics === "object"
+  const metricsEntries: [string, string][] = isAuthenticated && rawMetrics && typeof rawMetrics === "object"
     ? Object.entries(rawMetrics as Record<string, unknown>).map(([k, v]) => [k, typeof v === "number" ? v.toLocaleString() : String(v ?? "")])
     : [];
 
@@ -431,7 +431,7 @@ export default function ComponentDetailPage({
                 ) : (
                   <div className="space-y-4">
                     {feedbackItems
-                      .filter((fb: FeedbackItem) => !myReview || fb.id !== myReview.id)
+                      .filter((fb: FeedbackItem) => !isAuthenticated || !myReview || fb.id !== myReview.id)
                       .map((fb: FeedbackItem) => (
                       <div key={fb.id} className="rounded-md border border-border p-4 space-y-2">
                         <div className="flex items-center justify-between">

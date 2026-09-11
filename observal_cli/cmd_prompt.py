@@ -398,7 +398,7 @@ def prompt_render(
         variables[key.strip()] = raw.strip("\"'")
     render_context = nullcontext() if output == "json" else spinner("Rendering prompt...")
     with render_context:
-        result = client.post(f"/api/v1/prompts/{resolved}/render", {"variables": variables})
+        result = client.post_public(f"/api/v1/prompts/{resolved}/render", {"variables": variables})
     if output == "json":
         output_json(result)
     else:

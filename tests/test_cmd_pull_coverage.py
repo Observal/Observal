@@ -474,7 +474,11 @@ def test_rewrite_kiro_hooks_replaces_observal_entries_and_keeps_user_hooks(monke
         }
     )
     monkeypatch.setattr(spec, "build_kiro_hooks", build)
-    monkeypatch.setattr(cmd_pull.config, "get_or_exit", lambda: {"server_url": "https://registry.example/"})
+    monkeypatch.setattr(
+        cmd_pull.config,
+        "get_or_exit",
+        lambda **_kwargs: {"server_url": "https://registry.example/"},
+    )
     content = {
         "hooks": {
             "stop": [

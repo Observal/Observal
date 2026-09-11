@@ -123,6 +123,7 @@ function getRefreshToken(): string | null {
 export function setTokens(accessToken: string, refreshToken: string) {
 	sessionStorage.setItem(STORAGE_KEY_ACCESS_TOKEN, accessToken);
 	localStorage.setItem(STORAGE_KEY_REFRESH_TOKEN, refreshToken);
+	window.dispatchEvent(new Event("storage"));
 }
 
 export function clearSession() {
@@ -134,6 +135,8 @@ export function clearSession() {
 	localStorage.removeItem(STORAGE_KEY_USER_EMAIL);
 	localStorage.removeItem(STORAGE_KEY_USER_USERNAME);
 	localStorage.removeItem(STORAGE_KEY_USER_AVATAR);
+	window.dispatchEvent(new Event("observal:session-cleared"));
+	window.dispatchEvent(new Event("storage"));
 }
 
 export function setUserRole(role: string) {
@@ -979,6 +982,7 @@ export type PublicConfig = {
 	google_sso_enabled: boolean;
 	github_sso_enabled: boolean;
 	sso_only: boolean;
+	public_registry_enabled: boolean;
 	self_registration_enabled: boolean;
 	saml_enabled: boolean;
 	exec_dashboard_available: boolean;

@@ -56,10 +56,10 @@ export function useRegistryResolve(type: RegistryType, identifier: string | unde
   });
 }
 
-export function useRegistryMetrics(type: RegistryType, id: string | undefined) {
+export function useRegistryMetrics(type: RegistryType, id: string | undefined, enabled = true) {
   return useQuery({
     queryKey: ["registry", type, id, "metrics"],
-    enabled: !!id,
+    enabled: !!id && enabled,
     queryFn: () => registry.metrics(type, id!),
   });
 }

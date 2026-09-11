@@ -103,8 +103,7 @@ def test_current_registry_url_reads_and_normalizes_config(isolated_lockfile):
     assert lockfile.current_registry_url() == "https://registry.example.test/root"
 
     isolated_lockfile.server_url = ""
-    with pytest.raises(ValueError, match="configured server URL"):
-        lockfile.current_registry_url()
+    assert lockfile.current_registry_url() == config.PUBLIC_SERVER_URL
 
 
 def test_read_missing_lockfile_returns_fresh_schema_without_writing(isolated_lockfile):

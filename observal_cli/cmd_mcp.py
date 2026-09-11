@@ -1201,7 +1201,7 @@ def _install_impl(
         }
         if version:
             install_body["version"] = version
-        result = client.post(
+        result = client.post_public(
             f"/api/v1/mcps/{resolved}/install",
             install_body,
         )

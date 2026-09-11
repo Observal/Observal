@@ -5,7 +5,7 @@
 // SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter, useLocation } from "@tanstack/react-router";
 import { auth, setUserRole, getUserRole, clearSession, refreshAccessTokenWithReason } from "@/lib/api";
 import { currentPathAsNext } from "@/lib/safe-next";
@@ -34,6 +34,78 @@ function getServerSnapshot() {
   return "ssr";
 }
 
+function retryUntilSettled(
+  attemptRequest: () => Promise<"ok" | "rejected" | "network_error">,
+  { onSuccess, onRejected, onNetworkError }: {
+    onSuccess?: () => void;
+    onRejected?: () => void;
+    onNetworkError?: () => void;
+  } = {},
+) {
+  let cancelled = false;
+  let inFlight = false;
+  let retryTimer: number | undefined;
+
+  const attempt = async () => {
+    if (cancelled || inFlight) return;
+    inFlight = true;
+    const result = await attemptRequest();
+    inFlight = false;
+    if (cancelled) return;
+
+    if (result === "ok") {
+      onSuccess?.();
+      window.dispatchEvent(new Event("storage"));
+    } else if (result === "rejected") {
+      clearSession();
+      onRejected?.();
+    } else {
+      onNetworkError?.();
+      retryTimer = window.setTimeout(attempt, 5_000);
+    }
+  };
+
+  const retryNow = () => {
+    if (retryTimer) window.clearTimeout(retryTimer);
+    void attempt();
+  };
+
+  window.addEventListener("online", retryNow);
+  void attempt();
+  return () => {
+    cancelled = true;
+    if (retryTimer) window.clearTimeout(retryTimer);
+    window.removeEventListener("online", retryNow);
+  };
+}
+
+function retryRefreshUntilSettled(onRejected?: () => void) {
+  return retryUntilSettled(refreshAccessTokenWithReason, { onRejected });
+}
+
+function retryWhoamiUntilSettled({
+  onSuccess,
+  onRejected,
+  onNetworkError,
+}: {
+  onSuccess?: () => void;
+  onRejected?: () => void;
+  onNetworkError?: () => void;
+} = {}) {
+  return retryUntilSettled(
+    async () => {
+      try {
+        const user = await auth.whoami();
+        setUserRole(user.role);
+        return "ok";
+      } catch (err) {
+        return isNetworkError(err) ? "network_error" : "rejected";
+      }
+    },
+    { onSuccess, onRejected, onNetworkError },
+  );
+}
+
 export function useAuthGuard() {
   const router = useRouter();
   const { pathname } = useLocation();
@@ -49,17 +121,9 @@ export function useAuthGuard() {
 
     // New tab: no access token but refresh token exists. Try silent refresh.
     if (isRefreshing) {
-      refreshAccessTokenWithReason().then((result) => {
-        if (result === "ok") {
-          window.dispatchEvent(new Event("storage"));
-        } else if (result === "rejected") {
-          clearSession();
-          window.dispatchEvent(new Event("storage"));
-          router.navigate({ to: "/login", replace: true, search: { next: currentPathAsNext() } });
-        }
-        // "network_error": do nothing, leave session intact
+      return retryRefreshUntilSettled(() => {
+        router.navigate({ to: "/login", replace: true, search: { next: currentPathAsNext() } });
       });
-      return;
     }
 
     if (!hasToken && pathname !== "/login") {
@@ -69,14 +133,10 @@ export function useAuthGuard() {
     if (!hasToken) return;
 
     if (snapshot === "pending") {
-      auth.whoami().then((user) => {
-        setUserRole(user.role);
-        window.dispatchEvent(new Event("storage"));
-      }).catch((err) => {
-        if (isNetworkError(err)) return;
-        clearSession();
-        window.dispatchEvent(new Event("storage"));
-        router.navigate({ to: "/login", replace: true, search: { next: currentPathAsNext() } });
+      return retryWhoamiUntilSettled({
+        onRejected: () => {
+          router.navigate({ to: "/login", replace: true, search: { next: currentPathAsNext() } });
+        },
       });
     }
   }, [isSSR, hasToken, isRefreshing, snapshot, pathname, router]);
@@ -91,23 +151,29 @@ export function useAuthGuard() {
  */
 export function useOptionalAuth() {
   const snapshot = useSyncExternalStore(subscribe, getAuthSnapshot, getServerSnapshot);
-  const hasToken = snapshot !== "";
-  const ready = !hasToken || snapshot !== "pending";
-  const role = (hasToken && snapshot !== "pending") ? snapshot : null;
-  const isAuthenticated = hasToken && snapshot !== "pending";
+  const [networkFallback, setNetworkFallback] = useState(false);
+  const isRefreshing = snapshot === "refreshing";
+  const hasToken = snapshot !== "" && snapshot !== "ssr" && !isRefreshing;
+  const useAnonymousFallback = networkFallback && snapshot === "pending";
+  const ready = useAnonymousFallback || (snapshot !== "pending" && !isRefreshing);
+  const role = !useAnonymousFallback && hasToken && snapshot !== "pending" ? snapshot : null;
+  const isAuthenticated = !useAnonymousFallback && hasToken && snapshot !== "pending";
 
   useEffect(() => {
+    if (isRefreshing) {
+      return retryRefreshUntilSettled();
+    }
+
     if (hasToken && snapshot === "pending") {
-      auth.whoami().then((user) => {
-        setUserRole(user.role);
-        window.dispatchEvent(new Event("storage"));
-      }).catch((err) => {
-        if (isNetworkError(err)) return;
-        clearSession();
-        window.dispatchEvent(new Event("storage"));
+      return retryWhoamiUntilSettled({
+        onSuccess: () => setNetworkFallback(false),
+        onNetworkError: () => {
+          setNetworkFallback(true);
+          window.dispatchEvent(new Event("observal:session-cleared"));
+        },
       });
     }
-  }, [hasToken, snapshot]);
+  }, [hasToken, isRefreshing, snapshot]);
 
   return { ready, role, isAuthenticated };
 }

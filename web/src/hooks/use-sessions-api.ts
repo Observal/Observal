@@ -30,6 +30,7 @@ export function useSessions2(options?: {
   limit?: number;
   offset?: number;
   mine?: boolean;
+  enabled?: boolean;
 }) {
   return useQuery({
     queryKey: ['sessions', 'list', options?.platform, options?.user, options?.days, options?.limit, options?.offset, options?.mine],
@@ -42,6 +43,7 @@ export function useSessions2(options?: {
         offset: options?.offset,
         mine: options?.mine,
       }),
+    enabled: options?.enabled ?? true,
     refetchInterval: options?.refetchInterval,
     refetchOnMount: "always",
     staleTime: 0,

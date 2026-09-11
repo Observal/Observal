@@ -324,6 +324,7 @@ DEFAULTS: dict[str, str] = {
     "github.allowed_orgs": "",
     # Deployment
     "deployment.sso_only": "false",
+    "deployment.public_registry_enabled": "false",
     "deployment.frontend_url": "http://localhost:3000",
     "deployment.public_url": "",
     "deployment.cors_origins": "http://localhost:3000",
@@ -406,6 +407,13 @@ SENSITIVE_KEYS: set[str] = {
 
 SETTING_FEATURES: dict[str, str] = {}
 
+SETTING_SUBTITLES: dict[str, str] = {
+    "deployment.public_registry_enabled": (
+        "Allow signed-out visitors to browse and install approved public registry content. "
+        "Publishing, private data, telemetry, and administration still require authentication."
+    ),
+}
+
 RESTART_REQUIRED_KEYS: set[str] = {
     "oauth.client_id",
     "oauth.client_secret",
@@ -458,7 +466,7 @@ def settings_schema() -> list[dict[str, Any]]:
                 {
                     "key": key,
                     "label": _setting_label(key),
-                    "subtitle": "",
+                    "subtitle": SETTING_SUBTITLES.get(key, ""),
                     "default": DEFAULTS.get(key, ""),
                     "requires_feature": SETTING_FEATURES.get(key) or section.get("requires_feature"),
                     "restart_required": key in RESTART_REQUIRED_KEYS,

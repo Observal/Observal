@@ -682,6 +682,54 @@ class TestListAndDetail:
 
 class TestInstallSkill:
     @pytest.mark.asyncio
+    async def test_anonymous_approved_install_does_not_change_download_metrics(self, monkeypatch):
+        db = _db()
+        listing = _listing()
+        commit = AsyncMock()
+        monkeypatch.setattr(skill, "resolve_visible_listing", AsyncMock(return_value=listing))
+        monkeypatch.setattr(skill, "commit_or_name_conflict", commit)
+        monkeypatch.setattr("api.routes.config.derive_endpoints", AsyncMock(return_value={"api": "https://api.test"}))
+        monkeypatch.setattr(
+            "services.skill_config_generator.generate_skill_config",
+            Mock(return_value={"skill": {"name": "review"}}),
+        )
+
+        response = await skill.install_skill(
+            "alice/review-skill",
+            SkillInstallRequest(harness="pi"),
+            MagicMock(),
+            db,
+            None,
+        )
+
+        assert response.config_snippet == {"skill": {"name": "review"}}
+        assert listing.latest_version.download_count == 7
+        db.add.assert_not_called()
+        commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_anonymous_archived_install_is_hidden(self, monkeypatch):
+        db = _db()
+        listing = _listing(status=ListingStatus.archived)
+        monkeypatch.setattr(skill, "resolve_visible_listing", AsyncMock(side_effect=[None, listing]))
+        commit = AsyncMock()
+        monkeypatch.setattr(skill, "commit_or_name_conflict", commit)
+
+        with pytest.raises(HTTPException) as exc:
+            await skill.install_skill(
+                "alice/review-skill",
+                SkillInstallRequest(harness="pi"),
+                MagicMock(),
+                db,
+                None,
+            )
+
+        _http_error(exc, 404, "Listing not found or not approved")
+        assert listing.latest_version.download_count == 7
+        db.add.assert_not_called()
+        commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_archived_version_install_tracks_usage_then_generates_exact_config(self, monkeypatch):
         db = _db()
         listing = _listing(status=ListingStatus.archived)

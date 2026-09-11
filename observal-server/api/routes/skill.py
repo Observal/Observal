@@ -20,8 +20,8 @@ from api.deps import (
     commit_or_name_conflict,
     get_db,
     get_effective_component_permission,
+    get_registry_user,
     may_view_unapproved,
-    optional_current_user,
     require_role,
     resolve_listing,
     resolve_visible_listing,
@@ -207,7 +207,7 @@ async def list_skills(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(optional_current_user),
+    current_user: User | None = Depends(get_registry_user),
 ):
     optic.debug("listing skills (task_type={}, search={})", task_type, search)
     stmt = (
@@ -291,7 +291,7 @@ async def my_skills(
 async def get_skill(
     listing_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(optional_current_user),
+    current_user: User | None = Depends(get_registry_user),
 ):
     optic.debug("fetching skill {}", listing_id)
     listing = await resolve_visible_listing(
@@ -315,7 +315,7 @@ async def install_skill(
     req: SkillInstallRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.user)),
+    current_user: User | None = Depends(get_registry_user),
 ):
     optic.debug("installing skill {}", listing_id)
     listing = await resolve_visible_listing(
@@ -323,7 +323,7 @@ async def install_skill(
     )
     if not listing:
         listing = await resolve_visible_listing(SkillListing, listing_id, db, current_user)
-        if not listing:
+        if not listing or current_user is None:
             raise HTTPException(status_code=404, detail="Listing not found or not approved")
         if (
             listing.status != ListingStatus.archived
@@ -353,11 +353,12 @@ async def install_skill(
                 detail=f"Version {req.version!r} not found for this skill",
             )
 
-    db.add(SkillDownload(listing_id=listing.id, user_id=current_user.id, harness=req.harness))
-    latest_version = getattr(listing, "latest_version", None)
-    if latest_version:
-        latest_version.download_count += 1
-    await commit_or_name_conflict(db, "skill")
+    if current_user is not None:
+        db.add(SkillDownload(listing_id=listing.id, user_id=current_user.id, harness=req.harness))
+        latest_version = getattr(listing, "latest_version", None)
+        if latest_version:
+            latest_version.download_count += 1
+        await commit_or_name_conflict(db, "skill")
 
     from api.routes.config import derive_endpoints
     from services.skill_config_generator import generate_skill_config

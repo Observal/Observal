@@ -266,7 +266,7 @@ def test_agent_pull_writes_rules_and_mcp(tmp_path: Path) -> None:
     with (
         patch("observal_cli.config.resolve_alias", return_value=agent_id),
         patch("observal_cli.client.get", return_value=agent_detail),
-        patch("observal_cli.client.post", return_value=install_result),
+        patch("observal_cli.client.post_public", return_value=install_result),
     ):
         result = runner.invoke(
             app,
@@ -296,7 +296,7 @@ def test_agent_pull_dry_run(tmp_path: Path) -> None:
     with (
         patch("observal_cli.config.resolve_alias", return_value=agent_id),
         patch("observal_cli.client.get", return_value=agent_detail),
-        patch("observal_cli.client.post", return_value=install_result),
+        patch("observal_cli.client.post_public", return_value=install_result),
     ):
         result = runner.invoke(
             app,
@@ -322,7 +322,7 @@ def test_agent_pull_steering_file(tmp_path: Path) -> None:
     with (
         patch("observal_cli.config.resolve_alias", return_value=agent_id),
         patch("observal_cli.client.get", return_value=agent_detail),
-        patch("observal_cli.client.post", return_value=install_result),
+        patch("observal_cli.client.post_public", return_value=install_result),
     ):
         result = runner.invoke(
             app,
@@ -346,7 +346,7 @@ def test_agent_pull_path_traversal_rejected(tmp_path: Path) -> None:
     with (
         patch("observal_cli.config.resolve_alias", return_value=agent_id),
         patch("observal_cli.client.get", return_value=agent_detail),
-        patch("observal_cli.client.post", return_value=install_result),
+        patch("observal_cli.client.post_public", return_value=install_result),
     ):
         result = runner.invoke(
             app,

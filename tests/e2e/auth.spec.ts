@@ -46,3 +46,46 @@ test("logout redirects to /login and blocks protected pages", async ({ page }) =
   await page.goto("/dashboard");
   await expect(page).toHaveURL(/\/login/, { timeout: 10_000 });
 });
+
+test("public registry can be entered as a guest", async ({ page }) => {
+  await page.route("**/api/v1/config/public", async (route) => {
+    const response = await route.fetch();
+    const config = await response.json();
+    await route.fulfill({ response, json: { ...config, public_registry_enabled: true } });
+  });
+
+  await page.goto("/login");
+  const guestButton = page.getByRole("button", { name: "Sign in as guest" });
+  await expect(guestButton).toBeVisible();
+  await guestButton.click();
+  await expect(page).toHaveURL(/\/$/, { timeout: 10_000 });
+});
+
+test("logout clears account-scoped query data without a reload", async ({ page }) => {
+  let myAgentsRequests = 0;
+  await page.route("**/api/v1/agents/my", async (route) => {
+    myAgentsRequests += 1;
+    await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+  });
+
+  const login = async () => {
+    await page.goto("/login");
+    await page.fill("#email", EMAIL);
+    await page.fill("#password", PASSWORD);
+    await page.click('button[type="submit"]');
+    await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 15_000 });
+  };
+
+  await login();
+  await page.goto("/agents");
+  await expect.poll(() => myAgentsRequests).toBeGreaterThan(0);
+  const requestsBeforeLogout = myAgentsRequests;
+
+  await page.locator("button").filter({ hasText: /demo admin|admin/i }).first().click();
+  await page.locator("text=Sign out").click();
+  await expect(page).toHaveURL(/\/login/, { timeout: 10_000 });
+
+  await login();
+  await page.goto("/agents");
+  await expect.poll(() => myAgentsRequests).toBeGreaterThan(requestsBeforeLogout);
+});

@@ -18,7 +18,7 @@ from loguru import logger as optic
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002
 
-from api.deps import apply_visibility_filter, get_db, optional_current_user, require_role
+from api.deps import apply_visibility_filter, get_db, get_registry_user, require_role
 from api.sanitize import escape_like
 from models.agent import Agent, AgentStatus, AgentVersion
 from models.agent_component import AgentComponent
@@ -76,7 +76,7 @@ async def _ch_json(sql: str, params: dict | None = None) -> list[dict]:
 async def overview_stats(
     range_: str | None = Query(None, alias="range"),
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(optional_current_user),
+    current_user: User = Depends(require_role(UserRole.user)),
 ):
 
     optic.trace("range={}", range_)
@@ -126,7 +126,7 @@ async def overview_stats(
 @router.get("/overview/top-mcps", response_model=list[TopItem])
 async def top_mcps(
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(optional_current_user),
+    current_user: User | None = Depends(get_registry_user),
 ):
     optic.debug("top_mcps called")
     stmt = select(McpDownload.listing_id, func.count(McpDownload.id).label("cnt"), McpListing.name).join(
@@ -142,7 +142,7 @@ async def top_mcps(
 async def top_agents(
     limit: int = Query(6, le=50),
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(optional_current_user),
+    current_user: User | None = Depends(get_registry_user),
 ):
     stmt = (
         select(
@@ -210,7 +210,7 @@ async def agent_leaderboard(
     limit: int = Query(20, le=50),
     user: str | None = Query(None, description="Filter by creator email"),
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(optional_current_user),
+    current_user: User | None = Depends(get_registry_user),
 ):
     """Public leaderboard of agents ranked by downloads within a time window."""
     stmt = (
@@ -230,7 +230,7 @@ async def agent_leaderboard(
         .where(AgentVersion.status == AgentStatus.approved, Agent.deleted_at.is_(None))
     )
     stmt = apply_visibility_filter(stmt, Agent, current_user)
-    if user:
+    if user and current_user is not None:
         stmt = stmt.join(User, Agent.created_by == User.id).where(User.email.ilike(f"%{escape_like(user)}%"))
     if window != "all":
         days = _RANGE_MAP.get(window, 7)
@@ -281,7 +281,7 @@ async def agent_leaderboard(
             )
         )
         extra_stmt = apply_visibility_filter(extra_stmt, Agent, current_user)
-        if user:
+        if user and current_user is not None:
             extra_stmt = extra_stmt.join(User, Agent.created_by == User.id).where(
                 User.email.ilike(f"%{escape_like(user)}%")
             )
@@ -307,7 +307,7 @@ async def agent_leaderboard(
                 version=a.version or "",
                 download_count=0,
                 average_rating=rating_map.get(a.id),
-                created_by_email=email_map.get(a.created_by, ""),
+                created_by_email=email_map.get(a.created_by, "") if current_user else "",
                 created_by_username=username_map.get(a.created_by),
             )
             for a in extra
@@ -327,7 +327,7 @@ async def agent_leaderboard(
             version=row.version or "",
             download_count=row.cnt,
             average_rating=rating_map.get(row.agent_id),
-            created_by_email=email_map.get(row.created_by, ""),
+            created_by_email=email_map.get(row.created_by, "") if current_user else "",
             created_by_username=username_map.get(row.created_by),
         )
         for row in rows
@@ -340,7 +340,7 @@ async def component_leaderboard(
     limit: int = Query(20, le=50),
     user: str | None = Query(None, description="Filter by creator email"),
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(optional_current_user),
+    current_user: User | None = Depends(get_registry_user),
 ):
     """Public leaderboard of components ranked by agent downloads within a time window."""
     listing_types = [
@@ -381,7 +381,7 @@ async def component_leaderboard(
         )
         stmt = apply_visibility_filter(stmt, Agent, current_user)
         stmt = apply_visibility_filter(stmt, listing_model, current_user)
-        if user:
+        if user and current_user is not None:
             stmt = stmt.join(User, listing_model.submitted_by == User.id).where(
                 User.email.ilike(f"%{escape_like(user)}%")
             )
@@ -439,7 +439,7 @@ async def component_leaderboard(
 
     # Resolve user emails
     email_map: dict[uuid.UUID, str] = {}
-    if all_user_ids:
+    if all_user_ids and current_user is not None:
         email_rows = await db.execute(select(User.id, User.email).where(User.id.in_(all_user_ids)))
         email_map = {r[0]: r[1] for r in email_rows.all()}
 
@@ -450,7 +450,7 @@ async def component_leaderboard(
         item.total_reviews = total_reviews
     for item in all_items:
         uid = submitted_by_map.get(item.id)
-        if uid and not item.created_by_email:
+        if uid and current_user is not None and not item.created_by_email:
             item.created_by_email = email_map.get(uid, "")
 
     # Backfill: include approved components with zero agent downloads
@@ -475,7 +475,7 @@ async def component_leaderboard(
             extra_stmt = extra_stmt.order_by(listing_model.created_at.desc()).limit(limit - len(all_items))
             extra_rows = (await db.execute(extra_stmt)).all()
             extra_sub_ids = {r.submitted_by for r in extra_rows if r.submitted_by} - set(email_map)
-            if extra_sub_ids:
+            if extra_sub_ids and current_user is not None:
                 for er in (await db.execute(select(User.id, User.email).where(User.id.in_(extra_sub_ids)))).all():
                     email_map[er[0]] = er[1]
             for r in extra_rows:
@@ -493,7 +493,7 @@ async def component_leaderboard(
                         component_type=type_label,
                         description=r.description or "",
                         download_count=0,
-                        created_by_email=email_map.get(r.submitted_by, "") if r.submitted_by else "",
+                        created_by_email=(email_map.get(r.submitted_by, "") if r.submitted_by and current_user else ""),
                         average_rating=avg_rating,
                         total_reviews=total_reviews,
                     )
