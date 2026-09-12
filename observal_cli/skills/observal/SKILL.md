@@ -4,8 +4,8 @@
 # SPDX-License-Identifier: Apache-2.0
 name: observal
 command: observal
-description: "Operates the Observal CLI for authentication, configuration, setup diagnosis, teamspaces, inbox work, scans, update checks, and authenticated API access. Use when the user wants to log in, configure Observal, inspect local harness setup, manage a teamspace or invitation, process inbox items, check installed registry items, or call an endpoint without a dedicated command."
-version: 2.7.0
+description: "Operates the Observal CLI for authentication, configuration, setup diagnosis, teamspaces, inbox work, scans, Agent sharing, update checks, and authenticated API access. Use when the user wants to log in, configure Observal, inspect local harness setup, share repository Agents, open an Agent share, manage a teamspace or invitation, process inbox items, check installed registry items, or call an endpoint without a dedicated command."
+version: 2.8.0
 owner: observal
 ---
 
@@ -30,7 +30,7 @@ Use this skill for core account, setup, local inventory, inbox, and teamspace wo
 
 | Task | Read |
 | --- | --- |
-| Login, account, CLI config, scan, doctor, outdated, inbox | [Core workflows](references/core-workflows.md) |
+| Login, account, CLI config, scan, doctor, outdated, inbox, Agent shares | [Core workflows](references/core-workflows.md) |
 | Teamspaces, visibility review, members, requests, invitations | [Teamspace workflows](references/teamspaces.md) |
 | Exact command inventory or authenticated API escape hatch | [Generated command reference](references/commands.md) |
 | Create, edit, release, or pull an Agent | Use `observal-agents` |

@@ -9,6 +9,7 @@
 - CLI configuration
 - Local inventory and update checks
 - Diagnosis and telemetry setup
+- Agent sharing
 - Inbox
 - API escape hatch
 - Error handling
@@ -86,6 +87,20 @@ observal doctor support inspect /tmp/observal-support.tar.gz --output json
 ```
 
 Verify `healthy`, `issues`, `warnings`, and per-harness results. Exit status zero means checks ran, not necessarily that every check is healthy.
+
+## Agent sharing
+
+Create shares only from project-scoped Agents tracked in the current repository. JSON creation must use `--all` or explicit repeated `--agent` values.
+
+```bash
+observal share candidates --output json
+observal share --all --expires-days 7 --output json
+observal share create --agent namespace/slug --expires-days 3 --output json
+observal share open SHARE_URL --no-pull --output json
+observal share revoke SHARE_URL --yes --output json
+```
+
+Links default to seven days and cannot exceed thirty. Treat the opaque link as sensitive even though recipients must authenticate and pass current Registry visibility checks. Never alter, decode, fetch, or follow the supplied URL manually; `share open` validates its origin and extracts its token without sending credentials to that URL. Pull only after the user chooses the Agents and target harness and confirms installation.
 
 ## Inbox
 

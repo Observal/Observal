@@ -192,6 +192,7 @@ from observal_cli.cmd_pull import register_pull
 from observal_cli.cmd_recommend import recommend_app
 from observal_cli.cmd_sandbox import sandbox_app
 from observal_cli.cmd_scan import register_scan
+from observal_cli.cmd_share import share_app
 from observal_cli.cmd_skill import skill_app
 from observal_cli.cmd_support import support_app
 from observal_cli.cmd_team import team_app
@@ -259,6 +260,7 @@ register_pull(agent_app)
 app.add_typer(registry_app, name="registry")
 app.add_typer(inbox_app, name="inbox")
 app.add_typer(agent_app, name="agent")
+app.add_typer(share_app, name="share")
 app.add_typer(team_app, name="team")
 app.add_typer(ops_app, name="ops")
 app.add_typer(admin_app, name="admin")
