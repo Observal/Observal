@@ -10,15 +10,25 @@
     <link rel="icon" type="image/png" href="/icon.png" />
     <link rel="alternate icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" href="/icon.png" />
-    <script>
-      try {
-        document.documentElement.className =
-          localStorage.getItem("observal-theme") === "light" ? "light" : "dark";
-      } catch {
-        document.documentElement.className = "dark";
-      }
-    </script>
+    <link
+      rel="preload"
+      href="/fonts/inter-latin-variable.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
     <style>
+      /* Inter is the UI face for the whole app, matching the design system.
+         Served locally as a variable font; no CDN request. */
+      @font-face {
+        font-family: "Inter";
+        src: url("/fonts/inter-latin-variable.woff2") format("woff2");
+        font-weight: 100 900;
+        font-style: normal;
+        font-display: swap;
+      }
+      /* Archivo and Albert Sans are retained so any remaining explicit
+         references keep resolving rather than falling back to a system face. */
       @font-face {
         font-family: "Archivo";
         src: url("/fonts/archivo-latin-variable.woff2") format("woff2");
@@ -40,7 +50,10 @@
     </style>
     <script src="https://d2mvefebd70kbz.cloudfront.net/scripts/019eba61-6a10-76d4-ae9e-a3623efa1378.js" async></script>
   </head>
-  <body class="min-h-svh antialiased" style="font-family: 'Albert Sans', sans-serif;">
+  <body
+    class="min-h-svh antialiased"
+    style="font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+  >
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

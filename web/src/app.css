@@ -9,9 +9,16 @@
 
 @theme inline {
   /* ── Typography ─────────────────────────────────── */
-  --font-display: var(--font-display), ui-sans-serif, system-ui, sans-serif;
-  --font-body: var(--font-body), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-mono), ui-monospace, monospace;
+  /* Inter is the design system's UI face, matching the mockup. It is loaded
+     locally in index.html (no CDN), with a system stack as fallback.
+     `--font-display` intentionally resolves to the same family: the mockup uses
+     a single face for both headings and body, differentiated by weight and
+     tracking rather than by typeface. */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+    ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-sans);
+  --font-body: var(--font-sans);
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* ── Spacing scale (4pt base) ───────────────────── */
   --space-xs: 4px;
@@ -89,6 +96,30 @@
   --color-chart-7: oklch(var(--chart-7));
   --color-chart-8: oklch(var(--chart-8));
 
+  /* ── Component-type tag colors ──────────────────── */
+  /* Per-type identity colors from the mockup's --tag-* tokens. Each pairs a
+     readable foreground with a tinted surface, defined per light/dark mode. */
+  --color-tag-mcp: oklch(var(--tag-mcp));
+  --color-tag-mcp-bg: oklch(var(--tag-mcp-bg));
+  --color-tag-agent: oklch(var(--tag-agent));
+  --color-tag-agent-bg: oklch(var(--tag-agent-bg));
+  --color-tag-skill: oklch(var(--tag-skill));
+  --color-tag-skill-bg: oklch(var(--tag-skill-bg));
+  --color-tag-hook: oklch(var(--tag-hook));
+  --color-tag-hook-bg: oklch(var(--tag-hook-bg));
+  --color-tag-prompt: oklch(var(--tag-prompt));
+  --color-tag-prompt-bg: oklch(var(--tag-prompt-bg));
+
+  /* ── Elevation ──────────────────────────────────── */
+  /* Mirrors the mockup's --shadow-sm / --shadow-lg, tuned per mode in the
+     preset blocks below. Overriding Tailwind's own shadow scale means existing
+     `shadow-sm` / `shadow-lg` usages pick these up without per-file edits. */
+  --shadow-xs: var(--elevation-sm);
+  --shadow-sm: var(--elevation-sm);
+  --shadow-md: var(--elevation-md);
+  --shadow-lg: var(--elevation-lg);
+  --shadow-xl: var(--elevation-lg);
+
   /* ── Legacy compat ──────────────────────────────── */
   --color-light-red: oklch(var(--light-red));
   --color-dark-red: oklch(var(--dark-red));
@@ -101,20 +132,25 @@
   --color-muted-gray: oklch(var(--muted-gray));
 
   /* ── Radius ─────────────────────────────────────── */
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --radius-xl: 12px;
+  /* Bumped from 4/6/8/12 to match the warmer, rounder mockup (card radius 13px). */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 13px;
 
-  /* ── Type scale (fluid rem for app UI) ──────────── */
-  --text-xs: 0.75rem;     /* 12px */
-  --text-sm: 0.875rem;    /* 14px */
-  --text-base: 0.9375rem; /* 15px */
-  --text-lg: 1.0625rem;   /* 17px */
-  --text-xl: 1.3125rem;   /* 21px */
-  --text-2xl: 1.625rem;   /* 26px */
-  --text-3xl: 2.125rem;   /* 34px */
-  --text-4xl: 2.75rem;    /* 44px */
+  /* ── Type scale ─────────────────────────────────── */
+  /* Anchored to the mockup: 13.5px base body, 11px uppercase labels,
+     12px secondary UI text, 14px panel titles, 26px page headings.
+     Values are rem-relative so the fluid root size still applies. */
+  --text-2xs: 0.6875rem;  /* 11px — uppercase labels, nav group headings */
+  --text-xs: 0.75rem;     /* 12px — secondary UI text, table cells, badges */
+  --text-sm: 0.84375rem;  /* 13.5px — base body / nav items (mockup default) */
+  --text-base: 0.875rem;  /* 14px — panel titles */
+  --text-lg: 1rem;        /* 16px — brand, section headings */
+  --text-xl: 1.25rem;     /* 20px */
+  --text-2xl: 1.625rem;   /* 26px — page h1 */
+  --text-3xl: 2rem;       /* 32px */
+  --text-4xl: 2.5rem;     /* 40px */
 
   /* ── Motion ─────────────────────────────────────── */
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
@@ -163,11 +199,35 @@
 }
 
 /* ══════════════════════════════════════════════════════
-   LIGHT THEME
-   Warm-tinted neutrals, indigo accent
+   APPEARANCE SYSTEM — 6 presets x 2 modes
+   ------------------------------------------------------
+   Two independent dimensions, mirroring the design mockup's
+   "Appearance lab":
+
+     preset  monochrome (default) | slate | copper
+             verdant | indigo | rose
+     mode    light (no class) | dark (.dark)
+
+   ThemeProvider applies both as classes, e.g.
+   `class="preset-copper dark"`. Monochrome is the default, so
+   bare `:root` / `.dark` resolve to it and the `.preset-monochrome`
+   selectors below are aliases for an explicit choice.
+
+   Legacy single-class themes (.midnight, .forest, ... .rose-pine)
+   are unchanged and remain one-dimensional: they carry their own
+   complete palette and are not part of this matrix.
+
+   Source tokens per preset/mode: accent, canvas, surface, raised,
+   sunken, text, muted, border, success, warning, danger.
+   chart-1..4 are derived from the accent by the same hue-mixing the
+   mockup performs at runtime.
+   ══════════════════════════════════════════════════════ */
+
+/* ══════════════════════════════════════════════════════
+   MONOCHROME LIGHT — default. Warm off-white, near-black ink.
    ══════════════════════════════════════════════════════ */
 @layer base {
-  html {
+html {
     --theme-preview-dark-shell: oklch(0.11 0.02 260);
     --theme-preview-dark-canvas: oklch(0.13 0.02 260);
     --theme-preview-dark-accent: oklch(0.62 0.18 270);
@@ -176,137 +236,154 @@
     --theme-preview-light-accent: oklch(0.5 0.2 270);
   }
 
-  :root {
-    --bg: 0.99 0.004 270;
-    --fg: 0.17 0.025 270;
+  :root,
+  .preset-monochrome {
+    --bg: 0.967 0.007 88.6;
+    --fg: 0.222 0.006 91.6;
 
-    --muted: 0.955 0.008 260;
-    --muted-fg: 0.46 0.025 260;
+    --muted: 0.94 0.01 93.6;
+    --muted-fg: 0.531 0.011 93.7;
 
-    --popover: 0.995 0.003 260;
-    --popover-fg: 0.15 0.02 260;
+    --popover: 1.0 0.0 0.0;
+    --popover-fg: 0.222 0.006 91.6;
 
-    --card: 0.995 0.003 260;
-    --card-fg: 0.15 0.02 260;
+    --card: 1.0 0.0 0.0;
+    --card-fg: 0.222 0.006 91.6;
 
-    --header: 0.97 0.006 260;
-    --header-fg: 0.15 0.02 260;
+    --header: 0.967 0.007 88.6;
+    --header-fg: 0.222 0.006 91.6;
 
-    --border: 0.82 0.01 260;
-    --input: 0.82 0.01 260;
+    --border: 0.904 0.013 91.5;
+    --input: 0.904 0.013 91.5;
 
-    --primary: 0.15 0.02 260;
-    --primary-fg: 0.97 0.005 260;
+    --primary: 0.222 0.006 91.6;
+    --primary-fg: 0.967 0.007 88.6;
 
-    --secondary: 0.94 0.01 260;
-    --secondary-fg: 0.25 0.02 260;
+    --secondary: 0.94 0.01 93.6;
+    --secondary-fg: 0.222 0.006 91.6;
 
-    --accent: 0.94 0.01 260;
-    --accent-fg: 0.45 0.02 260;
+    --accent: 0.94 0.01 93.6;
+    --accent-fg: 0.222 0.006 91.6;
 
-    --destructive: 0.55 0.2 25;
-    --destructive-fg: 0.97 0.01 25;
+    --destructive: 0.554 0.164 24.2;
+    --destructive-fg: 0.967 0.007 88.6;
 
-    --ring: 0.7 0.03 260;
+    --ring: 0.222 0.006 91.6;
+    --primary-accent: 0.222 0.006 91.6;
 
-    --primary-accent: 0.5 0.2 270;
+    --surface-raised: 0.94 0.01 93.6;
+    --surface-sunken: 0.922 0.011 89.7;
 
-    --surface-raised: 1.0 0 0;
-    --surface-sunken: 0.945 0.018 285;
+--success: 0.531 0.095 161.9;
+    --success-fg: 0.967 0.007 88.6;
+    --warning: 0.659 0.135 83.6;
+    --warning-fg: 0.967 0.007 88.6;
+    --info: 0.352 0.021 251.2;
+    --info-fg: 0.967 0.007 88.6;
 
-    --success: 0.55 0.15 155;
-    --success-fg: 0.97 0.01 155;
-    --warning: 0.7 0.15 75;
-    --warning-fg: 0.25 0.05 75;
-    --info: 0.6 0.15 250;
-    --info-fg: 0.97 0.01 250;
+    --muted-gray: 0.94 0.01 93.6;
 
-    --component-agent: 0.52 0.19 272;
+--component-agent: 0.52 0.19 272;
     --component-mcp: 0.53 0.16 225;
     --component-skill: 0.52 0.17 305;
     --component-hook: 0.62 0.17 55;
     --component-prompt: 0.5 0.14 155;
     --component-sandbox: 0.52 0.08 250;
 
-    --muted-gray: 0.92 0.008 260;
+    --light-red: 0.943 0.016 17.4;
+    --dark-red: 0.554 0.164 24.2;
+    --light-yellow: 0.958 0.023 90.8;
+    --dark-yellow: 0.659 0.135 83.6;
+    --light-green: 0.944 0.011 167.8;
+    --dark-green: 0.531 0.095 161.9;
+    --light-blue: 0.946 0.013 251.6;
+    --dark-blue: 0.54 0.124 256.5;
+    --muted-gray: 0.947 0.001 17.2;
 
-    --light-red: 0.93 0.03 15;
-    --dark-red: 0.55 0.2 25;
-    --light-yellow: 0.94 0.05 90;
-    --dark-yellow: 0.65 0.17 75;
-    --light-green: 0.93 0.04 155;
-    --dark-green: 0.35 0.08 170;
-    --light-blue: 0.93 0.04 255;
-    --dark-blue: 0.58 0.18 255;
+    --tag-mcp: 0.54 0.124 256.5;
+    --tag-mcp-bg: 0.959 0.011 256.7;
+    --tag-agent: 0.478 0.105 155.0;
+    --tag-agent-bg: 0.967 0.014 155.6;
+    --tag-skill: 0.471 0.099 76.3;
+    --tag-skill-bg: 0.972 0.022 83.3;
+    --tag-hook: 0.495 0.144 327.5;
+    --tag-hook-bg: 0.96 0.017 325.7;
+    --tag-prompt: 0.546 0.139 44.1;
+    --tag-prompt-bg: 0.964 0.016 42.4;
 
-    --sidebar-bg: 0.945 0.018 285;
-    --sidebar-fg: 0.34 0.035 275;
-    --sidebar-primary: 0.17 0.025 270;
-    --sidebar-primary-fg: 0.98 0.005 270;
-    --sidebar-accent: 0.89 0.035 275;
-    --sidebar-accent-fg: 0.2 0.04 275;
-    --sidebar-border: 0.84 0.025 278;
-    --sidebar-ring: 0.58 0.18 272;
+--elevation-sm: 0 1px 2px oklch(0.222 0.006 91.6 / 0.05);
+    --elevation-md: 0 4px 14px oklch(0.222 0.006 91.6 / 0.08);
+    --elevation-lg: 0 20px 60px oklch(0.222 0.006 91.6 / 0.14);
 
-    --chart-1: 0.55 0.2 270;
-    --chart-2: 0.6 0.15 195;
-    --chart-3: 0.55 0.02 260;
-    --chart-4: 0.6 0.2 310;
-    --chart-5: 0.7 0.17 85;
-    --chart-6: 0.6 0.2 25;
-    --chart-7: 0.6 0.15 145;
-    --chart-8: 0.6 0.18 340;
-    --chart-grid: 0.92 0.008 260;
+    --sidebar-bg: 0.967 0.007 88.6;
+    --sidebar-fg: 0.531 0.011 93.7;
+    --sidebar-primary: 0.222 0.006 91.6;
+    --sidebar-primary-fg: 0.967 0.007 88.6;
+    --sidebar-accent: 0.94 0.01 93.6;
+    --sidebar-accent-fg: 0.222 0.006 91.6;
+    --sidebar-border: 0.904 0.013 91.5;
+    --sidebar-ring: 0.222 0.006 91.6;
+
+    --chart-1: 0.352 0.021 251.2;
+    --chart-2: 0.385 0.034 178.9;
+    --chart-3: 0.393 0.037 81.2;
+    --chart-4: 0.346 0.022 354.9;
+    --chart-5: 0.659 0.135 83.6;
+    --chart-6: 0.554 0.164 24.2;
+    --chart-7: 0.531 0.095 161.9;
+    --chart-8: 0.222 0.006 91.6;
+    --chart-grid: 0.904 0.013 91.5;
   }
 
   /* ══════════════════════════════════════════════════
-     DARK THEME (default)
-     Deep blue-tinted darks, indigo accent
+     MONOCHROME DARK — default dark. Near-black canvas, warm ink.
      ══════════════════════════════════════════════════ */
-  .dark {
-    --bg: 0.13 0.02 260;
-    --fg: 0.88 0.01 260;
+  .dark,
+  .preset-monochrome.dark {
+    --bg: 0.16 0.004 264;
+    --fg: 0.925 0.006 264;
 
-    --muted: 0.2 0.02 260;
-    --muted-fg: 0.69 0.018 260;
+    --muted: 0.23 0.005 264;
+    --muted-fg: 0.56 0.005 264;
 
-    --popover: 0.15 0.02 260;
-    --popover-fg: 0.88 0.01 260;
+    --popover: 0.20 0.004 264;
+    --popover-fg: 0.925 0.006 264;
 
-    --card: 0.17 0.018 260;
-    --card-fg: 0.88 0.01 260;
+    --card: 0.20 0.004 264;
+    --card-fg: 0.925 0.006 264;
 
-    --header: 0.18 0.02 260;
-    --header-fg: 0.88 0.01 260;
+    --header: 0.16 0.004 264;
+    --header-fg: 0.925 0.006 264;
 
-    --border: 0.38 0.02 260;
-    --input: 0.38 0.02 260;
+    --border: 0.27 0.005 264;
+    --input: 0.27 0.005 264;
 
-    --primary: 0.88 0.01 260;
-    --primary-fg: 0.13 0.02 260;
+    --primary: 0.898 0.01 87.5;
+    --primary-fg: 0.16 0.004 264;
 
-    --secondary: 0.2 0.02 260;
-    --secondary-fg: 0.85 0.01 260;
+    --secondary: 0.23 0.005 264;
+    --secondary-fg: 0.925 0.006 264;
 
-    --accent: 0.22 0.02 260;
-    --accent-fg: 0.9 0.005 260;
+    --accent: 0.23 0.005 264;
+    --accent-fg: 0.925 0.006 264;
 
-    --destructive: 0.45 0.15 25;
-    --destructive-fg: 0.93 0.03 25;
+    --destructive: 0.626 0.142 22.0;
+    --destructive-fg: 0.16 0.004 264;
 
-    --ring: 0.3 0.025 260;
+    --ring: 0.898 0.01 87.5;
+    --primary-accent: 0.898 0.01 87.5;
 
-    --primary-accent: 0.62 0.18 270;
+    --surface-raised: 0.23 0.005 264;
+    --surface-sunken: 0.13 0.003 264;
 
-    --surface-raised: 0.18 0.02 260;
-    --surface-sunken: 0.11 0.02 260;
+    --success: 0.713 0.112 159.9;
+    --success-fg: 0.16 0.004 264;
+    --warning: 0.735 0.143 83.7;
+    --warning-fg: 0.16 0.004 264;
+    --info: 0.847 0.013 244.3;
+    --info-fg: 0.16 0.004 264;
 
-    --success: 0.6 0.13 155;
-    --success-fg: 0.15 0.02 155;
-    --warning: 0.75 0.13 75;
-    --warning-fg: 0.2 0.03 75;
-    --info: 0.65 0.13 250;
-    --info-fg: 0.15 0.02 250;
+    --muted-gray: 0.23 0.005 264;
 
     --component-agent: 0.7 0.17 272;
     --component-mcp: 0.72 0.13 220;
@@ -315,26 +392,1000 @@
     --component-prompt: 0.7 0.12 155;
     --component-sandbox: 0.7 0.08 245;
 
-    --muted-gray: 0.25 0.015 260;
+    --light-red: 0.25 0.025 4.5;
+    --dark-red: 0.626 0.142 22.0;
+    --light-yellow: 0.27 0.03 87.5;
+    --dark-yellow: 0.735 0.143 83.7;
+    --light-green: 0.27 0.023 179.8;
+    --dark-green: 0.713 0.112 159.9;
+    --light-blue: 0.26 0.028 256.3;
+    --dark-blue: 0.646 0.11 256.0;
+    --muted-gray: 0.25 0.004 264;
 
-    --light-red: 0.3 0.08 15;
-    --dark-red: 0.7 0.15 25;
-    --light-yellow: 0.35 0.07 75;
-    --dark-yellow: 0.8 0.12 85;
-    --light-green: 0.28 0.06 155;
-    --dark-green: 0.7 0.12 160;
-    --light-blue: 0.3 0.07 255;
-    --dark-blue: 0.72 0.12 255;
+    --tag-mcp: 0.646 0.11 256.0;
+    --tag-mcp-bg: 0.22 0.025 259.9;
+    --tag-agent: 0.713 0.112 159.9;
+    --tag-agent-bg: 0.24 0.015 189.8;
+    --tag-skill: 0.735 0.143 83.7;
+    --tag-skill-bg: 0.24 0.018 90.4;
+    --tag-hook: 0.661 0.144 327.1;
+    --tag-hook-bg: 0.23 0.025 310.3;
+    --tag-prompt: 0.695 0.134 46.2;
+    --tag-prompt-bg: 0.23 0.012 25.5;
 
-    --sidebar-bg: 0.11 0.02 260;
-    --sidebar-fg: 0.78 0.01 260;
-    --sidebar-primary: 0.88 0.01 260;
-    --sidebar-primary-fg: 0.13 0.02 260;
-    --sidebar-accent: 0.19 0.02 260;
-    --sidebar-accent-fg: 0.82 0.01 260;
-    --sidebar-border: 0.35 0.02 260;
-    --sidebar-ring: 0.55 0.15 255;
+    --elevation-sm: 0 1px 3px oklch(0 0 0 / 0.3);
+    --elevation-md: 0 4px 12px oklch(0 0 0 / 0.35);
+    --elevation-lg: 0 20px 60px oklch(0 0 0 / 0.45);
 
+    --sidebar-bg: 0.16 0.004 264;
+    --sidebar-fg: 0.56 0.005 264;
+    --sidebar-primary: 0.898 0.01 87.5;
+    --sidebar-primary-fg: 0.16 0.004 264;
+    --sidebar-accent: 0.23 0.005 264;
+    --sidebar-accent-fg: 0.925 0.006 264;
+    --sidebar-border: 0.27 0.005 264;
+    --sidebar-ring: 0.898 0.01 87.5;
+
+    --chart-1: 0.847 0.013 244.3;
+    --chart-2: 0.842 0.031 172.7;
+    --chart-3: 0.849 0.035 82.9;
+    --chart-4: 0.84 0.018 8.8;
+    --chart-5: 0.735 0.143 83.7;
+    --chart-6: 0.626 0.142 22.0;
+    --chart-7: 0.713 0.112 159.9;
+    --chart-8: 0.898 0.01 87.5;
+    --chart-grid: 0.27 0.005 264;
+  }
+
+  /* ══════════════════════════════════════════════════
+     SLATE — cool blue-grey, steel accent
+     ══════════════════════════════════════════════════ */
+  .preset-slate {
+    --bg: 0.973 0.006 264.5;
+    --fg: 0.251 0.029 261.4;
+
+    --muted: 0.942 0.009 258.3;
+    --muted-fg: 0.536 0.033 245.3;
+
+    --popover: 1.0 0.0 0.0;
+    --popover-fg: 0.251 0.029 261.4;
+
+    --card: 1.0 0.0 0.0;
+    --card-fg: 0.251 0.029 261.4;
+
+    --header: 0.973 0.006 264.5;
+    --header-fg: 0.251 0.029 261.4;
+
+    --border: 0.879 0.016 253.9;
+    --input: 0.879 0.016 253.9;
+
+    --primary: 0.54 0.124 256.5;
+    --primary-fg: 0.973 0.006 264.5;
+
+    --secondary: 0.942 0.009 258.3;
+    --secondary-fg: 0.251 0.029 261.4;
+
+    --accent: 0.942 0.009 258.3;
+    --accent-fg: 0.251 0.029 261.4;
+
+    --destructive: 0.554 0.164 24.2;
+    --destructive-fg: 0.973 0.006 264.5;
+
+    --ring: 0.54 0.124 256.5;
+    --primary-accent: 0.54 0.124 256.5;
+
+    --surface-raised: 0.942 0.009 258.3;
+    --surface-sunken: 0.917 0.011 256.7;
+
+    --success: 0.531 0.095 161.9;
+    --success-fg: 0.973 0.006 264.5;
+    --warning: 0.659 0.135 83.6;
+    --warning-fg: 0.973 0.006 264.5;
+    --info: 0.578 0.114 256.0;
+    --info-fg: 0.973 0.006 264.5;
+
+    --light-red: 0.943 0.016 17.4;
+    --dark-red: 0.554 0.164 24.2;
+    --light-yellow: 0.958 0.023 90.8;
+    --dark-yellow: 0.659 0.135 83.6;
+    --light-green: 0.944 0.011 167.8;
+    --dark-green: 0.531 0.095 161.9;
+    --light-blue: 0.946 0.013 251.6;
+    --dark-blue: 0.54 0.124 256.5;
+    --muted-gray: 0.947 0.001 17.2;
+
+    --tag-mcp: 0.54 0.124 256.5;
+    --tag-mcp-bg: 0.959 0.011 256.7;
+    --tag-agent: 0.478 0.105 155.0;
+    --tag-agent-bg: 0.967 0.014 155.6;
+    --tag-skill: 0.471 0.099 76.3;
+    --tag-skill-bg: 0.972 0.022 83.3;
+    --tag-hook: 0.495 0.144 327.5;
+    --tag-hook-bg: 0.96 0.017 325.7;
+    --tag-prompt: 0.546 0.139 44.1;
+    --tag-prompt-bg: 0.964 0.016 42.4;
+
+    --elevation-sm: 0 1px 2px oklch(0.222 0.006 91.6 / 0.05);
+    --elevation-md: 0 4px 14px oklch(0.222 0.006 91.6 / 0.08);
+    --elevation-lg: 0 20px 60px oklch(0.222 0.006 91.6 / 0.14);
+
+    --sidebar-bg: 0.973 0.006 264.5;
+    --sidebar-fg: 0.536 0.033 245.3;
+    --sidebar-primary: 0.54 0.124 256.5;
+    --sidebar-primary-fg: 0.973 0.006 264.5;
+    --sidebar-accent: 0.942 0.009 258.3;
+    --sidebar-accent-fg: 0.251 0.029 261.4;
+    --sidebar-border: 0.879 0.016 253.9;
+    --sidebar-ring: 0.54 0.124 256.5;
+
+    --chart-1: 0.578 0.114 256.0;
+    --chart-2: 0.593 0.096 241.2;
+    --chart-3: 0.588 0.055 252.3;
+    --chart-4: 0.565 0.098 265.6;
+    --chart-5: 0.659 0.135 83.6;
+    --chart-6: 0.554 0.164 24.2;
+    --chart-7: 0.531 0.095 161.9;
+    --chart-8: 0.54 0.124 256.5;
+    --chart-grid: 0.879 0.016 253.9;
+  }
+
+  .preset-slate.dark {
+    --bg: 0.187 0.015 266.8;
+    --fg: 0.908 0.011 256.7;
+
+    --muted: 0.25 0.03 270.0;
+    --muted-fg: 0.565 0.031 248.4;
+
+    --popover: 0.218 0.021 267.7;
+    --popover-fg: 0.908 0.011 256.7;
+
+    --card: 0.218 0.021 267.7;
+    --card-fg: 0.908 0.011 256.7;
+
+    --header: 0.187 0.015 266.8;
+    --header-fg: 0.908 0.011 256.7;
+
+    --border: 0.278 0.031 268.5;
+    --input: 0.278 0.031 268.5;
+
+    --primary: 0.676 0.056 246.1;
+    --primary-fg: 0.187 0.015 266.8;
+
+    --secondary: 0.25 0.03 270.0;
+    --secondary-fg: 0.908 0.011 256.7;
+
+    --accent: 0.25 0.03 270.0;
+    --accent-fg: 0.908 0.011 256.7;
+
+    --destructive: 0.636 0.134 15.2;
+    --destructive-fg: 0.187 0.015 266.8;
+
+    --ring: 0.676 0.056 246.1;
+    --primary-accent: 0.676 0.056 246.1;
+
+    --surface-raised: 0.25 0.03 270.0;
+    --surface-sunken: 0.155 0.013 270.4;
+
+    --success: 0.712 0.115 159.2;
+    --success-fg: 0.187 0.015 266.8;
+    --warning: 0.736 0.136 82.1;
+    --warning-fg: 0.187 0.015 266.8;
+    --info: 0.68 0.063 248.8;
+    --info-fg: 0.187 0.015 266.8;
+
+    --light-red: 0.272 0.028 4.5;
+    --dark-red: 0.626 0.142 22.0;
+    --light-yellow: 0.296 0.033 87.5;
+    --dark-yellow: 0.735 0.143 83.7;
+    --light-green: 0.295 0.026 179.8;
+    --dark-green: 0.713 0.112 159.9;
+    --light-blue: 0.282 0.032 256.3;
+    --dark-blue: 0.646 0.11 256.0;
+    --muted-gray: 0.265 0.006 271.2;
+
+    --tag-mcp: 0.646 0.11 256.0;
+    --tag-mcp-bg: 0.234 0.028 259.9;
+    --tag-agent: 0.713 0.112 159.9;
+    --tag-agent-bg: 0.257 0.017 189.8;
+    --tag-skill: 0.735 0.143 83.7;
+    --tag-skill-bg: 0.261 0.02 90.4;
+    --tag-hook: 0.661 0.144 327.1;
+    --tag-hook-bg: 0.251 0.028 310.3;
+    --tag-prompt: 0.695 0.134 46.2;
+    --tag-prompt-bg: 0.254 0.014 25.5;
+
+    --elevation-sm: 0 1px 3px oklch(0 0 0 / 0.25);
+    --elevation-md: 0 4px 12px oklch(0 0 0 / 0.3);
+    --elevation-lg: 0 20px 60px oklch(0 0 0 / 0.4);
+
+    --sidebar-bg: 0.187 0.015 266.8;
+    --sidebar-fg: 0.565 0.031 248.4;
+    --sidebar-primary: 0.676 0.056 246.1;
+    --sidebar-primary-fg: 0.187 0.015 266.8;
+    --sidebar-accent: 0.25 0.03 270.0;
+    --sidebar-accent-fg: 0.908 0.011 256.7;
+    --sidebar-border: 0.278 0.031 268.5;
+    --sidebar-ring: 0.676 0.056 246.1;
+
+    --chart-1: 0.68 0.063 248.8;
+    --chart-2: 0.689 0.059 219.4;
+    --chart-3: 0.69 0.014 202.9;
+    --chart-4: 0.671 0.045 268.8;
+    --chart-5: 0.736 0.136 82.1;
+    --chart-6: 0.636 0.134 15.2;
+    --chart-7: 0.712 0.115 159.2;
+    --chart-8: 0.676 0.056 246.1;
+    --chart-grid: 0.278 0.031 268.5;
+  }
+
+  /* ══════════════════════════════════════════════════
+     COPPER — warm brown, aged-metal accent
+     ══════════════════════════════════════════════════ */
+  .preset-copper {
+    --bg: 0.971 0.007 80.7;
+    --fg: 0.258 0.022 72.8;
+
+    --muted: 0.942 0.011 76.6;
+    --muted-fg: 0.545 0.026 71.5;
+
+    --popover: 1.0 0.0 0.0;
+    --popover-fg: 0.258 0.022 72.8;
+
+    --card: 1.0 0.0 0.0;
+    --card-fg: 0.258 0.022 72.8;
+
+    --header: 0.971 0.007 80.7;
+    --header-fg: 0.258 0.022 72.8;
+
+    --border: 0.878 0.018 81.3;
+    --input: 0.878 0.018 81.3;
+
+    --primary: 0.572 0.082 72.5;
+    --primary-fg: 0.971 0.007 80.7;
+
+    --secondary: 0.942 0.011 76.6;
+    --secondary-fg: 0.258 0.022 72.8;
+
+    --accent: 0.942 0.011 76.6;
+    --accent-fg: 0.258 0.022 72.8;
+
+    --destructive: 0.554 0.164 24.2;
+    --destructive-fg: 0.971 0.007 80.7;
+
+    --ring: 0.572 0.082 72.5;
+    --primary-accent: 0.572 0.082 72.5;
+
+    --surface-raised: 0.942 0.011 76.6;
+    --surface-sunken: 0.915 0.013 75.4;
+
+    --success: 0.531 0.095 161.9;
+    --success-fg: 0.971 0.007 80.7;
+    --warning: 0.659 0.135 83.6;
+    --warning-fg: 0.971 0.007 80.7;
+    --info: 0.596 0.042 75.8;
+    --info-fg: 0.971 0.007 80.7;
+
+    --light-red: 0.943 0.016 17.4;
+    --dark-red: 0.554 0.164 24.2;
+    --light-yellow: 0.958 0.023 90.8;
+    --dark-yellow: 0.659 0.135 83.6;
+    --light-green: 0.944 0.011 167.8;
+    --dark-green: 0.531 0.095 161.9;
+    --light-blue: 0.946 0.013 251.6;
+    --dark-blue: 0.54 0.124 256.5;
+    --muted-gray: 0.947 0.001 17.2;
+
+    --tag-mcp: 0.54 0.124 256.5;
+    --tag-mcp-bg: 0.959 0.011 256.7;
+    --tag-agent: 0.478 0.105 155.0;
+    --tag-agent-bg: 0.967 0.014 155.6;
+    --tag-skill: 0.471 0.099 76.3;
+    --tag-skill-bg: 0.972 0.022 83.3;
+    --tag-hook: 0.495 0.144 327.5;
+    --tag-hook-bg: 0.96 0.017 325.7;
+    --tag-prompt: 0.546 0.139 44.1;
+    --tag-prompt-bg: 0.964 0.016 42.4;
+
+    --elevation-sm: 0 1px 2px oklch(0.222 0.006 91.6 / 0.05);
+    --elevation-md: 0 4px 14px oklch(0.222 0.006 91.6 / 0.08);
+    --elevation-lg: 0 20px 60px oklch(0.222 0.006 91.6 / 0.14);
+
+    --sidebar-bg: 0.971 0.007 80.7;
+    --sidebar-fg: 0.545 0.026 71.5;
+    --sidebar-primary: 0.572 0.082 72.5;
+    --sidebar-primary-fg: 0.971 0.007 80.7;
+    --sidebar-accent: 0.942 0.011 76.6;
+    --sidebar-accent-fg: 0.258 0.022 72.8;
+    --sidebar-border: 0.878 0.018 81.3;
+    --sidebar-ring: 0.572 0.082 72.5;
+
+    --chart-1: 0.596 0.042 75.8;
+    --chart-2: 0.608 0.057 110.4;
+    --chart-3: 0.624 0.086 76.0;
+    --chart-4: 0.595 0.069 55.9;
+    --chart-5: 0.659 0.135 83.6;
+    --chart-6: 0.554 0.164 24.2;
+    --chart-7: 0.531 0.095 161.9;
+    --chart-8: 0.572 0.082 72.5;
+    --chart-grid: 0.878 0.018 81.3;
+  }
+
+  .preset-copper.dark {
+    --bg: 0.184 0.005 67.5;
+    --fg: 0.915 0.015 80.7;
+
+    --muted: 0.245 0.016 84.5;
+    --muted-fg: 0.593 0.025 71.6;
+
+    --popover: 0.219 0.008 84.6;
+    --popover-fg: 0.915 0.015 80.7;
+
+    --card: 0.219 0.008 84.6;
+    --card-fg: 0.915 0.015 80.7;
+
+    --header: 0.184 0.005 67.5;
+    --header-fg: 0.915 0.015 80.7;
+
+    --border: 0.281 0.017 74.9;
+    --input: 0.281 0.017 74.9;
+
+    --primary: 0.721 0.081 66.0;
+    --primary-fg: 0.184 0.005 67.5;
+
+    --secondary: 0.245 0.016 84.5;
+    --secondary-fg: 0.915 0.015 80.7;
+
+    --accent: 0.245 0.016 84.5;
+    --accent-fg: 0.915 0.015 80.7;
+
+    --destructive: 0.613 0.134 26.2;
+    --destructive-fg: 0.184 0.005 67.5;
+
+    --ring: 0.721 0.081 66.0;
+    --primary-accent: 0.721 0.081 66.0;
+
+    --surface-raised: 0.245 0.016 84.5;
+    --surface-sunken: 0.146 0.006 69.2;
+
+    --success: 0.694 0.105 150.4;
+    --success-fg: 0.184 0.005 67.5;
+    --warning: 0.736 0.136 82.1;
+    --warning-fg: 0.184 0.005 67.5;
+    --info: 0.708 0.041 63.3;
+    --info-fg: 0.184 0.005 67.5;
+
+    --light-red: 0.272 0.028 4.5;
+    --dark-red: 0.626 0.142 22.0;
+    --light-yellow: 0.296 0.033 87.5;
+    --dark-yellow: 0.735 0.143 83.7;
+    --light-green: 0.295 0.026 179.8;
+    --dark-green: 0.713 0.112 159.9;
+    --light-blue: 0.282 0.032 256.3;
+    --dark-blue: 0.646 0.11 256.0;
+    --muted-gray: 0.265 0.006 271.2;
+
+    --tag-mcp: 0.646 0.11 256.0;
+    --tag-mcp-bg: 0.234 0.028 259.9;
+    --tag-agent: 0.713 0.112 159.9;
+    --tag-agent-bg: 0.257 0.017 189.8;
+    --tag-skill: 0.735 0.143 83.7;
+    --tag-skill-bg: 0.261 0.02 90.4;
+    --tag-hook: 0.661 0.144 327.1;
+    --tag-hook-bg: 0.251 0.028 310.3;
+    --tag-prompt: 0.695 0.134 46.2;
+    --tag-prompt-bg: 0.254 0.014 25.5;
+
+    --elevation-sm: 0 1px 3px oklch(0 0 0 / 0.25);
+    --elevation-md: 0 4px 12px oklch(0 0 0 / 0.3);
+    --elevation-lg: 0 20px 60px oklch(0 0 0 / 0.4);
+
+    --sidebar-bg: 0.184 0.005 67.5;
+    --sidebar-fg: 0.593 0.025 71.6;
+    --sidebar-primary: 0.721 0.081 66.0;
+    --sidebar-primary-fg: 0.184 0.005 67.5;
+    --sidebar-accent: 0.245 0.016 84.5;
+    --sidebar-accent-fg: 0.915 0.015 80.7;
+    --sidebar-border: 0.281 0.017 74.9;
+    --sidebar-ring: 0.721 0.081 66.0;
+
+    --chart-1: 0.708 0.041 63.3;
+    --chart-2: 0.712 0.05 103.6;
+    --chart-3: 0.726 0.084 71.3;
+    --chart-4: 0.708 0.068 51.1;
+    --chart-5: 0.736 0.136 82.1;
+    --chart-6: 0.613 0.134 26.2;
+    --chart-7: 0.694 0.105 150.4;
+    --chart-8: 0.721 0.081 66.0;
+    --chart-grid: 0.281 0.017 74.9;
+  }
+
+  /* ══════════════════════════════════════════════════
+     VERDANT — green, botanical accent
+     ══════════════════════════════════════════════════ */
+  .preset-verdant {
+    --bg: 0.975 0.006 153.8;
+    --fg: 0.265 0.033 154.4;
+
+    --muted: 0.944 0.012 157.0;
+    --muted-fg: 0.543 0.049 152.8;
+
+    --popover: 1.0 0.0 0.0;
+    --popover-fg: 0.265 0.033 154.4;
+
+    --card: 1.0 0.0 0.0;
+    --card-fg: 0.265 0.033 154.4;
+
+    --header: 0.975 0.006 153.8;
+    --header-fg: 0.265 0.033 154.4;
+
+    --border: 0.871 0.017 156.9;
+    --input: 0.871 0.017 156.9;
+
+    --primary: 0.531 0.095 161.9;
+    --primary-fg: 0.975 0.006 153.8;
+
+    --secondary: 0.944 0.012 157.0;
+    --secondary-fg: 0.265 0.033 154.4;
+
+    --accent: 0.944 0.012 157.0;
+    --accent-fg: 0.265 0.033 154.4;
+
+    --destructive: 0.554 0.164 24.2;
+    --destructive-fg: 0.975 0.006 153.8;
+
+    --ring: 0.531 0.095 161.9;
+    --primary-accent: 0.531 0.095 161.9;
+
+    --surface-raised: 0.944 0.012 157.0;
+    --surface-sunken: 0.92 0.016 154.5;
+
+    --success: 0.531 0.095 161.9;
+    --success-fg: 0.975 0.006 153.8;
+    --warning: 0.659 0.135 83.6;
+    --warning-fg: 0.975 0.006 153.8;
+    --info: 0.571 0.074 179.8;
+    --info-fg: 0.975 0.006 153.8;
+
+    --light-red: 0.943 0.016 17.4;
+    --dark-red: 0.554 0.164 24.2;
+    --light-yellow: 0.958 0.023 90.8;
+    --dark-yellow: 0.659 0.135 83.6;
+    --light-green: 0.944 0.011 167.8;
+    --dark-green: 0.531 0.095 161.9;
+    --light-blue: 0.946 0.013 251.6;
+    --dark-blue: 0.54 0.124 256.5;
+    --muted-gray: 0.947 0.001 17.2;
+
+    --tag-mcp: 0.54 0.124 256.5;
+    --tag-mcp-bg: 0.959 0.011 256.7;
+    --tag-agent: 0.478 0.105 155.0;
+    --tag-agent-bg: 0.967 0.014 155.6;
+    --tag-skill: 0.471 0.099 76.3;
+    --tag-skill-bg: 0.972 0.022 83.3;
+    --tag-hook: 0.495 0.144 327.5;
+    --tag-hook-bg: 0.96 0.017 325.7;
+    --tag-prompt: 0.546 0.139 44.1;
+    --tag-prompt-bg: 0.964 0.016 42.4;
+
+    --elevation-sm: 0 1px 2px oklch(0.222 0.006 91.6 / 0.05);
+    --elevation-md: 0 4px 14px oklch(0.222 0.006 91.6 / 0.08);
+    --elevation-lg: 0 20px 60px oklch(0.222 0.006 91.6 / 0.14);
+
+    --sidebar-bg: 0.975 0.006 153.8;
+    --sidebar-fg: 0.543 0.049 152.8;
+    --sidebar-primary: 0.531 0.095 161.9;
+    --sidebar-primary-fg: 0.975 0.006 153.8;
+    --sidebar-accent: 0.944 0.012 157.0;
+    --sidebar-accent-fg: 0.265 0.033 154.4;
+    --sidebar-border: 0.871 0.017 156.9;
+    --sidebar-ring: 0.531 0.095 161.9;
+
+    --chart-1: 0.571 0.074 179.8;
+    --chart-2: 0.59 0.093 168.3;
+    --chart-3: 0.585 0.082 145.5;
+    --chart-4: 0.555 0.057 167.2;
+    --chart-5: 0.659 0.135 83.6;
+    --chart-6: 0.554 0.164 24.2;
+    --chart-7: 0.531 0.095 161.9;
+    --chart-8: 0.531 0.095 161.9;
+    --chart-grid: 0.871 0.017 156.9;
+  }
+
+  .preset-verdant.dark {
+    --bg: 0.185 0.01 145.2;
+    --fg: 0.909 0.01 155.1;
+
+    --muted: 0.257 0.018 158.5;
+    --muted-fg: 0.585 0.036 147.9;
+
+    --popover: 0.219 0.012 156.1;
+    --popover-fg: 0.909 0.01 155.1;
+
+    --card: 0.219 0.012 156.1;
+    --card-fg: 0.909 0.01 155.1;
+
+    --header: 0.185 0.01 145.2;
+    --header-fg: 0.909 0.01 155.1;
+
+    --border: 0.294 0.024 159.5;
+    --input: 0.294 0.024 159.5;
+
+    --primary: 0.671 0.103 153.9;
+    --primary-fg: 0.185 0.01 145.2;
+
+    --secondary: 0.257 0.018 158.5;
+    --secondary-fg: 0.909 0.01 155.1;
+
+    --accent: 0.257 0.018 158.5;
+    --accent-fg: 0.909 0.01 155.1;
+
+    --destructive: 0.636 0.134 15.2;
+    --destructive-fg: 0.185 0.01 145.2;
+
+    --ring: 0.671 0.103 153.9;
+    --primary-accent: 0.671 0.103 153.9;
+
+    --surface-raised: 0.257 0.018 158.5;
+    --surface-sunken: 0.158 0.011 145.1;
+
+    --success: 0.713 0.112 159.9;
+    --success-fg: 0.185 0.01 145.2;
+    --warning: 0.735 0.143 83.7;
+    --warning-fg: 0.185 0.01 145.2;
+    --info: 0.674 0.076 168.5;
+    --info-fg: 0.185 0.01 145.2;
+
+    --light-red: 0.272 0.028 4.5;
+    --dark-red: 0.626 0.142 22.0;
+    --light-yellow: 0.296 0.033 87.5;
+    --dark-yellow: 0.735 0.143 83.7;
+    --light-green: 0.295 0.026 179.8;
+    --dark-green: 0.713 0.112 159.9;
+    --light-blue: 0.282 0.032 256.3;
+    --dark-blue: 0.646 0.11 256.0;
+    --muted-gray: 0.265 0.006 271.2;
+
+    --tag-mcp: 0.646 0.11 256.0;
+    --tag-mcp-bg: 0.234 0.028 259.9;
+    --tag-agent: 0.713 0.112 159.9;
+    --tag-agent-bg: 0.257 0.017 189.8;
+    --tag-skill: 0.735 0.143 83.7;
+    --tag-skill-bg: 0.261 0.02 90.4;
+    --tag-hook: 0.661 0.144 327.1;
+    --tag-hook-bg: 0.251 0.028 310.3;
+    --tag-prompt: 0.695 0.134 46.2;
+    --tag-prompt-bg: 0.254 0.014 25.5;
+
+    --elevation-sm: 0 1px 3px oklch(0 0 0 / 0.25);
+    --elevation-md: 0 4px 12px oklch(0 0 0 / 0.3);
+    --elevation-lg: 0 20px 60px oklch(0 0 0 / 0.4);
+
+    --sidebar-bg: 0.185 0.01 145.2;
+    --sidebar-fg: 0.585 0.036 147.9;
+    --sidebar-primary: 0.671 0.103 153.9;
+    --sidebar-primary-fg: 0.185 0.01 145.2;
+    --sidebar-accent: 0.257 0.018 158.5;
+    --sidebar-accent-fg: 0.909 0.01 155.1;
+    --sidebar-border: 0.294 0.024 159.5;
+    --sidebar-ring: 0.671 0.103 153.9;
+
+    --chart-1: 0.674 0.076 168.5;
+    --chart-2: 0.686 0.097 161.4;
+    --chart-3: 0.684 0.088 138.7;
+    --chart-4: 0.662 0.06 154.0;
+    --chart-5: 0.735 0.143 83.7;
+    --chart-6: 0.636 0.134 15.2;
+    --chart-7: 0.713 0.112 159.9;
+    --chart-8: 0.671 0.103 153.9;
+    --chart-grid: 0.294 0.024 159.5;
+  }
+
+  /* ══════════════════════════════════════════════════
+     INDIGO — violet, electric accent
+     ══════════════════════════════════════════════════ */
+  .preset-indigo {
+    --bg: 0.97 0.008 293.9;
+    --fg: 0.239 0.038 287.7;
+
+    --muted: 0.949 0.012 286.2;
+    --muted-fg: 0.536 0.042 288.3;
+
+    --popover: 1.0 0.0 0.0;
+    --popover-fg: 0.239 0.038 287.7;
+
+    --card: 1.0 0.0 0.0;
+    --card-fg: 0.239 0.038 287.7;
+
+    --header: 0.97 0.008 293.9;
+    --header-fg: 0.239 0.038 287.7;
+
+    --border: 0.858 0.021 292.1;
+    --input: 0.858 0.021 292.1;
+
+    --primary: 0.497 0.157 280.4;
+    --primary-fg: 0.97 0.008 293.9;
+
+    --secondary: 0.949 0.012 286.2;
+    --secondary-fg: 0.239 0.038 287.7;
+
+    --accent: 0.949 0.012 286.2;
+    --accent-fg: 0.239 0.038 287.7;
+
+    --destructive: 0.554 0.164 24.2;
+    --destructive-fg: 0.97 0.008 293.9;
+
+    --ring: 0.497 0.157 280.4;
+    --primary-accent: 0.497 0.157 280.4;
+
+    --surface-raised: 0.949 0.012 286.2;
+    --surface-sunken: 0.92 0.016 289.9;
+
+    --success: 0.531 0.095 161.9;
+    --success-fg: 0.97 0.008 293.9;
+    --warning: 0.659 0.135 83.6;
+    --warning-fg: 0.97 0.008 293.9;
+    --info: 0.547 0.136 277.0;
+    --info-fg: 0.97 0.008 293.9;
+
+    --light-red: 0.943 0.016 17.4;
+    --dark-red: 0.554 0.164 24.2;
+    --light-yellow: 0.958 0.023 90.8;
+    --dark-yellow: 0.659 0.135 83.6;
+    --light-green: 0.944 0.011 167.8;
+    --dark-green: 0.531 0.095 161.9;
+    --light-blue: 0.946 0.013 251.6;
+    --dark-blue: 0.54 0.124 256.5;
+    --muted-gray: 0.947 0.001 17.2;
+
+    --tag-mcp: 0.54 0.124 256.5;
+    --tag-mcp-bg: 0.959 0.011 256.7;
+    --tag-agent: 0.478 0.105 155.0;
+    --tag-agent-bg: 0.967 0.014 155.6;
+    --tag-skill: 0.471 0.099 76.3;
+    --tag-skill-bg: 0.972 0.022 83.3;
+    --tag-hook: 0.495 0.144 327.5;
+    --tag-hook-bg: 0.96 0.017 325.7;
+    --tag-prompt: 0.546 0.139 44.1;
+    --tag-prompt-bg: 0.964 0.016 42.4;
+
+    --elevation-sm: 0 1px 2px oklch(0.222 0.006 91.6 / 0.05);
+    --elevation-md: 0 4px 14px oklch(0.222 0.006 91.6 / 0.08);
+    --elevation-lg: 0 20px 60px oklch(0.222 0.006 91.6 / 0.14);
+
+    --sidebar-bg: 0.97 0.008 293.9;
+    --sidebar-fg: 0.536 0.042 288.3;
+    --sidebar-primary: 0.497 0.157 280.4;
+    --sidebar-primary-fg: 0.97 0.008 293.9;
+    --sidebar-accent: 0.949 0.012 286.2;
+    --sidebar-accent-fg: 0.239 0.038 287.7;
+    --sidebar-border: 0.858 0.021 292.1;
+    --sidebar-ring: 0.497 0.157 280.4;
+
+    --chart-1: 0.547 0.136 277.0;
+    --chart-2: 0.558 0.109 266.3;
+    --chart-3: 0.561 0.08 295.2;
+    --chart-4: 0.536 0.128 290.1;
+    --chart-5: 0.659 0.135 83.6;
+    --chart-6: 0.554 0.164 24.2;
+    --chart-7: 0.531 0.095 161.9;
+    --chart-8: 0.497 0.157 280.4;
+    --chart-grid: 0.858 0.021 292.1;
+  }
+
+  .preset-indigo.dark {
+    --bg: 0.177 0.016 284.6;
+    --fg: 0.905 0.014 295.3;
+
+    --muted: 0.244 0.034 283.6;
+    --muted-fg: 0.554 0.037 285.1;
+
+    --popover: 0.205 0.02 284.5;
+    --popover-fg: 0.905 0.014 295.3;
+
+    --card: 0.205 0.02 284.5;
+    --card-fg: 0.905 0.014 295.3;
+
+    --header: 0.177 0.016 284.6;
+    --header-fg: 0.905 0.014 295.3;
+
+    --border: 0.27 0.037 283.7;
+    --input: 0.27 0.037 283.7;
+
+    --primary: 0.632 0.159 281.7;
+    --primary-fg: 0.177 0.016 284.6;
+
+    --secondary: 0.244 0.034 283.6;
+    --secondary-fg: 0.905 0.014 295.3;
+
+    --accent: 0.244 0.034 283.6;
+    --accent-fg: 0.905 0.014 295.3;
+
+    --destructive: 0.626 0.142 22.0;
+    --destructive-fg: 0.177 0.016 284.6;
+
+    --ring: 0.632 0.159 281.7;
+    --primary-accent: 0.632 0.159 281.7;
+
+    --surface-raised: 0.244 0.034 283.6;
+    --surface-sunken: 0.149 0.017 284.1;
+
+    --success: 0.713 0.112 159.9;
+    --success-fg: 0.177 0.016 284.6;
+    --warning: 0.735 0.143 83.7;
+    --warning-fg: 0.177 0.016 284.6;
+    --info: 0.647 0.138 277.6;
+    --info-fg: 0.177 0.016 284.6;
+
+    --light-red: 0.272 0.028 4.5;
+    --dark-red: 0.626 0.142 22.0;
+    --light-yellow: 0.296 0.033 87.5;
+    --dark-yellow: 0.735 0.143 83.7;
+    --light-green: 0.295 0.026 179.8;
+    --dark-green: 0.713 0.112 159.9;
+    --light-blue: 0.282 0.032 256.3;
+    --dark-blue: 0.646 0.11 256.0;
+    --muted-gray: 0.265 0.006 271.2;
+
+    --tag-mcp: 0.646 0.11 256.0;
+    --tag-mcp-bg: 0.234 0.028 259.9;
+    --tag-agent: 0.713 0.112 159.9;
+    --tag-agent-bg: 0.257 0.017 189.8;
+    --tag-skill: 0.735 0.143 83.7;
+    --tag-skill-bg: 0.261 0.02 90.4;
+    --tag-hook: 0.661 0.144 327.1;
+    --tag-hook-bg: 0.251 0.028 310.3;
+    --tag-prompt: 0.695 0.134 46.2;
+    --tag-prompt-bg: 0.254 0.014 25.5;
+
+    --elevation-sm: 0 1px 3px oklch(0 0 0 / 0.25);
+    --elevation-md: 0 4px 12px oklch(0 0 0 / 0.3);
+    --elevation-lg: 0 20px 60px oklch(0 0 0 / 0.4);
+
+    --sidebar-bg: 0.177 0.016 284.6;
+    --sidebar-fg: 0.554 0.037 285.1;
+    --sidebar-primary: 0.632 0.159 281.7;
+    --sidebar-primary-fg: 0.177 0.016 284.6;
+    --sidebar-accent: 0.244 0.034 283.6;
+    --sidebar-accent-fg: 0.905 0.014 295.3;
+    --sidebar-border: 0.27 0.037 283.7;
+    --sidebar-ring: 0.632 0.159 281.7;
+
+    --chart-1: 0.647 0.138 277.6;
+    --chart-2: 0.653 0.111 267.5;
+    --chart-3: 0.655 0.083 293.8;
+    --chart-4: 0.637 0.13 290.0;
+    --chart-5: 0.735 0.143 83.7;
+    --chart-6: 0.626 0.142 22.0;
+    --chart-7: 0.713 0.112 159.9;
+    --chart-8: 0.632 0.159 281.7;
+    --chart-grid: 0.27 0.037 283.7;
+  }
+
+  /* ══════════════════════════════════════════════════
+     ROSE — pink, muted-berry accent
+     ══════════════════════════════════════════════════ */
+  .preset-rose {
+    --bg: 0.974 0.005 3.3;
+    --fg: 0.247 0.034 354.3;
+
+    --muted: 0.942 0.014 355.0;
+    --muted-fg: 0.536 0.056 353.4;
+
+    --popover: 1.0 0.0 0.0;
+    --popover-fg: 0.247 0.034 354.3;
+
+    --card: 1.0 0.0 0.0;
+    --card-fg: 0.247 0.034 354.3;
+
+    --header: 0.974 0.005 3.3;
+    --header-fg: 0.247 0.034 354.3;
+
+    --border: 0.852 0.025 351.4;
+    --input: 0.852 0.025 351.4;
+
+    --primary: 0.531 0.11 6.1;
+    --primary-fg: 0.974 0.005 3.3;
+
+    --secondary: 0.942 0.014 355.0;
+    --secondary-fg: 0.247 0.034 354.3;
+
+    --accent: 0.942 0.014 355.0;
+    --accent-fg: 0.247 0.034 354.3;
+
+    --destructive: 0.554 0.164 24.2;
+    --destructive-fg: 0.974 0.005 3.3;
+
+    --ring: 0.531 0.11 6.1;
+    --primary-accent: 0.531 0.11 6.1;
+
+    --surface-raised: 0.942 0.014 355.0;
+    --surface-sunken: 0.915 0.016 352.0;
+
+    --success: 0.531 0.095 161.9;
+    --success-fg: 0.974 0.005 3.3;
+    --warning: 0.659 0.135 83.6;
+    --warning-fg: 0.974 0.005 3.3;
+    --info: 0.561 0.077 346.4;
+    --info-fg: 0.974 0.005 3.3;
+
+    --light-red: 0.943 0.016 17.4;
+    --dark-red: 0.554 0.164 24.2;
+    --light-yellow: 0.958 0.023 90.8;
+    --dark-yellow: 0.659 0.135 83.6;
+    --light-green: 0.944 0.011 167.8;
+    --dark-green: 0.531 0.095 161.9;
+    --light-blue: 0.946 0.013 251.6;
+    --dark-blue: 0.54 0.124 256.5;
+    --muted-gray: 0.947 0.001 17.2;
+
+    --tag-mcp: 0.54 0.124 256.5;
+    --tag-mcp-bg: 0.959 0.011 256.7;
+    --tag-agent: 0.478 0.105 155.0;
+    --tag-agent-bg: 0.967 0.014 155.6;
+    --tag-skill: 0.471 0.099 76.3;
+    --tag-skill-bg: 0.972 0.022 83.3;
+    --tag-hook: 0.495 0.144 327.5;
+    --tag-hook-bg: 0.96 0.017 325.7;
+    --tag-prompt: 0.546 0.139 44.1;
+    --tag-prompt-bg: 0.964 0.016 42.4;
+
+    --elevation-sm: 0 1px 2px oklch(0.222 0.006 91.6 / 0.05);
+    --elevation-md: 0 4px 14px oklch(0.222 0.006 91.6 / 0.08);
+    --elevation-lg: 0 20px 60px oklch(0.222 0.006 91.6 / 0.14);
+
+    --sidebar-bg: 0.974 0.005 3.3;
+    --sidebar-fg: 0.536 0.056 353.4;
+    --sidebar-primary: 0.531 0.11 6.1;
+    --sidebar-primary-fg: 0.974 0.005 3.3;
+    --sidebar-accent: 0.942 0.014 355.0;
+    --sidebar-accent-fg: 0.247 0.034 354.3;
+    --sidebar-border: 0.852 0.025 351.4;
+    --sidebar-ring: 0.531 0.11 6.1;
+
+    --chart-1: 0.561 0.077 346.4;
+    --chart-2: 0.57 0.039 355.8;
+    --chart-3: 0.591 0.088 24.6;
+    --chart-4: 0.565 0.101 1.2;
+    --chart-5: 0.659 0.135 83.6;
+    --chart-6: 0.554 0.164 24.2;
+    --chart-7: 0.531 0.095 161.9;
+    --chart-8: 0.531 0.11 6.1;
+    --chart-grid: 0.852 0.025 351.4;
+  }
+
+  .preset-rose.dark {
+    --bg: 0.179 0.008 346.2;
+    --fg: 0.907 0.013 358.8;
+
+    --muted: 0.244 0.012 338.2;
+    --muted-fg: 0.571 0.032 356.2;
+
+    --popover: 0.215 0.007 346.0;
+    --popover-fg: 0.907 0.013 358.8;
+
+    --card: 0.215 0.007 346.0;
+    --card-fg: 0.907 0.013 358.8;
+
+    --header: 0.179 0.008 346.2;
+    --header-fg: 0.907 0.013 358.8;
+
+    --border: 0.273 0.017 352.3;
+    --input: 0.273 0.017 352.3;
+
+    --primary: 0.663 0.101 7.3;
+    --primary-fg: 0.179 0.008 346.2;
+
+    --secondary: 0.244 0.012 338.2;
+    --secondary-fg: 0.907 0.013 358.8;
+
+    --accent: 0.244 0.012 338.2;
+    --accent-fg: 0.907 0.013 358.8;
+
+    --destructive: 0.626 0.142 22.0;
+    --destructive-fg: 0.179 0.008 346.2;
+
+    --ring: 0.663 0.101 7.3;
+    --primary-accent: 0.663 0.101 7.3;
+
+    --surface-raised: 0.244 0.012 338.2;
+    --surface-sunken: 0.147 0.003 17.6;
+
+    --success: 0.713 0.112 159.9;
+    --success-fg: 0.179 0.008 346.2;
+    --warning: 0.735 0.143 83.7;
+    --warning-fg: 0.179 0.008 346.2;
+    --info: 0.663 0.069 348.8;
+    --info-fg: 0.179 0.008 346.2;
+
+    --muted-gray: 0.244 0.012 338.2;
+
+    --sidebar-bg: 0.179 0.008 346.2;
+    --sidebar-fg: 0.571 0.032 356.2;
+    --sidebar-primary: 0.663 0.101 7.3;
+    --sidebar-primary-fg: 0.179 0.008 346.2;
+    --sidebar-accent: 0.244 0.012 338.2;
+    --sidebar-accent-fg: 0.907 0.013 358.8;
+    --sidebar-border: 0.273 0.017 352.3;
+    --sidebar-ring: 0.663 0.101 7.3;
+
+    --chart-1: 0.663 0.069 348.8;
+    --chart-2: 0.667 0.034 3.1;
+    --chart-3: 0.685 0.083 28.0;
+    --chart-4: 0.663 0.095 2.5;
+    --chart-5: 0.735 0.143 83.7;
+    --chart-6: 0.626 0.142 22.0;
+    --chart-7: 0.713 0.112 159.9;
+    --chart-8: 0.663 0.101 7.3;
+    --chart-grid: 0.273 0.017 352.3;
+  }
+
+  /* ══════════════════════════════════════════════════
+     MIDNIGHT — deeper, cooler dark
+     ══════════════════════════════════════════════════ */
+  .midnight {
+    --bg: 0.1 0.025 270;
+    --fg: 0.88 0.008 260;
+    --muted: 0.18 0.025 270;
+    --muted-fg: 0.55 0.015 265;
+    --popover: 0.12 0.025 270;
+    --popover-fg: 0.88 0.008 260;
+    --card: 0.14 0.022 270;
+    --card-fg: 0.88 0.008 260;
+    --header: 0.16 0.022 270;
+    --header-fg: 0.88 0.008 260;
+    --border: 0.35 0.025 270;
+    --input: 0.35 0.025 270;
+    --primary: 0.88 0.008 260;
+    --primary-fg: 0.1 0.025 270;
+    --secondary: 0.18 0.025 270;
+    --secondary-fg: 0.88 0.008 260;
+    --accent: 0.2 0.025 270;
+    --accent-fg: 0.88 0.008 260;
+    --destructive: 0.45 0.15 25;
+    --destructive-fg: 0.93 0.03 25;
+    --ring: 0.3 0.03 270;
+    --primary-accent: 0.6 0.2 275;
+    --surface-raised: 0.16 0.025 270;
+    --surface-sunken: 0.08 0.025 270;
+    --success: 0.6 0.13 155;
+    --success-fg: 0.15 0.02 155;
+    --warning: 0.75 0.13 75;
+    --warning-fg: 0.2 0.03 75;
+    --info: 0.65 0.13 250;
+    --info-fg: 0.15 0.02 250;
+    --muted-gray: 0.22 0.02 265;
+    --light-red: 0.272 0.028 4.5;
+    --dark-red: 0.626 0.142 22.0;
+    --light-yellow: 0.296 0.033 87.5;
+    --dark-yellow: 0.735 0.143 83.7;
+    --light-green: 0.295 0.026 179.8;
+    --dark-green: 0.713 0.112 159.9;
+    --light-blue: 0.282 0.032 256.3;
+    --dark-blue: 0.646 0.11 256.0;
+    --muted-gray: 0.265 0.006 271.2;
+
+    --tag-mcp: 0.646 0.11 256.0;
+    --tag-mcp-bg: 0.234 0.028 259.9;
+    --tag-agent: 0.713 0.112 159.9;
+    --tag-agent-bg: 0.257 0.017 189.8;
+    --tag-skill: 0.735 0.143 83.7;
+    --tag-skill-bg: 0.261 0.02 90.4;
+    --tag-hook: 0.661 0.144 327.1;
+    --tag-hook-bg: 0.251 0.028 310.3;
+    --tag-prompt: 0.695 0.134 46.2;
+    --tag-prompt-bg: 0.254 0.014 25.5;
+
+    --elevation-sm: 0 1px 3px oklch(0 0 0 / 0.25);
+    --elevation-md: 0 4px 12px oklch(0 0 0 / 0.3);
+    --elevation-lg: 0 20px 60px oklch(0 0 0 / 0.4);
+    --sidebar-bg: 0.08 0.025 270;
+    --sidebar-fg: 0.75 0.01 265;
+    --sidebar-primary: 0.88 0.008 260;
+    --sidebar-primary-fg: 0.1 0.025 270;
+    --sidebar-accent: 0.17 0.025 270;
+    --sidebar-accent-fg: 0.8 0.01 265;
+    --sidebar-border: 0.33 0.025 270;
+    --sidebar-ring: 0.55 0.18 275;
     --chart-1: 0.6 0.18 270;
     --chart-2: 0.65 0.13 195;
     --chart-3: 0.5 0.01 260;
@@ -343,7 +1394,921 @@
     --chart-6: 0.65 0.18 25;
     --chart-7: 0.65 0.13 145;
     --chart-8: 0.65 0.15 340;
-    --chart-grid: 0.25 0.015 260;
+    --chart-grid: 0.22 0.02 265;
+  }
+
+  /* ══════════════════════════════════════════════════
+     FOREST — warm green-tinted dark
+     ══════════════════════════════════════════════════ */
+  .forest {
+    --bg: 0.1 0.02 155;
+    --fg: 0.87 0.01 150;
+    --muted: 0.17 0.02 155;
+    --muted-fg: 0.52 0.015 150;
+    --popover: 0.12 0.02 155;
+    --popover-fg: 0.87 0.01 150;
+    --card: 0.14 0.018 155;
+    --card-fg: 0.87 0.01 150;
+    --header: 0.16 0.018 155;
+    --header-fg: 0.87 0.01 150;
+    --border: 0.35 0.02 155;
+    --input: 0.35 0.02 155;
+    --primary: 0.87 0.01 150;
+    --primary-fg: 0.1 0.02 155;
+    --secondary: 0.17 0.02 155;
+    --secondary-fg: 0.87 0.01 150;
+    --accent: 0.19 0.02 155;
+    --accent-fg: 0.87 0.01 150;
+    --destructive: 0.45 0.15 25;
+    --destructive-fg: 0.93 0.03 25;
+    --ring: 0.3 0.025 155;
+    --primary-accent: 0.6 0.15 155;
+    --surface-raised: 0.16 0.018 155;
+    --surface-sunken: 0.08 0.02 155;
+    --success: 0.6 0.13 155;
+    --success-fg: 0.15 0.02 155;
+    --warning: 0.75 0.13 75;
+    --warning-fg: 0.2 0.03 75;
+    --info: 0.65 0.13 250;
+    --info-fg: 0.15 0.02 250;
+    --muted-gray: 0.22 0.015 155;
+    --light-red: 0.3 0.08 15;
+    --dark-red: 0.7 0.15 25;
+    --light-yellow: 0.35 0.07 75;
+    --dark-yellow: 0.8 0.12 85;
+    --light-green: 0.28 0.06 155;
+    --dark-green: 0.7 0.12 160;
+    --light-blue: 0.3 0.07 255;
+    --dark-blue: 0.72 0.12 255;
+    --sidebar-bg: 0.08 0.02 155;
+    --sidebar-fg: 0.73 0.01 150;
+    --sidebar-primary: 0.87 0.01 150;
+    --sidebar-primary-fg: 0.1 0.02 155;
+    --sidebar-accent: 0.16 0.02 155;
+    --sidebar-accent-fg: 0.77 0.01 150;
+    --sidebar-border: 0.33 0.02 155;
+    --sidebar-ring: 0.55 0.12 155;
+    --chart-1: 0.6 0.18 270;
+    --chart-2: 0.65 0.13 195;
+    --chart-3: 0.5 0.01 260;
+    --chart-4: 0.65 0.18 310;
+    --chart-5: 0.75 0.15 85;
+    --chart-6: 0.65 0.18 25;
+    --chart-7: 0.65 0.13 145;
+    --chart-8: 0.65 0.15 340;
+    --chart-grid: 0.22 0.015 155;
+  }
+
+  /* ══════════════════════════════════════════════════
+     SUNSET — warm amber-tinted dark
+     ══════════════════════════════════════════════════ */
+  .sunset {
+    --bg: 0.11 0.025 45;
+    --fg: 0.87 0.01 50;
+    --muted: 0.18 0.025 45;
+    --muted-fg: 0.53 0.02 50;
+    --popover: 0.13 0.025 45;
+    --popover-fg: 0.87 0.01 50;
+    --card: 0.15 0.022 45;
+    --card-fg: 0.87 0.01 50;
+    --header: 0.17 0.022 45;
+    --header-fg: 0.87 0.01 50;
+    --border: 0.37 0.025 45;
+    --input: 0.37 0.025 45;
+    --primary: 0.87 0.01 50;
+    --primary-fg: 0.11 0.025 45;
+    --secondary: 0.18 0.025 45;
+    --secondary-fg: 0.87 0.01 50;
+    --accent: 0.2 0.025 45;
+    --accent-fg: 0.87 0.01 50;
+    --destructive: 0.45 0.15 25;
+    --destructive-fg: 0.93 0.03 25;
+    --ring: 0.3 0.03 45;
+    --primary-accent: 0.7 0.15 60;
+    --surface-raised: 0.17 0.022 45;
+    --surface-sunken: 0.09 0.025 45;
+    --success: 0.6 0.13 155;
+    --success-fg: 0.15 0.02 155;
+    --warning: 0.75 0.13 75;
+    --warning-fg: 0.2 0.03 75;
+    --info: 0.65 0.13 250;
+    --info-fg: 0.15 0.02 250;
+    --muted-gray: 0.24 0.02 50;
+    --light-red: 0.3 0.08 15;
+    --dark-red: 0.7 0.15 25;
+    --light-yellow: 0.35 0.07 75;
+    --dark-yellow: 0.8 0.12 85;
+    --light-green: 0.28 0.06 155;
+    --dark-green: 0.7 0.12 160;
+    --light-blue: 0.3 0.07 255;
+    --dark-blue: 0.72 0.12 255;
+    --sidebar-bg: 0.09 0.025 45;
+    --sidebar-fg: 0.75 0.01 50;
+    --sidebar-primary: 0.87 0.01 50;
+    --sidebar-primary-fg: 0.11 0.025 45;
+    --sidebar-accent: 0.17 0.025 45;
+    --sidebar-accent-fg: 0.78 0.01 50;
+    --sidebar-border: 0.34 0.025 45;
+    --sidebar-ring: 0.65 0.12 55;
+    --chart-1: 0.6 0.18 270;
+    --chart-2: 0.65 0.13 195;
+    --chart-3: 0.5 0.01 260;
+    --chart-4: 0.65 0.18 310;
+    --chart-5: 0.75 0.15 85;
+    --chart-6: 0.65 0.18 25;
+    --chart-7: 0.65 0.13 145;
+    --chart-8: 0.65 0.15 340;
+    --chart-grid: 0.24 0.02 50;
+  }
+
+  /* ══════════════════════════════════════════════════
+     SOLARIZED DARK — cyan-tinted dark, canonical palette
+     ══════════════════════════════════════════════════ */
+  .solarized-dark {
+    --bg: 0.27 0.049 220;
+    --fg: 0.65 0.020 205;
+
+    --muted: 0.31 0.052 220;
+    --muted-fg: 0.55 0.025 210;
+
+    --popover: 0.29 0.050 220;
+    --popover-fg: 0.65 0.020 205;
+
+    --card: 0.31 0.052 220;
+    --card-fg: 0.65 0.020 205;
+
+    --header: 0.33 0.050 220;
+    --header-fg: 0.65 0.020 205;
+
+    --border: 0.45 0.035 218;
+    --input: 0.45 0.035 218;
+
+    --primary: 0.65 0.020 205;
+    --primary-fg: 0.27 0.049 220;
+
+    --secondary: 0.31 0.052 220;
+    --secondary-fg: 0.65 0.020 205;
+
+    --accent: 0.34 0.050 220;
+    --accent-fg: 0.65 0.020 205;
+
+    --destructive: 0.59 0.206 27;
+    --destructive-fg: 0.97 0.01 27;
+
+    --ring: 0.40 0.040 220;
+
+    --primary-accent: 0.61 0.139 245;
+
+    --surface-raised: 0.33 0.050 220;
+    --surface-sunken: 0.24 0.048 220;
+
+    --success: 0.64 0.151 119;
+    --success-fg: 0.15 0.02 119;
+    --warning: 0.65 0.134 86;
+    --warning-fg: 0.20 0.04 86;
+    --info: 0.64 0.102 187;
+    --info-fg: 0.15 0.02 187;
+
+    --muted-gray: 0.38 0.030 215;
+
+    --light-red: 0.38 0.08 27;
+    --dark-red: 0.59 0.206 27;
+    --light-yellow: 0.40 0.07 86;
+    --dark-yellow: 0.65 0.134 86;
+    --light-green: 0.35 0.07 119;
+    --dark-green: 0.64 0.151 119;
+    --light-blue: 0.35 0.07 245;
+    --dark-blue: 0.61 0.139 245;
+
+    --sidebar-bg: 0.24 0.048 220;
+    --sidebar-fg: 0.60 0.022 205;
+    --sidebar-primary: 0.65 0.020 205;
+    --sidebar-primary-fg: 0.27 0.049 220;
+    --sidebar-accent: 0.30 0.052 220;
+    --sidebar-accent-fg: 0.62 0.020 205;
+    --sidebar-border: 0.42 0.032 218;
+    --sidebar-ring: 0.61 0.139 245;
+
+    --chart-1: 0.61 0.139 245;
+    --chart-2: 0.64 0.102 187;
+    --chart-3: 0.64 0.151 119;
+    --chart-4: 0.59 0.202 356;
+    --chart-5: 0.65 0.134 86;
+    --chart-6: 0.59 0.206 27;
+    --chart-7: 0.64 0.102 187;
+    --chart-8: 0.59 0.202 356;
+    --chart-grid: 0.38 0.030 215;
+  }
+
+  /* ══════════════════════════════════════════════════
+     SOLARIZED LIGHT — warm cream tones, same accent palette
+     ══════════════════════════════════════════════════ */
+  .solarized-light {
+    --bg: 0.97 0.026 90;
+    --fg: 0.52 0.028 219;
+
+    --muted: 0.93 0.026 92;
+    --muted-fg: 0.60 0.025 215;
+
+    --popover: 0.97 0.026 90;
+    --popover-fg: 0.52 0.028 219;
+
+    --card: 0.95 0.026 91;
+    --card-fg: 0.52 0.028 219;
+
+    --header: 0.93 0.026 92;
+    --header-fg: 0.52 0.028 219;
+
+    --border: 0.70 0.016 197;
+    --input: 0.70 0.016 197;
+
+    --primary: 0.52 0.028 219;
+    --primary-fg: 0.97 0.026 90;
+
+    --secondary: 0.93 0.026 92;
+    --secondary-fg: 0.52 0.028 219;
+
+    --accent: 0.91 0.026 92;
+    --accent-fg: 0.52 0.028 219;
+
+    --destructive: 0.59 0.206 27;
+    --destructive-fg: 0.97 0.01 27;
+
+    --ring: 0.70 0.016 197;
+
+    --primary-accent: 0.61 0.139 245;
+
+    --surface-raised: 0.99 0.020 90;
+    --surface-sunken: 0.90 0.028 92;
+
+    --success: 0.55 0.15 119;
+    --success-fg: 0.97 0.01 119;
+    --warning: 0.58 0.134 86;
+    --warning-fg: 0.25 0.05 86;
+    --info: 0.61 0.139 245;
+    --info-fg: 0.97 0.01 245;
+
+    --muted-gray: 0.88 0.022 92;
+
+    --light-red: 0.88 0.04 27;
+    --dark-red: 0.59 0.206 27;
+    --light-yellow: 0.90 0.05 86;
+    --dark-yellow: 0.65 0.134 86;
+    --light-green: 0.88 0.04 119;
+    --dark-green: 0.40 0.10 119;
+    --light-blue: 0.88 0.04 245;
+    --dark-blue: 0.61 0.139 245;
+
+    --sidebar-bg: 0.93 0.026 92;
+    --sidebar-fg: 0.52 0.028 219;
+    --sidebar-primary: 0.52 0.028 219;
+    --sidebar-primary-fg: 0.97 0.026 90;
+    --sidebar-accent: 0.89 0.026 92;
+    --sidebar-accent-fg: 0.52 0.028 219;
+    --sidebar-border: 0.70 0.016 197;
+    --sidebar-ring: 0.61 0.139 245;
+
+    --chart-1: 0.55 0.2 270;
+    --chart-2: 0.61 0.139 245;
+    --chart-3: 0.64 0.102 187;
+    --chart-4: 0.59 0.202 356;
+    --chart-5: 0.65 0.134 86;
+    --chart-6: 0.59 0.206 27;
+    --chart-7: 0.64 0.151 119;
+    --chart-8: 0.59 0.202 356;
+    --chart-grid: 0.82 0.020 92;
+  }
+
+  /* ══════════════════════════════════════════════════
+     DRACULA — purple-tinted dark, vivid palette
+     ══════════════════════════════════════════════════ */
+  .dracula {
+    --bg: 0.26 0.030 278;
+    --fg: 0.98 0.008 107;
+
+    --muted: 0.35 0.038 278;
+    --muted-fg: 0.58 0.050 268;
+
+    --popover: 0.31 0.034 278;
+    --popover-fg: 0.98 0.008 107;
+
+    --card: 0.35 0.038 278;
+    --card-fg: 0.98 0.008 107;
+
+    --header: 0.36 0.028 278;
+    --header-fg: 0.98 0.008 107;
+
+    --border: 0.50 0.055 270;
+    --input: 0.50 0.055 270;
+
+    --primary: 0.98 0.008 107;
+    --primary-fg: 0.26 0.030 278;
+
+    --secondary: 0.35 0.038 278;
+    --secondary-fg: 0.98 0.008 107;
+
+    --accent: 0.38 0.038 278;
+    --accent-fg: 0.98 0.008 107;
+
+    --destructive: 0.68 0.206 24;
+    --destructive-fg: 0.15 0.01 24;
+
+    --ring: 0.48 0.045 278;
+
+    --primary-accent: 0.74 0.149 302;
+
+    --surface-raised: 0.38 0.035 278;
+    --surface-sunken: 0.22 0.028 278;
+
+    --success: 0.85 0.22 148;
+    --success-fg: 0.15 0.02 148;
+    --warning: 0.94 0.10 115;
+    --warning-fg: 0.20 0.03 115;
+    --info: 0.88 0.10 205;
+    --info-fg: 0.15 0.02 205;
+
+    --muted-gray: 0.45 0.028 275;
+
+    --light-red: 0.40 0.08 24;
+    --dark-red: 0.68 0.206 24;
+    --light-yellow: 0.55 0.07 113;
+    --dark-yellow: 0.96 0.134 113;
+    --light-green: 0.45 0.10 148;
+    --dark-green: 0.87 0.220 148;
+    --light-blue: 0.45 0.05 213;
+    --dark-blue: 0.88 0.093 213;
+
+    --sidebar-bg: 0.22 0.028 278;
+    --sidebar-fg: 0.85 0.010 107;
+    --sidebar-primary: 0.98 0.008 107;
+    --sidebar-primary-fg: 0.26 0.030 278;
+    --sidebar-accent: 0.34 0.036 278;
+    --sidebar-accent-fg: 0.90 0.008 107;
+    --sidebar-border: 0.45 0.050 270;
+    --sidebar-ring: 0.74 0.149 302;
+
+    --chart-1: 0.74 0.149 302;
+    --chart-2: 0.88 0.093 213;
+    --chart-3: 0.87 0.220 148;
+    --chart-4: 0.75 0.183 347;
+    --chart-5: 0.96 0.134 113;
+    --chart-6: 0.68 0.206 24;
+    --chart-7: 0.87 0.220 148;
+    --chart-8: 0.75 0.183 347;
+    --chart-grid: 0.45 0.028 275;
+  }
+
+  /* ══════════════════════════════════════════════════
+     NORD — arctic blue-grey, soft contrast
+     ══════════════════════════════════════════════════ */
+  .nord {
+    --bg: 0.30 0.018 230;
+    --fg: 0.93 0.010 230;
+
+    --muted: 0.40 0.024 234;
+    --muted-fg: 0.58 0.018 235;
+
+    --popover: 0.33 0.020 232;
+    --popover-fg: 0.93 0.010 230;
+
+    --card: 0.35 0.022 232;
+    --card-fg: 0.93 0.010 230;
+
+    --header: 0.37 0.020 232;
+    --header-fg: 0.93 0.010 230;
+
+    --border: 0.43 0.022 234;
+    --input: 0.43 0.022 234;
+
+    --primary: 0.93 0.010 230;
+    --primary-fg: 0.30 0.018 230;
+
+    --secondary: 0.40 0.024 234;
+    --secondary-fg: 0.93 0.010 230;
+
+    --accent: 0.42 0.024 234;
+    --accent-fg: 0.93 0.010 230;
+
+    --destructive: 0.61 0.121 15;
+    --destructive-fg: 0.15 0.01 15;
+
+    --ring: 0.40 0.020 232;
+
+    --primary-accent: 0.78 0.065 205;
+
+    --surface-raised: 0.40 0.024 234;
+    --surface-sunken: 0.26 0.016 230;
+
+    --success: 0.77 0.075 131;
+    --success-fg: 0.15 0.02 131;
+    --warning: 0.85 0.089 84;
+    --warning-fg: 0.20 0.03 84;
+    --info: 0.74 0.060 215;
+    --info-fg: 0.15 0.02 215;
+
+    --muted-gray: 0.43 0.020 232;
+
+    --light-red: 0.38 0.06 15;
+    --dark-red: 0.61 0.121 15;
+    --light-yellow: 0.50 0.05 84;
+    --dark-yellow: 0.85 0.089 84;
+    --light-green: 0.45 0.04 131;
+    --dark-green: 0.77 0.075 131;
+    --light-blue: 0.40 0.025 230;
+    --dark-blue: 0.70 0.055 215;
+
+    --sidebar-bg: 0.26 0.016 230;
+    --sidebar-fg: 0.82 0.012 230;
+    --sidebar-primary: 0.93 0.010 230;
+    --sidebar-primary-fg: 0.30 0.018 230;
+    --sidebar-accent: 0.36 0.022 232;
+    --sidebar-accent-fg: 0.88 0.010 230;
+    --sidebar-border: 0.40 0.020 232;
+    --sidebar-ring: 0.78 0.065 205;
+
+    --chart-1: 0.78 0.065 205;
+    --chart-2: 0.77 0.075 131;
+    --chart-3: 0.70 0.055 215;
+    --chart-4: 0.61 0.121 15;
+    --chart-5: 0.85 0.089 84;
+    --chart-6: 0.65 0.060 200;
+    --chart-7: 0.77 0.075 131;
+    --chart-8: 0.61 0.121 15;
+    --chart-grid: 0.43 0.020 232;
+  }
+
+  /* ══════════════════════════════════════════════════
+     MONOKAI — olive-tinted dark, saturated accents
+     ══════════════════════════════════════════════════ */
+  .monokai {
+    --bg: 0.25 0.012 110;
+    --fg: 0.98 0.008 107;
+
+    --muted: 0.36 0.018 103;
+    --muted-fg: 0.57 0.020 95;
+
+    --popover: 0.29 0.012 115;
+    --popover-fg: 0.98 0.008 107;
+
+    --card: 0.33 0.015 100;
+    --card-fg: 0.98 0.008 107;
+
+    --header: 0.32 0.015 110;
+    --header-fg: 0.98 0.008 107;
+
+    --border: 0.55 0.029 97;
+    --input: 0.55 0.029 97;
+
+    --primary: 0.98 0.008 107;
+    --primary-fg: 0.25 0.012 110;
+
+    --secondary: 0.33 0.015 100;
+    --secondary-fg: 0.98 0.008 107;
+
+    --accent: 0.36 0.015 100;
+    --accent-fg: 0.98 0.008 107;
+
+    --destructive: 0.58 0.26 345;
+    --destructive-fg: 0.15 0.01 350;
+
+    --ring: 0.45 0.022 103;
+
+    --primary-accent: 0.84 0.20 128;
+
+    --surface-raised: 0.38 0.015 100;
+    --surface-sunken: 0.21 0.010 110;
+
+    --success: 0.80 0.175 133;
+    --success-fg: 0.15 0.02 133;
+    --warning: 0.88 0.125 103;
+    --warning-fg: 0.20 0.03 103;
+    --info: 0.82 0.10 200;
+    --info-fg: 0.15 0.02 200;
+
+    --muted-gray: 0.40 0.015 100;
+
+    --light-red: 0.35 0.10 345;
+    --dark-red: 0.58 0.26 345;
+    --light-yellow: 0.55 0.07 103;
+    --dark-yellow: 0.88 0.125 103;
+    --light-green: 0.45 0.10 127;
+    --dark-green: 0.84 0.204 127;
+    --light-blue: 0.45 0.06 212;
+    --dark-blue: 0.83 0.108 212;
+
+    --sidebar-bg: 0.21 0.010 110;
+    --sidebar-fg: 0.85 0.008 107;
+    --sidebar-primary: 0.98 0.008 107;
+    --sidebar-primary-fg: 0.25 0.012 110;
+    --sidebar-accent: 0.32 0.014 100;
+    --sidebar-accent-fg: 0.90 0.008 107;
+    --sidebar-border: 0.50 0.025 97;
+    --sidebar-ring: 0.84 0.20 128;
+
+    --chart-1: 0.84 0.20 128;
+    --chart-2: 0.82 0.10 200;
+    --chart-3: 0.77 0.168 62;
+    --chart-4: 0.58 0.26 345;
+    --chart-5: 0.88 0.125 103;
+    --chart-6: 0.77 0.168 62;
+    --chart-7: 0.80 0.175 133;
+    --chart-8: 0.58 0.26 345;
+    --chart-grid: 0.40 0.015 100;
+  }
+
+  /* ══════════════════════════════════════════════════
+     GRUVBOX — warm retro dark, earthy tones
+     ══════════════════════════════════════════════════ */
+  .gruvbox {
+    --bg: 0.28 0.000 90;
+    --fg: 0.88 0.055 85;
+
+    --muted: 0.34 0.007 49;
+    --muted-fg: 0.60 0.025 70;
+
+    --popover: 0.30 0.002 90;
+    --popover-fg: 0.88 0.055 85;
+
+    --card: 0.34 0.007 49;
+    --card-fg: 0.88 0.055 85;
+
+    --header: 0.32 0.004 70;
+    --header-fg: 0.88 0.055 85;
+
+    --border: 0.48 0.018 61;
+    --input: 0.48 0.018 61;
+
+    --primary: 0.88 0.055 85;
+    --primary-fg: 0.28 0.000 90;
+
+    --secondary: 0.34 0.007 49;
+    --secondary-fg: 0.88 0.055 85;
+
+    --accent: 0.37 0.007 49;
+    --accent-fg: 0.88 0.055 85;
+
+    --destructive: 0.66 0.218 30;
+    --destructive-fg: 0.15 0.01 30;
+
+    --ring: 0.42 0.012 61;
+
+    --primary-accent: 0.73 0.182 52;
+
+    --surface-raised: 0.37 0.007 49;
+    --surface-sunken: 0.24 0.000 90;
+
+    --success: 0.77 0.158 111;
+    --success-fg: 0.15 0.02 111;
+    --warning: 0.83 0.159 83;
+    --warning-fg: 0.20 0.03 83;
+    --info: 0.55 0.065 200;
+    --info-fg: 0.90 0.01 200;
+
+    --muted-gray: 0.38 0.008 61;
+
+    --light-red: 0.38 0.09 30;
+    --dark-red: 0.66 0.218 30;
+    --light-yellow: 0.50 0.08 83;
+    --dark-yellow: 0.83 0.159 83;
+    --light-green: 0.45 0.08 111;
+    --dark-green: 0.77 0.158 111;
+    --light-blue: 0.38 0.030 200;
+    --dark-blue: 0.55 0.065 200;
+
+    --sidebar-bg: 0.24 0.000 90;
+    --sidebar-fg: 0.78 0.040 85;
+    --sidebar-primary: 0.88 0.055 85;
+    --sidebar-primary-fg: 0.28 0.000 90;
+    --sidebar-accent: 0.32 0.006 49;
+    --sidebar-accent-fg: 0.82 0.040 85;
+    --sidebar-border: 0.44 0.015 61;
+    --sidebar-ring: 0.73 0.182 52;
+
+    --chart-1: 0.73 0.182 52;
+    --chart-2: 0.55 0.065 200;
+    --chart-3: 0.77 0.158 111;
+    --chart-4: 0.71 0.098 2;
+    --chart-5: 0.83 0.159 83;
+    --chart-6: 0.66 0.218 30;
+    --chart-7: 0.77 0.158 111;
+    --chart-8: 0.71 0.098 2;
+    --chart-grid: 0.38 0.008 61;
+  }
+
+  /* ══════════════════════════════════════════════════
+     CATPPUCCIN MOCHA — purple-tinted soft dark
+     ══════════════════════════════════════════════════ */
+  .catppuccin {
+    --bg: 0.22 0.035 290;
+    --fg: 0.86 0.045 270;
+
+    --muted: 0.30 0.038 288;
+    --muted-fg: 0.56 0.028 280;
+
+    --popover: 0.26 0.036 290;
+    --popover-fg: 0.86 0.045 270;
+
+    --card: 0.30 0.038 288;
+    --card-fg: 0.86 0.045 270;
+
+    --header: 0.28 0.036 289;
+    --header-fg: 0.86 0.045 270;
+
+    --border: 0.42 0.035 285;
+    --input: 0.42 0.035 285;
+
+    --primary: 0.86 0.045 270;
+    --primary-fg: 0.22 0.035 290;
+
+    --secondary: 0.30 0.038 288;
+    --secondary-fg: 0.86 0.045 270;
+
+    --accent: 0.34 0.038 288;
+    --accent-fg: 0.86 0.045 270;
+
+    --destructive: 0.76 0.130 3;
+    --destructive-fg: 0.15 0.01 3;
+
+    --ring: 0.38 0.035 287;
+
+    --primary-accent: 0.72 0.14 305;
+
+    --surface-raised: 0.34 0.038 288;
+    --surface-sunken: 0.18 0.032 290;
+
+    --success: 0.80 0.12 143;
+    --success-fg: 0.15 0.02 143;
+    --warning: 0.92 0.070 87;
+    --warning-fg: 0.20 0.03 87;
+    --info: 0.72 0.12 255;
+    --info-fg: 0.15 0.02 255;
+
+    --muted-gray: 0.36 0.030 285;
+
+    --light-red: 0.40 0.06 3;
+    --dark-red: 0.76 0.130 3;
+    --light-yellow: 0.55 0.04 87;
+    --dark-yellow: 0.92 0.070 87;
+    --light-green: 0.44 0.06 143;
+    --dark-green: 0.80 0.12 143;
+    --light-blue: 0.40 0.06 255;
+    --dark-blue: 0.72 0.12 255;
+
+    --sidebar-bg: 0.18 0.032 290;
+    --sidebar-fg: 0.78 0.038 270;
+    --sidebar-primary: 0.86 0.045 270;
+    --sidebar-primary-fg: 0.22 0.035 290;
+    --sidebar-accent: 0.28 0.036 288;
+    --sidebar-accent-fg: 0.82 0.040 270;
+    --sidebar-border: 0.38 0.032 285;
+    --sidebar-ring: 0.72 0.14 305;
+
+    --chart-1: 0.72 0.14 305;
+    --chart-2: 0.72 0.12 255;
+    --chart-3: 0.80 0.12 143;
+    --chart-4: 0.76 0.130 3;
+    --chart-5: 0.92 0.070 87;
+    --chart-6: 0.87 0.075 336;
+    --chart-7: 0.80 0.12 143;
+    --chart-8: 0.76 0.130 3;
+    --chart-grid: 0.36 0.030 285;
+  }
+
+  /* ══════════════════════════════════════════════════
+     TOKYO NIGHT — deep navy dark, vibrant neon accents
+     ══════════════════════════════════════════════════ */
+  .tokyo-night {
+    --bg: 0.20 0.025 260;
+    --fg: 0.76 0.050 268;
+
+    --muted: 0.27 0.035 262;
+    --muted-fg: 0.50 0.040 262;
+
+    --popover: 0.23 0.030 260;
+    --popover-fg: 0.76 0.050 268;
+
+    --card: 0.27 0.035 262;
+    --card-fg: 0.76 0.050 268;
+
+    --header: 0.25 0.030 261;
+    --header-fg: 0.76 0.050 268;
+
+    --border: 0.38 0.045 262;
+    --input: 0.38 0.045 262;
+
+    --primary: 0.76 0.050 268;
+    --primary-fg: 0.20 0.025 260;
+
+    --secondary: 0.27 0.035 262;
+    --secondary-fg: 0.76 0.050 268;
+
+    --accent: 0.30 0.035 262;
+    --accent-fg: 0.76 0.050 268;
+
+    --destructive: 0.65 0.18 355;
+    --destructive-fg: 0.15 0.01 355;
+
+    --ring: 0.35 0.040 262;
+
+    --primary-accent: 0.68 0.15 260;
+
+    --surface-raised: 0.30 0.035 262;
+    --surface-sunken: 0.17 0.020 260;
+
+    --success: 0.80 0.139 130;
+    --success-fg: 0.15 0.02 130;
+    --warning: 0.78 0.106 75;
+    --warning-fg: 0.20 0.03 75;
+    --info: 0.72 0.132 264;
+    --info-fg: 0.15 0.02 264;
+
+    --muted-gray: 0.35 0.038 274;
+
+    --light-red: 0.38 0.07 10;
+    --dark-red: 0.72 0.159 10;
+    --light-yellow: 0.45 0.06 75;
+    --dark-yellow: 0.78 0.106 75;
+    --light-green: 0.42 0.07 130;
+    --dark-green: 0.80 0.139 130;
+    --light-blue: 0.38 0.07 264;
+    --dark-blue: 0.72 0.132 264;
+
+    --sidebar-bg: 0.19 0.018 281;
+    --sidebar-fg: 0.68 0.045 276;
+    --sidebar-primary: 0.77 0.054 276;
+    --sidebar-primary-fg: 0.23 0.021 281;
+    --sidebar-accent: 0.26 0.034 275;
+    --sidebar-accent-fg: 0.72 0.048 276;
+    --sidebar-border: 0.38 0.050 274;
+    --sidebar-ring: 0.72 0.132 264;
+
+    --chart-1: 0.72 0.132 264;
+    --chart-2: 0.80 0.139 130;
+    --chart-3: 0.75 0.134 300;
+    --chart-4: 0.72 0.159 10;
+    --chart-5: 0.78 0.106 75;
+    --chart-6: 0.72 0.159 10;
+    --chart-7: 0.80 0.139 130;
+    --chart-8: 0.75 0.134 300;
+    --chart-grid: 0.35 0.038 274;
+  }
+
+  /* ══════════════════════════════════════════════════
+     ONE DARK — Atom-inspired, balanced blue-grey
+     ══════════════════════════════════════════════════ */
+  .one-dark {
+    --bg: 0.27 0.012 240;
+    --fg: 0.78 0.018 250;
+
+    --muted: 0.33 0.014 240;
+    --muted-fg: 0.52 0.015 245;
+
+    --popover: 0.29 0.013 240;
+    --popover-fg: 0.78 0.018 250;
+
+    --card: 0.33 0.014 240;
+    --card-fg: 0.78 0.018 250;
+
+    --header: 0.31 0.013 240;
+    --header-fg: 0.78 0.018 250;
+
+    --border: 0.38 0.016 242;
+    --input: 0.38 0.016 242;
+
+    --primary: 0.78 0.018 250;
+    --primary-fg: 0.27 0.012 240;
+
+    --secondary: 0.33 0.014 240;
+    --secondary-fg: 0.78 0.018 250;
+
+    --accent: 0.36 0.014 240;
+    --accent-fg: 0.78 0.018 250;
+
+    --destructive: 0.62 0.15 5;
+    --destructive-fg: 0.15 0.01 17;
+
+    --ring: 0.36 0.015 242;
+
+    --primary-accent: 0.70 0.13 240;
+
+    --surface-raised: 0.36 0.014 240;
+    --surface-sunken: 0.23 0.010 240;
+
+    --success: 0.77 0.110 133;
+    --success-fg: 0.15 0.02 133;
+    --warning: 0.82 0.097 82;
+    --warning-fg: 0.20 0.03 82;
+    --info: 0.73 0.121 245;
+    --info-fg: 0.15 0.02 245;
+
+    --muted-gray: 0.35 0.012 242;
+
+    --light-red: 0.38 0.06 17;
+    --dark-red: 0.67 0.145 17;
+    --light-yellow: 0.48 0.05 82;
+    --dark-yellow: 0.82 0.097 82;
+    --light-green: 0.42 0.06 133;
+    --dark-green: 0.77 0.110 133;
+    --light-blue: 0.38 0.06 245;
+    --dark-blue: 0.73 0.121 245;
+
+    --sidebar-bg: 0.23 0.010 240;
+    --sidebar-fg: 0.65 0.015 245;
+    --sidebar-primary: 0.78 0.018 250;
+    --sidebar-primary-fg: 0.27 0.012 240;
+    --sidebar-accent: 0.30 0.013 240;
+    --sidebar-accent-fg: 0.72 0.016 245;
+    --sidebar-border: 0.36 0.015 242;
+    --sidebar-ring: 0.70 0.13 240;
+
+    --chart-1: 0.73 0.121 245;
+    --chart-2: 0.77 0.110 133;
+    --chart-3: 0.69 0.164 318;
+    --chart-4: 0.67 0.145 17;
+    --chart-5: 0.82 0.097 82;
+    --chart-6: 0.67 0.145 17;
+    --chart-7: 0.77 0.110 133;
+    --chart-8: 0.69 0.164 318;
+    --chart-grid: 0.35 0.012 242;
+  }
+
+  /* ══════════════════════════════════════════════════
+     ROSÉ PINE — dusty purple dark, misty warmth
+     ══════════════════════════════════════════════════ */
+  .rose-pine {
+    --bg: 0.19 0.030 300;
+    --fg: 0.90 0.028 295;
+
+    --muted: 0.26 0.045 298;
+    --muted-fg: 0.55 0.032 295;
+
+    --popover: 0.21 0.032 300;
+    --popover-fg: 0.90 0.028 295;
+
+    --card: 0.26 0.045 298;
+    --card-fg: 0.90 0.028 295;
+
+    --header: 0.23 0.035 300;
+    --header-fg: 0.90 0.028 295;
+
+    --border: 0.36 0.038 298;
+    --input: 0.36 0.038 298;
+
+    --primary: 0.90 0.028 295;
+    --primary-fg: 0.19 0.030 300;
+
+    --secondary: 0.26 0.045 298;
+    --secondary-fg: 0.90 0.028 295;
+
+    --accent: 0.29 0.045 298;
+    --accent-fg: 0.90 0.028 295;
+
+    --destructive: 0.68 0.16 358;
+    --destructive-fg: 0.15 0.01 4;
+
+    --ring: 0.33 0.040 300;
+
+    --primary-accent: 0.74 0.10 305;
+
+    --surface-raised: 0.29 0.045 298;
+    --surface-sunken: 0.15 0.025 300;
+
+    --success: 0.78 0.07 190;
+    --success-fg: 0.15 0.02 210;
+    --warning: 0.80 0.12 70;
+    --warning-fg: 0.20 0.03 75;
+    --info: 0.56 0.08 220;
+    --info-fg: 0.15 0.02 228;
+
+    --muted-gray: 0.30 0.036 298;
+
+    --light-red: 0.36 0.07 358;
+    --dark-red: 0.68 0.16 358;
+    --light-yellow: 0.48 0.06 75;
+    --dark-yellow: 0.84 0.110 75;
+    --light-green: 0.40 0.035 190;
+    --dark-green: 0.78 0.07 190;
+    --light-blue: 0.33 0.045 220;
+    --dark-blue: 0.56 0.08 220;
+
+    --sidebar-bg: 0.15 0.025 300;
+    --sidebar-fg: 0.76 0.025 295;
+    --sidebar-primary: 0.90 0.028 295;
+    --sidebar-primary-fg: 0.19 0.030 300;
+    --sidebar-accent: 0.23 0.042 298;
+    --sidebar-accent-fg: 0.80 0.025 295;
+    --sidebar-border: 0.33 0.036 300;
+    --sidebar-ring: 0.74 0.10 305;
+
+    --chart-1: 0.74 0.10 305;
+    --chart-2: 0.78 0.07 190;
+    --chart-3: 0.68 0.16 358;
+    --chart-4: 0.80 0.06 25;
+    --chart-5: 0.80 0.12 70;
+    --chart-6: 0.56 0.08 220;
+    --chart-7: 0.78 0.07 190;
+    --chart-8: 0.68 0.16 358;
+    --chart-grid: 0.30 0.036 298;
   }
 
 }
@@ -393,15 +2358,33 @@
   body {
     @apply bg-background text-foreground;
     font-family: var(--font-body);
-    font-feature-settings: "rlig" 1, "calt" 1;
-    line-height: 1.6;
+    /* Inter's contextual alternates plus tabular figures where numerals sit in
+       columns. `cv11` gives the single-storey 'l' the mockup's Inter renders. */
+    font-feature-settings: "rlig" 1, "calt" 1, "cv11" 1;
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
+  /* The mockup differentiates headings by weight and tracking rather than by
+     typeface, and stays at medium (500) rather than bold. */
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);
-    font-weight: 700;
-    line-height: 1.2;
+    font-weight: 500;
+    line-height: 1.3;
     letter-spacing: -0.02em;
+  }
+
+  h1 {
+    font-size: var(--text-2xl);
+    letter-spacing: -0.025em;
+  }
+
+  /* Numeric columns should not jitter as values change. */
+  .tabular-nums,
+  [class*="tabular-nums"] {
+    font-variant-numeric: tabular-nums;
   }
 
   code, pre, kbd, samp, .font-mono {
@@ -415,6 +2398,13 @@
 
 /* ── Utilities ────────────────────────────────────── */
 @layer utilities {
+  /* Standard page-body padding — matches the mockup's
+     .page { padding: 20px 30px 40px; }.
+     Applied to the content wrapper below every <PageHeader>. */
+  .page-body {
+    padding: 20px 30px 40px;
+  }
+
   .text-balance {
     text-wrap: balance;
   }
@@ -428,4 +2418,53 @@
   .stagger-3 { animation-delay: 150ms; }
   .stagger-4 { animation-delay: 200ms; }
   .stagger-5 { animation-delay: 250ms; }
+}
+
+/* ══════════════════════════════════════════════════════
+   REDUCED MOTION
+   ------------------------------------------------------
+   Honour `prefers-reduced-motion: reduce` globally rather than per-component,
+   so any current or future animation is covered without each author having to
+   remember a guard.
+
+   Animations are reduced to a single frame instead of being removed outright:
+   dropping them entirely can leave elements that animate *in* (Radix overlays,
+   accordions) stuck at their `from` state. A 1ms duration lets them complete
+   immediately and still fire `animationend`, which some components rely on.
+
+   Scroll behaviour is included because smooth scrolling is a motion effect that
+   commonly triggers vestibular discomfort.
+   ══════════════════════════════════════════════════════ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* Hover lifts and scale effects are pure decoration: neutralise the transform
+     so cards and rows stay put rather than jumping without a transition. */
+  .hover\:-translate-y-0\.5:hover,
+  .hover\:-translate-y-1:hover,
+  .hover\:scale-105:hover,
+  .hover\:scale-\[1\.02\]:hover {
+    transform: none !important;
+  }
+
+  /* Indefinite attention-seeking loops carry no information on their own; the
+     accompanying static dot or icon already conveys the state. */
+  .animate-ping,
+  .animate-pulse,
+  .animate-bounce {
+    animation: none !important;
+  }
+
+  /* Spinners are a genuine progress signal, so keep them turning but slow the
+     rotation to something far less agitating. */
+  .animate-spin {
+    animation-duration: 1.5s !important;
+  }
 }

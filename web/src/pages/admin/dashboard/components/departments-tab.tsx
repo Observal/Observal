@@ -24,7 +24,7 @@ export function DepartmentsTab() {
   if (deptsLoading) {
     return (
       <div className="space-y-6 pt-4">
-        <div className="h-64 rounded-lg border border-border animate-pulse bg-muted/30" />
+        <div className="h-64 rounded-xl bg-card shadow-sm animate-pulse" />
       </div>
     );
   }
@@ -34,7 +34,7 @@ export function DepartmentsTab() {
   if (departments.length === 0) {
     return (
       <div className="space-y-6 pt-4">
-        <div className="rounded-md border border-border p-8 text-center text-muted-foreground">
+        <div className="rounded-md bg-card shadow-sm p-8 text-center text-muted-foreground">
           <p className="text-sm font-medium mb-2">No department data available</p>
           <p className="text-xs">
             Assign departments to users in Settings, or log in via SSO to auto-sync groups from your identity provider.
@@ -57,11 +57,11 @@ export function DepartmentsTab() {
     <div className="space-y-6 pt-4">
       {/* Cost per Department KPIs */}
       {deptCosts.length > 0 && (
-        <div className="rounded-lg border border-border p-4">
+        <div className="rounded-xl bg-card shadow-sm p-5">
           <h3 className="text-sm font-medium mb-3">Monthly AI Spend by Department</h3>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {deptCosts.slice(0, 8).map((d) => (
-              <div key={d.name} className="rounded-md border border-border p-3 text-center">
+              <div key={d.name} className="rounded-md bg-card shadow-sm p-3 text-center">
                 <p className="text-xs text-muted-foreground truncate">{d.name}</p>
                 <p className="text-lg font-bold tabular-nums">${d.totalCost >= 1000000 ? `${(d.totalCost / 1000000).toFixed(1)}M` : d.totalCost >= 1000 ? `${(d.totalCost / 1000).toFixed(1)}K` : d.totalCost.toFixed(0)}</p>
                 <p className="text-[11px] text-muted-foreground">
@@ -74,7 +74,7 @@ export function DepartmentsTab() {
       )}
 
       {/* Department Breakdown Table */}
-      <div className="rounded-lg border border-border overflow-hidden">
+      <div className="rounded-lg bg-card shadow-sm overflow-hidden">
         <div className="p-4 border-b border-border">
           <h3 className="text-sm font-medium">Department Breakdown</h3>
           <p className="text-xs text-muted-foreground">
@@ -104,7 +104,7 @@ export function DepartmentsTab() {
                         className="h-full rounded-full"
                         style={{
                           width: `${dept.utilization_pct}%`,
-                          background: dept.utilization_pct > 80 ? "hsl(var(--success, 142 76% 36%))" : dept.utilization_pct > 50 ? "hsl(var(--primary))" : "hsl(var(--warning, 38 92% 50%))",
+                          background: dept.utilization_pct > 80 ? "oklch(var(--success))" : dept.utilization_pct > 50 ? "oklch(var(--primary))" : "oklch(var(--warning))",
                         }}
                       />
                     </div>
@@ -119,7 +119,7 @@ export function DepartmentsTab() {
       </div>
 
       {/* Token Usage by Department */}
-      <div className="rounded-lg border border-border overflow-hidden">
+      <div className="rounded-lg bg-card shadow-sm overflow-hidden">
         <div className="p-4 border-b border-border">
           <h3 className="text-sm font-medium">Token Usage by Department</h3>
           <p className="text-xs text-muted-foreground">Cost and usage efficiency per department</p>
@@ -153,13 +153,13 @@ export function DepartmentsTab() {
                   <td className="p-3">
                     <div className="flex items-center gap-1">
                       {t.trend_pct > 0 ? (
-                        <TrendingUp className="h-3 w-3 text-green-600" />
+                        <TrendingUp className="h-3 w-3 text-success" />
                       ) : t.trend_pct < 0 ? (
-                        <TrendingDown className="h-3 w-3 text-red-600" />
+                        <TrendingDown className="h-3 w-3 text-destructive" />
                       ) : (
                         <Minus className="h-3 w-3 text-muted-foreground" />
                       )}
-                      <span className={`text-xs tabular-nums ${t.trend_pct > 0 ? "text-green-600" : t.trend_pct < 0 ? "text-red-600" : "text-muted-foreground"}`}>
+                      <span className={`text-xs tabular-nums ${t.trend_pct > 0 ? "text-success" : t.trend_pct < 0 ? "text-destructive" : "text-muted-foreground"}`}>
                         {t.trend_pct > 0 ? "+" : ""}{t.trend_pct}%
                       </span>
                     </div>

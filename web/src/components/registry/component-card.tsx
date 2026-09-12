@@ -45,9 +45,9 @@ export function ComponentCard({
   className,
 }: ComponentCardProps) {
   const cardClassName = [
-    "group block border border-border bg-card p-4 rounded-md",
+    "group block bg-card p-[18px] rounded-xl shadow-sm",
     "transition-all duration-200 ease-out",
-    "hover:-translate-y-0.5 hover:border-foreground/20 hover:bg-accent/40",
+    "hover:-translate-y-0.5 hover:shadow-md",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
     className ?? "",
   ].join(" ");

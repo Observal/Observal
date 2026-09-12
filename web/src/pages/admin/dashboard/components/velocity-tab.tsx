@@ -22,7 +22,7 @@ function Sparkline({ data }: { data: number[] }) {
       <polyline
         points={points}
         fill="none"
-        stroke="hsl(var(--primary))"
+        stroke="oklch(var(--primary))"
         strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -46,7 +46,7 @@ export function VelocityTab() {
   if (velLoading) {
     return (
       <div className="space-y-6 pt-4">
-        <div className="h-80 rounded-lg border border-border animate-pulse bg-muted/30" />
+        <div className="h-80 rounded-xl bg-card shadow-sm animate-pulse" />
       </div>
     );
   }
@@ -64,7 +64,7 @@ export function VelocityTab() {
       <VelocityChart weekly={velocity?.weekly ?? []} />
 
       {/* Best Agents Table */}
-      <div className="rounded-lg border border-border overflow-hidden">
+      <div className="rounded-lg bg-card shadow-sm overflow-hidden">
         <div className="p-4 border-b border-border">
           <h3 className="text-sm font-medium">Best Agents</h3>
           <p className="text-xs text-muted-foreground">Ranked by composite score (sessions × 0.4 + downloads × 0.3 + rating × 0.3)</p>
@@ -138,7 +138,7 @@ function VelocityChart({ weekly }: { weekly: { week: string; traces: number }[] 
   }));
 
   return (
-    <div className="rounded-lg border border-border p-4">
+    <div className="rounded-xl bg-card shadow-sm p-5">
       <div className="flex items-center justify-between mb-1">
         <h3 className="text-sm font-medium">Development Velocity</h3>
         {weekly.length >= 4 && (
@@ -161,17 +161,17 @@ function VelocityChart({ weekly }: { weekly: { week: string; traces: number }[] 
             <AreaChart data={chartData} margin={{ top: 10, right: 10, bottom: 0, left: 5 }}>
               <defs>
                 <linearGradient id="velGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
-                  <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0.02} />
+                  <stop offset="0%" stopColor="oklch(var(--primary))" stopOpacity={0.3} />
+                  <stop offset="100%" stopColor="oklch(var(--primary))" stopOpacity={0.02} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.5} vertical={false} />
-              <XAxis dataKey="week" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <Tooltip formatter={(value, name) => [Number(value).toLocaleString(), name === "baseline" ? "Baseline (first 4 weeks)" : "Traces"]} contentStyle={{ background: "hsl(var(--background))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} />
-              <Area type="natural" dataKey="traces" stroke="hsl(var(--primary))" strokeWidth={2.5} fill="url(#velGrad)" dot={false} activeDot={{ r: 4, strokeWidth: 2, fill: "hsl(var(--background))" }} />
+              <CartesianGrid strokeDasharray="3 3" stroke="oklch(var(--border))" strokeOpacity={0.5} vertical={false} />
+              <XAxis dataKey="week" tick={{ fill: "oklch(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: "oklch(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <Tooltip formatter={(value, name) => [Number(value).toLocaleString(), name === "baseline" ? "Baseline (first 4 weeks)" : "Traces"]} contentStyle={{ background: "oklch(var(--background))", border: "1px solid oklch(var(--border))", borderRadius: 8, fontSize: 12 }} />
+              <Area type="natural" dataKey="traces" stroke="oklch(var(--primary))" strokeWidth={2.5} fill="url(#velGrad)" dot={false} activeDot={{ r: 4, strokeWidth: 2, fill: "oklch(var(--background))" }} />
               {showBaseline && (
-                <Line type="monotone" dataKey="baseline" stroke="hsl(var(--muted-foreground))" strokeWidth={1.5} strokeDasharray="6 3" dot={false} />
+                <Line type="monotone" dataKey="baseline" stroke="oklch(var(--muted-foreground))" strokeWidth={1.5} strokeDasharray="6 3" dot={false} />
               )}
             </AreaChart>
           </ResponsiveContainer>
@@ -201,13 +201,13 @@ function TimeToValue() {
   const { data, isLoading } = useExecTimeToValue();
 
   if (isLoading) {
-    return <div className="h-40 rounded-lg border border-border animate-pulse bg-muted/30" />;
+    return <div className="h-40 rounded-xl bg-card shadow-sm animate-pulse" />;
   }
 
   if (!data || data.agents.length === 0) return null;
 
   return (
-    <div className="rounded-lg border border-border overflow-hidden">
+    <div className="rounded-lg bg-card shadow-sm overflow-hidden">
       <div className="p-4 border-b border-border flex items-center justify-between">
         <div>
           <h3 className="text-sm font-medium">Time to Value</h3>
@@ -238,7 +238,7 @@ function TimeToValue() {
               <td className="p-3 tabular-nums text-xs text-muted-foreground">{agent.created_at}</td>
               <td className="p-3 tabular-nums">
                 {agent.days_to_100 !== null ? (
-                  <span className={agent.days_to_100 <= 7 ? "text-green-600 font-semibold" : agent.days_to_100 <= 30 ? "text-foreground" : "text-orange-500"}>
+                  <span className={agent.days_to_100 <= 7 ? "text-success font-semibold" : agent.days_to_100 <= 30 ? "text-foreground" : "text-warning"}>
                     {agent.days_to_100}d
                   </span>
                 ) : (

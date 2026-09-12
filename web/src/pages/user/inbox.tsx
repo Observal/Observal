@@ -721,7 +721,7 @@ function DetailBody({ itemId }: { itemId: string }) {
 				<div>
 					<div className="mb-1 text-xs font-medium text-muted-foreground">Run this yourself</div>
 					{/* Shown, never executed: the web app does not run commands. */}
-					<div className="flex items-center gap-2 rounded-md border bg-muted/40 p-2">
+					<div className="flex items-center gap-2 rounded-lg border border-border bg-muted/40 p-2">
 						<code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-xs">
 							{item.action_command}
 						</code>
@@ -844,7 +844,7 @@ export default function InboxPage() {
 					<div data-testid="inbox-feed" className="flex min-h-0 min-w-0 flex-1 flex-col">
 						{/* Toolbar */}
 						<div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
-							<div className="flex overflow-hidden rounded-md border">
+							<div className="flex overflow-hidden rounded-lg border border-border">
 								{[
 									{ label: "All", value: false },
 									{ label: "Unread", value: true },
@@ -926,7 +926,7 @@ export default function InboxPage() {
 
 						{/* List */}
 						<div className="min-h-0 flex-1 overflow-y-auto p-3">
-							<div className="overflow-hidden rounded-md border">
+							<div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
 								<div className="flex items-center gap-3 border-b bg-muted/30 px-3 py-2">
 									<Checkbox
 										checked={allChecked ? true : someChecked ? "indeterminate" : false}

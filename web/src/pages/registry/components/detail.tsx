@@ -30,6 +30,7 @@ import type { RegistryType } from "@/lib/api";
 import type { FeedbackItem, RegistryItem, ComponentVersionSummary } from "@/lib/types";
 import { compactNumber } from "@/lib/utils";
 import { canonicalRouteParts, registryIdentity } from "@/lib/registry-name";
+import { tagColorClasses } from "@/lib/tag-colors";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ReviewForm } from "@/components/registry/review-form";
@@ -286,7 +287,7 @@ export default function ComponentDetailPage({
           ) : undefined
         }
       />
-      <div className="p-6 w-full mx-auto space-y-6">
+      <div className="page-body w-full mx-auto space-y-5">
         {isLoading ? (
           <DetailSkeleton />
         ) : isError ? (
@@ -308,7 +309,9 @@ export default function ComponentDetailPage({
                   nameClassName="text-2xl font-display font-bold tracking-tight"
                   handleClassName="text-sm text-muted-foreground"
                 />
-                <Badge variant="outline" className="text-xs">{singularType}</Badge>
+                <span className={`rounded-full px-2.5 py-0.5 text-2xs font-medium ${tagColorClasses(singularType)}`}>
+                  {singularType}
+                </span>
                 {item.status && (
                   <Badge
                     variant={statusVariant(item.status)}
@@ -359,7 +362,7 @@ export default function ComponentDetailPage({
                     {Array.from({ length: 5 }).map((_, i) => (
                       <Star
                         key={i}
-                        className={`h-3.5 w-3.5 ${i < Math.round(avgRating) ? "fill-current text-amber-500" : "text-muted-foreground/30"}`}
+                        className={`h-3.5 w-3.5 ${i < Math.round(avgRating) ? "fill-current text-warning" : "text-muted-foreground/30"}`}
                       />
                     ))}
                   </div>
@@ -438,7 +441,7 @@ export default function ComponentDetailPage({
                                 key={i}
                                 className={`h-3.5 w-3.5 ${
                                   i < fb.rating
-                                    ? "fill-current text-amber-500"
+                                    ? "fill-current text-warning"
                                     : "text-muted-foreground/30"
                                 }`}
                               />

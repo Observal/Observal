@@ -553,11 +553,11 @@ function AgentListContent() {
         ]}
       />
 
-      <div className="p-6 lg:p-8 w-full mx-auto space-y-5">
+      <div className="page-body w-full mx-auto space-y-5">
         {/* Toolbar */}
         <div className="space-y-2">
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="relative max-w-md flex-1 min-w-[240px]">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative flex-1 min-w-[240px] max-w-[360px]">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 aria-label="Search agents"
@@ -567,7 +567,7 @@ function AgentListContent() {
                   setSearch(event.target.value);
                   updateFilters({ search: event.target.value || undefined });
                 }}
-                className="pl-9 h-9"
+                className="pl-9 h-[34px]"
               />
             </div>
             <PickerSelect
@@ -579,7 +579,7 @@ function AgentListContent() {
               ]}
               placeholder="Teamspace"
               className="w-[210px]"
-              inputClassName="h-9"
+              inputClassName="h-[34px]"
             />
             <UserSearchInput
               value={publisherQuery}
@@ -595,7 +595,7 @@ function AgentListContent() {
                 updateFilters({ namespace: user.username });
               }}
               placeholder="Publisher"
-              className="h-9 w-[220px]"
+              className="h-[34px] w-[220px]"
             />
             <PickerSelect
               value={category ?? ""}
@@ -606,13 +606,13 @@ function AgentListContent() {
               ]}
               placeholder="Category"
               className="w-[190px]"
-              inputClassName="h-9"
+              inputClassName="h-[34px]"
             />
-            <div className="flex items-center border border-border rounded-md overflow-hidden ml-auto">
+            <div className="flex items-center rounded-[9px] border border-border overflow-hidden ml-auto">
               <Button
                 variant={view === "table" ? "secondary" : "ghost"}
                 size="sm"
-                className="rounded-none h-8 px-2.5"
+                className="rounded-none h-[34px] px-2.5"
                 onClick={() => setView("table")}
                 aria-label="Table view"
               >
@@ -621,7 +621,7 @@ function AgentListContent() {
               <Button
                 variant={view === "grid" ? "secondary" : "ghost"}
                 size="sm"
-                className="rounded-none h-8 px-2.5"
+                className="rounded-none h-[34px] px-2.5"
                 onClick={() => setView("grid")}
                 aria-label="Grid view"
               >

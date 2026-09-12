@@ -133,7 +133,7 @@ const events = data?.events ?? [];
         title="Security Events"
         breadcrumbs={[{ label: "Admin" }, { label: "Security" }]}
       />
-      <div className="p-6 w-full mx-auto space-y-4">
+      <div className="page-body w-full mx-auto space-y-4">
         {/* Filters */}
         <div className="flex flex-wrap gap-3 items-center">
           <PickerSelect
@@ -174,7 +174,7 @@ const events = data?.events ?? [];
           />
         ) : (
           <>
-            <div className="rounded-md border">
+            <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
               <Table>
                 <TableHeader>
                   <TableRow>

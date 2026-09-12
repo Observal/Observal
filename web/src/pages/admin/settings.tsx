@@ -702,7 +702,7 @@ export default function SettingsPage() {
 					</div>
 				}
 			/>
-			<div className="p-6 w-full mx-auto space-y-6">
+			<div className="page-body w-full mx-auto space-y-5">
 				{/* Security warnings */}
 				{systemWarnings && systemWarnings.length > 0 && (
 					<section className="animate-in">
