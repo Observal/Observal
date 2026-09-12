@@ -629,7 +629,7 @@ function AgentBuilderInner() {
         }
       />
 
-      <div className="p-6 lg:p-8 w-full mx-auto">
+      <div className="page-body w-full mx-auto">
         {/* Restore draft banner */}
         {showRestoreBanner && (
           <div className="mb-4 flex items-center gap-3 rounded-lg border border-info/20 bg-info/5 px-4 py-3">

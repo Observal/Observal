@@ -204,7 +204,7 @@ export default function UsersPage() {
           </div>
         }
       />
-      <div className="p-6 w-full mx-auto space-y-4">
+      <div className="page-body w-full mx-auto space-y-4">
         {isLoading ? (
           <TableSkeleton rows={5} cols={4} />
         ) : isError ? (
@@ -218,7 +218,7 @@ export default function UsersPage() {
         ) : (
           <div className="animate-in space-y-3">
             <p className="text-xs text-muted-foreground">{userCount} user{userCount !== 1 ? "s" : ""}</p>
-            <div className="overflow-x-auto rounded-md border border-border">
+            <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">

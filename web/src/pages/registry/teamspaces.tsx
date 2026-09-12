@@ -345,7 +345,7 @@ export default function TeamspacesPage() {
 		<>
 			<PageHeader title="Teamspaces" breadcrumbs={[{ label: "Registry", href: "/" }, { label: "Teamspaces" }]} />
 			<main className="min-h-0 flex-1 overflow-y-auto bg-surface-sunken/30">
-				<div className="mx-auto w-full max-w-6xl p-4 sm:p-6 lg:p-8">
+				<div className="mx-auto w-full max-w-6xl">
 					{showCreate || firstTeamspace ? (
 						<CreatePanel
 							firstTeamspace={firstTeamspace}

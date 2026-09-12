@@ -26,9 +26,9 @@ import {
 
 const SIDEBAR_COOKIE_NAME = "sidebar:state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
-const SIDEBAR_WIDTH = "14.5rem"
-const SIDEBAR_WIDTH_MOBILE = "18rem"
-const SIDEBAR_WIDTH_ICON = "3rem"
+const SIDEBAR_WIDTH = "244px"
+const SIDEBAR_WIDTH_MOBILE = "244px"
+const SIDEBAR_WIDTH_ICON = "52px"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
 
 type SidebarContext = {
@@ -164,7 +164,7 @@ const Sidebar = React.forwardRef<
       data-sidebar="sidebar"
       className={cn(
         "group hidden h-full shrink-0 flex-col overflow-hidden bg-sidebar text-sidebar-foreground transition-[width] duration-200 ease-linear md:flex",
-        side === "right" && "border-l",
+        side === "left" ? "border-r" : "border-l",
         className,
       )}
       style={{ width }}
@@ -242,12 +242,12 @@ const SidebarInput = React.forwardRef<React.ComponentRef<typeof Input>, React.Co
 SidebarInput.displayName = "SidebarInput"
 
 const SidebarHeader = React.forwardRef<HTMLDivElement, React.ComponentProps<"div">>(
-  ({ className, ...props }, ref) => <div ref={ref} data-sidebar="header" className={cn("flex flex-col gap-2 p-2", className)} {...props} />,
+  ({ className, ...props }, ref) => <div ref={ref} data-sidebar="header" className={cn("flex flex-col gap-2 px-3.5 pt-4 pb-0", className)} {...props} />,
 )
 SidebarHeader.displayName = "SidebarHeader"
 
 const SidebarFooter = React.forwardRef<HTMLDivElement, React.ComponentProps<"div">>(
-  ({ className, ...props }, ref) => <div ref={ref} data-sidebar="footer" className={cn("flex flex-col gap-2 p-2", className)} {...props} />,
+  ({ className, ...props }, ref) => <div ref={ref} data-sidebar="footer" className={cn("mt-auto flex flex-col gap-2 border-t border-sidebar-border px-3.5 py-3", className)} {...props} />,
 )
 SidebarFooter.displayName = "SidebarFooter"
 
@@ -258,13 +258,13 @@ SidebarSeparator.displayName = "SidebarSeparator"
 
 const SidebarContent = React.forwardRef<HTMLDivElement, React.ComponentProps<"div">>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} data-sidebar="content" className={cn("flex min-h-0 flex-1 flex-col gap-2 overflow-auto group-data-[collapsible=icon]:overflow-hidden", className)} {...props} />
+    <div ref={ref} data-sidebar="content" className={cn("flex min-h-0 flex-1 flex-col overflow-auto px-3.5 py-0 group-data-[collapsible=icon]:overflow-hidden", className)} {...props} />
   ),
 )
 SidebarContent.displayName = "SidebarContent"
 
 const SidebarGroup = React.forwardRef<HTMLDivElement, React.ComponentProps<"div">>(
-  ({ className, ...props }, ref) => <div ref={ref} data-sidebar="group" className={cn("relative flex w-full min-w-0 flex-col p-2", className)} {...props} />,
+  ({ className, ...props }, ref) => <div ref={ref} data-sidebar="group" className={cn("relative flex w-full min-w-0 flex-col py-0", className)} {...props} />,
 )
 SidebarGroup.displayName = "SidebarGroup"
 
@@ -276,7 +276,8 @@ const SidebarGroupLabel = React.forwardRef<HTMLDivElement, React.ComponentProps<
         ref={ref}
         data-sidebar="group-label"
         className={cn(
-          "flex h-8 shrink-0 items-center rounded-md px-2 text-xs font-medium text-sidebar-foreground/70 outline-none ring-sidebar-ring transition-[margin,opacity] duration-200 ease-linear focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0",
+          // Mockup .nav-label: 11px, 500 weight, uppercase, 0.06em tracking, px-11px pb-6px
+          "flex shrink-0 items-center px-[11px] pb-1.5 pt-5 text-2xs font-medium uppercase tracking-[0.06em] text-muted-foreground outline-none ring-sidebar-ring transition-[margin,opacity] duration-200 ease-linear focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0",
           "group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:opacity-0",
           className,
         )}
@@ -324,12 +325,14 @@ SidebarMenuItem.displayName = "SidebarMenuItem"
 
 /* ─── Menu Button ─── */
 const sidebarMenuButtonVariants = cva(
-  "peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-sm p-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,height,padding,background-color,color] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 group-has-[[data-sidebar=menu-action]]/menu-item:pr-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-accent data-[active=true]:font-semibold data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0",
+  // Mockup nav-item: 9px 11px padding, 9px radius, text at 65% opacity when
+  // inactive. Active items get card background + hairline shadow + medium weight.
+  "peer/menu-button flex w-full items-center gap-[11px] overflow-hidden rounded-[9px] px-[11px] py-[9px] text-left text-sm outline-none ring-sidebar-ring transition-[background-color,color] duration-[120ms] text-foreground/65 hover:bg-surface-raised hover:text-foreground focus-visible:ring-2 active:bg-surface-raised active:text-foreground disabled:pointer-events-none disabled:opacity-50 group-has-[[data-sidebar=menu-action]]/menu-item:pr-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-card data-[active=true]:shadow-sm data-[active=true]:font-medium data-[active=true]:text-foreground data-[state=open]:hover:bg-surface-raised data-[state=open]:hover:text-foreground group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0",
   {
     variants: {
       variant: {
         default: "",
-        outline: "bg-background shadow-[0_0_0_1px_hsl(var(--sidebar-border))] hover:shadow-[0_0_0_1px_hsl(var(--sidebar-accent))]",
+        outline: "bg-background shadow-[0_0_0_1px_oklch(var(--sidebar-border))] hover:shadow-[0_0_0_1px_oklch(var(--sidebar-accent))]",
       },
       size: {
         default: "h-8 text-sm",

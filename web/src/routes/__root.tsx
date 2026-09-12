@@ -11,15 +11,15 @@ import { ErrorBoundary } from "@/components/shared/error-boundary";
 import { VersionMismatchBanner } from "@/components/shared/version-mismatch-banner";
 import "@/app.css";
 
-const THEMES = ["dark", "light"];
-
 function RootComponent() {
   const [queryClient] = useState(makeQueryClient);
 
   return (
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <ThemeProvider defaultTheme="dark" themes={THEMES}>
+        {/* Appearance defaults to the monochrome preset in system mode; the
+            preset and legacy theme lists live in @/lib/theme. */}
+        <ThemeProvider defaultTheme="system">
           <Outlet />
           <VersionMismatchBanner />
         </ThemeProvider>

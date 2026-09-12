@@ -244,7 +244,7 @@ return (
           </Button>
         }
       />
-      <div className="p-6 w-full mx-auto space-y-4">
+      <div className="page-body w-full mx-auto space-y-4">
         {/* Search */}
         <div className="space-y-2">
           <div className="relative">
@@ -301,7 +301,7 @@ return (
           />
         ) : (
           <>
-            <div className="rounded-md border overflow-x-auto">
+            <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
               <Table>
                 <TableHeader>
                   <TableRow>
