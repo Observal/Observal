@@ -133,7 +133,7 @@ export default function LeaderboardPage() {
         ]}
       />
 
-      <div className="p-6 lg:p-8 w-full mx-auto space-y-6">
+      <div className="page-body w-full mx-auto space-y-5">
         <Tabs
           value={topTab}
           onValueChange={(v) => setTopTab(v as TopTab)}
@@ -207,7 +207,7 @@ export default function LeaderboardPage() {
                         to={registryItemPath(item, "agents", item.id)}
                         className="flex items-center gap-4 rounded-md px-3 py-3 transition-colors hover:bg-accent/40 group"
                       >
-                        <span className={`w-8 text-right font-mono font-semibold ${i < 3 ? "text-foreground" : "text-muted-foreground"}`}>
+                        <span className={`w-8 text-right font-mono font-semibold tabular-nums ${i < 3 ? "text-warning" : "text-muted-foreground"}`}>
                           {i + 1}
                         </span>
                         <div className="flex-1 min-w-0">
@@ -274,7 +274,7 @@ export default function LeaderboardPage() {
                         key={user.email}
                         className="flex items-center gap-4 rounded-md px-3 py-3 transition-colors hover:bg-accent/40"
                       >
-                        <span className={`w-8 text-right font-mono font-semibold ${i < 3 ? "text-foreground" : "text-muted-foreground"}`}>
+                        <span className={`w-8 text-right font-mono font-semibold tabular-nums ${i < 3 ? "text-warning" : "text-muted-foreground"}`}>
                           {i + 1}
                         </span>
                         <div className="flex-1 min-w-0">
@@ -343,7 +343,7 @@ export default function LeaderboardPage() {
                         to={registryItemPath(item, componentRouteType(item.component_type), item.id)}
                         className="flex items-center gap-4 rounded-md px-3 py-3 transition-colors hover:bg-accent/40 group"
                       >
-                        <span className={`w-8 text-right font-mono font-semibold ${i < 3 ? "text-foreground" : "text-muted-foreground"}`}>
+                        <span className={`w-8 text-right font-mono font-semibold tabular-nums ${i < 3 ? "text-warning" : "text-muted-foreground"}`}>
                           {i + 1}
                         </span>
                         <div className="flex-1 min-w-0">
@@ -363,7 +363,7 @@ export default function LeaderboardPage() {
                         <span className="w-20 text-right inline-flex items-center justify-end gap-1 text-sm text-muted-foreground">
                           {item.average_rating != null ? (
                             <>
-                              <Star className="h-3 w-3 fill-amber-500 text-amber-500" />
+                              <Star className="h-3 w-3 fill-warning text-warning" />
                               {item.average_rating.toFixed(1)}
                             </>
                           ) : (
@@ -403,7 +403,7 @@ export default function LeaderboardPage() {
                         key={user.email}
                         className="flex items-center gap-4 rounded-md px-3 py-3 transition-colors hover:bg-accent/40"
                       >
-                        <span className={`w-8 text-right font-mono font-semibold ${i < 3 ? "text-foreground" : "text-muted-foreground"}`}>
+                        <span className={`w-8 text-right font-mono font-semibold tabular-nums ${i < 3 ? "text-warning" : "text-muted-foreground"}`}>
                           {i + 1}
                         </span>
                         <div className="flex-1 min-w-0">

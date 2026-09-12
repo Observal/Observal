@@ -2199,7 +2199,7 @@ export default function TraceDetailPage() {
 					},
 				]}
 			/>
-			<div className="p-6 w-full mx-auto space-y-6">
+			<div className="page-body w-full mx-auto space-y-5">
 				{isLoading ? (
 					<DetailSkeleton />
 				) : isError ? (

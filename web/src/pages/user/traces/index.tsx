@@ -331,7 +331,7 @@ const columns: ColumnDef<Session>[] = [
 				const credits = fmtCredits(r.total_credits ?? r.credits);
 				if (credits) {
 					return (
-						<span className="text-[13px] font-mono tabular-nums text-orange-400">
+						<span className="text-[13px] font-mono tabular-nums text-warning">
 							{credits} cr
 						</span>
 					);
@@ -350,9 +350,9 @@ const columns: ColumnDef<Session>[] = [
 					className="text-[13px] font-mono tabular-nums"
 					title={`In: ${r.total_input_tokens?.toLocaleString() ?? 0} · Out: ${r.total_output_tokens?.toLocaleString() ?? 0}`}
 				>
-					<span className="text-emerald-400">{inp}</span>
+					<span className="text-success">{inp}</span>
 					<span className="text-muted-foreground/50"> / </span>
-					<span className="text-blue-400">{out}</span>
+					<span className="text-info">{out}</span>
 				</span>
 			);
 		},
@@ -584,7 +584,7 @@ export default function TracesPage() {
 					</button>
 				}
 			/>
-			<div className="p-6 w-full mx-auto space-y-5">
+			<div className="page-body w-full mx-auto space-y-5">
 				{isLoading ? (
 					<TableSkeleton rows={8} cols={8} />
 				) : isError ? (
@@ -633,7 +633,7 @@ export default function TracesPage() {
 						</div>
 
 						{/* ── Table ── */}
-						<div className="rounded-lg border border-border overflow-hidden">
+						<div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
 							<Table>
 								<TableHeader>
 									{table.getHeaderGroups().map((hg) => (

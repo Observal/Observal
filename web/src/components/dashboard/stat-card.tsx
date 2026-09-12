@@ -17,16 +17,18 @@ interface StatCardProps {
 
 export function StatCard({ title, value, description, icon: Icon, trend, className }: StatCardProps) {
   return (
-    <div className={cn("overflow-hidden rounded-lg border bg-card px-4 py-4 shadow-xs", className)}>
-      <dt className="truncate text-xs font-medium text-muted-foreground">{title}</dt>
-      <dd className="mt-1 flex items-baseline gap-2">
-        <span className="text-2xl font-semibold tracking-tight">{value}</span>
+    <div className={cn("overflow-hidden bg-card px-5 py-5", className)}>
+      <dt className="truncate text-xs text-muted-foreground">{title}</dt>
+      <dd className="mt-2 flex items-baseline gap-2">
+        {/* Metric values are bold, tightly tracked, and tabular so columns of
+            figures stay aligned as values change. */}
+        <span className="text-2xl font-bold tabular-nums tracking-[-0.02em]">{value}</span>
         {Icon && <Icon className="h-3.5 w-3.5 text-muted-foreground" />}
       </dd>
       {(description || trend) && (
-        <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+        <div className="mt-1 flex items-center gap-1.5 text-2xs text-muted-foreground">
           {trend && (
-            <span className={cn("inline-flex items-center gap-0.5 font-medium", trend.positive ? "text-dark-green" : "text-dark-red")}>
+            <span className={cn("inline-flex items-center gap-0.5 font-semibold", trend.positive ? "text-success" : "text-destructive")}>
               {trend.positive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
               {trend.value}%
             </span>

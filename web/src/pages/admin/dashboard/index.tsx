@@ -216,7 +216,7 @@ function DashboardContent() {
         title="Executive Dashboard"
         breadcrumbs={[{ label: "Dashboard" }]}
       />
-      <div className="p-6 w-full mx-auto space-y-6">
+      <div className="page-body w-full mx-auto space-y-5">
         {showOnboarding && <OnboardingWizard onDismiss={handleDismissWizard} />}
 
         {/* Controls row */}
@@ -224,14 +224,14 @@ function DashboardContent() {
           {/* Range picker */}
           <div className="flex items-center gap-2">
             <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-            <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-muted/40 border border-border">
+            <div className="flex items-center gap-0.5 p-1 rounded-[11px] bg-surface-raised">
               {RANGES.map((r) => (
                 <button
                   key={r.value}
                   onClick={() => handleRangeChange(r.value)}
-                  className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
+                  className={`px-3 py-[7px] rounded-lg text-xs font-medium transition-colors ${
                     activeRange === r.value
-                      ? "bg-background shadow-sm text-foreground"
+                      ? "bg-card shadow-sm text-foreground"
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >

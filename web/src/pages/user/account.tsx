@@ -29,26 +29,34 @@ import { AvatarEditable } from "@/components/account/avatar-upload";
 import { NAMESPACE_RULE_TEXT, isValidNamespace } from "@/lib/registry-name";
 
 // ── Theme definitions ──────────────────────────────────────────────────────
-// Dark is the product default; light remains available for bright environments.
-const THEMES = [
+// ── Appearance presets (primary) ───────────────────────────────────────────
+// Swatches: [canvas, accent, text] per mode, taken from the design mockup's
+// preset definitions so each chip previews the mode it will apply.
+const PRESET_OPTIONS = [
 	{
-		value: "dark",
-		label: "Dark",
-		swatches: [
-			"var(--theme-preview-dark-shell)",
-			"var(--theme-preview-dark-canvas)",
-			"var(--theme-preview-dark-accent)",
-		],
+		value: "monochrome",
+		label: "Monochrome",
+		light: ["oklch(0.967 0.007 88.6)", "oklch(0.222 0.006 91.6)", "oklch(0.531 0.011 93.7)"],
+		dark: ["oklch(0.16 0.004 264)", "oklch(0.898 0.01 87.5)", "oklch(0.56 0.005 264)"],
 	},
 	{
-		value: "light",
-		label: "Light",
-		swatches: [
-			"var(--theme-preview-light-shell)",
-			"var(--theme-preview-light-canvas)",
-			"var(--theme-preview-light-accent)",
-		],
+		value: "slate",
+		label: "Slate",
+		light: ["oklch(0.972 0.007 259.5)", "oklch(0.54 0.124 256.5)", "oklch(0.542 0.033 249.6)"],
+		dark: ["oklch(0.181 0.017 269.7)", "oklch(0.669 0.055 249.4)", "oklch(0.549 0.032 250.5)"],
 	},
+	{
+		value: "copper",
+		label: "Copper",
+		light: ["oklch(0.972 0.01 87.5)", "oklch(0.545 0.075 78.4)", "oklch(0.535 0.02 84.6)"],
+		dark: ["oklch(0.183 0.01 62.4)", "oklch(0.708 0.062 71.9)", "oklch(0.573 0.025 79.6)"],
+	},
+] as const;
+
+const MODE_OPTIONS = [
+	{ value: "light", label: "Light" },
+	{ value: "dark", label: "Dark" },
+	{ value: "system", label: "System" },
 ] as const;
 
 // ── localStorage sync helpers ──────────────────────────────────────────────
@@ -309,7 +317,7 @@ function ChangePasswordSection() {
 							className={`h-8 text-sm ${
 								touched && newPassword
 									? strong
-										? "border-green-500 focus-visible:ring-green-500"
+										? "border-success focus-visible:ring-success"
 										: "border-destructive focus-visible:ring-destructive"
 									: ""
 							}`}
@@ -325,7 +333,7 @@ function ChangePasswordSection() {
 											key={rule.id}
 											className={`flex items-center gap-1.5 text-xs ${
 												ok
-													? "text-green-600 dark:text-green-400"
+													? "text-success"
 													: "text-muted-foreground"
 											}`}
 										>
@@ -348,7 +356,7 @@ function ChangePasswordSection() {
 							className={`h-8 text-sm ${
 								confirmPassword
 									? matches
-										? "border-green-500 focus-visible:ring-green-500"
+										? "border-success focus-visible:ring-success"
 										: "border-destructive focus-visible:ring-destructive"
 									: ""
 							}`}
@@ -418,7 +426,15 @@ export default function AccountPage() {
 		() => null as string | null,
 	);
 
-	const { theme, setTheme } = useTheme();
+	const {
+		preset,
+		setPreset,
+		mode,
+		setMode,
+		resolvedMode,
+		legacyTheme,
+		setLegacyTheme,
+	} = useTheme();
 
 	const displayName = name || "—";
 	const displayEmail = email || "—";
@@ -427,7 +443,7 @@ export default function AccountPage() {
 	return (
 		<>
 			<PageHeader title="Account" />
-			<div className="p-6 w-full mx-auto max-w-2xl space-y-6">
+			<div className="page-body w-full mx-auto max-w-2xl space-y-6">
 				{/* ── Section 1: Profile ─────────────────────────────────────────── */}
 				<section className="animate-in">
 					<h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
@@ -465,19 +481,51 @@ export default function AccountPage() {
 				{/* ── Section 3: Change Password ───────────────────────────────── */}
 				<ChangePasswordSection />
 
-				{/* ── Section 4: Theme ───────────────────────────────────────────── */}
+				{/* ── Section 4: Appearance ──────────────────────────────────────── */}
 				<section className="animate-in stagger-1">
 					<h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-						Theme
+						Appearance
 					</h3>
-					<div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-						{THEMES.map((t) => {
-							const isActive = theme === t.value;
+
+					{/* Mode: light / dark / system. System follows the OS preference. */}
+					<div className="mb-4">
+						<p className="text-xs text-muted-foreground mb-2">Mode</p>
+						<div className="inline-flex rounded-md border border-border bg-muted p-1 gap-0.5">
+							{MODE_OPTIONS.map((m) => (
+								<button
+									key={m.value}
+									type="button"
+									onClick={() => setMode(m.value)}
+									aria-pressed={mode === m.value}
+									className={
+										"rounded px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" +
+										(mode === m.value
+											? " bg-background text-foreground shadow-sm"
+											: " text-muted-foreground hover:text-foreground")
+									}
+								>
+									{m.label}
+								</button>
+							))}
+						</div>
+						{mode === "system" && (
+							<p className="mt-1.5 text-[11px] text-muted-foreground">
+								Following your system preference ({resolvedMode}).
+							</p>
+						)}
+					</div>
+
+					{/* Presets: each works in both light and dark. */}
+					<p className="text-xs text-muted-foreground mb-2">Preset</p>
+					<div className="grid grid-cols-3 gap-2">
+						{PRESET_OPTIONS.map((p) => {
+							const isActive = !legacyTheme && preset === p.value;
+							const swatches = resolvedMode === "dark" ? p.dark : p.light;
 							return (
 								<button
-									key={t.value}
+									key={p.value}
 									type="button"
-									onClick={() => setTheme(t.value)}
+									onClick={() => setPreset(p.value)}
 									className={
 										"rounded-md border p-3 text-left transition-colors hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" +
 										(isActive
@@ -485,9 +533,8 @@ export default function AccountPage() {
 											: " border-border bg-card")
 									}
 								>
-									{/* Color preview: 3 stacked bars */}
 									<div className="rounded overflow-hidden mb-2.5 h-8 flex flex-col gap-px">
-										{t.swatches.map((color, i) => (
+										{swatches.map((color, i) => (
 											<div
 												key={i}
 												className="flex-1"
@@ -496,7 +543,7 @@ export default function AccountPage() {
 										))}
 									</div>
 									<div className="flex items-center justify-between">
-										<span className="text-xs font-medium">{t.label}</span>
+										<span className="text-xs font-medium">{p.label}</span>
 										{isActive && (
 											<Check className="h-3 w-3 text-primary-accent" />
 										)}
@@ -505,6 +552,7 @@ export default function AccountPage() {
 							);
 						})}
 					</div>
+
 				</section>
 			</div>
 		</>
