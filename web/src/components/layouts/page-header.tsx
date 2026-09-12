@@ -8,7 +8,7 @@ import { Link } from "@tanstack/react-router";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import { CommandMenu } from "@/components/nav/command-menu";
-import { Bell, Palette } from "lucide-react";
+
 
 export interface BreadcrumbEntry {
   label: string;
@@ -85,21 +85,7 @@ export function PageHeader({
       {/* Search button trigger */}
       <CommandMenu />
 
-      {/* Notification bell (placeholder) */}
-      <button
-        className="inline-flex h-[34px] w-[34px] items-center justify-center rounded-[9px] text-foreground/65 transition-colors hover:bg-surface-raised hover:text-foreground"
-        aria-label="Notifications"
-      >
-        <Bell className="h-4 w-4" />
-      </button>
 
-      {/* Theme icon (placeholder) */}
-      <button
-        className="inline-flex h-[34px] w-[34px] items-center justify-center rounded-[9px] text-foreground/65 transition-colors hover:bg-surface-raised hover:text-foreground"
-        aria-label="Customize appearance"
-      >
-        <Palette className="h-4 w-4" />
-      </button>
     </header>
   );
 }

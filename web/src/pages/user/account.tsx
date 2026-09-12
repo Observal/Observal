@@ -51,24 +51,6 @@ const PRESET_OPTIONS = [
 		light: ["oklch(0.972 0.01 87.5)", "oklch(0.545 0.075 78.4)", "oklch(0.535 0.02 84.6)"],
 		dark: ["oklch(0.183 0.01 62.4)", "oklch(0.708 0.062 71.9)", "oklch(0.573 0.025 79.6)"],
 	},
-	{
-		value: "verdant",
-		label: "Verdant",
-		light: ["oklch(0.974 0.008 156.5)", "oklch(0.531 0.095 161.9)", "oklch(0.523 0.041 156.4)"],
-		dark: ["oklch(0.192 0.015 152.5)", "oklch(0.646 0.079 154.9)", "oklch(0.556 0.037 154.4)"],
-	},
-	{
-		value: "indigo",
-		label: "Indigo",
-		light: ["oklch(0.968 0.008 300.4)", "oklch(0.451 0.16 285.4)", "oklch(0.51 0.03 292.5)"],
-		dark: ["oklch(0.175 0.019 285.9)", "oklch(0.605 0.157 285.6)", "oklch(0.531 0.038 290.7)"],
-	},
-	{
-		value: "rose",
-		label: "Rose",
-		light: ["oklch(0.968 0.008 5.6)", "oklch(0.487 0.107 5.6)", "oklch(0.542 0.049 5.4)"],
-		dark: ["oklch(0.179 0.013 3.6)", "oklch(0.652 0.083 6.2)", "oklch(0.561 0.037 3.9)"],
-	},
 ] as const;
 
 const MODE_OPTIONS = [
@@ -535,7 +517,7 @@ export default function AccountPage() {
 
 					{/* Presets: each works in both light and dark. */}
 					<p className="text-xs text-muted-foreground mb-2">Preset</p>
-					<div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+					<div className="grid grid-cols-3 gap-2">
 						{PRESET_OPTIONS.map((p) => {
 							const isActive = !legacyTheme && preset === p.value;
 							const swatches = resolvedMode === "dark" ? p.dark : p.light;

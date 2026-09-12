@@ -4,7 +4,7 @@
 /**
  * Appearance system: two independent dimensions.
  *
- *   preset  monochrome (default) | slate | copper | verdant | indigo | rose
+ *   preset  monochrome (default) | slate | copper
  *   mode    system (default) | light | dark
  *
  * `mode` is persisted as the user's *intent*, so "system" stays "system" and
@@ -31,9 +31,6 @@ export const PRESETS = [
   "monochrome",
   "slate",
   "copper",
-  "verdant",
-  "indigo",
-  "rose",
 ] as const;
 
 export type Preset = (typeof PRESETS)[number];
