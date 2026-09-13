@@ -1125,7 +1125,7 @@ export default function TeamspaceDetailPage() {
 		return (
 			<>
 				{header}
-				<div className="mx-auto w-full max-w-6xl p-4 sm:p-6 lg:p-8">
+				<div className="page-body w-full">
 					<DetailSkeleton />
 				</div>
 			</>
@@ -1136,7 +1136,7 @@ export default function TeamspaceDetailPage() {
 		return (
 			<>
 				{header}
-				<div className="mx-auto w-full max-w-6xl p-4 sm:p-6 lg:p-8">
+				<div className="page-body w-full">
 					<ErrorState message={error?.message} onRetry={() => refetch()} />
 				</div>
 			</>
@@ -1147,7 +1147,7 @@ export default function TeamspaceDetailPage() {
 		return (
 			<>
 				{header}
-				<div className="mx-auto w-full max-w-6xl p-4 sm:p-6 lg:p-8">
+				<div className="page-body w-full">
 					<EmptyState
 						icon={Building2}
 						title={`No teamspace named ${handle}`}
@@ -1169,7 +1169,7 @@ export default function TeamspaceDetailPage() {
 		<>
 			{header}
 			<main className="min-h-0 flex-1 overflow-y-auto bg-surface-sunken/30">
-				<div className="mx-auto w-full max-w-6xl p-4 sm:p-6 lg:p-8">
+				<div className="page-body w-full">
 					<Link
 						to="/teamspaces"
 						className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"

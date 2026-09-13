@@ -10,14 +10,19 @@ import {
   ArrowRight,
   Blocks,
   Bot,
-  Search,
   Star,
 } from "lucide-react";
-import { PageHeader } from "@/components/layouts/page-header";
+import { PageHeader, PageIntro } from "@/components/layouts/page-header";
 import { RecommendedForYou } from "@/components/registry/recommended-for-you";
 import { RegistryName } from "@/components/registry/registry-name";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { EntityGlyph } from "@/components/registry/entity-glyph";
+import {
+  Panel,
+  CompactRow,
+  IntentSearch,
+  IntentChip,
+  RegistryHomeGrid,
+} from "@/components/registry/registry-primitives";
 import { ErrorState } from "@/components/shared/error-state";
 import { TableSkeleton } from "@/components/shared/skeleton-layouts";
 import {
@@ -79,141 +84,6 @@ function sessionPlatform(session: Session): string {
   return session.platform || session.service_name || "Unknown harness";
 }
 
-function PanelHeader({
-  title,
-  description,
-  action,
-}: {
-  title: string;
-  description: string;
-  action?: React.ReactNode;
-}) {
-  return (
-    <header className="flex min-h-16 items-center justify-between gap-5 border-b border-border px-4 py-3">
-      <div className="min-w-0">
-        <h2 className="text-base font-semibold tracking-tight text-foreground">
-          {title}
-        </h2>
-        <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
-      </div>
-      {action}
-    </header>
-  );
-}
-
-function AgentRow({ agent }: { agent: TopAgentItem }) {
-  return (
-    <Link
-      to={registryItemPath(agent, "agents", agent.id)}
-      className="group grid min-h-18 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b border-border/75 px-4 py-3 last:border-b-0 hover:bg-accent/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring md:grid-cols-[minmax(0,1fr)_5rem_6rem_5rem_1.5rem]"
-    >
-      <div className="min-w-0">
-        <RegistryName
-          item={agent}
-          nameClassName="text-sm font-semibold text-foreground group-hover:text-primary-accent"
-        />
-        <p className="mt-1 line-clamp-1 text-sm text-muted-foreground">
-          {agent.description}
-        </p>
-      </div>
-      <span className="hidden font-mono text-xs text-muted-foreground md:block">
-        v{agent.version}
-      </span>
-      <span className="hidden items-center justify-end gap-1.5 text-xs text-muted-foreground md:inline-flex">
-        <ArrowDownToLine className="h-3.5 w-3.5" />
-        {compactNumber(agent.download_count)}
-      </span>
-      <span className="hidden items-center justify-end gap-1.5 text-xs text-muted-foreground md:inline-flex">
-        <Star className="h-3.5 w-3.5" />
-        {agent.average_rating ? agent.average_rating.toFixed(1) : "New"}
-      </span>
-      <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
-    </Link>
-  );
-}
-
-function AvailableAgentRow({ agent }: { agent: RegistryItem }) {
-  return (
-    <Link
-      to={registryItemPath(agent, "agents", agent.id)}
-      className="group grid min-h-18 grid-cols-[minmax(0,1fr)_auto] items-center gap-4 border-b border-border/75 px-4 py-3 last:border-b-0 hover:bg-accent/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-    >
-      <div className="min-w-0">
-        <RegistryName
-          item={agent}
-          nameClassName="text-sm font-semibold text-foreground group-hover:text-primary-accent"
-        />
-        <p className="mt-1 line-clamp-1 text-sm text-muted-foreground">
-          {typeof agent.description === "string"
-            ? agent.description
-            : "Approved agent"}
-        </p>
-      </div>
-      <div className="flex items-center gap-3">
-        <span className="font-mono text-xs text-muted-foreground">
-          {typeof agent.version === "string" ? `v${agent.version}` : "Latest"}
-        </span>
-        <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
-      </div>
-    </Link>
-  );
-}
-
-function SessionRow({ session }: { session: Session }) {
-  return (
-    <Link
-      to="/traces/$traceId"
-      params={{ traceId: session.session_id }}
-      className="group block border-b border-border/75 px-4 py-3 last:border-b-0 hover:bg-accent/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-    >
-      <div className="flex items-center justify-between gap-3">
-        <span className="truncate text-sm font-semibold text-foreground group-hover:text-primary-accent">
-          {sessionTitle(session)}
-        </span>
-        <span className="shrink-0 text-xs text-muted-foreground">
-          {formatTime(session.last_event_time)}
-        </span>
-      </div>
-      <p className="mt-1 truncate text-sm text-muted-foreground">
-        {sessionPlatform(session)} · {session.model || "Unknown model"} ·{" "}
-        {compactNumber(toNumber(session.tool_result_count))} tools
-      </p>
-    </Link>
-  );
-}
-
-type WorkRoute = "/agents" | "/agents/builder" | "/components";
-
-function WorkRow({
-  href,
-  icon: Icon,
-  title,
-  description,
-}: {
-  href: WorkRoute;
-  icon: typeof Bot;
-  title: string;
-  description: string;
-}) {
-  return (
-    <Link
-      to={href}
-      className="group grid min-h-18 grid-cols-[1.25rem_minmax(0,1fr)_1rem] gap-3 border-b border-border/75 px-4 py-3 last:border-b-0 hover:bg-accent/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-    >
-      <Icon className="mt-0.5 h-4 w-4 text-component-agent" />
-      <span className="min-w-0">
-        <span className="block text-sm font-semibold text-foreground">
-          {title}
-        </span>
-        <span className="mt-1 block text-sm leading-5 text-muted-foreground">
-          {description}
-        </span>
-      </span>
-      <ArrowRight className="mt-0.5 h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
-    </Link>
-  );
-}
-
 export default function RegistryHome() {
   const [search, setSearch] = useState("");
   const router = useRouter();
@@ -255,104 +125,82 @@ export default function RegistryHome() {
   const recentSessions = (sessions ?? []).slice(0, 4);
   const displayName =
     whoami?.name || whoami?.username || whoami?.email || "Welcome back";
-  const daySummary =
-    myAgentsLoading || sessionsLoading
-      ? "Loading your registry activity."
-      : `${workInProgress.length} registry item${workInProgress.length === 1 ? "" : "s"} need attention · ${(sessions ?? []).length} recent session${(sessions ?? []).length === 1 ? "" : "s"} captured.`;
 
-  function handleSearch(event: React.FormEvent) {
-    event.preventDefault();
+  function handleSearch() {
     const query = search.trim();
     if (query) router.navigate({ to: "/agents", search: { search: query } });
   }
 
   return (
     <>
-      <PageHeader title="Registry" />
+      <PageHeader
+        title="Registry"
+        breadcrumbs={[
+          { label: "Registry" },
+          { label: "Home" },
+        ]}
+      />
 
-      <div className="mx-auto w-full max-w-[90rem] space-y-8 px-4 py-7 sm:px-6 lg:px-10 lg:py-9">
-        <section className="max-w-5xl">
-          <h1 className="max-w-3xl text-balance text-2xl font-semibold tracking-[-0.03em] text-foreground sm:text-3xl">
-            {displayName}, here is your day in {brandingAppName || "Observal"}.
+      <div className="page-body w-full">
+        {/* ── Intent box ── */}
+        <section className="mb-7 rounded-xl bg-card p-[30px] shadow-sm animate-in">
+          <p className="mb-1.5 text-2xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
+            Start with intent
+          </p>
+          <h1 className="max-w-3xl text-balance text-[28px] font-medium tracking-[-0.03em]">
+            What are you working on?
           </h1>
-          <p className="mt-2 max-w-2xl text-base leading-7 text-muted-foreground">
-            {daySummary}
+          <p className="mt-2 max-w-[680px] text-sm text-muted-foreground">
+            Find an approved agent, inspect a trace, or assemble a workflow from
+            trusted components.
           </p>
 
-          <form onSubmit={handleSearch} className="mt-7 flex max-w-4xl gap-2">
-            <div className="relative min-w-0 flex-1">
-              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                aria-label="Search agents"
-                placeholder="Search agents"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                className="h-12 rounded-md border-input bg-card pl-10 text-base shadow-none"
-              />
-            </div>
-            <Button
-              type="submit"
-              className="h-12 shrink-0 px-5"
-              disabled={!search.trim()}
-            >
-              Search
-            </Button>
-          </form>
+          <IntentSearch
+            value={search}
+            onChange={setSearch}
+            onSubmit={handleSearch}
+            placeholder='Try "review a Python service" or paste a trace ID'
+            className="mt-5 max-w-[780px]"
+          />
 
           <nav
-            aria-label="Browse registry"
-            className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm"
+            aria-label="Quick actions"
+            className="mt-3 flex flex-wrap gap-1.5"
           >
-            <Link
-              to="/agents"
-              className="font-medium text-foreground underline-offset-4 hover:underline"
-            >
-              Browse all agents
-            </Link>
-            <Link
-              to="/components"
-              search={{ type: "mcps" }}
-              className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-            >
-              MCP servers
-            </Link>
-            <Link
-              to="/components"
-              search={{ type: "skills" }}
-              className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-            >
-              Skills
-            </Link>
-            <Link
-              to="/components"
-              search={{ type: "hooks" }}
-              className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-            >
-              Hooks
-            </Link>
-            <Link
-              to="/teamspaces"
-              className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-            >
-              Teamspaces
-            </Link>
+            <IntentChip href="/agents">Browse agents</IntentChip>
+            <IntentChip href="/agents/builder">Build from components</IntentChip>
+            <IntentChip href="/traces">Inspect a trace</IntentChip>
+            <IntentChip href="/review">Review submissions</IntentChip>
           </nav>
         </section>
 
-        <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_21rem]">
-          <RecommendedForYou limit={3} />
+        {/* ── Main grid ── */}
+        <RegistryHomeGrid>
+          {/* Recommendations */}
+          <div className="col-span-full xl:col-span-1">
+            <RecommendedForYou limit={3} />
+          </div>
 
-          <section className="overflow-hidden rounded-md border border-border bg-card">
-            <PanelHeader
-              title="Your work"
-              description="Publishing and maintenance that needs you."
-            />
-            <WorkRow
-              href="/agents"
-              icon={Bot}
+          {/* Your work */}
+          <Panel
+            title="Your work"
+            subtitle="Publishing and maintenance that needs you"
+            action={
+              <Link
+                to="/agents"
+                className="text-2xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                View all →
+              </Link>
+            }
+          >
+            <CompactRow
+              icon={
+                <EntityGlyph type="agent" size="sm" labelled={false} />
+              }
               title={
                 myAgentsLoading
-                  ? "Loading your work"
+                  ? "Loading your work…"
                   : workInProgress.length > 0
                     ? `${workInProgress.length} item${workInProgress.length === 1 ? "" : "s"} need attention`
                     : "Your agents are up to date"
@@ -362,92 +210,147 @@ export default function RegistryHome() {
                   ? "Open drafts, pending reviews, and rejected submissions."
                   : "Review published agents or start a new release."
               }
+              href="/agents"
             />
-            <WorkRow
-              href="/agents/builder"
-              icon={Bot}
+            <CompactRow
+              icon={<EntityGlyph type="agent" size="sm" labelled={false} />}
               title="Build an agent"
-              description="Bundle components into a portable, versioned agent."
+              description="Bundle components into a portable agent."
+              href="/agents/builder"
             />
-            <WorkRow
-              href="/components"
-              icon={Blocks}
+            <CompactRow
+              icon={<EntityGlyph type="mcp" size="sm" labelled={false} />}
               title="Browse components"
-              description="Find MCPs, skills, hooks, prompts, and sandboxes."
+              description="Find approved reusable building blocks."
+              href="/components"
             />
-          </section>
+          </Panel>
 
-          <section className="overflow-hidden rounded-md border border-border bg-card">
-            <PanelHeader
-              title={topAgents?.length ? "Agents gaining adoption" : "Trusted agents"}
-              description={
-                topAgents?.length
-                  ? "Frequently installed agents from across the registry."
-                  : "Approved agents available to install now."
-              }
-              action={
-                <Link
-                  to="/leaderboard"
-                  className="shrink-0 text-sm font-medium text-primary-accent underline-offset-4 hover:underline"
-                >
-                  Leaderboard
-                </Link>
-              }
-            />
+          {/* Agents gaining adoption */}
+          <Panel
+            title={
+              topAgents?.length
+                ? "Agents gaining adoption"
+                : "Trusted agents"
+            }
+            subtitle={
+              topAgents?.length
+                ? "Frequently installed agents from across the registry"
+                : "Approved agents available to install now."
+            }
+            action={
+              <Link
+                to="/leaderboard"
+                className="text-2xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                Leaderboard →
+              </Link>
+            }
+            wide
+          >
             {topAgentsLoading || agentsLoading ? (
-              <div className="p-3">
-                <TableSkeleton rows={5} cols={4} />
-              </div>
+              <TableSkeleton rows={3} cols={3} />
             ) : topAgents?.length ? (
-              topAgents.map((agent) => <AgentRow key={agent.id} agent={agent} />)
-            ) : agentsError ? (
-              <div className="p-5">
-                <ErrorState
-                  message={agentsErrorDetail?.message}
-                  onRetry={() => refetchAgents()}
+              topAgents.slice(0, 3).map((agent) => (
+                <CompactRow
+                  key={agent.id}
+                  icon={<EntityGlyph type="agent" size="sm" labelled={false} />}
+                  title={
+                    agent.namespace && agent.slug
+                      ? `${agent.namespace}/${agent.slug}`
+                      : agent.name
+                  }
+                  description={agent.description}
+                  meta={
+                    <>
+                      {compactNumber(agent.download_count)} pulls
+                      <br />★{" "}
+                      {agent.average_rating
+                        ? agent.average_rating.toFixed(1)
+                        : "New"}
+                    </>
+                  }
+                  href={registryItemPath(agent, "agents", agent.id)}
                 />
-              </div>
+              ))
+            ) : agentsError ? (
+              <ErrorState
+                message={agentsErrorDetail?.message}
+                onRetry={() => refetchAgents()}
+              />
             ) : trustedAgents.length > 0 ? (
-              trustedAgents.map((agent) => (
-                <AvailableAgentRow key={agent.id} agent={agent} />
+              trustedAgents.slice(0, 3).map((agent) => (
+                <CompactRow
+                  key={agent.id}
+                  icon={<EntityGlyph type="agent" size="sm" labelled={false} />}
+                  title={
+                    agent.namespace && agent.slug
+                      ? `${agent.namespace}/${agent.slug}`
+                      : agent.name
+                  }
+                  description={
+                    typeof agent.description === "string"
+                      ? agent.description
+                      : "Approved agent"
+                  }
+                  href={registryItemPath(agent, "agents", agent.id)}
+                />
               ))
             ) : (
-              <p className="p-6 text-sm text-muted-foreground">
-                Approved agents will appear here when your registry starts publishing.
+              <p className="text-xs text-muted-foreground">
+                Approved agents will appear here when your registry starts
+                publishing.
               </p>
             )}
-          </section>
+          </Panel>
 
-          <section className="overflow-hidden rounded-md border border-border bg-card">
-            <PanelHeader
-              title="Recent execution"
-              description="Your latest captured coding sessions."
-              action={
-                <Link
-                  to="/traces"
-                  className="shrink-0 text-sm font-medium text-primary-accent underline-offset-4 hover:underline"
-                >
-                  All traces
-                </Link>
-              }
-            />
+          {/* Recent execution */}
+          <Panel
+            title="Recent execution"
+            subtitle="Your latest captured coding sessions"
+            action={
+              <Link
+                to="/traces"
+                className="text-2xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                All traces →
+              </Link>
+            }
+          >
             {sessionsLoading ? (
-              <div className="p-3">
-                <TableSkeleton rows={4} cols={2} />
-              </div>
+              <TableSkeleton rows={3} cols={2} />
             ) : recentSessions.length === 0 ? (
-              <div className="flex gap-3 p-5 text-sm leading-6 text-muted-foreground">
-                <Activity className="mt-1 h-4 w-4 shrink-0" />
-                Enable telemetry in a supported harness to connect registry assets
-                with execution evidence.
+              <div className="flex gap-3 text-xs leading-6 text-muted-foreground">
+                <Activity className="mt-0.5 h-4 w-4 shrink-0" />
+                Enable telemetry in a supported harness to connect registry
+                assets with execution evidence.
               </div>
             ) : (
               recentSessions.map((session) => (
-                <SessionRow key={session.session_id} session={session} />
+                <CompactRow
+                  key={session.session_id}
+                  icon={
+                    <span className="inline-grid h-6 w-6 shrink-0 place-items-center rounded-md bg-surface-raised font-mono text-[9px] font-medium text-muted-foreground">
+                      {(sessionPlatform(session) || "?")
+                        .slice(0, 2)
+                        .toUpperCase()}
+                    </span>
+                  }
+                  title={sessionTitle(session)}
+                  description={`${sessionPlatform(session)} · ${session.model || "Unknown model"}`}
+                  meta={
+                    <>
+                      {formatTime(session.last_event_time)}
+                      <br />
+                      {compactNumber(toNumber(session.tool_result_count))} tools
+                    </>
+                  }
+                  href={`/traces/${session.session_id}`}
+                />
               ))
             )}
-          </section>
-        </div>
+          </Panel>
+        </RegistryHomeGrid>
       </div>
     </>
   );

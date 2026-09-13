@@ -4,7 +4,7 @@
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Building2, ChevronRight, Loader2, Lock, Plus, RefreshCw, Search, Users } from "lucide-react";
-import { PageHeader } from "@/components/layouts/page-header";
+import { PageHeader, PageIntro } from "@/components/layouts/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -344,8 +344,13 @@ export default function TeamspacesPage() {
 	return (
 		<>
 			<PageHeader title="Teamspaces" breadcrumbs={[{ label: "Registry", href: "/" }, { label: "Teamspaces" }]} />
-			<main className="min-h-0 flex-1 overflow-y-auto bg-surface-sunken/30">
-				<div className="mx-auto w-full max-w-6xl">
+			<main className="min-h-0 flex-1 overflow-y-auto">
+				<div className="page-body w-full">
+					<PageIntro
+						eyebrow="Organization"
+						title="Teamspaces"
+						subtitle="Organize people, components, policy, and telemetry by team."
+					/>
 					{showCreate || firstTeamspace ? (
 						<CreatePanel
 							firstTeamspace={firstTeamspace}
@@ -355,9 +360,9 @@ export default function TeamspacesPage() {
 						/>
 					) : (
 						<>
-							<header className="flex flex-col gap-4 border-b border-border/80 pb-5 sm:flex-row sm:items-end sm:justify-between">
+							<header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
 								<div>
-									<h2 className="text-xl font-semibold tracking-tight">All visible teamspaces</h2>
+									<h2 className="text-base font-medium">All visible teamspaces</h2>
 									<p className="mt-1 text-sm text-muted-foreground">
 										Shared publishing namespaces. Open one to browse its agents and components, manage members, and
 										clear its review queue.
@@ -390,7 +395,7 @@ export default function TeamspacesPage() {
 
 							<div className="mt-6">
 								{isLoading ? (
-									<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" aria-label="Loading teamspaces">
+									<div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3" aria-label="Loading teamspaces">
 										<div className="h-32 animate-pulse rounded-lg bg-muted/60" />
 										<div className="h-32 animate-pulse rounded-lg bg-muted/60" />
 										<div className="h-32 animate-pulse rounded-lg bg-muted/60" />
@@ -408,7 +413,7 @@ export default function TeamspacesPage() {
 										description={`Nothing matches "${teamQuery.trim()}". Clear the search to see all ${teams.length}.`}
 									/>
 								) : (
-									<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+									<div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
 										{filteredTeams.map((team) => (
 											<TeamspaceCard key={team.id} team={team} isAdmin={isAdmin} />
 										))}

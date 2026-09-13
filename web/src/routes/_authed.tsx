@@ -8,6 +8,7 @@ import { RegistrySidebar } from "@/components/nav/registry-sidebar";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthGuard } from "@/components/layouts/auth-guard";
 import { HelpProvider } from "@/components/wiki/help-context";
+import { MockRegistryData } from "@/components/dev/mock-registry-data";
 
 function AuthedLayout() {
   return (
@@ -21,6 +22,7 @@ function AuthedLayout() {
             </Suspense>
           </SidebarInset>
           <Toaster visibleToasts={1} />
+          <MockRegistryData />
         </SidebarProvider>
       </HelpProvider>
     </AuthGuard>

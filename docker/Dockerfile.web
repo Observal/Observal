@@ -30,6 +30,8 @@ RUN pnpm install --frozen-lockfile
 COPY web/ ./web/
 COPY docs/ ./docs/
 WORKDIR /app/web
+ARG VITE_MOCK_REGISTRY
+ENV VITE_MOCK_REGISTRY=$VITE_MOCK_REGISTRY
 RUN pnpm run build
 
 # ── Runtime stage: nginx serves the static SPA build ────────────────────────

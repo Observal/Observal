@@ -54,7 +54,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { PageHeader } from "@/components/layouts/page-header";
+import { PageHeader, PageIntro } from "@/components/layouts/page-header";
 import {
   TableSkeleton,
   CardSkeleton,
@@ -330,7 +330,12 @@ export default function ComponentsPage() {
         ]}
       />
 
-      <div className="page-body w-full mx-auto space-y-5">
+      <div className="page-body w-full space-y-5">
+        <PageIntro
+          eyebrow="Component library"
+          title="Components"
+          subtitle="Browse and publish the MCP servers, skills, hooks, prompts, and sandboxes used by agents."
+        />
         {/* Toolbar */}
         <div className="space-y-2">
           <div className="flex items-center gap-3 flex-wrap">

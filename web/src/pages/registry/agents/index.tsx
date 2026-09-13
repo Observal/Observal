@@ -44,7 +44,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { PageHeader } from "@/components/layouts/page-header";
+import { PageHeader, PageIntro } from "@/components/layouts/page-header";
 import { TableSkeleton, CardSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -553,7 +553,12 @@ function AgentListContent() {
         ]}
       />
 
-      <div className="page-body w-full mx-auto space-y-5">
+      <div className="page-body w-full space-y-5">
+        <PageIntro
+          eyebrow="Registry"
+          title="Agents"
+          subtitle="Discover installable agents, continue drafts, and manage releases you own."
+        />
         {/* Toolbar */}
         <div className="space-y-2">
           <div className="flex items-center gap-2 flex-wrap">
