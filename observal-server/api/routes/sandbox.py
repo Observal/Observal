@@ -18,8 +18,8 @@ from api.deps import (
     commit_or_name_conflict,
     get_db,
     get_effective_component_permission,
+    get_registry_user,
     may_view_unapproved,
-    optional_current_user,
     require_role,
     resolve_listing,
     resolve_visible_listing,
@@ -125,7 +125,7 @@ async def list_sandboxes(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(optional_current_user),
+    current_user: User | None = Depends(get_registry_user),
 ):
     optic.debug("sandbox list: search={}", search)
     stmt = (
@@ -197,7 +197,7 @@ async def my_sandboxes(
 async def get_sandbox(
     listing_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(optional_current_user),
+    current_user: User | None = Depends(get_registry_user),
 ):
     optic.debug("sandbox get: listing_id={}", listing_id)
     listing = await resolve_visible_listing(

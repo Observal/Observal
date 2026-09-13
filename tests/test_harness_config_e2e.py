@@ -651,7 +651,7 @@ def isolated_lockfile(tmp_path, monkeypatch):
 
 
 def _patch_post(return_value):
-    return patch("observal_cli.client.post", return_value=return_value)
+    return patch("observal_cli.client.post_public", return_value=return_value)
 
 
 _AGENT_DETAIL_NO_ENV = {

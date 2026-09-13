@@ -12,6 +12,7 @@ import {
   Bot,
   Search,
   Star,
+  Terminal,
 } from "lucide-react";
 import { PageHeader } from "@/components/layouts/page-header";
 import { RecommendedForYou } from "@/components/registry/recommended-for-you";
@@ -27,6 +28,7 @@ import {
   useTopAgents,
   useWhoami,
 } from "@/hooks/use-api";
+import { useOptionalAuth } from "@/hooks/use-auth";
 import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 import { registryItemPath } from "@/lib/registry-name";
 import { compactNumber } from "@/lib/utils";
@@ -217,15 +219,17 @@ function WorkRow({
 export default function RegistryHome() {
   const [search, setSearch] = useState("");
   const router = useRouter();
-  const { data: whoami } = useWhoami();
+  const { isAuthenticated } = useOptionalAuth();
+  const { data: whoami } = useWhoami(isAuthenticated);
   const { brandingAppName } = useDeploymentConfig();
   const { data: sessions, isLoading: sessionsLoading } = useSessions2({
     days: 7,
     limit: 8,
     mine: true,
     refetchInterval: 30_000,
+    enabled: isAuthenticated,
   });
-  const { data: myAgents, isLoading: myAgentsLoading } = useMyAgents();
+  const { data: myAgents, isLoading: myAgentsLoading } = useMyAgents(isAuthenticated);
   const { data: topAgents, isLoading: topAgentsLoading } = useTopAgents(6);
   const {
     data: agents,
@@ -255,10 +259,11 @@ export default function RegistryHome() {
   const recentSessions = (sessions ?? []).slice(0, 4);
   const displayName =
     whoami?.name || whoami?.username || whoami?.email || "Welcome back";
-  const daySummary =
-    myAgentsLoading || sessionsLoading
+  const daySummary = isAuthenticated
+    ? myAgentsLoading || sessionsLoading
       ? "Loading your registry activity."
-      : `${workInProgress.length} registry item${workInProgress.length === 1 ? "" : "s"} need attention · ${(sessions ?? []).length} recent session${(sessions ?? []).length === 1 ? "" : "s"} captured.`;
+      : `${workInProgress.length} registry item${workInProgress.length === 1 ? "" : "s"} need attention · ${(sessions ?? []).length} recent session${(sessions ?? []).length === 1 ? "" : "s"} captured.`
+    : "Browse and install approved public agents and components without an account. Sign in when you are ready to publish or manage your own work.";
 
   function handleSearch(event: React.FormEvent) {
     event.preventDefault();
@@ -271,9 +276,52 @@ export default function RegistryHome() {
       <PageHeader title="Registry" />
 
       <div className="mx-auto w-full max-w-[90rem] space-y-8 px-4 py-7 sm:px-6 lg:px-10 lg:py-9">
+        {!isAuthenticated && (
+          <section
+            aria-labelledby="guest-cli-title"
+            className="rounded-lg border border-primary-accent/25 bg-primary-accent/5 px-5 py-5 sm:px-6"
+          >
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 rounded-md bg-primary-accent/10 p-2 text-primary-accent">
+                <Terminal className="h-4 w-4" />
+              </div>
+              <div>
+                <h2 id="guest-cli-title" className="text-base font-semibold text-foreground">
+                  Use the public registry from your terminal
+                </h2>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">
+                  No account or token is required for approved public content.
+                </p>
+              </div>
+            </div>
+            <ol className="mt-5 grid gap-4 text-sm md:grid-cols-3">
+              <li className="min-w-0">
+                <p className="mb-1.5 font-medium text-foreground">1. Install the CLI</p>
+                <code className="block overflow-x-auto whitespace-nowrap rounded-md bg-background px-3 py-2 font-mono text-xs text-foreground">
+                  uv tool install observal-cli
+                </code>
+              </li>
+              <li className="min-w-0">
+                <p className="mb-1.5 font-medium text-foreground">2. Find an agent</p>
+                <code className="block overflow-x-auto whitespace-nowrap rounded-md bg-background px-3 py-2 font-mono text-xs text-foreground">
+                  observal agent list
+                </code>
+              </li>
+              <li className="min-w-0">
+                <p className="mb-1.5 font-medium text-foreground">3. Pull it into your harness</p>
+                <code className="block overflow-x-auto whitespace-nowrap rounded-md bg-background px-3 py-2 font-mono text-xs text-foreground">
+                  observal pull namespace/agent --harness pi
+                </code>
+              </li>
+            </ol>
+          </section>
+        )}
+
         <section className="max-w-5xl">
           <h1 className="max-w-3xl text-balance text-2xl font-semibold tracking-[-0.03em] text-foreground sm:text-3xl">
-            {displayName}, here is your day in {brandingAppName || "Observal"}.
+            {isAuthenticated
+              ? `${displayName}, here is your day in ${brandingAppName || "Observal"}.`
+              : `Explore ${brandingAppName || "Observal"}'s public registry.`}
           </h1>
           <p className="mt-2 max-w-2xl text-base leading-7 text-muted-foreground">
             {daySummary}
@@ -330,45 +378,74 @@ export default function RegistryHome() {
             >
               Hooks
             </Link>
-            <Link
-              to="/teamspaces"
-              className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-            >
-              Teamspaces
-            </Link>
+            {isAuthenticated && (
+              <Link
+                to="/teamspaces"
+                className="text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+              >
+                Teamspaces
+              </Link>
+            )}
           </nav>
         </section>
 
         <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_21rem]">
-          <RecommendedForYou limit={3} />
+          {isAuthenticated ? (
+            <RecommendedForYou limit={3} />
+          ) : (
+            <section className="overflow-hidden rounded-md border border-border bg-card">
+              <PanelHeader
+                title="Public registry"
+                description="Approved building blocks you can use immediately."
+                action={
+                  <Button asChild size="sm">
+                    <Link to="/login">Sign in to contribute</Link>
+                  </Button>
+                }
+              />
+              {agentsLoading ? (
+                <div className="p-3"><TableSkeleton rows={3} cols={2} /></div>
+              ) : trustedAgents.length > 0 ? (
+                trustedAgents.slice(0, 3).map((agent) => <AvailableAgentRow key={agent.id} agent={agent} />)
+              ) : (
+                <p className="p-6 text-sm text-muted-foreground">Approved agents will appear here when the registry starts publishing.</p>
+              )}
+            </section>
+          )}
 
           <section className="overflow-hidden rounded-md border border-border bg-card">
             <PanelHeader
-              title="Your work"
-              description="Publishing and maintenance that needs you."
+              title={isAuthenticated ? "Your work" : "Start exploring"}
+              description={isAuthenticated ? "Publishing and maintenance that needs you." : "Browse the public catalog without signing in."}
             />
             <WorkRow
               href="/agents"
               icon={Bot}
               title={
-                myAgentsLoading
-                  ? "Loading your work"
-                  : workInProgress.length > 0
-                    ? `${workInProgress.length} item${workInProgress.length === 1 ? "" : "s"} need attention`
-                    : "Your agents are up to date"
+                isAuthenticated
+                  ? myAgentsLoading
+                    ? "Loading your work"
+                    : workInProgress.length > 0
+                      ? `${workInProgress.length} item${workInProgress.length === 1 ? "" : "s"} need attention`
+                      : "Your agents are up to date"
+                  : "Browse public agents"
               }
               description={
-                workInProgress.length > 0
-                  ? "Open drafts, pending reviews, and rejected submissions."
-                  : "Review published agents or start a new release."
+                isAuthenticated
+                  ? workInProgress.length > 0
+                    ? "Open drafts, pending reviews, and rejected submissions."
+                    : "Review published agents or start a new release."
+                  : "Find an approved agent and pull it into your harness."
               }
             />
-            <WorkRow
-              href="/agents/builder"
-              icon={Bot}
-              title="Build an agent"
-              description="Bundle components into a portable, versioned agent."
-            />
+            {isAuthenticated && (
+              <WorkRow
+                href="/agents/builder"
+                icon={Bot}
+                title="Build an agent"
+                description="Bundle components into a portable, versioned agent."
+              />
+            )}
             <WorkRow
               href="/components"
               icon={Blocks}
@@ -420,31 +497,37 @@ export default function RegistryHome() {
 
           <section className="overflow-hidden rounded-md border border-border bg-card">
             <PanelHeader
-              title="Recent execution"
-              description="Your latest captured coding sessions."
+              title={isAuthenticated ? "Recent execution" : "More public agents"}
+              description={isAuthenticated ? "Your latest captured coding sessions." : "Recently approved agents from the public registry."}
               action={
                 <Link
-                  to="/traces"
+                  to={isAuthenticated ? "/traces" : "/agents"}
                   className="shrink-0 text-sm font-medium text-primary-accent underline-offset-4 hover:underline"
                 >
-                  All traces
+                  {isAuthenticated ? "All traces" : "All agents"}
                 </Link>
               }
             />
-            {sessionsLoading ? (
-              <div className="p-3">
-                <TableSkeleton rows={4} cols={2} />
-              </div>
-            ) : recentSessions.length === 0 ? (
-              <div className="flex gap-3 p-5 text-sm leading-6 text-muted-foreground">
-                <Activity className="mt-1 h-4 w-4 shrink-0" />
-                Enable telemetry in a supported harness to connect registry assets
-                with execution evidence.
-              </div>
+            {isAuthenticated ? (
+              sessionsLoading ? (
+                <div className="p-3">
+                  <TableSkeleton rows={4} cols={2} />
+                </div>
+              ) : recentSessions.length === 0 ? (
+                <div className="flex gap-3 p-5 text-sm leading-6 text-muted-foreground">
+                  <Activity className="mt-1 h-4 w-4 shrink-0" />
+                  Enable telemetry in a supported harness to connect registry assets
+                  with execution evidence.
+                </div>
+              ) : (
+                recentSessions.map((session) => (
+                  <SessionRow key={session.session_id} session={session} />
+                ))
+              )
+            ) : agentsLoading ? (
+              <div className="p-3"><TableSkeleton rows={4} cols={2} /></div>
             ) : (
-              recentSessions.map((session) => (
-                <SessionRow key={session.session_id} session={session} />
-              ))
+              approvedAgents.slice(5, 9).map((agent) => <AvailableAgentRow key={agent.id} agent={agent} />)
             )}
           </section>
         </div>

@@ -681,7 +681,7 @@ def skill_install(
         install_body = {"harness": harness, "scope": scope, "local_name": local_name}
         if version:
             install_body["version"] = version
-        result = client.post(f"/api/v1/skills/{resolved}/install", install_body)
+        result = client.post_public(f"/api/v1/skills/{resolved}/install", install_body)
     snippet = result.get("config_snippet", result)
 
     if raw:

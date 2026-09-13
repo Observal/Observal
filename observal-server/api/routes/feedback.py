@@ -15,7 +15,7 @@ from api.deps import (
     apply_visibility_filter,
     check_listing_visibility_async,
     get_db,
-    optional_current_user,
+    get_registry_user,
     require_role,
 )
 from models.agent import Agent
@@ -228,7 +228,7 @@ async def my_feedback_received(
 async def feedback_summary(
     listing_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(optional_current_user),
+    current_user: User | None = Depends(get_registry_user),
 ):
     optic.trace("listing_id={}", listing_id)
     await _visible_listing_by_id(db, listing_id, current_user)
@@ -251,7 +251,7 @@ async def get_feedback(
     listing_type: str,
     listing_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(optional_current_user),
+    current_user: User | None = Depends(get_registry_user),
 ):
     """Get all reviews for a listing. Anonymous reviews have user_id redacted."""
     optic.trace("listing_type={}, listing_id={}", listing_type, listing_id)

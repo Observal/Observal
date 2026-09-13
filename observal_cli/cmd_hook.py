@@ -541,7 +541,7 @@ def hook_install(
     )
     install_context = nullcontext() if machine_output else spinner(f"Generating {harness} config...")
     with install_context:
-        result = client.post(
+        result = client.post_public(
             f"/api/v1/hooks/{resolved}/install",
             {"harness": harness, "platform": platform, "local_name": local_name},
         )

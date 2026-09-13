@@ -39,6 +39,8 @@ _LEGACY_MCP_CONFIGS = (
     ".pi/mcp.json",
 )
 
+PUBLIC_SERVER_URL = "https://public.observal.io"
+
 DEFAULTS = {
     "server_url": "",
     "access_token": "",
@@ -277,15 +279,23 @@ def get_timeout() -> int:
     return int(cfg.get("timeout", 30))
 
 
-def get_or_exit() -> dict:
+def get_or_exit(*, require_auth: bool = True) -> dict:
     cfg = load()
-    if not cfg.get("server_url") or not cfg.get("access_token"):
+    if not cfg.get("server_url") and not require_auth and not cfg.get("access_token"):
+        cfg["server_url"] = PUBLIC_SERVER_URL
+    if not cfg.get("server_url") or (require_auth and not cfg.get("access_token")):
         fail(
-            ErrorCategory.AUTH,
-            "Not configured. Observal authentication is required.",
-            operation="Load authenticated CLI configuration",
+            ErrorCategory.AUTH if require_auth else ErrorCategory.USAGE,
+            "Not configured. Observal authentication is required."
+            if require_auth
+            else "No Observal server is configured.",
+            operation="Load authenticated CLI configuration" if require_auth else "Load CLI configuration",
             resource=str(CONFIG_FILE),
-            remediation="Run observal auth login or set OBSERVAL_TOKEN or OBSERVAL_ACCESS_TOKEN.",
+            remediation=(
+                "Run observal auth login or set OBSERVAL_TOKEN or OBSERVAL_ACCESS_TOKEN."
+                if require_auth
+                else "Set OBSERVAL_SERVER_URL or run observal config set server_url URL."
+            ),
         )
     return cfg
 

@@ -25,6 +25,7 @@ Use this skill for core account, setup, local inventory, inbox, and teamspace wo
 8. Treat tokens, invitation URLs, credentials, generated passwords, headers, and environment values as secrets. Do not echo them.
 9. Fail openly. Do not silently switch to direct API calls, database access, or local file writes.
 10. Automatic transient retries apply only to reads. After an uncertain mutation failure, verify state before retrying.
+11. Public registry reads need no login when the server setting `deployment.public_registry_enabled` is enabled; it is disabled by default on self-hosted deployments. Listing, showing, pulling, installing, and rendering approved public content use `https://public.observal.io` by default. Publishing, private resources, telemetry, feedback, and account operations still require `observal auth login`.
 
 ## Route the task
 

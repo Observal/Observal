@@ -713,6 +713,7 @@ def test_whoami_renders_profile_panel(monkeypatch: pytest.MonkeyPatch) -> None:
     kv_panel = MagicMock(return_value=panel)
     console_print = MagicMock()
     monkeypatch.setattr(auth.client, "get", get)
+    monkeypatch.setattr(auth.config, "get_or_exit", MagicMock(return_value={"access_token": "token"}))
     monkeypatch.setattr(auth, "status_badge", lambda role: f"badge:{role}")
     monkeypatch.setattr(auth, "kv_panel", kv_panel)
     monkeypatch.setattr(auth.console, "print", console_print)
@@ -737,6 +738,7 @@ def test_whoami_json_delegates_to_safe_json_renderer(monkeypatch: pytest.MonkeyP
     output_json = MagicMock()
     spinner = MagicMock()
     monkeypatch.setattr(auth.client, "get", lambda _path: user)
+    monkeypatch.setattr(auth.config, "get_or_exit", MagicMock(return_value={"access_token": "token"}))
     monkeypatch.setattr(auth, "output_json", output_json)
     monkeypatch.setattr(auth, "spinner", spinner)
 

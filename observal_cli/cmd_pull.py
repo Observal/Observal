@@ -447,7 +447,7 @@ def _rewrite_kiro_hooks(content: dict, agent_id: str | None = None) -> dict:
 
     from observal_cli.harness_specs.kiro_hooks_spec import build_kiro_hooks
 
-    cfg = config.get_or_exit()
+    cfg = config.get_or_exit(require_auth=False)
     hooks_url = f"{cfg['server_url'].rstrip('/')}/api/v1/telemetry/hooks"
     desired_hooks = build_kiro_hooks(hooks_url, agent_id=agent_id or "")
 
@@ -919,7 +919,7 @@ def register_pull(app: typer.Typer):
             }
             if version:
                 install_body["version"] = version
-            result = client.post(
+            result = client.post_public(
                 f"/api/v1/agents/{resolved}/install",
                 install_body,
             )

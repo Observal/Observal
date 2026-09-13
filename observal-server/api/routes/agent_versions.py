@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002
 from api.deps import (
     get_db,
     get_effective_agent_permission,
+    get_registry_user,
     may_view_unapproved,
     require_role,
 )
@@ -144,7 +145,7 @@ async def _list_agent_versions(
     page: int,
     page_size: int,
     db: AsyncSession,
-    current_user: User,
+    current_user: User | None,
 ) -> dict:
     optic.trace("agent_id={}, page={}", agent_id, page)
     agent = await _load_agent(db, agent_id, current_user)
@@ -174,7 +175,7 @@ async def _list_agent_versions(
     result = await db.execute(stmt)
     versions = result.scalars().all()
 
-    count_stmt = select(func.count(AgentVersion.id)).where(AgentVersion.agent_id == agent.id)
+    count_stmt = select(func.count(AgentVersion.id)).where(*version_filters)
     total = (await db.execute(count_stmt)).scalar() or 0
 
     return {
@@ -189,7 +190,7 @@ async def _get_agent_version(
     agent_id: str,
     version: str,
     db: AsyncSession,
-    current_user: User,
+    current_user: User | None,
 ) -> dict:
     optic.trace("agent_id={}, version={}", agent_id, version)
     agent = await _load_agent(db, agent_id, current_user)
@@ -495,7 +496,7 @@ async def _get_agent_harness_config(
     version: str,
     harness: str,
     db: AsyncSession,
-    current_user: User,
+    current_user: User | None,
 ) -> dict:
     optic.trace("agent_id={}, version={}", agent_id, version)
     agent = await _load_agent(db, agent_id, current_user)
@@ -534,7 +535,7 @@ async def _get_version_diff(
     v1: str,
     v2: str,
     db: AsyncSession,
-    current_user: User,
+    current_user: User | None,
 ) -> dict:
     optic.trace("agent_id={}, v1={}", agent_id, v1)
     agent = await _load_agent(db, agent_id, current_user)
@@ -638,7 +639,7 @@ async def list_agent_versions(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.user)),
+    current_user: User | None = Depends(get_registry_user),
 ):
     optic.debug("agent versions list")
     return await _list_agent_versions(
@@ -655,7 +656,7 @@ async def get_agent_version(
     agent_id: str,
     version: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.user)),
+    current_user: User | None = Depends(get_registry_user),
 ):
     optic.trace("agent_id={}, version={}", agent_id, version)
     return await _get_agent_version(
@@ -706,7 +707,7 @@ async def get_agent_harness_config(
     version: str,
     harness: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.user)),
+    current_user: User | None = Depends(get_registry_user),
 ):
     optic.trace("agent_id={}, version={}", agent_id, version)
     return await _get_agent_harness_config(
@@ -724,7 +725,7 @@ async def get_version_diff(
     v1: str,
     v2: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.user)),
+    current_user: User | None = Depends(get_registry_user),
 ):
     optic.trace("agent_id={}, v1={}", agent_id, v1)
     return await _get_version_diff(

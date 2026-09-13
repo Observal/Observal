@@ -55,7 +55,7 @@ def normalize_server_url(server_url: str) -> str:
 def current_registry_url() -> str:
     from observal_cli import config
 
-    return normalize_server_url(str(config.load().get("server_url") or ""))
+    return normalize_server_url(str(config.get_or_exit(require_auth=False)["server_url"]))
 
 
 def migrate_lockfile_v1(server_url: str | None = None) -> bool:

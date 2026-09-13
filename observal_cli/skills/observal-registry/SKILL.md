@@ -21,6 +21,7 @@ owner: observal
 7. Submit or modify only components the user owns or is authorized to manage.
 8. Never expose environment values, headers, tokens, private source data, or submitted secret fields.
 9. Mutations are sent once. After an uncertain transport failure, read component state before retrying.
+10. Authentication is optional for approved public content when the server setting `deployment.public_registry_enabled` is enabled; it is disabled by default on self-hosted deployments. Public list, show, install, and prompt render commands use `https://public.observal.io` by default. Authenticate before submitting, editing, reviewing, rating, or accessing private team content.
 
 ## Choose the workflow
 

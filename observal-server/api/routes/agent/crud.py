@@ -17,6 +17,7 @@ from api.deps import (
     apply_registry_scope,
     get_db,
     get_effective_agent_permission,
+    get_registry_user,
     require_role,
 )
 from api.search import keyword_search
@@ -263,7 +264,7 @@ async def list_agents(
     limit: int = Query(50, ge=1, le=200, description="Page size (1-200)"),
     offset: int = Query(0, ge=0, description="Items to skip"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.user)),
+    current_user: User | None = Depends(get_registry_user),
 ):
     optic.debug("listing agents")
     from models.feedback import Feedback
@@ -363,7 +364,7 @@ async def list_agents(
             average_rating=rating_map.get(a.id),
             component_count=len(a.components),
             created_by=a.created_by,
-            created_by_email=email_map.get(a.created_by, ""),
+            created_by_email=email_map.get(a.created_by, "") if current_user else "",
             created_by_username=username_map.get(a.created_by),
             created_at=a.created_at,
             updated_at=a.updated_at,
@@ -562,13 +563,13 @@ async def deleted_agents(
 async def get_agent(
     agent_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.user)),
+    current_user: User | None = Depends(get_registry_user),
 ):
     optic.debug("fetching agent details")
     agent = await _load_agent(
         db,
         agent_id,
-        prefer_user_id=current_user.id,
+        prefer_user_id=current_user.id if current_user else None,
         current_user=current_user,
     )
     if not agent:
@@ -583,7 +584,7 @@ async def get_agent(
     return _agent_to_response(
         agent,
         name_map,
-        created_by_email=user_row[0] if user_row else "",
+        created_by_email=user_row[0] if user_row and current_user else "",
         created_by_username=user_row[1] if user_row else None,
         user_permission=perm,
         status_map=status_map,

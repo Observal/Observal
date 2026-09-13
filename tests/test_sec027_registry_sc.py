@@ -12,7 +12,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from api.deps import get_current_user, get_db
+from api.deps import get_current_user, get_db, get_registry_user
 from api.routes.agent import router
 from models.agent import AgentStatus
 from models.user import User, UserRole
@@ -45,6 +45,7 @@ def _app_with(user=None, db=None):
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_registry_user] = lambda: user
     app.dependency_overrides[get_db] = lambda: db
     return app, db, user
 

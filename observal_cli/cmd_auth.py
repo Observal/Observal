@@ -639,6 +639,7 @@ def whoami(
         observal auth whoami
         observal auth whoami --output json
     """
+    config.get_or_exit()
     with nullcontext() if _is_json(output) else spinner("Checking..."):
         user = client.get("/api/v1/auth/whoami")
     if _is_json(output):

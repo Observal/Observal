@@ -15,7 +15,7 @@ from api.deps import (
     apply_visibility_filter,
     get_db,
     get_effective_agent_permission,
-    optional_current_user,
+    get_registry_user,
     require_role,
 )
 from api.routes._component_archive import archived_install_warning
@@ -46,19 +46,21 @@ async def install_agent(
     req: AgentInstallRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.user)),
+    current_user: User | None = Depends(get_registry_user),
 ):
     optic.debug("installing agent")
     agent = await _load_agent(
         db,
         agent_id,
-        prefer_user_id=current_user.id,
+        prefer_user_id=current_user.id if current_user else None,
         current_user=current_user,
     )
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     if agent.status != AgentStatus.approved and not (
-        _ds.get_sync_bool("security.allow_draft_install") and agent.created_by == current_user.id
+        current_user is not None
+        and _ds.get_sync_bool("security.allow_draft_install")
+        and agent.created_by == current_user.id
     ):
         raise HTTPException(status_code=404, detail="Agent not found or not approved for installation")
     if get_effective_agent_permission(agent, current_user) == "none":
@@ -312,27 +314,28 @@ async def install_agent(
     # instance (e.g. savepoint rollback on duplicate download).
     resolved_agent_id = agent.id
 
-    from services.download_tracker import record_agent_download
+    if current_user is not None:
+        from services.download_tracker import record_agent_download
 
-    await record_agent_download(
-        agent_id=resolved_agent_id,
-        user_id=current_user.id,
-        source="api",
-        harness=req.harness,
-        request=request,
-        db=db,
-    )
-    await db.commit()
+        await record_agent_download(
+            agent_id=resolved_agent_id,
+            user_id=current_user.id,
+            source="api",
+            harness=req.harness,
+            request=request,
+            db=db,
+        )
+        await db.commit()
 
-    emit_registry_event(
-        action="agent.install",
-        user_id=str(current_user.id),
-        user_email=current_user.email,
-        user_role=current_user.role.value,
-        agent_id=str(resolved_agent_id),
-        resource_name=agent.name,
-        metadata={"harness": req.harness},
-    )
+        emit_registry_event(
+            action="agent.install",
+            user_id=str(current_user.id),
+            user_email=current_user.email,
+            user_role=current_user.role.value,
+            agent_id=str(resolved_agent_id),
+            resource_name=agent.name,
+            metadata={"harness": req.harness},
+        )
 
     warnings = archived_warnings + setup_warnings + snippet.pop("_warnings", [])
     return AgentInstallResponse(
@@ -344,13 +347,13 @@ async def install_agent(
 async def agent_download_stats(
     agent_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(optional_current_user),
+    current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.trace("agent_id={}", agent_id)
     agent = await _load_agent(
         db,
         agent_id,
-        prefer_user_id=current_user.id if current_user else None,
+        prefer_user_id=current_user.id,
         current_user=current_user,
     )
     if not agent:
@@ -369,14 +372,14 @@ async def get_agent_traces(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(optional_current_user),
+    current_user: User = Depends(require_role(UserRole.user)),
 ):
     """Return all traces where this agent participated."""
     optic.trace("agent_id={}, limit={}", agent_id, limit)
     agent = await _load_agent(
         db,
         agent_id,
-        prefer_user_id=current_user.id if current_user else None,
+        prefer_user_id=current_user.id,
         current_user=current_user,
     )
     if not agent:
@@ -390,11 +393,16 @@ async def get_agent_traces(
 async def resolve_agent_components(
     agent_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.user)),
+    current_user: User | None = Depends(get_registry_user),
 ):
     """Resolve all components for an agent - validates they exist and are approved."""
     optic.trace("agent_id={}", agent_id)
-    agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, current_user=current_user)
+    agent = await _load_agent(
+        db,
+        agent_id,
+        prefer_user_id=current_user.id if current_user else None,
+        current_user=current_user,
+    )
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     if get_effective_agent_permission(agent, current_user) == "none":
@@ -411,11 +419,16 @@ async def resolve_agent_components(
 async def get_agent_manifest(
     agent_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.user)),
+    current_user: User | None = Depends(get_registry_user),
 ):
     """Generate a portable agent manifest with all resolved components."""
     optic.trace("agent_id={}", agent_id)
-    agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, current_user=current_user)
+    agent = await _load_agent(
+        db,
+        agent_id,
+        prefer_user_id=current_user.id if current_user else None,
+        current_user=current_user,
+    )
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     if get_effective_agent_permission(agent, current_user) == "none":

@@ -24,7 +24,7 @@ import {
   Sparkles,
   AlertTriangle,
 } from "lucide-react";
-import { useState, useEffect, useCallback, useMemo, useSyncExternalStore } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 
 import {
@@ -46,7 +46,7 @@ import {
   useDeleteAgent,
   useUnarchiveAgent,
 } from "@/hooks/use-api";
-import { getUserRole } from "@/lib/api";
+import { useOptionalAuth } from "@/hooks/use-auth";
 import { hasMinRole } from "@/hooks/use-role-guard";
 import type {
   AgentComponentReference,
@@ -513,10 +513,10 @@ function InsightStatusBadge({ status }: { status: InsightReportListItem["status"
   }
 }
 
-function InsightsTab({ agentId, agentVersion }: { agentId: string; agentVersion?: string | null }) {
-  const { data: reports, isLoading: reportsLoading } = useInsightReports(agentId);
-  const { data: sessionCountData, isLoading: countLoading } = useInsightSessionCount(agentId, agentVersion);
-  const { data: insightsStatus } = useInsightsStatus();
+function InsightsTab({ agentId, agentVersion, enabled }: { agentId: string; agentVersion?: string | null; enabled: boolean }) {
+  const { data: reports, isLoading: reportsLoading } = useInsightReports(agentId, enabled);
+  const { data: sessionCountData, isLoading: countLoading } = useInsightSessionCount(agentId, agentVersion, enabled);
+  const { data: insightsStatus } = useInsightsStatus(enabled);
   const generateInsight = useGenerateInsight();
 
   const availableSessions = sessionCountData?.session_count ?? 0;
@@ -631,6 +631,7 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
   const params = useParams({ strict: false }) as { agentId?: string };
   const id = agentId ?? params.agentId ?? "";
   const navigate = useNavigate();
+  const { isAuthenticated, role } = useOptionalAuth();
   const {
     data: agent,
     isLoading,
@@ -645,10 +646,10 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
   );
   const { data: feedbackSummary, refetch: refetchSummary } =
     useFeedbackSummary(id);
-  const { data: myReview } = useMyFeedback("agent", id);
+  const { data: myReview } = useMyFeedback("agent", id, isAuthenticated);
 
-  const { data: whoami } = useWhoami();
-  const { data: teams = [] } = useTeams();
+  const { data: whoami } = useWhoami(isAuthenticated);
+  const { data: teams = [] } = useTeams(isAuthenticated);
   const updateVisibility = useUpdateRegistryVisibility();
   const { data: versionsData } = useAgentVersions(id);
   const versions = versionsData?.items ?? [];
@@ -662,6 +663,10 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
   // Co-authors
   const [coAuthors, setCoAuthors] = useState<CoAuthor[]>([]);
   useEffect(() => {
+    if (!isAuthenticated) {
+      setCoAuthors([]);
+      return;
+    }
     const token = sessionStorage.getItem("observal_access_token");
     const headers: Record<string, string> = {};
     if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -669,22 +674,9 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => setCoAuthors(data))
       .catch(() => {});
-  }, [id]);
+  }, [id, isAuthenticated]);
 
-  const storeSub = useCallback((cb: () => void) => {
-    window.addEventListener("storage", cb);
-    return () => window.removeEventListener("storage", cb);
-  }, []);
-  const isAuthenticated = useSyncExternalStore(
-    storeSub,
-    () => !!sessionStorage.getItem("observal_access_token"),
-    () => false,
-  );
-  const isAdmin = useSyncExternalStore(
-    storeSub,
-    () => hasMinRole(getUserRole(), "admin"),
-    () => false,
-  );
+  const isAdmin = isAuthenticated && hasMinRole(role, "admin");
 
   const a = agent as unknown as AgentDetail | undefined;
   const effectiveVersion = selectedVersion ?? latestApprovedVersion ?? a?.version;
@@ -715,7 +707,7 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
   // and a personal one needs its creator.
   const canChangeVisibility = Boolean(
     a &&
-      (hasMinRole(getUserRole(), "admin") ||
+      (hasMinRole(role, "admin") ||
         (a.team_id ? teamRole === "owner" || teamRole === "reviewer" : isOwner)),
   );
   const currentVisibility = a?.visibility ?? (a?.is_private ? "team" : "public");
@@ -1097,7 +1089,7 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
                 )}
                 {canEdit && (
                   <TabsContent value="insights" className="mt-6">
-                    <InsightsTab agentId={id} agentVersion={effectiveVersion} />
+                    <InsightsTab agentId={id} agentVersion={effectiveVersion} enabled={canEdit} />
                   </TabsContent>
                 )}
 

@@ -160,7 +160,10 @@ class TestPromptMy:
 class TestPromptRender:
     def test_render_prompt(self):
         """Test prompt render command with variables."""
-        with _patch_resolve_alias(), _patch_post({"rendered": "Hello Earth!"}) as mock_post:
+        with (
+            _patch_resolve_alias(),
+            patch("observal_cli.client.post_public", return_value={"rendered": "Hello Earth!"}) as mock_post,
+        ):
             result = runner.invoke(cli_app, ["registry", "prompt", "render", "p123", "--var", "target=Earth"])
 
             assert result.exit_code == 0
@@ -273,7 +276,10 @@ def test_prompt_submit_json_is_noninteractive_and_clean():
 
 def test_prompt_render_json_and_variable_validation():
     response = {"rendered": "Review array[0] literally"}
-    with _patch_resolve_alias(), _patch_post(response) as post:
+    with (
+        _patch_resolve_alias(),
+        patch("observal_cli.client.post_public", return_value=response) as post,
+    ):
         rendered = runner.invoke(
             cli_app,
             ["registry", "prompt", "render", "review", "--var", "code=array[0]", "--output", "json"],

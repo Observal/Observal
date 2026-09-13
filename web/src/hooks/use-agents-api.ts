@@ -26,10 +26,11 @@ import type { LeaderboardWindow } from "@/lib/types";
 
 // ── Agent-specific ──────────────────────────────────────────────────
 
-export function useMyAgents() {
+export function useMyAgents(enabled = true) {
   return useQuery({
     queryKey: ["registry", "agents", "my"],
     queryFn: () => registry.my(),
+    enabled,
   });
 }
 

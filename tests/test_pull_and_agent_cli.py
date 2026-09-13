@@ -15,7 +15,7 @@ import subprocess
 import sys
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 import yaml
@@ -62,9 +62,15 @@ def isolated_lockfile(tmp_path, monkeypatch):
     monkeypatch.setattr("observal_cli.lockfile._LOCKFILE_LOCK", tmp_path / ".observal/lockfile.lock")
 
 
+@contextmanager
 def _patch_post(return_value: dict):
-    """Patch client.post to return a canned response."""
-    return patch("observal_cli.client.post", return_value=return_value)
+    """Patch authenticated writes and public install requests with one mock."""
+    request = MagicMock(return_value=return_value)
+    with (
+        patch("observal_cli.client.post", request),
+        patch("observal_cli.client.post_public", request),
+    ):
+        yield request
 
 
 # Agent detail with no MCP env vars — used by pull to check for env var prompts

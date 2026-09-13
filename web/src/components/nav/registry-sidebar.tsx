@@ -42,6 +42,7 @@ import {
 	KeyRound,
 	BookOpen,
 	Inbox,
+	LogIn,
 } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import {
@@ -352,13 +353,26 @@ export function RegistrySidebar() {
 			</SidebarContent>
 			<SidebarFooter>
 				<ServerVersionBadge />
-				<NavUser
-					user={{
-						name: userName || "User",
-						email: userEmail || "",
-						username: userUsername || undefined,
-					}}
-				/>
+				{isAuthenticated ? (
+					<NavUser
+						user={{
+							name: userName || "User",
+							email: userEmail || "",
+							username: userUsername || undefined,
+						}}
+					/>
+				) : (
+					<SidebarMenu>
+						<SidebarMenuItem>
+							<SidebarMenuButton asChild size="lg">
+								<Link to="/login">
+									<LogIn className="h-4 w-4" />
+									<span>Sign in to contribute</span>
+								</Link>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
+					</SidebarMenu>
+				)}
 			</SidebarFooter>
 			<SidebarRail />
 		</Sidebar>
