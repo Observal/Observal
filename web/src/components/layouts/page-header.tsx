@@ -107,10 +107,10 @@ export function PageIntro({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-5">
+    <div className="mb-[24px] flex flex-wrap items-end justify-between gap-5">
       <div>
         {eyebrow && (
-          <p className="mb-1.5 text-2xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
+          <p className="mb-[5px] text-2xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
             {eyebrow}
           </p>
         )}
@@ -118,7 +118,7 @@ export function PageIntro({
           {title}
         </h1>
         {subtitle && (
-          <p className="mt-1.5 text-sm text-muted-foreground">{subtitle}</p>
+          <p className="mt-[6px] text-sm text-muted-foreground">{subtitle}</p>
         )}
       </div>
       {children && (

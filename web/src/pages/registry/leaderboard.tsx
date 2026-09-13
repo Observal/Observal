@@ -16,7 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
-import { PageHeader } from "@/components/layouts/page-header";
+import { PageHeader, PageIntro } from "@/components/layouts/page-header";
 import { RegistryName } from "@/components/registry/registry-name";
 import { TableSkeleton } from "@/components/shared/skeleton-layouts";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -133,7 +133,12 @@ export default function LeaderboardPage() {
         ]}
       />
 
-      <div className="page-body w-full mx-auto space-y-5">
+      <div className="page-body w-full space-y-5">
+        <PageIntro
+          eyebrow="Registry momentum"
+          title="Leaderboard"
+          subtitle="See what developers are adopting, who publishes it, and why rankings changed."
+        />
         <Tabs
           value={topTab}
           onValueChange={(v) => setTopTab(v as TopTab)}
@@ -193,7 +198,7 @@ export default function LeaderboardPage() {
                   />
                 ) : (
                   <div className="space-y-1 animate-in">
-                    <div className="flex items-center gap-4 px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    <div className="flex items-center gap-4 px-[22px] py-2.5 text-2xs font-medium text-muted-foreground uppercase tracking-[0.05em]">
                       <span className="w-8 text-right">#</span>
                       <span className="flex-1">Agent</span>
                       <span className="w-24 text-right">Downloads</span>
@@ -205,7 +210,7 @@ export default function LeaderboardPage() {
                       <Link
                         key={item.id}
                         to={registryItemPath(item, "agents", item.id)}
-                        className="flex items-center gap-4 rounded-md px-3 py-3 transition-colors hover:bg-accent/40 group"
+                        className="flex items-center gap-4 px-[22px] py-3.5 transition-colors hover:bg-surface-raised group"
                       >
                         <span className={`w-8 text-right font-mono font-semibold tabular-nums ${i < 3 ? "text-warning" : "text-muted-foreground"}`}>
                           {i + 1}
@@ -262,7 +267,7 @@ export default function LeaderboardPage() {
                   />
                 ) : (
                   <div className="space-y-1 animate-in">
-                    <div className="flex items-center gap-4 px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    <div className="flex items-center gap-4 px-[22px] py-2.5 text-2xs font-medium text-muted-foreground uppercase tracking-[0.05em]">
                       <span className="w-8 text-right">#</span>
                       <span className="flex-1">User</span>
                       <span className="w-24 text-right">Agents</span>
@@ -272,7 +277,7 @@ export default function LeaderboardPage() {
                     {agentUserAggregates.map((user, i) => (
                       <div
                         key={user.email}
-                        className="flex items-center gap-4 rounded-md px-3 py-3 transition-colors hover:bg-accent/40"
+                        className="flex items-center gap-4 px-[22px] py-3.5 transition-colors hover:bg-surface-raised"
                       >
                         <span className={`w-8 text-right font-mono font-semibold tabular-nums ${i < 3 ? "text-warning" : "text-muted-foreground"}`}>
                           {i + 1}
@@ -329,7 +334,7 @@ export default function LeaderboardPage() {
                   />
                 ) : (
                   <div className="space-y-1 animate-in">
-                    <div className="flex items-center gap-4 px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    <div className="flex items-center gap-4 px-[22px] py-2.5 text-2xs font-medium text-muted-foreground uppercase tracking-[0.05em]">
                       <span className="w-8 text-right">#</span>
                       <span className="flex-1">Component</span>
                       <span className="w-20 text-right">Type</span>
@@ -341,7 +346,7 @@ export default function LeaderboardPage() {
                       <Link
                         key={item.id}
                         to={registryItemPath(item, componentRouteType(item.component_type), item.id)}
-                        className="flex items-center gap-4 rounded-md px-3 py-3 transition-colors hover:bg-accent/40 group"
+                        className="flex items-center gap-4 px-[22px] py-3.5 transition-colors hover:bg-surface-raised group"
                       >
                         <span className={`w-8 text-right font-mono font-semibold tabular-nums ${i < 3 ? "text-warning" : "text-muted-foreground"}`}>
                           {i + 1}
@@ -391,7 +396,7 @@ export default function LeaderboardPage() {
                   />
                 ) : (
                   <div className="space-y-1 animate-in">
-                    <div className="flex items-center gap-4 px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    <div className="flex items-center gap-4 px-[22px] py-2.5 text-2xs font-medium text-muted-foreground uppercase tracking-[0.05em]">
                       <span className="w-8 text-right">#</span>
                       <span className="flex-1">User</span>
                       <span className="w-24 text-right">Components</span>
@@ -401,7 +406,7 @@ export default function LeaderboardPage() {
                     {componentUserAggregates.map((user, i) => (
                       <div
                         key={user.email}
-                        className="flex items-center gap-4 rounded-md px-3 py-3 transition-colors hover:bg-accent/40"
+                        className="flex items-center gap-4 px-[22px] py-3.5 transition-colors hover:bg-surface-raised"
                       >
                         <span className={`w-8 text-right font-mono font-semibold tabular-nums ${i < 3 ? "text-warning" : "text-muted-foreground"}`}>
                           {i + 1}

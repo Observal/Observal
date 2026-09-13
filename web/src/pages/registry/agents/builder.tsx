@@ -33,7 +33,7 @@ import {
   TabsTrigger,
   TabsContent,
 } from "@/components/ui/tabs";
-import { PageHeader } from "@/components/layouts/page-header";
+import { PageHeader, PageIntro } from "@/components/layouts/page-header";
 import { useRegistryItem, useAgentValidation, useTeams, useWhoami, useSaveDraft, useUpdateDraft, useStartEdit } from "@/hooks/use-api";
 import { useAuthGuard } from "@/hooks/use-auth";
 import { registry, type RegistryType } from "@/lib/api";
@@ -629,7 +629,12 @@ function AgentBuilderInner() {
         }
       />
 
-      <div className="page-body w-full mx-auto">
+      <div className="page-body w-full">
+        <PageIntro
+          eyebrow={isEditMode ? "Edit · " + (name || "Agent") : "Create"}
+          title={isEditMode ? "Edit Agent" : "Agent Builder"}
+          subtitle="Compose instructions, tools, and guardrails, then preview the result."
+        />
         {/* Restore draft banner */}
         {showRestoreBanner && (
           <div className="mb-4 flex items-center gap-3 rounded-lg border border-info/20 bg-info/5 px-4 py-3">
