@@ -38,15 +38,27 @@ export interface TokenStats {
 	avg_per_trace: number;
 	by_agent: TokenUsageRow[];
 	by_mcp: TokenUsageRow[];
-	over_time: { date: string; input: number; output: number }[];
+	over_time: { date: string; input: number; output: number; credits: number }[];
+	total_cache_read: number;
+	total_cache_write: number;
+	/** Kiro meters in credits rather than raw tokens. */
+	total_credits: number;
+	avg_credits_per_trace: number;
+	total_traces: number;
+	/** False when no session in range reported raw token counts. */
+	has_token_data: boolean;
+	has_credit_data: boolean;
 }
 
 export interface TokenUsageRow {
+	id: string;
 	name: string;
 	input: number;
 	output: number;
 	total: number;
 	traces: number;
+	/** Always 0 for by_mcp rows: credits are metered per session, not per tool. */
+	credits: number;
 }
 
 // ── harness Usage ───────────────────────────────────────────────────────

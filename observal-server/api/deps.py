@@ -40,6 +40,27 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
+def is_admin_user(user: User) -> bool:
+    """Whether the user holds an admin-level role."""
+    optic.trace("user_id={}", user.id)
+    return user.role in (UserRole.admin, UserRole.super_admin)
+
+
+def has_admin_trace_access(user: User) -> bool:
+    """Whether the user may read other users' session telemetry.
+
+    Admins lose cross-user trace visibility when the ``security.trace_privacy``
+    setting is on; super_admins always keep it. Callers that aggregate session
+    data must fall back to scoping by ``user_id`` when this returns False.
+    """
+    optic.trace("user_id={}", user.id)
+    if not is_admin_user(user):
+        return False
+    if user.role == UserRole.super_admin:
+        return True
+    return not getattr(user, "_trace_privacy", False)
+
+
 async def _authenticate_via_jwt(token: str, db: AsyncSession) -> User | None:
     """Try to authenticate using a JWT access token. Returns User or None.
 

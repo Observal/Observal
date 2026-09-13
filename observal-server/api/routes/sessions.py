@@ -25,6 +25,8 @@ from loguru import logger as optic
 from sqlalchemy import select
 
 import services.dynamic_settings as ds
+from api.deps import has_admin_trace_access as _has_admin_trace_access
+from api.deps import is_admin_user as _is_admin_user
 from api.deps import require_role
 from database import async_session
 from models.user import User, UserRole
@@ -43,21 +45,6 @@ async def _ch_json(sql: str, params: dict | None = None) -> list[dict]:
     except Exception as e:
         optic.warning("clickhouse_query_failed: {}", e)
     return []
-
-
-def _is_admin_user(user: User) -> bool:
-    optic.trace("user_id={}", user.id)
-    return user.role in (UserRole.admin, UserRole.super_admin)
-
-
-def _has_admin_trace_access(user: User) -> bool:
-    """Check if user has admin-level trace access."""
-    optic.trace("user_id={}", user.id)
-    if not _is_admin_user(user):
-        return False
-    if user.role == UserRole.super_admin:
-        return True
-    return not getattr(user, "_trace_privacy", False)
 
 
 @router.get("")
