@@ -15,7 +15,7 @@ from datetime import datetime as dt
 
 from fastapi import APIRouter, Depends, Query
 from loguru import logger as optic
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002
 
 from api.deps import apply_visibility_filter, get_db, get_registry_user, require_role
@@ -208,7 +208,7 @@ async def top_agents(
 async def agent_leaderboard(
     window: str = Query("7d", pattern="^(24h|7d|30d|all)$"),
     limit: int = Query(20, le=50),
-    user: str | None = Query(None, description="Filter by creator email"),
+    user: str | None = Query(None, description="Filter by creator email or username"),
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(get_registry_user),
 ):
@@ -231,7 +231,10 @@ async def agent_leaderboard(
     )
     stmt = apply_visibility_filter(stmt, Agent, current_user)
     if user and current_user is not None:
-        stmt = stmt.join(User, Agent.created_by == User.id).where(User.email.ilike(f"%{escape_like(user)}%"))
+        creator_match = f"%{escape_like(user)}%"
+        stmt = stmt.join(User, Agent.created_by == User.id).where(
+            or_(User.email.ilike(creator_match), User.username.ilike(creator_match))
+        )
     if window != "all":
         days = _RANGE_MAP.get(window, 7)
         stmt = stmt.where(AgentDownloadRecord.installed_at >= dt.now(UTC) - timedelta(days=days))
@@ -282,8 +285,9 @@ async def agent_leaderboard(
         )
         extra_stmt = apply_visibility_filter(extra_stmt, Agent, current_user)
         if user and current_user is not None:
+            creator_match = f"%{escape_like(user)}%"
             extra_stmt = extra_stmt.join(User, Agent.created_by == User.id).where(
-                User.email.ilike(f"%{escape_like(user)}%")
+                or_(User.email.ilike(creator_match), User.username.ilike(creator_match))
             )
         extra_stmt = extra_stmt.order_by(Agent.created_at.desc()).limit(limit - len(rows))
         extra = (await db.execute(extra_stmt)).scalars().all()
@@ -338,7 +342,7 @@ async def agent_leaderboard(
 async def component_leaderboard(
     window: str = Query("7d", pattern="^(24h|7d|30d|all)$"),
     limit: int = Query(20, le=50),
-    user: str | None = Query(None, description="Filter by creator email"),
+    user: str | None = Query(None, description="Filter by creator email or username"),
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(get_registry_user),
 ):
@@ -382,8 +386,9 @@ async def component_leaderboard(
         stmt = apply_visibility_filter(stmt, Agent, current_user)
         stmt = apply_visibility_filter(stmt, listing_model, current_user)
         if user and current_user is not None:
+            creator_match = f"%{escape_like(user)}%"
             stmt = stmt.join(User, listing_model.submitted_by == User.id).where(
-                User.email.ilike(f"%{escape_like(user)}%")
+                or_(User.email.ilike(creator_match), User.username.ilike(creator_match))
             )
         if window != "all":
             days = _RANGE_MAP.get(window, 7)
@@ -472,6 +477,11 @@ async def component_leaderboard(
                 .where(version_model.status == ListingStatus.approved, listing_model.id.notin_(existing_ids))
             )
             extra_stmt = apply_visibility_filter(extra_stmt, listing_model, current_user)
+            if user and current_user is not None:
+                creator_match = f"%{escape_like(user)}%"
+                extra_stmt = extra_stmt.join(User, listing_model.submitted_by == User.id).where(
+                    or_(User.email.ilike(creator_match), User.username.ilike(creator_match))
+                )
             extra_stmt = extra_stmt.order_by(listing_model.created_at.desc()).limit(limit - len(all_items))
             extra_rows = (await db.execute(extra_stmt)).all()
             extra_sub_ids = {r.submitted_by for r in extra_rows if r.submitted_by} - set(email_map)

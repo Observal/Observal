@@ -658,10 +658,11 @@ export const dashboard = {
 		const qs = params.toString();
 		return get<LeaderboardItem[]>(`/overview/leaderboard${qs ? `?${qs}` : ""}`);
 	},
-	componentLeaderboard: (window?: LeaderboardWindow, limit?: number) => {
+	componentLeaderboard: (window?: LeaderboardWindow, limit?: number, user?: string) => {
 		const params = new URLSearchParams();
 		if (window) params.set("window", window);
 		if (limit) params.set("limit", String(limit));
+		if (user) params.set("user", user);
 		const qs = params.toString();
 		return get<ComponentLeaderboardItem[]>(
 			`/overview/component-leaderboard${qs ? `?${qs}` : ""}`,

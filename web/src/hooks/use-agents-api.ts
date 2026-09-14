@@ -73,10 +73,10 @@ export function useLeaderboard(window?: LeaderboardWindow, limit?: number, user?
   });
 }
 
-export function useComponentLeaderboard(window?: LeaderboardWindow, limit?: number) {
+export function useComponentLeaderboard(window?: LeaderboardWindow, limit?: number, user?: string) {
   return useQuery({
-    queryKey: ["component-leaderboard", window, limit],
-    queryFn: () => dashboard.componentLeaderboard(window, limit),
+    queryKey: ["component-leaderboard", window, limit, user],
+    queryFn: () => dashboard.componentLeaderboard(window, limit, user),
   });
 }
 

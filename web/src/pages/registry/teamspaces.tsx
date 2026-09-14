@@ -6,6 +6,7 @@ import { useState, useMemo } from "react";
 import { Loader2, Lock, RefreshCw, Search, Users } from "lucide-react";
 import { PageHeader, PageIntro } from "@/components/layouts/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
+import { ErrorState } from "@/components/shared/error-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +18,7 @@ import { getUserRole } from "@/lib/api";
 import { slugifyRegistryText } from "@/lib/registry-name";
 import { cn } from "@/lib/utils";
 import { EntityGlyph } from "@/components/registry/entity-glyph";
+import { StatusBadge } from "@/components/registry/status-badge";
 import {
   TypeTabs,
   ViewToggle,
@@ -90,6 +92,28 @@ function VisibilityBadge({ visibility, className }: { visibility: string; classN
   );
 }
 
+function VisibilityReviewStatus({ team, className }: { team: TeamDisplay; className?: string }) {
+  if (team.visibility_request_status === "pending") {
+    return (
+      <div className={cn("flex items-center gap-1.5 text-2xs text-muted-foreground", className)}>
+        <StatusBadge status="Pending" />
+        <span>Public visibility pending review</span>
+      </div>
+    );
+  }
+
+  if (team.visibility_request_status === "rejected") {
+    return (
+      <div className={cn("space-y-1 text-2xs text-muted-foreground", className)}>
+        <StatusBadge status="Rejected" />
+        <p>{team.visibility_rejection_reason || "Public visibility request was rejected."}</p>
+      </div>
+    );
+  }
+
+  return null;
+}
+
 /** Role display text. */
 function roleLabel(team: TeamDisplay, isAdmin: boolean): string {
   if (team.display_role) return team.display_role;
@@ -109,6 +133,7 @@ function TeamspaceCard({ team, isAdmin }: { team: TeamDisplay; isAdmin: boolean 
         <EntityGlyph type="teamspace" size="lg" labelled />
         <VisibilityBadge visibility={effectiveVisibility(team)} />
       </div>
+      <VisibilityReviewStatus team={team} className="mt-2" />
 
       {/* Name */}
       <h3 className="mt-3.5 text-sm font-medium">{team.name}</h3>
@@ -166,7 +191,10 @@ function TeamspaceListRow({ team, isAdmin }: { team: TeamDisplay; isAdmin: boole
       </div>
 
       {/* Visibility */}
-      <VisibilityBadge visibility={effectiveVisibility(team)} />
+      <div className="min-w-0">
+        <VisibilityBadge visibility={effectiveVisibility(team)} />
+        <VisibilityReviewStatus team={team} className="mt-1.5" />
+      </div>
 
       {/* Role */}
       <span className="text-[10px] text-muted-foreground">{roleLabel(team, isAdmin)}</span>
@@ -414,7 +442,7 @@ function CreatePanel({
 /* ────────────────────────────────────────────────────────── */
 
 export default function TeamspacesPage() {
-  const { data: apiTeams = [], isLoading } = useAllTeams();
+  const { data: apiTeams = [], isLoading, isError, error, refetch } = useAllTeams();
   const isAdmin = hasMinRole(getUserRole(), "admin");
   const [showCreate, setShowCreate] = useState(false);
   const [teamQuery, setTeamQuery] = useState("");
@@ -444,6 +472,22 @@ export default function TeamspacesPage() {
 
   const firstTeamspace = !isLoading && apiTeams.length === 0;
   const personalClaimed = apiTeams.some((t) => t.is_personal && t.role === "owner");
+
+  if (isError) {
+    return (
+      <>
+        <PageHeader title="Teamspaces" breadcrumbs={[{ label: "Registry", href: "/" }, { label: "Teamspaces" }]} />
+        <div className="page-body w-full mx-auto">
+          <PageIntro
+            eyebrow="Registry"
+            title="Teamspaces"
+            subtitle="Shared publishing namespaces with members, visibility, catalogues, and review ownership."
+          />
+          <ErrorState message={error?.message} onRetry={() => refetch()} />
+        </div>
+      </>
+    );
+  }
 
   /* For a first-time setup (no teams at all), show the panel inline instead of as a modal. */
   if (firstTeamspace) {
