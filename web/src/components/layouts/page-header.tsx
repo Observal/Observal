@@ -3,12 +3,10 @@
 // SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-
 import { Link } from "@tanstack/react-router";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import { CommandMenu } from "@/components/nav/command-menu";
-
 
 export interface BreadcrumbEntry {
   label: string;
@@ -85,36 +83,46 @@ export function PageHeader({
       {/* Search button trigger */}
       <CommandMenu />
 
-
     </header>
   );
 }
 
-/**
- * Page intro section — sits inside the page body (below header), matching the
- * mockup's `.page-intro` layout: eyebrow + h1 + subtitle on the left, action
- * buttons on the right.
- */
 export function PageIntro({
   eyebrow,
   title,
   subtitle,
   children,
+  size = "page",
+  className,
 }: {
   eyebrow?: string;
   title: string;
   subtitle?: string;
   children?: React.ReactNode;
+  size?: "page" | "pane";
+  className?: string;
 }) {
+  const isPane = size === "pane";
+
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-5">
+    <div
+      className={cn(
+        isPane ? "" : "mb-6 flex flex-wrap items-end justify-between gap-5",
+        className
+      )}
+    >
       <div>
         {eyebrow && (
           <p className="mb-1.5 text-2xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
             {eyebrow}
           </p>
         )}
-        <h1 className="text-2xl font-medium leading-[1.3] tracking-[-0.025em]">
+        <h1
+          className={cn(
+            "font-medium leading-[1.3] tracking-[-0.025em]",
+            isPane ? "text-xl" : "text-2xl"
+          )}
+        >
           {title}
         </h1>
         {subtitle && (
@@ -122,7 +130,9 @@ export function PageIntro({
         )}
       </div>
       {children && (
-        <div className="flex items-center gap-2">{children}</div>
+        <div className={cn("flex items-center gap-2", isPane && "mt-3 flex-wrap")}>
+          {children}
+        </div>
       )}
     </div>
   );

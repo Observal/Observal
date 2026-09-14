@@ -77,7 +77,7 @@ export function TraceDetail({ trace, isLoading }: { trace?: Trace; isLoading: bo
       </Card>
 
       {/* Split: span tree | span detail */}
-      <ResizablePanelGroup orientation="horizontal" className="min-h-[500px] rounded-lg border">
+      <ResizablePanelGroup orientation="horizontal" className="min-h-[500px] rounded-xl border border-border">
         <ResizablePanel defaultSize={35} minSize={20}>
           <div className="h-full overflow-auto">
             <div className="px-3 py-2 text-xs font-medium text-muted-foreground border-b">Spans</div>
@@ -143,7 +143,7 @@ export function TraceDetail({ trace, isLoading }: { trace?: Trace; isLoading: bo
                       <div className="space-y-1 text-sm">
                         {trace.scores.map((s) => (
                           <div key={s.score_id} className="flex justify-between">
-                            <span>{s.name} <Badge variant="outline" className="text-[10px] ml-1">{s.source}</Badge></span>
+                            <span>{s.name} <Badge variant="outline" className="text-3xs ml-1">{s.source}</Badge></span>
                             <span className="font-mono">{s.value ?? s.string_value}</span>
                           </div>
                         ))}
