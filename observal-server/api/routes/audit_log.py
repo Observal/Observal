@@ -130,14 +130,7 @@ async def list_audit_logs(
     if resp.status_code != 200:
         return []
 
-    rows = []
-    for line in resp.text.strip().split("\n"):
-        if line.strip():
-            try:
-                rows.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-    return rows
+    return resp.json().get("data", [])
 
 
 @router.get("/export")
@@ -210,14 +203,7 @@ async def export_audit_logs(
 
     resp = await _query(sql, params)
 
-    rows = []
-    if resp.status_code == 200:
-        for line in resp.text.strip().split("\n"):
-            if line.strip():
-                try:
-                    rows.append(json.loads(line))
-                except json.JSONDecodeError:
-                    continue
+    rows = resp.json().get("data", []) if resp.status_code == 200 else []
 
     if format == "json":
         return StreamingResponse(

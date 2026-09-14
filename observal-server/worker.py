@@ -12,6 +12,10 @@
 from arq.cron import cron
 from loguru import logger as optic
 
+# When embedded in the API process (EMBEDDED_WORKER=1, required for the
+# embedded DuckDB analytics store), the API has already configured logging;
+# re-running setup here would clobber it.
+from config import settings as _boot_settings
 from jobs.catalog import batch_generate_insights, generate_insight_report, refresh_user_profiles
 from jobs.maintenance import maintain_clickhouse, purge_inbox_items, sync_component_sources
 from jobs.migration import purge_migration_artifacts, run_migration_job
@@ -22,8 +26,9 @@ from services.optic import setup_optic
 from services.redis import parse_redis_settings
 from services.retention import run_retention_purge
 
-setup_logging()
-setup_optic(mode="local")  # Worker always uses local mode for dev visibility
+if not _boot_settings.EMBEDDED_WORKER:
+    setup_logging()
+    setup_optic(mode="local")  # Worker always uses local mode for dev visibility
 
 
 async def startup(ctx: dict):

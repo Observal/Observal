@@ -83,7 +83,7 @@ SUB_SQL_OFFSET = SUB_SQL.replace(
     "AND rendered = 1 ORDER BY", "AND rendered = 1 AND line_offset > {offset:UInt32} ORDER BY"
 )
 SUMMARY_SQL_USER = (
-    "SELECT count() AS total, countIf(toDate(last_event_time) = today()) AS today_sessions FROM (   "
+    "SELECT count() AS total, count(*) FILTER (WHERE last_event_time::DATE = today()) AS today_sessions FROM (   "
     "SELECT session_id, max(last_event_time) AS last_event_time   FROM session_stats_agg FINAL   "
     "WHERE session_id != '' AND user_id = {uid:String}   GROUP BY session_id )"
 )

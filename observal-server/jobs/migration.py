@@ -77,7 +77,11 @@ async def _resolve_pg_conn() -> PgConnParams:
 
 
 async def _resolve_ch_conn() -> ChConnParams:
-    """Build ChConnParams from dynamic settings or boot config."""
+    """Build ChConnParams from dynamic settings or boot config.
+
+    DEPRECATED: the analytics store is DuckDB now. Unreachable - jobs with
+    ClickHouse scopes are rejected at dispatch time below.
+    """
     from config import settings
 
     ch_url = await ds.get("migration.clickhouse_url", default=settings.CLICKHOUSE_URL)
@@ -154,7 +158,13 @@ async def run_migration_job(ctx: dict, job_id: str) -> None:
 
     # Resolve connections
     pg_conn = await _resolve_pg_conn()
-    ch_conn = await _resolve_ch_conn()
+    if data_scope in (MigrationScope.clickhouse, MigrationScope.both):
+        raise RuntimeError(
+            "ClickHouse migration scopes are unsupported: the analytics store is "
+            "DuckDB now. Use scope='postgres' - analytics data migration to "
+            "DuckDB archives is tracked as follow-up work."
+        )
+    ch_conn = None
 
     result_json = None
     artifacts_json = None

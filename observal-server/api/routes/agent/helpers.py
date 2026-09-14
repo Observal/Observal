@@ -156,6 +156,8 @@ def _agent_to_response(
         "success_criteria",
     ):
         agent_dict[field] = getattr(agent, field)
+    if not isinstance(agent_dict.get("success_criteria"), dict):
+        agent_dict["success_criteria"] = None
     if not isinstance(agent_dict.get("models_by_harness"), dict):
         agent_dict["models_by_harness"] = {}
     if not isinstance(agent_dict.get("team_id"), uuid.UUID):

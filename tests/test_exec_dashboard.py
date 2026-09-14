@@ -251,7 +251,7 @@ async def test_adoption_aggregates_months_current_users_and_departments(monkeypa
         "departments_covered": 2,
     }
     assert "INTERVAL 12 MONTH" in ch.await_args_list[0].args[0]
-    assert "toStartOfMonth(now())" in ch.await_args_list[1].args[0]
+    assert "date_trunc('month', now()::TIMESTAMP)" in ch.await_args_list[1].args[0]
     assert all("project_id = '{project_id}'" in call.args[0] for call in ch.await_args_list)
 
 

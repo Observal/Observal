@@ -204,7 +204,7 @@ async def build_profile(
     # Step 1: user -> sessions, via the table that indexes user_id.
     session_rows = await _ch_rows(
         """
-        SELECT session_id, anyLast(harness) AS harness
+        SELECT session_id, any_value(harness) AS harness
         FROM session_stats_agg FINAL
         WHERE user_id = {uid:String}
           AND project_id = {pid:String}

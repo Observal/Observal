@@ -14,110 +14,50 @@ import pytest
 # ---------------------------------------------------------------------------
 
 
-class TestClickHouseRetry:
-    """Verify _query retries on transient connection errors."""
+class TestDuckDBHealth:
+    """DuckDB health checks against a real (tmp_path) database file."""
+
+    @pytest.fixture()
+    def duckdb_path(self, tmp_path, monkeypatch):
+        from config import settings
+        from services.duckdb import close_con
+
+        close_con()
+        monkeypatch.setattr(settings, "DUCKDB_PATH", str(tmp_path / "health.duckdb"))
+        monkeypatch.setattr(settings, "DUCKDB_READ_ONLY", False)
+        yield
+        close_con()
 
     @pytest.mark.asyncio
-    async def test_query_retries_on_connect_error(self):
-        """_query should retry up to 3 times on ConnectError."""
-        from services.clickhouse import _query
+    async def test_health_returns_true_on_live_db(self, duckdb_path):
+        from services.duckdb import duckdb_health
 
-        mock_client = AsyncMock()
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_client.post = AsyncMock(
-            side_effect=[
-                httpx.ConnectError("conn refused"),
-                httpx.ConnectError("conn refused"),
-                mock_resp,
-            ]
-        )
-
-        with patch("services.clickhouse.client._get_client", return_value=mock_client):
-            resp = await _query("SELECT 1")
-            assert resp.status_code == 200
-            assert mock_client.post.call_count == 3
+        assert await duckdb_health() is True
 
     @pytest.mark.asyncio
-    async def test_query_raises_after_max_retries(self):
-        """_query should reraise ConnectError after exhausting retries."""
-        from services.clickhouse import _query
+    async def test_health_returns_false_when_open_fails(self, tmp_path, monkeypatch):
+        """A path that cannot be opened (a directory) must yield False, not raise."""
+        from config import settings
+        from services.duckdb import close_con, duckdb_health
 
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(side_effect=httpx.ConnectError("conn refused"))
-
-        with patch("services.clickhouse.client._get_client", return_value=mock_client):
-            with pytest.raises(httpx.ConnectError):
-                await _query("SELECT 1")
-            assert mock_client.post.call_count == 3
-
-    @pytest.mark.asyncio
-    async def test_query_retries_on_connect_timeout(self):
-        """_query should retry on ConnectTimeout."""
-        from services.clickhouse import _query
-
-        mock_client = AsyncMock()
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_client.post = AsyncMock(side_effect=[httpx.ConnectTimeout("timeout"), mock_resp])
-
-        with patch("services.clickhouse.client._get_client", return_value=mock_client):
-            resp = await _query("SELECT 1")
-            assert resp.status_code == 200
-            assert mock_client.post.call_count == 2
+        close_con()
+        monkeypatch.setattr(settings, "DUCKDB_PATH", str(tmp_path))  # a directory
+        monkeypatch.setattr(settings, "DUCKDB_READ_ONLY", False)
+        try:
+            assert await duckdb_health() is False
+        finally:
+            close_con()
 
     @pytest.mark.asyncio
-    async def test_query_does_not_retry_on_other_errors(self):
-        """_query should NOT retry on non-transient errors like ReadError."""
-        from services.clickhouse import _query
+    async def test_query_errors_return_error_result_not_raise(self, duckdb_path):
+        """Embedded engine: SQL errors surface as status>=500 results, matching
+        the legacy contract where callers check status_code / raise_for_status."""
+        from services.duckdb import AnalyticsQueryError, _query
 
-        mock_client = AsyncMock()
-        mock_client.post = AsyncMock(side_effect=httpx.ReadError("broken pipe"))
-
-        with patch("services.clickhouse.client._get_client", return_value=mock_client):
-            with pytest.raises(httpx.ReadError):
-                await _query("SELECT 1")
-            assert mock_client.post.call_count == 1
-
-
-# ---------------------------------------------------------------------------
-# ClickHouse clickhouse_health()
-# ---------------------------------------------------------------------------
-
-
-class TestClickHouseHealth:
-    """Verify clickhouse_health returns True/False."""
-
-    @pytest.mark.asyncio
-    async def test_health_returns_true_on_success(self):
-        from services.clickhouse import clickhouse_health
-
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-
-        with patch("services.clickhouse.client._query", new_callable=AsyncMock, return_value=mock_resp):
-            assert await clickhouse_health() is True
-
-    @pytest.mark.asyncio
-    async def test_health_returns_false_on_error(self):
-        from services.clickhouse import clickhouse_health
-
-        with patch(
-            "services.clickhouse._query",
-            new_callable=AsyncMock,
-            side_effect=httpx.ConnectError("unreachable"),
-        ):
-            assert await clickhouse_health() is False
-
-    @pytest.mark.asyncio
-    async def test_health_returns_false_on_non_200(self):
-        from services.clickhouse import clickhouse_health
-
-        mock_resp = MagicMock()
-        mock_resp.status_code = 500
-
-        with patch("services.clickhouse.client._query", new_callable=AsyncMock, return_value=mock_resp):
-            assert await clickhouse_health() is False
+        resp = await _query("SELECT * FROM definitely_missing_table")
+        assert resp.status_code >= 400
+        with pytest.raises(AnalyticsQueryError):
+            resp.raise_for_status()
 
 
 # ---------------------------------------------------------------------------

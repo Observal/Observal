@@ -335,25 +335,22 @@ class TestCliAudit:
 
 
 class TestSchemaExpansion:
-    """ClickHouse schema includes new audit columns."""
+    """DuckDB baseline schema includes the audit columns."""
 
     def test_new_columns_in_baseline_migration(self):
-        from services.clickhouse.migrations import MIGRATIONS_DIR
+        from services.duckdb.migrations import MIGRATIONS_DIR
 
         sql_blob = (MIGRATIONS_DIR / "001_baseline.sql").read_text()
-        assert "ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS sensitivity" in sql_blob
-        assert "ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS outcome" in sql_blob
-        assert "ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS duration_ms" in sql_blob
-        assert "ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS chain_hash" in sql_blob
-        assert "ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS source" in sql_blob
+        for col in ["sensitivity", "outcome", "duration_ms", "chain_hash", "source", "request_id"]:
+            assert col in sql_blob, f"missing audit_log column in baseline: {col}"
 
-    def test_new_indexes_in_baseline_migration(self):
-        from services.clickhouse.migrations import MIGRATIONS_DIR
+    def test_no_legacy_clickhouse_constructs_in_baseline(self):
+        """The DuckDB baseline must not contain ClickHouse-only constructs."""
+        from services.duckdb.migrations import MIGRATIONS_DIR, _strip_sql_comments
 
-        sql_blob = (MIGRATIONS_DIR / "001_baseline.sql").read_text()
-        assert "idx_outcome" in sql_blob
-        assert "idx_sensitivity" in sql_blob
-        assert "idx_source" in sql_blob
+        sql_blob = _strip_sql_comments((MIGRATIONS_DIR / "001_baseline.sql").read_text())
+        for token in ["MergeTree", "bloom_filter", "LowCardinality", "CODEC(", "TTL "]:
+            assert token not in sql_blob, f"ClickHouse-only construct leaked into baseline: {token}"
 
 
 class TestInsertAuditLog:
@@ -361,13 +358,10 @@ class TestInsertAuditLog:
 
     @pytest.mark.asyncio
     async def test_includes_all_fields(self):
-        with patch("services.clickhouse.client._query", new_callable=AsyncMock) as mock_query:
-            mock_response = MagicMock()
-            mock_response.raise_for_status = MagicMock()
-            mock_query.return_value = mock_response
-
-            with patch("services.clickhouse.client._invalidate_cache", new_callable=AsyncMock):
-                from services.clickhouse.insert import insert_audit_log
+        with patch("services.duckdb.insert.insert_rows") as mock_insert:
+            mock_insert.return_value = 1
+            if True:
+                from services.duckdb.insert import insert_audit_log
 
                 rows = [
                     {
@@ -396,10 +390,10 @@ class TestInsertAuditLog:
                 ]
 
                 await insert_audit_log(rows)
-                mock_query.assert_called_once()
-                data = mock_query.call_args.kwargs.get("data", "")
-                parsed = json.loads(data)
-                assert parsed["sensitivity"] == "high"
-                assert parsed["outcome"] == "success"
-                assert parsed["source"] == "cli"
-                assert parsed["chain_hash"] == "a" * 64
+                mock_insert.assert_called_once()
+                table, inserted = mock_insert.call_args.args[0], mock_insert.call_args.args[1][0]
+                assert table == "audit_log"
+                assert inserted["sensitivity"] == "high"
+                assert inserted["outcome"] == "success"
+                assert inserted["source"] == "cli"
+                assert inserted["chain_hash"] == "a" * 64

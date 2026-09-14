@@ -59,7 +59,7 @@ finally:
     fi
 fi
 
-echo "Running ClickHouse migrations..."
-/app/.venv/bin/python -m services.clickhouse.migrations
+echo "Running DuckDB migrations..."
+/app/.venv/bin/python -m services.duckdb.migrations
 
 echo "Initialization complete."

@@ -259,7 +259,7 @@ async def sessions_summary(
     rows = await _ch_json(
         "SELECT "
         "count() AS total, "
-        "countIf(toDate(last_event_time) = today()) AS today_sessions "
+        "count(*) FILTER (WHERE last_event_time::DATE = today()) AS today_sessions "
         "FROM ( "
         "  SELECT session_id, max(last_event_time) AS last_event_time "
         "  FROM session_stats_agg FINAL "
@@ -301,10 +301,10 @@ async def sessions_stats(current_user: User = Depends(require_role(UserRole.admi
     row = rows[0] if rows else {}
     return {
         "total_sessions": int(row.get("total_sessions", 0)),
-        "total_prompts": int(row.get("total_prompts", 0)),
+        "total_prompts": int(row.get("total_prompts") or 0),
         "total_api_requests": int(row.get("total_api_requests", 0)),
-        "total_tool_calls": int(row.get("total_tool_calls", 0)),
-        "total_events": int(row.get("total_events", 0)),
+        "total_tool_calls": int(row.get("total_tool_calls") or 0),
+        "total_events": int(row.get("total_events") or 0),
     }
 
 

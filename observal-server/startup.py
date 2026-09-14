@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -16,8 +17,8 @@ from services.audit import setup_audit, shutdown_audit
 from services.audit.event_handlers import register_audit_handlers
 from services.audit.event_handlers import shutdown_audit as shutdown_audit_handlers
 from services.cache import close_cache, init_cache
-from services.clickhouse import init_clickhouse
 from services.crypto import init_key_manager
+from services.duckdb import init_duckdb, run_duckdb_migrations
 from services.redis import close as close_redis
 
 
@@ -49,7 +50,11 @@ async def run_startup_tasks() -> None:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
             await ensure_columns(conn)
-        await init_clickhouse()
+        await run_duckdb_migrations()
+        await init_duckdb()
+
+    if settings.EMBEDDED_WORKER:
+        await start_embedded_worker()
 
     ds.load_external_settings()
     await ds.load_sync_cache()
@@ -104,13 +109,60 @@ async def run_startup_tasks() -> None:
         await db.commit()
 
 
+_embedded_worker_task: asyncio.Task | None = None
+
+
+async def start_embedded_worker() -> None:
+    """Run the arq background worker inside this process.
+
+    Required for the embedded DuckDB analytics store: only one process may
+    hold the database file read-write, so cron/background jobs must share
+    the API process (and its DuckDB connection) instead of running as a
+    separate worker container.
+    """
+    global _embedded_worker_task
+    from arq.worker import create_worker
+
+    from worker import WorkerSettings
+
+    # handle_signals=False: uvicorn owns SIGINT/SIGTERM in this process.
+    worker = create_worker(WorkerSettings, handle_signals=False)
+    _embedded_worker_task = asyncio.create_task(worker.async_run())
+
+    def _on_done(task: asyncio.Task) -> None:
+        if not task.cancelled() and (exc := task.exception()):
+            from loguru import logger as optic
+
+            optic.error("embedded arq worker died: {}", exc)
+
+    _embedded_worker_task.add_done_callback(_on_done)
+
+
+async def stop_embedded_worker() -> None:
+    """Signal the embedded arq worker to shut down and await it."""
+    global _embedded_worker_task
+    if _embedded_worker_task is None:
+        return
+    task, _embedded_worker_task = _embedded_worker_task, None
+    task.cancel()
+    try:
+        await task
+    except (asyncio.CancelledError, Exception):
+        pass
+
+
 async def run_shutdown_tasks() -> None:
     """Release application dependencies used by the FastAPI lifespan."""
+    await stop_embedded_worker()
     await shutdown_audit()
     await shutdown_audit_handlers()
 
     await close_cache()
     await close_redis()
+
+    from services.duckdb.client import close_con
+
+    close_con()
 
 
 @asynccontextmanager

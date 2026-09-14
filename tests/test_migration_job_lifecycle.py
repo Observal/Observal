@@ -309,7 +309,7 @@ async def test_job_dispatches_operation_and_persists_success(
         upload_dir = tmp_path / "uploaded"
         upload_dir.mkdir()
         artifact_dir = str(upload_dir)
-    job = make_job(operation=operation, scope=MigrationScope.both, artifact_dir=artifact_dir)
+    job = make_job(operation=operation, scope=MigrationScope.postgres, artifact_dir=artifact_dir)
     lookup = Session(Result(one=job))
     terminal = Session()
     factory = SessionFactory(lookup, terminal)
@@ -352,9 +352,9 @@ async def test_job_dispatches_operation_and_persists_success(
     assert isinstance(reporter, migration.DbProgressReporter)
     assert reporter._job_id == str(job.id)
     handler.assert_awaited_once_with(
-        MigrationScope.both,
+        MigrationScope.postgres,
         boundaries.pg_conn,
-        boundaries.ch_conn,
+        None,  # ch_conn: ClickHouse scopes are rejected at dispatch (DuckDB port)
         expected_dir,
         reporter,
     )
@@ -363,7 +363,8 @@ async def test_job_dispatches_operation_and_persists_success(
     boundaries.get_timeout.assert_awaited_once_with("migration.job_timeout_seconds", default=3600)
     boundaries.timeout.assert_called_once_with(17)
     boundaries.pg_resolver.assert_awaited_once_with()
-    boundaries.ch_resolver.assert_awaited_once_with()
+    # ch_resolver intentionally unused: ClickHouse scopes are rejected (DuckDB port)
+    boundaries.ch_resolver.assert_not_awaited()
 
     boundaries.emit.assert_awaited_once()
     event = boundaries.emit.await_args.args[0]
@@ -371,7 +372,7 @@ async def test_job_dispatches_operation_and_persists_success(
     assert event.severity == Severity.INFO
     assert event.target_id == str(job.id)
     assert event.target_type == "migration_job"
-    assert event.detail == f"Migration {operation.value} completed (scope=both) total_rows=7"
+    assert event.detail == f"Migration {operation.value} completed (scope=postgres) total_rows=7"
     assert queue_client.mock_calls == []
     assert object_storage.mock_calls == []
 

@@ -232,7 +232,7 @@ class TestAuditLogEndpoint:
         }
         fake_resp = MagicMock()
         fake_resp.status_code = 200
-        fake_resp.text = json.dumps(fake_row)
+        fake_resp.json.return_value = {"data": [fake_row]}
 
         mock_query = AsyncMock(return_value=fake_resp)
         mock_user = MagicMock()
@@ -301,7 +301,7 @@ class TestAuditLogEndpoint:
         }
         fake_resp = MagicMock()
         fake_resp.status_code = 200
-        fake_resp.text = json.dumps(fake_row)
+        fake_resp.json.return_value = {"data": [fake_row]}
 
         mock_query = AsyncMock(return_value=fake_resp)
         mock_user = MagicMock()
