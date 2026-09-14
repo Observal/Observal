@@ -142,15 +142,21 @@ export default function RegistryHome() {
       />
 
       <div className="page-body w-full">
+        <PageIntro
+          eyebrow="Your workspace"
+          title="Registry"
+          subtitle="Find trusted agents and keep track of the registry work connected to you."
+        />
+
         {/* ── Intent box ── */}
-        <section className="mb-7 rounded-xl bg-card p-[30px] shadow-sm animate-in">
+        <section className="mb-[22px] rounded-xl bg-card p-[30px] shadow-sm animate-in">
           <p className="mb-1.5 text-2xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
             Start with intent
           </p>
-          <h1 className="max-w-3xl text-balance text-[28px] font-medium tracking-[-0.03em]">
+          <h2 className="max-w-[670px] text-balance text-[clamp(24px,3vw,38px)] font-semibold tracking-[-0.02em]">
             What are you working on?
-          </h1>
-          <p className="mt-2 max-w-[680px] text-sm text-muted-foreground">
+          </h2>
+          <p className="mt-2 max-w-[600px] text-sm text-muted-foreground">
             Find an approved agent, inspect a trace, or assemble a workflow from
             trusted components.
           </p>
@@ -160,12 +166,13 @@ export default function RegistryHome() {
             onChange={setSearch}
             onSubmit={handleSearch}
             placeholder='Try "review a Python service" or paste a trace ID'
-            className="mt-5 max-w-[780px]"
+            kbdHint="⌘ K"
+            className="mt-[22px] max-w-[780px]"
           />
 
           <nav
             aria-label="Quick actions"
-            className="mt-3 flex flex-wrap gap-1.5"
+            className="mt-[14px] flex flex-wrap gap-[7px]"
           >
             <IntentChip href="/agents">Browse agents</IntentChip>
             <IntentChip href="/agents/builder">Build from components</IntentChip>

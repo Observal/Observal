@@ -10,6 +10,7 @@ export type AgentsSearch = {
   namespace?: string;
   team?: string;
   category?: string;
+  harness?: string;
 };
 
 export const Route = createFileRoute("/_authed/agents/")({
@@ -19,5 +20,6 @@ export const Route = createFileRoute("/_authed/agents/")({
     namespace: (search.namespace as string) || undefined,
     team: (search.team as string) || undefined,
     category: (search.category as string) || undefined,
+    harness: (search.harness as string) || undefined,
   }),
 });

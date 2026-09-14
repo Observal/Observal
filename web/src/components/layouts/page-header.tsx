@@ -118,7 +118,7 @@ export function PageIntro({
           {title}
         </h1>
         {subtitle && (
-          <p className="mt-[6px] text-sm text-muted-foreground">{subtitle}</p>
+          <p className="mt-[6px] text-[13px] text-muted-foreground">{subtitle}</p>
         )}
       </div>
       {children && (

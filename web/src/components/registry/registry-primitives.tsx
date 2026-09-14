@@ -83,7 +83,7 @@ export function Panel({
         <div className="min-w-0">
           <h2 className="text-base font-medium">{title}</h2>
           {subtitle && (
-            <p className="mt-0.5 text-2xs text-muted-foreground">{subtitle}</p>
+            <p className="mt-[3px] text-2xs text-muted-foreground">{subtitle}</p>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -135,7 +135,7 @@ export function CompactRow({
   );
 
   const rowClass = cn(
-    "grid grid-cols-[28px_minmax(0,1fr)_auto] items-center gap-2.5 border-t border-border py-3 first:border-t-0 first:pt-0 last:pb-0",
+    "grid grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-2.5 border-t border-border py-3 first:border-t-0 first:pt-0 last:pb-0",
     (href || onClick) &&
       "cursor-pointer rounded-lg -mx-2 px-2 transition-colors hover:bg-surface-raised",
     className,
@@ -255,7 +255,7 @@ export function TypeTabs({
   return (
     <div
       className={cn(
-        "mb-4 flex gap-0 overflow-x-auto",
+        "mb-[15px] flex gap-0 overflow-x-auto",
         border && "border-b border-border",
         className,
       )}
@@ -323,12 +323,15 @@ export function IntentSearch({
   onSubmit,
   placeholder = "Search…",
   className,
+  kbdHint,
 }: {
   value: string;
   onChange: (v: string) => void;
   onSubmit?: () => void;
   placeholder?: string;
   className?: string;
+  /** Optional keyboard shortcut hint rendered before the submit button. */
+  kbdHint?: string;
 }) {
   return (
     <form
@@ -337,7 +340,7 @@ export function IntentSearch({
         onSubmit?.();
       }}
       className={cn(
-        "flex items-center gap-2.5 rounded-[11px] border border-border bg-surface-raised px-3.5 h-[50px]",
+        "flex items-center gap-2.5 rounded-[11px] border border-border bg-surface-raised pl-4 pr-2.5 h-[50px]",
         className,
       )}
     >
@@ -349,6 +352,11 @@ export function IntentSearch({
         placeholder={placeholder}
         className="min-w-0 flex-1 border-0 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
       />
+      {kbdHint && (
+        <kbd className="hidden shrink-0 rounded-[5px] bg-card px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground sm:inline-block">
+          {kbdHint}
+        </kbd>
+      )}
       {onSubmit && (
         <button
           type="submit"
@@ -430,7 +438,7 @@ export function StatusStrip({
   return (
     <div
       className={cn(
-        "mb-3.5 flex items-center gap-3 rounded-[11px] bg-surface-raised px-3.5 py-3",
+        "mb-3.5 flex items-center gap-[11px] rounded-[11px] bg-surface-raised px-3.5 py-3",
         className,
       )}
     >
@@ -512,7 +520,7 @@ export function RankingRow({
   return (
     <div
       className={cn(
-        "grid grid-cols-[42px_minmax(0,1fr)_90px_70px_70px] items-center gap-3 border-t border-border px-5 py-3.5 transition-colors hover:bg-surface-raised",
+        "grid grid-cols-[42px_minmax(0,1fr)_120px_90px_90px] items-center gap-3 border-t border-border px-5 py-3.5 transition-colors hover:bg-surface-raised",
         className,
       )}
     >
@@ -527,18 +535,52 @@ export function RankingRow({
           : position}
       </span>
       <div className="min-w-0">{children}</div>
-      {downloads && (
-        <span className="text-right font-mono text-2xs">{downloads}</span>
+      {downloads !== undefined && (
+        <span className="text-right font-mono text-2xs">{downloads} pulls</span>
       )}
-      {rating && (
+      {rating !== undefined && (
         <span className="text-right font-mono text-2xs">★ {rating}</span>
       )}
-      {change && (
+      {change !== undefined && (
         <span className="text-right font-mono text-[10px] text-success">
           {change}
         </span>
       )}
     </div>
+  );
+}
+
+/* ─── Ranking Head ───────────────────────────────── */
+
+export function RankingHead() {
+  return (
+    <div className="grid grid-cols-[42px_minmax(0,1fr)_120px_90px_90px] items-center gap-3 px-5 py-2.5 text-2xs font-medium uppercase tracking-[0.05em] text-muted-foreground">
+      <span>Rank</span>
+      <span>Agent</span>
+      <span className="text-right">Downloads</span>
+      <span className="text-right">Rating</span>
+      <span className="text-right">Change</span>
+    </div>
+  );
+}
+
+/* ─── Sparkline SVG ──────────────────────────────── */
+
+export function Sparkline({ className }: { className?: string }) {
+  return (
+    <svg
+      className={cn("opacity-50", className)}
+      viewBox="0 0 180 68"
+      fill="none"
+      aria-label="Seven day adoption trend"
+    >
+      <path
+        d="M2 56 C24 55 28 44 48 46 S75 35 94 38 S120 20 139 24 S160 11 178 8"
+        stroke="currentColor"
+        strokeWidth="2.5"
+      />
+      <path d="M2 63H178" stroke="var(--color-border)" />
+    </svg>
   );
 }
 
@@ -550,6 +592,7 @@ export function LeaderFeatureCard({
   handle,
   description,
   stats,
+  children,
   className,
 }: {
   rank: string;
@@ -557,6 +600,7 @@ export function LeaderFeatureCard({
   handle: string;
   description: string;
   stats: { label: string; value: string | ReactNode }[];
+  children?: ReactNode;
   className?: string;
 }) {
   return (
@@ -566,15 +610,16 @@ export function LeaderFeatureCard({
         className,
       )}
     >
-      <span className="text-2xs font-semibold uppercase tracking-[0.08em] font-mono text-muted-foreground">
+      {children}
+      <span className="relative z-[1] text-2xs font-semibold uppercase tracking-[0.08em] font-mono text-muted-foreground">
         {rank}
       </span>
-      <h2 className="mt-5 text-2xl font-medium">{title}</h2>
-      <div className="font-mono text-[10px] text-muted-foreground">{handle}</div>
-      <p className="mt-2.5 max-w-[590px] text-xs leading-relaxed text-muted-foreground">
+      <h2 className="relative z-[1] mt-5 text-2xl font-medium">{title}</h2>
+      <div className="relative z-[1] font-mono text-[10px] text-muted-foreground">{handle}</div>
+      <p className="relative z-[1] mt-2.5 max-w-[590px] text-xs leading-relaxed text-muted-foreground">
         {description}
       </p>
-      <div className="mt-6 flex flex-wrap gap-7">
+      <div className="relative z-[1] mt-6 flex flex-wrap gap-7">
         {stats.map((s) => (
           <div key={s.label}>
             <span className="text-[10px] text-muted-foreground">{s.label}</span>
