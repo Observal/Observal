@@ -37,6 +37,7 @@ import {
   useTeams,
 } from "@/hooks/use-api";
 import { registry, getUserRole } from "@/lib/api";
+import { useOptionalAuth } from "@/hooks/use-auth";
 import { hasMinRole } from "@/hooks/use-role-guard";
 import { PageHeader, PageIntro } from "@/components/layouts/page-header";
 import { TableSkeleton, CardSkeleton } from "@/components/shared/skeleton-layouts";
@@ -437,7 +438,8 @@ export default function AgentListPage() {
 function AgentListContent() {
   const { search: searchParam, namespace, team, category, harness } = useSearch({ from: "/_authed/agents/" });
   const router = useRouter();
-  const { data: teams = [] } = useTeams();
+  const { isAuthenticated } = useOptionalAuth();
+  const { data: teams = [] } = useTeams(isAuthenticated);
   const { data: harnessList = [] } = useHarnesses();
   const selectedTeam = teams.find((item) => item.handle === team);
   const initialSearch = searchParam ?? "";
@@ -471,19 +473,26 @@ function AgentListContent() {
     ...(harness ? { harness } : {}),
   });
 
-  const { data: whoami } = useWhoami();
-  const { data: myAgents } = useMyAgents();
-  const isAdmin = useSyncExternalStore(roleSub, () => hasMinRole(getUserRole(), "admin"), () => false);
+  const { data: myAgents } = useMyAgents(isAuthenticated);
+  const isAdmin = useSyncExternalStore(
+    roleSub,
+    () => isAuthenticated && hasMinRole(getUserRole(), "admin"),
+    () => false,
+  );
   const { data: allArchivedAgents } = useArchivedAgents(isAdmin);
-  const { data: deletedAgents = [] } = useDeletedAgents();
+  const { data: deletedAgents = [] } = useDeletedAgents(isAuthenticated);
   const submitDraft = useSubmitDraft();
   const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
   const qc = useQueryClient();
 
-  /* Derived lists */
+  const scopedMyAgents = useMemo(
+    () => (isAuthenticated ? (myAgents ?? []) : []),
+    [isAuthenticated, myAgents],
+  );
+
   const drafts = useMemo(() => {
-    return (myAgents ?? []).filter((a) => a.status === "draft" || a.status === "rejected" || a.status === "pending");
-  }, [myAgents]);
+    return scopedMyAgents.filter((a) => a.status === "draft" || a.status === "rejected" || a.status === "pending");
+  }, [scopedMyAgents]);
 
   const pendingAgents = useMemo(() => {
     return (myAgents ?? []).filter((a) => a.status === "pending");
@@ -491,17 +500,17 @@ function AgentListContent() {
 
   const archivedAgents = useMemo(() => {
     if (isAdmin && allArchivedAgents) return allArchivedAgents;
-    return (myAgents ?? []).filter((a) => a.status === "archived");
-  }, [isAdmin, allArchivedAgents, myAgents]);
+    return scopedMyAgents.filter((a) => a.status === "archived");
+  }, [isAdmin, allArchivedAgents, scopedMyAgents]);
 
   const { filtered, pendingCount } = useMemo(() => {
     const active = agents ?? [];
     const activeIds = new Set(active.map((a) => a.id));
-    const pending = (myAgents ?? []).filter(
+    const pending = scopedMyAgents.filter(
       (a) => a.status !== "approved" && a.status !== "draft" && a.status !== "rejected" && a.status !== "archived" && !activeIds.has(a.id),
     );
     return { filtered: [...pending, ...active], pendingCount: pending.length };
-  }, [agents, myAgents]);
+  }, [agents, scopedMyAgents]);
 
   /* Tab counts */
   const tabData = useMemo(() => [

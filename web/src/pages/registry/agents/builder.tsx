@@ -592,7 +592,7 @@ function AgentBuilderInner() {
         }
       />
 
-      <div className="page-body w-full">
+      <div className="page-body w-full mx-auto">
         <PageIntro
           eyebrow="Registry"
           title={isEditMode ? "Edit Agent" : "Agent Builder"}

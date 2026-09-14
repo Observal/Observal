@@ -27,7 +27,7 @@ import {
   useCancelEdit,
   useTeams,
 } from "@/hooks/use-api";
-import { useAuthGuard } from "@/hooks/use-auth";
+import { useOptionalAuth } from "@/hooks/use-auth";
 import type { RegistryType } from "@/lib/api";
 import type { RegistryItem } from "@/lib/types";
 import {
@@ -255,8 +255,8 @@ function ComponentListRow({
 export default function ComponentsPage() {
   const router = useRouter();
   const searchParams = useSearch({ from: "/_authed/components/" });
-  const { ready: authReady, role } = useAuthGuard();
-  const { data: teams = [] } = useTeams();
+  const { ready: authReady, role, isAuthenticated } = useOptionalAuth();
+  const { data: teams = [] } = useTeams(isAuthenticated);
   const activeType = searchParams.type ?? "mcps";
   const [search, setSearch] = useState(searchParams.search ?? "");
   const [debouncedSearch, setDebouncedSearch] = useState(searchParams.search ?? "");
@@ -290,14 +290,16 @@ export default function ComponentsPage() {
 
   const { data, isLoading, isError, error, refetch } = useRegistryList(activeType, registryFilters);
 
-  const { data: myItems } = useMyComponents(activeType);
-  const mySubmissions = useMemo(
-    () => (myItems ?? []).filter((i) => i.status !== "approved"),
-    [myItems],
+  const { data: myItems } = useMyComponents(activeType, isAuthenticated);
+  const myDrafts = useMemo(
+    () => isAuthenticated
+      ? (myItems ?? []).filter((i) => ["draft", "pending", "rejected", "archived"].includes(i.status ?? ""))
+      : [],
+    [isAuthenticated, myItems],
   );
   const pendingItems = useMemo(
-    () => (myItems ?? []).filter((i) => i.status === "pending"),
-    [myItems],
+    () => isAuthenticated ? (myItems ?? []).filter((i) => i.status === "pending") : [],
+    [isAuthenticated, myItems],
   );
 
   const submitMutation = useComponentSubmit(activeType);
@@ -338,21 +340,21 @@ export default function ComponentsPage() {
   const visibleItems = useMemo(() => {
     switch (discoveryTab) {
       case "my":
-        return mySubmissions;
+        return myDrafts;
       case "pending":
         return pendingItems;
       case "discover":
       default:
         return items;
     }
-  }, [discoveryTab, items, mySubmissions, pendingItems]);
+  }, [discoveryTab, items, myDrafts, pendingItems]);
 
   /* Tab data */
   const discoveryTabData = useMemo(() => [
     { value: "discover", label: "Discover", count: undefined },
-    { value: "my", label: "My submissions", count: mySubmissions.length || undefined },
+    { value: "my", label: "My submissions", count: myDrafts.length || undefined },
     { value: "pending", label: "Pending review", count: pendingItems.length || undefined },
-  ], [mySubmissions.length, pendingItems.length]);
+  ], [myDrafts.length, pendingItems.length]);
 
   const typeTabData = useMemo(() =>
     TYPES.map((t) => ({ value: t.value, label: t.label, count: undefined })),
@@ -456,33 +458,37 @@ export default function ComponentsPage() {
               className="h-[34px] w-full min-w-0 rounded-[9px] border border-border bg-transparent pl-9 pr-3 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
             />
           </div>
-          <PickerSelect
-            value={searchParams.team ?? ""}
-            onValueChange={(value) => updateFilters({ team: value || undefined })}
-            options={[
-              { value: "", label: "All visible teamspaces" },
-              ...teams.map((team) => ({ value: team.handle, label: `Team: ${team.name}` })),
-            ]}
-            placeholder="Teamspace"
-            className="min-w-[190px] w-auto"
-            inputClassName="h-[34px]"
-          />
-          <UserSearchInput
-            value={publisherQuery}
-            onValueChange={(value) => {
-              setPublisherQuery(value);
-              if (searchParams.namespace && value !== searchParams.namespace && value !== `@${searchParams.namespace}`) {
-                updateFilters({ namespace: undefined });
-              }
-            }}
-            onSelect={(user) => {
-              if (!user.username) return;
-              setPublisherQuery(`@${user.username}`);
-              updateFilters({ namespace: user.username });
-            }}
-            placeholder="Publisher"
-            className="h-[34px] min-w-[145px] w-auto"
-          />
+          {isAuthenticated && (
+            <>
+              <PickerSelect
+                value={searchParams.team ?? ""}
+                onValueChange={(value) => updateFilters({ team: value || undefined })}
+                options={[
+                  { value: "", label: "All visible teamspaces" },
+                  ...teams.map((team) => ({ value: team.handle, label: `Team: ${team.name}` })),
+                ]}
+                placeholder="Teamspace"
+                className="min-w-[190px] w-auto"
+                inputClassName="h-[34px]"
+              />
+              <UserSearchInput
+                value={publisherQuery}
+                onValueChange={(value) => {
+                  setPublisherQuery(value);
+                  if (searchParams.namespace && value !== searchParams.namespace && value !== `@${searchParams.namespace}`) {
+                    updateFilters({ namespace: undefined });
+                  }
+                }}
+                onSelect={(user) => {
+                  if (!user.username) return;
+                  setPublisherQuery(`@${user.username}`);
+                  updateFilters({ namespace: user.username });
+                }}
+                placeholder="Publisher"
+                className="h-[34px] min-w-[145px] w-auto"
+              />
+            </>
+          )}
           {typeFilters.map((filter) => (
             <PickerSelect
               key={filter.key}
@@ -617,11 +623,11 @@ export default function ComponentsPage() {
         )}
 
         {/* ── Inline submissions (My submissions tab) ── */}
-        {discoveryTab === "my" && mySubmissions.length > 0 && (
+        {discoveryTab === "my" && myDrafts.length > 0 && (
           <section className="mt-3.5 rounded-xl bg-card p-5 shadow-sm">
             <div className="mb-4 text-sm font-medium">Drafts &amp; submissions</div>
             <div className="divide-y divide-border">
-              {mySubmissions.map((item) => (
+              {myDrafts.map((item) => (
                 <div key={item.id} className="flex items-center gap-4 py-3">
                   <EntityGlyph type={typeToGlyphKind(activeType)} size="sm" labelled={false} />
                   <div className="min-w-0 flex-1">
@@ -681,7 +687,7 @@ export default function ComponentsPage() {
         )}
       </div>
 
-      <SubmitComponentDialog
+      {isAuthenticated && <SubmitComponentDialog
         key={editItem?.id ?? "new"}
         open={submitOpen}
         onOpenChange={(v) => {
@@ -722,7 +728,7 @@ export default function ComponentsPage() {
         }}
         isSubmitting={submitMutation.isPending || submitDraftMutation.isPending}
         isSavingDraft={saveDraftMutation.isPending || updateDraftMutation.isPending}
-      />
+      />}
     </>
   );
 }
