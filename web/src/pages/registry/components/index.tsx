@@ -3,23 +3,16 @@
 // SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-
 import { Link, useRouter, useSearch } from "@tanstack/react-router";
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   Search,
   Puzzle,
-  LayoutGrid,
-  TableProperties,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
   Plus,
   Send,
   FileEdit,
   X,
 } from "lucide-react";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { PickerSelect } from "@/components/ui/picker-select";
 import { UserSearchInput } from "@/components/shared/user-search-input";
@@ -46,56 +39,49 @@ import {
   SKILL_TASK_TYPES,
   SubmitComponentDialog,
 } from "@/components/registry/submit-component-dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { PageHeader } from "@/components/layouts/page-header";
-import {
-  TableSkeleton,
-  CardSkeleton,
-} from "@/components/shared/skeleton-layouts";
+import { PageHeader, PageIntro } from "@/components/layouts/page-header";
+import { TableSkeleton, CardSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
 import { StatusBadge } from "@/components/registry/status-badge";
-import { ComponentCard } from "@/components/registry/component-card";
+import { EntityGlyph, toEntityKind } from "@/components/registry/entity-glyph";
 import { RegistryName } from "@/components/registry/registry-name";
-import { registryItemPath } from "@/lib/registry-name";
+import { registryItemPath, canonicalRouteParts } from "@/lib/registry-name";
+import { compactNumber } from "@/lib/utils";
+import { tagColorClasses } from "@/lib/tag-colors";
 import {
-  useReactTable,
-  getCoreRowModel,
-  getSortedRowModel,
-  flexRender,
-  type Column,
-  type ColumnDef,
-  type SortingState,
-} from "@tanstack/react-table";
-import { cn } from "@/lib/utils";
+  TypeTabs,
+  ViewToggle,
+  RegistryToolbar,
+  ToolbarSpacer,
+  RegistryNote,
+  CatalogGrid,
+} from "@/components/registry/registry-primitives";
 
-const TYPES: { value: RegistryType; label: string }[] = [
-  { value: "mcps", label: "MCPs" },
-  { value: "skills", label: "Skills" },
-  { value: "hooks", label: "Hooks" },
-  { value: "prompts", label: "Prompts" },
-  { value: "sandboxes", label: "Sandboxes" },
+/* ────────────────────────────────────────────────────────── */
+/*  Constants                                                  */
+/* ────────────────────────────────────────────────────────── */
+
+type ViewMode = "grid" | "list";
+type DiscoveryTab = "discover" | "my" | "pending";
+type FilterKey = "category" | "task_type" | "event" | "scope" | "runtime_type";
+type TypeFilter = { key: FilterKey; label: string; options: string[] };
+
+/** Registry type tabs — labels match the mockup exactly. */
+const TYPES: { value: RegistryType; label: string; singular: string }[] = [
+  { value: "mcps", label: "MCP servers", singular: "MCP server" },
+  { value: "skills", label: "Skills", singular: "Skill" },
+  { value: "hooks", label: "Hooks", singular: "Hook" },
+  { value: "prompts", label: "Prompts", singular: "Prompt" },
+  { value: "sandboxes", label: "Sandboxes", singular: "Sandbox" },
 ];
 
-const TYPE_PLURAL_LABELS: Record<string, string> = Object.fromEntries(
+const SINGULAR: Record<string, string> = Object.fromEntries(
+  TYPES.map((t) => [t.value, t.singular]),
+);
+const PLURAL: Record<string, string> = Object.fromEntries(
   TYPES.map((t) => [t.value, t.label]),
 );
-
-type ViewMode = "table" | "grid";
-type FilterKey = "category" | "task_type" | "event" | "scope" | "runtime_type";
-
-type TypeFilter = {
-  key: FilterKey;
-  label: string;
-  options: string[];
-};
 
 const TYPE_FILTERS: Partial<Record<RegistryType, TypeFilter[]>> = {
   mcps: [{ key: "category", label: "Category", options: MCP_CATEGORIES }],
@@ -109,85 +95,162 @@ const TYPE_FILTERS: Partial<Record<RegistryType, TypeFilter[]>> = {
 };
 
 function formatOption(value: string): string {
-  return value.replaceAll("-", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return value.replaceAll("-", " ").replace(/\b\w/g, (l) => l.toUpperCase());
 }
 
-function SortIcon({ column }: { column: Column<RegistryItem> }) {
-  const sorted = column.getIsSorted();
-  if (sorted === "asc") return <ArrowUp className="h-3 w-3" />;
-  if (sorted === "desc") return <ArrowDown className="h-3 w-3" />;
-  return <ArrowUpDown className="h-3 w-3 opacity-40" />;
+/** Map registry plural type to entity-glyph kind. */
+function typeToGlyphKind(registryType: RegistryType): string {
+  const t = registryType.toLowerCase();
+  if (t.endsWith("es")) return t.slice(0, -2);
+  if (t.endsWith("s")) return t.slice(0, -1);
+  return t;
 }
 
-function makeColumns(activeType: RegistryType): ColumnDef<RegistryItem>[] {
-  return [
-    {
-      accessorKey: "name",
-      header: ({ column }) => (
-        <button
-          className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-        >
-          Name
-          <SortIcon column={column} />
-        </button>
-      ),
-      cell: ({ row }) => (
-        <div className="min-w-[160px]">
-          <Link
-            to={registryItemPath(row.original, activeType, row.original.id)}
-            className="block min-w-0 hover:underline underline-offset-4"
-          >
-            <RegistryName item={row.original} nameClassName="font-medium text-sm" />
-          </Link>
-          {row.original.description && (
-            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1 max-w-xs">
-              {row.original.description}
-            </p>
-          )}
+/* ────────────────────────────────────────────────────────── */
+/*  Component catalog card (mockup: registryComponentCard)     */
+/* ────────────────────────────────────────────────────────── */
+
+function ComponentCatalogCard({
+  item,
+  registryType,
+  className,
+}: {
+  item: RegistryItem;
+  registryType: RegistryType;
+  className?: string;
+}) {
+  const canonical = canonicalRouteParts(item.namespace, item.slug);
+  const status = (item.status as string | undefined) ?? "approved";
+  const handle = item.namespace && item.slug
+    ? `${item.namespace}/${item.slug}`
+    : item.qualified_name || item.name;
+  const version = item.version as string | undefined;
+  const description = typeof item.description === "string" ? item.description : undefined;
+  const usage = item.download_count != null
+    ? `${compactNumber(item.download_count as number)} agents`
+    : undefined;
+  const glyphKind = typeToGlyphKind(registryType);
+  const typeSingular = SINGULAR[registryType] ?? registryType;
+
+  const cls = [
+    "flex flex-col rounded-xl bg-card p-[18px] shadow-sm min-h-[160px]",
+    "transition-all duration-200 ease-out",
+    "hover:-translate-y-px hover:shadow-[0_4px_16px_rgba(28,27,24,.08)]",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    className ?? "",
+  ].join(" ");
+
+  const body = (
+    <>
+      {/* Top row: icon + status badge */}
+      <div className="flex items-start justify-between gap-3">
+        <EntityGlyph type={glyphKind} size="sm" labelled />
+        <StatusBadge status={status} />
+      </div>
+
+      {/* Title */}
+      <div className="mt-3 text-sm font-medium">{item.name}</div>
+
+      {/* Handle · version */}
+      <div className="mt-[3px] font-mono text-[10px] text-muted-foreground">
+        {handle}
+        {version ? ` · ${version}` : ""}
+      </div>
+
+      {/* Description */}
+      {description && (
+        <p className="mt-[9px] flex-1 text-xs leading-relaxed text-muted-foreground line-clamp-3">
+          {description}
+        </p>
+      )}
+
+      {/* Meta row: type-box + usage */}
+      <div className="mt-3.5 flex items-center gap-3 border-t border-border pt-3 text-[10px] text-muted-foreground">
+        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium ${tagColorClasses(glyphKind)}`}>
+          {typeSingular}
+        </span>
+        {usage && <span>{usage}</span>}
+      </div>
+    </>
+  );
+
+  if (canonical) {
+    return (
+      <Link to="/components/$type/$namespace/$slug" params={{ type: registryType, ...canonical }} className={cls}>
+        {body}
+      </Link>
+    );
+  }
+  return (
+    <Link to="/components/$componentId" params={{ componentId: item.id }} search={{ type: registryType }} className={cls}>
+      {body}
+    </Link>
+  );
+}
+
+/* ────────────────────────────────────────────────────────── */
+/*  Component list row (mockup: componentListRow)              */
+/*  Grid: minmax(260px,1.7fr) 105px 86px minmax(120px,.7fr) 100px */
+/* ────────────────────────────────────────────────────────── */
+
+function ComponentListRow({
+  item,
+  registryType,
+  onClick,
+}: {
+  item: RegistryItem;
+  registryType: RegistryType;
+  onClick: () => void;
+}) {
+  const status = (item.status as string | undefined) ?? "approved";
+  const handle = item.namespace && item.slug
+    ? `${item.namespace}/${item.slug}`
+    : item.qualified_name || item.name;
+  const glyphKind = typeToGlyphKind(registryType);
+  const typeSingular = SINGULAR[registryType] ?? registryType;
+  const version = (item.version as string | undefined) ?? "-";
+  const usage = item.download_count != null
+    ? `${compactNumber(item.download_count as number)} agents`
+    : "-";
+
+  return (
+    <div
+      className="grid min-h-[66px] cursor-pointer items-center gap-3 border-t border-border px-[22px] py-3 transition-colors first:border-t-0 hover:bg-surface-raised"
+      style={{ gridTemplateColumns: "minmax(260px,1.7fr) 105px 86px minmax(120px,.7fr) 100px" }}
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onClick(); }}
+    >
+      {/* Component identity */}
+      <div className="flex items-center gap-[11px] min-w-0">
+        <EntityGlyph type={glyphKind} size="sm" labelled={false} />
+        <div className="min-w-0">
+          <strong className="block truncate text-xs font-medium">{item.name}</strong>
+          <span className="block truncate mt-0.5 font-mono text-[9px] text-muted-foreground">{handle}</span>
         </div>
-      ),
-    },
-    {
-      accessorKey: "version",
-      header: "Version",
-      cell: ({ row }) => (
-        <span className="text-muted-foreground text-sm font-mono">
-          {(row.original.version as string | undefined) ?? "-"}
-        </span>
-      ),
-    },
-    {
-      accessorKey: "status",
-      header: "Status",
-      cell: ({ row }) =>
-        row.original.status ? (
-          <StatusBadge status={row.original.status} />
-        ) : (
-          <span className="text-muted-foreground">-</span>
-        ),
-    },
-    {
-      accessorKey: "updated_at",
-      header: ({ column }) => (
-        <button
-          className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-        >
-          Updated
-          <SortIcon column={column} />
-        </button>
-      ),
-      cell: ({ row }) => (
-        <span className="text-muted-foreground text-sm">
-          {row.original.updated_at
-            ? new Date(row.original.updated_at).toLocaleDateString()
-            : "-"}
-        </span>
-      ),
-    },
-  ];
+      </div>
+
+      {/* Type box */}
+      <span className={`inline-flex w-fit items-center rounded-full px-2 py-0.5 text-2xs font-medium whitespace-nowrap ${tagColorClasses(glyphKind)}`}>
+        {typeSingular}
+      </span>
+
+      {/* Version */}
+      <span className="font-mono text-[10px] text-muted-foreground">{version}</span>
+
+      {/* Used by */}
+      <span className="text-[10px] text-muted-foreground">{usage}</span>
+
+      {/* Status */}
+      <StatusBadge status={status} />
+    </div>
+  );
 }
+
+/* ────────────────────────────────────────────────────────── */
+/*  Main page                                                  */
+/* ────────────────────────────────────────────────────────── */
 
 export default function ComponentsPage() {
   const router = useRouter();
@@ -198,19 +261,15 @@ export default function ComponentsPage() {
   const [search, setSearch] = useState(searchParams.search ?? "");
   const [debouncedSearch, setDebouncedSearch] = useState(searchParams.search ?? "");
   const [publisherQuery, setPublisherQuery] = useState(searchParams.namespace ? `@${searchParams.namespace}` : "");
-  const [view, setView] = useState<ViewMode>("table");
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const [view, setView] = useState<ViewMode>("grid");
+  const [discoveryTab, setDiscoveryTab] = useState<DiscoveryTab>("discover");
   const [submitOpen, setSubmitOpen] = useState(false);
   const [editItem, setEditItem] = useState<RegistryItem | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
-    timerRef.current = setTimeout(() => {
-      setDebouncedSearch(search);
-    }, 300);
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
+    timerRef.current = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [search]);
 
   useEffect(() => {
@@ -236,6 +295,10 @@ export default function ComponentsPage() {
     () => isAuthenticated
       ? (myItems ?? []).filter((i) => ["draft", "pending", "rejected", "archived"].includes(i.status ?? ""))
       : [],
+    [isAuthenticated, myItems],
+  );
+  const pendingItems = useMemo(
+    () => isAuthenticated ? (myItems ?? []).filter((i) => i.status === "pending") : [],
     [isAuthenticated, myItems],
   );
 
@@ -273,16 +336,30 @@ export default function ComponentsPage() {
 
   const items = useMemo(() => data ?? [], [data]);
 
-  const columns = useMemo(() => makeColumns(activeType), [activeType]);
+  /* Active tab content */
+  const visibleItems = useMemo(() => {
+    switch (discoveryTab) {
+      case "my":
+        return myDrafts;
+      case "pending":
+        return pendingItems;
+      case "discover":
+      default:
+        return items;
+    }
+  }, [discoveryTab, items, myDrafts, pendingItems]);
 
-  const table = useReactTable({
-    data: items,
-    columns,
-    state: { sorting },
-    onSortingChange: setSorting,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-  });
+  /* Tab data */
+  const discoveryTabData = useMemo(() => [
+    { value: "discover", label: "Discover", count: undefined },
+    { value: "my", label: "My submissions", count: myDrafts.length || undefined },
+    { value: "pending", label: "Pending review", count: pendingItems.length || undefined },
+  ], [myDrafts.length, pendingItems.length]);
+
+  const typeTabData = useMemo(() =>
+    TYPES.map((t) => ({ value: t.value, label: t.label, count: undefined })),
+    [],
+  );
 
   const handleRowClick = useCallback(
     (id: string) => {
@@ -322,6 +399,9 @@ export default function ComponentsPage() {
     typeFilters.some((filter) => searchParams[filter.key])
   );
 
+  const typeSingular = SINGULAR[activeType] ?? activeType;
+  const typePlural = PLURAL[activeType] ?? activeType;
+
   return (
     <>
       <PageHeader
@@ -332,273 +412,241 @@ export default function ComponentsPage() {
         ]}
       />
 
-      <div className="page-body w-full mx-auto space-y-5">
-        {/* Toolbar */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="relative max-w-md flex-1 min-w-[240px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                aria-label={`Search ${TYPE_PLURAL_LABELS[activeType] ?? activeType}`}
-                placeholder="Search name, slug, or description..."
-                value={search}
-                onChange={(event) => {
-                  setSearch(event.target.value);
-                  updateFilters({ search: event.target.value || undefined });
-                }}
-                className="pl-9 h-9"
-              />
-            </div>
-            {isAuthenticated && (
-              <>
-                <PickerSelect
-                  value={searchParams.team ?? ""}
-                  onValueChange={(value) => updateFilters({ team: value || undefined })}
-                  options={[
-                    { value: "", label: "All visible teamspaces" },
-                    ...teams.map((team) => ({ value: team.handle, label: `Team: ${team.name}` })),
-                  ]}
-                  placeholder="Teamspace"
-                  className="w-[210px]"
-                  inputClassName="h-9"
-                />
-                <UserSearchInput
-                  value={publisherQuery}
-                  onValueChange={(value) => {
-                    setPublisherQuery(value);
-                    if (searchParams.namespace && value !== searchParams.namespace && value !== `@${searchParams.namespace}`) {
-                      updateFilters({ namespace: undefined });
-                    }
-                  }}
-                  onSelect={(user) => {
-                    if (!user.username) return;
-                    setPublisherQuery(`@${user.username}`);
-                    updateFilters({ namespace: user.username });
-                  }}
-                  placeholder="Publisher"
-                  className="h-9 w-[220px]"
-                />
-              </>
-            )}
-            {typeFilters.map((filter) => (
-              <PickerSelect
-                key={filter.key}
-                value={searchParams[filter.key] ?? ""}
-                onValueChange={(value) => updateFilters({ [filter.key]: value || undefined })}
-                options={[
-                  { value: "", label: `Any ${filter.label.toLowerCase()}` },
-                  ...filter.options.map((option) => ({ value: option, label: formatOption(option) })),
-                ]}
-                placeholder={filter.label}
-                className="w-[180px]"
-                inputClassName="h-9"
-              />
-            ))}
-            {authReady && role && (
-              <Button size="sm" className="h-9" onClick={() => { setEditItem(null); setSubmitOpen(true); }}>
-                <Plus className="h-4 w-4 mr-1.5" />
-                Create
-              </Button>
-            )}
-            <div className="flex items-center border border-border rounded-md overflow-hidden ml-auto">
-              <Button
-                variant={view === "table" ? "secondary" : "ghost"}
-                size="sm"
-                className="rounded-none h-8 px-2.5"
-                onClick={() => setView("table")}
-                aria-label="Table view"
-              >
-                <TableProperties className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={view === "grid" ? "secondary" : "ghost"}
-                size="sm"
-                className="rounded-none h-8 px-2.5"
-                onClick={() => setView("grid")}
-                aria-label="Grid view"
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-          {hasFilters && (
-            <div className="flex min-h-7 items-center gap-2 flex-wrap" aria-label="Active filters">
-              {searchParams.team && (
-                <Button variant="secondary" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => updateFilters({ team: undefined })}>
-                  Team: {selectedTeam?.name ?? searchParams.team}
-                  <X className="h-3 w-3" />
-                </Button>
-              )}
-              {searchParams.namespace && (
-                <Button variant="secondary" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => updateFilters({ namespace: undefined })}>
-                  Publisher: @{searchParams.namespace}
-                  <X className="h-3 w-3" />
-                </Button>
-              )}
-              {typeFilters.map((filter) => {
-                const value = searchParams[filter.key];
-                if (!value) return null;
-                return (
-                  <Button key={filter.key} variant="secondary" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => updateFilters({ [filter.key]: undefined })}>
-                    {filter.label}: {formatOption(value)}
-                    <X className="h-3 w-3" />
-                  </Button>
-                );
-              })}
-              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={clearFilters}>
-                Clear all
-              </Button>
-            </div>
-          )}
-        </div>
+      <div className="page-body w-full mx-auto">
+        <PageIntro
+          eyebrow="Registry"
+          title="Components"
+          subtitle="Browse and publish the MCP servers, skills, hooks, prompts, and sandboxes used by agents."
+        />
 
-        {/* Type filter tabs */}
-        <div className="flex items-center gap-1 border-b border-border">
-          {TYPES.map((t) => (
-            <button
-              key={t.value}
-              onClick={() => {
-                updateFilters({
-                  type: t.value,
-                  category: undefined,
-                  task_type: undefined,
-                  event: undefined,
-                  scope: undefined,
-                  runtime_type: undefined,
-                });
-                setSorting([]);
+        {/* ── Discovery tabs (row 1) ── */}
+        <TypeTabs
+          tabs={discoveryTabData}
+          active={discoveryTab}
+          onTabChange={(v) => setDiscoveryTab(v as DiscoveryTab)}
+        />
+
+        {/* ── Type tabs (row 2) ── */}
+        <TypeTabs
+          tabs={typeTabData}
+          active={activeType}
+          onTabChange={(v) => {
+            updateFilters({
+              type: v as RegistryType,
+              category: undefined,
+              task_type: undefined,
+              event: undefined,
+              scope: undefined,
+              runtime_type: undefined,
+            });
+          }}
+        />
+
+        {/* ── Toolbar ── */}
+        <RegistryToolbar>
+          <div className="relative w-[min(360px,100%)] shrink-[2]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              aria-label={`Search ${typePlural}`}
+              type="text"
+              placeholder={`Search ${typePlural}`}
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                updateFilters({ search: e.target.value || undefined });
               }}
-              className={cn(
-                "relative px-3 py-2 text-sm font-medium transition-colors hover:text-foreground",
-                activeType === t.value
-                  ? "text-foreground"
-                  : "text-muted-foreground",
-              )}
-            >
-              {t.label}
-              {activeType === t.value && (
-                <span className="absolute inset-x-0 -bottom-px h-0.5 bg-primary-accent" />
-              )}
-            </button>
+              className="h-[34px] w-full min-w-0 rounded-[9px] border border-border bg-transparent pl-9 pr-3 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
+            />
+          </div>
+          {isAuthenticated && (
+            <>
+              <PickerSelect
+                value={searchParams.team ?? ""}
+                onValueChange={(value) => updateFilters({ team: value || undefined })}
+                options={[
+                  { value: "", label: "All visible teamspaces" },
+                  ...teams.map((team) => ({ value: team.handle, label: `Team: ${team.name}` })),
+                ]}
+                placeholder="Teamspace"
+                className="min-w-[190px] w-auto"
+                inputClassName="h-[34px]"
+              />
+              <UserSearchInput
+                value={publisherQuery}
+                onValueChange={(value) => {
+                  setPublisherQuery(value);
+                  if (searchParams.namespace && value !== searchParams.namespace && value !== `@${searchParams.namespace}`) {
+                    updateFilters({ namespace: undefined });
+                  }
+                }}
+                onSelect={(user) => {
+                  if (!user.username) return;
+                  setPublisherQuery(`@${user.username}`);
+                  updateFilters({ namespace: user.username });
+                }}
+                placeholder="Publisher"
+                className="h-[34px] min-w-[145px] w-auto"
+              />
+            </>
+          )}
+          {typeFilters.map((filter) => (
+            <PickerSelect
+              key={filter.key}
+              value={searchParams[filter.key] ?? ""}
+              onValueChange={(value) => updateFilters({ [filter.key]: value || undefined })}
+              options={[
+                { value: "", label: `Any ${filter.label.toLowerCase()}` },
+                ...filter.options.map((option) => ({ value: option, label: formatOption(option) })),
+              ]}
+              placeholder={filter.label}
+              className="min-w-[145px] w-auto"
+              inputClassName="h-[34px]"
+            />
           ))}
-        </div>
+          <ToolbarSpacer />
+          {authReady && role && (
+            <Button
+              size="sm"
+              className="h-[34px] shrink-0 rounded-[9px] bg-primary px-3.5 text-xs font-medium text-primary-foreground"
+              onClick={() => { setEditItem(null); setSubmitOpen(true); }}
+            >
+              Create
+            </Button>
+          )}
+          <ViewToggle view={view} onViewChange={setView} />
+        </RegistryToolbar>
 
-        {/* Content */}
+        {/* ── Active filter chips ── */}
+        {hasFilters && (
+          <div className="mb-3.5 flex min-h-7 items-center gap-2 flex-wrap" aria-label="Active filters">
+            {searchParams.team && (
+              <Button variant="secondary" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => updateFilters({ team: undefined })}>
+                Team: {selectedTeam?.name ?? searchParams.team}
+                <X className="h-3 w-3" />
+              </Button>
+            )}
+            {searchParams.namespace && (
+              <Button variant="secondary" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => updateFilters({ namespace: undefined })}>
+                Publisher: @{searchParams.namespace}
+                <X className="h-3 w-3" />
+              </Button>
+            )}
+            {typeFilters.map((filter) => {
+              const value = searchParams[filter.key];
+              if (!value) return null;
+              return (
+                <Button key={filter.key} variant="secondary" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => updateFilters({ [filter.key]: undefined })}>
+                  {filter.label}: {formatOption(value)}
+                  <X className="h-3 w-3" />
+                </Button>
+              );
+            })}
+            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={clearFilters}>
+              Clear all
+            </Button>
+          </div>
+        )}
+
+        {/* ── Content ── */}
         {isLoading ? (
-          view === "table" ? (
-            <TableSkeleton rows={8} cols={4} />
-          ) : (
+          view === "grid" ? (
             <CardSkeleton count={6} columns={3} />
+          ) : (
+            <TableSkeleton rows={6} cols={5} />
           )
         ) : isError ? (
           <ErrorState message={error?.message} onRetry={() => refetch()} />
-        ) : items.length === 0 ? (
+        ) : visibleItems.length === 0 ? (
           <EmptyState
             icon={Puzzle}
-            title={`No ${TYPE_PLURAL_LABELS[activeType] ?? activeType} found`}
+            title={`No ${typePlural.toLowerCase()} found`}
             description={
               hasFilters
-                ? `No ${TYPE_PLURAL_LABELS[activeType] ?? activeType} match the active search and filters.`
-                : `No ${TYPE_PLURAL_LABELS[activeType] ?? activeType} have been registered yet.`
+                ? `No ${typePlural.toLowerCase()} match the active search and filters.`
+                : `No ${typePlural.toLowerCase()} have been registered yet.`
             }
             actionLabel="Back to Registry"
             actionHref="/"
           />
-        ) : view === "table" ? (
-          <div className="overflow-x-auto animate-in">
-            <Table>
-              <TableHeader>
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <TableRow key={headerGroup.id}>
-                    {headerGroup.headers.map((header) => (
-                      <TableHead key={header.id} className="text-xs">
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(
-                              header.column.columnDef.header,
-                              header.getContext(),
-                            )}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableHeader>
-              <TableBody>
-                {table.getRowModel().rows.map((row) => (
-                  <TableRow
-                    key={row.id}
-                    className="cursor-pointer hover:bg-accent/40 transition-colors"
-                    onClick={() => handleRowClick(row.original.id)}
-                  >
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id}>
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext(),
-                        )}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        ) : (
-          <div
-            className="grid gap-4 animate-in"
-            style={{
-              gridTemplateColumns:
-                "repeat(auto-fill, minmax(min(320px, 100%), 1fr))",
-            }}
-          >
-            {items.map((item: RegistryItem, i: number) => (
-              <ComponentCard
+        ) : view === "grid" ? (
+          /* ── Grid view ── */
+          <CatalogGrid className="animate-in">
+            {visibleItems.map((item, i) => (
+              <ComponentCatalogCard
                 key={item.id}
-                id={item.id}
-                name={item.name}
-                namespace={item.namespace}
-                slug={item.slug}
-                qualified_name={item.qualified_name}
-                type={activeType}
-                description={item.description}
-                version={item.version as string | undefined}
-                status={item.status}
-                git_url={item.git_url as string | undefined}
+                item={item}
+                registryType={activeType}
                 className={`animate-in stagger-${Math.min(i + 1, 5)}`}
               />
             ))}
-          </div>
+          </CatalogGrid>
+        ) : (
+          /* ── List view ── */
+          <section className="overflow-hidden rounded-xl bg-card shadow-sm animate-in">
+            {/* Table head */}
+            <div className="flex items-center justify-between border-b border-border px-[22px] py-4">
+              <div>
+                <div className="text-sm font-medium">Component catalogue</div>
+                <div className="mt-[3px] text-2xs text-muted-foreground">
+                  Reusable building blocks matching the current type and filters
+                </div>
+              </div>
+              <span className="font-mono text-xs text-muted-foreground">
+                {compactNumber(visibleItems.length)} {typePlural.toLowerCase()}
+              </span>
+            </div>
+
+            {/* Column headers */}
+            <div
+              className="grid min-h-[40px] items-center gap-3 border-b border-border px-[22px] text-2xs font-medium uppercase tracking-[0.05em] text-muted-foreground"
+              style={{ gridTemplateColumns: "minmax(260px,1.7fr) 105px 86px minmax(120px,.7fr) 100px" }}
+            >
+              <span>Component</span>
+              <span>Type</span>
+              <span>Version</span>
+              <span>Used by</span>
+              <span>Status</span>
+            </div>
+
+            {/* Rows */}
+            <div className="overflow-x-auto">
+              {visibleItems.map((item) => (
+                <ComponentListRow
+                  key={item.id}
+                  item={item}
+                  registryType={activeType}
+                  onClick={() => handleRowClick(item.id)}
+                />
+              ))}
+            </div>
+          </section>
         )}
 
-        {/* My Drafts / Submissions */}
-        {authReady && role && myDrafts.length > 0 && (
-          <div className="space-y-3 pt-4 border-t border-border">
-            <h3 className="text-sm font-medium text-muted-foreground">
-              My Submissions
-            </h3>
-            <div className="space-y-2">
+        {/* ── Inline submissions (My submissions tab) ── */}
+        {discoveryTab === "my" && myDrafts.length > 0 && (
+          <section className="mt-3.5 rounded-xl bg-card p-5 shadow-sm">
+            <div className="mb-4 text-sm font-medium">Drafts &amp; submissions</div>
+            <div className="divide-y divide-border">
               {myDrafts.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-center justify-between rounded-lg border border-border px-4 py-3"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <StatusBadge status={item.status ?? "draft"} />
-                    <div className="min-w-0">
-                      <RegistryName item={item} nameClassName="text-sm font-medium" />
-                      {item.description && (
-                        <p className="text-xs text-muted-foreground truncate max-w-xs">
-                          {item.description}
-                        </p>
-                      )}
-                      {item.status === "rejected" && item.rejection_reason && (
-                        <p className="text-xs text-destructive mt-0.5 line-clamp-2" title={item.rejection_reason}>
-                          Rejected: {item.rejection_reason}
-                        </p>
-                      )}
+                <div key={item.id} className="flex items-center gap-4 py-3">
+                  <EntityGlyph type={typeToGlyphKind(activeType)} size="sm" labelled={false} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start gap-2">
+                      <RegistryName item={item} nameClassName="text-xs font-medium" />
+                      <StatusBadge status={item.status ?? "draft"} />
                     </div>
+                    {item.status === "rejected" && item.rejection_reason && (
+                      <p className="text-[10px] text-destructive mt-0.5">
+                        Rejected: {item.rejection_reason}
+                      </p>
+                    )}
+                    {item.description && (
+                      <p className="truncate text-[10px] text-muted-foreground mt-0.5">
+                        {item.description}
+                      </p>
+                    )}
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0">
                     {(item.status === "draft" || item.status === "rejected" || item.status === "pending") && (
                       <Button
                         variant="outline"
@@ -635,7 +683,7 @@ export default function ComponentsPage() {
                 </div>
               ))}
             </div>
-          </div>
+          </section>
         )}
       </div>
 

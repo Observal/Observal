@@ -8,6 +8,7 @@ import { RegistrySidebar } from "@/components/nav/registry-sidebar";
 import { Toaster } from "@/components/ui/sonner";
 import { AuthGuard, OptionalAuthGuard } from "@/components/layouts/auth-guard";
 import { HelpProvider } from "@/components/wiki/help-context";
+import { MockRegistryData } from "@/components/dev/mock-registry-data";
 import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 import { isPublicRegistryPath } from "@/lib/public-registry";
 
@@ -22,6 +23,7 @@ function AppShell() {
           </Suspense>
         </SidebarInset>
         <Toaster visibleToasts={1} />
+        <MockRegistryData />
       </SidebarProvider>
     </HelpProvider>
   );

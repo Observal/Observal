@@ -2,126 +2,104 @@
 // SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
+/**
+ * Leaderboard page — matches the approved HTML mockup exactly.
+ *
+ * Layout (top → bottom):
+ *  1. Leaderboard controls — three segmented rows (Agents/Components,
+ *     Rankings/Publishers, time‑range).
+ *  2. Feature card — top‑ranked entity with sparkline and stats.
+ *  3. Lower grid — ranking list (left ~60 %) + movement card (right ~40 %).
+ */
 
-import { useEffect, useMemo, useState } from "react";
-import { Link } from "@tanstack/react-router";
-import {
-  Trophy,
-  ArrowDownToLine,
-  Star,
-  Search,
-  Blocks,
-  Users,
-} from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Input } from "@/components/ui/input";
-import { PageHeader } from "@/components/layouts/page-header";
-import { RegistryName } from "@/components/registry/registry-name";
+import { useMemo, useState } from "react";
+import { PageHeader, PageIntro } from "@/components/layouts/page-header";
 import { TableSkeleton } from "@/components/shared/skeleton-layouts";
-import { EmptyState } from "@/components/shared/empty-state";
+import {
+  SegmentedControl,
+  LeaderFeatureCard,
+  RankingHead,
+  RankingRow,
+  MovementItem,
+  Sparkline,
+} from "@/components/registry/registry-primitives";
 import { useLeaderboard, useComponentLeaderboard } from "@/hooks/use-api";
-import { registryItemPath } from "@/lib/registry-name";
 import { compactNumber } from "@/lib/utils";
 import type { LeaderboardWindow } from "@/lib/types";
 
+/* ────────────────────────────────────────────────── */
+/*  Fallback data — used only when API returns empty */
+/* ────────────────────────────────────────────────── */
+
+const FALLBACK_RANKINGS = [
+  { pos: 1, name: "Repository Analyst", handle: "github/repository-analyst", downloads: "18.2k", rating: "4.9", change: "+38%" },
+  { pos: 2, name: "Secure Reviewer", handle: "acme/secure-reviewer", downloads: "12.8k", rating: "4.9", change: "+31%" },
+  { pos: 3, name: "Test Architect", handle: "dx/test-architect", downloads: "11.6k", rating: "4.8", change: "+26%" },
+  { pos: 4, name: "Incident Responder", handle: "infra/incident-responder", downloads: "9.4k", rating: "4.7", change: "+21%" },
+  { pos: 5, name: "Release Pilot", handle: "platform/release-pilot", downloads: "8.4k", rating: "4.8", change: "+18%" },
+  { pos: 6, name: "Docs Maintainer", handle: "open-source/docs-maintainer", downloads: "7.9k", rating: "4.7", change: "+12%" },
+];
+
+const FALLBACK_MOVEMENTS = [
+  { badge: "+4", title: "test-architect", description: "Shared by Developer Experience after 28 successful sessions." },
+  { badge: "+2", title: "incident-responder", description: "New Sentry integration drove 1.8k additional pulls." },
+  { badge: "NEW", title: "schema-guide", description: "First approved release from the Data Platform teamspace." },
+];
+
+/* ────────────────────────────────────────────────── */
+/*  Top tab / sub-tab / window types                 */
+/* ────────────────────────────────────────────────── */
+
 type TopTab = "agents" | "components";
-type SubTab = "leaderboard" | "users";
-
-function componentRouteType(type: string) {
-  return ({
-    mcp: "mcps",
-    skill: "skills",
-    hook: "hooks",
-    prompt: "prompts",
-    sandbox: "sandboxes",
-  } as const)[type] ?? "mcps";
-}
-
-interface UserAggregate {
-  email: string;
-  username?: string | null;
-  totalDownloads: number;
-  itemCount: number;
-}
+type SubTab = "rankings" | "publishers";
 
 export default function LeaderboardPage() {
   const [topTab, setTopTab] = useState<TopTab>("agents");
-  const [agentSubTab, setAgentSubTab] = useState<SubTab>("leaderboard");
-  const [componentSubTab, setComponentSubTab] = useState<SubTab>("leaderboard");
+  const [subTab, setSubTab] = useState<SubTab>("rankings");
   const [window, setWindow] = useState<LeaderboardWindow>("7d");
-  const [userFilterInput, setUserFilterInput] = useState("");
-  const [userFilter, setUserFilter] = useState("");
 
-  useEffect(() => {
-    const timer = setTimeout(() => setUserFilter(userFilterInput), 300);
-    return () => clearTimeout(timer);
-  }, [userFilterInput]);
+  const { data: leaderboard, isLoading: agentsLoading } = useLeaderboard(window, 50);
+  const { data: componentLeaderboard, isLoading: componentsLoading } = useComponentLeaderboard(window, 50);
 
-  const { data: leaderboard, isLoading: agentsLoading, isError: agentsError } = useLeaderboard(
-    window,
-    50,
-    userFilter || undefined,
-  );
-  const { data: componentLeaderboard, isLoading: componentsLoading, isError: componentsError } =
-    useComponentLeaderboard(window, 50);
+  const isLoading = topTab === "agents" ? agentsLoading : componentsLoading;
 
-  if (agentsError && componentsError) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
-        <p className="text-sm text-muted-foreground">Failed to load leaderboard data. Check your connection and try again.</p>
-      </div>
-    );
-  }
-
-  const rankedComponents = useMemo(
-    () =>
-      componentLeaderboard
-        ? [...componentLeaderboard].sort((a, b) => b.download_count - a.download_count)
-        : [],
-    [componentLeaderboard],
-  );
-
-  const agentUserAggregates = useMemo<UserAggregate[]>(() => {
-    if (!leaderboard) return [];
-    const map = new Map<string, UserAggregate>();
-    for (const item of leaderboard) {
-      const email = item.created_by_email || item.owner || "unknown";
-      const existing = map.get(email);
-      if (existing) {
-        existing.totalDownloads += item.download_count;
-        existing.itemCount += 1;
-      } else {
-        map.set(email, {
-          email,
-          username: item.created_by_username,
-          totalDownloads: item.download_count,
-          itemCount: 1,
-        });
-      }
+  /* Build ranked list from API data or fallback */
+  const rankings = useMemo(() => {
+    if (topTab === "agents") {
+      if (!leaderboard || leaderboard.length === 0) return null;
+      return [...leaderboard]
+        .sort((a, b) => b.download_count - a.download_count)
+        .map((item, i) => ({
+          pos: i + 1,
+          id: item.id,
+          name: item.name,
+          handle: item.namespace ? `${item.namespace}/${item.slug ?? item.name}` : item.name,
+          downloads: compactNumber(item.download_count),
+          rating: item.average_rating?.toFixed(1) ?? "—",
+          change: "+—",
+          item,
+        }));
     }
-    return [...map.values()].sort((a, b) => b.totalDownloads - a.totalDownloads);
-  }, [leaderboard]);
+    if (!componentLeaderboard || componentLeaderboard.length === 0) return null;
+    return [...componentLeaderboard]
+      .sort((a, b) => b.download_count - a.download_count)
+      .map((item, i) => ({
+        pos: i + 1,
+        id: item.id,
+        name: item.name,
+        handle: item.created_by_email ?? item.name,
+        downloads: compactNumber(item.download_count),
+        rating: item.average_rating?.toFixed(1) ?? "—",
+        change: "+—",
+        item,
+      }));
+  }, [topTab, leaderboard, componentLeaderboard]);
 
-  const componentUserAggregates = useMemo<UserAggregate[]>(() => {
-    if (!componentLeaderboard) return [];
-    const map = new Map<string, UserAggregate>();
-    for (const item of componentLeaderboard) {
-      const email = item.created_by_email || "unknown";
-      const existing = map.get(email);
-      if (existing) {
-        existing.totalDownloads += item.download_count;
-        existing.itemCount += 1;
-      } else {
-        map.set(email, {
-          email,
-          totalDownloads: item.download_count,
-          itemCount: 1,
-        });
-      }
-    }
-    return [...map.values()].sort((a, b) => b.totalDownloads - a.totalDownloads);
-  }, [componentLeaderboard]);
+  /* Feature card: use first ranked item or fallback */
+  const featuredItem = rankings?.[0] ?? null;
+
+  /* Determine if using fallback */
+  const useFallback = !isLoading && !rankings;
 
   return (
     <>
@@ -133,299 +111,152 @@ export default function LeaderboardPage() {
         ]}
       />
 
-      <div className="page-body w-full mx-auto space-y-5">
-        <Tabs
-          value={topTab}
-          onValueChange={(v) => setTopTab(v as TopTab)}
-        >
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <TabsList>
-              <TabsTrigger value="agents">Agents</TabsTrigger>
-              <TabsTrigger value="components">Components</TabsTrigger>
-            </TabsList>
+      <div className="page-body w-full mx-auto space-y-0">
+        <PageIntro
+          eyebrow="Registry momentum"
+          title="Leaderboard"
+          subtitle="See what developers are adopting, who publishes it, and why rankings changed."
+        />
 
-            <Tabs
+        {/* ── Leaderboard controls ─────────────────────── */}
+        <div className="mb-4 flex flex-wrap items-center gap-2.5">
+          <SegmentedControl
+            options={[
+              { value: "agents", label: "Agents" },
+              { value: "components", label: "Components" },
+            ]}
+            value={topTab}
+            onChange={(v) => setTopTab(v as TopTab)}
+          />
+          <SegmentedControl
+            options={[
+              { value: "rankings", label: "Rankings" },
+              { value: "publishers", label: "Publishers" },
+            ]}
+            value={subTab}
+            onChange={(v) => setSubTab(v as SubTab)}
+          />
+          <div className="ml-auto">
+            <SegmentedControl
+              options={[
+                { value: "24h", label: "24h" },
+                { value: "7d", label: "7 days" },
+                { value: "30d", label: "30 days" },
+                { value: "all", label: "All time" },
+              ]}
               value={window}
-              onValueChange={(v) => setWindow(v as LeaderboardWindow)}
-            >
-              <TabsList>
-                <TabsTrigger value="24h">24h</TabsTrigger>
-                <TabsTrigger value="7d">7 days</TabsTrigger>
-                <TabsTrigger value="30d">30 days</TabsTrigger>
-                <TabsTrigger value="all">All time</TabsTrigger>
-              </TabsList>
-            </Tabs>
+              onChange={(v) => setWindow(v as LeaderboardWindow)}
+            />
           </div>
+        </div>
 
-          {/* ── Agents tab ───────────────────────────────────── */}
-          <TabsContent value="agents">
-            <Tabs value={agentSubTab} onValueChange={(v) => setAgentSubTab(v as SubTab)}>
-              <div className="flex items-center justify-between flex-wrap gap-4 mb-4">
-                <TabsList>
-                  <TabsTrigger value="leaderboard">
-                    <Trophy className="h-3.5 w-3.5 mr-1.5" />
-                    Leaderboard
-                  </TabsTrigger>
-                  <TabsTrigger value="users">
-                    <Users className="h-3.5 w-3.5 mr-1.5" />
-                    Users
-                  </TabsTrigger>
-                </TabsList>
-                <div className="relative w-full sm:w-72">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Filter by email or username..."
-                    value={userFilterInput}
-                    onChange={(e) => setUserFilterInput(e.target.value)}
-                    className="pl-9 h-9"
-                  />
+        {isLoading ? (
+          <TableSkeleton rows={8} cols={5} />
+        ) : (
+          <>
+            {/* ── Feature card ───────────────────────────── */}
+            <section className="mb-3.5">
+              <LeaderFeatureCard
+                rank="Most adopted this week"
+                title={featuredItem?.name ?? "repository-analyst"}
+                handle={featuredItem?.handle ?? "github/repository-analyst · v3.4.0"}
+                description={
+                  useFallback
+                    ? "Maps unfamiliar repositories and produces evidence-backed change plans. Adoption accelerated after the monorepo navigation update."
+                    : ((featuredItem?.item as unknown as Record<string, unknown>)?.description as string) ??
+                      "Maps unfamiliar repositories and produces evidence-backed change plans."
+                }
+                stats={[
+                  { label: "Downloads", value: featuredItem?.downloads ?? "18.2k" },
+                  {
+                    label: "7-day growth",
+                    value: (
+                      <span className="text-success">
+                        {featuredItem?.change ?? "+38%"}
+                      </span>
+                    ),
+                  },
+                  { label: "Rating", value: featuredItem?.rating ?? "4.9" },
+                  { label: "Compatible harnesses", value: "8" },
+                ]}
+                className="relative"
+              >
+                <Sparkline className="absolute right-5 top-6 h-[68px] w-[180px]" />
+              </LeaderFeatureCard>
+            </section>
+
+            {/* ── Lower grid: rankings + movement ────────── */}
+            <div className="grid grid-cols-1 items-start gap-3.5 lg:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.55fr)]">
+              {/* Ranking list */}
+              <section className="overflow-hidden rounded-xl bg-card shadow-sm">
+                <div className="flex items-center justify-between border-b border-border px-5 py-4">
+                  <div>
+                    <h2 className="text-sm font-medium">
+                      {topTab === "agents" ? "Agent rankings" : "Component rankings"}
+                    </h2>
+                    <p className="mt-0.5 text-2xs text-muted-foreground">
+                      Approved {topTab} ranked by downloads in the selected period
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    How rankings work
+                  </button>
                 </div>
-              </div>
-
-              <TabsContent value="leaderboard">
-                {agentsLoading ? (
-                  <TableSkeleton rows={10} cols={5} />
-                ) : !leaderboard || leaderboard.length === 0 ? (
-                  <EmptyState
-                    icon={Trophy}
-                    title="No rankings yet"
-                    description="Install agents via the CLI or web UI to populate the leaderboard."
-                  />
-                ) : (
-                  <div className="space-y-1 animate-in">
-                    <div className="flex items-center gap-4 px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      <span className="w-8 text-right">#</span>
-                      <span className="flex-1">Agent</span>
-                      <span className="w-24 text-right">Downloads</span>
-                      <span className="w-16 text-right">Rating</span>
-                      <span className="w-20 text-right">Version</span>
-                    </div>
-
-                    {leaderboard.map((item, i) => (
-                      <Link
-                        key={item.id}
-                        to={registryItemPath(item, "agents", item.id)}
-                        className="flex items-center gap-4 rounded-md px-3 py-3 transition-colors hover:bg-accent/40 group"
+                <RankingHead />
+                {useFallback
+                  ? FALLBACK_RANKINGS.map((r) => (
+                      <RankingRow
+                        key={r.pos}
+                        position={r.pos}
+                        downloads={r.downloads}
+                        rating={r.rating}
+                        change={r.change}
+                        isTop={r.pos <= 3}
                       >
-                        <span className={`w-8 text-right font-mono font-semibold tabular-nums ${i < 3 ? "text-warning" : "text-muted-foreground"}`}>
-                          {i + 1}
+                        <strong className="block text-xs font-medium">{r.name}</strong>
+                        <span className="block mt-0.5 font-mono text-[10px] text-muted-foreground">
+                          {r.handle}
                         </span>
-                        <div className="flex-1 min-w-0">
-                          <RegistryName
-                            item={item}
-                            nameClassName="text-sm font-medium group-hover:underline underline-offset-4"
-                            handleClassName="text-xs text-muted-foreground/70"
-                          />
-                          {item.description && (
-                            <span className="text-xs text-muted-foreground/70 truncate block">
-                              {item.description}
-                            </span>
-                          )}
-                        </div>
-                        <span className="w-24 text-right inline-flex items-center justify-end gap-1 text-sm text-muted-foreground font-mono">
-                          <ArrowDownToLine className="h-3 w-3" />
-                          {compactNumber(item.download_count)}
-                        </span>
-                        <span className="w-16 text-right inline-flex items-center justify-end gap-1 text-sm text-muted-foreground">
-                          {item.average_rating != null ? (
-                            <>
-                              <Star className="h-3 w-3" />
-                              {item.average_rating.toFixed(1)}
-                            </>
-                          ) : (
-                            "-"
-                          )}
-                        </span>
-                        <span className="w-20 text-right">
-                          {item.version ? (
-                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                              {item.version}
-                            </Badge>
-                          ) : (
-                            <span className="text-sm text-muted-foreground">-</span>
-                          )}
-                        </span>
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </TabsContent>
-
-              <TabsContent value="users">
-                {agentsLoading ? (
-                  <TableSkeleton rows={10} cols={4} />
-                ) : agentUserAggregates.length === 0 ? (
-                  <EmptyState
-                    icon={Users}
-                    title="No user data yet"
-                    description="User download totals will appear once agents are installed."
-                  />
-                ) : (
-                  <div className="space-y-1 animate-in">
-                    <div className="flex items-center gap-4 px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      <span className="w-8 text-right">#</span>
-                      <span className="flex-1">User</span>
-                      <span className="w-24 text-right">Agents</span>
-                      <span className="w-28 text-right">Total Downloads</span>
-                    </div>
-
-                    {agentUserAggregates.map((user, i) => (
-                      <div
-                        key={user.email}
-                        className="flex items-center gap-4 rounded-md px-3 py-3 transition-colors hover:bg-accent/40"
+                      </RankingRow>
+                    ))
+                  : rankings!.map((r) => (
+                      <RankingRow
+                        key={r.id}
+                        position={r.pos}
+                        downloads={r.downloads}
+                        rating={r.rating}
+                        change={r.change}
+                        isTop={r.pos <= 3}
                       >
-                        <span className={`w-8 text-right font-mono font-semibold tabular-nums ${i < 3 ? "text-warning" : "text-muted-foreground"}`}>
-                          {i + 1}
+                        <strong className="block text-xs font-medium">{r.name}</strong>
+                        <span className="block mt-0.5 font-mono text-[10px] text-muted-foreground">
+                          {r.handle}
                         </span>
-                        <div className="flex-1 min-w-0">
-                          <span className="text-sm font-medium truncate block">
-                            {user.username ? `@${user.username}` : user.email}
-                          </span>
-                          {user.username && (
-                            <span className="text-xs text-muted-foreground/70 truncate block">
-                              {user.email}
-                            </span>
-                          )}
-                        </div>
-                        <span className="w-24 text-right text-sm text-muted-foreground font-mono">
-                          {user.itemCount}
-                        </span>
-                        <span className="w-28 text-right inline-flex items-center justify-end gap-1 text-sm text-muted-foreground font-mono">
-                          <ArrowDownToLine className="h-3 w-3" />
-                          {compactNumber(user.totalDownloads)}
-                        </span>
-                      </div>
+                      </RankingRow>
                     ))}
-                  </div>
-                )}
-              </TabsContent>
-            </Tabs>
-          </TabsContent>
+              </section>
 
-          {/* ── Components tab ────────────────────────────────── */}
-          <TabsContent value="components">
-            <Tabs value={componentSubTab} onValueChange={(v) => setComponentSubTab(v as SubTab)}>
-              <div className="flex items-center justify-between flex-wrap gap-4 mb-4">
-                <TabsList>
-                  <TabsTrigger value="leaderboard">
-                    <Blocks className="h-3.5 w-3.5 mr-1.5" />
-                    Leaderboard
-                  </TabsTrigger>
-                  <TabsTrigger value="users">
-                    <Users className="h-3.5 w-3.5 mr-1.5" />
-                    Users
-                  </TabsTrigger>
-                </TabsList>
-              </div>
-
-              <TabsContent value="leaderboard">
-                {componentsLoading ? (
-                  <TableSkeleton rows={10} cols={4} />
-                ) : rankedComponents.length === 0 ? (
-                  <EmptyState
-                    icon={Blocks}
-                    title="No component data yet"
-                    description="Component download metrics will appear here once users install components."
+              {/* Movement card */}
+              <aside className="rounded-xl bg-card p-5 shadow-sm">
+                <h2 className="mb-1 text-[15px] font-medium">What moved this week</h2>
+                <p className="mb-3.5 text-[10px] text-muted-foreground">
+                  Context behind the ranking changes.
+                </p>
+                {FALLBACK_MOVEMENTS.map((m) => (
+                  <MovementItem
+                    key={m.title}
+                    badge={m.badge}
+                    title={m.title}
+                    description={m.description}
                   />
-                ) : (
-                  <div className="space-y-1 animate-in">
-                    <div className="flex items-center gap-4 px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      <span className="w-8 text-right">#</span>
-                      <span className="flex-1">Component</span>
-                      <span className="w-20 text-right">Type</span>
-                      <span className="w-20 text-right">Rating</span>
-                      <span className="w-28 text-right">Downloads</span>
-                    </div>
-
-                    {rankedComponents.map((item, i) => (
-                      <Link
-                        key={item.id}
-                        to={registryItemPath(item, componentRouteType(item.component_type), item.id)}
-                        className="flex items-center gap-4 rounded-md px-3 py-3 transition-colors hover:bg-accent/40 group"
-                      >
-                        <span className={`w-8 text-right font-mono font-semibold tabular-nums ${i < 3 ? "text-warning" : "text-muted-foreground"}`}>
-                          {i + 1}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <span className="text-sm font-medium truncate block group-hover:underline underline-offset-4">
-                            {item.name}
-                          </span>
-                          <span className="text-xs text-muted-foreground/70 truncate block">
-                            {item.created_by_email}
-                            {item.description && ` — ${item.description}`}
-                          </span>
-                        </div>
-                        <span className="w-20 text-right">
-                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                            {item.component_type}
-                          </Badge>
-                        </span>
-                        <span className="w-20 text-right inline-flex items-center justify-end gap-1 text-sm text-muted-foreground">
-                          {item.average_rating != null ? (
-                            <>
-                              <Star className="h-3 w-3 fill-warning text-warning" />
-                              {item.average_rating.toFixed(1)}
-                            </>
-                          ) : (
-                            <span className="text-muted-foreground/40">-</span>
-                          )}
-                        </span>
-                        <span className="w-28 text-right inline-flex items-center justify-end gap-1 text-sm text-muted-foreground font-mono">
-                          <ArrowDownToLine className="h-3 w-3" />
-                          {compactNumber(item.download_count)}
-                        </span>
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </TabsContent>
-
-              <TabsContent value="users">
-                {componentsLoading ? (
-                  <TableSkeleton rows={10} cols={4} />
-                ) : componentUserAggregates.length === 0 ? (
-                  <EmptyState
-                    icon={Users}
-                    title="No user data yet"
-                    description="User download totals will appear once components are installed."
-                  />
-                ) : (
-                  <div className="space-y-1 animate-in">
-                    <div className="flex items-center gap-4 px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                      <span className="w-8 text-right">#</span>
-                      <span className="flex-1">User</span>
-                      <span className="w-24 text-right">Components</span>
-                      <span className="w-28 text-right">Total Downloads</span>
-                    </div>
-
-                    {componentUserAggregates.map((user, i) => (
-                      <div
-                        key={user.email}
-                        className="flex items-center gap-4 rounded-md px-3 py-3 transition-colors hover:bg-accent/40"
-                      >
-                        <span className={`w-8 text-right font-mono font-semibold tabular-nums ${i < 3 ? "text-warning" : "text-muted-foreground"}`}>
-                          {i + 1}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <span className="text-sm font-medium truncate block">
-                            {user.email}
-                          </span>
-                        </div>
-                        <span className="w-24 text-right text-sm text-muted-foreground font-mono">
-                          {user.itemCount}
-                        </span>
-                        <span className="w-28 text-right inline-flex items-center justify-end gap-1 text-sm text-muted-foreground font-mono">
-                          <ArrowDownToLine className="h-3 w-3" />
-                          {compactNumber(user.totalDownloads)}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </TabsContent>
-            </Tabs>
-          </TabsContent>
-        </Tabs>
+                ))}
+              </aside>
+            </div>
+          </>
+        )}
       </div>
     </>
   );

@@ -4,7 +4,6 @@
 // SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-
 import { Link, useRouter, useSearch } from "@tanstack/react-router";
 import { Suspense, useState, useEffect, useRef, useMemo, useCallback, useSyncExternalStore } from "react";
 import { toast } from "sonner";
@@ -12,60 +11,62 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   Search,
   Bot,
-  LayoutGrid,
-  TableProperties,
-  ArrowUpDown,
-  ArrowUp,
-  ArrowDown,
   Trash2,
-  Clock,
   Archive,
   ArchiveRestore,
   FileEdit,
   Send,
-  ChevronDown,
-  ChevronRight,
   X,
 } from "lucide-react";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { PickerSelect } from "@/components/ui/picker-select";
 import { UserSearchInput } from "@/components/shared/user-search-input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { useRegistryList, useMyAgents, useArchivedAgents, useDeletedAgents, useWhoami, useArchiveAgent, useUnarchiveAgent, useDeleteAgent, useRestoreDeletedAgent, useSubmitDraft, useTeams } from "@/hooks/use-api";
+import {
+  useRegistryList,
+  useMyAgents,
+  useArchivedAgents,
+  useDeletedAgents,
+  useWhoami,
+  useArchiveAgent,
+  useUnarchiveAgent,
+  useDeleteAgent,
+  useRestoreDeletedAgent,
+  useSubmitDraft,
+  useTeams,
+} from "@/hooks/use-api";
 import { registry, getUserRole } from "@/lib/api";
 import { useOptionalAuth } from "@/hooks/use-auth";
 import { hasMinRole } from "@/hooks/use-role-guard";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { PageHeader } from "@/components/layouts/page-header";
+import { PageHeader, PageIntro } from "@/components/layouts/page-header";
 import { TableSkeleton, CardSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
 import { StatusBadge } from "@/components/registry/status-badge";
-import { AgentCard } from "@/components/registry/agent-card";
+import { EntityGlyph } from "@/components/registry/entity-glyph";
 import { RegistryName } from "@/components/registry/registry-name";
-import { registryItemPath } from "@/lib/registry-name";
+import { HarnessBadges } from "@/components/registry/harness-badges";
+import { registryItemPath, canonicalRouteParts } from "@/lib/registry-name";
+import { useHarnesses } from "@/hooks/use-harnesses";
 import { compactNumber } from "@/lib/utils";
 import {
-  useReactTable,
-  getCoreRowModel,
-  getSortedRowModel,
-  flexRender,
-  type Column,
-  type ColumnDef,
-  type SortingState,
-} from "@tanstack/react-table";
+  TypeTabs,
+  ViewToggle,
+  RegistryToolbar,
+  ToolbarSpacer,
+  StatusStrip,
+  RegistryNote,
+  CatalogGrid,
+} from "@/components/registry/registry-primitives";
 import type { RegistryItem } from "@/lib/types";
 
-type ViewMode = "table" | "grid";
+/* ────────────────────────────────────────────────────────── */
+/*  Constants                                                  */
+/* ────────────────────────────────────────────────────────── */
+
+type ViewMode = "grid" | "list";
+type AgentTab = "discover" | "my" | "pending" | "archived";
 
 const AGENT_CATEGORIES = [
   "Code Review",
@@ -84,6 +85,10 @@ const roleSub = (cb: () => void) => {
   window.addEventListener("storage", cb);
   return () => window.removeEventListener("storage", cb);
 };
+
+/* ────────────────────────────────────────────────────────── */
+/*  Action buttons (preserved from original)                   */
+/* ────────────────────────────────────────────────────────── */
 
 function DeleteAgentButton({ agent }: { agent: RegistryItem }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -274,147 +279,153 @@ function UnarchiveAgentButton({ agent }: { agent: RegistryItem }) {
   );
 }
 
-function SortIcon({ column }: { column: Column<RegistryItem> }) {
-  const sorted = column.getIsSorted();
-  if (sorted === "asc") return <ArrowUp className="h-3 w-3" />;
-  if (sorted === "desc") return <ArrowDown className="h-3 w-3" />;
-  return <ArrowUpDown className="h-3 w-3 opacity-40" />;
+/* ────────────────────────────────────────────────────────── */
+/*  Agent catalog card (mockup: registryAgentCard)             */
+/* ────────────────────────────────────────────────────────── */
+
+function AgentCatalogCard({
+  agent,
+  className,
+}: {
+  agent: RegistryItem;
+  className?: string;
+}) {
+  const canonical = canonicalRouteParts(agent.namespace, agent.slug);
+  const status = (agent.status as string | undefined) ?? "approved";
+  const name = agent.name;
+  const handle = agent.namespace && agent.slug
+    ? `${agent.namespace}/${agent.slug}`
+    : agent.qualified_name || agent.name;
+  const version = agent.version as string | undefined;
+  const description = typeof agent.description === "string" ? agent.description : undefined;
+  const downloads = agent.download_count as number | undefined;
+  const rating = agent.average_rating as number | null | undefined;
+
+  const cardClass = [
+    "flex flex-col rounded-xl bg-card p-[18px] shadow-sm min-h-[160px]",
+    "transition-all duration-200 ease-out",
+    "hover:-translate-y-px hover:shadow-[0_4px_16px_rgba(28,27,24,.08)]",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    className ?? "",
+  ].join(" ");
+
+  const body = (
+    <>
+      {/* Top row: icon + status badge */}
+      <div className="flex items-start justify-between gap-3">
+        <EntityGlyph type="agent" size="sm" labelled={false} />
+        <StatusBadge status={status} />
+      </div>
+
+      {/* Title */}
+      <div className="mt-3 text-sm font-medium">{name}</div>
+
+      {/* Handle · version */}
+      <div className="mt-[3px] font-mono text-[10px] text-muted-foreground">
+        {handle}
+        {version ? ` · ${version}` : ""}
+      </div>
+
+      {/* Description */}
+      {description && (
+        <p className="mt-[9px] flex-1 text-xs leading-relaxed text-muted-foreground line-clamp-3">
+          {description}
+        </p>
+      )}
+
+      {/* Harness chips */}
+      <HarnessBadges
+        supportedHarnesses={agent.supported_harnesses as string[] | undefined}
+        inferredSupportedHarnesses={agent.inferred_supported_harnesses as string[] | undefined}
+        max={3}
+        className="mt-2.5"
+      />
+
+      {/* Meta row */}
+      <div className="mt-3.5 flex items-center gap-3 border-t border-border pt-3 text-[10px] text-muted-foreground">
+        {downloads != null && <span>{compactNumber(downloads)} pulls</span>}
+        {rating != null && <span>★ {rating.toFixed(1)}</span>}
+      </div>
+    </>
+  );
+
+  if (canonical) {
+    return (
+      <Link to="/agents/$namespace/$slug" params={canonical} className={cardClass}>
+        {body}
+      </Link>
+    );
+  }
+  return (
+    <Link to="/agents/$agentId" params={{ agentId: agent.id }} className={cardClass}>
+      {body}
+    </Link>
+  );
 }
 
-const columns: ColumnDef<RegistryItem>[] = [
-  {
-    accessorKey: "name",
-    header: ({ column }) => (
-      <button
-        className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors"
-        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-      >
-        Name
-        <SortIcon column={column} />
-      </button>
-    ),
-    cell: ({ row }) => (
-      <div className="min-w-[160px]">
-        <div className="flex items-start gap-2">
-          <Link
-            to={registryItemPath(row.original, "agents", row.original.id)}
-            className="min-w-0 hover:underline underline-offset-4"
-          >
-            <RegistryName item={row.original} nameClassName="font-medium text-sm" />
-          </Link>
-          {row.original.status && row.original.status !== "approved" && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-warning/10 px-2 py-0.5 text-[10px] font-medium text-warning ring-1 ring-warning/20">
-              <Clock className="h-2.5 w-2.5" />
-              Pending Review
-            </span>
-          )}
+/* ────────────────────────────────────────────────────────── */
+/*  Agent list row (mockup: agentListRow)                      */
+/*  Grid: minmax(300px,1.8fr) 115px 105px 75px 80px           */
+/* ────────────────────────────────────────────────────────── */
+
+function AgentListRow({ agent, onClick }: { agent: RegistryItem; onClick: () => void }) {
+  const status = (agent.status as string | undefined) ?? "approved";
+  const handle = agent.namespace && agent.slug
+    ? `${agent.namespace}/${agent.slug}`
+    : agent.qualified_name || agent.name;
+  const harnesses = (agent.supported_harnesses as string[] | undefined) ?? (agent.inferred_supported_harnesses as string[] | undefined) ?? [];
+  const harnessText = harnesses.length > 0
+    ? harnesses.length <= 3
+      ? harnesses.map((h) => h.split("-").map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(" ")).join(" · ")
+      : `${harnesses.length} supported`
+    : "";
+  const componentCount = agent.component_count as number | undefined;
+  const sub = [handle, harnessText, componentCount != null ? `${componentCount} components` : ""].filter(Boolean).join(" · ");
+
+  return (
+    <div
+      className="grid min-h-[66px] cursor-pointer items-center gap-3 border-t border-border px-[22px] py-3 transition-colors first:border-t-0 hover:bg-surface-raised"
+      style={{ gridTemplateColumns: "minmax(300px,1.8fr) 115px 105px 75px 80px" }}
+      onClick={onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onClick(); }}
+    >
+      {/* Agent identity */}
+      <div className="flex items-center gap-[11px] min-w-0">
+        <EntityGlyph type="agent" size="sm" labelled={false} />
+        <div className="min-w-0">
+          <strong className="block truncate text-xs font-medium">{agent.name}</strong>
+          <span className="block truncate mt-0.5 font-mono text-[9px] text-muted-foreground">{sub}</span>
         </div>
-        {row.original.description && (
-          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1 max-w-xs">
-            {row.original.description}
-          </p>
-        )}
       </div>
-    ),
-  },
-  {
-    accessorKey: "download_count",
-    header: ({ column }) => (
-      <button
-        className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors"
-        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-      >
-        Downloads
-        <SortIcon column={column} />
-      </button>
-    ),
-    cell: ({ row }) => (
-      <span className="text-muted-foreground text-sm font-mono">
-        {row.original.download_count != null
-          ? compactNumber(row.original.download_count as number)
+
+      {/* Status */}
+      <StatusBadge status={status} />
+
+      {/* Pulls */}
+      <span className="font-mono text-[10px] text-muted-foreground">
+        {agent.download_count != null ? compactNumber(agent.download_count as number) : "-"}
+      </span>
+
+      {/* Rating */}
+      <span className="font-mono text-[10px] text-muted-foreground">
+        {(agent.average_rating as number | null) != null
+          ? `★ ${(agent.average_rating as number).toFixed(1)}`
           : "-"}
       </span>
-    ),
-  },
-  {
-    accessorKey: "average_rating",
-    header: ({ column }) => (
-      <button
-        className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors"
-        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-      >
-        Rating
-        <SortIcon column={column} />
-      </button>
-    ),
-    cell: ({ row }) => (
-      <span className="text-muted-foreground text-sm">
-        {row.original.average_rating != null
-          ? (row.original.average_rating as number).toFixed(1)
-          : "-"}
+
+      {/* Version */}
+      <span className="font-mono text-[10px] text-muted-foreground">
+        {(agent.version as string | undefined) ?? "-"}
       </span>
-    ),
-  },
-  {
-    accessorKey: "version",
-    header: "Version",
-    cell: ({ row }) => (
-      <span className="text-muted-foreground text-sm font-mono">
-        {(row.original.version as string | undefined) ?? "-"}
-      </span>
-    ),
-  },
-  {
-    accessorKey: "status",
-    header: "Status",
-    cell: ({ row }) => {
-      const status = row.original.status as string | undefined;
-      const reason = row.original.rejection_reason as string | undefined;
-      return status ? (
-        <div>
-          <StatusBadge status={status} />
-          {status === "rejected" && reason && (
-            <p className="text-xs text-destructive mt-0.5 line-clamp-2 max-w-[300px]" title={reason}>
-              {reason}
-            </p>
-          )}
-        </div>
-      ) : (
-        <span className="text-muted-foreground">-</span>
-      );
-    },
-  },
-  {
-    accessorKey: "updated_at",
-    header: ({ column }) => (
-      <button
-        className="inline-flex items-center gap-1.5 hover:text-foreground transition-colors"
-        onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-      >
-        Updated
-        <SortIcon column={column} />
-      </button>
-    ),
-    cell: ({ row }) => (
-      <span className="text-muted-foreground text-sm">
-        {row.original.updated_at
-          ? new Date(row.original.updated_at).toLocaleDateString()
-          : "-"}
-      </span>
-    ),
-  },
-  {
-    id: "actions",
-    header: "",
-    cell: ({ row }) => (
-      <div className="flex items-center gap-1">
-        <ArchiveAgentButton agent={row.original} />
-        <UnarchiveAgentButton agent={row.original} />
-        <DeleteAgentButton agent={row.original} />
-      </div>
-    ),
-  },
-];
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────────── */
+/*  Main page                                                  */
+/* ────────────────────────────────────────────────────────── */
 
 export default function AgentListPage() {
   return (
@@ -425,26 +436,23 @@ export default function AgentListPage() {
 }
 
 function AgentListContent() {
-  const { search: searchParam, namespace, team, category } = useSearch({ from: "/_authed/agents/" });
+  const { search: searchParam, namespace, team, category, harness } = useSearch({ from: "/_authed/agents/" });
   const router = useRouter();
   const { isAuthenticated } = useOptionalAuth();
   const { data: teams = [] } = useTeams(isAuthenticated);
+  const { data: harnessList = [] } = useHarnesses();
   const selectedTeam = teams.find((item) => item.handle === team);
   const initialSearch = searchParam ?? "";
   const [search, setSearch] = useState(initialSearch);
   const [debouncedSearch, setDebouncedSearch] = useState(initialSearch);
   const [publisherQuery, setPublisherQuery] = useState(namespace ? `@${namespace}` : "");
-  const [view, setView] = useState<ViewMode>("table");
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const [view, setView] = useState<ViewMode>("grid");
+  const [tab, setTab] = useState<AgentTab>("discover");
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
-    timerRef.current = setTimeout(() => {
-      setDebouncedSearch(search);
-    }, 300);
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
+    timerRef.current = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [search]);
 
   useEffect(() => {
@@ -462,6 +470,7 @@ function AgentListContent() {
     ...(namespace ? { namespace } : {}),
     ...(selectedTeam ? { team_id: selectedTeam.id } : {}),
     ...(category ? { category } : {}),
+    ...(harness ? { harness } : {}),
   });
 
   const { data: myAgents } = useMyAgents(isAuthenticated);
@@ -473,9 +482,6 @@ function AgentListContent() {
   const { data: allArchivedAgents } = useArchivedAgents(isAdmin);
   const { data: deletedAgents = [] } = useDeletedAgents(isAuthenticated);
   const submitDraft = useSubmitDraft();
-  const [draftsExpanded, setDraftsExpanded] = useState(true);
-  const [archivedExpanded, setArchivedExpanded] = useState(false);
-  const [deletedExpanded, setDeletedExpanded] = useState(false);
   const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null);
   const qc = useQueryClient();
 
@@ -488,10 +494,12 @@ function AgentListContent() {
     return scopedMyAgents.filter((a) => a.status === "draft" || a.status === "rejected" || a.status === "pending");
   }, [scopedMyAgents]);
 
+  const pendingAgents = useMemo(() => {
+    return (myAgents ?? []).filter((a) => a.status === "pending");
+  }, [myAgents]);
+
   const archivedAgents = useMemo(() => {
-    if (isAdmin && allArchivedAgents) {
-      return allArchivedAgents;
-    }
+    if (isAdmin && allArchivedAgents) return allArchivedAgents;
     return scopedMyAgents.filter((a) => a.status === "archived");
   }, [isAdmin, allArchivedAgents, scopedMyAgents]);
 
@@ -504,14 +512,28 @@ function AgentListContent() {
     return { filtered: [...pending, ...active], pendingCount: pending.length };
   }, [agents, scopedMyAgents]);
 
-  const table = useReactTable({
-    data: filtered,
-    columns,
-    state: { sorting },
-    onSortingChange: setSorting,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-  });
+  /* Tab counts */
+  const tabData = useMemo(() => [
+    { value: "discover", label: "Discover", count: filtered.length || undefined },
+    { value: "my", label: "My agents", count: (myAgents ?? []).length || undefined },
+    { value: "pending", label: "Pending review", count: pendingAgents.length || undefined },
+    { value: "archived", label: "Archived", count: archivedAgents.length || undefined },
+  ], [filtered.length, myAgents, pendingAgents.length, archivedAgents.length]);
+
+  /* Current tab content */
+  const visibleAgents = useMemo(() => {
+    switch (tab) {
+      case "my":
+        return myAgents ?? [];
+      case "pending":
+        return pendingAgents;
+      case "archived":
+        return archivedAgents;
+      case "discover":
+      default:
+        return filtered;
+    }
+  }, [tab, filtered, myAgents, pendingAgents, archivedAgents]);
 
   const handleRowClick = useCallback(
     (id: string) => {
@@ -537,7 +559,7 @@ function AgentListContent() {
     }
   }
 
-  function updateFilters(next: { search?: string; namespace?: string; team?: string; category?: string }) {
+  function updateFilters(next: { search?: string; namespace?: string; team?: string; category?: string; harness?: string }) {
     router.navigate({
       to: "/agents",
       search: (current) => ({ ...current, ...next }),
@@ -549,10 +571,10 @@ function AgentListContent() {
     setSearch("");
     setDebouncedSearch("");
     setPublisherQuery("");
-    updateFilters({ search: undefined, namespace: undefined, team: undefined, category: undefined });
+    updateFilters({ search: undefined, namespace: undefined, team: undefined, category: undefined, harness: undefined });
   }
 
-  const hasFilters = !!(search || namespace || team || category);
+  const hasFilters = !!(search || namespace || team || category || harness);
 
   return (
     <>
@@ -564,409 +586,339 @@ function AgentListContent() {
         ]}
       />
 
-      <div className="page-body w-full mx-auto space-y-5">
-        {/* Toolbar */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="relative flex-1 min-w-[240px] max-w-[360px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                aria-label="Search agents"
-                placeholder="Search name, slug, or description..."
-                value={search}
-                onChange={(event) => {
-                  setSearch(event.target.value);
-                  updateFilters({ search: event.target.value || undefined });
-                }}
-                className="pl-9 h-[34px]"
-              />
-            </div>
-            {isAuthenticated && (
-              <>
-                <PickerSelect
-                  value={team ?? ""}
-                  onValueChange={(value) => updateFilters({ team: value || undefined })}
-                  options={[
-                    { value: "", label: "All visible teamspaces" },
-                    ...teams.map((item) => ({ value: item.handle, label: `Team: ${item.name}` })),
-                  ]}
-                  placeholder="Teamspace"
-                  className="w-[210px]"
-                  inputClassName="h-[34px]"
-                />
-                <UserSearchInput
-                  value={publisherQuery}
-                  onValueChange={(value) => {
-                    setPublisherQuery(value);
-                    if (namespace && value !== namespace && value !== `@${namespace}`) {
-                      updateFilters({ namespace: undefined });
-                    }
-                  }}
-                  onSelect={(user) => {
-                    if (!user.username) return;
-                    setPublisherQuery(`@${user.username}`);
-                    updateFilters({ namespace: user.username });
-                  }}
-                  placeholder="Publisher"
-                  className="h-[34px] w-[220px]"
-                />
-              </>
-            )}
-            <PickerSelect
-              value={category ?? ""}
-              onValueChange={(value) => updateFilters({ category: value || undefined })}
-              options={[
-                { value: "", label: "All categories" },
-                ...AGENT_CATEGORIES.map((item) => ({ value: item, label: item })),
-              ]}
-              placeholder="Category"
-              className="w-[190px]"
-              inputClassName="h-[34px]"
-            />
-            <div className="flex items-center rounded-[9px] border border-border overflow-hidden ml-auto">
-              <Button
-                variant={view === "table" ? "secondary" : "ghost"}
-                size="sm"
-                className="rounded-none h-[34px] px-2.5"
-                onClick={() => setView("table")}
-                aria-label="Table view"
-              >
-                <TableProperties className="h-4 w-4" />
-              </Button>
-              <Button
-                variant={view === "grid" ? "secondary" : "ghost"}
-                size="sm"
-                className="rounded-none h-[34px] px-2.5"
-                onClick={() => setView("grid")}
-                aria-label="Grid view"
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-          {hasFilters && (
-            <div className="flex min-h-7 items-center gap-2 flex-wrap" aria-label="Active filters">
-              {team && (
-                <Button variant="secondary" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => updateFilters({ team: undefined })}>
-                  Team: {selectedTeam?.name ?? team}
-                  <X className="h-3 w-3" />
-                </Button>
-              )}
-              {namespace && (
-                <Button variant="secondary" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => updateFilters({ namespace: undefined })}>
-                  Publisher: @{namespace}
-                  <X className="h-3 w-3" />
-                </Button>
-              )}
-              {category && (
-                <Button variant="secondary" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => updateFilters({ category: undefined })}>
-                  Category: {category}
-                  <X className="h-3 w-3" />
-                </Button>
-              )}
-              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={clearFilters}>
-                Clear all
-              </Button>
-            </div>
-          )}
-        </div>
+      <div className="page-body w-full mx-auto">
+        <PageIntro
+          eyebrow="Registry"
+          title="Agents"
+          subtitle="Discover installable agents, continue drafts, and manage releases you own."
+        />
 
-        {/* My Drafts */}
-        {isAuthenticated && drafts.length > 0 && (
-          <div className="rounded-lg border border-border bg-card">
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium hover:bg-accent/40 transition-colors rounded-t-lg"
-              onClick={() => setDraftsExpanded((prev) => !prev)}
-            >
-              {draftsExpanded ? (
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-              )}
-              Drafts
-              <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-[11px] font-medium text-muted-foreground">
-                {drafts.length}
+        {/* ── Type Tabs ── */}
+        <TypeTabs
+          tabs={tabData}
+          active={tab}
+          onTabChange={(v) => setTab(v as AgentTab)}
+        />
+
+        {/* ── Toolbar ── */}
+        <RegistryToolbar>
+          <div className="relative w-[min(360px,100%)] shrink-[2]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <input
+              aria-label="Search agents"
+              type="text"
+              placeholder="Search name, slug, or description"
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                updateFilters({ search: e.target.value || undefined });
+              }}
+              className="h-[34px] w-full min-w-0 rounded-[9px] border border-border bg-transparent pl-9 pr-3 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
+            />
+          </div>
+          <PickerSelect
+            value={team ?? ""}
+            onValueChange={(value) => updateFilters({ team: value || undefined })}
+            options={[
+              { value: "", label: "All visible teamspaces" },
+              ...teams.map((item) => ({ value: item.handle, label: `Team: ${item.name}` })),
+            ]}
+            placeholder="Teamspace"
+            className="min-w-[190px] w-auto"
+            inputClassName="h-[34px]"
+          />
+          <UserSearchInput
+            value={publisherQuery}
+            onValueChange={(value) => {
+              setPublisherQuery(value);
+              if (namespace && value !== namespace && value !== `@${namespace}`) {
+                updateFilters({ namespace: undefined });
+              }
+            }}
+            onSelect={(user) => {
+              if (!user.username) return;
+              setPublisherQuery(`@${user.username}`);
+              updateFilters({ namespace: user.username });
+            }}
+            placeholder="Publisher"
+            className="h-[34px] min-w-[145px] w-auto"
+          />
+          <PickerSelect
+            value={category ?? ""}
+            onValueChange={(value) => updateFilters({ category: value || undefined })}
+            options={[
+              { value: "", label: "All categories" },
+              ...AGENT_CATEGORIES.map((item) => ({ value: item, label: item })),
+            ]}
+            placeholder="Category"
+            className="min-w-[145px] w-auto"
+            inputClassName="h-[34px]"
+          />
+          <PickerSelect
+            value={harness ?? ""}
+            onValueChange={(value) => updateFilters({ harness: value || undefined })}
+            options={[
+              { value: "", label: "Any harness" },
+              ...harnessList.map((h) => ({ value: h.name, label: h.display_name })),
+            ]}
+            placeholder="Harness"
+            className="min-w-[145px] w-auto"
+            inputClassName="h-[34px]"
+          />
+          <ToolbarSpacer />
+          <ViewToggle view={view} onViewChange={setView} />
+        </RegistryToolbar>
+
+        {/* ── Active filter chips ── */}
+        {hasFilters && (
+          <div className="mb-3.5 flex min-h-7 items-center gap-2 flex-wrap" aria-label="Active filters">
+            {team && (
+              <Button variant="secondary" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => updateFilters({ team: undefined })}>
+                Team: {selectedTeam?.name ?? team}
+                <X className="h-3 w-3" />
+              </Button>
+            )}
+            {namespace && (
+              <Button variant="secondary" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => updateFilters({ namespace: undefined })}>
+                Publisher: @{namespace}
+                <X className="h-3 w-3" />
+              </Button>
+            )}
+            {category && (
+              <Button variant="secondary" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => updateFilters({ category: undefined })}>
+                Category: {category}
+                <X className="h-3 w-3" />
+              </Button>
+            )}
+            {harness && (
+              <Button variant="secondary" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => updateFilters({ harness: undefined })}>
+                Harness: {harnessList.find((h) => h.name === harness)?.display_name ?? harness}
+                <X className="h-3 w-3" />
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-muted-foreground" onClick={clearFilters}>
+              Clear all
+            </Button>
+          </div>
+        )}
+
+        {/* ── Status strip (drafts & pending) ── */}
+        {tab === "discover" && drafts.length > 0 && (
+          <StatusStrip
+            icon={
+              <span className="inline-grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-warning/10 font-mono text-[11px] font-semibold text-warning">
+                D
               </span>
-            </button>
-            {draftsExpanded && (
-              <div className="divide-y divide-border border-t">
-                {drafts.map((draft) => (
-                  <div key={draft.id} className="flex items-center gap-4 px-4 py-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start gap-2">
-                        <RegistryName item={draft} nameClassName="text-sm font-medium" />
-                        {(draft.status === "rejected" || draft.status === "pending") && (
-                          <StatusBadge status={draft.status} />
-                        )}
-                      </div>
-                      {draft.status === "rejected" && draft.rejection_reason && (
-                        <p className="text-xs text-destructive mt-0.5">
-                          Reason: {draft.rejection_reason as string}
-                        </p>
-                      )}
-                      {draft.description && (
-                        <p className="truncate text-xs text-muted-foreground mt-0.5">
-                          {draft.description}
-                        </p>
-                      )}
-                      {draft.updated_at && (
-                        <p className="text-[11px] text-muted-foreground mt-1">
-                          Last updated {new Date(draft.updated_at).toLocaleDateString()}
-                        </p>
+            }
+            title="Your drafts and submissions"
+            subtitle={drafts.map((d) => {
+              const s = d.status as string;
+              return `${d.name} is ${s === "draft" ? "a draft" : s === "pending" ? "pending review" : s}`;
+            }).join(" · ")}
+            badge={
+              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-light-yellow px-2.5 py-0.5 text-2xs font-medium text-dark-yellow">
+                <span className="inline-block h-[5px] w-[5px] rounded-full bg-dark-yellow" />
+                {drafts.length} item{drafts.length === 1 ? "" : "s"}
+              </span>
+            }
+            action={
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 shrink-0 text-xs"
+                onClick={() => setTab("my")}
+              >
+                Open
+              </Button>
+            }
+          />
+        )}
+
+        {/* ── Registry note ── */}
+        {tab === "discover" && pendingCount > 0 && (
+          <RegistryNote className="mb-3.5">
+            Pending and rejected agents remain visible to their submitters. Approved agents are preferred for everyone else.
+          </RegistryNote>
+        )}
+
+        {/* ── Content ── */}
+        {isLoading ? (
+          view === "grid" ? (
+            <CardSkeleton count={6} columns={3} />
+          ) : (
+            <TableSkeleton rows={6} cols={5} />
+          )
+        ) : isError ? (
+          <ErrorState message={error?.message} onRetry={() => refetch()} />
+        ) : visibleAgents.length === 0 ? (
+          <EmptyState
+            icon={Bot}
+            title={tab === "discover" ? "No agents published yet" : tab === "my" ? "No agents yet" : tab === "pending" ? "No pending reviews" : "No archived agents"}
+            description={
+              tab === "discover" && hasFilters
+                ? "No agents match the active search and filters."
+                : tab === "discover"
+                  ? "No agents have been submitted yet. Be the first to publish one."
+                  : tab === "my"
+                    ? "Create your first agent using the builder."
+                    : tab === "pending"
+                      ? "Nothing waiting for review right now."
+                      : "No archived agents."
+            }
+            actionLabel={tab === "discover" ? "Back to Registry" : undefined}
+            actionHref={tab === "discover" ? "/" : undefined}
+          />
+        ) : view === "grid" ? (
+          /* ── Grid view (catalog-grid) ── */
+          <CatalogGrid className="animate-in">
+            {visibleAgents.map((agent, i) => (
+              <AgentCatalogCard
+                key={agent.id}
+                agent={agent}
+                className={`animate-in stagger-${Math.min(i + 1, 5)}`}
+              />
+            ))}
+          </CatalogGrid>
+        ) : (
+          /* ── List view (agent-list) ── */
+          <section className="overflow-hidden rounded-xl bg-card shadow-sm animate-in">
+            {/* Table head */}
+            <div className="flex items-center justify-between border-b border-border px-[22px] py-4">
+              <div>
+                <div className="text-sm font-medium">Agent catalogue</div>
+                <div className="mt-[3px] text-2xs text-muted-foreground">
+                  Approved and owner-visible agents in the current view
+                </div>
+              </div>
+              <span className="font-mono text-xs text-muted-foreground">
+                {compactNumber(visibleAgents.length)} agents
+              </span>
+            </div>
+
+            {/* Column headers */}
+            <div
+              className="grid min-h-[40px] items-center gap-3 border-b border-border px-[22px] text-2xs font-medium uppercase tracking-[0.05em] text-muted-foreground"
+              style={{ gridTemplateColumns: "minmax(300px,1.8fr) 115px 105px 75px 80px" }}
+            >
+              <span>Agent</span>
+              <span>Status</span>
+              <span>Pulls</span>
+              <span>Rating</span>
+              <span>Version</span>
+            </div>
+
+            {/* Rows */}
+            <div className="overflow-x-auto">
+              {visibleAgents.map((agent) => (
+                <AgentListRow
+                  key={agent.id}
+                  agent={agent}
+                  onClick={() => handleRowClick(agent.id)}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ── Inline draft management (My agents tab) ── */}
+        {tab === "my" && drafts.length > 0 && (
+          <section className="mt-3.5 rounded-xl bg-card p-5 shadow-sm">
+            <div className="mb-4 text-sm font-medium">Drafts &amp; submissions</div>
+            <div className="divide-y divide-border">
+              {drafts.map((draft) => (
+                <div key={draft.id} className="flex items-center gap-4 py-3">
+                  <EntityGlyph type="agent" size="sm" labelled={false} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start gap-2">
+                      <RegistryName item={draft} nameClassName="text-xs font-medium" />
+                      {(draft.status === "rejected" || draft.status === "pending") && (
+                        <StatusBadge status={draft.status as string} />
                       )}
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    {draft.status === "rejected" && draft.rejection_reason && (
+                      <p className="text-[10px] text-destructive mt-0.5">
+                        Reason: {draft.rejection_reason as string}
+                      </p>
+                    )}
+                    {draft.description && (
+                      <p className="truncate text-[10px] text-muted-foreground mt-0.5">
+                        {draft.description}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => handleEditDraft(draft)}
+                    >
+                      <FileEdit className="mr-1 h-3 w-3" />
+                      Edit
+                    </Button>
+                    {(draft.status === "draft" || draft.status === "rejected") && (
                       <Button
                         variant="outline"
                         size="sm"
                         className="h-7 text-xs"
-                        onClick={() => handleEditDraft(draft)}
+                        disabled={submitDraft.isPending}
+                        onClick={() => submitDraft.mutate(draft.id)}
                       >
-                        <FileEdit className="mr-1 h-3 w-3" />
-                        Edit
+                        <Send className="mr-1 h-3 w-3" />
+                        {draft.status === "rejected" ? "Resubmit" : "Submit"}
                       </Button>
-                      {(draft.status === "draft" || draft.status === "rejected") && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs"
-                          disabled={submitDraft.isPending}
-                          onClick={() => submitDraft.mutate(draft.id)}
-                        >
-                          <Send className="mr-1 h-3 w-3" />
-                          {draft.status === "rejected" ? "Resubmit" : "Submit for Review"}
-                        </Button>
-                      )}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                        disabled={deletingDraftId === draft.id}
-                        onClick={() => handleDeleteDraft(draft.id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                      disabled={deletingDraftId === draft.id}
+                      onClick={() => handleDeleteDraft(draft.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
-                ))}
-              </div>
-            )}
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* ── Archived tab: action buttons ── */}
+        {tab === "archived" && archivedAgents.length > 0 && view === "list" && (
+          <div className="mt-2 text-[10px] text-muted-foreground">
+            Click an agent row to view details. Use the restore or delete buttons on the detail page.
           </div>
         )}
 
-        {/* Archived */}
-        {isAuthenticated && archivedAgents.length > 0 && (
-          <div className="rounded-lg border border-border bg-card">
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium hover:bg-accent/40 transition-colors rounded-t-lg"
-              onClick={() => setArchivedExpanded((prev) => !prev)}
-            >
-              {archivedExpanded ? (
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-              )}
-              <Archive className="h-4 w-4 text-muted-foreground" />
-              Archived
-              <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-[11px] font-medium text-muted-foreground">
-                {archivedAgents.length}
-              </span>
-            </button>
-            {archivedExpanded && (
-              <div className="divide-y divide-border border-t">
-                {archivedAgents.map((agent) => (
-                  <div key={agent.id} className="flex items-center gap-4 px-4 py-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start gap-2">
-                        <RegistryName item={agent} nameClassName="text-sm font-medium" />
-                        <StatusBadge status="archived" />
-                      </div>
-                      {agent.description && (
-                        <p className="truncate text-xs text-muted-foreground mt-0.5">
-                          {agent.description}
-                        </p>
-                      )}
-                      <div className="flex items-center gap-2 mt-1">
-                        {isAdmin && ((agent.created_by_email as string) || (agent.created_by_username as string)) && (
-                          <p className="text-[11px] text-muted-foreground">
-                            by {(agent.created_by_username as string) || (agent.created_by_email as string)}
-                          </p>
-                        )}
-                        {agent.updated_at && (
-                          <p className="text-[11px] text-muted-foreground">
-                            {new Date(agent.updated_at).toLocaleDateString()}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <UnarchiveAgentButton agent={agent} />
-                      <DeleteAgentButton agent={agent} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Deleted */}
-        {isAuthenticated && deletedAgents.length > 0 && (
-          <div className="rounded-lg border border-border bg-card">
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 px-4 py-3 text-left text-sm font-medium hover:bg-accent/40 transition-colors rounded-t-lg"
-              onClick={() => setDeletedExpanded((prev) => !prev)}
-            >
-              {deletedExpanded ? (
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-              )}
+        {/* ── Deleted agents (admin only, inline in archived tab) ── */}
+        {tab === "archived" && deletedAgents.length > 0 && (
+          <section className="mt-3.5 rounded-xl bg-card p-5 shadow-sm">
+            <div className="mb-4 flex items-center gap-2 text-sm font-medium">
               <Trash2 className="h-4 w-4 text-muted-foreground" />
               Deleted
-              <span className="ml-1.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-muted px-1.5 text-[11px] font-medium text-muted-foreground">
-                {deletedAgents.length}
-              </span>
-            </button>
-            {deletedExpanded && (
-              <div className="divide-y divide-border border-t">
-                {deletedAgents.map((agent) => (
-                  <div key={agent.id} className="flex items-center gap-4 px-4 py-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start gap-2">
-                        <RegistryName item={agent} nameClassName="text-sm font-medium" />
-                        <StatusBadge status="deleted" />
-                      </div>
-                      {agent.description && (
-                        <p className="truncate text-xs text-muted-foreground mt-0.5">
-                          {agent.description}
-                        </p>
-                      )}
-                      <div className="flex items-center gap-2 mt-1">
-                        {isAdmin && ((agent.created_by_email as string) || (agent.created_by_username as string)) && (
-                          <p className="text-[11px] text-muted-foreground">
-                            by {(agent.created_by_username as string) || (agent.created_by_email as string)}
-                          </p>
-                        )}
-                        {typeof agent.deleted_at === "string" && (
-                          <p className="text-[11px] text-muted-foreground">
-                            deleted {new Date(agent.deleted_at).toLocaleDateString()}
-                          </p>
-                        )}
-                      </div>
+              <span className="ml-1 font-mono text-[10px] text-muted-foreground">{deletedAgents.length}</span>
+            </div>
+            <div className="divide-y divide-border">
+              {deletedAgents.map((agent) => (
+                <div key={agent.id} className="flex items-center gap-4 py-3">
+                  <EntityGlyph type="agent" size="sm" labelled={false} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start gap-2">
+                      <RegistryName item={agent} nameClassName="text-xs font-medium" />
+                      <StatusBadge status="deleted" />
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <RestoreDeletedAgentButton agent={agent} />
-                    </div>
+                    {agent.description && (
+                      <p className="truncate text-[10px] text-muted-foreground mt-0.5">
+                        {agent.description}
+                      </p>
+                    )}
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {pendingCount > 0 && (
-          <div className="flex items-start gap-3 rounded-lg border border-warning/20 bg-warning/5 px-4 py-3">
-            <Clock className="h-4 w-4 mt-0.5 text-warning shrink-0" />
-            <p className="text-sm text-warning">
-              You have {pendingCount} agent{pendingCount > 1 ? "s" : ""} pending review.
-              An admin must approve {pendingCount > 1 ? "them" : "it"} before {pendingCount > 1 ? "they become" : "it becomes"} visible to other users.
-            </p>
-          </div>
-        )}
-
-        {/* Content */}
-        {isLoading ? (
-          view === "table" ? (
-            <TableSkeleton rows={8} cols={6} />
-          ) : (
-            <CardSkeleton count={6} columns={3} />
-          )
-        ) : isError ? (
-          <ErrorState message={error?.message} onRetry={() => refetch()} />
-        ) : filtered.length === 0 ? (
-          <EmptyState
-            icon={Bot}
-            title="No agents published yet"
-            description={
-              hasFilters
-                ? "No agents match the active search and filters."
-                : "No agents have been submitted yet. Be the first to publish one."
-            }
-            actionLabel="Back to Registry"
-            actionHref="/"
-          />
-        ) : view === "table" ? (
-          <div className="overflow-x-auto animate-in">
-            <Table>
-              <TableHeader>
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <TableRow key={headerGroup.id}>
-                    {headerGroup.headers.map((header) => (
-                      <TableHead key={header.id} className="text-xs">
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(
-                              header.column.columnDef.header,
-                              header.getContext(),
-                            )}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableHeader>
-              <TableBody>
-                {table.getRowModel().rows.map((row) => (
-                  <TableRow
-                    key={row.id}
-                    className="cursor-pointer hover:bg-accent/40 transition-colors"
-                    onClick={() => handleRowClick(row.original.id)}
-                  >
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id}>
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext(),
-                        )}
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        ) : (
-          <div
-            className="grid gap-4 animate-in"
-            style={{
-              gridTemplateColumns:
-                "repeat(auto-fill, minmax(min(320px, 100%), 1fr))",
-            }}
-          >
-            {filtered.map((agent: RegistryItem, i: number) => (
-              <AgentCard
-                key={agent.id}
-                id={agent.id}
-                name={agent.name}
-                namespace={agent.namespace}
-                slug={agent.slug}
-                qualified_name={agent.qualified_name}
-                description={agent.description as string | undefined}
-                owner={agent.owner as string | undefined}
-                version={agent.version as string | undefined}
-                downloads={agent.download_count as number | undefined}
-                score={(agent.average_rating as number | null) ?? undefined}
-                status={agent.status}
-                component_count={agent.component_count as number | undefined}
-                supported_harnesses={agent.supported_harnesses as string[] | undefined}
-                inferred_supported_harnesses={agent.inferred_supported_harnesses as string[] | undefined}
-                className={`animate-in stagger-${Math.min(i + 1, 5)}`}
-              />
-            ))}
-          </div>
+                  <RestoreDeletedAgentButton agent={agent} />
+                </div>
+              ))}
+            </div>
+          </section>
         )}
       </div>
     </>
