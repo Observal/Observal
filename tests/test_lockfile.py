@@ -564,7 +564,7 @@ def test_agent_upsert_persists_complete_schema_and_component_pins(isolated_lockf
 def test_upserts_persist_optional_launch_fingerprint_without_version_migration(isolated_lockfile):
     from observal_cli.discovery.normalize import normalize_launch
 
-    normalized = normalize_launch(command="npx", arguments=["search", "--mode", "read"])
+    normalized = normalize_launch(command="npx", arguments=["search", "--read"])
     assert normalized.launch_fingerprint is not None
 
     lockfile.upsert_agent(

@@ -11,10 +11,13 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from observal_cli.discovery.adapter_support import RichAdapterScanner, project_legacy
+from observal_cli.discovery.adapter_support import RichAdapterScanner
 from observal_cli.discovery.models import AdapterDiscoveryResult, DiagnosticCode, DiscoveryScope
 from observal_cli.discovery.redact import redact_text
 from observal_cli.harness import (
+    DiscoveredAgent,
+    DiscoveredHook,
+    DiscoveredMcp,
     DiscoveredSkill,
     HookSpec,
     ScanResult,
@@ -24,6 +27,8 @@ from observal_cli.harness import (
 from observal_cli.harness.base import BaseAdapter
 from observal_cli.shared.utils import (
     _OBSERVAL_HOOK_MARKERS,
+    extract_body,
+    extract_mcp_servers,
     first_content_line,
     parse_frontmatter_field,
 )
@@ -130,10 +135,35 @@ class ClaudeCodeAdapter(BaseAdapter):
             return False
 
     def scan_home(self, home: Path | None = None) -> ScanResult:
-        return project_legacy(self.discover_home(home))
+        home = home or Path.home()
+        claude_dir = home / ".claude"
+        if not claude_dir.exists():
+            return ScanResult()
+        return self._scan_claude_dir(claude_dir)
 
     def scan_project(self, project_dir: Path) -> ScanResult:
-        return project_legacy(self.discover_project(project_dir))
+        # Claude Code uses .mcp.json at project root
+        mcp_file = project_dir / ".mcp.json"
+        if not mcp_file.exists():
+            return ScanResult()
+        try:
+            data = json.loads(mcp_file.read_text())
+            servers = extract_mcp_servers(data)
+            mcps = []
+            for name, cfg in servers.items():
+                mcps.append(
+                    DiscoveredMcp(
+                        name=name,
+                        command=cfg.get("command"),
+                        args=cfg.get("args", []),
+                        url=cfg.get("url"),
+                        description=f"Claude Code project MCP: {name}",
+                        source="claude-code:project",
+                    )
+                )
+            return ScanResult(mcps=mcps)
+        except (json.JSONDecodeError, OSError):
+            return ScanResult()
 
     def discover_home(self, home: Path | None = None) -> AdapterDiscoveryResult:
         home = home or Path.home()
@@ -214,8 +244,180 @@ class ClaudeCodeAdapter(BaseAdapter):
     # ── Private scanning helpers ──────────────────────────────────
 
     def _scan_claude_dir(self, claude_dir: Path) -> ScanResult:
-        """Compatibility projection for callers that already resolved ``.claude``."""
-        return project_legacy(self._discover_claude_home(claude_dir, claude_dir.parent))
+        """Scan ~/.claude for all component types."""
+        mcps: list[DiscoveredMcp] = []
+        skills: list[DiscoveredSkill] = []
+        hooks: list[DiscoveredHook] = []
+        agents: list[DiscoveredAgent] = []
+
+        settings_file = claude_dir / "settings.json"
+        if not settings_file.exists():
+            return ScanResult()
+
+        try:
+            settings = json.loads(settings_file.read_text())
+        except (json.JSONDecodeError, OSError):
+            return ScanResult()
+
+        enabled_plugins = settings.get("enabledPlugins", {})
+        active_plugins = {name for name, enabled in enabled_plugins.items() if enabled}
+
+        # Load installed_plugins.json to get install paths
+        installed_file = claude_dir / "plugins" / "installed_plugins.json"
+        plugin_paths: dict[str, Path] = {}
+        if installed_file.exists():
+            try:
+                installed = json.loads(installed_file.read_text())
+                for plugin_key, entries in installed.get("plugins", {}).items():
+                    if plugin_key in active_plugins and entries:
+                        install_path = entries[0].get("installPath")
+                        if install_path:
+                            plugin_paths[plugin_key] = Path(install_path)
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        # Fallback: scan plugin cache directly
+        cache_dir = claude_dir / "plugins" / "cache"
+        if cache_dir.exists():
+            for plugin_key in active_plugins:
+                if plugin_key in plugin_paths:
+                    continue
+                parts = plugin_key.split("@", 1)
+                name = parts[0]
+                marketplace = parts[1] if len(parts) > 1 else ""
+                market_dir = cache_dir / marketplace / name if marketplace else cache_dir / name / name
+                if market_dir.exists():
+                    versions = sorted(market_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True)
+                    if versions:
+                        plugin_paths[plugin_key] = versions[0]
+
+        for plugin_key, plugin_dir in plugin_paths.items():
+            if not plugin_dir.is_dir():
+                continue
+
+            plugin_name = plugin_key.split("@")[0]
+            plugin_desc = f"Plugin: {plugin_name}"
+            plugin_json = plugin_dir / ".claude-plugin" / "plugin.json"
+            if plugin_json.exists():
+                try:
+                    meta = json.loads(plugin_json.read_text())
+                    plugin_desc = meta.get("description", plugin_desc)
+                except (json.JSONDecodeError, OSError):
+                    pass
+
+            mcp_file = plugin_dir / ".mcp.json"
+            if mcp_file.exists():
+                try:
+                    mcp_data = json.loads(mcp_file.read_text())
+                    servers = extract_mcp_servers(mcp_data)
+                    for srv_name, srv_config in servers.items():
+                        mcps.append(
+                            DiscoveredMcp(
+                                name=srv_name,
+                                command=srv_config.get("command"),
+                                args=srv_config.get("args", []),
+                                url=srv_config.get("url"),
+                                description=plugin_desc,
+                                source=f"plugin:{plugin_name}",
+                            )
+                        )
+                except (json.JSONDecodeError, OSError):
+                    pass
+
+            for skill_md in plugin_dir.rglob("SKILL.md"):
+                skill_name_part = skill_md.parent.name
+                full_name = f"{plugin_name}/{skill_name_part}"
+                desc = ""
+                try:
+                    content = skill_md.read_text()
+                    desc = parse_frontmatter_field(content, "description") or ""
+                    if not desc:
+                        desc = first_content_line(content)
+                except OSError:
+                    pass
+                skills.append(
+                    DiscoveredSkill(
+                        name=full_name,
+                        description=desc or f"Skill from {plugin_name}",
+                        source=f"plugin:{plugin_name}",
+                    )
+                )
+
+            for hooks_file in plugin_dir.rglob("hooks.json"):
+                try:
+                    hooks_data = json.loads(hooks_file.read_text())
+                    hook_events = hooks_data.get("hooks", {})
+                    for event_name, event_hooks in hook_events.items():
+                        hook_full_name = f"{plugin_name}/{event_name}"
+                        handler_type = "command"
+                        handler_config = {}
+                        if isinstance(event_hooks, list) and event_hooks:
+                            first = event_hooks[0]
+                            if isinstance(first, dict):
+                                inner = first.get("hooks", [first])
+                                if inner and isinstance(inner[0], dict):
+                                    handler_type = inner[0].get("type", "command")
+                                    handler_config = inner[0]
+                        hooks.append(
+                            DiscoveredHook(
+                                name=hook_full_name,
+                                event=event_name,
+                                handler_type=handler_type,
+                                handler_config=handler_config,
+                                description=f"Hook from {plugin_name}: {event_name}",
+                                source=f"plugin:{plugin_name}",
+                            )
+                        )
+                except (json.JSONDecodeError, OSError):
+                    pass
+
+        # Skills from ~/.claude/skills/
+        skills_dir = claude_dir / "skills"
+        if skills_dir.is_dir():
+            for skill_md in sorted(skills_dir.rglob("SKILL.md")):
+                skill_name = skill_md.parent.name
+                desc = ""
+                task_type = "general"
+                try:
+                    content = skill_md.read_text()
+                    desc = parse_frontmatter_field(content, "description") or ""
+                    task_type = parse_frontmatter_field(content, "task_type") or "general"
+                    if not desc:
+                        desc = first_content_line(content)
+                except OSError:
+                    pass
+                skills.append(
+                    DiscoveredSkill(
+                        name=skill_name,
+                        description=desc or f"Skill: {skill_name}",
+                        source="claude:skills",
+                        task_type=task_type,
+                    )
+                )
+
+        # Agents from ~/.claude/agents/
+        agents_dir = claude_dir / "agents"
+        if agents_dir.is_dir():
+            for agent_md in sorted(agents_dir.glob("*.md")):
+                try:
+                    content = agent_md.read_text()
+                    name = agent_md.stem
+                    model = parse_frontmatter_field(content, "model") or ""
+                    desc = first_content_line(content)
+                    prompt_body = extract_body(content)
+                    agents.append(
+                        DiscoveredAgent(
+                            name=name,
+                            description=desc or f"Agent: {name}",
+                            model_name=model,
+                            prompt=prompt_body,
+                            source_file=str(agent_md),
+                        )
+                    )
+                except OSError:
+                    pass
+
+        return ScanResult(mcps=mcps, skills=skills, hooks=hooks, agents=agents)
 
     def _discover_claude_home(self, claude_dir: Path, home: Path) -> AdapterDiscoveryResult:
         scanner = RichAdapterScanner(
@@ -357,11 +559,11 @@ class ClaudeCodeAdapter(BaseAdapter):
         try:
             versions = [path for path in market_dir.iterdir() if path.is_dir() and not path.is_symlink()]
             versions.sort(key=lambda path: (-path.stat().st_mtime, path.name.casefold()))
-        except OSError as exc:
+        except OSError:
             scanner.diagnostic(
                 DiagnosticCode.PERMISSION_DENIED,
                 market_dir,
-                f"unable to inspect Claude plugin cache metadata: {exc}",
+                "unable to inspect Claude plugin cache metadata",
             )
             return None
         if len(versions) > scanner.walker.limits.max_files_per_root:

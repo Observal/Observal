@@ -162,8 +162,8 @@ class BoundedWalker:
             return None
         try:
             resolved = path.resolve(strict=True)
-        except (OSError, RuntimeError) as exc:
-            self.diagnostic(DiagnosticCode.PERMISSION_DENIED, f"unable to resolve discovery path: {exc}", source=path)
+        except (OSError, RuntimeError):
+            self.diagnostic(DiagnosticCode.PERMISSION_DENIED, "unable to resolve discovery path", source=path)
             return None
         if not self._within_root(resolved):
             code = DiagnosticCode.SYMLINK_ESCAPE if path.is_symlink() else DiagnosticCode.PATH_OUTSIDE_ROOT
@@ -202,8 +202,8 @@ class BoundedWalker:
                 )
                 return None
             return resolved.read_text()
-        except (OSError, UnicodeError) as exc:
-            self.diagnostic(DiagnosticCode.PERMISSION_DENIED, f"unable to read discovery metadata: {exc}", source=path)
+        except (OSError, UnicodeError):
+            self.diagnostic(DiagnosticCode.PERMISSION_DENIED, "unable to read discovery metadata", source=path)
             return None
 
     def files(self, directory: Path, *, name: str | None = None, suffix: str | None = None) -> Iterator[Path]:
@@ -212,10 +212,8 @@ class BoundedWalker:
             return
         try:
             start = directory.resolve(strict=True)
-        except (OSError, RuntimeError) as exc:
-            self.diagnostic(
-                DiagnosticCode.PERMISSION_DENIED, f"unable to resolve discovery directory: {exc}", source=directory
-            )
+        except (OSError, RuntimeError):
+            self.diagnostic(DiagnosticCode.PERMISSION_DENIED, "unable to resolve discovery directory", source=directory)
             return
         if not self._within_root(start):
             self.diagnostic(
@@ -237,9 +235,9 @@ class BoundedWalker:
             current, depth = stack.pop()
             try:
                 entries = sorted(os.scandir(current), key=lambda entry: entry.name.casefold())
-            except OSError as exc:
+            except OSError:
                 self.diagnostic(
-                    DiagnosticCode.PERMISSION_DENIED, f"unable to inspect discovery directory: {exc}", source=current
+                    DiagnosticCode.PERMISSION_DENIED, "unable to inspect discovery directory", source=current
                 )
                 continue
             directories: list[Path] = []
@@ -254,9 +252,9 @@ class BoundedWalker:
                         continue
                     if not entry.is_file(follow_symlinks=False) and not entry.is_symlink():
                         continue
-                except OSError as exc:
+                except OSError:
                     self.diagnostic(
-                        DiagnosticCode.PERMISSION_DENIED, f"unable to inspect discovery path: {exc}", source=candidate
+                        DiagnosticCode.PERMISSION_DENIED, "unable to inspect discovery path", source=candidate
                     )
                     continue
                 resolved = self._inspect(candidate)

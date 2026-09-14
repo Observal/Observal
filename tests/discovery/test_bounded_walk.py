@@ -12,6 +12,8 @@ from observal_cli.discovery.models import DiagnosticCode, DiscoveryScope
 if TYPE_CHECKING:
     from pathlib import Path
 
+    import pytest
+
 
 def _codes(walker: BoundedWalker) -> list[DiagnosticCode]:
     return [item.code for item in walker.diagnostics]
@@ -66,6 +68,28 @@ def test_size_and_file_limits_preserve_partial_results(tmp_path: Path) -> None:
     limited = BoundedWalker(root, provider="test", limits=WalkLimits(max_files_per_root=2))
     assert list(limited.files(root, suffix=".txt"))
     assert DiagnosticCode.ITEM_LIMIT_REACHED in _codes(limited)
+
+
+def test_read_diagnostic_does_not_embed_absolute_exception_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    metadata = root / "private.json"
+    metadata.write_text("{}")
+    original_read_text = type(metadata).read_text
+
+    def fail_for_metadata(path: Path, *args, **kwargs):
+        if path == metadata.resolve():
+            raise PermissionError(13, "permission denied", str(path))
+        return original_read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(type(metadata), "read_text", fail_for_metadata)
+    walker = BoundedWalker(root, provider="test")
+
+    assert walker.read_text(metadata) is None
+    assert str(tmp_path) not in walker.diagnostics[0].message
+    assert walker.diagnostics[0].source == "<external>/private.json"
 
 
 def test_depth_limit_stops_deep_metadata(tmp_path: Path) -> None:

@@ -23,6 +23,7 @@ from rich.table import Table
 
 from observal_cli.discovery.collector import collect_discovery_scan, collect_legacy_scan
 from observal_cli.discovery.redact import redact_arguments, redact_text, sanitize_diagnostic_message, sanitize_url
+from observal_cli.discovery.registry import DEFAULT_REGISTRY_LOOKUP_LIMIT
 from observal_cli.discovery.serialize import discovery_to_dict, privacy_safe_path
 from observal_cli.harness import ensure_loaded, get_adapter, get_all_adapters
 from observal_cli.render import OutputMode, console, esc, output_json, spinner
@@ -73,6 +74,12 @@ def register_scan(app: typer.Typer):
             "--discover",
             help="Add bounded package evidence, local tracking, and authenticated Registry classification",
         ),
+        registry_lookup_limit: int = typer.Option(
+            DEFAULT_REGISTRY_LOOKUP_LIMIT,
+            "--registry-lookup-limit",
+            min=0,
+            help="Maximum Registry requests during discovery; 0 explicitly disables the limit and deadline",
+        ),
     ):
         """Show a read-only inventory of local components and harness setup.
 
@@ -119,6 +126,7 @@ def register_scan(app: typer.Typer):
                 home=home,
                 project_dir=project_dir,
                 harness_filtered=harness is not None,
+                registry_lookup_limit=registry_lookup_limit,
             )
             collection = discovery_collection
             candidates = discovery_collection.candidates

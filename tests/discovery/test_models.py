@@ -73,6 +73,7 @@ def test_all_required_diagnostic_codes_are_declared() -> None:
         "registry_auth_required",
         "registry_unavailable",
         "registry_lookup_incomplete",
+        "registry_lookup_limit_reached",
     }
 
 

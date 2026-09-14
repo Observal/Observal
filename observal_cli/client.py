@@ -58,7 +58,7 @@ def _get_cli_version() -> str:
 
 def _client() -> tuple[str, dict]:
     auth_required = not _OPTIONAL_AUTH.get()
-    cfg = config.get_or_exit(require_auth=auth_required)
+    cfg = config.get_or_exit() if auth_required else config.get_or_exit(require_auth=False)
     try:
         base_url = config.validate_server_url(cfg["server_url"])
     except ValueError as error:
@@ -297,6 +297,8 @@ def _request_with_retry(
     *,
     params: dict | None = None,
     json: object | None = None,
+    timeout: float | None = None,
+    deadline: float | None = None,
 ) -> httpx.Response:
     """Execute HTTP with transient retries for GET requests only.
 
@@ -304,10 +306,11 @@ def _request_with_retry(
     are retried only for GET requests.
     """
     optic.trace("method={}, url={}", method, url)
-    timeout = config.get_timeout()
+    configured_timeout = config.get_timeout()
+    request_timeout = min(configured_timeout, timeout) if timeout is not None else configured_timeout
     func = getattr(httpx, method)
 
-    kwargs: dict = {"headers": headers, "timeout": timeout, "trust_env": False}
+    kwargs: dict = {"headers": headers, "timeout": request_timeout, "trust_env": False}
     if params is not None:
         kwargs["params"] = params
     if json is not None:
@@ -318,6 +321,11 @@ def _request_with_retry(
     t0 = time.monotonic()
 
     for attempt in range(_MAX_RETRIES):
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise httpx.ReadTimeout("request deadline exceeded")
+            kwargs["timeout"] = min(request_timeout, remaining)
         r = func(url, **kwargs)
 
         # Auto-refresh on 401
@@ -337,6 +345,8 @@ def _request_with_retry(
         # Honor Retry-After header if present
         retry_after = r.headers.get("Retry-After")
         delay = float(retry_after) if retry_after else 0.5 * (2**attempt)
+        if deadline is not None and time.monotonic() + delay >= deadline:
+            raise httpx.ReadTimeout("request deadline exceeded")
         logger.debug(f"Retrying {method.upper()} {safe_url} (attempt {attempt + 1}, delay {delay:.1f}s)")
         optic.debug("retrying {} {} (attempt {}, delay {:.1f}s)", method.upper(), safe_url, attempt + 1, delay)
         time.sleep(delay)
@@ -429,6 +439,8 @@ def _request(
     params: dict | None = None,
     json_data: object | None = None,
     auth_required: bool = True,
+    timeout: float | None = None,
+    deadline: float | None = None,
 ) -> httpx.Response:
     optional_auth_token = _OPTIONAL_AUTH.set(not auth_required)
     try:
@@ -440,6 +452,10 @@ def _request(
         request_kwargs["params"] = params
     if json_data is not None:
         request_kwargs["json"] = json_data
+    if timeout is not None:
+        request_kwargs["timeout"] = timeout
+    if deadline is not None:
+        request_kwargs["deadline"] = deadline
     try:
         return _request_with_retry(method, f"{base}{path}", headers, **request_kwargs)
     except httpx.HTTPStatusError as error:
@@ -511,6 +527,8 @@ def get(
     *,
     operation: str | None = None,
     resource: str | None = None,
+    timeout: float | None = None,
+    deadline: float | None = None,
 ) -> dict:
     optic.trace("path={}, params={}", path, params)
     operation, resource = _error_context(
@@ -526,6 +544,8 @@ def get(
         resource=resource,
         params=params,
         auth_required=False,
+        timeout=timeout,
+        deadline=deadline,
     )
     return _json_response(response, operation=operation, resource=resource)
 
@@ -536,6 +556,8 @@ def get_optional(
     *,
     operation: str | None = None,
     resource: str | None = None,
+    timeout: float | None = None,
+    deadline: float | None = None,
 ) -> OptionalLookupResult:
     """GET authenticated JSON while treating only HTTP 404 as optional absence."""
 
@@ -548,6 +570,10 @@ def get_optional(
     )
     base, headers = _client()
     request_kwargs = {"params": params} if params is not None else {}
+    if timeout is not None:
+        request_kwargs["timeout"] = timeout
+    if deadline is not None:
+        request_kwargs["deadline"] = deadline
     try:
         response = _request_with_retry("get", f"{base}{path}", headers, **request_kwargs)
     except httpx.HTTPStatusError as error:
@@ -644,8 +670,12 @@ def post(
         default_resource=path,
     )
     response = _request(
-        "post", path, operation=operation, resource=resource,
-        json_data=json_data, auth_required=not _PUBLIC_POST.get(),
+        "post",
+        path,
+        operation=operation,
+        resource=resource,
+        json_data=json_data,
+        auth_required=not _PUBLIC_POST.get(),
     )
     return _json_response(response, operation=operation, resource=resource, allow_empty=True)
 

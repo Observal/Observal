@@ -34,20 +34,20 @@ def test_common_tokens_and_high_entropy_values_are_redacted(value: str) -> None:
     assert redact_text(value) == REDACTION_MARKER
 
 
-def test_references_and_behavioral_arguments_are_preserved() -> None:
-    arguments, safe = redact_arguments(["--mode", "read", "--key-file", "fixtures/public.pem", "${API_KEY}"])
+def test_unclassified_argument_values_are_redacted_and_fail_closed() -> None:
+    arguments, safe = redact_arguments(["--mode", "read", "--key", "hunter2", "-k", "another", "${API_KEY}"])
 
-    assert safe
-    assert arguments == ("--mode", "read", "--key-file", "fixtures/public.pem", "${API_KEY}")
+    assert not safe
+    assert arguments == ("--mode", "<secret>", "--key", "<secret>", "-k", "<secret>", "${API_KEY}")
 
 
-def test_long_path_arguments_remain_behavior_relevant() -> None:
+def test_unclassified_path_arguments_are_redacted() -> None:
     path = "servers/mcp-filesystem/dist/index1.js"
 
     arguments, safe = redact_arguments([path])
 
-    assert safe
-    assert arguments == (path,)
+    assert not safe
+    assert arguments == ("<secret>",)
 
 
 def test_secret_options_are_redacted_in_equals_and_adjacent_forms() -> None:
@@ -75,7 +75,7 @@ def test_environment_references_are_preserved_for_secret_options() -> None:
 def test_missing_secret_option_value_is_not_safe_to_fingerprint() -> None:
     arguments, safe = redact_arguments(["--mode", "read", "--token"])
 
-    assert arguments == ("--mode", "read", "--token")
+    assert arguments == ("--mode", "<secret>", "--token")
     assert not safe
 
 
@@ -100,7 +100,7 @@ def test_recursive_redaction_preserves_names_and_removes_nested_values(tmp_path:
         "REFERENCE": "${SHARED_TOKEN}",
     }
     assert redacted["handler"]["headers"] == {"Authorization": "<secret>", "X-Mode": "<secret>"}
-    assert redacted["handler"]["args"] == ["--mode", "read", "--token", "<secret>"]
+    assert redacted["handler"]["args"] == ["--mode", "<secret>", "--token", "<secret>"]
     assert redacted["handler"]["nested"][0]["path"].endswith("/hook.sh")
 
 

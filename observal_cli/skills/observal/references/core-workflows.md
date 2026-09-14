@@ -52,11 +52,13 @@ Only use keys accepted by `config set`. Authentication fields are managed by `au
 
 ## Local inventory and update checks
 
-Every `scan` mode is read-only and never prompts. Add `--discover` to include bounded npm, pipx, and uv evidence, local lockfile tracking, and authenticated exact Registry classification. Scanning never writes local or Registry state.
+Every `scan` mode is read-only and never prompts. Add `--discover` to include bounded harness and package evidence, local lockfile fingerprint tracking, and authenticated exact Registry identity classification. Registry identity status indicates whether the qualified name exists, not whether its content matches the local launch. Scanning never writes local or Registry state.
 
 ```bash
 observal scan --output json
 observal scan --discover --output json
+# Registry classification is capped at 100 requests by default.
+# Use --registry-lookup-limit 0 only when intentionally requesting an unlimited lookup.
 observal scan --harness kiro --discover --output json
 observal scan --harness kiro --output json
 observal outdated --output json

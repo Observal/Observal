@@ -224,7 +224,9 @@ def test_complete_discovery_pipeline_combines_providers_matches_lock_and_never_w
     assert [(item.name, item.hooks) for item in result.harnesses] == [("kiro", "installed")]
     discover_uv.assert_called_once_with(home=home)
     registry.assert_called_once_with(
-        result.candidates, configuration={"server_url": "https://registry.test", "access_token": ""}
+        result.candidates,
+        configuration={"server_url": "https://registry.test", "access_token": ""},
+        lookup_limit=100,
     )
     assert lock_path.read_bytes() == before
     write.assert_not_called()
@@ -267,7 +269,7 @@ def test_discovery_reports_malformed_registry_url_without_traceback(tmp_path, mo
     assert [(item.provider, item.code) for item in result.diagnostics] == [
         ("lockfile", DiagnosticCode.REGISTRY_UNAVAILABLE)
     ]
-    classify.assert_called_once_with([], configuration={})
+    classify.assert_called_once_with([], configuration={}, lookup_limit=100)
 
 
 def test_harness_filtered_discovery_suppresses_unrelated_package_candidates(tmp_path, monkeypatch) -> None:

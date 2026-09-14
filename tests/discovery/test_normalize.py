@@ -34,8 +34,8 @@ def test_npm_package_parsing(requirement: str, expected: tuple[str, str | None] 
 
 
 def test_npx_and_npm_exec_have_the_same_identity_and_launch() -> None:
-    npx = normalize_launch(command="npx", arguments=["-y", "@scope/server@1.2.3", "--mode", "read"])
-    npm = normalize_launch(command="npm", arguments=["exec", "--yes", "--", "@scope/server@1.2.3", "--mode", "read"])
+    npx = normalize_launch(command="npx", arguments=["-y", "@scope/server@1.2.3", "--read"])
+    npm = normalize_launch(command="npm", arguments=["exec", "--yes", "--", "@scope/server@1.2.3", "--read"])
 
     assert npx.complete and npm.complete
     assert npx.correlation_identity == npm.correlation_identity == "npm:@scope/server"
@@ -44,18 +44,18 @@ def test_npx_and_npm_exec_have_the_same_identity_and_launch() -> None:
 
 
 def test_behaviorally_different_arguments_produce_different_fingerprints() -> None:
-    read = normalize_launch(command="npx", arguments=["server", "--mode", "read"])
-    write = normalize_launch(command="npx", arguments=["server", "--mode", "write"])
+    read = normalize_launch(command="npx", arguments=["server", "--read"])
+    write = normalize_launch(command="npx", arguments=["server", "--write"])
 
     assert read.correlation_identity == write.correlation_identity == "npm:server"
     assert read.launch_fingerprint != write.launch_fingerprint
 
 
 def test_mcp_definition_behavior_fields_are_part_of_the_fingerprint() -> None:
-    base = {"command": "npx", "args": ["server", "--mode", "read"]}
+    base = {"command": "npx", "args": ["server", "--read"]}
     variants = [
         base,
-        {**base, "args": ["server", "--mode", "write"]},
+        {**base, "args": ["server", "--write"]},
         {**base, "env": {"API_KEY": "secret"}},
         {**base, "headers": {"Authorization": "secret"}},
         {**base, "transport": "stdio"},
@@ -145,13 +145,12 @@ def test_secret_values_are_replaced_before_fingerprinting() -> None:
 
 
 def test_canonical_serialization_is_compact_sorted_utf8() -> None:
-    result = normalize_launch(command="npx", arguments=["server", "--label", "café"], environment=["Z", "A"])
+    result = normalize_launch(command="npx", arguments=["server", "--verbose"], environment=["Z", "A"])
 
     serialized = serialize_canonical_launch(result.launch)  # type: ignore[arg-type]
 
     assert serialized == (
-        '{"arguments":["--label","café"],"binary":"server","environment_names":["A","Z"],'
-        '"kind":"npm","package":"server"}'
+        '{"arguments":["--verbose"],"binary":"server","environment_names":["A","Z"],"kind":"npm","package":"server"}'
     )
     assert fingerprint_launch(result.launch).startswith("sha256:")  # type: ignore[arg-type]
     assert len(fingerprint_launch(result.launch)) == 71  # type: ignore[arg-type]
@@ -170,7 +169,7 @@ def test_canonicalizer_redacts_manual_secret_arguments_and_rejects_secret_identi
 
 
 def test_uv_requirements_use_pep503_identity_and_retain_metadata() -> None:
-    result = normalize_launch(command="uv", arguments=["tool", "run", "MCP_Server.Fetch[cli]>=0.6", "--mode", "read"])
+    result = normalize_launch(command="uv", arguments=["tool", "run", "MCP_Server.Fetch[cli]>=0.6", "--read"])
 
     assert result.complete
     assert result.correlation_identity == "pypi:mcp-server-fetch"
@@ -194,7 +193,7 @@ def test_uv_at_version_and_known_pipx_executable_correlate() -> None:
 
 
 def test_python_module_launch_is_supported() -> None:
-    result = normalize_launch(command="python3", arguments=["-m", "package.server", "--mode", "read"])
+    result = normalize_launch(command="python3", arguments=["-m", "package.server", "--read"])
 
     assert result.complete
     assert result.correlation_identity == "python:package.server"

@@ -29,7 +29,7 @@ from observal_cli.discovery.models import (
 from observal_cli.discovery.normalize import build_candidates
 from observal_cli.discovery.providers import discover_npm, discover_pipx, discover_uv
 from observal_cli.discovery.redact import make_diagnostic
-from observal_cli.discovery.registry import classify_registry_candidates
+from observal_cli.discovery.registry import DEFAULT_REGISTRY_LOOKUP_LIMIT, classify_registry_candidates
 from observal_cli.harness import (
     DiscoveredAgent,
     DiscoveredHook,
@@ -293,6 +293,7 @@ def collect_discovery_scan(
     home: Path,
     project_dir: Path,
     harness_filtered: bool = False,
+    registry_lookup_limit: int = DEFAULT_REGISTRY_LOOKUP_LIMIT,
 ) -> DiscoveryScanCollection:
     """Run the complete read-only discovery and classification pipeline."""
 
@@ -337,7 +338,13 @@ def collect_discovery_scan(
     for candidate in candidates:
         apply_local_match(candidate, registry, project_directory=project_dir)
 
-    diagnostics.extend(classify_registry_candidates(candidates, configuration=classification_configuration))
+    diagnostics.extend(
+        classify_registry_candidates(
+            candidates,
+            configuration=classification_configuration,
+            lookup_limit=registry_lookup_limit,
+        )
+    )
     severity_order = {"error": 0, "warning": 1, "info": 2}
     diagnostics.sort(
         key=lambda item: (severity_order[item.severity.value], item.provider, item.code.value, item.source or "")

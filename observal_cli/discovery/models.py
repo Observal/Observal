@@ -108,6 +108,7 @@ class ReasonCode(StrEnum):
     REGISTRY_AUTH_REQUIRED = "registry_auth_required"
     REGISTRY_UNAVAILABLE = "registry_unavailable"
     REGISTRY_LOOKUP_INCOMPLETE = "registry_lookup_incomplete"
+    REGISTRY_LOOKUP_LIMIT_REACHED = "registry_lookup_limit_reached"
     NO_EXACT_REGISTRY_MATCH = "no_exact_registry_match"
     REGISTRY_EXACT_MATCH = "registry_exact_match"
     REGISTRY_OWNED_EXISTING = "registry_owned_existing"
@@ -143,6 +144,7 @@ class DiagnosticCode(StrEnum):
     REGISTRY_AUTH_REQUIRED = "registry_auth_required"
     REGISTRY_UNAVAILABLE = "registry_unavailable"
     REGISTRY_LOOKUP_INCOMPLETE = "registry_lookup_incomplete"
+    REGISTRY_LOOKUP_LIMIT_REACHED = "registry_lookup_limit_reached"
 
 
 @dataclass(frozen=True)

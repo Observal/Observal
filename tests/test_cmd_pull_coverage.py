@@ -1039,7 +1039,7 @@ def test_pull_persists_nested_mcp_fingerprint_matching_discovery(
     boundaries.get.side_effect = lambda path: detail if path.endswith("agents/agent-uuid") else listing
     definition = {
         "command": "npx",
-        "args": ["-y", "example-mcp", "--mode", "read"],
+        "args": ["-y", "example-mcp", "--read"],
         "env": {"API_KEY": "first-secret", "OBSERVAL_AGENT_ID": "agent-uuid"},
         "headers": {"Authorization": "Bearer first-secret"},
         "type": "stdio",
