@@ -5,18 +5,21 @@
 
 from __future__ import annotations
 
+import json
 import time
 from pathlib import Path
 
-from observal_cli.discovery.adapter_support import RichAdapterScanner, project_legacy
+from observal_cli.discovery.adapter_support import RichAdapterScanner
 from observal_cli.discovery.models import AdapterDiscoveryResult, DiscoveryScope
 from observal_cli.harness import (
+    DiscoveredMcp,
     HookSpec,
     ScanResult,
     SessionSource,
     register_adapter,
 )
 from observal_cli.harness.base import BaseAdapter
+from observal_cli.shared.utils import extract_mcp_servers
 
 
 class CursorAdapter(BaseAdapter):
@@ -131,10 +134,53 @@ class CursorAdapter(BaseAdapter):
         return True
 
     def scan_home(self, home: Path | None = None) -> ScanResult:
-        return project_legacy(self.discover_home(home))
+        home = home or Path.home()
+        mcp_file = home / ".cursor" / "mcp.json"
+        if not mcp_file.exists():
+            return ScanResult()
+        try:
+            data = json.loads(mcp_file.read_text())
+            servers = extract_mcp_servers(data)
+            mcps = []
+            for name, cfg in servers.items():
+                if isinstance(cfg, dict):
+                    mcps.append(
+                        DiscoveredMcp(
+                            name=name,
+                            command=cfg.get("command"),
+                            args=cfg.get("args", []),
+                            url=cfg.get("url"),
+                            description=f"Cursor global MCP: {name}",
+                            source="cursor:global",
+                        )
+                    )
+            return ScanResult(mcps=mcps)
+        except (json.JSONDecodeError, OSError):
+            return ScanResult()
 
     def scan_project(self, project_dir: Path) -> ScanResult:
-        return project_legacy(self.discover_project(project_dir))
+        mcp_file = project_dir / ".cursor" / "mcp.json"
+        if not mcp_file.exists():
+            return ScanResult()
+        try:
+            data = json.loads(mcp_file.read_text())
+            servers = extract_mcp_servers(data)
+            mcps = []
+            for name, cfg in servers.items():
+                if isinstance(cfg, dict):
+                    mcps.append(
+                        DiscoveredMcp(
+                            name=name,
+                            command=cfg.get("command"),
+                            args=cfg.get("args", []),
+                            url=cfg.get("url"),
+                            description=f"Cursor project MCP: {name}",
+                            source="cursor:project",
+                        )
+                    )
+            return ScanResult(mcps=mcps)
+        except (json.JSONDecodeError, OSError):
+            return ScanResult()
 
     def discover_home(self, home: Path | None = None) -> AdapterDiscoveryResult:
         home = home or Path.home()

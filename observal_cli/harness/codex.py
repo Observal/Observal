@@ -10,6 +10,8 @@ import re
 import time
 from pathlib import Path
 
+from observal_cli.discovery.adapter_support import RichAdapterScanner
+from observal_cli.discovery.models import AdapterDiscoveryResult, DiagnosticCode, DiscoveryScope
 from observal_cli.harness import (
     DiscoveredMcp,
     HookSpec,
@@ -158,6 +160,52 @@ class CodexAdapter(BaseAdapter):
             return ScanResult(mcps=mcps)
         except Exception:
             return ScanResult()
+
+    def discover_home(self, home: Path | None = None) -> AdapterDiscoveryResult:
+        home = home or Path.home()
+        return self._discover_codex_root(home / ".codex", DiscoveryScope.USER, home=home)
+
+    def discover_project(self, project_dir: Path) -> AdapterDiscoveryResult:
+        return self._discover_codex_root(
+            project_dir / ".codex",
+            DiscoveryScope.PROJECT,
+            project_dir=project_dir,
+        )
+
+    def _discover_codex_root(
+        self,
+        root: Path,
+        scope: DiscoveryScope,
+        *,
+        home: Path | None = None,
+        project_dir: Path | None = None,
+    ) -> AdapterDiscoveryResult:
+        scanner = RichAdapterScanner(
+            harness=self.harness_name,
+            scope=scope,
+            root=root,
+            home=home,
+            project_dir=project_dir,
+        )
+        config_path = root / "config.toml"
+        content = scanner.walker.read_text(config_path)
+        if content is not None:
+            try:
+                import tomllib
+
+                data = tomllib.loads(content)
+            except (tomllib.TOMLDecodeError, UnicodeError):
+                scanner.diagnostic(DiagnosticCode.METADATA_MALFORMED, config_path, "malformed TOML discovery metadata")
+            else:
+                mcp = data.get("mcp", {})
+                servers = mcp.get("servers", {}) if isinstance(mcp, dict) else {}
+                scanner.add_mcps(
+                    servers,
+                    config_path,
+                    source=f"codex:{'global' if scope is DiscoveryScope.USER else 'project'}",
+                    description_prefix="Codex MCP",
+                )
+        return scanner.finish()
 
     def get_hook_spec(self) -> HookSpec:
         return HookSpec(

@@ -12,9 +12,15 @@ from observal_cli.discovery.models import DiagnosticCode, DiscoveryScope
 from observal_cli.discovery.normalize import build_candidates, fingerprint_launch
 from observal_cli.discovery.readiness import build_discovery_draft_payload
 from observal_cli.discovery.serialize import adapter_discovery_result_to_dict
+from observal_cli.harness.antigravity import AntigravityAdapter
 from observal_cli.harness.claude_code import ClaudeCodeAdapter
+from observal_cli.harness.codex import CodexAdapter
+from observal_cli.harness.copilot import CopilotAdapter
+from observal_cli.harness.copilot_cli import CopilotCliAdapter
 from observal_cli.harness.cursor import CursorAdapter
+from observal_cli.harness.goose import GooseAdapter
 from observal_cli.harness.kiro import KiroAdapter
+from observal_cli.harness.opencode import OpenCodeAdapter
 from observal_cli.harness.pi import PiAdapter
 from observal_cli.harness.protocol import DiscoveredAgent, DiscoveredHook, DiscoveredMcp, DiscoveredSkill
 
@@ -36,6 +42,71 @@ def _text(path: Path, value: str) -> Path:
 
 def _components(result, component_type):
     return [item.component for item in result.evidence if isinstance(item.component, component_type)]
+
+
+@pytest.mark.parametrize(
+    ("adapter", "relative_path", "content"),
+    [
+        (
+            CodexAdapter(),
+            ".codex/config.toml",
+            '[mcp.servers.demo]\ncommand = "npx"\nargs = ["demo", "--read"]\n',
+        ),
+        (
+            CopilotAdapter(),
+            ".vscode/mcp.json",
+            '{"servers":{"demo":{"command":"npx","args":["demo","--read"]}}}',
+        ),
+        (
+            CopilotCliAdapter(),
+            ".copilot/mcp-config.json",
+            '{"mcpServers":{"demo":{"command":"npx","args":["demo","--read"]}}}',
+        ),
+        (
+            OpenCodeAdapter(),
+            ".config/opencode/opencode.json",
+            '{"mcp":{"demo":{"command":["npx","demo","--read"]}}}',
+        ),
+    ],
+)
+def test_remaining_json_and_toml_adapters_use_rich_discovery(
+    tmp_path: Path, adapter, relative_path: str, content: str
+) -> None:
+    _text(tmp_path / relative_path, content)
+
+    result = adapter.discover_home(tmp_path)
+
+    mcps = _components(result, DiscoveredMcp)
+    assert [item.name for item in mcps] == ["demo"]
+    assert result.evidence[0].launch is not None
+    assert result.evidence[0].display_path is not None
+
+
+def test_antigravity_and_goose_use_bounded_rich_discovery(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    antigravity = tmp_path / "antigravity"
+    _json(
+        antigravity / "mcp_config.json",
+        {"mcpServers": {"demo": {"command": "npx", "args": ["demo", "--read"]}}},
+    )
+    monkeypatch.setattr("observal_cli.harness.antigravity.resolve_antigravity_config_dir", lambda _home: antigravity)
+    monkeypatch.setattr(AntigravityAdapter, "_resolve_ag_dir", lambda _self, _home=None: antigravity)
+
+    antigravity_result = AntigravityAdapter().discover_home(tmp_path)
+
+    assert [item.name for item in _components(antigravity_result, DiscoveredMcp)] == ["demo"]
+
+    goose_config = tmp_path / "goose-config"
+    goose_agents = tmp_path / "goose-agents"
+    _text(
+        goose_config / "config.yaml",
+        "extensions:\n  demo:\n    type: stdio\n    cmd: npx\n    args: [demo, --read]\n",
+    )
+    monkeypatch.setattr("observal_cli.harness.goose.resolve_goose_config_dir", lambda _home: goose_config)
+    monkeypatch.setattr("observal_cli.harness.goose.resolve_goose_agents_home", lambda _home: goose_agents)
+
+    goose_result = GooseAdapter().discover_home(tmp_path)
+
+    assert [item.name for item in _components(goose_result, DiscoveredMcp)] == ["demo"]
 
 
 def test_claude_discovers_independent_user_and_project_sources(tmp_path: Path) -> None:
@@ -290,7 +361,10 @@ def test_kiro_project_discovers_root_sources_and_preserves_distinct_same_name_mc
     result = KiroAdapter().discover_project(tmp_path)
 
     mcps = _components(result, DiscoveredMcp)
-    assert [(item.name, item.args) for item in mcps] == [("shared", ["two"]), ("shared", ["one"])]
+    assert [(item.name, item.args) for item in mcps] == [
+        ("shared", ["<secret>"]),
+        ("shared", ["<secret>"]),
+    ]
     assert [item.name for item in _components(result, DiscoveredAgent)] == ["coder"]
     assert [item.name for item in _components(result, DiscoveredSkill)] == ["helper"]
     hooks = _components(result, DiscoveredHook)

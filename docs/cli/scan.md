@@ -12,7 +12,7 @@ To install session telemetry hooks, use [`observal doctor patch`](doctor.md). MC
 ## Synopsis
 
 ```bash
-observal scan [--harness <harness>] [--discover] [--output table|json]
+observal scan [--harness <harness>] [--discover] [--registry-lookup-limit <count>] [--output table|json]
 ```
 
 ## Options
@@ -20,7 +20,8 @@ observal scan [--harness <harness>] [--discover] [--output table|json]
 | Option | Description |
 | --- | --- |
 | `--harness <harness>`, `-i` | Scope harness evidence to one registered harness. Package evidence may enrich matching harness candidates, but unrelated package-only candidates are suppressed. |
-| `--discover` | Enable bounded rich discovery, package evidence, local tracking, and exact Registry classification. |
+| `--discover` | Enable bounded rich discovery, package evidence, local tracking, and exact Registry identity classification. |
+| `--registry-lookup-limit <count>` | Maximum Registry requests during discovery (default: `100`). Use `0` to explicitly disable both the request limit and Registry deadline. |
 | `--output table\|json`, `-o` | Select human-readable table output or versioned JSON. |
 
 With no flags, `observal scan` auto-detects registered harnesses and preserves the established read-only inventory output.
@@ -66,23 +67,23 @@ observal scan --harness kiro --discover --output json
 
 Discovery adds:
 
-- bounded rich evidence from Claude Code, Cursor, Pi, and Kiro adapters;
+- bounded rich evidence from all registered harness adapters;
 - bounded top-level npm, pipx, and installed uv tool metadata;
 - optional local lockfile identity and launch-fingerprint matching;
-- authenticated owned-state and exact canonical Registry resolution;
+- authenticated owned-state and exact canonical Registry identity resolution;
 - typed candidate provenance, confidence, tracking, support, Registry, and registration states; and
 - non-fatal, redacted diagnostics for partial provider or adapter failures.
 
 Package discovery does not install, import, or execute discovered packages.
 
-Discovery JSON uses `discovery_schema_version: 1` and retains the default component arrays while adding `candidates` and `diagnostics`. Paths and launch data are normalized and secret values are removed before output or fingerprinting.
+Discovery JSON uses `discovery_schema_version: 1` and retains the default component arrays while adding `candidates` and `diagnostics`. Paths and launch data are normalized before output. Recognized secret values and all unclassified argument values are removed; launches with unclassified behavior arguments do not receive exact fingerprints.
 
 ## Discovery result states
 
 Candidate state is deliberately split rather than represented by one status:
 
-- **Tracking**: whether an exact or compatible local installation-lock identity exists.
-- **Registry**: owned exact match, accessible exact match, exact miss, ambiguous, unavailable, or not checked.
+- **Tracking**: whether an exact or compatible local installation-lock identity exists, including MCP launch-fingerprint comparison where available.
+- **Registry**: whether the proposed exact qualified Registry identity exists; this is an identity/slug check, not launch-content equivalence.
 - **Support/readiness**: whether the evidence has a supported, complete portable representation.
 - **Draft readiness**: already exists, eligible, incomplete, not applicable, or otherwise blocked.
 
@@ -96,7 +97,8 @@ Canonical launch fingerprints are recorded only when an install path has the exa
 - URL credentials and sensitive query values are removed.
 - Nested hook configuration and diagnostic messages are redacted.
 - Local paths are represented as project-relative, home-relative, or opaque external paths.
-- Filesystem traversal, metadata files, command output, item counts, and provider runtimes are bounded.
+- Filesystem traversal, metadata files, command output, item counts, provider runtimes, and Registry classification are bounded by default.
+- Registry candidates skipped because a lookup bound was reached remain `not_checked`; `--registry-lookup-limit 0` explicitly requests unlimited Registry classification.
 - Symlinks escaping approved roots are rejected.
 - Readiness checks accept only portable Registry content, not arbitrary local executable or file paths.
 

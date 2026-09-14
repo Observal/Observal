@@ -96,7 +96,7 @@ def test_evidence_serialization_omits_internal_source_path_and_emits_nulls() -> 
     assert result["component"] == {
         "name": "server",
         "command": "npx",
-        "args": ["-y", "server"],
+        "args": ["-y", "<secret>"],
         "url": None,
         "description": "Description",
         "source": "claude",

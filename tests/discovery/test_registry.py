@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, call
+from unittest.mock import ANY, MagicMock, call
 
 import pytest
 
@@ -11,6 +11,7 @@ from observal_cli import client
 from observal_cli.discovery.models import (
     ComponentType,
     Confidence,
+    DiagnosticCode,
     DiscoveryCandidate,
     ReasonCode,
     RegistrationStatus,
@@ -64,6 +65,43 @@ def test_empty_candidate_list_performs_no_registry_calls(monkeypatch):
     )
 
 
+def test_registry_request_limit_leaves_unresolved_candidates_not_checked(monkeypatch):
+    candidate = _candidate()
+    get = MagicMock(return_value={"username": "alice"})
+    monkeypatch.setattr("observal_cli.discovery.registry.client.get", get)
+
+    diagnostics = classify_registry_candidates(
+        [candidate],
+        configuration={"server_url": "https://registry", "access_token": "token"},
+        lookup_limit=1,
+    )
+
+    assert get.call_count == 1
+    assert candidate.registry_status is RegistryStatus.NOT_CHECKED
+    assert candidate.registration_status is RegistrationStatus.INCOMPLETE
+    assert candidate.reason_codes == [ReasonCode.REGISTRY_LOOKUP_LIMIT_REACHED]
+    assert [item.code for item in diagnostics] == [DiagnosticCode.REGISTRY_LOOKUP_LIMIT_REACHED]
+
+
+def test_zero_registry_request_limit_explicitly_disables_budget(monkeypatch):
+    candidate = _candidate()
+    get = MagicMock(side_effect=[{"username": "alice"}, []])
+    optional = MagicMock(return_value=client.OptionalLookupResult(client.OptionalLookupStatus.NOT_FOUND))
+    monkeypatch.setattr("observal_cli.discovery.registry.client.get", get)
+    monkeypatch.setattr("observal_cli.discovery.registry.client.get_optional", optional)
+
+    diagnostics = classify_registry_candidates(
+        [candidate],
+        configuration={"server_url": "https://registry", "access_token": "token"},
+        lookup_limit=0,
+    )
+
+    assert diagnostics == []
+    assert candidate.registry_status is RegistryStatus.NO_EXACT_MATCH
+    assert all("deadline" not in call.kwargs for call in get.call_args_list)
+    assert "deadline" not in optional.call_args.kwargs
+
+
 def test_missing_configuration_and_auth_do_not_make_requests(monkeypatch):
     get = MagicMock(side_effect=AssertionError("unexpected request"))
     monkeypatch.setattr("observal_cli.discovery.registry.client.get", get)
@@ -109,6 +147,7 @@ def test_registry_uses_type_specific_owned_routes(monkeypatch, component_type, m
         my_path,
         operation=f"List owned {component_type.value} Registry entries",
         resource=f"owned {component_type.value} entries",
+        deadline=ANY,
     )
     assert candidate.registry_status is RegistryStatus.NO_EXACT_MATCH
 
@@ -150,6 +189,7 @@ def test_successful_owned_and_exact_404_classifies_owned_existing(monkeypatch):
         params={"type": "mcp", "identifier": "alice/search-tool"},
         operation="Resolve exact mcp Registry identity",
         resource="alice/search-tool",
+        deadline=ANY,
     )
 
 
@@ -196,6 +236,7 @@ def test_exact_unowned_match_fetches_detail(monkeypatch):
         "/api/v1/mcps/mcp-2",
         operation="Fetch exact mcp Registry entry",
         resource="alice/search-tool",
+        deadline=ANY,
     )
 
 

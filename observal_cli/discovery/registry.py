@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+import time
 from collections import defaultdict
+from dataclasses import dataclass, field
 from typing import Any
 
 from observal_cli import client, config
@@ -46,12 +48,50 @@ _ELIGIBILITY_BLOCKERS = {
     ReasonCode.CACHE_EVIDENCE_ONLY,
     ReasonCode.MANAGED_TELEMETRY_COMPONENT,
 }
+DEFAULT_REGISTRY_LOOKUP_LIMIT = 100
+DEFAULT_REGISTRY_DEADLINE_SECONDS = 15.0
+
+
+class RegistryLookupLimitError(RuntimeError):
+    """The opt-in Registry lookup budget has been exhausted."""
+
+
+@dataclass
+class RegistryLookupBudget:
+    max_requests: int = DEFAULT_REGISTRY_LOOKUP_LIMIT
+    deadline_seconds: float = DEFAULT_REGISTRY_DEADLINE_SECONDS
+    clock: Any = time.monotonic
+    requests: int = 0
+    deadline: float | None = field(init=False)
+
+    def __post_init__(self) -> None:
+        # Zero is the explicit unlimited mode.
+        self.deadline = None if self.max_requests == 0 else self.clock() + self.deadline_seconds
+
+    def claim(self) -> None:
+        if self.max_requests and self.requests >= self.max_requests:
+            raise RegistryLookupLimitError
+        if self.deadline is not None and self.clock() >= self.deadline:
+            raise RegistryLookupLimitError
+        self.requests += 1
+
+    def request_options(self) -> dict[str, float]:
+        return {"deadline": self.deadline} if self.deadline is not None else {}
+
+    def exhausted(self) -> bool:
+        return bool(
+            (self.max_requests and self.requests >= self.max_requests)
+            or (self.deadline is not None and self.clock() >= self.deadline)
+        )
+
+
 _REGISTRY_REASONS = {
     ReasonCode.REGISTRY_NOT_CHECKED,
     ReasonCode.REGISTRY_NOT_CONFIGURED,
     ReasonCode.REGISTRY_AUTH_REQUIRED,
     ReasonCode.REGISTRY_UNAVAILABLE,
     ReasonCode.REGISTRY_LOOKUP_INCOMPLETE,
+    ReasonCode.REGISTRY_LOOKUP_LIMIT_REACHED,
     ReasonCode.NO_EXACT_REGISTRY_MATCH,
     ReasonCode.REGISTRY_EXACT_MATCH,
     ReasonCode.REGISTRY_OWNED_EXISTING,
@@ -84,6 +124,16 @@ def _mark_auth_required(candidates: list[DiscoveryCandidate], reason: ReasonCode
         candidate.reason_codes.append(reason)
         if _otherwise_eligible(candidate):
             candidate.registration_status = RegistrationStatus.REQUIRES_AUTH
+
+
+def _mark_lookup_limit(candidates: list[DiscoveryCandidate]) -> None:
+    for candidate in candidates:
+        if candidate.registry_status != RegistryStatus.NOT_CHECKED:
+            continue
+        _reset_registry_reasons(candidate)
+        candidate.registry_status = RegistryStatus.NOT_CHECKED
+        candidate.registration_status = RegistrationStatus.INCOMPLETE
+        candidate.reason_codes.append(ReasonCode.REGISTRY_LOOKUP_LIMIT_REACHED)
 
 
 def _mark_unavailable(candidate: DiscoveryCandidate, *, incomplete: bool = False) -> None:
@@ -134,11 +184,13 @@ def _apply_no_match(candidate: DiscoveryCandidate) -> None:
         candidate.registration_status = RegistrationStatus.ELIGIBLE
 
 
-def _load_owned(component_type: ComponentType) -> dict[str, list[dict[str, Any]]] | None:
+def _load_owned(component_type: ComponentType, budget: RegistryLookupBudget) -> dict[str, list[dict[str, Any]]] | None:
+    budget.claim()
     payload: object = client.get(
         _MY_PATHS[component_type],
         operation=f"List owned {component_type.value} Registry entries",
         resource=f"owned {component_type.value} entries",
+        **budget.request_options(),
     )
     if not isinstance(payload, list):
         return None
@@ -157,6 +209,8 @@ def classify_registry_candidates(
     candidates: list[DiscoveryCandidate],
     *,
     configuration: dict[str, Any] | None = None,
+    lookup_limit: int = DEFAULT_REGISTRY_LOOKUP_LIMIT,
+    deadline_seconds: float = DEFAULT_REGISTRY_DEADLINE_SECONDS,
 ) -> list[DiscoveryDiagnostic]:
     """Classify proposed personal Registry identities, preserving local results.
 
@@ -165,6 +219,9 @@ def classify_registry_candidates(
     proof that a canonical Registry identity is absent.
     """
 
+    if lookup_limit < 0:
+        raise ValueError("Registry lookup limit must be zero or greater")
+    budget = RegistryLookupBudget(max_requests=lookup_limit, deadline_seconds=deadline_seconds)
     diagnostics: list[DiscoveryDiagnostic] = []
     registry_candidates = [candidate for candidate in candidates if candidate.component_type in _MY_PATHS]
     for candidate in candidates:
@@ -199,11 +256,16 @@ def classify_registry_candidates(
         ]
 
     try:
+        budget.claim()
         identity = client.get(
             "/api/v1/auth/whoami",
             operation="Resolve Registry owner identity",
             resource="authenticated user",
+            **budget.request_options(),
         )
+    except RegistryLookupLimitError:
+        _mark_lookup_limit(registry_candidates)
+        return [_diagnostic(DiagnosticCode.REGISTRY_LOOKUP_LIMIT_REACHED, "Registry lookup limit reached")]
     except CliError:
         for candidate in registry_candidates:
             _mark_unavailable(candidate)
@@ -229,7 +291,13 @@ def classify_registry_candidates(
     for component_type in sorted(grouped, key=lambda item: item.value):
         typed_candidates = grouped[component_type]
         try:
-            owned = _load_owned(component_type)
+            owned = _load_owned(component_type, budget)
+        except RegistryLookupLimitError:
+            _mark_lookup_limit(registry_candidates)
+            diagnostics.append(
+                _diagnostic(DiagnosticCode.REGISTRY_LOOKUP_LIMIT_REACHED, "Registry lookup limit reached")
+            )
+            return diagnostics
         except CliError:
             for candidate in typed_candidates:
                 _mark_unavailable(candidate)
@@ -259,13 +327,30 @@ def classify_registry_candidates(
             qualified_name = f"{namespace}/{slug}"
             if qualified_name not in lookup_cache:
                 try:
+                    budget.claim()
                     lookup_cache[qualified_name] = client.get_optional(
                         "/api/v1/registry/resolve",
                         params={"type": component_type.value, "identifier": qualified_name},
                         operation=f"Resolve exact {component_type.value} Registry identity",
                         resource=qualified_name,
+                        **budget.request_options(),
                     )
+                except RegistryLookupLimitError:
+                    _mark_lookup_limit(registry_candidates)
+                    diagnostics.append(
+                        _diagnostic(DiagnosticCode.REGISTRY_LOOKUP_LIMIT_REACHED, "Registry lookup limit reached")
+                    )
+                    return diagnostics
                 except CliError as error:
+                    if budget.exhausted():
+                        _mark_lookup_limit(registry_candidates)
+                        diagnostics.append(
+                            _diagnostic(
+                                DiagnosticCode.REGISTRY_LOOKUP_LIMIT_REACHED,
+                                "Registry lookup deadline reached",
+                            )
+                        )
+                        return diagnostics
                     lookup_cache[qualified_name] = error
             lookup = lookup_cache[qualified_name]
             if isinstance(lookup, CliError):
@@ -312,13 +397,30 @@ def classify_registry_candidates(
             assert resolution is not None and resolved_id is not None
             if resolved_id not in detail_cache:
                 try:
+                    budget.claim()
                     detail = client.get(
                         _DETAIL_PATHS[component_type].format(id=resolved_id),
                         operation=f"Fetch exact {component_type.value} Registry entry",
                         resource=qualified_name,
+                        **budget.request_options(),
                     )
                     detail_cache[resolved_id] = detail if isinstance(detail, dict) else None
+                except RegistryLookupLimitError:
+                    _mark_lookup_limit(registry_candidates)
+                    diagnostics.append(
+                        _diagnostic(DiagnosticCode.REGISTRY_LOOKUP_LIMIT_REACHED, "Registry lookup limit reached")
+                    )
+                    return diagnostics
                 except CliError as error:
+                    if budget.exhausted():
+                        _mark_lookup_limit(registry_candidates)
+                        diagnostics.append(
+                            _diagnostic(
+                                DiagnosticCode.REGISTRY_LOOKUP_LIMIT_REACHED,
+                                "Registry lookup deadline reached",
+                            )
+                        )
+                        return diagnostics
                     detail_cache[resolved_id] = error
             detail = detail_cache[resolved_id]
             if isinstance(detail, CliError):

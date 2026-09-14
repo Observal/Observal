@@ -287,7 +287,13 @@ def test_discover_json_uses_versioned_contract_and_never_calls_mutations(scan_en
     assert payload["candidates"][0]["local_name"] == "search"
     assert payload["candidates"][0]["registry_status"] == "no_exact_match"
     assert payload["diagnostics"][0]["code"] == "executable_missing"
-    collect.assert_called_once_with({}, home=scan_env.home, project_dir=scan_env.project, harness_filtered=False)
+    collect.assert_called_once_with(
+        {},
+        home=scan_env.home,
+        project_dir=scan_env.project,
+        harness_filtered=False,
+        registry_lookup_limit=100,
+    )
     mutation.assert_not_called()
     scan_env.http_get.assert_not_called()
     scan_env.rprint.assert_not_called()
@@ -366,6 +372,22 @@ def test_discover_json_rejects_unsupported_mcp_transport_end_to_end(scan_env, mo
     mutation.assert_not_called()
 
 
+def test_discover_accepts_explicit_unlimited_registry_lookup(scan_env, monkeypatch) -> None:
+    collect = Mock(return_value=DiscoveryScanCollection())
+    monkeypatch.setattr(cmd_scan, "collect_discovery_scan", collect)
+
+    result = _invoke("--discover", "--registry-lookup-limit", "0", "--output", "json")
+
+    assert result.exit_code == 0, result.exception
+    collect.assert_called_once_with(
+        {},
+        home=scan_env.home,
+        project_dir=scan_env.project,
+        harness_filtered=False,
+        registry_lookup_limit=0,
+    )
+
+
 def test_discover_table_renders_candidates_and_diagnostics_without_legacy_registry_query(scan_env, monkeypatch) -> None:
     candidate = DiscoveryCandidate(
         component_type=None,
@@ -406,6 +428,7 @@ def test_discover_table_renders_candidates_and_diagnostics_without_legacy_regist
         home=scan_env.home,
         project_dir=scan_env.project,
         harness_filtered=True,
+        registry_lookup_limit=100,
     )
     scan_env.http_get.assert_not_called()
     mutation.assert_not_called()

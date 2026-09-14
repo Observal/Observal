@@ -10,6 +10,8 @@ import json
 import time
 from pathlib import Path
 
+from observal_cli.discovery.adapter_support import RichAdapterScanner
+from observal_cli.discovery.models import AdapterDiscoveryResult, DiscoveryScope
 from observal_cli.harness import (
     DiscoveredAgent,
     DiscoveredHook,
@@ -102,6 +104,53 @@ class CopilotCliAdapter(BaseAdapter):
         hooks = self._scan_hooks_dir(project_dir / ".github" / "hooks")
 
         return ScanResult(mcps=mcps, skills=skills, agents=agents, hooks=hooks)
+
+    def discover_home(self, home: Path | None = None) -> AdapterDiscoveryResult:
+        home = home or Path.home()
+        root = home / ".copilot"
+        scanner = RichAdapterScanner(
+            harness=self.harness_name,
+            scope=DiscoveryScope.USER,
+            root=root,
+            home=home,
+        )
+        self._discover_copilot_cli(scanner, root, project=False)
+        return scanner.finish()
+
+    def discover_project(self, project_dir: Path) -> AdapterDiscoveryResult:
+        scanner = RichAdapterScanner(
+            harness=self.harness_name,
+            scope=DiscoveryScope.PROJECT,
+            root=project_dir,
+            project_dir=project_dir,
+        )
+        self._discover_copilot_cli(scanner, project_dir, project=True)
+        return scanner.finish()
+
+    def _discover_copilot_cli(self, scanner: RichAdapterScanner, root: Path, *, project: bool) -> None:
+        mcp_path = root / ".mcp.json" if project else root / "mcp-config.json"
+        mcp_data = scanner.read_json(mcp_path)
+        if mcp_data is not None:
+            scanner.add_mcps(
+                mcp_data.get("mcpServers", {}),
+                mcp_path,
+                source=f"copilot-cli:{'project' if project else 'global'}",
+                description_prefix="Copilot CLI MCP",
+            )
+        skills_dir = root / ".agents" / "skills" if project else root / "skills"
+        scanner.add_skills(skills_dir, source="copilot-cli:skills", prefix="Copilot CLI skill")
+        if project:
+            scanner.add_markdown_agents(root / ".github" / "agents", source_prefix="Copilot CLI agent")
+        hooks_dir = root / ".github" / "hooks" if project else root / "hooks"
+        for hook_path in scanner.walker.files(hooks_dir, suffix=".json"):
+            data = scanner.read_json(hook_path)
+            if data is not None:
+                scanner.add_hooks_mapping(
+                    hook_path,
+                    data.get("hooks", {}),
+                    name_prefix=hook_path.stem,
+                    source="copilot-cli:hooks",
+                )
 
     def get_hook_spec(self) -> HookSpec:
         return HookSpec(

@@ -166,9 +166,12 @@ def redact_text(value: str) -> str:
 
 
 def redact_arguments(arguments: Sequence[str]) -> tuple[tuple[str, ...], bool]:
-    """Redact secret-bearing argument values.
+    """Fail closed when an arbitrary argument value cannot be classified.
 
-    The boolean indicates whether every argument was safely classified.
+    Option names and environment references are safe to display. Values for
+    recognized secret/environment options are deliberately replaced. Every
+    other positional or ``--option=value`` value is opaque: redact it and mark
+    the launch non-canonical so it cannot receive an exact fingerprint.
     """
 
     values = [str(argument) for argument in arguments]
@@ -206,8 +209,21 @@ def redact_arguments(arguments: Sequence[str]) -> tuple[tuple[str, ...], bool]:
                     index += 1
                 else:
                     safe = False
-        else:
+        elif argument.startswith("-") and "=" not in argument:
+            # A standalone option name carries no value. If the next token is a
+            # value, that token is handled conservatively on the next pass.
             redacted.append(redact_text(argument))
+        elif _is_reference(argument):
+            redacted.append(argument)
+        else:
+            # There is no universal CLI grammar that can prove an arbitrary
+            # value is non-secret. Redact it rather than extending a denylist.
+            if "=" in argument and argument.startswith("-"):
+                option, _value = argument.split("=", 1)
+                redacted.append(f"{option}={REDACTION_MARKER}")
+            else:
+                redacted.append(REDACTION_MARKER)
+            safe = False
         index += 1
     return tuple(redacted), safe
 

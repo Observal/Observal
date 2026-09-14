@@ -14,6 +14,7 @@ from unittest.mock import Mock
 import pytest
 from typer.testing import CliRunner
 
+from observal_cli.discovery.adapter_support import project_legacy
 from observal_cli.discovery.models import DiagnosticCode
 from observal_cli.harness import NotSupportedError, ScanResult, SessionSource
 from observal_cli.harness.base import _check_feature
@@ -195,13 +196,13 @@ def test_scan_home_resolves_default_home_and_normalizes_all_components(
         _markdown(["model: claude-opus"], "# Reviewer\nReview carefully.\n"),
     )
 
-    result = ClaudeCodeAdapter().scan_home()
+    result = project_legacy(ClaudeCodeAdapter().discover_home())
 
     assert _records(result.mcps) == [
         {
             "name": "local-server",
             "command": "node",
-            "args": ["server.js"],
+            "args": ["<secret>"],
             "url": None,
             "description": "Suite plugin description",
             "source": "plugin:suite",
@@ -370,7 +371,7 @@ def test_scan_project_follows_config_symlink_and_preserves_server_order(tmp_path
     (project / ".mcp.json").symlink_to(target)
     adapter = ClaudeCodeAdapter()
 
-    assert _records(adapter.scan_project(project).mcps) == [
+    assert _records(project_legacy(adapter.discover_project(project)).mcps) == [
         {
             "name": "remote",
             "command": None,
@@ -382,7 +383,7 @@ def test_scan_project_follows_config_symlink_and_preserves_server_order(tmp_path
         {
             "name": "stdio",
             "command": "python",
-            "args": ["server.py"],
+            "args": ["<secret>"],
             "url": None,
             "description": "Claude Code project MCP: stdio",
             "source": "claude-code:project",
@@ -390,11 +391,11 @@ def test_scan_project_follows_config_symlink_and_preserves_server_order(tmp_path
     ]
 
     _write_json(target, {"bare": {"command": "uvx", "args": ["bare-server"]}})
-    assert _records(adapter.scan_project(project).mcps) == [
+    assert _records(project_legacy(adapter.discover_project(project)).mcps) == [
         {
             "name": "bare",
             "command": "uvx",
-            "args": ["bare-server"],
+            "args": ["<secret>"],
             "url": None,
             "description": "Claude Code project MCP: bare",
             "source": "claude-code:project",
@@ -404,23 +405,23 @@ def test_scan_project_follows_config_symlink_and_preserves_server_order(tmp_path
 
 def test_missing_malformed_and_unreadable_scan_configs_fail_soft(tmp_path: Path):
     adapter = ClaudeCodeAdapter()
-    assert vars(adapter.scan_home(tmp_path)) == _empty_result()
-    assert vars(adapter.scan_project(tmp_path)) == _empty_result()
+    assert vars(project_legacy(adapter.discover_home(tmp_path))) == _empty_result()
+    assert vars(project_legacy(adapter.discover_project(tmp_path))) == _empty_result()
 
     claude_dir = tmp_path / ".claude"
     local_skill = claude_dir / "skills" / "ignored" / "SKILL.md"
     _write_text(local_skill, "available without settings")
-    assert [item.name for item in adapter.scan_home(tmp_path).skills] == ["ignored"]
+    assert [item.name for item in project_legacy(adapter.discover_home(tmp_path)).skills] == ["ignored"]
 
     _write_text(claude_dir / "settings.json", "{ malformed")
-    assert [item.name for item in adapter.scan_home(tmp_path).skills] == ["ignored"]
+    assert [item.name for item in project_legacy(adapter.discover_home(tmp_path)).skills] == ["ignored"]
     (claude_dir / "settings.json").unlink()
     (claude_dir / "settings.json").mkdir()
-    assert [item.name for item in adapter.scan_home(tmp_path).skills] == ["ignored"]
+    assert [item.name for item in project_legacy(adapter.discover_home(tmp_path)).skills] == ["ignored"]
 
     project_config = tmp_path / ".mcp.json"
     project_config.mkdir()
-    project_result = adapter.scan_project(tmp_path)
+    project_result = project_legacy(adapter.discover_project(tmp_path))
     assert project_result.mcps == []
     assert [item.name for item in project_result.skills] == ["ignored"]
 
@@ -497,7 +498,7 @@ def test_component_read_errors_are_isolated_with_exact_fallbacks(tmp_path: Path,
 
     monkeypatch.setattr(Path, "read_text", raise_for_components)
 
-    result = ClaudeCodeAdapter().scan_home(tmp_path)
+    result = project_legacy(ClaudeCodeAdapter().discover_home(tmp_path))
 
     assert vars(result) == _empty_result()
     rich = ClaudeCodeAdapter().discover_home(tmp_path)
@@ -850,17 +851,17 @@ def test_scan_command_preserves_name_based_home_scope_precedence(
         "harnesses": [{"name": "claude-code", "hooks": "missing"}],
         "mcps": [
             {
-                "name": "home-only",
-                "command": "home-only",
-                "args": [],
+                "name": "shared",
+                "command": "home-command",
+                "args": ["home.js"],
                 "url": None,
                 "description": "Plugin: suite",
                 "source": "plugin:suite",
             },
             {
-                "name": "shared",
-                "command": "home-command",
-                "args": ["home.js"],
+                "name": "home-only",
+                "command": "home-only",
+                "args": [],
                 "url": None,
                 "description": "Plugin: suite",
                 "source": "plugin:suite",

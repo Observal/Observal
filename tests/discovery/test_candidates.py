@@ -75,8 +75,8 @@ def test_exact_harness_launches_merge_and_package_evidence_enriches() -> None:
 
 
 def test_same_package_with_different_launches_remains_distinct() -> None:
-    read = SanitizedLaunch(kind=LaunchKind.NPM, package="server", binary="server", arguments=("--mode", "read"))
-    write = SanitizedLaunch(kind=LaunchKind.NPM, package="server", binary="server", arguments=("--mode", "write"))
+    read = SanitizedLaunch(kind=LaunchKind.NPM, package="server", binary="server", arguments=("--read",))
+    write = SanitizedLaunch(kind=LaunchKind.NPM, package="server", binary="server", arguments=("--write",))
     metadata = _package("server", SanitizedLaunch(kind=LaunchKind.NPM, package="server", binary="server"))
 
     candidates = build_candidates([_harness_mcp("server-read", read), _harness_mcp("server-write", write), metadata])

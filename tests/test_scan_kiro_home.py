@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+from observal_cli.harness import DiscoveredMcp
 from observal_cli.harness.kiro import KiroAdapter
 
 if TYPE_CHECKING:
@@ -302,8 +303,9 @@ class TestKiroMcpIdentity:
                 "mcpServers": {"shared-mcp": {"command": "npx", "args": ["shared"]}},
             },
         )
-        mcps, _, _, _ = _scan_kiro_home(kiro)
-        assert len([m for m in mcps if m.name == "shared-mcp"]) == 2
+        result = _adapter.discover_home(kiro.parent)
+        mcps = [item.component for item in result.evidence if isinstance(item.component, DiscoveredMcp)]
+        assert len([mcp for mcp in mcps if mcp.name == "shared-mcp"]) == 2
 
     def test_unique_mcps_all_kept(self, tmp_path: Path):
         kiro = tmp_path / ".kiro"
