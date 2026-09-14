@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useAllTeams, useClaimPersonalTeamspace, useCreateTeam } from "@/hooks/use-api";
 import { hasMinRole } from "@/hooks/use-role-guard";
 import { getUserRole } from "@/lib/api";
@@ -35,51 +36,9 @@ interface TeamDisplay extends Team {
   component_count?: number;
   review_count?: number;
   display_role?: string;
-  /** Extended visibility for mockup fallback data (API only returns public/private). */
-  display_visibility?: "public" | "private" | "internal";
 }
 
-/** Fallback data matching the HTML mockup exactly – used only when the API
- *  returns zero teams so the page is never empty during development. */
-const FALLBACK_TEAMS: TeamDisplay[] = [
-  {
-    id: "fb-1", name: "Platform Engineering", handle: "platform",
-    description: "Agents and components used to operate Acme's internal developer platform.",
-    visibility: "private", role: "owner", member_count: 14,
-    agent_count: 38, component_count: 64, review_count: 3, display_role: "Owner",
-    display_visibility: "private",
-  },
-  {
-    id: "fb-2", name: "Developer Experience", handle: "dx",
-    description: "Shared developer tooling, onboarding workflows, and quality automation.",
-    visibility: "private", role: "member", member_count: 9,
-    agent_count: 22, component_count: 31, review_count: 1, display_role: "Member",
-    display_visibility: "internal",
-  },
-  {
-    id: "fb-3", name: "Security Engineering", handle: "security",
-    description: "Secure development guidance, review agents, and policy components.",
-    visibility: "private", role: null, member_count: 7,
-    agent_count: 16, component_count: 28, review_count: 0, display_role: "Viewer",
-    display_visibility: "internal",
-  },
-  {
-    id: "fb-4", name: "Data Platform", handle: "data",
-    description: "Warehouse operations, schema migrations, and analytics engineering.",
-    visibility: "private", role: null, member_count: 11,
-    agent_count: 19, component_count: 31, review_count: 2, display_role: "Invite pending",
-    display_visibility: "private",
-  },
-  {
-    id: "fb-5", name: "Open Source", handle: "open-source",
-    description: "Community-maintained agents and reusable components.",
-    visibility: "public", role: null, member_count: 23,
-    agent_count: 41, component_count: 72, review_count: 0, display_role: "Discoverable",
-    display_visibility: "public",
-  },
-];
-
-/** Convert an API Team into a TeamDisplay with defaults. */
+/** Convert API data into the display shape used by this page. */
 function toDisplay(team: Team): TeamDisplay {
   return { ...team };
 }
@@ -89,7 +48,8 @@ function toDisplay(team: Team): TeamDisplay {
 /* ────────────────────────────────────────────────────────── */
 
 type ViewMode = "grid" | "list";
-type TeamTab = "all" | "my" | "invitations" | "discoverable";
+type TeamTab = "all" | "my" | "discoverable";
+type VisibilityFilter = "all" | "public" | "private";
 
 const CONTROL_CLASS_NAME =
   "bg-background/80 border-input/90 placeholder:text-muted-foreground/80 hover:border-primary-accent/50 focus-visible:border-primary-accent focus-visible:ring-primary-accent/30";
@@ -99,10 +59,9 @@ function slugifyHandle(value: string) {
   return base && base.length < 3 ? `${base}-team` : base;
 }
 
-/** Resolve the effective visibility for display.
- *  Prefer display_visibility (mockup-specific), fall back to API visibility. */
+/** Resolve the API visibility for display. */
 function effectiveVisibility(team: TeamDisplay): string {
-  return team.display_visibility ?? team.visibility ?? "private";
+  return team.visibility ?? "private";
 }
 
 /** Map visibility to badge color tone matching the HTML mockup exactly:
@@ -368,29 +327,36 @@ function CreatePanel({
                 Generated from the name. You can edit it before creation.
               </p>
             </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label>Visibility</Label>
-              <div role="radiogroup" className="grid gap-2 sm:grid-cols-2">
+            <fieldset className="space-y-2 md:col-span-2">
+              <legend className="text-sm font-medium">Visibility</legend>
+              <div className="grid gap-2 sm:grid-cols-2">
                 {([
                   { value: "public" as const, title: "Public", blurb: "Requires reviewer approval. It stays locked and private until approved." },
                   { value: "private" as const, title: "Private", blurb: "Hidden from non-members. Administrators can still access it." },
-                ] as const).map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    role="radio"
-                    aria-checked={visibility === opt.value}
-                    onClick={() => setVisibility(opt.value)}
-                    className={`rounded-[11px] border p-3 text-left transition-colors ${
-                      visibility === opt.value ? "border-foreground/30 bg-surface-raised" : "border-border hover:border-foreground/20"
-                    }`}
+                ] as const).map((option) => (
+                  <label
+                    key={option.value}
+                    className={cn(
+                      "relative cursor-pointer rounded-[11px] border p-3 text-left transition-colors focus-within:ring-2 focus-within:ring-ring",
+                      visibility === option.value
+                        ? "border-foreground/30 bg-surface-raised"
+                        : "border-border hover:border-foreground/20",
+                    )}
                   >
-                    <p className="text-xs font-medium">{opt.title}</p>
-                    <p className="mt-1 text-[10px] leading-5 text-muted-foreground">{opt.blurb}</p>
-                  </button>
+                    <input
+                      type="radio"
+                      name="team-visibility"
+                      value={option.value}
+                      checked={visibility === option.value}
+                      onChange={() => setVisibility(option.value)}
+                      className="sr-only"
+                    />
+                    <span className="block text-xs font-medium">{option.title}</span>
+                    <span className="mt-1 block text-[10px] leading-5 text-muted-foreground">{option.blurb}</span>
+                  </label>
                 ))}
               </div>
-            </div>
+            </fieldset>
             <div className="space-y-2 md:col-span-2">
               <Label htmlFor="team-description">
                 Description <span className="font-normal text-muted-foreground">(optional)</span>
@@ -454,45 +420,29 @@ export default function TeamspacesPage() {
   const [teamQuery, setTeamQuery] = useState("");
   const [view, setView] = useState<ViewMode>("grid");
   const [tab, setTab] = useState<TeamTab>("all");
+  const [visibilityFilter, setVisibilityFilter] = useState<VisibilityFilter>("all");
 
-  /* Use fallback data when the API returns nothing (dev / empty instance). */
-  const teams: TeamDisplay[] = useMemo(
-    () => (apiTeams.length > 0 ? apiTeams.map(toDisplay) : FALLBACK_TEAMS),
-    [apiTeams],
-  );
-  const usingFallback = apiTeams.length === 0 && !isLoading;
-
+  const teams = useMemo(() => apiTeams.map(toDisplay), [apiTeams]);
   const query = teamQuery.trim().toLowerCase();
-  const filteredTeams = useMemo(() =>
-    teams.filter((t) => !query || t.name.toLowerCase().includes(query) || t.handle.toLowerCase().includes(query)),
-    [teams, query],
-  );
-
-  const myTeams = useMemo(() => teams.filter((t) => t.role && ["owner", "member", "reviewer"].includes(t.role)), [teams]);
-  const invitations = useMemo(() => teams.filter((t) => !t.role || t.display_role === "Invite pending"), [teams]);
-  const discoverable = useMemo(() => teams.filter((t) => t.visibility === "public" || (!t.role && t.visibility !== "private")), [teams]);
+  const myTeams = useMemo(() => teams.filter((team) => team.role && ["owner", "member", "reviewer"].includes(team.role)), [teams]);
+  const discoverable = useMemo(() => teams.filter((team) => team.visibility === "public" || (!team.role && team.visibility !== "private")), [teams]);
 
   const visibleTeams = useMemo(() => {
-    const base = (() => {
-      switch (tab) {
-        case "my": return myTeams;
-        case "invitations": return invitations;
-        case "discoverable": return discoverable;
-        default: return filteredTeams;
-      }
-    })();
-    if (tab !== "all" || !query) return base;
-    return base;
-  }, [tab, filteredTeams, myTeams, invitations, discoverable, query]);
+    const base = tab === "my" ? myTeams : tab === "discoverable" ? discoverable : teams;
+    return base.filter((team) => {
+      const matchesQuery = !query || team.name.toLowerCase().includes(query) || team.handle.toLowerCase().includes(query);
+      const matchesVisibility = visibilityFilter === "all" || team.visibility === visibilityFilter;
+      return matchesQuery && matchesVisibility;
+    });
+  }, [discoverable, myTeams, query, tab, teams, visibilityFilter]);
 
   const tabData = useMemo(() => [
-    { value: "all", label: "All visible", count: filteredTeams.length || undefined },
+    { value: "all", label: "All visible", count: teams.length || undefined },
     { value: "my", label: "My teamspaces", count: myTeams.length || undefined },
-    { value: "invitations", label: "Invitations", count: invitations.length || undefined },
     { value: "discoverable", label: "Discoverable", count: discoverable.length || undefined },
-  ], [filteredTeams.length, myTeams.length, invitations.length, discoverable.length]);
+  ], [teams.length, myTeams.length, discoverable.length]);
 
-  const firstTeamspace = !isLoading && apiTeams.length === 0 && !usingFallback;
+  const firstTeamspace = !isLoading && apiTeams.length === 0;
   const personalClaimed = apiTeams.some((t) => t.is_personal && t.role === "owner");
 
   /* For a first-time setup (no teams at all), show the panel inline instead of as a modal. */
@@ -547,12 +497,15 @@ export default function TeamspacesPage() {
               className="h-[34px] w-full min-w-0 rounded-[9px] border border-border bg-transparent pl-9 pr-3 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
             />
           </div>
-          {/* Visibility filter – matches mockup toolbar select */}
           <select
             aria-label="Filter by visibility"
-            className="h-[34px] min-w-[145px] rounded-[9px] border border-border bg-transparent px-3 text-xs text-foreground outline-none"
+            value={visibilityFilter}
+            onChange={(event) => setVisibilityFilter(event.target.value as VisibilityFilter)}
+            className="h-[34px] min-w-[145px] rounded-[9px] border border-border bg-transparent px-3 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <option>All visible teamspaces</option>
+            <option value="all">All visible teamspaces</option>
+            <option value="public">Public teamspaces</option>
+            <option value="private">Private teamspaces</option>
           </select>
           <ToolbarSpacer />
           <Button
@@ -582,8 +535,8 @@ export default function TeamspacesPage() {
             icon={Users}
             title={tab === "all" ? "No teamspaces yet" : `No ${tabData.find((t) => t.value === tab)?.label.toLowerCase() ?? "items"}`}
             description={
-              tab === "all" && query
-                ? `Nothing matches "${query}". Clear the search to see all ${teams.length}.`
+              query || visibilityFilter !== "all"
+                ? "No teamspaces match the selected filters."
                 : tab === "all"
                   ? "Create the first teamspace to give your team a shared publishing namespace."
                   : "Nothing here yet."
@@ -595,20 +548,6 @@ export default function TeamspacesPage() {
             {visibleTeams.map((team) => (
               <TeamspaceCard key={team.id} team={team} isAdmin={isAdmin} />
             ))}
-            {/* Create card (dashed) */}
-            <TeamspaceCardShell dashed className="cursor-pointer" href={undefined}>
-              <button
-                type="button"
-                className="grid h-full w-full place-items-center text-center text-muted-foreground"
-                onClick={() => setShowCreate(true)}
-              >
-                <span>
-                  <span className="block text-[22px]">＋</span>
-                  <strong className="mt-2 block text-xs font-medium">Create a teamspace</strong>
-                  <small className="mt-1 block text-[10px]">Choose a namespace and visibility.</small>
-                </span>
-              </button>
-            </TeamspaceCardShell>
           </div>
         ) : (
           /* ── List view ── */
@@ -646,28 +585,16 @@ export default function TeamspacesPage() {
         )}
       </div>
 
-      {/* ── Create teamspace modal overlay (matches mockup's fixed centered panel) ── */}
-      {showCreate && (
-        <>
-          {/* Scrim */}
-          <div
-            className="fixed inset-0 z-[115] bg-black/50 transition-opacity"
-            onClick={() => setShowCreate(false)}
-            aria-hidden
+      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+        <DialogContent className="max-h-[min(680px,calc(100vh-40px))] max-w-[min(1060px,calc(100vw-40px))] overflow-y-auto p-0">
+          <DialogTitle className="sr-only">Create a teamspace</DialogTitle>
+          <CreatePanel
+            firstTeamspace={false}
+            personalClaimed={personalClaimed}
+            onCreated={() => setShowCreate(false)}
           />
-          {/* Panel */}
-          <div className="fixed inset-0 z-[120] grid place-items-center pointer-events-none">
-            <div className="pointer-events-auto w-[min(1060px,calc(100vw-40px))] max-h-[min(680px,calc(100vh-40px))] overflow-hidden">
-              <CreatePanel
-                firstTeamspace={false}
-                personalClaimed={personalClaimed}
-                onCreated={() => setShowCreate(false)}
-                onCancel={() => setShowCreate(false)}
-              />
-            </div>
-          </div>
-        </>
-      )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

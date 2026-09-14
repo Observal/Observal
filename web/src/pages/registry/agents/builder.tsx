@@ -594,7 +594,7 @@ function AgentBuilderInner() {
 
       <div className="page-body w-full">
         <PageIntro
-          eyebrow={isEditMode ? `Edit · ${name || "Agent"}` : `Draft · ${namespace}/${name || "migration-guide"}`}
+          eyebrow="Registry"
           title={isEditMode ? "Edit Agent" : "Agent Builder"}
           subtitle="Build one step at a time, then validate the complete package before review."
         />

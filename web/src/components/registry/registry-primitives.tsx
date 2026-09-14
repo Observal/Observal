@@ -520,7 +520,7 @@ export function RankingRow({
   return (
     <div
       className={cn(
-        "grid grid-cols-[42px_minmax(0,1fr)_120px_90px_90px] items-center gap-3 border-t border-border px-5 py-3.5 transition-colors hover:bg-surface-raised",
+        "grid grid-cols-[42px_minmax(0,1fr)_120px_90px] items-center gap-3 border-t border-border px-5 py-3.5 transition-colors hover:bg-surface-raised",
         className,
       )}
     >
@@ -552,35 +552,14 @@ export function RankingRow({
 
 /* ─── Ranking Head ───────────────────────────────── */
 
-export function RankingHead() {
+export function RankingHead({ entityLabel = "Agent" }: { entityLabel?: string }) {
   return (
-    <div className="grid grid-cols-[42px_minmax(0,1fr)_120px_90px_90px] items-center gap-3 px-5 py-2.5 text-2xs font-medium uppercase tracking-[0.05em] text-muted-foreground">
+    <div className="grid grid-cols-[42px_minmax(0,1fr)_120px_90px] items-center gap-3 px-5 py-2.5 text-2xs font-medium uppercase tracking-[0.05em] text-muted-foreground">
       <span>Rank</span>
-      <span>Agent</span>
+      <span>{entityLabel}</span>
       <span className="text-right">Downloads</span>
       <span className="text-right">Rating</span>
-      <span className="text-right">Change</span>
     </div>
-  );
-}
-
-/* ─── Sparkline SVG ──────────────────────────────── */
-
-export function Sparkline({ className }: { className?: string }) {
-  return (
-    <svg
-      className={cn("opacity-50", className)}
-      viewBox="0 0 180 68"
-      fill="none"
-      aria-label="Seven day adoption trend"
-    >
-      <path
-        d="M2 56 C24 55 28 44 48 46 S75 35 94 38 S120 20 139 24 S160 11 178 8"
-        stroke="currentColor"
-        strokeWidth="2.5"
-      />
-      <path d="M2 63H178" stroke="var(--color-border)" />
-    </svg>
   );
 }
 
@@ -628,30 +607,6 @@ export function LeaderFeatureCard({
         ))}
       </div>
     </article>
-  );
-}
-
-/* ─── Movement Item ──────────────────────────────── */
-
-export function MovementItem({
-  badge,
-  title,
-  description,
-}: {
-  badge: string;
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="grid grid-cols-[26px_1fr] gap-2 border-t border-border py-3">
-      <span className="font-mono text-[10px] font-semibold text-success">
-        {badge}
-      </span>
-      <div>
-        <strong className="block text-2xs font-medium">{title}</strong>
-        <span className="text-[10px] text-muted-foreground">{description}</span>
-      </div>
-    </div>
   );
 }
 
