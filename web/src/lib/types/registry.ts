@@ -265,6 +265,13 @@ export interface McpValidationResult {
 	run_at?: string;
 }
 
+export interface ReviewComponentBlocker {
+	component_type: string;
+	component_id: string;
+	name: string;
+	status: string;
+}
+
 export interface ReviewItem {
 	id: string;
 	name?: string;
@@ -281,12 +288,8 @@ export interface ReviewItem {
 	mcp_validated?: boolean;
 	validation_results?: McpValidationResult[];
 	components_ready?: boolean;
-	component_blockers?: {
-		component_type: string;
-		component_id: string;
-		name: string;
-		status: string;
-	}[];
+	component_blockers?: ReviewComponentBlocker[];
+	blocking_components?: ReviewComponentBlocker[];
 	bundle_id?: string;
 	bundle_name?: string;
 	rejection_reason?: string;
