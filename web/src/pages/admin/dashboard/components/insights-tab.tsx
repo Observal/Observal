@@ -23,10 +23,10 @@ function DeveloperBreakdown() {
   if (!data || data.active_developers === 0) return null;
 
   return (
-    <div className="rounded-lg bg-card shadow-sm p-5">
+    <div className="rounded-xl bg-card shadow-sm p-5">
       <div className="flex items-center gap-2 mb-1">
-        <Crown className="h-4 w-4 text-amber-400" />
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-amber-400">Developer Activity</span>
+        <Crown className="h-4 w-4 text-warning" />
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-warning">Developer Activity</span>
       </div>
       <h3 className="text-sm font-semibold mb-1">
         {data.active_developers} active developers — top 20% drive {data.top_20_value_pct}% of value
@@ -99,7 +99,7 @@ export function InsightsTab() {
   if (isLoading) {
     return (
       <div className="space-y-6 pt-4">
-        <div className="rounded-lg bg-card shadow-sm p-8 flex flex-col items-center justify-center text-center">
+        <div className="rounded-xl bg-card shadow-sm p-8 flex flex-col items-center justify-center text-center">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground mb-3" />
           <p className="text-sm font-medium">Loading cached AI insights...</p>
           <p className="text-xs text-muted-foreground mt-1">No new report is generated until you request one.</p>
@@ -111,7 +111,7 @@ export function InsightsTab() {
   if (!insights || !insights.generated) {
     return (
       <div className="space-y-6 pt-4">
-        <div className="rounded-md bg-card shadow-sm p-8 text-center text-muted-foreground">
+        <div className="rounded-xl bg-card p-8 shadow-sm text-center text-muted-foreground">
           <Cpu className="h-8 w-8 mx-auto mb-3 opacity-50" />
           <p className="text-sm font-medium mb-1">No cached AI insights report</p>
           <p className="text-xs mb-4">Generate a report when you want fresh executive recommendations.</p>
@@ -134,7 +134,7 @@ export function InsightsTab() {
 
   return (
     <div className="space-y-6 pt-4">
-      <div className="rounded-lg bg-card shadow-sm p-5">
+      <div className="rounded-xl bg-card shadow-sm p-5">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-3">
@@ -160,10 +160,8 @@ export function InsightsTab() {
           </Button>
         </div>
       </div>
-
-      {/* Quick Wins */}
       {insights.quick_wins.length > 0 && (
-        <div className="rounded-lg bg-card shadow-sm p-5">
+        <div className="rounded-xl bg-card shadow-sm p-5">
           <div className="flex items-center gap-2 mb-1">
             <Zap className="h-4 w-4 text-success" />
             <span className="text-[11px] font-semibold uppercase tracking-wide text-success">Quick Wins</span>
@@ -190,10 +188,8 @@ export function InsightsTab() {
           </div>
         </div>
       )}
-
-      {/* Adoption Gaps */}
       {insights.adoption_gaps.length > 0 && (
-        <div className="rounded-lg bg-card shadow-sm p-5">
+        <div className="rounded-xl bg-card shadow-sm p-5">
           <div className="flex items-center gap-2 mb-1">
             <AlertTriangle className="h-4 w-4 text-destructive" />
             <span className="text-[11px] font-semibold uppercase tracking-wide text-destructive">Adoption Gaps</span>
@@ -209,10 +205,8 @@ export function InsightsTab() {
           </div>
         </div>
       )}
-
-      {/* Platform Insight */}
       {insights.platform_insight.title && insights.platform_insight.title !== "Insufficient data" && (
-        <div className="rounded-lg bg-card shadow-sm p-5">
+        <div className="rounded-xl bg-card shadow-sm p-5">
           <div className="flex items-center gap-2 mb-1">
             <Users className="h-4 w-4 text-violet-400" />
             <span className="text-[11px] font-semibold uppercase tracking-wide text-violet-400">harness Performance</span>
@@ -222,10 +216,8 @@ export function InsightsTab() {
           <p className="text-sm text-muted-foreground leading-relaxed">{insights.platform_insight.detail}</p>
         </div>
       )}
-
-      {/* Automation Opportunity */}
       {insights.automation_opportunity.title && insights.automation_opportunity.title !== "Insufficient data" && (
-        <div className="rounded-lg border border-dashed border-amber-500/30 bg-amber-500/5 p-5">
+        <div className="rounded-lg border border-dashed border-warning/30 bg-warning/5 p-5">
           <div className="flex items-center gap-2 mb-2">
             <span className="text-[11px] font-semibold uppercase tracking-wide text-warning">Automation Opportunity</span>
           </div>
@@ -233,33 +225,27 @@ export function InsightsTab() {
           <p className="text-sm text-muted-foreground leading-relaxed">{insights.automation_opportunity.detail}</p>
         </div>
       )}
-
-      {/* Model Insight */}
       {insights.model_insight.title && insights.model_insight.title !== "Insufficient data" && (
-        <div className="rounded-lg bg-card shadow-sm p-5">
+        <div className="rounded-xl bg-card shadow-sm p-5">
           <div className="flex items-center gap-2 mb-1">
-            <TrendingUp className="h-4 w-4 text-cyan-400" />
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-cyan-400">Model Provider</span>
+            <TrendingUp className="h-4 w-4 text-info" />
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-info">Model Provider</span>
             <span className="text-[10px] px-2 py-0.5 rounded bg-success/10 text-success font-semibold">High Impact</span>
           </div>
           <h4 className="text-sm font-semibold mt-2 mb-1">{insights.model_insight.title}</h4>
           <p className="text-sm text-muted-foreground leading-relaxed">{insights.model_insight.detail}</p>
         </div>
       )}
-
-      {/* Usage Pattern */}
       {insights.usage_pattern.title && insights.usage_pattern.title !== "Insufficient data" && (
-        <div className="rounded-lg bg-card shadow-sm p-5">
+        <div className="rounded-xl bg-card shadow-sm p-5">
           <div className="flex items-center gap-2 mb-1">
-            <Crown className="h-4 w-4 text-amber-400" />
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-amber-400">Usage Pattern</span>
+            <Crown className="h-4 w-4 text-warning" />
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-warning">Usage Pattern</span>
           </div>
           <h4 className="text-sm font-semibold mt-2 mb-1">{insights.usage_pattern.title}</h4>
           <p className="text-sm text-muted-foreground leading-relaxed">{insights.usage_pattern.detail}</p>
         </div>
       )}
-
-      {/* Developer Breakdown */}
       <DeveloperBreakdown />
     </div>
   );

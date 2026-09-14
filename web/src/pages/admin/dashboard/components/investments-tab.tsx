@@ -55,7 +55,7 @@ export function InvestmentsTab() {
   if (!platforms || platforms.length === 0) {
     return (
       <div className="space-y-6 pt-4">
-        <div className="rounded-md bg-card shadow-sm p-8 text-center text-muted-foreground">
+        <div className="rounded-xl bg-card p-8 shadow-sm text-center text-muted-foreground">
           <p className="text-sm">No platform data yet. Traces from different harnesses will populate this view.</p>
         </div>
       </div>
@@ -75,7 +75,6 @@ export function InvestmentsTab() {
 
   return (
     <div className="space-y-6 pt-4">
-      {/* Sessions bar chart, sorted by adoption (most used = most validated). */}
       <div className="rounded-xl bg-card shadow-sm p-5">
         <h3 className="text-sm font-medium mb-1">Platform Adoption</h3>
         <p className="text-xs text-muted-foreground mb-4">Sorted by usage volume. Click a bar to view platform details.</p>
@@ -93,11 +92,8 @@ export function InvestmentsTab() {
           </BarChart>
         </ResponsiveContainer>
       </div>
-
-      {/* Detail + Radar */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Detail Card */}
-        <div className="rounded-lg bg-card shadow-sm p-5">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="rounded-xl bg-card shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
               <div className="w-3 h-3 rounded" style={{ background: COLORS[selected % COLORS.length] }} />
@@ -109,7 +105,7 @@ export function InvestmentsTab() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4 pt-4 border-t border-border">
+          <div className="grid grid-cols-1 gap-4 border-t border-border pt-4 sm:grid-cols-3">
             <div className="text-center">
               <div className="text-lg font-bold">{(platform.sessions / 1000).toFixed(1)}K</div>
               <div className="text-xs text-muted-foreground">Sessions</div>
@@ -124,7 +120,7 @@ export function InvestmentsTab() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4 mt-4">
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="text-center">
               <div className="text-lg font-bold">{platform.avg_latency_ms.toFixed(0)}ms</div>
               <div className="text-xs text-muted-foreground">Avg Latency</div>
@@ -139,8 +135,6 @@ export function InvestmentsTab() {
             </div>
           </div>
         </div>
-
-        {/* Radar Chart */}
         <div className="rounded-xl bg-card shadow-sm p-5">
           <h3 className="text-sm font-medium mb-2">Performance Radar</h3>
           <ResponsiveContainer width="100%" height={300}>
@@ -159,9 +153,7 @@ export function InvestmentsTab() {
           </ResponsiveContainer>
         </div>
       </div>
-
-      {/* Comparison Table */}
-      <div className="rounded-lg bg-card shadow-sm overflow-hidden">
+      <div className="overflow-x-auto rounded-xl bg-card shadow-sm">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/30">
@@ -196,8 +188,6 @@ export function InvestmentsTab() {
           </tbody>
         </table>
       </div>
-
-      {/* Model Provider Comparison */}
       <ModelComparison />
     </div>
   );
@@ -227,8 +217,7 @@ function ModelComparison() {
         <h3 className="text-sm font-medium mb-1">Model Provider Comparison</h3>
         <p className="text-xs text-muted-foreground mb-4">Performance and cost by AI model (from actual usage)</p>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Model list */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <div className="space-y-2">
             {models.slice(0, 8).map((m, i) => (
               <div
@@ -249,8 +238,6 @@ function ModelComparison() {
               </div>
             ))}
           </div>
-
-          {/* Radar for selected model */}
           <div>
             <ResponsiveContainer width="100%" height={260}>
               <RadarChart data={radarData} cx="50%" cy="50%" outerRadius="80%">
@@ -273,9 +260,7 @@ function ModelComparison() {
           </div>
         </div>
       </div>
-
-      {/* Model comparison table */}
-      <div className="rounded-lg bg-card shadow-sm overflow-hidden">
+      <div className="overflow-x-auto rounded-xl bg-card shadow-sm">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/30">
