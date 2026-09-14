@@ -7,7 +7,8 @@ import { Suspense } from "react";
 import { useLocation, useSearch } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { PageHeader } from "@/components/layouts/page-header";
+import { PageHeader, PageIntro } from "@/components/layouts/page-header";
+import { Button } from "@/components/ui/button";
 import { AdoptionTab } from "./components/adoption-tab";
 import { CostTab } from "./components/cost-tab";
 import { InvestmentsTab } from "./components/investments-tab";
@@ -30,19 +31,19 @@ const RANGES = [
 
 function OnboardingWizard({ onDismiss }: { onDismiss: () => void }) {
   return (
-    <div className="rounded-lg border border-dashed border-primary/30 bg-primary/5 p-6">
+    <section className="rounded-xl border border-dashed border-primary/30 bg-primary/5 p-5 sm:p-6" aria-labelledby="dashboard-welcome-title">
       <div className="flex items-start gap-4">
-        <div className="rounded-full bg-primary/10 p-2.5 mt-0.5">
+        <div className="mt-0.5 rounded-full bg-primary/10 p-2.5">
           <Rocket className="h-5 w-5 text-primary" />
         </div>
         <div className="flex-1">
-          <h3 className="text-base font-semibold mb-1">Welcome to the Executive Dashboard</h3>
-          <p className="text-sm text-muted-foreground mb-4">
+          <h2 id="dashboard-welcome-title" className="mb-1 text-base font-semibold">Welcome to the Executive Dashboard</h2>
+          <p className="mb-4 text-sm text-muted-foreground">
             Set up these three things to unlock the full dashboard experience:
           </p>
           <ol className="space-y-3">
             <li className="flex items-start gap-3">
-              <span className="flex-shrink-0 flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold">1</span>
+              <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">1</span>
               <div>
                 <p className="text-sm font-medium">Assign departments to users</p>
                 <p className="text-xs text-muted-foreground">
@@ -51,7 +52,7 @@ function OnboardingWizard({ onDismiss }: { onDismiss: () => void }) {
               </div>
             </li>
             <li className="flex items-start gap-3">
-              <span className="flex-shrink-0 flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold">2</span>
+              <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">2</span>
               <div>
                 <p className="text-sm font-medium">Set cost baselines</p>
                 <p className="text-xs text-muted-foreground">
@@ -60,7 +61,7 @@ function OnboardingWizard({ onDismiss }: { onDismiss: () => void }) {
               </div>
             </li>
             <li className="flex items-start gap-3">
-              <span className="flex-shrink-0 flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold">3</span>
+              <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">3</span>
               <div>
                 <p className="text-sm font-medium">Categorize your agents</p>
                 <p className="text-xs text-muted-foreground">
@@ -77,7 +78,7 @@ function OnboardingWizard({ onDismiss }: { onDismiss: () => void }) {
           </button>
         </div>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -121,26 +122,31 @@ function ExportDropdown({ activeTab }: { activeTab: string }) {
 
   return (
     <div className="relative">
-      <button
+      <Button
+        variant="outline"
+        size="sm"
         onClick={() => setOpen(!open)}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted/50 transition-colors"
+        aria-expanded={open}
+        aria-haspopup="menu"
       >
-        <Download className="h-3 w-3" />
+        <Download className="h-3.5 w-3.5" />
         Export
-      </button>
+      </Button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-1 z-50 rounded-md border border-border bg-background shadow-md py-1 min-w-[120px]">
+          <div className="absolute right-0 top-full z-50 mt-1 min-w-[140px] rounded-lg border border-border bg-card py-1 shadow-md" role="menu">
             <button
               onClick={handleCSV}
-              className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 transition-colors"
+              className="w-full px-3 py-2 text-left text-xs transition-colors hover:bg-surface-raised"
+              role="menuitem"
             >
               Export as CSV
             </button>
             <button
               onClick={handlePrint}
-              className="w-full text-left px-3 py-1.5 text-xs hover:bg-muted/50 transition-colors"
+              className="w-full px-3 py-2 text-left text-xs transition-colors hover:bg-surface-raised"
+              role="menuitem"
             >
               Print / PDF
             </button>
@@ -214,60 +220,54 @@ function DashboardContent() {
     <DashboardRangeContext.Provider value={activeRange}>
       <PageHeader
         title="Executive Dashboard"
-        breadcrumbs={[{ label: "Dashboard" }]}
+        breadcrumbs={[{ label: "Administration" }, { label: "Dashboard" }]}
       />
-      <div className="page-body w-full mx-auto space-y-5">
-        {showOnboarding && <OnboardingWizard onDismiss={handleDismissWizard} />}
-
-        {/* Controls row */}
-        <div className="flex items-center justify-between">
-          {/* Range picker */}
-          <div className="flex items-center gap-2">
-            <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
-            <div className="flex items-center gap-0.5 p-1 rounded-[11px] bg-surface-raised">
-              {RANGES.map((r) => (
-                <button
-                  key={r.value}
-                  onClick={() => handleRangeChange(r.value)}
-                  className={`px-3 py-[7px] rounded-lg text-xs font-medium transition-colors ${
-                    activeRange === r.value
-                      ? "bg-card shadow-sm text-foreground"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {r.label}
-                </button>
-              ))}
-            </div>
+      <div className="page-body mx-auto w-full">
+        <PageIntro
+          eyebrow="Executive overview"
+          title="AI Adoption Dashboard"
+          subtitle="Monitor usage, impact, and investment across your organization."
+        >
+          <div className="flex items-center gap-1 rounded-xl bg-surface-raised p-1" aria-label="Dashboard date range">
+            <Calendar className="ml-2 h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+            {RANGES.map((r) => (
+              <button
+                key={r.value}
+                onClick={() => handleRangeChange(r.value)}
+                aria-pressed={activeRange === r.value}
+                className={`rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
+                  activeRange === r.value
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {r.label}
+              </button>
+            ))}
           </div>
+          <ExportDropdown activeTab={activeTab} />
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing}>
+            <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        </PageIntro>
 
-          <div className="flex items-center gap-2">
-            {/* Export */}
-            <ExportDropdown activeTab={activeTab} />
+        <div className="space-y-5">
+          {showOnboarding && <OnboardingWizard onDismiss={handleDismissWizard} />}
 
-            {/* Refresh button */}
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-border hover:bg-muted/50 transition-colors disabled:opacity-50"
-            >
-              <RefreshCw className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`} />
-              Refresh
-            </button>
-          </div>
-        </div>
-
-        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-          <TabsList className="grid w-full grid-cols-6">
+          <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+            <div className="overflow-x-auto rounded-xl bg-surface-raised p-1">
+              <TabsList className="grid min-w-[720px] grid-cols-6 bg-transparent p-0 shadow-none">
             <TabsTrigger value="adoption">AI Adoption</TabsTrigger>
             <TabsTrigger value="cost">Cost Intelligence</TabsTrigger>
             <TabsTrigger value="investments">Investments</TabsTrigger>
             <TabsTrigger value="insights">AI Insights</TabsTrigger>
             <TabsTrigger value="departments">Departments</TabsTrigger>
             <TabsTrigger value="velocity">Velocity</TabsTrigger>
-          </TabsList>
+              </TabsList>
+            </div>
 
-          <TabsContent value="adoption">
+            <TabsContent value="adoption">
             <AdoptionTab />
           </TabsContent>
 
@@ -287,10 +287,11 @@ function DashboardContent() {
             <DepartmentsTab />
           </TabsContent>
 
-          <TabsContent value="velocity">
-            <VelocityTab />
-          </TabsContent>
-        </Tabs>
+            <TabsContent value="velocity">
+              <VelocityTab />
+            </TabsContent>
+          </Tabs>
+        </div>
       </div>
     </DashboardRangeContext.Provider>
   );

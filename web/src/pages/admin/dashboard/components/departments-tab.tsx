@@ -34,7 +34,7 @@ export function DepartmentsTab() {
   if (departments.length === 0) {
     return (
       <div className="space-y-6 pt-4">
-        <div className="rounded-md bg-card shadow-sm p-8 text-center text-muted-foreground">
+        <div className="rounded-xl bg-card p-8 shadow-sm text-center text-muted-foreground">
           <p className="text-sm font-medium mb-2">No department data available</p>
           <p className="text-xs">
             Assign departments to users in Settings, or log in via SSO to auto-sync groups from your identity provider.
@@ -55,13 +55,12 @@ export function DepartmentsTab() {
 
   return (
     <div className="space-y-6 pt-4">
-      {/* Cost per Department KPIs */}
       {deptCosts.length > 0 && (
         <div className="rounded-xl bg-card shadow-sm p-5">
           <h3 className="text-sm font-medium mb-3">Monthly AI Spend by Department</h3>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {deptCosts.slice(0, 8).map((d) => (
-              <div key={d.name} className="rounded-md bg-card shadow-sm p-3 text-center">
+              <div key={d.name} className="rounded-lg bg-surface-raised p-3 text-center">
                 <p className="text-xs text-muted-foreground truncate">{d.name}</p>
                 <p className="text-lg font-bold tabular-nums">${d.totalCost >= 1000000 ? `${(d.totalCost / 1000000).toFixed(1)}M` : d.totalCost >= 1000 ? `${(d.totalCost / 1000).toFixed(1)}K` : d.totalCost.toFixed(0)}</p>
                 <p className="text-[11px] text-muted-foreground">
@@ -72,9 +71,7 @@ export function DepartmentsTab() {
           </div>
         </div>
       )}
-
-      {/* Department Breakdown Table */}
-      <div className="rounded-lg bg-card shadow-sm overflow-hidden">
+      <div className="overflow-x-auto rounded-xl bg-card shadow-sm">
         <div className="p-4 border-b border-border">
           <h3 className="text-sm font-medium">Department Breakdown</h3>
           <p className="text-xs text-muted-foreground">
@@ -117,9 +114,7 @@ export function DepartmentsTab() {
           </tbody>
         </table>
       </div>
-
-      {/* Token Usage by Department */}
-      <div className="rounded-lg bg-card shadow-sm overflow-hidden">
+      <div className="overflow-x-auto rounded-xl bg-card shadow-sm">
         <div className="p-4 border-b border-border">
           <h3 className="text-sm font-medium">Token Usage by Department</h3>
           <p className="text-xs text-muted-foreground">Cost and usage efficiency per department</p>

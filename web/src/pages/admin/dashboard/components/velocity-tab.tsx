@@ -53,18 +53,13 @@ export function VelocityTab() {
 
   return (
     <div className="space-y-6 pt-4">
-      {/* KPI Row */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-px overflow-hidden rounded-xl bg-border sm:grid-cols-3">
         <StatCard label="Multiplier" value={`${velocity?.multiplier ?? 0}x`} subtitle="vs baseline" />
         <StatCard label="Current Avg" value={Math.round(velocity?.current_weekly_avg ?? 0)} subtitle="traces/week" />
         <StatCard label="Baseline Avg" value={Math.round(velocity?.baseline_weekly_avg ?? 0)} subtitle="traces/week (first 4 weeks)" />
       </div>
-
-      {/* Velocity Chart */}
       <VelocityChart weekly={velocity?.weekly ?? []} />
-
-      {/* Best Agents Table */}
-      <div className="rounded-lg bg-card shadow-sm overflow-hidden">
+      <div className="overflow-x-auto rounded-xl bg-card shadow-sm">
         <div className="p-4 border-b border-border">
           <h3 className="text-sm font-medium">Best Agents</h3>
           <p className="text-xs text-muted-foreground">Ranked by composite score (sessions × 0.4 + downloads × 0.3 + rating × 0.3)</p>
@@ -117,8 +112,6 @@ export function VelocityTab() {
           </table>
         )}
       </div>
-
-      {/* Time to Value */}
       <TimeToValue />
     </div>
   );
@@ -207,7 +200,7 @@ function TimeToValue() {
   if (!data || data.agents.length === 0) return null;
 
   return (
-    <div className="rounded-lg bg-card shadow-sm overflow-hidden">
+    <div className="overflow-x-auto rounded-xl bg-card shadow-sm">
       <div className="p-4 border-b border-border flex items-center justify-between">
         <div>
           <h3 className="text-sm font-medium">Time to Value</h3>

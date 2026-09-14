@@ -50,7 +50,7 @@ function BaselinesConfigForm({ onSaved }: { onSaved: () => void }) {
 
   return (
     <div className="space-y-6 pt-4">
-      <div className="rounded-xl bg-card shadow-sm p-5 max-w-2xl">
+      <div className="rounded-xl bg-card p-5 shadow-sm">
         <h3 className="text-sm font-semibold mb-1">Configure Cost Baselines</h3>
         <p className="text-xs text-muted-foreground mb-6">
           Enter what tasks cost before AI agents were deployed. This allows the dashboard to compute savings and ROI.
@@ -74,7 +74,7 @@ function BaselinesConfigForm({ onSaved }: { onSaved: () => void }) {
             <p className="text-[11px] text-muted-foreground mb-2">
               Average cost to complete one task manually, before AI. Leave blank for categories that don&apos;t apply.
             </p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {DEFAULT_CATEGORIES.map((cat) => (
                 <div key={cat} className="flex items-center gap-2">
                   <span className="text-xs w-32 truncate">{cat}</span>
@@ -117,7 +117,7 @@ function ROIProjections() {
   }
 
   return (
-    <div className="rounded-lg bg-card shadow-sm p-5">
+    <div className="rounded-xl bg-card shadow-sm p-5">
       <div className="flex items-center justify-between mb-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -131,26 +131,24 @@ function ROIProjections() {
           <p className="text-[11px] text-muted-foreground">ROI multiple</p>
         </div>
       </div>
-
-      {/* Summary KPIs */}
-      <div className="grid grid-cols-4 gap-3 mb-6">
-        <div className="rounded-md bg-muted/20 p-3 text-center">
+      <div className="mb-6 grid grid-cols-1 gap-px overflow-hidden rounded-xl bg-border sm:grid-cols-2 xl:grid-cols-4">
+        <div className="bg-surface-raised p-3 text-center">
           <p className="text-lg font-bold text-foreground">
             ${roi.total_saved >= 1000 ? `${(roi.total_saved / 1000).toFixed(1)}K` : roi.total_saved.toFixed(0)}
           </p>
           <p className="text-[11px] text-muted-foreground">Total Saved</p>
         </div>
-        <div className="rounded-md bg-muted/20 p-3 text-center">
+        <div className="bg-surface-raised p-3 text-center">
           <p className="text-lg font-bold text-foreground">
             ${roi.total_invested >= 1000 ? `${(roi.total_invested / 1000).toFixed(1)}K` : roi.total_invested.toFixed(0)}
           </p>
           <p className="text-[11px] text-muted-foreground">Total Invested</p>
         </div>
-        <div className="rounded-md bg-muted/20 p-3 text-center">
+        <div className="bg-surface-raised p-3 text-center">
           <p className="text-lg font-bold text-success">{roi.growth_rate_pct}%</p>
           <p className="text-[11px] text-muted-foreground">Growth Rate</p>
         </div>
-        <div className="rounded-md bg-muted/20 p-3 text-center">
+        <div className="bg-surface-raised p-3 text-center">
           <p className="text-lg font-bold text-foreground">
             {roi.time_to_breakeven_months === null
               ? "—"
@@ -161,8 +159,6 @@ function ROIProjections() {
           <p className="text-[11px] text-muted-foreground">To Breakeven</p>
         </div>
       </div>
-
-      {/* Quarterly Projections Chart */}
       <ResponsiveContainer width="100%" height={200}>
         <BarChart data={roi.projections} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="oklch(var(--border))" strokeOpacity={0.5} vertical={false} />
@@ -179,9 +175,7 @@ function ROIProjections() {
           <Bar dataKey="projected_savings" fill="oklch(var(--primary))" radius={[4, 4, 0, 0]} activeBar={false} />
         </BarChart>
       </ResponsiveContainer>
-
-      {/* Cumulative timeline */}
-      <div className="grid grid-cols-4 gap-3 mt-4 pt-4 border-t border-border">
+      <div className="mt-4 grid grid-cols-1 gap-3 border-t border-border pt-4 sm:grid-cols-2 xl:grid-cols-4">
         {roi.projections.map((p) => (
           <div
             key={p.quarter}
@@ -222,7 +216,7 @@ export function CostTab() {
   if (isLoading) {
     return (
       <div className="space-y-6 pt-4">
-        <div className="grid grid-cols-4 gap-px overflow-hidden rounded-xl bg-border">
+        <div className="grid grid-cols-1 gap-px overflow-hidden rounded-xl bg-border shadow-sm sm:grid-cols-2 xl:grid-cols-4">
           {[...Array(4)].map((_, i) => (
             <div key={i} className="h-24 rounded-xl bg-card shadow-sm animate-pulse" />
           ))}
@@ -238,7 +232,6 @@ export function CostTab() {
 
   return (
     <div className="space-y-6 pt-4">
-      {/* KPI Row */}
       <div className="flex items-center justify-end mb-2">
         <button
           onClick={() => setShowEditBaselines(true)}
@@ -247,14 +240,12 @@ export function CostTab() {
           Edit baselines
         </button>
       </div>
-      <div className="grid grid-cols-4 gap-px overflow-hidden rounded-xl bg-border">
+      <div className="grid grid-cols-1 gap-px overflow-hidden rounded-xl bg-border shadow-sm sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Monthly Savings" value={`$${(cost.monthly_savings / 1000).toFixed(1)}K`} />
         <StatCard label="Cost Reduction" value={`${cost.cost_reduction_pct}%`} />
         <StatCard label="Projected Annual" value={`$${(cost.projected_annual_savings / 1000).toFixed(0)}K`} />
         <StatCard label="Avg Cost/Session" value={`$${cost.cost_per_task.toFixed(3)}`} />
       </div>
-
-      {/* Savings vs Spend Chart */}
       <div className="rounded-xl bg-card shadow-sm p-5">
         <h3 className="text-sm font-medium mb-1">Savings vs AI Spend</h3>
         <p className="text-xs text-muted-foreground mb-4">Monthly savings generated vs platform spend</p>
@@ -294,8 +285,6 @@ export function CostTab() {
           </div>
         </div>
       </div>
-
-      {/* Cost per Category */}
       {cost.by_category.length > 0 && (
         <div className="rounded-xl bg-card shadow-sm p-5">
           <h3 className="text-sm font-medium mb-1">Cost per Task by Category</h3>
@@ -338,8 +327,6 @@ export function CostTab() {
           </div>
         </div>
       )}
-
-      {/* ROI Projections */}
       <ROIProjections />
     </div>
   );

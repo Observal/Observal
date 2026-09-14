@@ -2,56 +2,91 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
+import type { ReactNode } from "react";
+import {
+  AlertTriangle,
+  BookOpen,
+  Building2,
+  CheckCircle2,
+  Database,
+  KeyRound,
+  RefreshCw,
+  XCircle,
+} from "lucide-react";
 
-import { CheckCircle2, AlertTriangle, XCircle, RefreshCw, Database, KeyRound, Building2, BookOpen } from "lucide-react";
-import { useDiagnostics } from "@/hooks/use-api";
+import { PageHeader, PageIntro } from "@/components/layouts/page-header";
+import { ErrorState } from "@/components/shared/error-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { PageHeader } from "@/components/layouts/page-header";
-import { ErrorState } from "@/components/shared/error-state";
+import { useDiagnostics } from "@/hooks/use-api";
+import { cn } from "@/lib/utils";
+import { AdminMetric, AdminMetricStrip, AdminPanel } from "./components/admin-surface";
 
-function StatusIcon({ status }: { status: string }) {
-  if (status === "ok") return <CheckCircle2 className="h-5 w-5 text-success" />;
-  if (status === "degraded" || status === "misconfigured" || status === "missing")
-    return <AlertTriangle className="h-5 w-5 text-warning" />;
-  return <XCircle className="h-5 w-5 text-red-500" />;
-}
-
-function statusBadge(status: string) {
-  switch (status) {
-    case "ok":
-      return <Badge className="bg-success/15 text-success border-success/20">{status}</Badge>;
-    case "degraded":
-    case "misconfigured":
-    case "missing":
-      return <Badge className="bg-warning/15 text-warning border-warning/20">{status}</Badge>;
-    default:
-      return <Badge variant="destructive">{status}</Badge>;
+function StatusIcon({ status, className }: { status: string; className?: string }) {
+  if (status === "ok") return <CheckCircle2 className={cn("text-success", className)} />;
+  if (["degraded", "misconfigured", "missing"].includes(status)) {
+    return <AlertTriangle className={cn("text-warning", className)} />;
   }
+  return <XCircle className={cn("text-destructive", className)} />;
 }
 
-function CatalogStatusCard() {
+function StatusBadge({ status }: { status: string }) {
+  const classes = status === "ok"
+    ? "border-success/20 bg-success/12 text-success"
+    : ["degraded", "misconfigured", "missing"].includes(status)
+      ? "border-warning/20 bg-warning/12 text-warning"
+      : status === "disabled"
+        ? "border-border bg-surface-raised text-muted-foreground"
+        : "border-destructive/20 bg-destructive/12 text-destructive";
+
   return (
-    <Card className="md:col-span-2">
-      <CardHeader className="pb-3">
-        <div className="flex items-center gap-2">
-          <BookOpen className="h-4 w-4 text-muted-foreground" />
-          <CardTitle className="text-sm">Model Catalog</CardTitle>
-          <div className="ml-auto">
-            <Badge variant="secondary">disabled</Badge>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <p className="text-xs text-muted-foreground">
-          Disabled while the Insights model picker moves to the LiteLLM catalog.
-        </p>
-      </CardContent>
-    </Card>
+    <Badge variant="outline" className={cn("gap-1.5 text-2xs font-medium", classes)}>
+      {status === "disabled"
+        ? <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />
+        : <StatusIcon status={status} className="h-3 w-3" />}
+      {status}
+    </Badge>
   );
 }
 
+function CheckPanel({
+  icon,
+  title,
+  status,
+  children,
+  className,
+}: {
+  icon: ReactNode;
+  title: string;
+  status: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <AdminPanel
+      className={className}
+      title={
+        <span className="flex items-center gap-2">
+          <span aria-hidden="true" className="text-muted-foreground [&_svg]:h-4 [&_svg]:w-4">{icon}</span>
+          {title}
+        </span>
+      }
+      action={<StatusBadge status={status} />}
+      contentClassName="px-5 py-4"
+    >
+      {children}
+    </AdminPanel>
+  );
+}
+
+function DataRow({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-6 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-medium tabular-nums text-foreground">{value}</span>
+    </div>
+  );
+}
 
 export default function DiagnosticsPage() {
   const { data, isLoading, isError, error, refetch, dataUpdatedAt } = useDiagnostics();
@@ -60,134 +95,105 @@ export default function DiagnosticsPage() {
     <>
       <PageHeader
         title="Diagnostics"
-        breadcrumbs={[{ label: "Admin" }, { label: "Diagnostics" }]}
-        actionButtonsRight={
+        breadcrumbs={[{ label: "Administration" }, { label: "Diagnostics" }]}
+      />
+      <div className="page-body mx-auto w-full">
+        <PageIntro
+          eyebrow="System health"
+          title="Diagnostics"
+          subtitle="Inspect storage, signing keys, runtime configuration, and supporting services."
+        >
           <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
-            <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${isLoading ? "animate-spin" : ""}`} />
+            <RefreshCw className={cn("h-3.5 w-3.5", isLoading && "animate-spin")} />
             Refresh
           </Button>
-        }
-      />
-      <div className="page-body w-full mx-auto space-y-5">
+        </PageIntro>
+
         {isError ? (
           <ErrorState message={(error as Error)?.message} onRetry={() => refetch()} />
         ) : isLoading && !data ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {[1, 2, 3, 4].map((i) => (
-              <Card key={i} className="animate-pulse">
-                <CardHeader className="pb-3">
-                  <div className="h-5 w-32 bg-muted rounded" />
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-2">
-                    <div className="h-4 w-48 bg-muted rounded" />
-                    <div className="h-4 w-36 bg-muted rounded" />
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+          <div className="space-y-5" aria-label="Loading diagnostics">
+            <div className="grid grid-cols-1 gap-px overflow-hidden rounded-xl bg-border sm:grid-cols-2 xl:grid-cols-4">
+              {[1, 2, 3, 4].map((i) => <div key={i} className="h-28 animate-pulse bg-card" />)}
+            </div>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {[1, 2, 3, 4].map((i) => <div key={i} className="h-36 animate-pulse rounded-xl bg-card" />)}
+            </div>
           </div>
         ) : data ? (
-          <>
-            {/* Overall status */}
-            <Card>
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <StatusIcon status={data.status} />
-                    <div>
-                      <CardTitle className="text-lg">System Status</CardTitle>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Updated: {dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : "never"}
-                      </p>
-                    </div>
-                  </div>
-                  {statusBadge(data.status)}
-                </div>
-              </CardHeader>
-            </Card>
+          <div className="space-y-5">
+            <AdminMetricStrip>
+              <AdminMetric
+                label="System status"
+                value={data.status === "ok" ? "Operational" : data.status}
+                detail={dataUpdatedAt ? `Updated ${new Date(dataUpdatedAt).toLocaleTimeString()}` : "Not yet refreshed"}
+                icon={<StatusIcon status={data.status} />}
+                tone={data.status === "ok" ? "success" : "warning"}
+              />
+              <AdminMetric
+                label="Database"
+                value={data.checks.database?.status === "ok" ? "Healthy" : String(data.checks.database?.status ?? "Unknown")}
+                detail={data.checks.database?.users !== undefined ? `${String(data.checks.database.users)} users` : "Connection check"}
+                icon={<Database />}
+                tone={data.checks.database?.status === "ok" ? "success" : "warning"}
+              />
+              <AdminMetric
+                label="Signing keys"
+                value={data.checks.jwt_keys?.status === "ok" ? "Ready" : String(data.checks.jwt_keys?.status ?? "Unknown")}
+                detail={data.checks.jwt_keys?.algorithm ? String(data.checks.jwt_keys.algorithm) : "JWT configuration"}
+                icon={<KeyRound />}
+                tone={data.checks.jwt_keys?.status === "ok" ? "success" : "warning"}
+              />
+              <AdminMetric
+                label="Runtime config"
+                value={data.checks.runtime_config?.status === "ok" ? "Valid" : String(data.checks.runtime_config?.status ?? "Unknown")}
+                detail={Array.isArray(data.checks.runtime_config?.issues) ? `${data.checks.runtime_config.issues.length} issues` : "Configuration check"}
+                icon={<Building2 />}
+                tone={data.checks.runtime_config?.status === "ok" ? "success" : "warning"}
+              />
+            </AdminMetricStrip>
 
-            {/* Check cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Database */}
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               {data.checks.database && (
-                <Card>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center gap-2">
-                      <Database className="h-4 w-4 text-muted-foreground" />
-                      <CardTitle className="text-sm">Database</CardTitle>
-                      <div className="ml-auto">{statusBadge(data.checks.database.status as string)}</div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-1.5">
-                    {data.checks.database.users !== undefined && (
-                      <div className="flex justify-between text-xs">
-                        <span className="text-muted-foreground">Users</span>
-                        <span className="font-medium">{String(data.checks.database.users)}</span>
-                      </div>
-                    )}
-                    {data.checks.database.demo_accounts !== undefined && (
-                      <div className="flex justify-between text-xs">
-                        <span className="text-muted-foreground">Demo accounts</span>
-                        <span className="font-medium">{String(data.checks.database.demo_accounts)}</span>
-                      </div>
-                    )}
-                    {data.checks.database.detail ? (
-                      <p className="text-xs text-destructive mt-2">{String(data.checks.database.detail)}</p>
-                    ) : null}
-                  </CardContent>
-                </Card>
+                <CheckPanel icon={<Database />} title="Database" status={String(data.checks.database.status)}>
+                  <div className="space-y-2.5">
+                    {data.checks.database.users !== undefined && <DataRow label="Users" value={String(data.checks.database.users)} />}
+                    {data.checks.database.demo_accounts !== undefined && <DataRow label="Demo accounts" value={String(data.checks.database.demo_accounts)} />}
+                    {data.checks.database.detail ? <p className="pt-2 text-xs text-destructive">{String(data.checks.database.detail)}</p> : null}
+                  </div>
+                </CheckPanel>
               )}
 
-              {/* JWT Keys */}
               {data.checks.jwt_keys && (
-                <Card>
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center gap-2">
-                      <KeyRound className="h-4 w-4 text-muted-foreground" />
-                      <CardTitle className="text-sm">JWT Keys</CardTitle>
-                      <div className="ml-auto">{statusBadge(data.checks.jwt_keys.status as string)}</div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex justify-between text-xs">
-                      <span className="text-muted-foreground">Algorithm</span>
-                      <span className="font-mono font-medium">{String(data.checks.jwt_keys.algorithm)}</span>
-                    </div>
-                  </CardContent>
-                </Card>
+                <CheckPanel icon={<KeyRound />} title="JWT keys" status={String(data.checks.jwt_keys.status)}>
+                  <DataRow label="Algorithm" value={<span className="font-mono">{String(data.checks.jwt_keys.algorithm)}</span>} />
+                </CheckPanel>
               )}
 
-              <CatalogStatusCard />
+              <CheckPanel icon={<BookOpen />} title="Model catalog" status="disabled">
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Disabled while the Insights model picker moves to the LiteLLM catalog.
+                </p>
+              </CheckPanel>
 
-              {/* Runtime config */}
               {data.checks.runtime_config && (
-                <Card className="md:col-span-2">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center gap-2">
-                      <Building2 className="h-4 w-4 text-muted-foreground" />
-                      <CardTitle className="text-sm">Runtime Config</CardTitle>
-                      <div className="ml-auto">{statusBadge(data.checks.runtime_config.status as string)}</div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    {Array.isArray(data.checks.runtime_config.issues) && data.checks.runtime_config.issues.length > 0 ? (
-                      <ul className="space-y-1.5">
-                        {(data.checks.runtime_config.issues as string[]).map((issue: string, i: number) => (
-                          <li key={i} className="flex items-start gap-2 text-xs">
-                            <AlertTriangle className="h-3.5 w-3.5 text-warning mt-0.5 shrink-0" />
-                            <span>{issue}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">No configuration issues detected.</p>
-                    )}
-                  </CardContent>
-                </Card>
+                <CheckPanel icon={<Building2 />} title="Runtime config" status={String(data.checks.runtime_config.status)}>
+                  {Array.isArray(data.checks.runtime_config.issues) && data.checks.runtime_config.issues.length > 0 ? (
+                    <ul className="space-y-2.5">
+                      {(data.checks.runtime_config.issues as string[]).map((issue) => (
+                        <li key={issue} className="flex items-start gap-2 text-xs">
+                          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" aria-hidden="true" />
+                          <span>{issue}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">No configuration issues detected.</p>
+                  )}
+                </CheckPanel>
               )}
             </div>
-          </>
+          </div>
         ) : null}
       </div>
     </>

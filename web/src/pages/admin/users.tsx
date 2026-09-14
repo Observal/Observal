@@ -23,7 +23,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from "@/components/ui/dialog";
 import { PickerSelect } from "@/components/ui/picker-select";
-import { PageHeader } from "@/components/layouts/page-header";
+import { PageHeader, PageIntro } from "@/components/layouts/page-header";
+import { AdminPanel } from "./components/admin-surface";
 import { TableSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -32,6 +33,11 @@ import { getUserRole } from "@/lib/api";
 import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 
 const ALL_ROLES: Role[] = ["super_admin", "admin", "reviewer", "user"];
+
+function initials(name: string | null | undefined, email: string | null | undefined) {
+  const source = name?.trim() || email?.split("@")[0] || "User";
+  return source.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+}
 
 function useAssignableRoles(): Role[] {
   const myRole = getUserRole();
@@ -187,26 +193,28 @@ export default function UsersPage() {
     <>
       <PageHeader
         title="Users"
-        breadcrumbs={[
-          { label: "Dashboard", href: "/dashboard" },
-          { label: "Users" },
-        ]}
-        actionButtonsRight={
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => setShowBulkDept(true)} className="h-8">
-              <Users className="mr-1 h-3.5 w-3.5" /> Bulk Departments
-            </Button>
-            {!ssoOnly && (
-              <Button size="sm" variant="outline" onClick={() => setShowCreate(true)} className="h-8">
-                <Plus className="mr-1 h-3.5 w-3.5" /> Add User
-              </Button>
-            )}
-          </div>
-        }
+        breadcrumbs={[{ label: "Administration" }, { label: "Users" }]}
       />
-      <div className="page-body w-full mx-auto space-y-4">
+      <div className="page-body mx-auto w-full">
+        <PageIntro
+          eyebrow="Access management"
+          title="Users"
+          subtitle="Manage accounts, departments, roles, and authentication access."
+        >
+          <Button size="sm" variant="outline" onClick={() => setShowBulkDept(true)}>
+            <Users className="h-3.5 w-3.5" />
+            Bulk departments
+          </Button>
+          {!ssoOnly && (
+            <Button size="sm" onClick={() => setShowCreate(true)}>
+              <Plus className="h-3.5 w-3.5" />
+              Add user
+            </Button>
+          )}
+        </PageIntro>
+
         {isLoading ? (
-          <TableSkeleton rows={5} cols={4} />
+          <TableSkeleton rows={5} cols={6} />
         ) : isError ? (
           <ErrorState message={error?.message} onRetry={() => refetch()} />
         ) : userCount === 0 ? (
@@ -216,63 +224,65 @@ export default function UsersPage() {
             description="Users will appear here once they sign up or are added by an admin."
           />
         ) : (
-          <div className="animate-in space-y-3">
-            <p className="text-xs text-muted-foreground">{userCount} user{userCount !== 1 ? "s" : ""}</p>
-            <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-sm">
+          <AdminPanel
+            title="Organization users"
+            subtitle={`${userCount} ${userCount === 1 ? "account" : "accounts"}`}
+          >
+            <div className="hidden overflow-x-auto md:block">
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
-                    <TableHead className="h-8 text-xs">Name</TableHead>
-                    <TableHead className="h-8 text-xs">Username</TableHead>
-                    <TableHead className="h-8 text-xs">Email</TableHead>
-                    <TableHead className="h-8 text-xs">Role</TableHead>
-                    <TableHead className="h-8 text-xs">Department</TableHead>
-                    <TableHead className="h-8 text-xs text-right">Joined</TableHead>
-                    <TableHead className="h-8 text-xs w-[60px]" />
+                    <TableHead>User</TableHead>
+                    <TableHead>Username</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Department</TableHead>
+                    <TableHead className="text-right">Joined</TableHead>
+                    <TableHead className="w-[76px]"><span className="sr-only">Actions</span></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {(users ?? []).map((u: AdminUser) => (
                     <TableRow key={u.id}>
-                      <TableCell className="py-1.5">
-                        <span className="text-sm font-medium">{u.name ?? "-"}</span>
+                      <TableCell>
+                        <div className="flex items-center gap-2.5">
+                          <span aria-hidden="true" className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-surface-raised text-3xs font-medium text-muted-foreground">
+                            {initials(u.name, u.email)}
+                          </span>
+                          <span className="text-xs font-medium">{u.name ?? "—"}</span>
+                        </div>
                       </TableCell>
-                      <TableCell className="py-1.5 text-sm text-muted-foreground">
-                        {u.username ? `@${u.username}` : "-"}
+                      <TableCell className="text-xs text-muted-foreground">{u.username ? `@${u.username}` : "—"}</TableCell>
+                      <TableCell className="font-mono text-2xs text-muted-foreground">{u.email ?? "—"}</TableCell>
+                      <TableCell><RoleSelect userId={u.id} currentRole={u.role} /></TableCell>
+                      <TableCell><DepartmentInput userId={u.id} currentDept={u.department} /></TableCell>
+                      <TableCell className="text-right text-2xs tabular-nums text-muted-foreground">
+                        {u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}
                       </TableCell>
-                      <TableCell className="py-1.5 text-sm text-muted-foreground font-[family-name:var(--font-mono)]">
-                        {u.email ?? "-"}
-                      </TableCell>
-                      <TableCell className="py-1.5">
-                        <RoleSelect userId={u.id} currentRole={u.role} />
-                      </TableCell>
-                      <TableCell className="py-1.5">
-                        <DepartmentInput userId={u.id} currentDept={u.department} />
-                      </TableCell>
-                      <TableCell className="py-1.5 text-xs text-muted-foreground text-right tabular-nums">
-                        {u.created_at ? new Date(u.created_at).toLocaleDateString() : "-"}
-                      </TableCell>
-                      <TableCell className="py-1.5">
+                      <TableCell>
                         <div className="flex items-center justify-end gap-1">
-                        {!ssoOnly && (
+                          {!ssoOnly && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground"
+                              aria-label={`Reset password for ${u.name ?? u.email}`}
+                              title="Reset password"
+                              onClick={() => setResetTarget(u)}
+                            >
+                              <RotateCcw className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
-                            title="Reset password"
-                            onClick={() => setResetTarget(u)}
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            aria-label={`Delete ${u.name ?? u.email}`}
+                            title="Delete user"
+                            onClick={() => setDeleteTarget(u)}
                           >
-                            <RotateCcw className="h-3.5 w-3.5" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </Button>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                          onClick={() => setDeleteTarget(u)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -280,7 +290,37 @@ export default function UsersPage() {
                 </TableBody>
               </Table>
             </div>
-          </div>
+
+            <div className="divide-y divide-border md:hidden">
+              {(users ?? []).map((u: AdminUser) => (
+                <article key={u.id} className="p-4">
+                  <div className="flex items-start gap-3">
+                    <span aria-hidden="true" className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-surface-raised text-2xs font-medium text-muted-foreground">
+                      {initials(u.name, u.email)}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <h2 className="truncate text-sm font-medium">{u.name ?? "Unnamed user"}</h2>
+                      <p className="truncate font-mono text-2xs text-muted-foreground">{u.email ?? "No email"}</p>
+                    </div>
+                    <div className="flex shrink-0 gap-1">
+                      {!ssoOnly && (
+                        <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Reset password for ${u.name ?? u.email}`} onClick={() => setResetTarget(u)}>
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" aria-label={`Delete ${u.name ?? u.email}`} onClick={() => setDeleteTarget(u)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                  <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-border pt-3">
+                    <div><dt className="text-3xs uppercase tracking-wide text-muted-foreground">Role</dt><dd className="mt-1"><RoleSelect userId={u.id} currentRole={u.role} /></dd></div>
+                    <div><dt className="text-3xs uppercase tracking-wide text-muted-foreground">Department</dt><dd className="mt-2"><DepartmentInput userId={u.id} currentDept={u.department} /></dd></div>
+                  </dl>
+                </article>
+              ))}
+            </div>
+          </AdminPanel>
         )}
       </div>
 
