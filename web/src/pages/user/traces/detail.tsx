@@ -6,7 +6,6 @@
 // SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-
 import { useState, useCallback, useMemo, createElement } from "react";
 import { useParams } from "@tanstack/react-router";
 import { useSessionDetail, useSessionSubscription } from "@/hooks/use-api";
@@ -15,6 +14,7 @@ import type {
 	RawSessionEvent,
 	SubagentSession,
 } from "@/lib/types";
+import { kindChipClasses, eventTextClass } from "@/lib/kind-colors";
 import {
 	FileText,
 	ChevronDown,
@@ -52,6 +52,14 @@ import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { StepPath, type StepPathStep } from "@/components/ui/step-path";
+
+/**
+ * How recently the newest event must have landed for the session to read as
+ * still running. The step is labelled "In progress" either way, so the
+ * distinction never rests on the accent colour or the pulse alone.
+ */
+const LIVE_WINDOW_MS = 5 * 60_000;
 
 /* ── Helpers ─────────────────────────────────────────────── */
 
@@ -65,12 +73,12 @@ function Badge({
 	const cls = {
 		default: "bg-primary/10 text-primary",
 		success: "bg-success/10 text-success",
-		warning: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+		warning: "bg-warning/10 text-warning",
 		muted: "bg-muted text-muted-foreground",
 	}[variant];
 	return (
 		<span
-			className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium ${cls}`}
+			className={`inline-flex items-center px-1.5 py-0.5 rounded text-2xs font-medium ${cls}`}
 		>
 			{children}
 		</span>
@@ -154,42 +162,14 @@ function eventIcon(eventName: string) {
 	return FileText;
 }
 
+/**
+ * Event colour, resolved through the event's filter category so the tree and
+ * the filter chips always agree. Previously a ladder of raw Tailwind hues
+ * (purple/cyan/indigo/...) that ignored the active preset and light/dark mode.
+ * Unrecognised hook events stay muted — they are the catch-all bucket.
+ */
 function eventColor(eventName: string): string {
-	if (eventName === "api_request") return "text-info";
-	if (eventName === "tool_result") return "text-success";
-	if (eventName === "tool_decision") return "text-amber-500";
-	if (eventName === "user_prompt" || eventName === "hook_userpromptsubmit")
-		return "text-purple-500";
-	if (eventName === "hook_posttooluse") return "text-cyan-500";
-	if (eventName === "hook_pretooluse") return "text-sky-400";
-	if (
-		eventName === "hook_posttoolusefailure" ||
-		eventName === "hook_stopfailure"
-	)
-		return "text-destructive";
-	if (eventName === "hook_subagentstart" || eventName === "hook_subagentstop")
-		return "text-indigo-500";
-	if (eventName === "hook_assistant_response") return "text-violet-500";
-	if (eventName === "hook_assistant_thinking") return "text-fuchsia-500";
-	if (eventName === "hook_stop") return "text-rose-500";
-	if (eventName === "hook_sessionstart") return "text-success";
-	if (eventName === "hook_notification") return "text-warning";
-	if (eventName === "hook_taskcreated" || eventName === "hook_taskcompleted")
-		return "text-lime-500";
-	if (eventName === "hook_precompact" || eventName === "hook_postcompact")
-		return "text-muted-foreground";
-	if (
-		eventName === "hook_worktreecreate" ||
-		eventName === "hook_worktreeremove"
-	)
-		return "text-amber-400";
-	if (
-		eventName === "hook_elicitation" ||
-		eventName === "hook_elicitationresult"
-	)
-		return "text-teal-500";
-	if (isHookEvent(eventName)) return "text-orange-500";
-	return "text-muted-foreground";
+	return eventTextClass(eventName);
 }
 
 /* ── Filter categories ───────────────────────────────────── */
@@ -206,22 +186,19 @@ const FILTER_CATEGORIES: FilterCategory[] = [
 		key: "prompts",
 		label: "Prompts",
 		match: (e) => e === "user_prompt" || e === "hook_userpromptsubmit",
-		color:
-			"bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
+		color: kindChipClasses("prompts"),
 	},
 	{
 		key: "responses",
 		label: "Responses",
 		match: (e) => e === "hook_assistant_response",
-		color:
-			"bg-violet-500/10 text-violet-600 dark:text-violet-400 border-violet-500/20",
+		color: kindChipClasses("responses"),
 	},
 	{
 		key: "thinking",
 		label: "Thinking",
 		match: (e) => e === "hook_assistant_thinking",
-		color:
-			"bg-fuchsia-500/10 text-fuchsia-600 dark:text-fuchsia-400 border-fuchsia-500/20",
+		color: kindChipClasses("thinking"),
 	},
 	{
 		key: "tools",
@@ -234,20 +211,19 @@ const FILTER_CATEGORIES: FilterCategory[] = [
 				"hook_pretooluse",
 				"hook_posttoolusefailure",
 			].includes(e),
-		color: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20",
+		color: kindChipClasses("tools"),
 	},
 	{
 		key: "api",
 		label: "API",
 		match: (e) => e === "api_request",
-		color: "bg-info/10 text-info border-info/20",
+		color: kindChipClasses("api"),
 	},
 	{
 		key: "agents",
 		label: "Agents",
 		match: (e) => e === "hook_subagentstart" || e === "hook_subagentstop",
-		color:
-			"bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20",
+		color: kindChipClasses("agents"),
 	},
 	{
 		key: "lifecycle",
@@ -260,38 +236,37 @@ const FILTER_CATEGORIES: FilterCategory[] = [
 				"hook_precompact",
 				"hook_postcompact",
 			].includes(e),
-		color: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20",
+		color: kindChipClasses("lifecycle"),
 	},
 	{
 		key: "tasks",
 		label: "Tasks",
 		match: (e) => e === "hook_taskcreated" || e === "hook_taskcompleted",
-		color: "bg-lime-500/10 text-lime-600 dark:text-lime-400 border-lime-500/20",
+		color: kindChipClasses("tasks"),
 	},
 	{
 		key: "mcp",
 		label: "MCP",
 		match: (e) => e === "hook_elicitation" || e === "hook_elicitationresult",
-		color: "bg-teal-500/10 text-teal-600 dark:text-teal-400 border-teal-500/20",
+		color: kindChipClasses("mcp"),
 	},
 	{
 		key: "errors",
 		label: "Errors",
 		match: (e) => e === "hook_posttoolusefailure" || e === "hook_stopfailure",
-		color: "bg-destructive/10 text-destructive border-destructive/20",
+		color: kindChipClasses("errors"),
 	},
 	{
 		key: "notifications",
 		label: "Notifications",
 		match: (e) => e === "hook_notification",
-		color: "bg-warning/10 text-warning border-warning/20",
+		color: kindChipClasses("notifications"),
 	},
 	{
 		key: "worktree",
 		label: "Worktrees",
 		match: (e) => e === "hook_worktreecreate" || e === "hook_worktreeremove",
-		color:
-			"bg-amber-400/10 text-amber-600 dark:text-amber-300 border-amber-400/20",
+		color: kindChipClasses("worktree"),
 	},
 ];
 
@@ -659,7 +634,7 @@ function EventSummary({ event }: { event: RawSessionEvent }) {
 					{attrs.tool_name || "?"}
 				</Badge>
 				{hasMcp && (
-					<span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium bg-teal-500/10 text-teal-600 dark:text-teal-400">
+					<span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-2xs font-medium bg-kind-mcp/10 text-kind-mcp">
 						<Globe className="h-3 w-3" />
 						{attrs.mcp_id}
 					</span>
@@ -680,7 +655,7 @@ function EventSummary({ event }: { event: RawSessionEvent }) {
 				)}
 				{hasMcp && (
 					<span
-						className={`inline-flex items-center gap-0.5 text-[10px] font-medium ${schemaValid ? "text-success" : "text-destructive"}`}
+						className={`inline-flex items-center gap-0.5 text-2xs font-medium ${schemaValid ? "text-success" : "text-destructive"}`}
 					>
 						{schemaValid ? (
 							<CheckCircle2 className="h-3 w-3" />
@@ -906,14 +881,14 @@ function DiffBlock({
 	return (
 		<div className="space-y-1">
 			<div className="flex items-center gap-2">
-				<span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+				<span className="text-2xs font-medium text-muted-foreground uppercase tracking-wide">
 					Diff
 				</span>
-				<span className="text-[11px] font-[family-name:var(--font-mono)] text-muted-foreground">
+				<span className="text-2xs font-[family-name:var(--font-mono)] text-muted-foreground">
 					{filePath.split("/").pop()}
 				</span>
-				<span className="text-[11px] text-success">+{addCount}</span>
-				<span className="text-[11px] text-destructive">-{removeCount}</span>
+				<span className="text-2xs text-success">+{addCount}</span>
+				<span className="text-2xs text-destructive">-{removeCount}</span>
 			</div>
 			<div className="text-xs font-[family-name:var(--font-mono)] border border-border rounded-md overflow-hidden max-h-[400px] overflow-auto">
 				{visible.map((line, idx) => {
@@ -921,7 +896,7 @@ function DiffBlock({
 						return (
 							<div
 								key={idx}
-								className="px-2 py-0.5 text-muted-foreground bg-muted/30 text-center text-[10px]"
+								className="px-2 py-0.5 text-muted-foreground bg-muted/30 text-center text-2xs"
 							>
 								··· {line.count} unchanged lines ···
 							</div>
@@ -966,7 +941,7 @@ function DiffBlock({
 				<button
 					type="button"
 					onClick={() => setShowFull(true)}
-					className="text-[11px] text-primary-accent hover:underline"
+					className="text-2xs text-primary-accent hover:underline"
 				>
 					Show full diff ({diff.length} lines)
 				</button>
@@ -975,7 +950,7 @@ function DiffBlock({
 				<button
 					type="button"
 					onClick={() => setShowFull(false)}
-					className="text-[11px] text-primary-accent hover:underline"
+					className="text-2xs text-primary-accent hover:underline"
 				>
 					Show context only
 				</button>
@@ -1005,7 +980,7 @@ function ContentBlock({ label, content }: { label: string; content: string }) {
 
 	return (
 		<div className="space-y-1">
-			<span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide">
+			<span className="text-2xs font-medium text-muted-foreground uppercase tracking-wide">
 				{label}
 			</span>
 			<pre
@@ -1017,7 +992,7 @@ function ContentBlock({ label, content }: { label: string; content: string }) {
 				<button
 					type="button"
 					onClick={() => setShowFull(!showFull)}
-					className="text-[11px] text-primary-accent hover:underline"
+					className="text-2xs text-primary-accent hover:underline"
 				>
 					{showFull ? "Show less" : `Show all ${lines} lines`}
 				</button>
@@ -1147,7 +1122,7 @@ function HookMetaGrid({ attrs }: { attrs: Record<string, string> }) {
 						<span
 							className={
 								isMcpField
-									? "text-teal-600 dark:text-teal-400"
+									? "text-kind-mcp"
 									: "text-muted-foreground"
 							}
 						>
@@ -1185,14 +1160,14 @@ function AssistantResponseBlock({ event }: { event: RawSessionEvent }) {
 	if (!fullResponse) return null;
 
 	return (
-		<div className="mx-3 mt-2 mb-3 rounded-md border border-violet-500/20 bg-violet-500/5 overflow-hidden">
-			<div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-violet-500/10">
-				<Bot className="h-3 w-3 text-violet-500" />
-				<span className="text-[11px] font-medium text-violet-600 dark:text-violet-400">
+		<div className="mx-3 mt-2 mb-3 rounded-md border border-kind-response/20 bg-kind-response/5 overflow-hidden">
+			<div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-kind-response/10">
+				<Bot className="h-3 w-3 text-kind-response" />
+				<span className="text-2xs font-medium text-kind-response">
 					Assistant Response{seqLabel}
 				</span>
 				{event.timestamp && (
-					<span className="ml-auto text-[10px] text-muted-foreground tabular-nums">
+					<span className="ml-auto text-2xs text-muted-foreground tabular-nums">
 						{new Date(event.timestamp).toLocaleTimeString()}
 					</span>
 				)}
@@ -1204,7 +1179,7 @@ function AssistantResponseBlock({ event }: { event: RawSessionEvent }) {
 				<button
 					type="button"
 					onClick={() => setExpanded(!expanded)}
-					className="w-full text-center py-1 text-[11px] text-violet-500 hover:underline border-t border-violet-500/10"
+					className="w-full text-center py-1 text-2xs text-kind-response hover:underline border-t border-kind-response/10"
 				>
 					{expanded ? "Show less" : `Show all ${lines.length} lines`}
 				</button>
@@ -1230,14 +1205,14 @@ function ThinkingBlock({ event }: { event: RawSessionEvent }) {
 	if (!fullText) return null;
 
 	return (
-		<div className="mx-3 mt-2 mb-1 rounded-md border border-fuchsia-500/20 bg-fuchsia-500/5 overflow-hidden">
-			<div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-fuchsia-500/10">
-				<Bot className="h-3 w-3 text-fuchsia-500" />
-				<span className="text-[11px] font-medium text-fuchsia-600 dark:text-fuchsia-400">
+		<div className="mx-3 mt-2 mb-1 rounded-md border border-kind-thinking/20 bg-kind-thinking/5 overflow-hidden">
+			<div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-kind-thinking/10">
+				<Bot className="h-3 w-3 text-kind-thinking" />
+				<span className="text-2xs font-medium text-kind-thinking">
 					Thinking{seqLabel}
 				</span>
 				{event.timestamp && (
-					<span className="ml-auto text-[10px] text-muted-foreground tabular-nums">
+					<span className="ml-auto text-2xs text-muted-foreground tabular-nums">
 						{new Date(event.timestamp).toLocaleTimeString()}
 					</span>
 				)}
@@ -1249,7 +1224,7 @@ function ThinkingBlock({ event }: { event: RawSessionEvent }) {
 				<button
 					type="button"
 					onClick={() => setExpanded(!expanded)}
-					className="w-full text-center py-1 text-[11px] text-fuchsia-500 hover:underline border-t border-fuchsia-500/10"
+					className="w-full text-center py-1 text-2xs text-kind-thinking hover:underline border-t border-kind-thinking/10"
 				>
 					{expanded ? "Show less" : `Show all ${lines.length} lines`}
 				</button>
@@ -1312,6 +1287,7 @@ function LeafEvent({
 				onClick={onToggle}
 				className="flex items-center gap-2 w-full text-left py-1.5 px-3 rounded-md hover:bg-muted/50 transition-colors"
 				style={{ paddingLeft: `${12 + depth * 20}px` }}
+				aria-expanded={isExpanded}
 			>
 				{isExpanded ? (
 					<ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" />
@@ -1323,7 +1299,7 @@ function LeafEvent({
 					{eventLabel(event)}
 				</span>
 				{attrs.agent_id && (
-					<span className="text-[10px] px-1 py-0.5 rounded bg-indigo-500/10 text-indigo-500 font-medium shrink-0">
+					<span className="text-2xs px-1 py-0.5 rounded bg-kind-agent/10 text-kind-agent font-medium shrink-0">
 						{attrs.agent_type || "agent"}
 					</span>
 				)}
@@ -1331,7 +1307,7 @@ function LeafEvent({
 					<EventSummary event={event} />
 				</div>
 				{event.timestamp && (
-					<span className="ml-auto text-[10px] text-muted-foreground tabular-nums shrink-0 pl-2">
+					<span className="ml-auto text-2xs text-muted-foreground tabular-nums shrink-0 pl-2">
 						{new Date(event.timestamp).toLocaleTimeString()}
 					</span>
 				)}
@@ -1390,16 +1366,17 @@ function AgentNode({
 			<button
 				type="button"
 				onClick={() => onToggleEvent(nodeKey)}
-				className="flex items-center gap-2 w-full text-left py-1.5 px-3 rounded-md hover:bg-indigo-500/5 transition-colors"
+				className="flex items-center gap-2 w-full text-left py-1.5 px-3 rounded-md hover:bg-kind-agent/5 transition-colors"
 				style={{ paddingLeft: `${12 + depth * 20}px` }}
+				aria-expanded={isOpen}
 			>
 				{isOpen ? (
-					<ChevronDown className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+					<ChevronDown className="h-3.5 w-3.5 text-kind-agent shrink-0" />
 				) : (
-					<ChevronRight className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+					<ChevronRight className="h-3.5 w-3.5 text-kind-agent shrink-0" />
 				)}
-				<Users className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-				<span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+				<Users className="h-3.5 w-3.5 text-kind-agent shrink-0" />
+				<span className="text-xs font-semibold text-kind-agent">
 					{agent.agentType}
 				</span>
 				<div className="flex items-center gap-1.5">
@@ -1421,7 +1398,7 @@ function AgentNode({
 					)}
 				</div>
 				{agent.startEvent?.timestamp && (
-					<span className="ml-auto text-[10px] text-muted-foreground tabular-nums shrink-0">
+					<span className="ml-auto text-2xs text-muted-foreground tabular-nums shrink-0">
 						{new Date(agent.startEvent.timestamp).toLocaleTimeString()}
 						{agent.stopEvent?.timestamp && (
 							<> — {new Date(agent.stopEvent.timestamp).toLocaleTimeString()}</>
@@ -1431,7 +1408,7 @@ function AgentNode({
 			</button>
 			{isOpen && (
 				<div
-					className="border-l-2 border-indigo-500/20"
+					className="border-l-2 border-kind-agent/20"
 					style={{ marginLeft: `${22 + depth * 20}px` }}
 				>
 					{filtered.length === 0 ? (
@@ -1453,7 +1430,7 @@ function AgentNode({
 						})
 					)}
 					{agent.events.length > filtered.length && activeFilters.size > 0 && (
-						<p className="text-[10px] text-muted-foreground pl-4 py-1">
+						<p className="text-2xs text-muted-foreground pl-4 py-1">
 							{agent.events.length - filtered.length} event
 							{agent.events.length - filtered.length !== 1 ? "s" : ""} hidden by
 							filters
@@ -1489,22 +1466,23 @@ function InlineSubagentBlock({
 		[subagent.events],
 	);
 	return (
-		<div className="ml-6 mr-3 mb-2 rounded-md border border-indigo-500/30 overflow-hidden">
+		<div className="ml-6 mr-3 mb-2 rounded-md border border-kind-agent/30 overflow-hidden">
 			<button
 				type="button"
 				onClick={() => onToggleEvent(nodeKey)}
-				className="flex items-center gap-2 w-full text-left px-3 py-1.5 bg-indigo-500/5 hover:bg-indigo-500/10 transition-colors"
+				className="flex items-center gap-2 w-full text-left px-3 py-1.5 bg-kind-agent/5 hover:bg-kind-agent/10 transition-colors"
+				aria-expanded={isOpen}
 			>
 				{isOpen ? (
-					<ChevronDown className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+					<ChevronDown className="h-3.5 w-3.5 text-kind-agent shrink-0" />
 				) : (
-					<ChevronRight className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
+					<ChevronRight className="h-3.5 w-3.5 text-kind-agent shrink-0" />
 				)}
-				<Users className="h-3.5 w-3.5 text-indigo-500 shrink-0" />
-				<span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+				<Users className="h-3.5 w-3.5 text-kind-agent shrink-0" />
+				<span className="text-xs font-semibold text-kind-agent">
 					Subagent
 				</span>
-				<span className="text-[10px] text-muted-foreground ml-1 font-mono">
+				<span className="text-2xs text-muted-foreground ml-1 font-mono">
 					{subagent.session_id.slice(0, 8)}
 				</span>
 				<Badge variant="muted">
@@ -1582,6 +1560,18 @@ function TurnNode({
 	const apiCount = turn.allEvents.filter(
 		(e) => getEventName(e) === "api_request",
 	).length;
+	// Surfaced on the collapsed header: without it a turn containing failures
+	// looks identical to a clean one until you expand it.
+	const errorCount = turn.allEvents.filter((e) => {
+		const en = getEventName(e);
+		const attrs = e.attributes ?? {};
+		return (
+			en === "hook_posttoolusefailure" ||
+			en === "hook_stopfailure" ||
+			(en === "hook_posttooluse" && attrs.success === "false") ||
+			(en === "tool_result" && attrs.success !== "true")
+		);
+	}).length;
 	const agentCount = turn.agents.length + subagentSessions.length;
 
 	// Timestamps
@@ -1598,14 +1588,15 @@ function TurnNode({
 			<button
 				type="button"
 				onClick={() => onToggleEvent(nodeKey)}
-				className="flex items-start gap-2 w-full text-left py-2.5 px-3 hover:bg-purple-500/5 transition-colors"
+				className="flex items-start gap-2 w-full text-left py-2.5 px-3 hover:bg-kind-prompt/5 transition-colors"
+				aria-expanded={isOpen}
 			>
 				{isOpen ? (
-					<ChevronDown className="h-4 w-4 text-purple-500 mt-0.5 shrink-0" />
+					<ChevronDown className="h-4 w-4 text-kind-prompt mt-0.5 shrink-0" />
 				) : (
-					<ChevronRight className="h-4 w-4 text-purple-500 mt-0.5 shrink-0" />
+					<ChevronRight className="h-4 w-4 text-kind-prompt mt-0.5 shrink-0" />
 				)}
-				<MessageSquare className="h-4 w-4 text-purple-500 mt-0.5 shrink-0" />
+				<MessageSquare className="h-4 w-4 text-kind-prompt mt-0.5 shrink-0" />
 				<div className="flex-1 min-w-0">
 					<div className="flex items-center gap-2 flex-wrap">
 						<span className="text-sm font-semibold">Turn {index + 1}</span>
@@ -1628,6 +1619,12 @@ function TurnNode({
 									{agentCount}
 								</Badge>
 							)}
+							{errorCount > 0 && (
+								<Badge variant="warning">
+									<AlertTriangle className="h-2.5 w-2.5 mr-0.5 inline" />
+									{errorCount} failed
+								</Badge>
+							)}
 							{duration !== null && (
 								<Stat label="" value={formatDuration(duration)} icon={Clock} />
 							)}
@@ -1641,7 +1638,7 @@ function TurnNode({
 					)}
 				</div>
 				{startTime && (
-					<span className="text-[10px] text-muted-foreground tabular-nums shrink-0 mt-1">
+					<span className="text-2xs text-muted-foreground tabular-nums shrink-0 mt-1">
 						{new Date(startTime).toLocaleTimeString()}
 					</span>
 				)}
@@ -1652,10 +1649,10 @@ function TurnNode({
 				<div className="border-t border-border">
 					{/* Full user prompt */}
 					{fullPrompt && (
-						<div className="mx-3 mt-3 mb-2 rounded-md border border-purple-500/20 bg-purple-500/5 overflow-hidden">
-							<div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-purple-500/10">
-								<MessageSquare className="h-3 w-3 text-purple-500" />
-								<span className="text-[11px] font-medium text-purple-600 dark:text-purple-400">
+						<div className="mx-3 mt-3 mb-2 rounded-md border border-kind-prompt/20 bg-kind-prompt/5 overflow-hidden">
+							<div className="flex items-center gap-1.5 px-3 py-1.5 border-b border-kind-prompt/10">
+								<MessageSquare className="h-3 w-3 text-kind-prompt" />
+								<span className="text-2xs font-medium text-kind-prompt">
 									User Prompt
 								</span>
 							</div>
@@ -1726,10 +1723,10 @@ function TurnNode({
 					{/* Turn end marker */}
 					{turn.stopEvent && (
 						<div
-							className="flex items-center gap-2 py-1 px-3 text-[10px] text-muted-foreground"
+							className="flex items-center gap-2 py-1 px-3 text-2xs text-muted-foreground"
 							style={{ paddingLeft: "32px" }}
 						>
-							<Square className="h-2.5 w-2.5 text-rose-400" />
+							<Square className="h-2.5 w-2.5 text-muted-foreground" />
 							<span>
 								{turn.stopEvent.attributes?.stop_reason || "end_turn"}
 							</span>
@@ -1859,17 +1856,17 @@ function SessionStats({
 		<div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-4">
 			{stats.isKiro ? (
 				<div className="space-y-1">
-					<p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+					<p className="text-2xs text-muted-foreground uppercase tracking-wide">
 						Credits
 					</p>
-					<p className="text-lg font-semibold tabular-nums text-orange-500">
+					<p className="text-lg font-semibold tabular-nums text-warning">
 						{stats.credits > 0 ? formatCredits(stats.credits) : "—"}
 					</p>
 				</div>
 			) : !stats.isCopilotCli ? (
 				<>
 					<div className="space-y-1">
-						<p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+						<p className="text-2xs text-muted-foreground uppercase tracking-wide">
 							Input Tokens
 						</p>
 						<p className="text-lg font-semibold tabular-nums">
@@ -1877,7 +1874,7 @@ function SessionStats({
 						</p>
 					</div>
 					<div className="space-y-1">
-						<p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+						<p className="text-2xs text-muted-foreground uppercase tracking-wide">
 							Output Tokens
 						</p>
 						<p className="text-lg font-semibold tabular-nums">
@@ -1887,7 +1884,7 @@ function SessionStats({
 					{!stats.isGemini && (
 						<>
 							<div className="space-y-1">
-								<p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+								<p className="text-2xs text-muted-foreground uppercase tracking-wide">
 									Cache Read
 								</p>
 								<p className="text-lg font-semibold tabular-nums">
@@ -1895,7 +1892,7 @@ function SessionStats({
 								</p>
 							</div>
 							<div className="space-y-1">
-								<p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+								<p className="text-2xs text-muted-foreground uppercase tracking-wide">
 									Cache Write
 								</p>
 								<p className="text-lg font-semibold tabular-nums">
@@ -1908,35 +1905,35 @@ function SessionStats({
 			) : null}
 			{!stats.isGemini && !stats.isCopilotCli && (
 				<div className="space-y-1">
-					<p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+					<p className="text-2xs text-muted-foreground uppercase tracking-wide">
 						API Calls
 					</p>
 					<p className="text-lg font-semibold tabular-nums">{stats.apiCalls}</p>
 				</div>
 			)}
 			<div className="space-y-1">
-				<p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+				<p className="text-2xs text-muted-foreground uppercase tracking-wide">
 					Tool Calls
 				</p>
 				<p className="text-lg font-semibold tabular-nums">{stats.toolCalls}</p>
 			</div>
 			{stats.hookEvents > 0 && (
 				<div className="space-y-1">
-					<p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+					<p className="text-2xs text-muted-foreground uppercase tracking-wide">
 						Hook Captures
 					</p>
-					<p className="text-lg font-semibold tabular-nums text-orange-500">
+					<p className="text-lg font-semibold tabular-nums text-warning">
 						{stats.hookEvents}
 					</p>
 				</div>
 			)}
 			{stats.isEnriched && (
 				<div className="space-y-1">
-					<p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+					<p className="text-2xs text-muted-foreground uppercase tracking-wide">
 						Data Source
 					</p>
 					<div className="flex items-center gap-1.5">
-						<span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/25">
+						<span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold bg-success/15 text-success border border-success/25">
 							<CheckCircle2 className="h-3.5 w-3.5" />
 							Enriched
 						</span>
@@ -1945,7 +1942,7 @@ function SessionStats({
 			)}
 			{!stats.isCopilotCli && (
 				<div className="space-y-1">
-					<p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+					<p className="text-2xs text-muted-foreground uppercase tracking-wide">
 						Models
 					</p>
 					<div className="flex flex-wrap gap-1">
@@ -1957,7 +1954,7 @@ function SessionStats({
 			)}
 			{Object.keys(stats.tools).length > 0 && (
 				<div className="col-span-full space-y-1">
-					<p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+					<p className="text-2xs text-muted-foreground uppercase tracking-wide">
 						Tools Used
 					</p>
 					<div className="flex flex-wrap gap-1.5">
@@ -2146,6 +2143,37 @@ export default function TraceDetailPage() {
 		return counts;
 	}, [allDeduped]);
 
+
+	const executionPath = useMemo<StepPathStep[]>(() => {
+		const firstReal = events.find((e) => isRealTs(e.timestamp));
+		const lastReal = [...events].reverse().find((e) => isRealTs(e.timestamp));
+		const elapsed = lastReal
+			? Date.now() - new Date(lastReal.timestamp).getTime()
+			: Number.POSITIVE_INFINITY;
+		const live = elapsed >= 0 && elapsed < LIVE_WINDOW_MS;
+		const clock = (ts?: string) =>
+			ts
+				? new Date(ts).toLocaleTimeString([], {
+						hour: "2-digit",
+						minute: "2-digit",
+					})
+				: "—";
+		return [
+			{ label: "Started", value: clock(firstReal?.timestamp), state: "done" },
+			{ label: "Turns", value: String(tree.turns.length), state: "done" },
+			{
+				label: "Tool calls",
+				value: String(filterCounts.tools ?? 0),
+				state: "done",
+			},
+			{
+				label: live ? "In progress" : "Last event",
+				value: clock(lastReal?.timestamp),
+				state: live ? "current" : "done",
+			},
+		];
+	}, [events, tree.turns.length, filterCounts]);
+
 	// Visible turns after filtering
 	const visibleTurns = useMemo(() => {
 		if (activeFilters.size === 0 && !searchQuery.trim()) return tree.turns;
@@ -2267,6 +2295,16 @@ export default function TraceDetailPage() {
 							sessionId={id}
 							serviceName={session.service_name}
 						/>
+
+
+						{events.length > 0 && (
+							<StepPath
+								className="mb-5 mt-[25px]"
+								aria-label="Session execution path"
+								steps={executionPath}
+							/>
+						)}
+
 						<Separator />
 
 						{/* Tabbed content */}
@@ -2299,6 +2337,7 @@ export default function TraceDetailPage() {
 														type="button"
 														onClick={() => setSearchQuery("")}
 														className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+														aria-label="Clear search"
 													>
 														<X className="h-3.5 w-3.5" />
 													</button>
@@ -2323,7 +2362,7 @@ export default function TraceDetailPage() {
 													type="button"
 													key={cat.key}
 													onClick={() => toggleFilter(cat.key)}
-													className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border transition-all ${
+													className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-medium border transition-all ${
 														activeFilters.has(cat.key)
 															? cat.color + " border-current"
 															: "bg-muted/50 text-muted-foreground border-transparent hover:bg-muted"
@@ -2339,7 +2378,7 @@ export default function TraceDetailPage() {
 												<button
 													type="button"
 													onClick={clearFilters}
-													className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
+													className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-2xs text-muted-foreground hover:text-foreground"
 												>
 													<X className="h-3 w-3" /> Clear
 												</button>
@@ -2361,7 +2400,7 @@ export default function TraceDetailPage() {
 									{/* Pre-session events */}
 									{tree.preSessionEvents.length > 0 && (
 										<div className="rounded-lg border border-border/50 p-2 space-y-0.5">
-											<span className="text-[10px] text-muted-foreground uppercase tracking-wide px-2">
+											<span className="text-2xs text-muted-foreground uppercase tracking-wide px-2">
 												Pre-session
 											</span>
 											{tree.preSessionEvents.map((evt, i) => {

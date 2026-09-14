@@ -14,12 +14,12 @@ interface StatCardProps {
 
 export function StatCard({ label, value, trend, subtitle }: StatCardProps) {
   return (
-    <div className="bg-card p-5 space-y-1">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-2xl font-bold font-[family-name:var(--font-display)] tabular-nums">
+    <div className="min-w-0 bg-card px-5 py-4">
+      <p className="text-2xs text-muted-foreground">{label}</p>
+      <p className="mt-3 text-2xl font-semibold tracking-[-0.025em] tabular-nums">
         {value}
       </p>
-      <div className="flex items-center gap-1.5">
+      <div className="mt-1 flex items-center gap-1.5">
         {trend !== undefined && trend !== 0 && (
           <>
             {trend > 0 ? (

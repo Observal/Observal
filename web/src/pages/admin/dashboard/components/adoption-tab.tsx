@@ -4,7 +4,7 @@
 
 
 import { useContext, useState } from "react";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Line } from "recharts";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line } from "recharts";
 import { useExecAdoption, useExecAgentCounts, useExecUsageByCategory, useExecPlatformCoverage } from "@/hooks/use-api";
 import { StatCard } from "./stat-card";
 import { DashboardRangeContext } from "../context";
@@ -27,7 +27,7 @@ export function AdoptionTab() {
   if (adoptionLoading || agentsLoading) {
     return (
       <div className="space-y-6 pt-4">
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-px overflow-hidden rounded-xl bg-border sm:grid-cols-2 xl:grid-cols-4">
           {[...Array(4)].map((_, i) => (
             <div key={i} className="h-24 rounded-xl bg-card shadow-sm animate-pulse" />
           ))}
@@ -39,21 +39,17 @@ export function AdoptionTab() {
 
   return (
     <div className="space-y-6 pt-4">
-      {/* KPI Row — mockup: 4-col grid, 1px gap (bg-border as divider), shared radius */}
-      <div className="grid grid-cols-4 gap-px overflow-hidden rounded-xl bg-border">
+      <div className="grid grid-cols-1 gap-px overflow-hidden rounded-xl bg-border shadow-sm sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="AI Adoption" value={`${adoption?.current_pct ?? 0}%`} subtitle="of users active" />
         <StatCard label="Active Users" value={adoption?.active_users ?? 0} subtitle={`of ${adoption?.total_users ?? 0} total`} />
         <StatCard label="Departments" value={adoption?.departments_covered ?? 0} subtitle="with AI usage" />
         <StatCard label="Active Agents" value={agents?.active ?? 0} subtitle={`of ${agents?.total ?? 0} total`} />
       </div>
 
-      {/* Adoption curve + Agent counts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Adoption Chart */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <AdoptionChart monthly={adoption?.monthly ?? []} />
 
 
-        {/* Agent Count Breakdown */}
         <div className="rounded-xl bg-card shadow-sm p-5">
           <h3 className="text-sm font-medium mb-4">Agents by Category</h3>
           <div className="flex items-center gap-4 mb-4 text-xs text-muted-foreground">
@@ -74,9 +70,7 @@ export function AdoptionTab() {
         </div>
       </div>
 
-      {/* Usage by Category + Platform Coverage */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Usage by Category */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="rounded-xl bg-card shadow-sm p-5">
           <h3 className="text-sm font-medium mb-4">Agent Usage by Category</h3>
           {usage && usage.length > 0 ? (
@@ -102,7 +96,6 @@ export function AdoptionTab() {
           )}
         </div>
 
-        {/* Platform Coverage */}
         <div className="rounded-xl bg-card shadow-sm p-5">
           <h3 className="text-sm font-medium mb-4">Platform Coverage</h3>
           {platforms && platforms.length > 0 ? (

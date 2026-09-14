@@ -8,7 +8,7 @@
  *
  * Run: npx playwright test e2e/review-diff-screenshots.spec.ts --project=chromium
  */
-import { test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { loginToWebUI, API_BASE, getAccessToken } from "./helpers";
 
 const SCREENSHOT_DIR = "e2e/screenshots";
@@ -34,10 +34,7 @@ test.describe("Review Diff Dialog Screenshots", () => {
         owner: "platform-team",
         model_name: "claude-sonnet-4-20250514",
         prompt: "## Security Review Agent\n\nYou are a security-focused code reviewer. Your job is to analyze code changes for vulnerabilities.\n\n## Focus Areas\n- SQL injection (A03)\n- Broken authentication (A07)\n- Sensitive data exposure (A02)\n\n## Output Format\nProvide findings as a structured report with severity levels.",
-        components: []
-            { name: "Report", description: "Generate findings report" },
-          ],
-        },
+        components: [],
       }),
     });
 
@@ -65,9 +62,10 @@ test.describe("Review Diff Dialog Screenshots", () => {
     await page.waitForLoadState("networkidle");
     await page.waitForTimeout(500);
 
-    // Click the agent name in the review list to open the diff dialog
-    const agentCard = page.locator("button:has-text('review-diff-test')").first();
+    // Select the agent, then open its full diff from the detail pane.
+    const agentCard = page.locator(`[data-review-item="${agentId}"]`);
     await agentCard.click();
+    await page.getByRole("button", { name: "View full diff", exact: true }).click();
     await page.waitForTimeout(1000);
 
     await page.screenshot({
@@ -121,9 +119,10 @@ test.describe("Review Diff Dialog Screenshots", () => {
     await page.waitForLoadState("networkidle");
     await page.waitForTimeout(500);
 
-    // Click the agent to open the diff dialog
-    const agentCard = page.locator("button:has-text('review-diff-test')").first();
+    // Select the agent, then open its full diff from the detail pane.
+    const agentCard = page.locator(`[data-review-item="${agentId}"]`);
     await agentCard.click();
+    await page.getByRole("button", { name: "View full diff", exact: true }).click();
     await page.waitForTimeout(1500);
 
     await page.screenshot({
@@ -132,39 +131,23 @@ test.describe("Review Diff Dialog Screenshots", () => {
     });
   });
 
-  test("3 - Reject dialog", async ({ page }) => {
+  test("3 - Inline rejection", async ({ page }) => {
     await loginToWebUI(page);
     await page.goto("/review");
     await page.waitForLoadState("networkidle");
-    await page.waitForTimeout(500);
 
-    // Click our specific agent (the v2 pending from test 2)
-    const agentCard = page.locator("button:has-text('review-diff-test')").first();
+    const agentCard = page.locator(`[data-review-item="${agentId}"]`);
     await agentCard.click();
-
-    // Wait for the main review dialog to open
-    const mainDialog = page.locator("[role='dialog']").first();
-    await mainDialog.waitFor({ state: "visible", timeout: 5000 });
-    await page.waitForTimeout(1000);
-
-    // Click Reject inside the main dialog footer
-    const rejectBtn = mainDialog.locator("button", { hasText: "Reject" });
-    await rejectBtn.click();
-
-    // Wait for the nested reject-reason dialog to appear
-    // It will be the second [role='dialog'] on the page
-    const rejectDialog = page.locator("[role='dialog']").nth(1);
-    await rejectDialog.waitFor({ state: "visible", timeout: 5000 });
-    await page.waitForTimeout(300);
-
-    // Type a reason
-    const textarea = rejectDialog.locator("textarea");
-    await textarea.fill("Missing CSRF detection in focus areas. Please add A05 (Security Misconfiguration) coverage before approval.");
-    await page.waitForTimeout(300);
+    await page.getByLabel(/Review note/).fill(
+      "Missing CSRF detection in focus areas. Please add A05 coverage before approval.",
+    );
 
     await page.screenshot({
-      path: `${SCREENSHOT_DIR}/09-review-reject-dialog.png`,
+      path: `${SCREENSHOT_DIR}/09-review-inline-rejection.png`,
       fullPage: false,
     });
+
+    await page.getByRole("button", { name: "Reject", exact: true }).click();
+    await expect(agentCard).toHaveCount(0);
   });
 });
