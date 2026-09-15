@@ -18,7 +18,7 @@ import {
 import {
   dashboard,
 } from "@/lib/api";
-import type { SessionData } from "@/lib/types";
+import type { Session, SessionData } from "@/lib/types";
 
 // ── Sessions ───────────────────────────────────────────────────────
 
@@ -49,6 +49,39 @@ export function useSessions2(options?: {
     staleTime: 0,
   });
 }
+export function useAllSessions2(options?: {
+  platform?: string;
+  user?: string;
+  days?: number;
+  mine?: boolean;
+  enabled?: boolean;
+}) {
+  return useQuery({
+    queryKey: ["sessions", "all", options?.platform, options?.user, options?.days, options?.mine],
+    queryFn: async () => {
+      const sessions: Session[] = [];
+      const limit = 200;
+      let offset = 0;
+
+      for (;;) {
+        const page = await dashboard.sessions({
+          platform: options?.platform,
+          user: options?.user,
+          days: options?.days,
+          limit,
+          offset,
+          mine: options?.mine,
+        });
+        sessions.push(...page);
+        if (page.length < limit) return sessions;
+        offset += limit;
+      }
+    },
+    enabled: options?.enabled ?? true,
+    staleTime: 0,
+  });
+}
+
 export function useSessionsSummary() {
   return useQuery({
     queryKey: ['sessions', 'summary'],
@@ -87,7 +120,7 @@ export function useSessionSubscription() {
         // Debounce the list refetch (many events → one list refresh)
         clearTimeout(listDebounceRef.current);
         listDebounceRef.current = setTimeout(() => {
-          qc.invalidateQueries({ queryKey: ["sessions", "list"] });
+          qc.invalidateQueries({ queryKey: ["sessions"] });
         }, 300);
         // Session detail: invalidate immediately so new turns appear
         qc.invalidateQueries({ queryKey: ["sessions", "detail", sessionId] });

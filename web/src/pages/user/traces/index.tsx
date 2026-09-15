@@ -20,7 +20,7 @@ import {
 import { toast } from "sonner";
 import { useHelp } from "@/components/wiki/help-context";
 import {
-	useSessions2,
+	useAllSessions2,
 	useSessionsSummary,
 	useSessionSubscription,
 	useWhoami,
@@ -444,13 +444,10 @@ export default function TracesPage() {
 		isError,
 		error,
 		refetch,
-	} = useSessions2({
-		refetchInterval: 5_000,
+	} = useAllSessions2({
 		platform: serverQuery.filters.platform,
 		user: serverQuery.filters.user,
 		days: serverQuery.filters.days && !isNaN(parseInt(serverQuery.filters.days, 10)) ? parseInt(serverQuery.filters.days, 10) : undefined,
-		limit: PAGE_SIZE,
-		offset: page * PAGE_SIZE,
 	});
 	const { data: summary } = useSessionsSummary();
 	const { data: whoami } = useWhoami();
@@ -574,7 +571,7 @@ export default function TracesPage() {
 				// A live session used to be signalled only by a green bar down the
 				// left edge — no icon, no label, so it did not survive a
 				// colour-vision difference or a monochrome override. StatusBadge
-				// states it in words and pings only while the work is in progress.
+				// states it in words, so color is never the only cue.
 				id: "status",
 				accessorFn: (row) => (row.is_active ? "live" : "completed"),
 				header: "Status",
@@ -651,7 +648,8 @@ export default function TracesPage() {
 		getSortedRowModel: getSortedRowModel(),
 	});
 
-	const rows = table.getRowModel().rows;
+	const sortedRows = table.getRowModel().rows;
+	const rows = sortedRows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
 	// ── Toolbar state derived from the query / sort ──────────────────
 	const harnesses = useMemo(() => {
@@ -676,6 +674,7 @@ export default function TracesPage() {
 		else if (value === "oldest") setSorting([{ id: "first_event_time", desc: false }]);
 		else if (value === "tokens") setSorting([{ id: "tokens", desc: true }]);
 		else if (value === "activity") setSorting([{ id: "activity", desc: true }]);
+		setPage(0);
 	}, []);
 
 	// ── Summary bar figures ─────────────────────────────────────────
@@ -1090,8 +1089,8 @@ export default function TracesPage() {
 										<span>
 											Showing{" "}
 											<span className="tabular-nums">{rows.length}</span> of{" "}
-											<span className="tabular-nums">{totalSessions}</span>{" "}
-											session{totalSessions === 1 ? "" : "s"} · Updated live
+											<span className="tabular-nums">{sortedRows.length}</span>{" "}
+											session{sortedRows.length === 1 ? "" : "s"} · Updated live
 										</span>
 										<div className="flex gap-1.5">
 											<Button
@@ -1107,7 +1106,7 @@ export default function TracesPage() {
 												type="button"
 												variant="ghost"
 												className="text-xs disabled:cursor-not-allowed disabled:opacity-40"
-												disabled={allSessions.length < PAGE_SIZE}
+												disabled={(page + 1) * PAGE_SIZE >= sortedRows.length}
 												onClick={() => setPage(page + 1)}
 											>
 												Next

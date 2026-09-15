@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils"
 
 /** Controlled search input with optional shortcut and leading icon. */
 export interface SearchFieldProps
-  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "size" | "value" | "onChange"> {
+  extends Omit<React.InputHTMLAttributes<HTMLInputElement>, "size" | "value" | "onChange" | "type"> {
   value: string
   onValueChange: (value: string) => void
   mono?: boolean
@@ -51,6 +51,7 @@ const SearchField = React.forwardRef<HTMLInputElement, SearchFieldProps>(
       </span>
       <input
         ref={ref}
+        {...props}
         type="search"
         value={value}
         disabled={disabled}
@@ -62,7 +63,6 @@ const SearchField = React.forwardRef<HTMLInputElement, SearchFieldProps>(
           mono ? "font-mono text-2xs" : "text-xs",
           inputClassName
         )}
-        {...props}
       />
       {kbd && (
         <kbd className="ml-auto hidden shrink-0 rounded-sm bg-surface-raised px-1.5 py-0.5 font-mono text-3xs font-normal text-muted-foreground sm:inline-block">

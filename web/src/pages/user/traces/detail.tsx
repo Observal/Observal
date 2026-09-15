@@ -6,7 +6,7 @@
 // SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-import { useState, useCallback, useMemo, createElement } from "react";
+import { useState, useCallback, useEffect, useMemo, createElement } from "react";
 import { useParams } from "@tanstack/react-router";
 import { useSessionDetail, useSessionSubscription } from "@/hooks/use-api";
 import type {
@@ -2113,6 +2113,12 @@ export default function TraceDetailPage() {
 	const [expandedSet, setExpandedSet] = useState<Set<string>>(new Set());
 	const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
 	const [searchQuery, setSearchQuery] = useState("");
+	const [now, setNow] = useState(() => Date.now());
+
+	useEffect(() => {
+		const timer = globalThis.setInterval(() => setNow(Date.now()), 30_000);
+		return () => globalThis.clearInterval(timer);
+	}, []);
 
 	const toggleFilter = useCallback((key: string) => {
 		setActiveFilters((prev) => {
@@ -2148,7 +2154,7 @@ export default function TraceDetailPage() {
 		const firstReal = events.find((e) => isRealTs(e.timestamp));
 		const lastReal = [...events].reverse().find((e) => isRealTs(e.timestamp));
 		const elapsed = lastReal
-			? Date.now() - new Date(lastReal.timestamp).getTime()
+			? now - new Date(lastReal.timestamp).getTime()
 			: Number.POSITIVE_INFINITY;
 		const live = elapsed >= 0 && elapsed < LIVE_WINDOW_MS;
 		const clock = (ts?: string) =>
@@ -2172,7 +2178,7 @@ export default function TraceDetailPage() {
 				state: live ? "current" : "done",
 			},
 		];
-	}, [events, tree.turns.length, filterCounts]);
+	}, [events, tree.turns.length, filterCounts, now]);
 
 	// Visible turns after filtering
 	const visibleTurns = useMemo(() => {
@@ -2362,6 +2368,7 @@ export default function TraceDetailPage() {
 													type="button"
 													key={cat.key}
 													onClick={() => toggleFilter(cat.key)}
+									aria-pressed={activeFilters.has(cat.key)}
 													className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-2xs font-medium border transition-all ${
 														activeFilters.has(cat.key)
 															? cat.color + " border-current"
