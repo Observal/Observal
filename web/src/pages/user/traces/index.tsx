@@ -6,24 +6,24 @@
 // SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-
 import { Link, useRouter, useSearch, useLocation } from "@tanstack/react-router";
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import {
 	Activity,
 	Search,
 	ArrowUpDown,
 	ArrowUp,
 	ArrowDown,
-	BarChart3,
 	SlidersHorizontal,
 	HelpCircle,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useHelp } from "@/components/wiki/help-context";
 import {
 	useSessions2,
 	useSessionsSummary,
 	useSessionSubscription,
+	useWhoami,
 } from "@/hooks/use-api";
 import {
 	useReactTable,
@@ -41,16 +41,40 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
-import { Input } from "@/components/ui/input";
-import { PageHeader } from "@/components/layouts/page-header";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { SearchField } from "@/components/ui/search-field";
+import {
+	SummaryBar,
+	SummaryBarStat,
+	SummaryBarStatus,
+} from "@/components/ui/summary-bar";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageHeader, PageIntro } from "@/components/layouts/page-header";
 import { TableSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
+import { StatusBadge } from "@/components/registry/status-badge";
 import { EmptyState } from "@/components/shared/empty-state";
+import { cn } from "@/lib/utils";
 import type { Session } from "@/lib/types";
 
 /** Quickstart docs URL shown in the first-time empty state CTA. */
 const DOCS_QUICKSTART_URL =
 	"https://github.com/Observal/Observal/blob/main/docs/getting-started/quickstart.md";
+
+/**
+ * How recent the newest event must be for ingest to read as healthy. The
+ * summary bar states the verdict in words either way, so this only decides the
+ * wording and the dot — never carries the meaning on its own.
+ */
+const INGEST_FRESH_WINDOW_MS = 5 * 60_000;
 
 function truncateQuery(q: string, max = 50): string {
 	return q.length > max ? `${q.slice(0, max)}…` : q;
@@ -90,6 +114,22 @@ function parseSearchQuery(query: string): { text: string; filters: Record<string
 function filterTokensOnly(query: string): string {
 	const tokens = query.match(/(\w+):(?:"[^"]*"|[^\s]*)/g);
 	return tokens ? tokens.join(" ").trim() : "";
+}
+
+/**
+ * Replace (or drop, when `value` is null) a single `key:value` token inside the
+ * query string. The toolbar selects write through this so the search field
+ * stays the one source of truth for filtering — the same string the user can
+ * type by hand, and the same string the URL carries.
+ */
+function withFilterToken(query: string, key: string, value: string | null): string {
+	const pattern = new RegExp(`(?:^|\\s)${key}:(?:"[^"]*"|[^\\s]*)`, "gi");
+	let next = query.replace(pattern, " ").replace(/\s+/g, " ").trim();
+	if (value) {
+		const token = /\s/.test(value) ? `${key}:"${value}"` : `${key}:${value}`;
+		next = next ? `${next} ${token}` : token;
+	}
+	return next;
 }
 
 type TracesEmptyStateKind = "first-time" | "filter" | "search" | "fallback";
@@ -222,12 +262,12 @@ function fmtCredits(c: number | string | undefined | null): string | null {
 const TS_UPPER_BOUND_MS = new Date("2099-01-01").getTime();
 
 function fmtDuration(first?: string, last?: string): string {
-	if (!first || !last) return "\u2013";
+	if (!first || !last) return "–";
 	const t1 = toDate(first).getTime();
 	const t2 = toDate(last).getTime();
-	if (t1 >= TS_UPPER_BOUND_MS || t2 >= TS_UPPER_BOUND_MS) return "\u2013";
+	if (t1 >= TS_UPPER_BOUND_MS || t2 >= TS_UPPER_BOUND_MS) return "–";
 	const ms = t2 - t1;
-	if (ms < 0) return "\u2013";
+	if (ms < 0) return "–";
 	const mins = Math.floor(ms / 60_000);
 	const hours = Math.floor(mins / 60);
 	if (hours > 0) return `${hours}h ${String(mins % 60).padStart(2, "0")}m`;
@@ -243,7 +283,7 @@ function toDate(ts: string): Date {
 }
 
 function relTime(ts?: string): string {
-	if (!ts) return "\u2013";
+	if (!ts) return "–";
 	const ms = Date.now() - toDate(ts).getTime();
 	if (ms < 0) return "just now";
 	const mins = Math.floor(ms / 60_000);
@@ -281,132 +321,20 @@ function sessionLabel(row: Session): string {
 	const count = row.prompt_count ?? 0;
 	const suffix = count === 1 ? "prompt" : "prompts";
 	const version = row.agent_version ? ` v${row.agent_version}` : "";
-	const agent = row.agent_name ? `${row.agent_name}${version} \u00b7 ` : "";
-	if (model) return `${agent}${model} \u00b7 ${count} ${suffix}`;
+	const agent = row.agent_name ? `${row.agent_name}${version} · ` : "";
+	if (model) return `${agent}${model} · ${count} ${suffix}`;
 	return `${agent}${count} ${suffix}`;
 }
 
-// ── Column Definitions ───────────────────────────────────────────────
+function sessionSubLabel(row: Session): string {
+	return row.user_name
+		? `${row.session_id} · ${row.user_name}`
+		: row.session_id;
+}
 
-const columns: ColumnDef<Session>[] = [
-	{
-		accessorKey: "session_id",
-		header: "Session",
-		cell: ({ row }) => (
-			<Link
-				to="/traces/$traceId" params={{ traceId: row.original.session_id }}
-				className="text-[13px] font-medium text-foreground/90 hover:text-foreground transition-colors whitespace-nowrap"
-				onClick={(e) => e.stopPropagation()}
-			>
-				{sessionLabel(row.original)}
-			</Link>
-		),
-	},
-	{
-		accessorKey: "user_name",
-		header: "User",
-		cell: ({ row }) => (
-			<span className="text-[13px] text-muted-foreground whitespace-nowrap">
-				{row.original.user_name || "\u2014"}
-			</span>
-		),
-	},
-	{
-		id: "platform",
-		accessorFn: (row) => derivePlatform(row),
-		header: "Platform",
-		cell: ({ row }) => (
-			<span className="text-[13px] font-medium text-foreground/80 whitespace-nowrap">
-				{derivePlatform(row.original)}
-			</span>
-		),
-	},
-	{
-		id: "tokens",
-		header: "Tokens",
-		accessorFn: (row) => row.total_input_tokens ?? 0,
-		cell: ({ row }) => {
-			const r = row.original;
-			if (isKiroSession(r)) {
-				const credits = fmtCredits(r.total_credits ?? r.credits);
-				if (credits) {
-					return (
-						<span className="text-[13px] font-mono tabular-nums text-warning">
-							{credits} cr
-						</span>
-					);
-				}
-				return <span className="text-[13px] text-muted-foreground">{"\u2013"}</span>;
-			}
-			if (!r.total_input_tokens && !r.total_output_tokens) {
-				return (
-					<span className="text-[13px] text-muted-foreground">{"\u2014"}</span>
-				);
-			}
-			const inp = fmtTokens(r.total_input_tokens);
-			const out = fmtTokens(r.total_output_tokens);
-			return (
-				<span
-					className="text-[13px] font-mono tabular-nums"
-					title={`In: ${r.total_input_tokens?.toLocaleString() ?? 0} · Out: ${r.total_output_tokens?.toLocaleString() ?? 0}`}
-				>
-					<span className="text-success">{inp}</span>
-					<span className="text-muted-foreground/50"> / </span>
-					<span className="text-info">{out}</span>
-				</span>
-			);
-		},
-	},
-	{
-		accessorKey: "tool_result_count",
-		header: "Tools",
-		cell: ({ row }) => (
-			<span className="text-[13px] font-mono tabular-nums text-muted-foreground">
-				{row.original.tool_result_count ?? 0}
-			</span>
-		),
-	},
-	{
-		id: "duration",
-		header: "Duration",
-		accessorFn: (row) => {
-			if (!row.first_event_time || !row.last_event_time) return 0;
-			return (
-				toDate(row.last_event_time).getTime() -
-				toDate(row.first_event_time).getTime()
-			);
-		},
-		cell: ({ row }) => (
-			<span className="text-[13px] text-muted-foreground tabular-nums whitespace-nowrap">
-				{fmtDuration(
-					row.original.first_event_time,
-					row.original.last_event_time,
-				)}
-			</span>
-		),
-	},
-	{
-		accessorKey: "first_event_time",
-		header: "Started",
-		cell: ({ row }) => (
-			<span
-				className="text-[13px] text-muted-foreground tabular-nums whitespace-nowrap"
-				title={absTime(row.original.first_event_time)}
-			>
-				{relTime(row.original.first_event_time)}
-			</span>
-		),
-		sortingFn: (a, b) => {
-			const ta = a.original.first_event_time
-				? toDate(a.original.first_event_time).getTime()
-				: 0;
-			const tb = b.original.first_event_time
-				? toDate(b.original.first_event_time).getTime()
-				: 0;
-			return ta - tb;
-		},
-	},
-];
+function tokenTotal(row: Session): number {
+	return (row.total_input_tokens ?? 0) + (row.total_output_tokens ?? 0);
+}
 
 // ── Sort Icon ────────────────────────────────────────────────────────
 
@@ -416,7 +344,82 @@ function SortIcon({ sorted }: { sorted: false | "asc" | "desc" }) {
 	return <ArrowUpDown className="h-3 w-3 opacity-25" />;
 }
 
+// ── Cell fragments (shared by the table and the narrow card list) ─────
+
+function TraceTitle({ row }: { row: Session }) {
+	return (
+		<div className="min-w-0 min-[1020px]:min-w-[250px]">
+			<Link
+				to="/traces/$traceId"
+				params={{ traceId: row.session_id }}
+				className="block truncate rounded-sm text-xs font-medium text-foreground transition-colors hover:text-foreground/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+				onClick={(e) => e.stopPropagation()}
+			>
+				{sessionLabel(row)}
+			</Link>
+			<span className="mt-[3px] block truncate font-mono text-4xs text-muted-foreground">
+				{sessionSubLabel(row)}
+			</span>
+		</div>
+	);
+}
+
+function TraceStatus({ row }: { row: Session }) {
+	return (
+		<StatusBadge status={row.is_active ? "live" : "completed"} />
+	);
+}
+
+function TraceSource({ row }: { row: Session }) {
+	return (
+		<div className="min-w-0">
+			<span className="block truncate text-2xs font-medium text-foreground">
+				{derivePlatform(row)}
+			</span>
+			<span className="mt-0.5 block truncate text-3xs text-muted-foreground">
+				{row.service_name || "—"}
+			</span>
+		</div>
+	);
+}
+
+function TraceActivity({ row }: { row: Session }) {
+	const tools = row.tool_result_count ?? 0;
+	return (
+		<span className="whitespace-nowrap text-2xs tabular-nums text-muted-foreground">
+			{tools} tools
+		</span>
+	);
+}
+
+/** Token input/output pair. Kiro reports credits instead of tokens. */
+function TraceTokens({ row }: { row: Session }) {
+	if (isKiroSession(row)) {
+		const credits = fmtCredits(row.total_credits ?? row.credits);
+		return (
+			<span className="whitespace-nowrap font-mono text-2xs tabular-nums text-warning">
+				{credits ? `${credits} cr` : "–"}
+			</span>
+		);
+	}
+	if (!row.total_input_tokens && !row.total_output_tokens) {
+		return <span className="text-2xs text-muted-foreground">—</span>;
+	}
+	return (
+		<span
+			className="whitespace-nowrap font-mono text-2xs tabular-nums"
+			title={`In: ${row.total_input_tokens?.toLocaleString() ?? 0} · Out: ${row.total_output_tokens?.toLocaleString() ?? 0}`}
+		>
+			<span className="text-success">{fmtTokens(row.total_input_tokens)}</span>
+			<span className="text-muted-foreground/50"> / </span>
+			<span className="text-info">{fmtTokens(row.total_output_tokens)}</span>
+		</span>
+	);
+}
+
 // ── Page ─────────────────────────────────────────────────────────────
+
+type SavedView = "all" | "active" | "mine";
 
 export default function TracesPage() {
 	const helpCtx = useHelp();
@@ -430,7 +433,9 @@ export default function TracesPage() {
 	]);
 	const [searchValue, setSearchValue] = useState(searchParam ?? "");
 	const [globalFilter, setGlobalFilter] = useState(searchParam ?? "");
+	const [savedView, setSavedView] = useState<SavedView>("all");
 	const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+	const searchRef = useRef<HTMLInputElement>(null);
 	const serverQuery = useMemo(() => parseSearchQuery(globalFilter), [globalFilter]);
 
 	const {
@@ -448,6 +453,7 @@ export default function TracesPage() {
 		offset: page * PAGE_SIZE,
 	});
 	const { data: summary } = useSessionsSummary();
+	const { data: whoami } = useWhoami();
 	useSessionSubscription();
 
 	const updateURL = useCallback(
@@ -477,6 +483,21 @@ export default function TracesPage() {
 		[updateURL],
 	);
 
+	/**
+	 * Same effect as `handleSearch` without the typing debounce — used by the
+	 * toolbar selects, which are discrete choices rather than keystrokes.
+	 */
+	const applyQuery = useCallback(
+		(value: string) => {
+			clearTimeout(debounceRef.current);
+			setSearchValue(value);
+			setGlobalFilter(value);
+			updateURL(value);
+			setPage(0);
+		},
+		[updateURL],
+	);
+
 	const clearSearch = useCallback(() => {
 		const remaining = filterTokensOnly(globalFilter);
 		clearTimeout(debounceRef.current);
@@ -492,6 +513,20 @@ export default function TracesPage() {
 		setGlobalFilter(text);
 		updateURL(text);
 	}, [globalFilter, updateURL]);
+	// than decorative.
+	useEffect(() => {
+		const onKeyDown = (e: KeyboardEvent) => {
+			if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+				e.preventDefault();
+				searchRef.current?.focus();
+				searchRef.current?.select();
+			}
+		};
+		window.addEventListener("keydown", onKeyDown);
+		return () => window.removeEventListener("keydown", onKeyDown);
+	}, []);
+
+	useEffect(() => () => clearTimeout(debounceRef.current), []);
 
 	const allSessions = useMemo(() => (sessions ?? []) as Session[], [sessions]);
 
@@ -506,9 +541,105 @@ export default function TracesPage() {
 		return applyTextFilter(applyParameterFilters(allSessions, filters), text);
 	}, [allSessions, globalFilter]);
 
-	const data = useMemo(
-		() => filteredSessions,
-		[filteredSessions],
+	// Identities that count as "mine" for the saved view. Sessions carry a
+	// display name, so match it against every name this account is known by.
+	const myNames = useMemo(() => {
+		const keys = new Set<string>();
+		for (const value of [whoami?.name, whoami?.username, whoami?.email]) {
+			if (value) keys.add(String(value).toLowerCase());
+		}
+		if (whoami?.email) keys.add(String(whoami.email).split("@")[0].toLowerCase());
+		return keys;
+	}, [whoami]);
+
+	const isMine = useCallback(
+		(s: Session) => !!s.user_name && myNames.has(s.user_name.toLowerCase()),
+		[myNames],
+	);
+
+	const data = useMemo(() => {
+		if (savedView === "active") return filteredSessions.filter((s) => s.is_active);
+		if (savedView === "mine") return filteredSessions.filter(isMine);
+		return filteredSessions;
+	}, [filteredSessions, savedView, isMine]);
+
+	const columns = useMemo<ColumnDef<Session>[]>(
+		() => [
+			{
+				accessorKey: "session_id",
+				header: "Session",
+				cell: ({ row }) => <TraceTitle row={row.original} />,
+			},
+			{
+				// A live session used to be signalled only by a green bar down the
+				// left edge — no icon, no label, so it did not survive a
+				// colour-vision difference or a monochrome override. StatusBadge
+				// states it in words and pings only while the work is in progress.
+				id: "status",
+				accessorFn: (row) => (row.is_active ? "live" : "completed"),
+				header: "Status",
+				cell: ({ row }) => <TraceStatus row={row.original} />,
+			},
+			{
+				id: "source",
+				accessorFn: (row) => derivePlatform(row),
+				header: "Source",
+				cell: ({ row }) => <TraceSource row={row.original} />,
+			},
+			{
+				accessorKey: "agent_name",
+				header: "Agent",
+				cell: ({ row }) => (
+					<span className="block max-w-[180px] truncate font-mono text-2xs text-muted-foreground">
+						{row.original.agent_name || "—"}
+					</span>
+				),
+			},
+			{
+				id: "model",
+				accessorFn: (row) => shortModel(row.model),
+				header: "Model",
+				cell: ({ row }) => (
+					<span className="block max-w-[160px] truncate text-2xs text-muted-foreground">
+						{shortModel(row.original.model) || "—"}
+					</span>
+				),
+			},
+			{
+				id: "activity",
+				accessorFn: (row) => row.tool_result_count ?? 0,
+				header: "Activity",
+				cell: ({ row }) => <TraceActivity row={row.original} />,
+			},
+			{
+				id: "tokens",
+				header: "Tokens",
+				accessorFn: (row) => tokenTotal(row),
+				cell: ({ row }) => <TraceTokens row={row.original} />,
+			},
+			{
+				accessorKey: "first_event_time",
+				header: "Started",
+				cell: ({ row }) => (
+					<span
+						className="whitespace-nowrap font-mono text-2xs tabular-nums text-muted-foreground"
+						title={absTime(row.original.first_event_time)}
+					>
+						{relTime(row.original.first_event_time)}
+					</span>
+				),
+				sortingFn: (a, b) => {
+					const ta = a.original.first_event_time
+						? toDate(a.original.first_event_time).getTime()
+						: 0;
+					const tb = b.original.first_event_time
+						? toDate(b.original.first_event_time).getTime()
+						: 0;
+					return ta - tb;
+				},
+			},
+		],
+		[],
 	);
 
 	const table = useReactTable({
@@ -520,7 +651,86 @@ export default function TracesPage() {
 		getSortedRowModel: getSortedRowModel(),
 	});
 
+	const rows = table.getRowModel().rows;
+
+	// ── Toolbar state derived from the query / sort ──────────────────
+	const harnesses = useMemo(() => {
+		const set = new Set<string>();
+		for (const s of allSessions) set.add(derivePlatform(s));
+		return Array.from(set).sort();
+	}, [allSessions]);
+
+	const harnessValue = serverQuery.filters.platform ?? "all";
+
+	const sortValue = useMemo(() => {
+		const s = sorting[0];
+		if (!s) return "custom";
+		if (s.id === "first_event_time") return s.desc ? "newest" : "oldest";
+		if (s.id === "tokens" && s.desc) return "tokens";
+		if (s.id === "activity" && s.desc) return "activity";
+		return "custom";
+	}, [sorting]);
+
+	const onSortChange = useCallback((value: string) => {
+		if (value === "newest") setSorting([{ id: "first_event_time", desc: true }]);
+		else if (value === "oldest") setSorting([{ id: "first_event_time", desc: false }]);
+		else if (value === "tokens") setSorting([{ id: "tokens", desc: true }]);
+		else if (value === "activity") setSorting([{ id: "activity", desc: true }]);
+	}, []);
+
+	// ── Summary bar figures ─────────────────────────────────────────
 	const todaySessions = summary?.today_sessions ?? allSessions.length;
+	const totalSessions = summary?.total_sessions ?? allSessions.length;
+	const activeCount = useMemo(
+		() => allSessions.filter((s) => s.is_active).length,
+		[allSessions],
+	);
+	const activeInViewCount = useMemo(
+		() => filteredSessions.filter((s) => s.is_active).length,
+		[filteredSessions],
+	);
+	const mineInViewCount = useMemo(
+		() => filteredSessions.filter(isMine).length,
+		[filteredSessions, isMine],
+	);
+	const toolCalls = useMemo(
+		() => allSessions.reduce((sum, s) => sum + (s.tool_result_count ?? 0), 0),
+		[allSessions],
+	);
+	const observedTokens = useMemo(
+		() => allSessions.reduce((sum, s) => sum + tokenTotal(s), 0),
+		[allSessions],
+	);
+	const latestEvent = useMemo(() => {
+		let bestTs: string | undefined;
+		let best = 0;
+		for (const s of allSessions) {
+			if (!s.last_event_time) continue;
+			const t = toDate(s.last_event_time).getTime();
+			if (t > best && t < TS_UPPER_BOUND_MS) {
+				best = t;
+				bestTs = s.last_event_time;
+			}
+		}
+		return bestTs;
+	}, [allSessions]);
+	const ingestFresh =
+		!!latestEvent &&
+		Date.now() - toDate(latestEvent).getTime() < INGEST_FRESH_WINDOW_MS;
+
+	const copySearchLink = useCallback(() => {
+		const url = `${window.location.origin}${pathname}${searchValue ? `?search=${encodeURIComponent(searchValue)}` : ""}`;
+		// The clipboard API is absent on insecure origins, so the optional call
+		// has to be guarded rather than chained straight into `.then`.
+		const write = navigator.clipboard?.writeText(url);
+		if (!write) {
+			toast.error("Could not copy the link to this view");
+			return;
+		}
+		write
+			.then(() => toast.success("Search link copied"))
+			.catch(() => toast.error("Could not copy the search link"));
+	}, [pathname, searchValue]);
 
 	const tracesEmptyState = (() => {
 		switch (emptyStateKind) {
@@ -549,7 +759,7 @@ export default function TracesPage() {
 					<EmptyState
 						icon={Activity}
 						title="No traces yet"
-						description="Traces are created automatically when tools are invoked through Observal. Connect an harness to start collecting traces."
+						description="Traces are created automatically when tools are invoked through Observal. Connect a harness to start collecting traces."
 						actionLabel="Connect your first harness"
 						actionHref={DOCS_QUICKSTART_URL}
 					/>
@@ -565,6 +775,13 @@ export default function TracesPage() {
 		}
 	})();
 
+	const openRow = useCallback(
+		(sessionId: string) => {
+			router.navigate({ to: "/traces/$traceId", params: { traceId: sessionId } });
+		},
+		[router],
+	);
+
 	return (
 		<>
 			<PageHeader
@@ -576,7 +793,7 @@ export default function TracesPage() {
 				actionButtonsRight={
 					<button
 						type="button"
-						className="text-muted-foreground hover:text-primary transition-colors"
+						className="rounded-sm text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
 						onClick={() => helpCtx.openHelp({ pageKey: "traces" })}
 						title="Telemetry documentation"
 					>
@@ -584,7 +801,12 @@ export default function TracesPage() {
 					</button>
 				}
 			/>
-			<div className="page-body w-full mx-auto space-y-5">
+			<div className="page-body mx-auto w-full">
+				<PageIntro
+					eyebrow="Observability"
+					title="My Traces"
+					subtitle="Find active work quickly, then inspect the execution path and supporting evidence."
+				/>
 				{isLoading ? (
 					<TableSkeleton rows={8} cols={8} />
 				) : isError ? (
@@ -592,142 +814,309 @@ export default function TracesPage() {
 				) : allSessions.length === 0 ? (
 					tracesEmptyState
 				) : (
-					<div className="animate-in space-y-5">
-						{/* ── Summary ── */}
-						<div className="flex items-center gap-2.5 text-sm text-muted-foreground">
-							<BarChart3 className="h-4 w-4 text-foreground/50" />
-							<span>
-								<span className="font-semibold text-foreground tabular-nums">
-									{todaySessions}
-								</span>{" "}
-								session{todaySessions !== 1 ? "s" : ""} today
-							</span>
-						</div>
+					<div className="animate-in">
 
-						{/* ── Toolbar ── */}
-						<div className="flex items-center gap-3">
-							<div className="relative flex-1">
-								<Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-								<Input
-									placeholder="Search: platform:kiro user:name agent:my-agent model:sonnet days:7 status:active"
-									value={searchValue}
-									onChange={(e) => handleSearch(e.target.value)}
-									className="pl-8 h-9 text-sm font-mono"
-								/>
-							</div>
-						</div>
+						<SummaryBar className="mb-3.5">
+							<SummaryBarStatus
+								tone={ingestFresh ? "success" : "warning"}
+								pulse={ingestFresh}
+								title={
+									ingestFresh
+										? "Telemetry is arriving normally"
+										: "Telemetry has not arrived recently"
+								}
+								detail={`Last event received ${relTime(latestEvent)}`}
+							/>
+							<SummaryBarStat label="Sessions today" value={todaySessions} />
+							<SummaryBarStat
+								label="Active now"
+								value={activeCount}
+								className="[&_strong]:text-success"
+							/>
+							<SummaryBarStat label="Tool calls" value={toolCalls} />
+							<SummaryBarStat
+								label="Observed tokens"
+								value={fmtTokens(observedTokens)}
+							/>
+						</SummaryBar>
 
-						{/* Filter hints */}
-						<div className="flex gap-1.5 flex-wrap">
-							<span className="text-[10px] text-muted-foreground">Filters:</span>
-							{["platform:", "user:", "agent:", "model:", "days:", "status:"].map((hint) => (
-								<button
-									key={hint}
-									type="button"
-									className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground hover:text-foreground hover:bg-muted/80 font-mono transition-colors"
-									onClick={() => handleSearch(searchValue + (searchValue && !searchValue.endsWith(" ") ? " " : "") + hint)}
+
+						<div className="mb-2.5 grid grid-cols-2 gap-2 min-[760px]:grid-cols-[minmax(300px,1fr)_auto_auto]">
+							<SearchField
+								ref={searchRef}
+								size="sm"
+								mono
+								kbd="⌘ K"
+								className="col-span-2 min-[760px]:col-span-1"
+								value={searchValue}
+								onValueChange={handleSearch}
+								placeholder="days:7"
+								aria-label="Search traces"
+								title="Filter with platform: user: agent: model: days: status: or free text"
+							/>
+							<Select
+								value={harnessValue}
+								onValueChange={(v) =>
+									applyQuery(
+										withFilterToken(searchValue, "platform", v === "all" ? null : v),
+									)
+								}
+							>
+								<SelectTrigger
+									aria-label="Filter by harness"
+									className="min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring min-[760px]:w-[160px]"
 								>
-									{hint}
-								</button>
-							))}
-						</div>
-
-						{/* ── Table ── */}
-						<div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
-							<Table>
-								<TableHeader>
-									{table.getHeaderGroups().map((hg) => (
-										<TableRow
-											key={hg.id}
-											className="hover:bg-transparent bg-muted/40 border-b border-border"
-										>
-											{hg.headers.map((header) => (
-												<TableHead
-													key={header.id}
-													className="h-11 px-5 text-center cursor-pointer select-none hover:text-foreground transition-colors"
-													onClick={header.column.getToggleSortingHandler()}
-												>
-													<span className="inline-flex items-center justify-center gap-1 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-														{flexRender(
-															header.column.columnDef.header,
-															header.getContext(),
-														)}
-														<SortIcon sorted={header.column.getIsSorted()} />
-													</span>
-												</TableHead>
-											))}
-										</TableRow>
-									))}
-								</TableHeader>
-								<TableBody>
-									{table.getRowModel().rows.length === 0 ? (
-										<TableRow className="hover:bg-transparent">
-											<TableCell colSpan={columns.length} className="p-0">
-												{tracesEmptyState}
-											</TableCell>
-										</TableRow>
-									) : (
-										table.getRowModel().rows.map((row, idx) => {
-											const active = row.original.is_active;
-											return (
-												<TableRow
-													key={row.id}
-													className={`relative cursor-pointer transition-colors hover:bg-muted/50 border-b border-border/50 ${
-														idx % 2 === 1 ? "bg-muted/15" : ""
-													}`}
-													onClick={() =>
-														router.navigate({ to: "/traces/$traceId", params: { traceId: row.original.session_id } })
-													}
-												>
-													{row.getVisibleCells().map((cell, cellIdx) => (
-														<TableCell
-															key={cell.id}
-															className={`py-4 px-5 text-center ${cellIdx === 0 ? "relative" : ""}`}
-														>
-															{cellIdx === 0 && active && (
-																<span
-																	className="absolute inset-y-0 left-0 w-[3px] bg-green-500 rounded-r-sm"
-																	aria-hidden="true"
-																/>
-															)}
-															{flexRender(
-																cell.column.columnDef.cell,
-																cell.getContext(),
-															)}
-														</TableCell>
-													))}
-												</TableRow>
-											);
-										})
+									<SelectValue placeholder="All harnesses" />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="all">All harnesses</SelectItem>
+									{/* A `platform:` token typed by hand may not match any
+									    harness on this page; keep it selectable so the control
+									    still reflects the query it is bound to. */}
+									{harnessValue !== "all" && !harnesses.includes(harnessValue) && (
+										<SelectItem value={harnessValue}>{harnessValue}</SelectItem>
 									)}
-								</TableBody>
-							</Table>
+									{harnesses.map((h) => (
+										<SelectItem key={h} value={h}>
+											{h}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+							<Select value={sortValue} onValueChange={onSortChange}>
+								<SelectTrigger
+									aria-label="Sort sessions"
+									className="min-w-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring min-[760px]:w-[160px]"
+								>
+									<SelectValue placeholder="Newest first" />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="newest">Newest first</SelectItem>
+									<SelectItem value="oldest">Oldest first</SelectItem>
+									<SelectItem value="tokens">Most tokens</SelectItem>
+									<SelectItem value="activity">Most activity</SelectItem>
+									{sortValue === "custom" && (
+										<SelectItem value="custom">Custom order</SelectItem>
+									)}
+								</SelectContent>
+							</Select>
 						</div>
 
-						{/* ── Footer ── */}
-						<div className="flex items-center justify-between">
-							<p className="text-xs text-muted-foreground/70">
-								Page {page + 1} · {table.getRowModel().rows.length} sessions
-							</p>
-							<div className="flex items-center gap-2">
-								<button
+
+						<Tabs
+							value={savedView}
+							onValueChange={(v) => {
+								setSavedView(v as SavedView);
+								setPage(0);
+							}}
+						>
+							<div className="mb-[13px] flex items-center gap-1">
+								<TabsList variant="ghost" className="flex-1" aria-label="Saved views">
+									<TabsTrigger variant="ghost" value="all">
+										All sessions · {totalSessions}
+									</TabsTrigger>
+									<TabsTrigger variant="ghost" value="active">
+										Active · {activeInViewCount}
+									</TabsTrigger>
+									<TabsTrigger variant="ghost" value="mine">
+										Mine · {mineInViewCount}
+									</TabsTrigger>
+								</TabsList>
+								<Button
 									type="button"
-									className="text-xs px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-									disabled={page === 0}
-									onClick={() => setPage(page - 1)}
+									variant="ghost"
+									size="sm"
+									onClick={copySearchLink}
+									title="Copy a link for this search"
+									className="shrink-0 gap-1.5 rounded-md px-3 py-[7px] text-3xs text-info hover:bg-surface-raised hover:text-info"
 								>
-									Prev
-								</button>
-								<button
-									type="button"
-									className="text-xs px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-									disabled={allSessions.length < PAGE_SIZE}
-									onClick={() => setPage(page + 1)}
-								>
-									Next
-								</button>
+									<span aria-hidden="true">＋</span>
+									Copy search link
+								</Button>
 							</div>
-						</div>
+
+
+							<TabsContent value={savedView} className="mt-0">
+								<Card className="overflow-hidden">
+									{rows.length === 0 ? (
+										tracesEmptyState
+									) : (
+										<>
+
+											<div className="hidden overflow-x-auto min-[1020px]:block">
+												<Table className="min-w-[1020px] border-collapse">
+													<TableHeader className="bg-surface-raised [&_tr]:border-b-0">
+														{table.getHeaderGroups().map((hg) => (
+															<TableRow
+																key={hg.id}
+																className="border-0 hover:bg-transparent"
+															>
+																{hg.headers.map((header) => {
+																	const sorted = header.column.getIsSorted();
+																	return (
+																		<TableHead
+																			key={header.id}
+																			className="h-10 select-none px-4 text-left"
+																			// Sorting was bound to onClick on the <th>,
+																			// so it could not be reached by keyboard at
+																			// all. A real button gets focus, Enter and
+																			// Space for free, and aria-sort tells a
+																			// screen reader the current direction.
+																			aria-sort={
+																				sorted === "asc"
+																					? "ascending"
+																					: sorted === "desc"
+																						? "descending"
+																						: "none"
+																			}
+																		>
+																			<button
+																				type="button"
+																				onClick={header.column.getToggleSortingHandler()}
+																				className="inline-flex items-center gap-1 rounded-sm text-2xs font-medium uppercase tracking-[0.05em] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+																			>
+																				{flexRender(
+																					header.column.columnDef.header,
+																					header.getContext(),
+																				)}
+																				<SortIcon sorted={sorted} />
+																			</button>
+																		</TableHead>
+																	);
+																})}
+															</TableRow>
+														))}
+													</TableHeader>
+													<TableBody>
+														{rows.map((row) => (
+															<TableRow
+																key={row.id}
+																className={cn(
+																	"cursor-pointer border-b-0 border-t border-border transition-colors duration-100 hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+																	// session. It repeats what the Live badge
+																	// already says, so it is never the only cue.
+																	row.original.is_active && "bg-success/[0.06]",
+																)}
+																// The row was click-only, so every cell outside
+																// the session link was a dead target for keyboard
+																// and screen-reader users. The link stays the
+																// primary affordance; this makes the row itself
+																// reachable too.
+																tabIndex={0}
+																onClick={() => openRow(row.original.session_id)}
+																onKeyDown={(e) => {
+																	if (e.target !== e.currentTarget) return;
+																	if (e.key === "Enter" || e.key === " ") {
+																		e.preventDefault();
+																		openRow(row.original.session_id);
+																	}
+																}}
+															>
+																{row.getVisibleCells().map((cell) => (
+																	<TableCell
+																		key={cell.id}
+																		className="h-[60px] px-4 py-2.5 align-middle text-2xs text-muted-foreground"
+																	>
+																		{flexRender(
+																			cell.column.columnDef.cell,
+																			cell.getContext(),
+																		)}
+																	</TableCell>
+																))}
+															</TableRow>
+														))}
+													</TableBody>
+												</Table>
+											</div>
+
+
+											<ul className="min-[1020px]:hidden">
+												{rows.map((row) => {
+													const s = row.original;
+													return (
+														<li key={row.id}>
+															<div
+																role="button"
+																tabIndex={0}
+																onClick={() => openRow(s.session_id)}
+																onKeyDown={(e) => {
+																	if (e.target !== e.currentTarget) return;
+																	if (e.key === "Enter" || e.key === " ") {
+																		e.preventDefault();
+																		openRow(s.session_id);
+																	}
+																}}
+																className={cn(
+																	"grid cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 border-t border-border px-4 py-3.5 transition-colors duration-100 hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring min-[560px]:grid-cols-[minmax(0,1fr)_92px_82px_74px] min-[560px]:gap-y-0 min-[560px]:px-[22px]",
+																	s.is_active && "bg-success/[0.06]",
+																)}
+															>
+																<div className="min-w-0">
+																	<h3 className="truncate text-xs font-medium text-foreground">
+																		{sessionLabel(s)}
+																	</h3>
+																	<p className="mt-[3px] truncate text-3xs text-muted-foreground">
+																		<span className="font-mono text-3xs">
+																			{s.session_id}
+																		</span>{" "}
+																		· {derivePlatform(s)} ·{" "}
+																		{s.agent_name || shortModel(s.model) || "—"}
+																	</p>
+																</div>
+																<span className="justify-self-start">
+																	<TraceStatus row={s} />
+																</span>
+																<span className="font-mono text-3xs leading-[1.5] tabular-nums text-muted-foreground">
+																	{fmtDuration(s.first_event_time, s.last_event_time)}
+																	<br />
+																	{s.tool_result_count ?? 0} tools
+																</span>
+																<span
+																	className="font-mono text-3xs tabular-nums text-muted-foreground"
+																	title={absTime(s.first_event_time)}
+																>
+																	{relTime(s.first_event_time)}
+																</span>
+															</div>
+														</li>
+													);
+												})}
+											</ul>
+										</>
+									)}
+
+
+									<footer className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-4 py-3 text-3xs text-muted-foreground">
+										<span>
+											Showing{" "}
+											<span className="tabular-nums">{rows.length}</span> of{" "}
+											<span className="tabular-nums">{totalSessions}</span>{" "}
+											session{totalSessions === 1 ? "" : "s"} · Updated live
+										</span>
+										<div className="flex gap-1.5">
+											<Button
+												type="button"
+												variant="ghost"
+												className="text-xs disabled:cursor-not-allowed disabled:opacity-40"
+												disabled={page === 0}
+												onClick={() => setPage(page - 1)}
+											>
+												Previous
+											</Button>
+											<Button
+												type="button"
+												variant="ghost"
+												className="text-xs disabled:cursor-not-allowed disabled:opacity-40"
+												disabled={allSessions.length < PAGE_SIZE}
+												onClick={() => setPage(page + 1)}
+											>
+												Next
+											</Button>
+										</div>
+									</footer>
+								</Card>
+							</TabsContent>
+						</Tabs>
 					</div>
 				)}
 			</div>

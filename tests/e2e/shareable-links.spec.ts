@@ -192,7 +192,8 @@ test.describe("shareable teamspace links", () => {
     await page.goto("/review?tab=teamspaces");
     const reviewCard = page.getByTestId(`teamspace-review-${visibilityReviewTeam.id}`);
     await expect(reviewCard).toContainText(visibilityReviewTeam.handle);
-    await reviewCard.getByRole("button", { name: "Reject", exact: true }).click();
+    await reviewCard.click();
+    await page.getByRole("button", { name: "Reject", exact: true }).click();
     await page.getByLabel("Reason (optional)").fill("Add a clearer team description");
     await page.getByRole("button", { name: "Reject request", exact: true }).click();
     await expect(reviewCard).toHaveCount(0);
@@ -207,7 +208,8 @@ test.describe("shareable teamspace links", () => {
     await loginAs(page, globalReviewer);
     await page.goto("/review?tab=teamspaces");
     const approveCard = page.getByTestId(`teamspace-review-${visibilityReviewTeam.id}`);
-    await approveCard.getByRole("button", { name: "Approve", exact: true }).click();
+    await approveCard.click();
+    await page.getByRole("button", { name: "Approve teamspace", exact: true }).click();
     await expect(approveCard).toHaveCount(0);
 
     await loginAs(page, owner);
@@ -220,24 +222,21 @@ test.describe("shareable teamspace links", () => {
     await expect(page.getByText(visibilityReviewTeam.handle, { exact: true })).toBeVisible();
   });
 
-  test("inbox rail is rendered to the right of the feed", async ({ page }) => {
+  test("inbox detail is rendered to the right of the feed", async ({ page }) => {
     await loginAs(page, owner);
     await page.goto("/inbox");
 
     const feed = page.getByTestId("inbox-feed");
-    const rail = page.getByTestId("inbox-rail");
+    const detail = page.getByTestId("inbox-detail");
     await expect(feed).toBeVisible();
-    await expect(rail).toBeVisible();
-    await expect(rail.getByText("Inbox", { exact: true })).toBeVisible();
-    await expect(rail.getByText("Done", { exact: true })).toBeVisible();
-    await expect(rail.getByText("Dismissed", { exact: true })).toBeVisible();
-    await expect(rail.getByText("Manage notifications", { exact: true })).toBeVisible();
+    await expect(detail).toBeVisible();
+    await expect(page.getByRole("button", { name: "Search and filter inbox" })).toBeVisible();
 
     const feedBox = await feed.boundingBox();
-    const railBox = await rail.boundingBox();
+    const detailBox = await detail.boundingBox();
     expect(feedBox).not.toBeNull();
-    expect(railBox).not.toBeNull();
-    expect(railBox!.x).toBeGreaterThan(feedBox!.x);
+    expect(detailBox).not.toBeNull();
+    expect(detailBox!.x).toBeGreaterThan(feedBox!.x);
   });
 
   test("personal teamspaces can be deleted but never joined or left", async ({ page }) => {
@@ -740,7 +739,8 @@ test.describe("shareable teamspace links", () => {
       await loginAs(page, globalReviewer);
       await page.goto("/review?tab=teamspaces");
       const card = page.getByTestId(`teamspace-review-${team.id}`);
-      await card.getByRole("button", { name: "Approve", exact: true }).click();
+      await card.click();
+      await page.getByRole("button", { name: "Approve teamspace", exact: true }).click();
       await expect(card).toHaveCount(0);
 
       await loginAs(page, outsider);

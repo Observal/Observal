@@ -59,6 +59,14 @@
   --color-surface-raised: oklch(var(--surface-raised));
   --color-surface-sunken: oklch(var(--surface-sunken));
 
+  /* ── Step-path connector (#1728) ────────────────── */
+  /* The mockup blends the completed rail into the hairline
+     (color-mix(in srgb, var(--success) 40%, var(--border))) so a finished leg
+     reads as done without shouting. `@theme inline` is what makes this safe:
+     the mix is emitted into each utility rather than frozen into one variable,
+     so it re-resolves against every palette's own --success and --border. */
+  --color-connector-done: color-mix(in oklch, oklch(var(--success)) 40%, oklch(var(--border)));
+
   /* ── Status colors ──────────────────────────────── */
   --color-success: oklch(var(--success));
   --color-success-foreground: oklch(var(--success-fg));
@@ -110,6 +118,22 @@
   --color-tag-prompt: oklch(var(--tag-prompt));
   --color-tag-prompt-bg: oklch(var(--tag-prompt-bg));
 
+  /* ── Trace/span kind colours ────────────────────── */
+  /* Categorical identity for trace event kinds — what a span *is*, not what
+     state it is in. Aliased onto the per-theme categorical ramp rather than
+     given literal values, so all 25 palette blocks (12 preset x mode plus the
+     13 legacy themes) pick them up without per-block duplication; --chart-* is
+     the one family every block defines. Surfaces are derived with alpha
+     (bg-kind-tool/10), so a kind needs no separate -bg token. */
+  --color-kind-agent: oklch(var(--chart-1));
+  --color-kind-response: oklch(var(--chart-2));
+  --color-kind-tool: oklch(var(--chart-3));
+  --color-kind-prompt: oklch(var(--chart-4));
+  --color-kind-task: oklch(var(--chart-5));
+  --color-kind-thinking: oklch(var(--chart-6));
+  --color-kind-mcp: oklch(var(--chart-7));
+  --color-kind-worktree: oklch(var(--chart-8));
+
   /* ── Elevation ──────────────────────────────────── */
   /* Mirrors the mockup's --shadow-sm / --shadow-lg, tuned per mode in the
      preset blocks below. Overriding Tailwind's own shadow scale means existing
@@ -142,6 +166,8 @@
   /* Anchored to the mockup: 13.5px base body, 11px uppercase labels,
      12px secondary UI text, 14px panel titles, 26px page headings.
      Values are rem-relative so the fluid root size still applies. */
+  --text-4xs: 0.5625rem;  /* 9px  — micro labels in dense divided cells (#1728) */
+  --text-3xs: 0.625rem;   /* 10px — list-item subtitles, meta rows, step labels (#1728) */
   --text-2xs: 0.6875rem;  /* 11px — uppercase labels, nav group headings */
   --text-xs: 0.75rem;     /* 12px — secondary UI text, table cells, badges */
   --text-sm: 0.84375rem;  /* 13.5px — base body / nav items (mockup default) */
@@ -164,6 +190,9 @@
   --animate-fade-in: fade-in var(--duration-normal) var(--ease-out-expo);
   --animate-slide-up: slide-up var(--duration-slow) var(--ease-out-expo);
   --animate-slide-down: slide-down var(--duration-slow) var(--ease-out-expo);
+  /* Mockup `breathe`: a slow fade+shrink used for "this is live / in progress"
+     markers. Never the only cue — always paired with a word. */
+  --animate-breathe: breathe 1.8s ease-in-out infinite;
 
   @keyframes accordion-down {
     from { height: 0; opacity: 0; }
@@ -184,6 +213,9 @@
   @keyframes slide-down {
     from { opacity: 0; transform: translateY(-8px); }
     to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes breathe {
+    50% { opacity: 0.38; transform: scale(0.72); }
   }
 }
 
@@ -1297,7 +1329,36 @@ html {
     --info: 0.663 0.069 348.8;
     --info-fg: 0.179 0.008 346.2;
 
+    /* Status ramp, tag palette and elevation were omitted from this block when
+       the presets landed, so rose dark mode inherited the light-mode values
+       from :root — pale chip surfaces and a shadow tuned for a light canvas,
+       both of which read wrong on a dark one. Values match the other dark
+       presets. */
+    --light-red: 0.272 0.028 4.5;
+    --dark-red: 0.626 0.142 22.0;
+    --light-yellow: 0.296 0.033 87.5;
+    --dark-yellow: 0.735 0.143 83.7;
+    --light-green: 0.295 0.026 179.8;
+    --dark-green: 0.713 0.112 159.9;
+    --light-blue: 0.282 0.032 256.3;
+    --dark-blue: 0.646 0.11 256.0;
+
     --muted-gray: 0.244 0.012 338.2;
+
+    --tag-mcp: 0.646 0.11 256.0;
+    --tag-mcp-bg: 0.234 0.028 259.9;
+    --tag-agent: 0.713 0.112 159.9;
+    --tag-agent-bg: 0.257 0.017 189.8;
+    --tag-skill: 0.735 0.143 83.7;
+    --tag-skill-bg: 0.261 0.02 90.4;
+    --tag-hook: 0.661 0.144 327.1;
+    --tag-hook-bg: 0.251 0.028 310.3;
+    --tag-prompt: 0.695 0.134 46.2;
+    --tag-prompt-bg: 0.254 0.014 25.5;
+
+    --elevation-sm: 0 1px 3px oklch(0 0 0 / 0.25);
+    --elevation-md: 0 4px 12px oklch(0 0 0 / 0.3);
+    --elevation-lg: 0 20px 60px oklch(0 0 0 / 0.4);
 
     --sidebar-bg: 0.179 0.008 346.2;
     --sidebar-fg: 0.571 0.032 356.2;
@@ -2447,6 +2508,7 @@ html {
 
   /* Hover lifts and scale effects are pure decoration: neutralise the transform
      so cards and rows stay put rather than jumping without a transition. */
+  .hover\:-translate-y-px:hover,
   .hover\:-translate-y-0\.5:hover,
   .hover\:-translate-y-1:hover,
   .hover\:scale-105:hover,
@@ -2458,7 +2520,8 @@ html {
      accompanying static dot or icon already conveys the state. */
   .animate-ping,
   .animate-pulse,
-  .animate-bounce {
+  .animate-bounce,
+  .animate-breathe {
     animation: none !important;
   }
 
