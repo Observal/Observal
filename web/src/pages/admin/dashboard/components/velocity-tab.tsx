@@ -159,8 +159,8 @@ function VelocityChart({ weekly }: { weekly: { week: string; traces: number }[] 
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="oklch(var(--border))" strokeOpacity={0.5} vertical={false} />
-              <XAxis dataKey="week" tick={{ fill: "oklch(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: "oklch(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <XAxis dataKey="week" tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} axisLine={false} tickLine={false} />
               <Tooltip formatter={(value, name) => [Number(value).toLocaleString(), name === "baseline" ? "Baseline (first 4 weeks)" : "Traces"]} contentStyle={{ background: "oklch(var(--background))", border: "1px solid oklch(var(--border))", borderRadius: 8, fontSize: 12 }} />
               <Area type="natural" dataKey="traces" stroke="oklch(var(--primary))" strokeWidth={2.5} fill="url(#velGrad)" dot={false} activeDot={{ r: 4, strokeWidth: 2, fill: "oklch(var(--background))" }} />
               {showBaseline && (

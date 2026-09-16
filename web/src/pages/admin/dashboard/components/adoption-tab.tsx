@@ -159,8 +159,8 @@ function AdoptionChart({ monthly }: { monthly: { month: string; adoption_pct: nu
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="oklch(var(--border))" strokeOpacity={0.5} vertical={false} />
-              <XAxis dataKey="month" tick={{ fill: "oklch(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fill: "oklch(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <XAxis dataKey="month" tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} axisLine={false} tickLine={false} />
               <Tooltip formatter={(value, name) => [`${value}%`, name === "previous_pct" ? "Previous Period" : "Current"]} contentStyle={{ background: "oklch(var(--background))", border: "1px solid oklch(var(--border))", borderRadius: 8, fontSize: 12 }} />
               <Area type="natural" dataKey="adoption_pct" stroke="oklch(var(--primary))" strokeWidth={2.5} fill="url(#adoptionGrad)" dot={false} activeDot={{ r: 4, strokeWidth: 2, fill: "oklch(var(--background))" }} />
               {showPrevious && (

@@ -81,8 +81,8 @@ export function InvestmentsTab() {
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={chartData} margin={{ top: 10, right: 10, bottom: 0, left: 5 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="oklch(var(--border))" strokeOpacity={0.5} vertical={false} />
-            <XAxis dataKey="name" tick={{ fill: "oklch(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fill: "oklch(var(--muted-foreground))", fontSize: 11 }} tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}K` : v} axisLine={false} tickLine={false} />
+            <XAxis dataKey="name" tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}K` : v} axisLine={false} tickLine={false} />
             <Tooltip formatter={(value) => [Number(value).toLocaleString(), "Sessions"]} contentStyle={{ background: "oklch(var(--background))", border: "1px solid oklch(var(--border))", borderRadius: 8, fontSize: 12 }} cursor={{ fill: "oklch(var(--muted))", opacity: 0.3 }} />
             <Bar dataKey="sessions" radius={[6, 6, 0, 0]} barSize={48} onClick={(_, index) => setSelected(index)} className="cursor-pointer" activeBar={false}>
               {chartData.map((entry, i) => (
