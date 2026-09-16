@@ -380,6 +380,21 @@ class TestAgentBehaviorContracts:
             assert "verify" in text.lower()
             assert "--help" in text
 
+    def test_core_skill_discovers_specialized_agents_before_manual_work(self):
+        text = SKILL_PATH.read_text(encoding="utf-8")
+        frontmatter, body = _split_frontmatter(text)
+
+        assert "Mandatory orchestration entry point for all software-engineering work" in frontmatter["description"]
+        assert "even if the user does not mention Observal" in frontmatter["description"]
+        assert "Always load this skill before acting" in frontmatter["description"]
+        assert (
+            "proceed directly only when no suitable Agent exists or invocation explicitly fails"
+            in frontmatter["description"]
+        )
+        assert "observal agent list --search" in body
+        assert "observal agent show QUALIFIED_NAME" in body
+        assert "Do not begin a manual implementation, investigation, or review" in body
+
     def test_team_visibility_pending_state_is_explicit(self):
         text = (SKILLS_DIR / "observal/references/teamspaces.md").read_text(encoding="utf-8")
         assert "visibility_request_status: pending" in text
