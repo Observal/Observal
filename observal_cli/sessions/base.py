@@ -707,12 +707,60 @@ def build_payload(
         "hook_event": hook_event,
         "parent_session_id": parent_session_id,
     }
+    capabilities = _capabilities_for_session(session_id, cwd, harness, session_jsonl)
+    if capabilities:
+        payload["capabilities_used"] = capabilities
     if hook_event == "Stop":
         payload["final"] = True
         payload["total_line_count"] = line_count_before + len(lines)
         payload["total_offset"] = new_offset
         _evict_layer_hash_cache(session_id)
     return payload
+
+
+# How far before a session file first appeared a capability use may still
+# belong to it: a developer often runs `discover use` a moment before the
+# harness creates the transcript.
+_CAPABILITY_LEAD_SECONDS = 15 * 60
+_CAPABILITY_FALLBACK_HOURS = 24
+
+
+def _session_started_at(session_jsonl: Path | None):
+    from datetime import UTC, datetime, timedelta
+
+    if session_jsonl is not None:
+        try:
+            stat = session_jsonl.stat()
+            created = getattr(stat, "st_birthtime", None) or stat.st_ctime
+            return datetime.fromtimestamp(created, tz=UTC) - timedelta(seconds=_CAPABILITY_LEAD_SECONDS)
+        except OSError:
+            pass
+    return datetime.now(UTC) - timedelta(hours=_CAPABILITY_FALLBACK_HOURS)
+
+
+def _capabilities_for_session(session_id: str, cwd: str, harness: str, session_jsonl: Path | None) -> list[dict]:
+    """Capability-lock uses that belong to this session, shaped for ingest.
+
+    Matching is harness + directory + time window, or an exact session hint
+    when a hook exposed the harness session id. Best effort: attribution is
+    evidence, so a broken lock file never blocks telemetry.
+    """
+    try:
+        from observal_cli import capability_lock
+
+        uses = capability_lock.matching(
+            harness=harness,
+            cwd=cwd or None,
+            since=_session_started_at(session_jsonl),
+            session_hint=session_id,
+        )
+        if not uses:
+            return []
+        confidence = "window" if session_jsonl is not None else "loose"
+        return capability_lock.to_payload(capability_lock.dedupe_latest(uses), confidence=confidence)
+    except Exception as exc:
+        optic.debug("capability attribution skipped for {}: {}", session_id, exc)
+        return []
 
 
 # Per-session layer_hash cache: avoids re-scanning harness dirs on every chunk

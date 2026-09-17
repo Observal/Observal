@@ -177,6 +177,53 @@ async def refresh_session_summary(session_id: str, project_id: str, user_id: str
     r.raise_for_status()
 
 
+async def insert_session_capabilities(
+    *, session_id: str, project_id: str, user_id: str, harness: str, uses: list[dict]
+) -> None:
+    """Record which discovery resources a session used (from the CLI capability lock).
+
+    Best effort: attribution is evidence, so a ClickHouse hiccup is logged and
+    never fails the ingest that carried it.
+    """
+    optic.trace("inserting {} capability uses for session {}", len(uses), session_id)
+    if not uses:
+        return
+    lines = []
+    for use in uses:
+        used_at = _client._normalize_ts(use.get("used_at")) or _client._normalize_ts(
+            time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        )
+        lines.append(
+            _dumps(
+                {
+                    "project_id": project_id,
+                    "user_id": user_id,
+                    "harness": harness,
+                    "session_id": session_id,
+                    "identifier": use.get("identifier") or "",
+                    "kind": use.get("kind") or "",
+                    "component_id": use.get("component_id") or "",
+                    "native_ref": use.get("native_ref") or "",
+                    "version": use.get("version") or "",
+                    "digest": use.get("digest") or "",
+                    "mode": use.get("mode") or "context",
+                    "source": use.get("source") or "unknown",
+                    "confidence": use.get("confidence") or "window",
+                    "used_at": used_at,
+                }
+            )
+        )
+    sql = (
+        "INSERT INTO session_capabilities (project_id, user_id, harness, session_id, identifier, kind, "
+        "component_id, native_ref, version, digest, mode, source, confidence, used_at) FORMAT JSONEachRow"
+    )
+    try:
+        r = await _client._query(sql, data="\n".join(lines))
+        r.raise_for_status()
+    except Exception as exc:
+        optic.error("failed to insert {} capability uses for session {}: {}", len(uses), session_id, exc)
+
+
 async def insert_layer_snapshot(row: dict):
     """Insert a single layer snapshot row into ClickHouse."""
     optic.trace("inserting layer snapshot: hash={}", row.get("hash", "?"))

@@ -202,6 +202,40 @@ def _ensure_harness(data: dict, harness: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _record_capability_use(
+    *,
+    kind: str,
+    source: str,
+    harness: str,
+    component_id: str,
+    version: str | None,
+    directory: str | None,
+    namespace: str | None,
+    slug: str | None,
+) -> None:
+    """Note an install in the capability lock so session upload can attribute it.
+
+    Best effort: the lock is evidence, and a failure to write it must never
+    break an install that already succeeded.
+    """
+    try:
+        from observal_cli import capability_lock
+
+        native_ref = f"{namespace}/{slug}@{version}" if namespace and slug and version else None
+        capability_lock.record(
+            kind=kind,
+            mode=capability_lock.MODE_NEXT_SESSION,
+            source=source,
+            harness=harness,
+            cwd=directory,
+            component_id=component_id,
+            native_ref=native_ref,
+            version=version,
+        )
+    except Exception as exc:
+        optic.debug("capability lock not updated for {} {}: {}", kind, component_id, exc)
+
+
 def upsert_agent(
     harness: str,
     *,
@@ -253,6 +287,16 @@ def upsert_agent(
         agents.append(entry)
 
     write_lockfile(data)
+    _record_capability_use(
+        kind="agent",
+        source="pull",
+        harness=harness,
+        component_id=agent_id,
+        version=version,
+        directory=directory,
+        namespace=namespace,
+        slug=slug,
+    )
 
 
 def remove_agent(harness: str, agent_id: str, directory: str | None = None) -> bool:
@@ -339,6 +383,16 @@ def upsert_standalone(
         standalone.append(entry)
 
     write_lockfile(data)
+    _record_capability_use(
+        kind=component_type,
+        source="install",
+        harness=harness,
+        component_id=component_id,
+        version=version,
+        directory=directory,
+        namespace=namespace,
+        slug=slug,
+    )
 
 
 def remove_standalone(harness: str, component_type: str, component_id: str, directory: str | None = None) -> bool:

@@ -22,6 +22,54 @@ MAX_SESSION_LINES = 1000
 MAX_SESSION_TOTAL_LINES = 10_000_000
 
 
+MAX_CAPABILITIES_PER_PUSH = 200
+_CAPABILITY_KINDS = {"agent", "mcp", "skill", "hook", "prompt", "sandbox"}
+_CAPABILITY_MODES = {"context", "next-session"}
+_CAPABILITY_CONFIDENCE = {"exact", "window", "loose"}
+
+
+class CapabilityUsed(BaseModel):
+    """One discovery resource the CLI recorded as used in this session (from the capability lock)."""
+
+    identifier: str | None = Field(None, max_length=MAX_SHORT_STRING_LENGTH)
+    kind: str = Field(..., max_length=32)
+    component_id: str | None = Field(None, max_length=MAX_SHORT_STRING_LENGTH)
+    native_ref: str | None = Field(None, max_length=MAX_SHORT_STRING_LENGTH)
+    version: str | None = Field(None, max_length=64)
+    digest: str | None = Field(None, max_length=96)
+    mode: str = Field("context", max_length=32)
+    source: str = Field("unknown", max_length=32)
+    used_at: str = Field(..., max_length=64)
+    confidence: str = Field("window", max_length=16)
+
+    @field_validator("kind")
+    @classmethod
+    def kind_is_known(cls, value: str) -> str:
+        if value not in _CAPABILITY_KINDS:
+            raise ValueError(f"unknown capability kind: {value}")
+        return value
+
+    @field_validator("mode")
+    @classmethod
+    def mode_is_known(cls, value: str) -> str:
+        if value not in _CAPABILITY_MODES:
+            raise ValueError(f"unknown capability mode: {value}")
+        return value
+
+    @field_validator("confidence")
+    @classmethod
+    def confidence_is_known(cls, value: str) -> str:
+        if value not in _CAPABILITY_CONFIDENCE:
+            raise ValueError(f"unknown capability confidence: {value}")
+        return value
+
+    @model_validator(mode="after")
+    def has_some_identity(self):
+        if not (self.identifier or self.component_id or self.native_ref):
+            raise ValueError("a capability needs an identifier, component_id or native_ref")
+        return self
+
+
 class SessionIngestRequest(BaseModel):
     session_id: str = Field(..., max_length=MAX_SHORT_STRING_LENGTH)
     harness: str = Field("claude-code", max_length=MAX_SHORT_STRING_LENGTH)
@@ -42,6 +90,8 @@ class SessionIngestRequest(BaseModel):
     total_credits: float | None = Field(None, ge=0)
     # Claude Code subagent attribution: set when this session is a subagent
     parent_session_id: str | None = Field(None, max_length=MAX_SHORT_STRING_LENGTH)
+    # Discovery resources the CLI's capability lock attributes to this session
+    capabilities_used: list[CapabilityUsed] | None = Field(None, max_length=MAX_CAPABILITIES_PER_PUSH)
 
     @field_validator("lines")
     @classmethod
@@ -148,6 +198,17 @@ async def ingest_session(
         user_id,
         req.harness,
     )
+
+    if req.capabilities_used:
+        from services.clickhouse import insert_session_capabilities
+
+        await insert_session_capabilities(
+            session_id=req.session_id,
+            project_id=project_id,
+            user_id=user_id,
+            harness=req.harness,
+            uses=[c.model_dump() for c in req.capabilities_used],
+        )
 
     integrity_ok = None
     if req.final and req.total_line_count is not None:
