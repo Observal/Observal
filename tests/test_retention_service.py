@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Focused tests for deployment-wide retention purging."""
@@ -16,8 +17,8 @@ def _response(status_code=200, data=None):
 
 
 @pytest.mark.asyncio
-async def test_delete_batch_reports_clickhouse_failure():
-    with patch("services.clickhouse._query", new=AsyncMock(return_value=_response(500))):
+async def test_delete_batch_reports_analytics_failure():
+    with patch("services.analytics.duckdb._execute", new=AsyncMock(side_effect=RuntimeError("analytics down"))):
         from services.retention import _delete_batch
 
         assert await _delete_batch("session_events", "timestamp", "default", "2026-01-01") == 0
@@ -25,15 +26,15 @@ async def test_delete_batch_reports_clickhouse_failure():
 
 @pytest.mark.asyncio
 async def test_delete_batch_reports_success():
-    with patch("services.clickhouse._query", new=AsyncMock(return_value=_response())):
+    with patch("services.analytics.duckdb._execute", new=AsyncMock(return_value=1)):
         from services.retention import _delete_batch
 
         assert await _delete_batch("session_events", "timestamp", "default", "2026-01-01") == 1
 
 
 @pytest.mark.asyncio
-async def test_has_data_fails_closed_on_clickhouse_error():
-    with patch("services.clickhouse._query", new=AsyncMock(return_value=_response(500))):
+async def test_has_data_fails_closed_on_analytics_error():
+    with patch("services.analytics.duckdb._query", new=AsyncMock(return_value=_response(500))):
         from services.retention import _has_data
 
         assert await _has_data("default") is False
@@ -88,7 +89,7 @@ async def test_purge_insight_reports_deletes_completed_and_stuck_rows():
 @pytest.mark.asyncio
 async def test_purge_count_based_does_nothing_under_limit():
     with patch(
-        "services.clickhouse._query",
+        "services.analytics.duckdb._query",
         new=AsyncMock(return_value=_response(data=[{"day": "2026-05-11", "cnt": "2"}])),
     ):
         from services.retention import _purge_count_based
@@ -101,15 +102,18 @@ async def test_purge_count_based_deletes_old_sessions():
     query = AsyncMock(
         side_effect=[
             _response(data=[{"day": "2026-05-11", "cnt": "6"}, {"day": "2026-05-10", "cnt": "6"}]),
-            _response(),
-            _response(),
         ]
     )
-    with patch("services.clickhouse._query", new=query):
+    execute = AsyncMock(return_value=1)
+    with (
+        patch("services.analytics.duckdb._query", new=query),
+        patch("services.analytics.duckdb._execute", new=execute),
+    ):
         from services.retention import _purge_count_based
 
         assert await _purge_count_based("default", 10) == 1
-    assert query.await_count == 3
+    assert query.await_count == 1
+    assert execute.await_count == 2
 
 
 @pytest.mark.asyncio

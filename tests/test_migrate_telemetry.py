@@ -87,15 +87,16 @@ class TestCLIRegistration:
         result = runner.invoke(cli_app, ["server", "migrate", "export-telemetry", "--help"])
         assert result.exit_code == 0
         out = _plain(result.output)
-        assert "--clickhouse-url" in out
-        assert "--manifest" in out
+        assert "--duckdb-url" in out
+        assert "--duckdb-token" in out
         assert "--output-dir" in out
 
     def test_import_telemetry_help_shows_options(self):
         result = runner.invoke(cli_app, ["server", "migrate", "import-telemetry", "--help"])
         assert result.exit_code == 0
         out = _plain(result.output)
-        assert "--clickhouse-url" in out
+        assert "--duckdb-url" in out
+        assert "--duckdb-token" in out
         assert "--input-dir" in out
 
     def test_validate_telemetry_help_shows_options(self):
@@ -103,8 +104,8 @@ class TestCLIRegistration:
         assert result.exit_code == 0
         out = _plain(result.output)
         assert "--input-dir" in out
-        assert "--clickhouse-url" in out
-        assert "--target-db-url" in out
+        assert "--duckdb-url" in out
+        assert "--duckdb-token" in out
 
 
 # ── ClickHouse URL Parsing Tests ─────────────────────────
@@ -1173,24 +1174,6 @@ class TestSidecarArchiveHash:
 # ── Parameterized Query ──────────────────────────────────
 
 
-class TestParameterizedQuery:
-    """Verify _ch_existing_tables uses parameterized query, not f-string."""
-
-    def test_existing_tables_query_uses_parameterized_syntax(self):
-        """The SQL should use {db:String} placeholder, not f-string interpolation."""
-        # We can't easily call the async function, but we can verify the pattern
-        # by checking the source code uses the right SQL string.
-        import inspect
-
-        from observal_shared.migration.ch_import import _ch_existing_tables
-
-        source = inspect.getsource(_ch_existing_tables)
-        assert "{db:String}" in source
-        assert "extra_params" in source
-        # Should NOT have f-string with db variable in SQL
-        assert 'f"SELECT' not in source or "f'SELECT" not in source
-
-
 # ── Cutoff in WHERE Clause ───────────────────────────────
 
 
@@ -1234,8 +1217,8 @@ def test_exec_dashboard_queries_session_tables_only():
 
 def test_legacy_clickhouse_tables_are_dropped_but_not_exported():
     root = Path(__file__).resolve().parents[1]
-    baseline = (root / "observal-server/clickhouse/migrations/001_baseline.sql").read_text()
+    baseline = (root / "observal-server/analytics/migrations/001_baseline.sql").read_text()
     constants = (root / "packages/observal-shared/observal_shared/migration/constants.py").read_text()
     for table in ("traces", "spans", "scores", "otel_logs"):
-        assert f"DROP TABLE IF EXISTS {table}" in baseline
+        assert f"CREATE TABLE IF NOT EXISTS {table}" not in baseline
         assert f'"name": "{table}"' not in constants

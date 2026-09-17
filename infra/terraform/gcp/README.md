@@ -1,5 +1,6 @@
 <!--
 SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+<!-- SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com> -->
 SPDX-License-Identifier: Apache-2.0
 -->
 
@@ -15,7 +16,7 @@ Deploy a production-ready Observal instance on Google Cloud Platform.
 | Web frontend | Cloud Run (v2) |
 | PostgreSQL | Cloud SQL |
 | Redis | Memorystore |
-| ClickHouse, optional Prometheus and Grafana | GCE instance (Docker Compose) |
+| DuckDB analytics, optional Prometheus and Grafana | GCE instance (Docker Compose) |
 | Load balancer / TLS | Global HTTPS LB + Managed SSL Certificate |
 | DNS | Cloud DNS |
 | Secrets | Secret Manager |
@@ -61,10 +62,11 @@ After apply:
 
 Set `domain_name` and `dns_managed_zone_name` to enable the Global HTTPS Load Balancer with a managed SSL certificate. The module creates a DNS A record pointing to the LB IP.
 
-## ClickHouse Modes
+## Data Host
 
-- **self_hosted** (default): Deploys a GCE instance running ClickHouse, Grafana, and Prometheus via Docker Compose. Access via IAP SSH tunnel.
-- **cloud**: Supply `clickhouse_cloud_url` and `clickhouse_cloud_password` to use ClickHouse Cloud. No GCE instance is created.
+The data host is a single GCE instance running the DuckDB analytics service,
+Postgres, Redis, and (optionally) Prometheus and Grafana via Docker Compose. It
+keeps the DuckDB file on a persistent disk; access the host over IAP SSH.
 
 ## Accessing the Data Host
 
@@ -78,6 +80,6 @@ gcloud compute ssh observal-prod-data --zone=us-central1-a --tunnel-through-iap
 |--------|-------------|
 | `app_url` | Public URL |
 | `cloud_run_urls` | Individual service URLs |
-| `data_host_ssh_command` | IAP SSH command for ClickHouse host |
+| `data_host_ssh_command` | IAP SSH command for the data host |
 | `init_job_run_command` | Command to re-run migrations |
 | `backups_bucket` | GCS backup bucket name |

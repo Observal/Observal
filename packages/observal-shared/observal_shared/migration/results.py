@@ -61,6 +61,9 @@ class TelemetryImportResult:
     rows_imported: dict[str, int]
     duration_seconds: float
     warnings: list[str] = field(default_factory=list)
+    # Row counts observed in the target before the load, per table. Lets the
+    # caller distinguish "rows are missing" from "the target already had rows".
+    pre_rows: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass

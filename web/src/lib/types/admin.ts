@@ -5,6 +5,7 @@
 // SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 // SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 // SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
+// SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
 // ── Admin ───────────────────────────────────────────────────────────
@@ -352,10 +353,9 @@ export interface InsightAppliedItems {
 // ── Telemetry ───────────────────────────────────────────────────────
 
 export interface TelemetryStatus {
-	clickhouse: boolean;
-	traces_count: number;
-	spans_count: number;
-	scores_count: number;
+	tool_call_events: number;
+	agent_interaction_events: number;
+	status: string;
 }
 
 export interface LiteLLMProvider {
@@ -621,7 +621,7 @@ export interface ExecAIInsightsResponse {
 // ── Migration ───────────────────────────────────────────────────────
 
 export type MigrationOperation = "export" | "import" | "validate";
-export type MigrationScope = "postgres" | "clickhouse" | "both";
+export type MigrationScope = "postgres" | "telemetry" | "both";
 export type MigrationStatus = "queued" | "running" | "completed" | "failed";
 
 export interface MigrationArtifactMeta {
@@ -652,8 +652,9 @@ export interface MigrationJob {
 }
 
 export interface MigrationExportResult {
-	table_counts: Record<string, number>;
-	total_rows: number;
+	// Registry-only fields: a telemetry-only export reports sizes instead.
+	table_counts?: Record<string, number>;
+	total_rows?: number;
 	archive_size_bytes: number | null;
 	telemetry_size_bytes: number | null;
 	schema_version_diff: string | null;

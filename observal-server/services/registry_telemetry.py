@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 
 from loguru import logger as optic
 
-from services.clickhouse import insert_audit_log
+from services.analytics.duckdb import insert_audit_log
 
 # prevent GC of fire-and-forget tasks (same pattern as telemetry.py)
 _background_tasks: set[asyncio.Task] = set()
@@ -37,7 +37,7 @@ def emit_registry_event(
     resource_name: str = "",
     metadata: dict[str, str] | None = None,
 ) -> None:
-    """Fire-and-forget a registry audit_log entry into ClickHouse."""
+    """Fire-and-forget a registry audit_log entry into DuckDB."""
     optic.trace("recording registry action: {}", action)
     now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
     meta = metadata or {}

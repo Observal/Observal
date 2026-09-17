@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Layer snapshot upload and retrieval endpoint.
@@ -106,22 +107,21 @@ async def upload_layer_snapshot(
     import json
 
     # Check if this hash already exists for this project
-    from services.clickhouse.client import _query as ch_query
-    from services.clickhouse.insert import insert_layer_snapshot
+    from services.analytics.duckdb.client import _query as analytics_query
+    from services.analytics.duckdb.insert import insert_layer_snapshot
 
     check_sql = """
-        SELECT count() as cnt
-        FROM layer_snapshots FINAL
-        WHERE project_id = {project_id:String}
-          AND hash = {hash:String}
-        FORMAT JSON
+        SELECT count(*) as cnt
+        FROM layer_snapshots
+        WHERE project_id = $project_id
+          AND hash = $hash
     """
     try:
-        result = await ch_query(
+        result = await analytics_query(
             check_sql,
             {
-                "param_project_id": project_id,
-                "param_hash": req.hash,
+                "project_id": project_id,
+                "hash": req.hash,
             },
         )
         result.raise_for_status()
@@ -204,21 +204,20 @@ async def get_layer_snapshot(
     optic.trace("user_id={}, hash={}", current_user.id, snapshot_hash)
     project_id = DEFAULT_PROJECT_ID
 
-    from services.clickhouse.client import _query as ch_query
+    from services.analytics.duckdb.client import _query as analytics_query
 
     sql = """
         SELECT hash, harness, content, uploaded_at, file_count, total_size, lockfile_hash
-        FROM layer_snapshots FINAL
-        WHERE project_id = {project_id:String}
-          AND hash = {hash:String}
+        FROM layer_snapshots
+        WHERE project_id = $project_id
+          AND hash = $hash
         LIMIT 1
-        FORMAT JSON
     """
-    result = await ch_query(
+    result = await analytics_query(
         sql,
         {
-            "param_project_id": project_id,
-            "param_hash": snapshot_hash,
+            "project_id": project_id,
+            "hash": snapshot_hash,
         },
     )
     result.raise_for_status()
@@ -268,21 +267,20 @@ async def diff_layer_snapshots(
 
     import json
 
-    from services.clickhouse.client import _query as ch_query
+    from services.analytics.duckdb.client import _query as analytics_query
 
     sql = """
         SELECT hash, content
-        FROM layer_snapshots FINAL
-        WHERE project_id = {project_id:String}
-          AND hash IN ({hash_a:String}, {hash_b:String})
-        FORMAT JSON
+        FROM layer_snapshots
+        WHERE project_id = $project_id
+          AND hash IN ($hash_a, $hash_b)
     """
-    result = await ch_query(
+    result = await analytics_query(
         sql,
         {
-            "param_project_id": project_id,
-            "param_hash_a": hash_a,
-            "param_hash_b": hash_b,
+            "project_id": project_id,
+            "hash_a": hash_a,
+            "hash_b": hash_b,
         },
     )
     result.raise_for_status()
@@ -352,31 +350,32 @@ async def pin_baseline(
 
     import json
 
-    from services.clickhouse.client import _query as ch_query
+    from services.analytics.duckdb.client import _execute as analytics_execute
 
     # Store/update baseline pin (use a dedicated table or settings)
     # For now, store in layer_snapshots with a special marker
     sql = """
-        INSERT INTO layer_snapshots (hash, project_id, user_id, harness, content, file_count, total_size, lockfile_hash)
+        INSERT OR REPLACE INTO layer_snapshots
+            (hash, project_id, user_id, harness, content, file_count, total_size, lockfile_hash)
         VALUES (
-            {hash:String},
-            {project_id:String},
-            {user_id:String},
+            $hash,
+            $project_id,
+            $user_id,
             'baseline',
-            {content:String},
+            $content,
             0, 0, ''
         )
     """
     content = json.dumps({"agent_id": req.agent_id, "baseline": True, "pinned_hash": req.layer_hash})
 
     try:
-        await ch_query(
+        await analytics_execute(
             sql,
             {
-                "param_hash": f"baseline:{req.agent_id}",
-                "param_project_id": project_id,
-                "param_user_id": user_id,
-                "param_content": content,
+                "hash": f"baseline:{req.agent_id}",
+                "project_id": project_id,
+                "user_id": user_id,
+                "content": content,
             },
         )
     except Exception as e:

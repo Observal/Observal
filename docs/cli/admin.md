@@ -249,7 +249,7 @@ observal admin review reject BUNDLE_UUID --bundle --reason 'License conflict' --
 | 6 | Ambiguous reference or existing export conflict |
 | 7 | Invalid role, filter, UUID, SAML input, reason, or missing non-interactive confirmation |
 | 8 | Rate limit reached |
-| 9 | Server, database, ClickHouse, Redis, or filesystem unavailable |
+| 9 | Server, database, DuckDB, Redis, or filesystem unavailable |
 | 10 | CLI and server version mismatch |
 
 ## Related

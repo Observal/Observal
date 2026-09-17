@@ -70,19 +70,18 @@ def isolated_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleN
         "pg_ctl": root / "bin/pg_ctl",
         "pg_isready": root / "bin/pg_isready",
         "createdb": root / "bin/createdb",
-        "clickhouse": root / "bin/clickhouse",
         "redis_server": root / "bin/redis-server",
         "redis_cli": root / "bin/redis-cli",
     }
     pids = {
         "postgres": root / "run/postgres.pid",
-        "clickhouse": root / "run/clickhouse.pid",
+        "analytics": root / "run/analytics.pid",
         "redis": root / "run/redis.pid",
         "api": root / "run/api.pid",
     }
     data = {
         "postgres": root / "data/pg",
-        "clickhouse": root / "data/ch",
+        "analytics": root / "data/duckdb",
         "redis": root / "data/redis",
     }
     console = FakeConsole()
@@ -145,10 +144,14 @@ class TestSecretsAndEnvironment:
         assert orch._secrets == {
             "POSTGRES_PASSWORD": "generated-24",
             "SECRET_KEY": "generated-32",
+            "DUCKDB_ANALYTICS_TOKEN": "generated-32",
         }
-        assert secrets_file.read_text() == "POSTGRES_PASSWORD=generated-24\nSECRET_KEY=generated-32\n"
+        assert (
+            secrets_file.read_text()
+            == "POSTGRES_PASSWORD=generated-24\nSECRET_KEY=generated-32\nDUCKDB_ANALYTICS_TOKEN=generated-32\n"
+        )
         assert stat.S_IMODE(secrets_file.stat().st_mode) == 0o600
-        assert generate.call_args_list == [call(24), call(32)]
+        assert generate.call_args_list == [call(24), call(32), call(32)]
 
     def test_existing_secrets_are_parsed_and_only_missing_values_are_added(
         self,
@@ -168,10 +171,14 @@ class TestSecretsAndEnvironment:
             "EXTRA": "a=b",
             "POSTGRES_PASSWORD": "existing",
             "SECRET_KEY": "new-secret",
+            "DUCKDB_ANALYTICS_TOKEN": "new-secret",
         }
-        assert secrets_file.read_text() == "EXTRA=a=b\nPOSTGRES_PASSWORD=existing\nSECRET_KEY=new-secret\n"
+        assert (
+            secrets_file.read_text()
+            == "EXTRA=a=b\nPOSTGRES_PASSWORD=existing\nSECRET_KEY=new-secret\nDUCKDB_ANALYTICS_TOKEN=new-secret\n"
+        )
         assert stat.S_IMODE(secrets_file.stat().st_mode) == 0o600
-        generate.assert_called_once_with(32)
+        assert generate.call_args_list == [call(32), call(32)]
 
     def test_complete_existing_secrets_are_not_rewritten(
         self,
@@ -180,7 +187,7 @@ class TestSecretsAndEnvironment:
     ) -> None:
         isolated_runtime.root.mkdir(parents=True)
         secrets_file = isolated_runtime.root / ".secrets"
-        content = "POSTGRES_PASSWORD=postgres\nSECRET_KEY=jwt\n"
+        content = "POSTGRES_PASSWORD=postgres\nSECRET_KEY=jwt\nDUCKDB_ANALYTICS_TOKEN=analytics-token\n"
         secrets_file.write_text(content)
         secrets_file.chmod(0o640)
         generate = MagicMock()
@@ -189,7 +196,11 @@ class TestSecretsAndEnvironment:
         orch = Orchestrator()
         orch._secrets = orch._load_or_create_secrets()
 
-        assert orch._secrets == {"POSTGRES_PASSWORD": "postgres", "SECRET_KEY": "jwt"}
+        assert orch._secrets == {
+            "POSTGRES_PASSWORD": "postgres",
+            "SECRET_KEY": "jwt",
+            "DUCKDB_ANALYTICS_TOKEN": "analytics-token",
+        }
         assert secrets_file.read_text() == content
         assert stat.S_IMODE(secrets_file.stat().st_mode) == 0o640
         generate.assert_not_called()
@@ -204,7 +215,7 @@ class TestSecretsAndEnvironment:
 
         assert env["PRESERVED"] == "yes"
         assert env["DATABASE_URL"] == "postgresql+asyncpg://observal@127.0.0.1:5480/observal"
-        assert env["CLICKHOUSE_URL"] == "clickhouse://default@127.0.0.1:8124/observal"
+        assert env["DUCKDB_ANALYTICS_URL"] == "duckdb://127.0.0.1:8124/observal"
         assert env["REDIS_URL"] == "redis://127.0.0.1:6380"
         assert env["SECRET_KEY"] == "secret-32"
         assert env["JWT_KEY_DIR"] == str(orchestrator_module.KEYS_DIR)
@@ -462,78 +473,45 @@ class TestPostgresLifecycle:
         )
 
 
-class TestClickHouseLifecycle:
-    def test_start_generates_config_creates_dirs_and_tracks_process(
+class TestAnalyticsLifecycle:
+    def test_start_creates_data_dir_and_tracks_process(
         self,
         isolated_runtime: SimpleNamespace,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         isolated_runtime.log_dir.mkdir(parents=True)
         isolated_runtime.run_dir.mkdir(parents=True)
-        generate = MagicMock()
         proc = MagicMock(pid=4242)
         popen = MagicMock(return_value=proc)
-        monkeypatch.setattr(orchestrator_module, "generate_all_configs", generate)
         monkeypatch.setattr(orchestrator_module.subprocess, "Popen", popen)
         orch = Orchestrator()
         immediate = MagicMock()
         wait = MagicMock()
-        ensure_database = MagicMock()
+        monkeypatch.setattr(orch, "_find_python", lambda: "/python")
         monkeypatch.setattr(orch, "_check_immediate_death", immediate)
-        monkeypatch.setattr(orch, "_wait_for_clickhouse", wait)
-        monkeypatch.setattr(orch, "_ensure_clickhouse_database", ensure_database)
+        monkeypatch.setattr(orch, "_wait_for_analytics", wait)
 
-        orch.start_clickhouse()
+        orch.start_analytics()
 
-        generate.assert_called_once_with()
-        for name in ("tmp", "user_files", "format_schemas"):
-            assert (isolated_runtime.data["clickhouse"] / name).is_dir()
+        assert isolated_runtime.data["analytics"].is_dir()
         command = popen.call_args.args[0]
         assert command == [
-            str(isolated_runtime.bins["clickhouse"]),
-            "server",
-            f"{LONG_OPTION}config-file",
-            str(isolated_runtime.config_dir / "clickhouse-config.xml"),
-            f"{LONG_OPTION}pid-file",
-            str(isolated_runtime.pids["clickhouse"]),
+            "/python",
+            "-m",
+            "uvicorn",
+            "services.analytics.duckdb.service:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8124",
         ]
         assert popen.call_args.kwargs["stderr"] is subprocess.STDOUT
         assert popen.call_args.kwargs["start_new_session"] is True
-        assert orch._processes["clickhouse"] is proc
-        assert isolated_runtime.pids["clickhouse"].read_text() == "4242"
-        immediate.assert_called_once_with(proc, "clickhouse")
+        assert orch._processes["analytics"] is proc
+        assert isolated_runtime.pids["analytics"].read_text() == "4242"
+        immediate.assert_called_once_with(proc, "analytics")
         wait.assert_called_once_with()
-        ensure_database.assert_called_once_with()
         orch._log_handles[0].close()
-
-    @pytest.mark.parametrize("status_code", [200, 503])
-    def test_create_database_posts_ddl_and_warns_on_non_success(
-        self,
-        status_code: int,
-        isolated_runtime: SimpleNamespace,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        post = MagicMock(return_value=SimpleNamespace(status_code=status_code))
-        monkeypatch.setattr(orchestrator_module.httpx, "post", post)
-
-        Orchestrator()._ensure_clickhouse_database()
-
-        post.assert_called_once_with(
-            "http://127.0.0.1:8124/",
-            content="CREATE DATABASE IF NOT EXISTS observal",
-            timeout=10,
-        )
-        assert ("returned 503" in isolated_runtime.console.text()) is (status_code == 503)
-
-    def test_create_database_translates_connection_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setattr(
-            orchestrator_module.httpx,
-            "post",
-            MagicMock(side_effect=httpx.ConnectError("offline")),
-        )
-
-        with pytest.raises(ServiceError, match="became unreachable"):
-            Orchestrator()._ensure_clickhouse_database()
 
     def test_wait_tolerates_connection_and_http_failures_until_healthy(self, monkeypatch: pytest.MonkeyPatch) -> None:
         clock = Clock()
@@ -548,10 +526,11 @@ class TestClickHouseLifecycle:
         monkeypatch.setattr(orchestrator_module.time, "sleep", clock.sleep)
         monkeypatch.setattr(orchestrator_module.httpx, "get", get)
 
-        Orchestrator()._wait_for_clickhouse(timeout=2)
+        Orchestrator()._wait_for_analytics(timeout=2)
 
         assert get.call_count == 3
         assert clock.sleeps == [0.5, 0.5]
+        assert get.call_args.args[0] == "http://127.0.0.1:8124/health"
 
     def test_wait_reports_log_after_timeout(
         self,
@@ -565,10 +544,10 @@ class TestClickHouseLifecycle:
         monkeypatch.setattr(orchestrator_module.httpx, "get", get)
 
         with pytest.raises(ServiceError) as error:
-            Orchestrator()._wait_for_clickhouse(timeout=1)
+            Orchestrator()._wait_for_analytics(timeout=1)
 
         assert "within 1s" in str(error.value)
-        assert str(isolated_runtime.log_dir / "clickhouse-startup.log") in str(error.value)
+        assert str(isolated_runtime.log_dir / "analytics-startup.log") in str(error.value)
         assert get.call_count == 2
 
 
@@ -647,7 +626,7 @@ class TestPidShutdown:
     @pytest.mark.parametrize(
         ("service", "method_name", "poll_count", "wait_timeout"),
         [
-            ("clickhouse", "stop_clickhouse", 20, 10),
+            ("analytics", "stop_analytics", 20, 10),
             ("api", "stop_api", 10, 10),
         ],
     )
@@ -717,7 +696,7 @@ class TestPidShutdown:
     @pytest.mark.parametrize(
         ("service", "method_name", "live_checks"),
         [
-            ("clickhouse", "stop_clickhouse", 0),
+            ("analytics", "stop_analytics", 0),
             ("redis", "stop_redis", 1),
             ("api", "stop_api", 0),
         ],
@@ -756,7 +735,7 @@ class TestPidShutdown:
     @pytest.mark.parametrize(
         ("service", "method_name"),
         [
-            ("clickhouse", "stop_clickhouse"),
+            ("analytics", "stop_analytics"),
             ("redis", "stop_redis"),
             ("api", "stop_api"),
         ],
@@ -922,7 +901,7 @@ class TestMigrations:
 
         run.assert_not_called()
 
-    def test_success_applies_postgres_and_clickhouse_migrations(
+    def test_success_applies_postgres_and_analytics_migrations(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         (tmp_path / "alembic.ini").write_text("[alembic]")
@@ -935,7 +914,7 @@ class TestMigrations:
 
         assert [item.args[0] for item in run.call_args_list] == [
             ["/python", "-m", "alembic", "upgrade", "head"],
-            ["/python", "-m", "services.clickhouse.migrations"],
+            ["/python", "-m", "services.analytics.duckdb.migrations"],
         ]
 
     @pytest.mark.parametrize("failure_index", [0, 1])
@@ -1131,7 +1110,7 @@ class TestFullLifecycle:
     ) -> None:
         monkeypatch.setattr(orchestrator_module, "ensure_dirs", lambda: calls.append("ensure_dirs"))
         monkeypatch.setattr(orch, "_is_first_run", lambda: first_run)
-        for name in ("start_postgres", "start_clickhouse", "start_redis", "run_migrations"):
+        for name in ("start_postgres", "start_analytics", "start_redis", "run_migrations"):
             monkeypatch.setattr(orch, name, lambda name=name: calls.append(name))
 
         def start_api(*, foreground: bool) -> None:
@@ -1171,9 +1150,9 @@ class TestFullLifecycle:
         assert calls == [
             "ensure_dirs",
             "start_postgres",
-            "start_clickhouse",
             "start_redis",
             "run_migrations",
+            "start_analytics",
             ("start_api", foreground),
             "bootstrap",
             ("configure_cli", {"access_token": "access", "refresh_token": "refresh"}),
@@ -1230,7 +1209,7 @@ class TestFullLifecycle:
         for method_name, label in (
             ("stop_api", "api"),
             ("stop_redis", "redis"),
-            ("stop_clickhouse", "clickhouse"),
+            ("stop_analytics", "analytics"),
             ("stop_postgres", "postgres"),
         ):
             monkeypatch.setattr(orch, method_name, lambda label=label: events.append(label))
@@ -1241,7 +1220,7 @@ class TestFullLifecycle:
 
         orch.stop_all()
 
-        assert events == ["api", "redis", "clickhouse", "postgres"]
+        assert events == ["api", "redis", "analytics", "postgres"]
         good_handle.close.assert_called_once_with()
         bad_handle.close.assert_called_once_with()
         assert orch._log_handles == []
@@ -1267,14 +1246,14 @@ class TestStatusAndReset:
 
         assert statuses == {
             "postgres": "running",
-            "clickhouse": "running",
+            "analytics": "running",
             "redis": "running",
             "api": "running",
         }
         assert run.call_args_list[0].args[0][0] == str(isolated_runtime.bins["pg_isready"])
         assert run.call_args_list[1].args[0][0] == str(isolated_runtime.bins["redis_cli"])
         assert get.call_args_list == [
-            call("http://127.0.0.1:8124/ping", timeout=2),
+            call("http://127.0.0.1:8124/health", timeout=2),
             call("http://127.0.0.1:9000/livez", timeout=2),
         ]
 
@@ -1299,7 +1278,7 @@ class TestStatusAndReset:
 
         assert statuses == {
             "postgres": "not initialized",
-            "clickhouse": "stopped",
+            "analytics": "stopped",
             "redis": "stopped",
             "api": "stopped",
         }

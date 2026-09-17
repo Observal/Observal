@@ -68,7 +68,7 @@ For normal backend, frontend, and dependency changes, use `make rebuild-fast`. I
 
 Use `make rebuild` when the Compose topology changes, such as adding services, changing build contexts, changing image names, or updating volumes and networks.
 
-For schema, migration, ClickHouse setup, init path, or worker changes, use `make rebuild-fast` so the shared API image used by `observal-init` and `observal-worker` is refreshed.
+For schema, migration, DuckDB setup, init path, or worker changes, use `make rebuild-fast` so the shared API image used by `observal-init` and `observal-worker` is refreshed.
 
 Wait for services to be healthy, then:
 
@@ -116,7 +116,7 @@ For larger changes, open an issue or discuss in **#contributing** on Discord bef
 
 ```
 feature/skill-registry
-fix/clickhouse-insert-timeout
+fix/analytics-insert-timeout
 docs/update-setup-guide
 ```
 

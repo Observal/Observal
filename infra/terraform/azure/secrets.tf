@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Tanvi Reddy
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 data "azurerm_client_config" "current" {}
@@ -8,9 +9,16 @@ resource "random_password" "db" {
   special = false
 }
 
-resource "random_password" "clickhouse" {
-  length  = 32
+resource "random_password" "duckdb" {
+  length  = 48
   special = false
+}
+
+# Renamed from random_password.clickhouse: keep the deployed token instead of
+# rotating it (the data VM and the Container Apps share this value).
+moved {
+  from = random_password.clickhouse
+  to   = random_password.duckdb
 }
 
 resource "random_password" "secret_key" {
@@ -53,9 +61,9 @@ resource "azurerm_key_vault_secret" "redis_url" {
   key_vault_id = azurerm_key_vault.main.id
 }
 
-resource "azurerm_key_vault_secret" "clickhouse_url" {
-  name         = "CLICKHOUSE-URL"
-  value        = local.clickhouse_url
+resource "azurerm_key_vault_secret" "analytics_url" {
+  name         = "DUCKDB-ANALYTICS-URL"
+  value        = local.analytics_url
   key_vault_id = azurerm_key_vault.main.id
 }
 

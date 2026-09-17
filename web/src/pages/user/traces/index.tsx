@@ -4,6 +4,7 @@
 // SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 // SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 // SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
+// SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
 import { Link, useRouter, useSearch, useLocation } from "@tanstack/react-router";
@@ -277,8 +278,9 @@ function fmtDuration(first?: string, last?: string): string {
 
 function toDate(ts: string): Date {
 	if (ts.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(ts)) return new Date(ts);
-	// ClickHouse returns DateTime64 as "YYYY-MM-DD HH:MM:SS.mmm" (space, no Z).
-	// Replace the space with T and append Z for valid ISO 8601 UTC parsing.
+	// The analytics service serializes DuckDB TIMESTAMP columns as UTC wall time
+	// without a zone ("YYYY-MM-DDTHH:MM:SS"); some rows use a space separator.
+	// Normalize to ISO 8601 UTC before parsing.
 	return new Date(ts.replace(" ", "T") + "Z");
 }
 

@@ -51,7 +51,7 @@ class InsightReport(Base):
     )
     comparison_agent_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
-    # Deterministic metrics from ClickHouse
+    # Deterministic metrics from DuckDB
     metrics: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # LLM-generated narrative sections

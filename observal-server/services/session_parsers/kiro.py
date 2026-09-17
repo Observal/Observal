@@ -32,7 +32,7 @@ from .base import basic_event, dict_field, list_field, load_line, pick_timestamp
 def parse_rows(rows: list[dict]) -> list[dict]:
     """Parse raw_line Kiro JSONL rows into normalised frontend events.
 
-    Each ClickHouse row contains a ``raw_line`` field holding one line of the
+    Each DuckDB row contains a ``raw_line`` field holding one line of the
     Kiro CLI session transcript.  This function expands each row into one or
     more virtual events that the frontend trace viewer understands.
 
@@ -68,7 +68,7 @@ def parse_rows(rows: list[dict]) -> list[dict]:
         # For everything else we fall back to the row ts / ingested_at via pick_timestamp.
         meta = data.get("meta") if isinstance(data.get("meta"), dict) else {}
         epoch_s = meta.get("timestamp") if meta else None
-        jsonl_ts = _epoch_to_clickhouse(epoch_s) if epoch_s else None
+        jsonl_ts = _epoch_to_analytics_ts(epoch_s) if epoch_s else None
         ts = pick_timestamp(jsonl_ts, row_ts, ingested_at)
 
         if kind == "KiroCredits":
@@ -102,8 +102,8 @@ def parse_rows(rows: list[dict]) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 
-def _epoch_to_clickhouse(epoch_s: int | float) -> str | None:
-    """Convert unix epoch seconds to a ClickHouse datetime string.
+def _epoch_to_analytics_ts(epoch_s: int | float) -> str | None:
+    """Convert unix epoch seconds to the stored timestamp string.
 
     Returns None for values a transcript can carry but ``datetime`` cannot
     represent, so the caller falls back to the row timestamp.

@@ -12,7 +12,7 @@ from loguru import logger as optic
 from api.deps import require_role
 from models.user import User, UserRole
 from schemas.telemetry import TelemetryStatusResponse
-from services.clickhouse import query_recent_events
+from services.analytics.duckdb import query_recent_events
 
 router = APIRouter(prefix="/api/v1/telemetry", tags=["telemetry"])
 

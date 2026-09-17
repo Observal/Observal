@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Ravi Chopra <shivamchopra1234567890@gmail.com>
 # SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 # =============================================================================
@@ -67,21 +68,22 @@ postgresql:
     size: 10Gi
     storageClassName: ""
 
-clickhouse:
-  enabled: true
-  externalUrl: ""
+duckdb:
   image:
-    repository: clickhouse/clickhouse-server
-    tag: "26.3"
+    repository: ghcr.io/observal/observal-duckdb
+    tag: ""
     pullPolicy: IfNotPresent
+  # Keep this below resources.limits.memory: DuckDB sizes its own buffer pool
+  # from the host unless the limit is set explicitly.
+  memoryLimit: 1500MB
   resources:
     limits:
-      memory: 3Gi
+      memory: 2Gi
     requests:
-      memory: 512Mi
-      cpu: 250m
+      memory: 256Mi
+      cpu: 100m
   storage:
-    size: 50Gi
+    size: 20Gi
     storageClassName: ""
 
 redis:
@@ -117,12 +119,12 @@ ingress:
 
 secrets:
   # Use a pre-existing Secret instead of creating one. Secret must contain all
-  # keys: SECRET_KEY, POSTGRES_PASSWORD, CLICKHOUSE_PASSWORD, DATABASE_URL,
-  # CLICKHOUSE_URL, REDIS_URL
+  # keys: SECRET_KEY, POSTGRES_PASSWORD, DUCKDB_ANALYTICS_TOKEN, DATABASE_URL,
+  # DUCKDB_ANALYTICS_URL, REDIS_URL
   existingSecret: ""
   secretKey: ""
   postgresPassword: ""
-  clickhousePassword: ""
+  duckdbToken: ""
 
 config:
   logLevel: INFO

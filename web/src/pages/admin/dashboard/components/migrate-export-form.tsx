@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+// SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
 import { useState } from "react";
@@ -19,9 +20,14 @@ const EXPORT_SCOPE_OPTIONS = [
 		description: "Users, agents, components, settings, reviews, and metadata.",
 	},
 	{
+		value: "telemetry" as const,
+		title: "Telemetry data",
+		description: "Session events, checkpoints, summaries, audit event history, and webhook deliveries.",
+	},
+	{
 		value: "both" as const,
 		title: "Registry + telemetry",
-		description: "Full instance export with registry records and ClickHouse trace history.",
+		description: "Full instance export with registry records and telemetry history.",
 	},
 ];
 
@@ -52,7 +58,9 @@ export function MigrateExportForm({ onJobStarted }: MigrateExportFormProps) {
 			<div className="space-y-2">
 				<div>
 					<label className="text-sm font-medium">What should be exported?</label>
-					<p className="mt-1 text-xs text-muted-foreground">Telemetry-only export is not supported here. Choose Registry + telemetry for a full move.</p>
+					<p className="mt-1 text-xs text-muted-foreground">
+						A telemetry export ships as one self-describing archive; a registry export ships as a PostgreSQL archive.
+					</p>
 				</div>
 				<ScopeChoiceGroup name="export-scope" value={scope} onChange={setScope} options={EXPORT_SCOPE_OPTIONS} />
 			</div>

@@ -7,7 +7,7 @@ The vocabulary you need to be productive with Observal.
 
 ## The registry
 
-The registry stores users, agents, components, review state, and alert rules in PostgreSQL. Session events and aggregates are stored separately in ClickHouse. See [Session tracking and reconciliation](session-tracking.md) for the complete session data flow.
+The registry stores users, agents, components, review state, and alert rules in PostgreSQL. Session events and aggregates are stored separately in DuckDB. See [Session tracking and reconciliation](session-tracking.md) for the complete session data flow.
 
 ## Registry components
 

@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Single-node deployment
@@ -30,8 +31,9 @@ flowchart TB
         worker["Worker - arq"]
         pg[(Postgres)]
         redis[(Redis)]
-        ch[(ClickHouse)]
-        grafana[Grafana]
+        duckdb[(DuckDB)]
+        grafana[Grafana - optional]
+        prometheus[Prometheus - optional]
         systemd["systemd - docker compose restart"]
         cron["cron - daily backups to S3"]
     end
@@ -39,18 +41,18 @@ flowchart TB
     nginx --> web
     nginx --> api
     api --> pg
-    api --> ch
+    api --> duckdb
     api --> redis
     api --> worker
     worker --> pg
     worker --> redis
-    worker --> ch
-    grafana --> ch
+    worker --> duckdb
+    grafana -.-> prometheus
     systemd -.-> nginx
     systemd -.-> api
     systemd -.-> worker
     cron -.-> pg
-    cron -.-> ch
+    cron -.-> duckdb
 ```
 
 Everything runs as Docker containers on a single host. The nginx LB routes traffic and terminates TLS. Docker's restart policy and systemd keep the stack running across reboots.
@@ -74,7 +76,7 @@ Everything runs as Docker containers on a single host. The nginx LB routes traff
 | 30–50 users | `t3.xlarge` (4 vCPU / 16 GB) | ~$120/mo |
 | 50+ users | Consider the [Terraform module](aws-terraform.md) | ~$255/mo |
 
-ClickHouse is the memory consumer. If you run out, increase `CLICKHOUSE_MEMORY_LIMIT` before resizing the VM.
+DuckDB is the memory consumer. If you run out, increase `DUCKDB_MEMORY_LIMIT` before resizing the VM.
 
 ## Step 1: Provision the VM
 
@@ -129,7 +131,7 @@ SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))")
 
 # Set strong database passwords
 POSTGRES_PASSWORD=$(openssl rand -base64 24)
-CLICKHOUSE_PASSWORD=$(openssl rand -base64 24)
+DUCKDB_ANALYTICS_TOKEN=$(openssl rand -base64 32)
 
 # Set your domain (used for CORS and OAuth redirects)
 CORS_ALLOWED_ORIGINS=https://observal.yourcompany.com
@@ -144,7 +146,7 @@ Write them into `.env`:
 ```bash
 sed -i "s|^SECRET_KEY=.*|SECRET_KEY=$SECRET_KEY|" .env
 sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$POSTGRES_PASSWORD|" .env
-sed -i "s|^CLICKHOUSE_PASSWORD=.*|CLICKHOUSE_PASSWORD=$CLICKHOUSE_PASSWORD|" .env
+sed -i "s|^DUCKDB_ANALYTICS_TOKEN=.*|DUCKDB_ANALYTICS_TOKEN=$DUCKDB_ANALYTICS_TOKEN|" .env
 ```
 
 > SAML SSO, audit logs, and executive dashboards are included in the open-source distribution. See [Configuration](configuration.md). For mounted credentials and private keys, use the documented [`NAME_FILE` inputs](configuration.md#secret-files) instead of placing secret contents in `.env`.
@@ -279,10 +281,10 @@ Schedule it:
 echo "0 3 * * * root /opt/observal-backups/backup.sh >> /var/log/observal-backup.log 2>&1" | sudo tee /etc/cron.d/observal-backup
 ```
 
-For ClickHouse (weekly, since it's larger):
+For DuckDB (weekly, since it's larger):
 
 ```bash
-echo "0 4 * * 0 root docker compose -f /home/ubuntu/Observal/docker/docker-compose.yml exec -T observal-clickhouse clickhouse-client --password \$CLICKHOUSE_PASSWORD --query \"BACKUP DATABASE observal TO Disk('backups', 'weekly-\$(date +\%Y\%m\%d).zip')\" >> /var/log/observal-backup.log 2>&1" | sudo tee /etc/cron.d/observal-ch-backup
+echo "0 4 * * 0 root docker exec observal-duckdb tar czf - -C /data . > /var/backups/observal-duckdb-weekly.tar.gz" | sudo tee /etc/cron.d/observal-duckdb-backup
 ```
 
 See [Backup and restore](backup-and-restore.md) for detailed restore procedures.
@@ -371,8 +373,8 @@ When you outgrow a single node:
 | Symptom | Fix |
 |---|---|
 | API response times increasing | Increase `API_WORKERS` in `.env` (default 2), or bump to a bigger VM |
-| ClickHouse queries slow | Increase `CLICKHOUSE_MEMORY_LIMIT`, move to a bigger VM, or externalize to [ClickHouse Cloud](https://clickhouse.cloud) |
-| Disk filling up | Reduce `DATA_RETENTION_DAYS`, add a bigger disk, or move ClickHouse data to a separate volume |
+| DuckDB queries slow | Increase `DUCKDB_MEMORY_LIMIT`, move to a bigger VM, and check the query indexes in `observal-server/analytics/migrations/` |
+| Disk filling up | Reduce `DATA_RETENTION_DAYS`, add a bigger disk, or move DuckDB data to a separate volume |
 | Need HA / zero downtime deploys | Migrate to the [Terraform module](aws-terraform.md) |
 
 ## Next

@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 """Verify exec dashboard endpoints against a live deployment.
 
@@ -207,7 +208,13 @@ def main():
     args = parser.parse_args()
 
     base = args.base_url.rstrip("/") + "/api/v1"
-    headers = {"Authorization": f"Bearer {args.token}", "Content-Type": "application/json"}
+    # The auth middleware version-gates CLI user agents; this script is not the
+    # CLI, so it identifies itself instead of claiming a CLI version.
+    headers = {
+        "Authorization": f"Bearer {args.token}",
+        "Content-Type": "application/json",
+        "User-Agent": "observal-verify-exec-dashboard/1.0",
+    }
 
     passed = 0
     failed = 0

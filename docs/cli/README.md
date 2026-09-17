@@ -33,7 +33,7 @@ Complete reference for the `observal` CLI. Every subcommand has its own page; th
 | [`observal admin`](admin.md)                                                               | Core administration and submission review                                             |
 | [`observal doctor support`](support.md)                                                   | Generate and inspect redacted diagnostic bundles                                      |
 | [`observal doctor`](doctor.md)                                                             | Diagnose harness compatibility; `doctor patch` applies instrumentation                |
-| [`observal server migrate`](https://github.com/Observal/Observal/blob/main/docs/cli/migrate.md) | Export/import PostgreSQL registry (shallow copy) and ClickHouse telemetry (deep copy) |
+| [`observal server migrate`](https://github.com/Observal/Observal/blob/main/docs/cli/migrate.md) | Export/import PostgreSQL registry (shallow copy) and DuckDB telemetry (deep copy) |
 | [`observal self`](self.md)                                                                 | Upgrade or downgrade the CLI                                                          |
 | [`observal registry prompt`](prompt.md)                                                    | Manage reusable prompts in the registry                                               |
 | [`observal server`](server.md)                                                             | Manage the embedded server (start, stop, upgrade, rollback)                           |

@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.work@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 resource "google_service_account" "cloud_run" {
@@ -99,10 +100,30 @@ resource "google_cloud_run_v2_service" "api" {
       }
 
       env {
-        name = "CLICKHOUSE_URL"
+        name = "DUCKDB_ANALYTICS_URL"
         value_source {
           secret_key_ref {
-            secret  = google_secret_manager_secret.app["CLICKHOUSE_URL"].secret_id
+            secret  = google_secret_manager_secret.app["DUCKDB_ANALYTICS_URL"].secret_id
+            version = "latest"
+          }
+        }
+      }
+
+      env {
+        name = "DUCKDB_ANALYTICS_TOKEN"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.app["DUCKDB_ANALYTICS_TOKEN"].secret_id
+            version = "latest"
+          }
+        }
+      }
+
+      env {
+        name = "DUCKDB_ANALYTICS_TOKEN"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.app["DUCKDB_ANALYTICS_TOKEN"].secret_id
             version = "latest"
           }
         }
@@ -277,10 +298,10 @@ resource "google_cloud_run_v2_service" "worker" {
       }
 
       env {
-        name = "CLICKHOUSE_URL"
+        name = "DUCKDB_ANALYTICS_URL"
         value_source {
           secret_key_ref {
-            secret  = google_secret_manager_secret.app["CLICKHOUSE_URL"].secret_id
+            secret  = google_secret_manager_secret.app["DUCKDB_ANALYTICS_URL"].secret_id
             version = "latest"
           }
         }
@@ -354,10 +375,20 @@ resource "google_cloud_run_v2_job" "init" {
         }
 
         env {
-          name = "CLICKHOUSE_URL"
+          name = "DUCKDB_ANALYTICS_URL"
           value_source {
             secret_key_ref {
-              secret  = google_secret_manager_secret.app["CLICKHOUSE_URL"].secret_id
+              secret  = google_secret_manager_secret.app["DUCKDB_ANALYTICS_URL"].secret_id
+              version = "latest"
+            }
+          }
+        }
+
+        env {
+          name = "DUCKDB_ANALYTICS_TOKEN"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.app["DUCKDB_ANALYTICS_TOKEN"].secret_id
               version = "latest"
             }
           }

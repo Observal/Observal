@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Yash Gadgil <yashgadgil08@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Tests for the enterprise audit logging system."""
@@ -7,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -181,7 +183,7 @@ class TestSink:
             _buffer.clear()
             _buffer.append({"event_id": "test", "timestamp": "2026-01-01 00:00:00.000", "action": "t"})
 
-        with patch("services.clickhouse.insert_audit_log", new_callable=AsyncMock) as mock_insert:
+        with patch("services.analytics.duckdb.insert_audit_log", new_callable=AsyncMock) as mock_insert:
             async with _buffer_lock:
                 await _flush()
             mock_insert.assert_called_once()
@@ -194,7 +196,7 @@ class TestSink:
         async with _buffer_lock:
             _buffer.clear()
 
-        with patch("services.clickhouse.insert_audit_log", new_callable=AsyncMock) as mock_insert:
+        with patch("services.analytics.duckdb.insert_audit_log", new_callable=AsyncMock) as mock_insert:
             async with _buffer_lock:
                 await _flush()
             mock_insert.assert_not_called()
@@ -335,25 +337,34 @@ class TestCliAudit:
 
 
 class TestSchemaExpansion:
-    """ClickHouse schema includes new audit columns."""
+    """The DuckDB analytics baseline includes the audit columns."""
 
     def test_new_columns_in_baseline_migration(self):
-        from services.clickhouse.migrations import MIGRATIONS_DIR
+        from services.analytics.duckdb.migrations import MIGRATIONS_DIR
 
         sql_blob = (MIGRATIONS_DIR / "001_baseline.sql").read_text()
-        assert "ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS sensitivity" in sql_blob
-        assert "ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS outcome" in sql_blob
-        assert "ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS duration_ms" in sql_blob
-        assert "ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS chain_hash" in sql_blob
-        assert "ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS source" in sql_blob
+        # Match column/type pairs regardless of alignment whitespace.
+        for column, column_type in (
+            ("sensitivity", "VARCHAR"),
+            ("outcome", "VARCHAR"),
+            ("duration_ms", "FLOAT"),
+            ("chain_hash", "VARCHAR"),
+            ("source", "VARCHAR"),
+        ):
+            assert re.search(rf"\b{column}\s+{column_type}\b", sql_blob), f"{column} {column_type} missing"
 
     def test_new_indexes_in_baseline_migration(self):
-        from services.clickhouse.migrations import MIGRATIONS_DIR
+        from services.analytics.duckdb.migrations import MIGRATIONS_DIR
 
-        sql_blob = (MIGRATIONS_DIR / "001_baseline.sql").read_text()
-        assert "idx_outcome" in sql_blob
-        assert "idx_sensitivity" in sql_blob
-        assert "idx_source" in sql_blob
+        baseline = (MIGRATIONS_DIR / "001_baseline.sql").read_text()
+        composites = (MIGRATIONS_DIR / "002_query_indexes.sql").read_text()
+        # actor_id/action lead the composite indexes added in 002, so the
+        # baseline only carries the resource_type index.
+        assert "idx_audit_log_resource_type" in baseline
+        assert "idx_audit_log_actor_time" in composites
+        assert "idx_audit_log_filter" in composites
+        assert "idx_audit_log_actor ON" not in baseline
+        assert "idx_audit_log_action ON" not in baseline
 
 
 class TestInsertAuditLog:
@@ -361,13 +372,11 @@ class TestInsertAuditLog:
 
     @pytest.mark.asyncio
     async def test_includes_all_fields(self):
-        with patch("services.clickhouse.client._query", new_callable=AsyncMock) as mock_query:
-            mock_response = MagicMock()
-            mock_response.raise_for_status = MagicMock()
-            mock_query.return_value = mock_response
+        with patch("services.analytics.duckdb.client._insert", new_callable=AsyncMock) as mock_insert:
+            mock_insert.return_value = 1
 
-            with patch("services.clickhouse.client._invalidate_cache", new_callable=AsyncMock):
-                from services.clickhouse.insert import insert_audit_log
+            with patch("services.analytics.duckdb.client._invalidate_cache", new_callable=AsyncMock):
+                from services.analytics.duckdb.insert import insert_audit_log
 
                 rows = [
                     {
@@ -396,9 +405,10 @@ class TestInsertAuditLog:
                 ]
 
                 await insert_audit_log(rows)
-                mock_query.assert_called_once()
-                data = mock_query.call_args.kwargs.get("data", "")
-                parsed = json.loads(data)
+                mock_insert.assert_awaited_once()
+                table, parsed_rows = mock_insert.await_args.args
+                assert table == "audit_log"
+                parsed = parsed_rows[0]
                 assert parsed["sensitivity"] == "high"
                 assert parsed["outcome"] == "success"
                 assert parsed["source"] == "cli"

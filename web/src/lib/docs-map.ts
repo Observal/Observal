@@ -82,14 +82,10 @@ export const SETTING_DOCS: Record<string, DocRef> = {
 	"resource.db_max_overflow": { file: "self-hosting/resource-tuning.md", anchor: "db-max-overflow", label: "DB Max Overflow" },
 	"resource.redis_max_connections": { file: "self-hosting/resource-tuning.md", anchor: "redis-max-connections", label: "Redis Max Connections" },
 	"resource.redis_socket_timeout": { file: "self-hosting/resource-tuning.md", anchor: "redis-timeout", label: "Redis Timeout" },
-	"resource.clickhouse_max_connections": { file: "self-hosting/resource-tuning.md", anchor: "clickhouse-max-connections", label: "ClickHouse Max Connections" },
-	"resource.clickhouse_max_keepalive": { file: "self-hosting/resource-tuning.md", anchor: "clickhouse-keepalive", label: "ClickHouse Keepalive" },
-	"resource.clickhouse_timeout": { file: "self-hosting/resource-tuning.md", anchor: "clickhouse-query-timeout", label: "ClickHouse Query Timeout" },
 	"resource.skip_ddl_on_startup": { file: "self-hosting/resource-tuning.md", anchor: "skip-ddl-on-startup", label: "Skip DDL on Startup" },
 	"resource.max_query_memory_mb": { file: "self-hosting/resource-tuning.md", anchor: "query-memory-limit", label: "Query Memory Limit" },
-	"resource.group_by_spill_mb": { file: "self-hosting/resource-tuning.md", anchor: "group-by-spill-threshold", label: "GROUP BY Spill Threshold" },
-	"resource.sort_spill_mb": { file: "self-hosting/resource-tuning.md", anchor: "order-by-spill-threshold", label: "ORDER BY Spill Threshold" },
-	"resource.join_memory_mb": { file: "self-hosting/resource-tuning.md", anchor: "join-memory-limit", label: "JOIN Memory Limit" },
+	"resource.threads": { file: "self-hosting/resource-tuning.md", anchor: "analytics-threads", label: "DuckDB Threads" },
+	"resource.temp_directory": { file: "self-hosting/resource-tuning.md", anchor: "analytics-temp-directory", label: "DuckDB Temp Directory" },
 
 	// Data & Retention
 	"danger.purge_traces_insights": { file: "self-hosting/data-retention.md", anchor: "purge-traces-and-insights", label: "Purge Traces & Insights" },

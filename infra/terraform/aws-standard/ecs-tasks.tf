@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Observal
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 # ECS task definitions: api, web, worker, init.
@@ -25,7 +26,8 @@ locals {
   app_secrets = [
     { name = "DATABASE_URL", valueFrom = aws_ssm_parameter.urls["DATABASE_URL"].arn },
     { name = "REDIS_URL", valueFrom = aws_ssm_parameter.urls["REDIS_URL"].arn },
-    { name = "CLICKHOUSE_URL", valueFrom = aws_ssm_parameter.urls["CLICKHOUSE_URL"].arn },
+    { name = "DUCKDB_ANALYTICS_URL", valueFrom = aws_ssm_parameter.urls["DUCKDB_ANALYTICS_URL"].arn },
+    { name = "DUCKDB_ANALYTICS_TOKEN", valueFrom = aws_ssm_parameter.duckdb_analytics_token.arn },
     { name = "SECRET_KEY", valueFrom = aws_ssm_parameter.secret_key.arn },
   ]
 }

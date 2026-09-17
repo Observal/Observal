@@ -100,14 +100,13 @@ esac
 
 mkdir -p \
     "$SECRETS_DIR/postgres" \
-    "$SECRETS_DIR/clickhouse" \
-    "$SECRETS_DIR/grafana" \
-    "$INSTALL_DIR/clickhouse/users.d"
-chmod 750 "$SECRETS_DIR" "$SECRETS_DIR/postgres" "$SECRETS_DIR/clickhouse" "$SECRETS_DIR/grafana"
+    "$SECRETS_DIR/duckdb" \
+    "$SECRETS_DIR/grafana"
+chmod 750 "$SECRETS_DIR" "$SECRETS_DIR/postgres" "$SECRETS_DIR/duckdb" "$SECRETS_DIR/grafana"
 SECRET_GID=$(id -g)
 
 POSTGRES_PASSWORD=$(existing_or_generated_secret postgres/postgres_password POSTGRES_PASSWORD)
-CLICKHOUSE_PASSWORD=$(existing_or_generated_secret clickhouse/clickhouse_password CLICKHOUSE_PASSWORD)
+DUCKDB_ANALYTICS_TOKEN=$(existing_or_generated_secret duckdb/duckdb_analytics_token DUCKDB_ANALYTICS_TOKEN)
 SECRET_KEY=$(existing_or_generated_secret secret_key SECRET_KEY)
 JWT_KEY_PASSWORD=$(existing_or_generated_secret jwt_key_password JWT_KEY_PASSWORD)
 DEMO_SUPER_ADMIN_EMAIL=$(env_value DEMO_SUPER_ADMIN_EMAIL)
@@ -126,8 +125,7 @@ GRAFANA_ADMIN_PASSWORD=$(existing_or_generated_secret grafana/grafana_admin_pass
 
 write_secret secret_key "$SECRET_KEY"
 write_secret postgres/postgres_password "$POSTGRES_PASSWORD"
-write_secret clickhouse/clickhouse_password "$CLICKHOUSE_PASSWORD"
-write_secret grafana/clickhouse_password "$CLICKHOUSE_PASSWORD"
+write_secret duckdb/duckdb_analytics_token "$DUCKDB_ANALYTICS_TOKEN"
 write_secret jwt_key_password "$JWT_KEY_PASSWORD"
 write_secret demo_super_admin_password "$DEMO_SUPER_ADMIN_PASSWORD"
 write_secret demo_admin_password "$DEMO_ADMIN_PASSWORD"
@@ -136,32 +134,14 @@ write_secret demo_user_password "$DEMO_USER_PASSWORD"
 write_secret grafana/grafana_admin_password "$GRAFANA_ADMIN_PASSWORD"
 
 DATABASE_URL=$(existing_secret_value database_url DATABASE_URL)
-CLICKHOUSE_URL=$(existing_secret_value clickhouse_url CLICKHOUSE_URL)
+DUCKDB_ANALYTICS_URL=$(existing_secret_value duckdb_analytics_url DUCKDB_ANALYTICS_URL)
 REDIS_URL=$(existing_secret_value redis_url REDIS_URL)
 case "$DATABASE_URL" in "" | *'$'*) DATABASE_URL="postgresql+asyncpg://postgres:$POSTGRES_PASSWORD@observal-db:5432/observal" ;; esac
-case "$CLICKHOUSE_URL" in "" | *'$'*) CLICKHOUSE_URL="clickhouse://default:$CLICKHOUSE_PASSWORD@observal-clickhouse:8123/observal" ;; esac
+case "$DUCKDB_ANALYTICS_URL" in "" | *'$'*) DUCKDB_ANALYTICS_URL="duckdb://observal-duckdb:8484/observal" ;; esac
 REDIS_URL="${REDIS_URL:-redis://observal-redis:6379}"
 write_secret database_url "$DATABASE_URL"
-write_secret clickhouse_url "$CLICKHOUSE_URL"
+write_secret duckdb_analytics_url "$DUCKDB_ANALYTICS_URL"
 write_secret redis_url "$REDIS_URL"
-
-CLICKHOUSE_PASSWORD_HASH=$(printf '%s' "$CLICKHOUSE_PASSWORD" | sha256)
-rm -f "$INSTALL_DIR/clickhouse/users.d/default-user.xml"
-cat >"$INSTALL_DIR/clickhouse/users.d/generated-password.xml" <<EOF
-<clickhouse>
-  <users>
-    <default remove="remove" />
-    <default>
-      <profile>default</profile>
-      <networks><ip>::/0</ip></networks>
-      <password_sha256_hex>$CLICKHOUSE_PASSWORD_HASH</password_sha256_hex>
-      <quota>default</quota>
-      <access_management>0</access_management>
-    </default>
-  </users>
-</clickhouse>
-EOF
-chmod 644 "$INSTALL_DIR/clickhouse/users.d/generated-password.xml"
 
 cp "$INSTALL_DIR/env.template" "$ENV_FILE"
 cat >>"$ENV_FILE" <<EOF

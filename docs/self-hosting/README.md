@@ -19,7 +19,7 @@ flowchart TB
     worker["observal-worker - async jobs"]
     db["observal-db - Postgres"]
     redis["observal-redis - jobs + pub/sub"]
-    ch["observal-clickhouse - telemetry"]
+    ch["observal-duckdb - telemetry"]
     grafana["observal-grafana - optional dashboards"]
 
     engineers --> web
@@ -41,7 +41,7 @@ flowchart TB
 | `observal-api`        | built from `docker/Dockerfile.api`  | 8000       | FastAPI backend           |
 | `observal-web`        | built from `docker/Dockerfile.web`  | 3000       | Next.js web UI            |
 | `observal-db`         | `postgres:16`                       | 5432       | Registry, users, config   |
-| `observal-clickhouse` | `clickhouse/clickhouse-server:26.3` | 8123       | Session and audit events |
+| `observal-duckdb` | `ghcr.io/observal/observal-duckdb` | 8484     | Session and audit events |
 | `observal-redis`      | `redis:7-alpine`                    | 6379       | Job queue (arq) + pub/sub |
 | `observal-worker`     | built from `docker/Dockerfile.api`  | (internal) | Background async jobs     |
 | `observal-grafana`    | `grafana/grafana-oss:11.6.5`        | 3001       | Dashboards (optional)     |
@@ -90,7 +90,7 @@ Choose the deployment model that fits your team:
 Before putting Observal in front of real users:
 
 1. **Protect `SECRET_KEY`**: server-package setup generates it in `secrets/`; source deployments must set a strong direct value or `SECRET_KEY_FILE`.
-2. **Protect database passwords**: server-package setup generates restricted PostgreSQL and ClickHouse credential files; source deployments must replace the `.env.example` defaults.
+2. **Protect database passwords**: server-package setup generates restricted PostgreSQL and DuckDB credential files; source deployments must replace the `.env.example` defaults.
 3. **Scope `CORS_ALLOWED_ORIGINS`** to your real frontend host.
 4. **Configure SSO** in **Admin → SSO**, including `deployment.sso_only` if you want SSO-only login.
 5. **Tune rate limits** (`RATE_LIMIT_AUTH`, `RATE_LIMIT_AUTH_STRICT`).

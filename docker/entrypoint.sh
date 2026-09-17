@@ -59,7 +59,4 @@ finally:
     fi
 fi
 
-echo "Running ClickHouse migrations..."
-/app/.venv/bin/python -m services.clickhouse.migrations
-
 echo "Initialization complete."

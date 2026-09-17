@@ -1,10 +1,11 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Observal Contributors -->
+<!-- SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # `observal server`
 
-Manage local Observal deployments. The lifecycle commands operate the embedded PostgreSQL, ClickHouse, Redis, and API processes. Upgrade, rollback, and version commands operate a local Docker Compose deployment.
+Manage local Observal deployments. The lifecycle commands operate the embedded PostgreSQL, DuckDB, Redis, and API processes. Upgrade, rollback, and version commands operate a local Docker Compose deployment.
 
 Local filesystem, process, Docker, and database access are the authorization boundary. These commands do not require a reachable Observal API or an API role.
 
@@ -23,7 +24,7 @@ Local filesystem, process, Docker, and database access are the authorization bou
 | `upgrade` | Docker | Back up PostgreSQL and replace images |
 | `rollback` | Docker | Restore PostgreSQL and the prior image version |
 | `versions` | Docker | List image versions and managed backups |
-| `migrate` | Databases | Move PostgreSQL registry and ClickHouse telemetry data |
+| `migrate` | Databases | Move PostgreSQL registry and DuckDB telemetry data |
 
 ## Embedded lifecycle
 
@@ -51,8 +52,8 @@ observal server stop --output json
 Startup performs these steps in order:
 
 1. Installs embedded dependencies when missing. Downloads require a published SHA-256 checksum and archives reject links and path traversal.
-2. Starts PostgreSQL, ClickHouse, and Redis.
-3. Applies PostgreSQL and ClickHouse migrations. Migration failures stop startup; the CLI never stamps a failed PostgreSQL schema as current.
+2. Starts PostgreSQL, DuckDB, and Redis.
+3. Applies PostgreSQL and DuckDB migrations. Migration failures stop startup; the CLI never stamps a failed PostgreSQL schema as current.
 4. Starts the API.
 5. Bootstraps a local admin only on a fresh embedded server and persists the real access and refresh tokens. It never writes placeholder credentials or an API key.
 6. Attempts telemetry hook installation. Optional hook failures are explicit warnings.
@@ -71,7 +72,7 @@ Status is a finite diagnosis command. It exits successfully when checks run, inc
   "healthy": false,
   "services": [
     {"service": "postgres", "status": "running", "port": 5480},
-    {"service": "clickhouse", "status": "stopped", "port": 8124},
+    {"service": "analytics", "status": "stopped", "port": 8124},
     {"service": "redis", "status": "running", "port": 6380},
     {"service": "api", "status": "stopped", "port": 8000}
   ]
@@ -95,7 +96,7 @@ Follow one service as JSON Lines:
 observal server logs api --follow --output json
 ```
 
-JSON follow requires one service so every event has an unambiguous `service` field. Valid services are `postgres`, `clickhouse`, `redis`, and `api`.
+JSON follow requires one service so every event has an unambiguous `service` field. Valid services are `postgres`, `analytics`, `redis`, and `api`.
 
 ## Install and reset
 
@@ -143,7 +144,7 @@ observal server rollback \
 
 Rollback accepts only backup directories under the managed backup root. It restores PostgreSQL, atomically restores the image version, recreates containers, and checks health.
 
-**ClickHouse telemetry is not restored by this command.** JSON and human results state `clickhouse_restored: false`. Use [`observal server migrate`](migrate.md) for ClickHouse export and import.
+Rollback restores the DuckDB analytics store as well whenever the backup contains `analytics.tar.gz` (backups created by `observal server upgrade` do): the analytics service is stopped, its data directory is replaced, and the service is restarted and health-checked before containers are recreated. JSON and human results report `analytics_restored` accordingly, and any backup predating the DuckDB cutover restores PostgreSQL only. Use [`observal server migrate`](migrate.md) for telemetry export and import between deployments.
 
 ## Docker versions
 

@@ -1,5 +1,6 @@
 <!--
 SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+<!-- SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com> -->
 SPDX-License-Identifier: Apache-2.0
 -->
 
@@ -41,6 +42,8 @@ Expose interactive API documentation endpoints.
 | `true` | Exposes `/docs`, `/redoc`, and `/openapi.json` |
 | `false` | Hides generated API documentation |
 
+**Default:** `false`.
+
 **Production recommendation:** Disable unless your admins actively use these endpoints. It reduces public attack surface and avoids exposing schema details to unauthenticated users.
 
 ## Enable Metrics {#enable-metrics}
@@ -51,5 +54,9 @@ Expose Prometheus-compatible metrics.
 |-------|--------|
 | `true` | Exposes `/metrics` for Prometheus scraping |
 | `false` | Metrics endpoint is unavailable |
+
+**Default:** `false`. The bundled `docker-compose.observability.yml` overlay ships a
+Prometheus scrape config pointed at `/metrics`, so set this to `true` first or the
+`observal-api` target stays down.
 
 **When to enable:** You run Prometheus, Grafana, or another scraper and want infrastructure metrics for API health, request latency, errors, and worker activity.

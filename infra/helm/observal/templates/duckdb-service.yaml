@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: 2026 Observal contributors
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "observal.fullname" . }}-duckdb
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "observal.labels" . | nindent 4 }}
+    app.kubernetes.io/component: duckdb
+spec:
+  # Private ClusterIP only: reached by api/worker at
+  # http://<release>-duckdb:8484 and never exposed through an Ingress.
+  type: ClusterIP
+  ports:
+    - port: 8484
+      targetPort: 8484
+      name: http
+  selector:
+    {{- include "observal.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: duckdb

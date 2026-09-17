@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 __pycache__/
@@ -90,3 +91,13 @@ node_modules
 *.bak
 scripts/seed_demo.py
 .playwright-cli/
+# Playwright artifacts (e2e runs from tests/e2e)
+tests/e2e/test-results/
+tests/e2e/playwright-report/
+
+# Local analytics scratch: generated DuckDB files and benchmark outputs
+/data/
+# Keep the vendored LiteLLM snapshot tracked; ignore the rest of the directory.
+/observal-server/data/*
+!/observal-server/data/litellm_model_catalog.json
+/benchmarks/results/

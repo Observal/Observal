@@ -4,7 +4,7 @@
 
 # Observal
 
-Observal is an agent-centric registry and observability platform for AI coding agents. This chart deploys the API, web UI, worker, PostgreSQL, ClickHouse, Redis, and supporting Kubernetes resources for self-hosted installations.
+Observal is an agent-centric registry and observability platform for AI coding agents. This chart deploys the API, web UI, worker, PostgreSQL, DuckDB analytics, Redis, and supporting Kubernetes resources for self-hosted installations.
 
 ## Install
 
@@ -17,7 +17,7 @@ helm install observal oci://ghcr.io/observal/charts/observal \
   --namespace observal
 ```
 
-For production deployments, use managed PostgreSQL, ClickHouse, and Redis services by setting `postgresql.enabled=false`, `clickhouse.enabled=false`, and `redis.enabled=false`, then providing the matching external connection URLs.
+For production deployments, use managed PostgreSQL and Redis services by setting `postgresql.enabled=false` and `redis.enabled=false`, then providing the matching external connection URLs. The analytics store is a DuckDB singleton and always runs in-cluster: give it a `ReadWriteOnce` volume and never scale it past one replica.
 
 See the Kubernetes deployment guide for the full values reference and operational notes:
 

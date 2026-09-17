@@ -12,7 +12,7 @@ name_prefix     = "observal"
 postgresql_sku        = "B_Standard_B2s"
 postgresql_storage_gb = 32
 
-# Redis on ClickHouse VM (Enterprise not available on this subscription)
+# Redis on the analytics data VM (Enterprise not available on this subscription)
 redis_mode = "self_hosted"
 
 # Minimal replicas
@@ -23,9 +23,9 @@ web_max_replicas    = 2
 worker_min_replicas = 1
 worker_max_replicas = 2
 
-# Smaller ClickHouse VM
-clickhouse_vm_size      = "Standard_D2ads_v7"
-clickhouse_disk_size_gb = 50
+# Smaller analytics data VM
+analytics_vm_size      = "Standard_D2ads_v7"
+analytics_disk_size_gb = 50
 
 # Bundled observability
 observability_stack = "grafana"

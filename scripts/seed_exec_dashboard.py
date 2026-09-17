@@ -1,13 +1,19 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
-"""Seed exec dashboard test data into PostgreSQL + ClickHouse.
+"""Seed exec dashboard test data into PostgreSQL + the DuckDB analytics store.
 
-Run on the EC2 instance (inside the container) or locally with SSH tunnel:
+Run on the data host (inside the API container) or locally:
   docker exec observal-api python scripts/seed_exec_dashboard.py
   # or with explicit URLs:
-  python scripts/seed_exec_dashboard.py --pg-url postgresql://... --ch-url http://...
+  python scripts/seed_exec_dashboard.py \
+      --pg-url postgresql://... \
+      --duckdb-url duckdb://localhost:8484/observal
 
-Reads DATABASE_URL and CLICKHOUSE_URL from environment by default.
+Reads DATABASE_URL, DUCKDB_ANALYTICS_URL, and DUCKDB_ANALYTICS_TOKEN from the
+environment by default. Sessions land in ``session_events`` and their summaries
+are recomputed with the same helper the ingest path uses, which is what the
+exec dashboard reads.
 """
 
 import argparse
@@ -28,9 +34,8 @@ from observal_shared.migration.constants import DEFAULT_PROJECT_ID
 
 try:
     import asyncpg
-    import httpx
 except ImportError:
-    print("Install dependencies: pip install asyncpg httpx")
+    print("Install dependencies: pip install asyncpg")
     sys.exit(1)
 
 # ---------------------------------------------------------------------------
@@ -64,7 +69,7 @@ AGENTS = [
 ]
 
 
-# user -> (traces/week, agents used, harness, model, cost_range, latency_range)
+# user -> (sessions/week, agents used, harness, model, cost_range)
 USER_ACTIVITY = {
     "eng1@acme.corp": (
         40,
@@ -72,21 +77,19 @@ USER_ACTIVITY = {
         "claude-code",
         "claude-sonnet-4-5",
         (0.03, 0.12),
-        (800, 3000),
     ),
-    "eng2@acme.corp": (15, ["CodeReviewBot", "DocWriter"], "cursor", "claude-sonnet-4-5", (0.03, 0.12), (800, 3000)),
-    "eng3@acme.corp": (5, ["DocWriter"], "kiro", "claude-haiku-4-5", (0.005, 0.02), (200, 800)),
+    "eng2@acme.corp": (15, ["CodeReviewBot", "DocWriter"], "cursor", "claude-sonnet-4-5", (0.03, 0.12)),
+    "eng3@acme.corp": (5, ["DocWriter"], "kiro", "claude-haiku-4-5", (0.005, 0.02)),
     "ds1@acme.corp": (
         30,
         ["DataPipelineAgent", "DocWriter"],
         "claude-code",
         "claude-opus-4-5",
         (0.15, 0.40),
-        (2000, 8000),
     ),
-    "ds2@acme.corp": (10, ["DocWriter"], "cursor", "claude-sonnet-4-5", (0.03, 0.12), (800, 3000)),
-    "qa1@acme.corp": (25, ["TestGenerator"], "claude-code", "claude-sonnet-4-5", (0.03, 0.12), (800, 3000)),
-    "prod1@acme.corp": (8, ["PrototypeHelper"], "cursor", "claude-haiku-4-5", (0.005, 0.02), (200, 800)),
+    "ds2@acme.corp": (10, ["DocWriter"], "cursor", "claude-sonnet-4-5", (0.03, 0.12)),
+    "qa1@acme.corp": (25, ["TestGenerator"], "claude-code", "claude-sonnet-4-5", (0.03, 0.12)),
+    "prod1@acme.corp": (8, ["PrototypeHelper"], "cursor", "claude-haiku-4-5", (0.005, 0.02)),
 }
 
 WEEKS_OF_DATA = 8
@@ -109,16 +112,6 @@ def parse_pg_url(url: str) -> dict:
         "password": parsed.password or "postgres",
         "database": parsed.path.lstrip("/") or "observal",
     }
-
-
-def parse_ch_url(url: str) -> tuple[str, str, str, str]:
-    """Parse CLICKHOUSE_URL into (http_url, db, user, password)."""
-    parsed = urlparse(url.replace("clickhouse://", "http://"))
-    http_url = f"http://{parsed.hostname}:{parsed.port or 8123}"
-    db = parsed.path.strip("/") or "default"
-    user = parsed.username or "default"
-    password = parsed.password or ""
-    return http_url, db, user, password
 
 
 # ---------------------------------------------------------------------------
@@ -178,9 +171,10 @@ async def seed_postgres(pg_url: str, clean: bool) -> dict:
         agent_map: dict[str, uuid.UUID] = {}
         for agent_name, category, status in AGENTS:
             row = await conn.fetchrow(
-                "INSERT INTO agents (id, name, namespace, slug, owner, category, created_by, co_authors, created_at, updated_at) "
-                "VALUES ($1, $2, 'seed', $3, 'seed', $4, $5, '[]'::jsonb, NOW(), NOW()) "
-                "ON CONFLICT (namespace, slug) DO UPDATE SET category = EXCLUDED.category RETURNING id",
+                "INSERT INTO agents (id, name, namespace, slug, owner, is_private, category, created_by, co_authors, created_at, updated_at) "
+                "VALUES ($1, $2, 'seed', $3, 'seed', false, $4, $5, '[]'::jsonb, NOW(), NOW()) "
+                "ON CONFLICT (namespace, slug) WHERE deleted_at IS NULL "
+                "DO UPDATE SET category = EXCLUDED.category RETURNING id",
                 uuid.uuid4(),
                 agent_name,
                 agent_name.lower(),
@@ -227,191 +221,206 @@ async def seed_postgres(pg_url: str, clean: bool) -> dict:
         print("  Inserted download records")
 
         feedbacks = [("CodeReviewBot", [5, 4, 4.5]), ("DocWriter", [4, 4, 4, 4, 4]), ("TestGenerator", [4, 3.6])]
+        # One rating per user per listing: the schema enforces that pair as unique.
+        reviewers = [uid for email, uid in user_map.items() if email != USERS[0][0]]
         for agent_name, ratings in feedbacks:
             agent_id = agent_map.get(agent_name)
             if not agent_id:
                 continue
-            for rating in ratings:
+            for idx, rating in enumerate(ratings):
                 await conn.execute(
                     "INSERT INTO feedback (id, listing_id, listing_type, user_id, rating, comment, created_at) "
-                    "VALUES ($1, $2, 'agent', $3, $4, 'Good', NOW())",
+                    "VALUES ($1, $2, 'agent', $3, $4, 'Good', NOW()) "
+                    "ON CONFLICT (user_id, listing_id, listing_type) DO UPDATE SET rating = EXCLUDED.rating",
                     uuid.uuid4(),
                     agent_id,
-                    admin_id,
+                    reviewers[idx % len(reviewers)],
                     rating,
                 )
         print("  Inserted feedback ratings")
 
-        await conn.execute(
-            "INSERT INTO exec_dashboard_config (id, hourly_dev_cost, pre_ai_baselines, department_budgets, "
-            "target_adoption_pct, created_at, updated_at) VALUES ($1, 85.00, $2, $3, 80, NOW(), NOW()) "
-            "ON CONFLICT DO UPDATE SET hourly_dev_cost = 85.00, pre_ai_baselines = EXCLUDED.pre_ai_baselines",
-            uuid.uuid4(),
-            json.dumps(
-                {
-                    "Code Review": 0.50,
-                    "Testing": 0.35,
-                    "Documentation": 0.25,
-                    "Data": 0.45,
-                    "Security": 0.40,
-                    "Other": 0.30,
-                }
-            ),
-            json.dumps({"Engineering": 5000, "Data Science": 3000, "QA": 2000, "Product": 1000}),
+        baselines = json.dumps(
+            {
+                "Code Review": 0.50,
+                "Testing": 0.35,
+                "Documentation": 0.25,
+                "Data": 0.45,
+                "Security": 0.40,
+                "Other": 0.30,
+            }
         )
-        print("  Created exec_dashboard_config")
+        budgets = json.dumps({"Engineering": 5000, "Data Science": 3000, "QA": 2000, "Product": 1000})
+        # The table holds exactly one row (unique index on a constant expression),
+        # so update it in place when it already exists.
+        config_id = await conn.fetchval("SELECT id FROM exec_dashboard_config LIMIT 1")
+        if config_id:
+            await conn.execute(
+                "UPDATE exec_dashboard_config SET hourly_dev_cost = 85.00, pre_ai_baselines = $1, "
+                "department_budgets = $2, target_adoption_pct = 80, updated_at = NOW() WHERE id = $3",
+                baselines,
+                budgets,
+                config_id,
+            )
+            print("  Updated exec_dashboard_config")
+        else:
+            await conn.execute(
+                "INSERT INTO exec_dashboard_config (id, hourly_dev_cost, pre_ai_baselines, department_budgets, "
+                "target_adoption_pct, created_at, updated_at) VALUES ($1, 85.00, $2, $3, 80, NOW(), NOW())",
+                uuid.uuid4(),
+                baselines,
+                budgets,
+            )
+            print("  Created exec_dashboard_config")
         return {"user_map": user_map, "agent_map": agent_map}
     finally:
         await conn.close()
 
 
 # ---------------------------------------------------------------------------
-# ClickHouse seeding
+# DuckDB analytics seeding
 # ---------------------------------------------------------------------------
 
 
-async def seed_clickhouse(ch_url: str, user_map: dict, agent_map: dict, clean: bool):
-    """Seed traces, spans, and session_events."""
-    http_url, db, ch_user, ch_pass = parse_ch_url(ch_url)
-    params = {"database": db, "user": ch_user, "password": ch_pass}
+async def seed_analytics(duckdb_url: str, duckdb_token: str, user_map: dict, agent_map: dict, clean: bool):
+    """Seed session events plus their summaries into the DuckDB analytics store."""
+    os.environ["DUCKDB_ANALYTICS_URL"] = duckdb_url
+    if duckdb_token:
+        os.environ["DUCKDB_ANALYTICS_TOKEN"] = duckdb_token
 
-    async with httpx.AsyncClient(timeout=30) as client:
+    from services.analytics.duckdb import client as analytics_client
+    from services.analytics.duckdb.insert import insert_session_events, refresh_session_summary
 
-        async def ch_query(sql: str, data: str | None = None):
-            body = f"{sql}\n{data}" if data else sql
-            r = await client.post(http_url, params=params, content=body)
-            if r.status_code != 200:
-                print(f"    CH error: {r.text[:200]}")
-            return r
+    if clean:
+        # Only the rows this script owns: seeded users, one project.
+        seeded_users = ", ".join(f"'{uid}'" for uid in user_map.values())
+        await analytics_client._execute(f"DELETE FROM session_stats_agg WHERE user_id IN ({seeded_users})")
+        await analytics_client._execute(f"DELETE FROM session_events WHERE user_id IN ({seeded_users})")
+        print("  Cleaned seeded analytics rows")
 
-        if clean:
-            await ch_query("TRUNCATE TABLE IF EXISTS traces")
-            await ch_query("TRUNCATE TABLE IF EXISTS spans")
-            await ch_query("TRUNCATE TABLE IF EXISTS session_events")
-            print("  Cleaned ClickHouse tables")
+    now = datetime.now(UTC)
+    session_event_rows: list[dict] = []
+    session_keys: list[tuple[str, str, str]] = []
 
-        now = datetime.now(UTC)
-        trace_rows = []
-        span_rows = []
-        session_event_rows = []
+    for email, activity in USER_ACTIVITY.items():
+        sessions_per_week, agent_names, harness, model, cost_range = activity
+        uid = str(user_map.get(email, ""))
+        if not uid:
+            continue
 
-        for email, activity in USER_ACTIVITY.items():
-            traces_per_week, agent_names, harness, model, cost_range, latency_range = activity
-            uid = str(user_map.get(email, ""))
-            if not uid:
-                continue
+        for week_offset in range(WEEKS_OF_DATA):
+            week_start = now - timedelta(weeks=WEEKS_OF_DATA - week_offset)
+            count = sessions_per_week + random.randint(-3, 3)
 
-            for week_offset in range(WEEKS_OF_DATA):
-                week_start = now - timedelta(weeks=WEEKS_OF_DATA - week_offset)
-                count = traces_per_week + random.randint(-3, 3)
+            for _ in range(max(1, count)):
+                session_id = str(uuid.uuid4())
+                agent_name = random.choice(agent_names)
+                agent_id = str(agent_map.get(agent_name, ""))
+                start_time = week_start + timedelta(
+                    days=random.randint(0, 6),
+                    hours=random.randint(8, 18),
+                    minutes=random.randint(0, 59),
+                )
+                session_keys.append((session_id, uid, harness))
 
-                for _ in range(max(1, count)):
-                    trace_id = str(uuid.uuid4())
-                    agent_name = random.choice(agent_names)
-                    agent_id = str(agent_map.get(agent_name, ""))
-                    start_time = week_start + timedelta(
-                        days=random.randint(0, 6),
-                        hours=random.randint(8, 18),
-                        minutes=random.randint(0, 59),
-                    )
+                # One prompt plus 2-6 tool round trips, then the session total.
+                num_spans = random.randint(2, 6)
+                session_tokens = 0
+                session_cost = 0.0
+                line_offset = 0
 
-                    trace_rows.append(
-                        json.dumps(
-                            {
-                                "trace_id": trace_id,
-                                "project_id": PROJECT_ID,
-                                "agent_id": agent_id,
-                                "user_id": uid,
-                                "harness": harness,
-                                "start_time": start_time.strftime("%Y-%m-%dT%H:%M:%S"),
-                                "trace_type": "agent",
-                                "name": agent_name,
-                                "is_deleted": 0,
-                                "event_ts": start_time.strftime("%Y-%m-%dT%H:%M:%S"),
-                            }
-                        )
-                    )
+                session_event_rows.append(
+                    {
+                        "session_id": session_id,
+                        "project_id": PROJECT_ID,
+                        "user_id": uid,
+                        "agent_id": agent_id,
+                        "harness": harness,
+                        "line_offset": line_offset,
+                        "event_type": "user_prompt",
+                        "timestamp": start_time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "model": model,
+                        "content_preview": f"{agent_name} session",
+                        "content_length": len(agent_name) + 8,
+                    }
+                )
 
-                    # 2-6 spans per trace
-                    num_spans = random.randint(2, 6)
-                    session_tokens = 0
-                    session_cost = 0.0
+                for s_idx in range(num_spans):
+                    line_offset += 1
+                    cost = round(random.uniform(*cost_range), 4)
+                    input_tokens = random.randint(200, 4000)
+                    output_tokens = random.randint(100, 3000)
+                    session_tokens += input_tokens + output_tokens
+                    session_cost += cost
+                    event_time = (start_time + timedelta(seconds=30 * s_idx)).strftime("%Y-%m-%d %H:%M:%S")
 
-                    for s_idx in range(num_spans):
-                        span_id = str(uuid.uuid4())
-                        cost = round(random.uniform(*cost_range), 4)
-                        latency = random.randint(*latency_range)
-                        input_tokens = random.randint(200, 4000)
-                        output_tokens = random.randint(100, 3000)
-                        # 5% error rate, but SecurityScanner gets 25%
-                        error_chance = 0.25 if agent_name == "SecurityScanner" else 0.05
-                        status = "error" if random.random() < error_chance else "success"
-
-                        session_tokens += input_tokens + output_tokens
-                        session_cost += cost
-
-                        span_rows.append(
-                            json.dumps(
-                                {
-                                    "span_id": span_id,
-                                    "trace_id": trace_id,
-                                    "project_id": PROJECT_ID,
-                                    "agent_id": agent_id,
-                                    "user_id": uid,
-                                    "type": "llm",
-                                    "name": model,
-                                    "start_time": (start_time + timedelta(seconds=s_idx)).strftime("%Y-%m-%dT%H:%M:%S"),
-                                    "latency_ms": latency,
-                                    "status": status,
-                                    "cost": cost,
-                                    "token_count_input": input_tokens,
-                                    "token_count_output": output_tokens,
-                                    "token_count_total": input_tokens + output_tokens,
-                                    "harness": harness,
-                                    "is_deleted": 0,
-                                    "event_ts": (start_time + timedelta(seconds=s_idx)).strftime("%Y-%m-%dT%H:%M:%S"),
-                                }
-                            )
-                        )
-
-                    # Session events for session_stats_agg
-                    session_id = str(uuid.uuid4())
                     session_event_rows.append(
-                        json.dumps(
-                            {
-                                "session_id": session_id,
-                                "project_id": PROJECT_ID,
-                                "user_id": uid,
-                                "harness": harness,
-                                "model": model,
-                                "agent_id": agent_id,
-                                "event_type": "session_end",
-                                "timestamp": start_time.strftime("%Y-%m-%dT%H:%M:%S"),
-                                "input_tokens": session_tokens // 2,
-                                "output_tokens": session_tokens // 2,
-                                "credits": session_cost,
-                            }
-                        )
+                        {
+                            "session_id": session_id,
+                            "project_id": PROJECT_ID,
+                            "user_id": uid,
+                            "agent_id": agent_id,
+                            "harness": harness,
+                            "line_offset": line_offset,
+                            "event_type": "tool_call",
+                            "timestamp": event_time,
+                            "model": model,
+                            "tool_name": model,
+                            "tool_id": str(uuid.uuid4()),
+                            "input_tokens": input_tokens,
+                            "output_tokens": output_tokens,
+                            "content_preview": f"{model} call",
+                            "content_length": len(model) + 5,
+                        }
                     )
 
-        # Insert in batches
-        batch_size = 500
-        print(f"  Inserting {len(trace_rows)} traces...")
-        for i in range(0, len(trace_rows), batch_size):
-            batch = "\n".join(trace_rows[i : i + batch_size])
-            await ch_query("INSERT INTO traces FORMAT JSONEachRow", batch)
+                    line_offset += 1
+                    session_event_rows.append(
+                        {
+                            "session_id": session_id,
+                            "project_id": PROJECT_ID,
+                            "user_id": uid,
+                            "agent_id": agent_id,
+                            "harness": harness,
+                            "line_offset": line_offset,
+                            "event_type": "tool_result",
+                            "timestamp": event_time,
+                            "model": model,
+                            "content_preview": "ok" if random.random() >= 0.05 else "error",
+                            "content_length": 2,
+                        }
+                    )
 
-        print(f"  Inserting {len(span_rows)} spans...")
-        for i in range(0, len(span_rows), batch_size):
-            batch = "\n".join(span_rows[i : i + batch_size])
-            await ch_query("INSERT INTO spans FORMAT JSONEachRow", batch)
+                line_offset += 1
+                session_event_rows.append(
+                    {
+                        "session_id": session_id,
+                        "project_id": PROJECT_ID,
+                        "user_id": uid,
+                        "agent_id": agent_id,
+                        "harness": harness,
+                        "line_offset": line_offset,
+                        "event_type": "session_end",
+                        "timestamp": (start_time + timedelta(seconds=30 * num_spans)).strftime("%Y-%m-%d %H:%M:%S"),
+                        "model": model,
+                        "input_tokens": session_tokens // 2,
+                        "output_tokens": session_tokens // 2,
+                        "credits": round(session_cost, 4),
+                    }
+                )
 
-        print(f"  Inserting {len(session_event_rows)} session events...")
-        for i in range(0, len(session_event_rows), batch_size):
-            batch = "\n".join(session_event_rows[i : i + batch_size])
-            await ch_query("INSERT INTO session_events FORMAT JSONEachRow", batch)
+    batch_size = 2000
+    print(f"  Inserting {len(session_event_rows)} session events across {len(session_keys)} sessions...")
+    for i in range(0, len(session_event_rows), batch_size):
+        await insert_session_events(session_event_rows[i : i + batch_size])
 
-        print(f"  Done: {len(trace_rows)} traces, {len(span_rows)} spans, {len(session_event_rows)} sessions")
+    # The dashboard reads session_stats_agg, so rebuild each summary exactly the
+    # way the ingest path does after it writes a session's events.
+    print(f"  Recomputing {len(session_keys)} session summaries...")
+    for session_id, uid, harness in session_keys:
+        await refresh_session_summary(session_id, PROJECT_ID, uid, harness)
+
+    print(f"  Done: {len(session_keys)} sessions, {len(session_event_rows)} events")
+    return {"sessions": len(session_keys), "events": len(session_event_rows)}
 
 
 # ---------------------------------------------------------------------------
@@ -425,7 +434,11 @@ async def main():
         "--pg-url",
         default=os.environ.get("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/observal"),
     )
-    parser.add_argument("--ch-url", default=os.environ.get("CLICKHOUSE_URL", "clickhouse://localhost:8123/observal"))
+    parser.add_argument(
+        "--duckdb-url",
+        default=os.environ.get("DUCKDB_ANALYTICS_URL", "duckdb://localhost:8484/observal"),
+    )
+    parser.add_argument("--duckdb-token", default=os.environ.get("DUCKDB_ANALYTICS_TOKEN", ""))
     parser.add_argument("--clean", action="store_true", help="Delete existing test data first")
     args = parser.parse_args()
 
@@ -434,12 +447,15 @@ async def main():
     print("[1/2] Seeding PostgreSQL...")
     result = await seed_postgres(args.pg_url, args.clean)
 
-    print("\n[2/2] Seeding ClickHouse...")
-    await seed_clickhouse(args.ch_url, result["user_map"], result["agent_map"], args.clean)
+    print("\n[2/2] Seeding the DuckDB analytics store...")
+    counts = await seed_analytics(
+        args.duckdb_url, args.duckdb_token, result["user_map"], result["agent_map"], args.clean
+    )
 
     print("\n=== Done ===")
     print(f"Users: {len(result['user_map'])}")
     print(f"Agents: {len(result['agent_map'])}")
+    print(f"Sessions: {counts['sessions']} ({counts['events']} events)")
     print("\nTo verify: python scripts/verify_exec_dashboard.py --base-url <URL> --token <ADMIN_JWT>")
 
 

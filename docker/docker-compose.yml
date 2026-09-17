@@ -20,10 +20,11 @@ services:
       - ../.env
     environment:
       - JWT_KEY_DIR=/data/keys
+      - DUCKDB_ANALYTICS_URL=duckdb://observal-duckdb:8484/observal
     depends_on:
       observal-db:
         condition: service_healthy
-      observal-clickhouse:
+      observal-duckdb:
         condition: service_healthy
       observal-redis:
         condition: service_healthy
@@ -58,6 +59,7 @@ services:
       - ../.env
     environment:
       - JWT_KEY_DIR=/data/keys
+      - DUCKDB_ANALYTICS_URL=duckdb://observal-duckdb:8484/observal
       - MIGRATION_ARTIFACT_ROOT=/data/migration_artifacts
       - SKIP_DDL_ON_STARTUP=true
       - DEMO_SUPER_ADMIN_EMAIL=${DEMO_SUPER_ADMIN_EMAIL:-super@demo.example}
@@ -100,6 +102,42 @@ services:
     networks:
       - observal-net
 
+  # DuckDB analytics store: the only writer of the analytics database file.
+  observal-duckdb:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.duckdb
+    image: ghcr.io/observal/observal-duckdb:latest
+    env_file:
+      - ../.env
+    environment:
+      DUCKDB_PATH: /data/analytics.duckdb
+      DUCKDB_MEMORY_LIMIT: ${DUCKDB_MEMORY_LIMIT:-2GB}
+      DUCKDB_THREADS: ${DUCKDB_THREADS:-4}
+    volumes:
+      - duckdbdata:/data
+    ports:
+      - "127.0.0.1:${DUCKDB_HOST_PORT:-8484}:8484"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          '/app/.venv/bin/python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8484/health'')"',
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: ${DUCKDB_MEMORY_LIMIT:-2GB}
+    networks:
+      - observal-net
+
   observal-db:
     image: postgres:18
     ports:
@@ -127,35 +165,6 @@ services:
       resources:
         limits:
           memory: 512M
-    networks:
-      - observal-net
-
-  observal-clickhouse:
-    image: clickhouse/clickhouse-server:26.6
-    ports:
-      - "127.0.0.1:${CLICKHOUSE_HOST_PORT:-8123}:8123"
-    env_file:
-      - ../.env
-    environment:
-      CLICKHOUSE_DB: observal
-      MAX_SERVER_MEMORY_USAGE_RATIO: "0.8"
-    volumes:
-      - chdata:/var/lib/clickhouse
-      - ./clickhouse/config.d:/etc/clickhouse-server/config.d:ro
-      - ./clickhouse/users.d:/etc/clickhouse-server/users.d
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "clickhouse-client --password ${CLICKHOUSE_PASSWORD:-clickhouse} --query 'SELECT 1'",
-        ]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-    deploy:
-      resources:
-        limits:
-          memory: ${CLICKHOUSE_MEMORY_LIMIT:-2G}
     networks:
       - observal-net
 
@@ -193,6 +202,7 @@ services:
       - ../.env
     environment:
       - MIGRATION_ARTIFACT_ROOT=/data/migration_artifacts
+      - DUCKDB_ANALYTICS_URL=duckdb://observal-duckdb:8484/observal
     volumes:
       - apidata:/data
     depends_on:
@@ -265,7 +275,7 @@ services:
 
 volumes:
   pgdata:
-  chdata:
+  duckdbdata:
   redisdata:
   apidata:
 

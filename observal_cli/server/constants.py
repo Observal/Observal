@@ -24,15 +24,13 @@ KEYS_DIR = OBSERVAL_HOME / "keys"
 # ── Service ports (non-standard to avoid conflicts) ─────────────
 
 POSTGRES_PORT = 5480
-CLICKHOUSE_HTTP_PORT = 8124
-CLICKHOUSE_TCP_PORT = 9100
+ANALYTICS_HTTP_PORT = 8124
 REDIS_PORT = 6380
 API_PORT = 8000
 
 # ── Dependency versions ────────────────────────────────────────
 
 POSTGRES_VERSION = "18"
-CLICKHOUSE_VERSION = "26.4"
 REDIS_VERSION = "8.0"
 
 # ── GitHub repo for downloads ──────────────────────────────────
@@ -78,13 +76,8 @@ def get_dep_urls() -> dict[str, str]:
 
     base = f"https://github.com/{GITHUB_REPO}/releases/download/{DEPS_RELEASE_TAG}"
 
-    # ClickHouse uses different naming
-    ch_arch = "amd64" if arch == "x64" else "aarch64"
-    ch_os = "linux" if os_name == "linux" else "macos"
-
     return {
         "postgres": f"{base}/pg-{os_name}-{arch}.tar.gz",
-        "clickhouse": f"{base}/clickhouse-{ch_os}-{ch_arch}.tar.gz",
         "redis": f"{base}/redis-{os_name}-{arch}.tar.gz",
     }
 
@@ -100,7 +93,6 @@ def get_bin_paths() -> dict[str, Path]:
         "pg_ctl": BIN_DIR / "pg_ctl",
         "pg_isready": BIN_DIR / "pg_isready",
         "createdb": BIN_DIR / "createdb",
-        "clickhouse": BIN_DIR / "clickhouse",
         "redis_server": BIN_DIR / "redis-server",
         "redis_cli": BIN_DIR / "redis-cli",
     }
@@ -113,7 +105,7 @@ def get_pid_paths() -> dict[str, Path]:
     """Get PID file paths for each service."""
     return {
         "postgres": RUN_DIR / "postgres.pid",
-        "clickhouse": RUN_DIR / "clickhouse.pid",
+        "analytics": RUN_DIR / "analytics.pid",
         "redis": RUN_DIR / "redis.pid",
         "api": RUN_DIR / "api.pid",
     }
@@ -126,6 +118,6 @@ def get_data_paths() -> dict[str, Path]:
     """Get data directory paths for each service."""
     return {
         "postgres": DATA_DIR / "pg",
-        "clickhouse": DATA_DIR / "ch",
+        "analytics": DATA_DIR / "duckdb",
         "redis": DATA_DIR / "redis",
     }

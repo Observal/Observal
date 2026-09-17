@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Observal
 # SPDX-License-Identifier: Apache-2.0
 
-# Backups bucket — ClickHouse snapshots, Postgres dumps, ad-hoc data exports.
+# Backups bucket — DuckDB snapshots, Postgres dumps, ad-hoc data exports.
 
 resource "aws_s3_bucket" "backups" {
   bucket        = "${local.name}-backups-${data.aws_caller_identity.current.account_id}"

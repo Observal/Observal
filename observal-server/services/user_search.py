@@ -133,28 +133,26 @@ def _dedupe(values: Iterable[str]) -> list[str]:
     return result
 
 
-def clickhouse_in_condition(column: str, values: list[str], prefix: str, params: dict[str, str]) -> str | None:
+def analytics_in_condition(column: str, values: list[str], prefix: str, params: dict[str, object]) -> str | None:
+    """Bind *values* as a list parameter and return a DuckDB IN condition."""
     if not values:
         return None
-    placeholders = []
-    for idx, value in enumerate(values):
-        name = f"{prefix}_{idx}"
-        placeholders.append(f"{{{name}:String}}")
-        params[f"param_{name}"] = value
-    return f"{column} IN ({', '.join(placeholders)})"
+    name = f"{prefix}_values"
+    params[name] = [str(value) for value in values]
+    return f"list_contains(CAST(${name} AS VARCHAR[]), {column})"
 
 
-def clickhouse_user_conditions(
+def analytics_user_conditions(
     *,
     id_column: str,
     email_column: str,
     values: UserFilterValues,
     prefix: str,
-    params: dict[str, str],
+    params: dict[str, object],
 ) -> list[str]:
     conditions = []
-    id_condition = clickhouse_in_condition(id_column, values.ids, f"{prefix}_id", params)
-    email_condition = clickhouse_in_condition(email_column, values.emails, f"{prefix}_email", params)
+    id_condition = analytics_in_condition(id_column, values.ids, f"{prefix}_id", params)
+    email_condition = analytics_in_condition(email_column, values.emails, f"{prefix}_email", params)
     if id_condition:
         conditions.append(id_condition)
     if email_condition:

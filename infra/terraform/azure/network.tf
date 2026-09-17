@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Tanvi Reddy
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 resource "azurerm_virtual_network" "main" {
@@ -41,7 +42,7 @@ resource "azurerm_subnet" "data" {
   }
 }
 
-# VM subnet for ClickHouse host
+# VM subnet for the analytics data host
 resource "azurerm_subnet" "vm" {
   name                 = "${local.name}-vm"
   resource_group_name  = azurerm_resource_group.main.name
@@ -57,13 +58,13 @@ resource "azurerm_network_security_group" "vm" {
   tags                = local.tags
 
   security_rule {
-    name                       = "AllowClickHouseFromVNet"
+    name                       = "AllowAnalyticsFromVNet"
     priority                   = 100
     direction                  = "Inbound"
     access                     = "Allow"
     protocol                   = "Tcp"
     source_port_range          = "*"
-    destination_port_range     = "8123"
+    destination_port_range     = "8484"
     source_address_prefix      = var.vnet_cidr
     destination_address_prefix = "*"
   }

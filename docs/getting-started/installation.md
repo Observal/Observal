@@ -9,7 +9,7 @@ Observal has two parts: a **server** you self-host and a **CLI** installed on ea
 
 ## Install the server
 
-The server runs as a Docker Compose stack (API, web UI, PostgreSQL, ClickHouse, Redis, worker, load balancer). Prometheus and Grafana are optional deployment overlays.
+The server runs as a Docker Compose stack (API, web UI, PostgreSQL, DuckDB, Redis, worker, load balancer). Prometheus and Grafana are optional deployment overlays.
 
 > [!NOTE]
 > Requires Docker Engine ≥ 24.0 with Compose v2 (`docker compose`, not `docker-compose`). Homebrew's Docker formula is outdated. Install [Docker Desktop](https://docs.docker.com/get-docker/) or use your distro's upstream packages. Verify with `docker version` and `docker compose version`.

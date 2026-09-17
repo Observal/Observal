@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """End-to-end integration test for the support bundle feature.
@@ -46,8 +47,8 @@ def _full_server_response() -> dict:
                     "app_version": "0.9.5",
                     "build_hash": "abc123def456",
                     "alembic_revision": "a1b2c3d4e5f6",
-                    "clickhouse_version": "24.3.1.2672",
-                    "clickhouse_tables": ["traces", "spans", "scores"],
+                    "analytics_version": "v1.5.5",
+                    "analytics_tables": ["session_events", "audit_log", "security_events"],
                 },
             },
             "health": {
@@ -55,7 +56,7 @@ def _full_server_response() -> dict:
                 "duration_ms": 28,
                 "data": {
                     "postgres": {"status": "ok", "latency_ms": 3},
-                    "clickhouse": {"status": "ok", "latency_ms": 7},
+                    "analytics": {"status": "ok", "latency_ms": 7},
                     "redis": {"status": "ok", "latency_ms": 1},
                     "otel_collector": {"status": "ok", "latency_ms": 12},
                 },
@@ -65,7 +66,7 @@ def _full_server_response() -> dict:
                 "duration_ms": 5,
                 "data": {
                     "DATABASE_URL": "postgresql+asyncpg://admin:s3cret@localhost:5432/observal",
-                    "CLICKHOUSE_URL": "clickhouse://default:pass@localhost:8123/observal",
+                    "DUCKDB_ANALYTICS_URL": "duckdb://analytics:8484/observal",
                     "REDIS_URL": "redis://localhost:6379",
                     "REDIS_SOCKET_TIMEOUT": 5,
                     "EVAL_MODEL_NAME": "gpt-4",
@@ -95,10 +96,10 @@ def _full_server_response() -> dict:
                         "mcp_listings": 8,
                         "feedback": 200,
                     },
-                    "ch_table_counts": {
-                        "traces": 1000000,
-                        "spans": 5000000,
-                        "scores": 50000,
+                    "analytics_table_counts": {
+                        "session_events": 1000000,
+                        "audit_log": 5000000,
+                        "session_stats_agg": 50000,
                     },
                 },
             },
@@ -112,7 +113,7 @@ def _full_server_response() -> dict:
                             "count": 12,
                             "first_seen": "2025-07-14T10:00:00Z",
                             "last_seen": "2025-07-15T08:30:00Z",
-                            "stack_template": "api/routes/telemetry.py:ingest -> services/clickhouse.py:insert_batch",
+                            "stack_template": "api/routes/telemetry.py:ingest -> services/analytics/duckdb/insert.py:insert_batch",
                         }
                     ]
                 },
@@ -219,13 +220,13 @@ class TestSupportBundleIntegration:
             )
 
     def test_versions_directory_files(self, bundle_path):
-        """versions/ should contain app.json, alembic.json, clickhouse.json."""
+        """versions/ should contain app.json, alembic.json, analytics.json."""
         with tarfile.open(bundle_path, "r:gz") as tar:
             names = tar.getnames()
 
         assert "versions/app.json" in names
         assert "versions/alembic.json" in names
-        assert "versions/clickhouse.json" in names
+        assert "versions/analytics.json" in names
 
     def test_health_directory_files(self, bundle_path):
         """health/ should contain per-service JSON files."""
@@ -234,17 +235,17 @@ class TestSupportBundleIntegration:
 
         health_files = [n for n in names if n.startswith("health/")]
         assert "health/postgres.json" in names
-        assert "health/clickhouse.json" in names
+        assert "health/analytics.json" in names
         assert "health/redis.json" in names
         assert "health/otel_collector.json" in names
 
     def test_aggregates_directory_files(self, bundle_path):
-        """aggregates/ should contain pg_table_counts.json and ch_table_counts.json."""
+        """aggregates/ should contain pg_table_counts.json and analytics_table_counts.json."""
         with tarfile.open(bundle_path, "r:gz") as tar:
             names = tar.getnames()
 
         assert "aggregates/pg_table_counts.json" in names
-        assert "aggregates/ch_table_counts.json" in names
+        assert "aggregates/analytics_table_counts.json" in names
 
     def test_errors_directory_files(self, bundle_path):
         """errors/ should contain recent_errors.json."""
@@ -419,14 +420,14 @@ class TestSupportBundleIntegration:
         assert "current_revision" in data
         assert data["current_revision"] == "a1b2c3d4e5f6"
 
-    def test_versions_clickhouse_json_content(self, bundle_path):
-        """versions/clickhouse.json should contain server_version and tables."""
+    def test_versions_analytics_json_content(self, bundle_path):
+        """versions/analytics.json should contain server_version and tables."""
         with tarfile.open(bundle_path, "r:gz") as tar:
-            data = json.loads(tar.extractfile(tar.getmember("versions/clickhouse.json")).read())
+            data = json.loads(tar.extractfile(tar.getmember("versions/analytics.json")).read())
 
         assert "server_version" in data
         assert "tables" in data
-        assert data["server_version"] == "24.3.1.2672"
+        assert data["server_version"] == "v1.5.5"
         assert isinstance(data["tables"], list)
 
     def test_config_excludes_secrets(self, bundle_path):
@@ -450,12 +451,12 @@ class TestSupportBundleIntegration:
         """Aggregate files should contain table count data."""
         with tarfile.open(bundle_path, "r:gz") as tar:
             pg_data = json.loads(tar.extractfile(tar.getmember("aggregates/pg_table_counts.json")).read())
-            ch_data = json.loads(tar.extractfile(tar.getmember("aggregates/ch_table_counts.json")).read())
+            analytics_data = json.loads(tar.extractfile(tar.getmember("aggregates/analytics_table_counts.json")).read())
 
         assert isinstance(pg_data, dict)
-        assert isinstance(ch_data, dict)
+        assert isinstance(analytics_data, dict)
         assert pg_data.get("users") == 42
-        assert ch_data.get("traces") == 1000000
+        assert analytics_data.get("session_events") == 1000000
 
     def test_errors_contain_fingerprints(self, bundle_path):
         """errors/recent_errors.json should contain fingerprint data."""

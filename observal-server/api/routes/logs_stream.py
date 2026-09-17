@@ -8,7 +8,7 @@ Streams from the in-memory ring buffer with optional level/text filtering.
 
 Usage:
     observal ops logs --remote
-    observal ops logs --remote --level WARNING --filter clickhouse
+    observal ops logs --remote --level WARNING --filter analytics
     curl -N -H "Authorization: Bearer <token>" https://host/api/v1/admin/logs/stream
 """
 

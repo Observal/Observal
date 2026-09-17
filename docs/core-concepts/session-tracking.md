@@ -123,7 +123,7 @@ This repair handles interrupted uploads and stale cursors. It cannot recover a s
 
 ## Server processing
 
-The ingest endpoint validates batch size, line size, ordered byte offsets, finalization metadata, and authentication. It stores raw source records in ClickHouse `session_events` and classifies them with the registered harness parser.
+The ingest endpoint validates batch size, line size, ordered byte offsets, finalization metadata, and authentication. It stores raw source records in DuckDB `session_events` and classifies them with the registered harness parser.
 
 Session records include agent ID, agent version, and layer hash when attribution is available. Claude Code subagent records can also include a parent session ID. Kiro can report total session credits as durable metadata.
 

@@ -21,7 +21,7 @@ Everything you need to get Observal running locally for development or self-host
 | **Docker Engine** | 24.0+ with Compose v2 | Use `docker compose` (not `docker-compose`). Homebrew Docker is often outdated - use [Docker Desktop](https://docs.docker.com/get-docker/) or your distro's upstream packages. Check with `docker version` and `docker compose version`. |
 | **Python**        | 3.11+                 | Only needed if you install the CLI via Python or run tests.                                                                                                                                                                              |
 | **uv**            | latest                | Recommended for CLI dev installs: `curl -LsSf https://astral.sh/uv/install.sh \| sh`                                                                                                                                                     |
-| **RAM**           | 4 GB+                 | ClickHouse is the memory consumer. 6 GB recommended for comfortable use.                                                                                                                                                                 |
+| **RAM**           | 4 GB+                 | The DuckDB analytics service is the memory consumer. 6 GB recommended for comfortable use.                                                                                                                                               |
 | **Disk**          | 5 GB+                 | For Docker images and data volumes.                                                                                                                                                                                                      |
 
 ---
@@ -36,7 +36,7 @@ cp .env.example .env
 
 `.env.example` ships with working defaults; you don't need to edit anything for local development. Demo accounts (`super@demo.example` / `super-changeme`, etc.) are seeded automatically on first start.
 
-> **Before a real deployment from source:** change `SECRET_KEY`, `POSTGRES_PASSWORD`, `CLICKHOUSE_PASSWORD`, and unset all `DEMO_*` variables. Server-package installs generate these credentials as files automatically. See the [Self-hosting overview](docs/self-hosting/README.md), [Configuration](docs/self-hosting/configuration.md), [Databases](docs/self-hosting/databases.md), and [Upgrades](docs/self-hosting/upgrades.md).
+> **Before a real deployment from source:** change `SECRET_KEY`, `POSTGRES_PASSWORD`, `DUCKDB_ANALYTICS_TOKEN`, and unset all `DEMO_*` variables. Server-package installs generate these credentials as files automatically. See the [Self-hosting overview](docs/self-hosting/README.md), [Configuration](docs/self-hosting/configuration.md), [Databases](docs/self-hosting/databases.md), and [Upgrades](docs/self-hosting/upgrades.md).
 
 ---
 
@@ -64,7 +64,7 @@ First build pulls images and compiles the Vite frontend. Expect 3 to 5 minutes. 
 | `observal-worker`     | internal                | Background jobs (arq)                    |
 | `observal-init`       | internal                | Runs DB migrations on startup then exits |
 | `observal-db`         | `localhost:5432`        | PostgreSQL 16 (registry data)            |
-| `observal-clickhouse` | `localhost:8123`        | ClickHouse (session and audit events)    |
+| `observal-duckdb`     | `localhost:8484`        | DuckDB analytics (session and audit events) |
 | `observal-redis`      | `localhost:6379`        | Job queue + pub/sub                      |
 | `observal-prometheus` | `http://localhost:9090` | Metrics scraping                         |
 | `observal-grafana`    | `http://localhost:3001` | Metrics dashboards                       |
@@ -77,7 +77,7 @@ First build pulls images and compiles the Vite frontend. Expect 3 to 5 minutes. 
 docker compose -f docker/docker-compose.yml ps
 ```
 
-All services except `observal-init` (which exits after migrations) should show `healthy` or `running`. The API waits for Postgres, ClickHouse, and Redis before starting. Allow 15–30 seconds on first boot.
+All services except `observal-init` (which exits after migrations) should show `healthy` or `running`. The API waits for Postgres, the DuckDB analytics service, and Redis before starting. Allow 15–30 seconds on first boot.
 
 Confirm the API is up:
 
@@ -215,7 +215,7 @@ Every host port is overridable via env var:
 | `API_HOST_PORT`        | `8000`  | nginx LB → API |
 | `WEB_HOST_PORT`        | `3000`  | Web UI         |
 | `POSTGRES_HOST_PORT`   | `5432`  | PostgreSQL     |
-| `CLICKHOUSE_HOST_PORT` | `8123`  | ClickHouse     |
+| `DUCKDB_HOST_PORT`     | `8484`  | DuckDB         |
 | `REDIS_HOST_PORT`      | `6379`  | Redis          |
 | `PROMETHEUS_HOST_PORT` | `9090`  | Prometheus     |
 | `GRAFANA_HOST_PORT`    | `3001`  | Grafana        |

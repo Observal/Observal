@@ -21,7 +21,7 @@ import orjson
 import xxhash
 from loguru import logger as optic
 
-from services.clickhouse import (
+from services.analytics.duckdb import (
     insert_session_checkpoint,
     insert_session_events,
     query_existing_for_dedup,

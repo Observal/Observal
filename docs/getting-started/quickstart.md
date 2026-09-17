@@ -47,12 +47,12 @@ That's it. The `.env.example` ships with working defaults. The core services com
 | `observal-worker`     | internal                | Background jobs (arq)          |
 | `observal-init`       | internal                | Runs DB migrations, then exits |
 | `observal-db`         | `localhost:5432`        | PostgreSQL 16                  |
-| `observal-clickhouse` | `localhost:8123`        | ClickHouse                     |
+| `observal-duckdb` | `localhost:8123`        | DuckDB                     |
 | `observal-redis`      | `localhost:6379`        | Redis                          |
 
 Optional monitoring can be enabled with `make up-prometheus` or `make up-observability`. Prometheus listens on `http://localhost:9090`; Grafana listens on `http://localhost:3001` when the Grafana profile is enabled.
 
-The API waits for Postgres, ClickHouse, and Redis to pass health checks before starting. Expect 15–30 seconds. Confirm it is up:
+The API waits for Postgres, DuckDB, and Redis to pass health checks before starting. Expect 15–30 seconds. Confirm it is up:
 
 ```bash
 curl http://localhost/health
@@ -142,7 +142,7 @@ flowchart LR
     transcript[Local session transcript]
     hook[Session hook or extension]
     api[Session ingest API]
-    ch[(ClickHouse)]
+    ch[(DuckDB)]
     ui[Web UI]
 
     harness --> transcript

@@ -43,13 +43,13 @@ variable "subnet_container_apps_cidr" {
 }
 
 variable "subnet_data_cidr" {
-  description = "CIDR for the data tier subnet (PostgreSQL, Redis, ClickHouse VM)."
+  description = "CIDR for the data tier subnet (PostgreSQL, Redis, analytics VM)."
   type        = string
   default     = "10.42.4.0/24"
 }
 
 variable "subnet_vm_cidr" {
-  description = "CIDR for the ClickHouse VM subnet."
+  description = "CIDR for the analytics VM subnet."
   type        = string
   default     = "10.42.5.0/24"
 }
@@ -156,40 +156,16 @@ variable "worker_max_replicas" {
   default     = 5
 }
 
-# -- Data tier (ClickHouse) --------------------------------------------------
+# -- Data tier (DuckDB analytics) --------------------------------------------
 
-variable "clickhouse_mode" {
-  description = "Where ClickHouse lives. 'self_hosted' = Azure VM. 'cloud' = ClickHouse Cloud (supply clickhouse_cloud_url + clickhouse_cloud_password)."
-  type        = string
-  default     = "self_hosted"
-  validation {
-    condition     = contains(["self_hosted", "cloud"], var.clickhouse_mode)
-    error_message = "clickhouse_mode must be 'self_hosted' or 'cloud'."
-  }
-}
-
-variable "clickhouse_cloud_url" {
-  description = "ClickHouse Cloud DSN. Required when clickhouse_mode = 'cloud'."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "clickhouse_cloud_password" {
-  description = "ClickHouse Cloud password. Required when clickhouse_mode = 'cloud'."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "clickhouse_vm_size" {
-  description = "Azure VM size for the ClickHouse host."
+variable "analytics_vm_size" {
+  description = "Azure VM size for the DuckDB analytics host."
   type        = string
   default     = "Standard_D2ads_v7"
 }
 
-variable "clickhouse_disk_size_gb" {
-  description = "Size of the managed disk for ClickHouse data."
+variable "analytics_disk_size_gb" {
+  description = "Size of the managed disk for DuckDB analytics data."
   type        = number
   default     = 100
 }
@@ -209,7 +185,7 @@ variable "postgresql_storage_gb" {
 }
 
 variable "redis_mode" {
-  description = "Where Redis lives. 'self_hosted' = on ClickHouse VM via Docker. 'enterprise' = Azure Managed Redis (requires Enterprise quota)."
+  description = "Where Redis lives. 'self_hosted' = on the analytics data VM via Docker. 'enterprise' = Azure Managed Redis (requires Enterprise quota)."
   type        = string
   default     = "self_hosted"
   validation {

@@ -5,7 +5,7 @@
 
 OpenCode's telemetry plugin converts messages to a Claude-Code-compatible
 JSONL format before pushing to the Observal ingest endpoint. This parser
-handles the read path (ClickHouse rows -> frontend events).
+handles the read path (DuckDB rows -> frontend events).
 
 The format is nearly identical to Claude Code's JSONL:
   { "type": "user"|"assistant", "timestamp": "...", "uuid": "...",

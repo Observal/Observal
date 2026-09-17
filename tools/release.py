@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Prepare a curated Observal release from a safe, contiguous main-branch cutoff."""
@@ -310,7 +311,7 @@ def migration_changes(changes: list[Change]) -> list[Change]:
             paths.update(run("git", "diff-tree", "--no-commit-id", "--name-only", "-r", sha).splitlines())
         if any(
             path.startswith("observal-server/alembic/versions/")
-            or path.startswith("observal-server/clickhouse/migrations/")
+            or path.startswith("observal-server/analytics/migrations/")
             for path in paths
         ):
             result.append(change)

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 #
 # Deploy Observal onto the EC2 instance provisioned by Terraform.
@@ -119,26 +120,22 @@ done
 
 echo "Setting up Observal server package..."
 
-# Clone only the server-package config files (nginx, grafana, clickhouse configs)
-run_remote "rm -rf /opt/observal && git clone --depth 1 --branch $OBSERVAL_REF $OBSERVAL_REPO /opt/observal-src && mkdir -p /opt/observal && cp /opt/observal-src/docker/server-package/* /opt/observal/ && cp -r /opt/observal-src/docker/server-package/clickhouse /opt/observal/ 2>/dev/null || true && cp -r /opt/observal-src/docker/server-package/grafana /opt/observal/ 2>/dev/null || true && cp -r /opt/observal-src/docker/server-package/prometheus* /opt/observal/ 2>/dev/null || true && rm -rf /opt/observal-src"
+# Clone only the server-package config files (nginx, grafana, prometheus configs)
+run_remote "rm -rf /opt/observal && git clone --depth 1 --branch $OBSERVAL_REF $OBSERVAL_REPO /opt/observal-src && mkdir -p /opt/observal && cp /opt/observal-src/docker/server-package/* /opt/observal/ && cp -r /opt/observal-src/docker/server-package/grafana /opt/observal/ 2>/dev/null || true && cp -r /opt/observal-src/docker/server-package/prometheus* /opt/observal/ 2>/dev/null || true && rm -rf /opt/observal-src"
 
-# ── Configure .env ───────────────────────────────────────────────────────────
+# ── Configure .env and secrets ───────────────────────────────────────────────
 
 echo "Configuring environment..."
-SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))" 2>/dev/null || openssl rand -base64 32)
-POSTGRES_PW=$(python3 -c "import secrets; print(secrets.token_urlsafe(18))" 2>/dev/null || openssl rand -base64 18)
-CLICKHOUSE_PW=$(python3 -c "import secrets; print(secrets.token_urlsafe(18))" 2>/dev/null || openssl rand -base64 18)
-GRAFANA_PW=$(python3 -c "import secrets; print(secrets.token_urlsafe(18))" 2>/dev/null || openssl rand -base64 18)
-
 FRONTEND_URL="${DOMAIN:+https://$DOMAIN}"
 FRONTEND_URL="${FRONTEND_URL:-http://$PUBLIC_IP}"
 
-# Generate .env from template
-run_remote "cd /opt/observal && cp env.template .env && sed -i 's|__SECRET_KEY__|$SECRET_KEY|g' .env && sed -i 's|__POSTGRES_PASSWORD__|$POSTGRES_PW|g' .env && sed -i 's|__CLICKHOUSE_PASSWORD__|$CLICKHOUSE_PW|g' .env && sed -i 's|__FRONTEND_URL__|$FRONTEND_URL|g' .env && echo 'OBSERVAL_VERSION=$IMAGE_TAG' >> .env && chmod 600 .env"
-
-if [ "$OBSERVABILITY_STACK" = "grafana" ]; then
-  run_remote "cd /opt/observal && echo 'GRAFANA_ADMIN_USER=admin' >> .env && echo 'GRAFANA_ADMIN_PASSWORD=$GRAFANA_PW' >> .env"
-fi
+# The packaged installer owns secret generation and the file-backed .env layout
+# (docker/server-package/setup.sh), including the DuckDB bearer token that the
+# API, worker and analytics service all share. Its prompts are: frontend URL,
+# HTTP bind address, observability stack. Loopback stays the bind default: the
+# compose load balancer publishes 80/443 itself.
+run_remote "cd /opt/observal && printf '%s\n%s\n%s\n' '$FRONTEND_URL' '127.0.0.1' '$OBSERVABILITY_STACK' | bash setup.sh"
+run_remote "cd /opt/observal && echo 'OBSERVAL_VERSION=$IMAGE_TAG' >> .env && chmod 600 .env"
 
 # Apply env overrides (skip empty values)
 while IFS='=' read -r key value; do

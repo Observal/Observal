@@ -57,7 +57,7 @@ JSON returns:
 Remote collectors use `POST /api/v1/support/collect` and require an administrator account. They provide:
 
 * Application and migration versions
-* PostgreSQL, ClickHouse, and Redis health
+* PostgreSQL, DuckDB, and Redis health
 * Allowlisted configuration
 * Aggregate table counts
 * Error fingerprints

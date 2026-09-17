@@ -18,28 +18,23 @@ TIME_PURGE_TABLES = {"session_events": "timestamp"}
 
 async def _delete_batch(table: str, time_col: str, project_id: str, cutoff_str: str) -> int:
     """Execute a lightweight delete and return one on success."""
-    from services.clickhouse import _query
+    from services.analytics.duckdb import _execute
 
-    sql = (
-        f"DELETE FROM {table} "
-        f"WHERE project_id = {{pid:String}} AND {time_col} < {{cutoff:String}} "
-        "SETTINGS lightweight_deletes_sync = 0"
-    )
-    response = await _query(sql, {"param_pid": project_id, "param_cutoff": cutoff_str})
-    if response.status_code != 200:
-        optic.warning(
-            "retention delete failed on table {} (status={}): {}", table, response.status_code, response.text[:200]
-        )
+    sql = f"DELETE FROM {table} WHERE project_id = $pid AND {time_col} < CAST($cutoff AS TIMESTAMP)"
+    try:
+        await _execute(sql, {"pid": project_id, "cutoff": cutoff_str})
+    except Exception as e:
+        optic.warning("retention delete failed on table {}: {}", table, e)
         return 0
     return 1
 
 
 async def _has_data(project_id: str) -> bool:
-    from services.clickhouse import _query
+    from services.analytics.duckdb import _query
 
     response = await _query(
-        "SELECT 1 FROM session_events WHERE project_id = {pid:String} LIMIT 1 FORMAT JSON",
-        {"param_pid": project_id},
+        "SELECT 1 AS present FROM session_events WHERE project_id = $pid LIMIT 1",
+        {"pid": project_id},
     )
     if response.status_code != 200:
         return False
@@ -66,17 +61,21 @@ async def _purge_time_based(project_id: str, cutoff_str: str, tables: dict[str, 
 
 
 async def _purge_session_stats_orphans(project_id: str) -> int:
-    from services.clickhouse import _query
+    from services.analytics.duckdb import _execute
 
     sql = (
         "DELETE FROM session_stats_agg "
-        "WHERE project_id = {pid:String} "
+        "WHERE project_id = $pid "
         "AND session_id NOT IN ("
-        "  SELECT DISTINCT session_id FROM session_events WHERE project_id = {pid2:String}"
-        ") SETTINGS lightweight_deletes_sync = 0"
+        "  SELECT DISTINCT session_id FROM session_events WHERE project_id = $pid2"
+        ")"
     )
-    response = await _query(sql, {"param_pid": project_id, "param_pid2": project_id})
-    return 1 if response.status_code == 200 else 0
+    try:
+        await _execute(sql, {"pid": project_id, "pid2": project_id})
+    except Exception as e:
+        optic.warning("session_stats_agg orphan purge failed: {}", e)
+        return 0
+    return 1
 
 
 async def _purge_insight_reports(score_cutoff: datetime) -> int:
@@ -98,15 +97,15 @@ async def _purge_insight_reports(score_cutoff: datetime) -> int:
 
 
 async def _purge_count_based(project_id: str, max_trace_count: int) -> int:
-    from services.clickhouse import _query
+    from services.analytics.duckdb import _query
 
     sql = (
-        "SELECT toDate(timestamp) AS day, count(DISTINCT session_id) AS cnt "
-        "FROM session_events WHERE project_id = {pid:String} "
+        "SELECT CAST(timestamp AS DATE) AS day, count(DISTINCT session_id) AS cnt "
+        "FROM session_events WHERE project_id = $pid "
         "AND timestamp >= now() - INTERVAL 730 DAY "
-        "GROUP BY day ORDER BY day DESC LIMIT 730 FORMAT JSON"
+        "GROUP BY day ORDER BY day DESC LIMIT 730"
     )
-    response = await _query(sql, {"param_pid": project_id})
+    response = await _query(sql, {"pid": project_id})
     if response.status_code != 200:
         return 0
     data = response.json().get("data", [])

@@ -14,7 +14,7 @@ Deploy Observal on a single EC2 instance with everything running in Docker. Simp
 - **IAM instance profile** (SSM access for remote management — no SSH keys needed)
 - **Route53 DNS record** (optional)
 
-All Observal components (API, web frontend, worker, PostgreSQL, Redis, ClickHouse, Grafana, nginx) run as Docker containers on the single instance.
+All Observal components (API, web frontend, worker, PostgreSQL, Redis, DuckDB analytics, Grafana, nginx) run as Docker containers on the single instance.
 
 ## Architecture
 
@@ -32,7 +32,7 @@ All Observal components (API, web frontend, worker, PostgreSQL, Redis, ClickHous
 │  └─────────┘  └─────────┘  └─────────┘  │
 │                                         │
 │  ┌───────────┐  ┌──────────┐            │
-│  │ClickHouse │  │ Grafana  │            │
+│  │  DuckDB   │  │ Grafana  │            │
 │  └───────────┘  └──────────┘            │
 └─────────────────────────────────────────┘
 ```

@@ -218,7 +218,7 @@ def _sql(statement) -> str:
 @pytest.fixture
 def boundaries(monkeypatch):
     import services.agent_snapshot as snapshot
-    import services.clickhouse as clickhouse
+    import services.analytics.duckdb as clickhouse
     import services.model_resolver as model_resolver
 
     load = AsyncMock()
@@ -323,7 +323,7 @@ def test_summary_and_detail_serialize_version_owned_fields():
 
 
 async def test_legacy_audit_shim_is_a_noop_and_never_reaches_clickhouse(monkeypatch):
-    import services.clickhouse as clickhouse
+    import services.analytics.duckdb as clickhouse
 
     insert = AsyncMock()
     monkeypatch.setattr(clickhouse, "insert_audit_log", insert)

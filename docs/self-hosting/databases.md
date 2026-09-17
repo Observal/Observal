@@ -8,7 +8,7 @@ Observal runs two DBs with very different jobs.
 | DB | Role | Access pattern | Schema source of truth |
 | --- | --- | --- | --- |
 | Postgres 16 | Registry, users, config | Relational, transactional | Alembic migrations in `observal-server/alembic/versions/` |
-| ClickHouse 26.5 | Telemetry and audit event storage | Columnar, time-series, high-write | Versioned SQL migrations in `observal-server/clickhouse/migrations/` |
+| DuckDB 1.5 | Telemetry and audit event storage | Columnar, single-writer file, analytic reads | Versioned SQL migrations in `observal-server/analytics/migrations/` |
 
 ## Postgres
 
@@ -32,7 +32,7 @@ For Docker Compose deployments, run the init service manually when needed:
 docker compose -f docker/docker-compose.yml run --rm observal-init
 ```
 
-The init service applies Alembic and ClickHouse migrations before API startup. `observal server migrate` moves data between deployments; it does not apply schema migrations.
+The init service applies Alembic and DuckDB migrations before API startup. `observal server migrate` moves data between deployments; it does not apply schema migrations.
 
 ### Reset
 
@@ -47,7 +47,7 @@ The `-v` deletes all named volumes. Use only in dev.
 
 ---
 
-## ClickHouse
+## DuckDB
 
 ### What's in it
 
@@ -62,58 +62,68 @@ Core tables:
 | `security_events` | Security events for login, auth, and admin activity |
 | `webhook_deliveries` | Alert webhook delivery attempts and status |
 
-### Deduplication and aggregates
+### Single writer and deduplication
 
-`session_events` and `layer_snapshots` use `ReplacingMergeTree` for idempotent ingest. `session_stats_agg` uses `AggregatingMergeTree` and is maintained by a materialized view.
+One service container (`observal-duckdb`) owns the analytics database file and is its only writer; every other process reaches it over HTTP on port 8484. Never mount the same data directory into a second writer — DuckDB (and the service's own lock file) will refuse the second process.
 
-The API query layer handles the required `FINAL` or aggregate reads. If you query ClickHouse directly, match the table engine instead of assuming every table reads the same way.
+Idempotent ingest is expressed with primary keys rather than merge engines:
+
+* `session_events`, `session_checkpoints`, `session_stats_agg`, and `layer_snapshots` have primary keys; writes use `INSERT OR REPLACE`, so re-ingested rows replace the previous version.
+* `audit_log`, `security_events`, and `webhook_deliveries` are append-only.
+* `session_stats_agg` is recomputed by the ingest path (`refresh_session_summary`); there is no materialized view.
+
+Reads do not need `FINAL`: each primary key holds exactly one row.
 
 ### Retention (TTL)
 
-Controlled by `DATA_RETENTION_DAYS`:
+Controlled by the `data.retention_days` setting:
 
-* Default `90`: rows older than 90 days are TTL'd out.
+* Default `90`: the retention job deletes rows older than 90 days.
 * `0`: retention disabled (disk grows without bound).
 * The server enforces a minimum of `7` on any non-zero value.
 
-TTL runs asynchronously. Disk space is reclaimed on the next merge; don't expect instant free-up.
+Deletes free space inside the file lazily; the worker also checkpoints the write-ahead log on a schedule. Plan for periodic compaction headroom rather than expecting instant shrink.
 
 ### Schema migrations
 
-ClickHouse schema changes are managed separately from Alembic. Alembic is only for Postgres.
+DuckDB schema changes are managed separately from Alembic. Alembic is only for Postgres.
 
-ClickHouse migration files live in:
+DuckDB migration files live in:
 
 ```bash
-observal-server/clickhouse/migrations/*.sql
+observal-server/analytics/migrations/*.sql
 ```
 
-The init container runs ClickHouse migrations after Alembic and before the API starts. The migration runner records applied files in `clickhouse_schema_migrations`.
+The DuckDB service applies pending migrations at boot, before it accepts queries, and records them in `analytics_schema_migrations`. The init container does not touch analytics DDL.
 
-On existing installations that predate versioned ClickHouse migrations, the runner detects the existing baseline tables and stamps `001_baseline.sql` as applied instead of replaying the whole baseline.
+Each migration file is checksummed; changing an applied file is rejected so two deployments cannot silently diverge.
 
 For local checks outside Docker, run the same runner from the server package:
 
 ```bash
-cd observal-server
-python -m services.clickhouse.migrations
+cd docker
+docker compose run --rm --no-deps observal-duckdb /app/.venv/bin/python -m services.analytics.duckdb.migrations
 ```
 
-Do not put ClickHouse DDL in startup code. Add a new migration file instead.
+Do not put DuckDB DDL in startup code. Add a new migration file instead.
 
 ### Capacity planning
 
 Session record size depends on harness transcript detail and tool output size. Measure representative sessions, apply the configured raw-line retention window, and plan 2 to 3 times headroom for merges and replicas.
 
-### External ClickHouse
+### Migrating an existing ClickHouse deployment
 
-For heavy workloads, run ClickHouse outside the compose stack (ClickHouse Cloud, a dedicated VM, etc.). Point the API at it:
+Older Observal releases stored telemetry in ClickHouse. Those installations migrate once with the one-way command:
 
+```bash
+observal server migrate duckdb \
+  --clickhouse-url clickhouse://default:clickhouse@observal-clickhouse:8123/observal \
+  --duckdb-url duckdb://observal-duckdb:8484/observal \
+  --duckdb-token "$DUCKDB_ANALYTICS_TOKEN" \
+  --export-dir ./telemetry-export
 ```
-CLICKHOUSE_URL=clickhouse://user:pass@external-clickhouse.example.com:8123/observal
-```
 
-Remove the `observal-clickhouse` service from `docker-compose.yml` or ignore it.
+See [Data migration](data-migration.md) and the [CLI reference](../cli/migrate.md) for the full flow, verification output, and rollback guidance.
 
 ---
 
@@ -122,7 +132,7 @@ Remove the `observal-clickhouse` service from `docker-compose.yml` or ignore it.
 See [Backup and restore](backup-and-restore.md). Short version:
 
 * Postgres: `pg_dump` from a running container.
-* ClickHouse: snapshot the `chdata` volume, or use ClickHouse's native `BACKUP` command.
+* DuckDB: checkpoint the service, then snapshot the `duckdbdata` volume (or use the service's `/admin/backup` export).
 * Both: back up before every upgrade.
 
 ## Next

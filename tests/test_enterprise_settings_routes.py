@@ -465,7 +465,7 @@ async def test_upsert_retention_setting_normalizes_persists_and_refreshes_cache(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("key", ["resource.max_query_memory_mb", "custom.unknown_setting"])
 async def test_upsert_accepts_resource_map_and_unknown_keys_without_implicit_apply(key, boundaries, monkeypatch):
-    import services.clickhouse as clickhouse
+    import services.analytics.duckdb as clickhouse
 
     db = _db(_one(None))
     apply_resources = AsyncMock()
@@ -793,7 +793,7 @@ async def test_delete_and_revoke_nonrestart_settings_skip_restart_marker(boundar
 
 @pytest.mark.asyncio
 async def test_apply_resources_passes_all_overrides_but_reports_only_supported_keys(boundaries, monkeypatch):
-    import services.clickhouse as clickhouse
+    import services.analytics.duckdb as clickhouse
 
     rows = [
         SimpleNamespace(key="resource.max_query_memory_mb", value="300"),
@@ -809,7 +809,7 @@ async def test_apply_resources_passes_all_overrides_but_reports_only_supported_k
     apply.assert_awaited_once_with(overrides=expected)
     assert response == {
         "applied": {"resource.max_query_memory_mb": "300"},
-        "message": "ClickHouse resource settings applied",
+        "message": "Analytics resource settings applied",
     }
     event = boundaries.emit.await_args.args[0]
     assert event.event_type is EventType.SETTING_CHANGED
@@ -821,7 +821,7 @@ async def test_apply_resources_passes_all_overrides_but_reports_only_supported_k
 
 @pytest.mark.asyncio
 async def test_apply_resources_failure_is_not_hidden_and_emits_no_success(boundaries, monkeypatch):
-    import services.clickhouse as clickhouse
+    import services.analytics.duckdb as clickhouse
 
     db = _db(_many([SimpleNamespace(key="resource.max_query_memory_mb", value="300")]))
     monkeypatch.setattr(
@@ -837,12 +837,12 @@ async def test_apply_resources_failure_is_not_hidden_and_emits_no_success(bounda
 
 
 @pytest.mark.asyncio
-async def test_purge_continues_after_clickhouse_failure_and_deletes_postgres_rows(boundaries, monkeypatch):
-    import services.clickhouse.client as clickhouse_client
+async def test_purge_continues_after_analytics_failure_and_deletes_postgres_rows(boundaries, monkeypatch):
+    import services.analytics.duckdb.client as analytics_client
 
-    clickhouse_error = RuntimeError("mutation unavailable")
-    query = AsyncMock(side_effect=[None, clickhouse_error])
-    monkeypatch.setattr(clickhouse_client, "_query", query)
+    analytics_error = RuntimeError("mutation unavailable")
+    execute = AsyncMock(side_effect=[1, analytics_error])
+    monkeypatch.setattr(analytics_client, "_execute", execute)
     logger = MagicMock()
     monkeypatch.setattr(es, "optic", logger)
     counts = [MagicMock(rowcount=value) for value in (5, 4, 3, 2)]
@@ -850,20 +850,20 @@ async def test_purge_continues_after_clickhouse_failure_and_deletes_postgres_row
 
     response = await es.purge_traces_and_insights(db=db, current_user=_actor())
 
-    assert query.await_args_list == [
+    assert execute.await_args_list == [
         call(
-            "ALTER TABLE session_events DELETE WHERE project_id = {project_id:String}",
-            {"param_project_id": "default"},
+            "DELETE FROM session_events WHERE project_id = $project_id",
+            {"project_id": "default"},
         ),
         call(
-            "ALTER TABLE session_stats_agg DELETE WHERE project_id = {project_id:String}",
-            {"param_project_id": "default"},
+            "DELETE FROM session_stats_agg WHERE project_id = $project_id",
+            {"project_id": "default"},
         ),
     ]
     logger.warning.assert_any_call(
-        "danger purge failed for ClickHouse table {}: {}",
+        "danger purge failed for analytics table {}: {}",
         "session_stats_agg",
-        clickhouse_error,
+        analytics_error,
     )
     assert [statement.table.name for statement in [item.args[0] for item in db.execute.await_args_list]] == [
         "insight_reports",
@@ -874,7 +874,7 @@ async def test_purge_continues_after_clickhouse_failure_and_deletes_postgres_row
     db.commit.assert_awaited_once_with()
     assert response.model_dump() == {
         "project_id": "default",
-        "clickhouse_tables": ["session_events", "session_stats_agg"],
+        "analytics_tables": ["session_events", "session_stats_agg"],
         "deleted_reports": 5,
         "deleted_facets": 4,
         "deleted_session_meta": 3,
@@ -888,17 +888,17 @@ async def test_purge_continues_after_clickhouse_failure_and_deletes_postgres_row
 
 @pytest.mark.asyncio
 async def test_purge_database_failure_propagates_without_commit_or_success_event(boundaries, monkeypatch):
-    import services.clickhouse.client as clickhouse_client
+    import services.analytics.duckdb.client as analytics_client
 
-    query = AsyncMock(return_value=None)
-    monkeypatch.setattr(clickhouse_client, "_query", query)
+    execute = AsyncMock(return_value=1)
+    monkeypatch.setattr(analytics_client, "_execute", execute)
     db = _db()
     db.execute.side_effect = RuntimeError("postgres unavailable")
 
     with pytest.raises(RuntimeError, match="postgres unavailable"):
         await es.purge_traces_and_insights(db=db, current_user=_actor())
 
-    assert query.await_count == 2
+    assert execute.await_count == 2
     db.commit.assert_not_awaited()
     boundaries.emit.assert_not_awaited()
 

@@ -32,7 +32,7 @@ When `deployment.sso_only=true`, password-based login is disabled. All authentic
 
 ## Audit Log API
 
-Observal logs admin and write operations to ClickHouse. Audit logs are queryable via the API and exportable as CSV.
+Observal logs admin and write operations to DuckDB. Audit logs are queryable via the API and exportable as CSV.
 
 ### `GET /api/v1/admin/audit-log`
 

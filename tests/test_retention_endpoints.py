@@ -81,11 +81,11 @@ async def test_preview_uses_default_project():
     ch_response = MagicMock(status_code=200)
     ch_response.json.return_value = {"data": [{"cnt": "42"}]}
 
-    with patch("services.clickhouse._query", new=AsyncMock(return_value=ch_response)) as query:
+    with patch("services.analytics.duckdb._query", new=AsyncMock(return_value=ch_response)) as query:
         result = await retention.preview_retention(14, db, _user(UserRole.super_admin))
 
     assert result["session_events"] == 42
-    assert query.await_args.args[1]["param_pid"] == "default"
+    assert query.await_args.args[1]["pid"] == "default"
 
 
 @pytest.mark.asyncio

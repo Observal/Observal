@@ -1,11 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """CLI commands for managing the embedded Observal server.
 
 Provides `observal server start|stop|status|logs|reset|install|config` commands
 for running a fully self-contained Observal instance with embedded PostgreSQL,
-ClickHouse, and Redis.
+the DuckDB analytics service, and Redis.
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ from observal_cli.server.constants import API_PORT, CONFIG_DIR, LOG_DIR, OBSERVA
 server_app = typer.Typer(
     name="server",
     help=(
-        "Manage the embedded Observal server (PostgreSQL + ClickHouse + Redis + API).\n\n"
+        "Manage the embedded Observal server (PostgreSQL + DuckDB analytics + Redis + API).\n\n"
         "Examples:\n"
         "  observal server status\n"
         "  observal server start\n"
@@ -237,14 +238,14 @@ def status(
         observal server status
         observal server status --output json
     """
-    from observal_cli.server.constants import CLICKHOUSE_HTTP_PORT, POSTGRES_PORT, REDIS_PORT
+    from observal_cli.server.constants import ANALYTICS_HTTP_PORT, POSTGRES_PORT, REDIS_PORT
     from observal_cli.server.orchestrator import Orchestrator
 
     orchestrator = Orchestrator()
     statuses = orchestrator.status()
     ports = {
         "postgres": POSTGRES_PORT,
-        "clickhouse": CLICKHOUSE_HTTP_PORT,
+        "analytics": ANALYTICS_HTTP_PORT,
         "redis": REDIS_PORT,
         "api": orchestrator.port,
     }
@@ -280,7 +281,7 @@ def status(
 def logs(
     service: str = typer.Argument(
         None,
-        help="Service to show logs for (postgres, clickhouse, redis, api). Default: all.",
+        help="Service to show logs for (postgres, analytics, redis, api). Default: all.",
     ),
     follow: bool = typer.Option(False, "--follow", "-f", help="Follow log output"),
     lines: int = typer.Option(50, "--lines", "-n", min=1, help="Number of lines to show"),
@@ -299,7 +300,7 @@ def logs(
     """
     log_files = {
         "postgres": LOG_DIR / "postgres.log",
-        "clickhouse": LOG_DIR / "clickhouse-startup.log",
+        "analytics": LOG_DIR / "analytics-startup.log",
         "redis": LOG_DIR / "redis.log",
         "api": LOG_DIR / "api.log",
     }
@@ -317,7 +318,7 @@ def logs(
             "JSON log following requires one service.",
             operation="Follow embedded server logs",
             resource="service filter",
-            remediation="Provide postgres, clickhouse, redis, or api.",
+            remediation="Provide postgres, analytics, redis, or api.",
         )
 
     selected = [log_files[service]] if service else [path for path in log_files.values() if path.exists()]
@@ -403,7 +404,7 @@ def install(
             detail=repr(error),
         )
     if _is_json(output):
-        output_json({"status": "installed", "services": ["postgres", "clickhouse", "redis"], "refreshed": upgrade})
+        output_json({"status": "installed", "services": ["postgres", "redis"], "refreshed": upgrade})
     else:
         console.print("\n[green]✓[/green] All dependencies installed")
         console.print("  Run [cyan]observal server start[/cyan] to start the server")
@@ -438,7 +439,7 @@ def reset(
     with _quiet_output(output):
         Orchestrator().reset()
     if _is_json(output):
-        output_json({"status": "reset", "deleted": ["postgres", "clickhouse", "redis", "generated secrets"]})
+        output_json({"status": "reset", "deleted": ["postgres", "analytics", "redis", "generated secrets"]})
 
 
 @server_app.command()
@@ -453,7 +454,7 @@ def config(
         observal server config
         observal server config --output json
     """
-    from observal_cli.server.constants import CLICKHOUSE_HTTP_PORT, POSTGRES_PORT, REDIS_PORT
+    from observal_cli.server.constants import ANALYTICS_HTTP_PORT, POSTGRES_PORT, REDIS_PORT
 
     config_file = OBSERVAL_HOME / "observal.yaml"
     payload = {
@@ -462,7 +463,7 @@ def config(
         "ports": {
             "api": API_PORT,
             "postgres": POSTGRES_PORT,
-            "clickhouse": CLICKHOUSE_HTTP_PORT,
+            "analytics": ANALYTICS_HTTP_PORT,
             "redis": REDIS_PORT,
         },
         "config_directory": str(CONFIG_DIR),
@@ -906,7 +907,7 @@ def _server_rollback(from_backup: str | None, force: bool) -> dict:
     try:
         # Restore database
         console.print("[blue]==>[/blue] Restoring database...")
-        restore_backup(backup_dir, compose_dir)
+        analytics_restored = restore_backup(backup_dir, compose_dir)
 
         # Revert version
         _update_env_version(compose_dir, prev_version)
@@ -955,14 +956,17 @@ def _server_rollback(from_backup: str | None, force: bool) -> dict:
                 remediation="Inspect Docker Compose logs before taking further action.",
             )
         console.print(f"[green]✓ Rolled back to v{prev_version}[/green]")
-        console.print("[yellow]ClickHouse telemetry was not restored.[/yellow]")
+        if analytics_restored:
+            console.print("[dim]DuckDB analytics telemetry restored from the backup.[/dim]")
+        else:
+            console.print("[yellow]No analytics archive in that backup; DuckDB telemetry was left unchanged.[/yellow]")
         return {
             "status": "rolled_back",
             "from_version": current,
             "to_version": prev_version,
             "backup": str(backup_dir),
             "postgres_restored": True,
-            "clickhouse_restored": False,
+            "analytics_restored": analytics_restored,
             "healthy": True,
         }
     finally:
@@ -977,9 +981,11 @@ def server_rollback(
         OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
     ] = OutputMode.table,
 ) -> None:
-    """Restore PostgreSQL and the Docker image version from backup.
+    """Restore PostgreSQL, DuckDB analytics telemetry, and the Docker image version from backup.
 
-    ClickHouse telemetry is left unchanged. JSON mode requires explicit confirmation.
+    Backups taken since the DuckDB cutover include the analytics store, so
+    telemetry is restored with the registry data. JSON mode requires explicit
+    confirmation.
 
     Examples:
         observal server rollback --force --output json

@@ -4,7 +4,7 @@
 """Audit event bus handlers for compliance logging.
 
 Registers event bus handlers that buffer events and batch-insert to the
-ClickHouse audit_log table.
+DuckDB audit_log table.
 
 Buffer is flushed every 2 seconds or when it reaches 500 rows, whichever
 comes first. A background asyncio.Task handles the periodic flush.
@@ -16,7 +16,7 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
-from services.clickhouse import insert_audit_log
+from services.analytics.duckdb import insert_audit_log
 from services.events import (
     AgentLifecycleEvent,
     AlertRuleChanged,
@@ -99,7 +99,7 @@ async def _flush_locked() -> None:
     _audit_buffer.clear()
     try:
         await insert_audit_log(batch)
-        logger.debug("Flushed %d audit rows to ClickHouse", len(batch))
+        logger.debug("Flushed %d audit rows to DuckDB", len(batch))
     except Exception:
         logger.exception("Failed to flush %d audit rows", len(batch))
 

@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """observal doctor support: generate and inspect diagnostic support bundles.
@@ -56,7 +57,7 @@ support_app = typer.Typer(
 CONFIG_ALLOWLIST = frozenset(
     {
         "DATABASE_URL",
-        "CLICKHOUSE_URL",
+        "DUCKDB_ANALYTICS_URL",
         "REDIS_URL",
         "REDIS_SOCKET_TIMEOUT",
         "EVAL_MODEL_NAME",
@@ -427,11 +428,11 @@ def bundle(
                 alembic_data = {"current_revision": redacted_versions.get("alembic_revision", "unknown")}
                 files["versions/alembic.json"] = json.dumps(alembic_data, indent=2).encode("utf-8")
 
-                ch_data = {
-                    "server_version": redacted_versions.get("clickhouse_version", "unknown"),
-                    "tables": redacted_versions.get("clickhouse_tables", []),
+                analytics_data = {
+                    "server_version": redacted_versions.get("analytics_version", "unknown"),
+                    "tables": redacted_versions.get("analytics_tables", []),
                 }
-                files["versions/clickhouse.json"] = json.dumps(ch_data, indent=2).encode("utf-8")
+                files["versions/analytics.json"] = json.dumps(analytics_data, indent=2).encode("utf-8")
             continue
 
         if result.name == "health":
@@ -448,14 +449,16 @@ def bundle(
             continue
 
         if result.name == "aggregates":
-            # Split aggregates into PG and CH count files
+            # Split aggregates into registry and analytics count files
             if isinstance(result.data, dict):
                 redacted_agg, agg_count = redact_value(result.data)
                 redaction_stats.record("aggregates/aggregates.json", agg_count)
                 pg_counts = redacted_agg.get("pg_table_counts", {})
-                ch_counts = redacted_agg.get("ch_table_counts", {})
+                analytics_counts = redacted_agg.get("analytics_table_counts", {})
                 files["aggregates/pg_table_counts.json"] = json.dumps(pg_counts, indent=2, default=str).encode("utf-8")
-                files["aggregates/ch_table_counts.json"] = json.dumps(ch_counts, indent=2, default=str).encode("utf-8")
+                files["aggregates/analytics_table_counts.json"] = json.dumps(
+                    analytics_counts, indent=2, default=str
+                ).encode("utf-8")
             continue
 
         if result.name == "logs":

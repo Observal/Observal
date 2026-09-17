@@ -107,7 +107,7 @@ Deployment docs are linked directly from this README:
 - [Setup guide](SETUP.md): fastest path from zero to a working stack
 - [Self-hosting overview](docs/self-hosting/README.md): deployment models and operator docs
 - [Production deployment](docs/self-hosting/production-deploy.md): hardened production topology
-- [Databases](docs/self-hosting/databases.md): Postgres, ClickHouse, migrations, retention
+- [Databases](docs/self-hosting/databases.md): Postgres, DuckDB analytics, migrations, retention
 - [Upgrades](docs/self-hosting/upgrades.md): safe upgrade and rollback flow
 - [Release verification](docs/security/release-verification.md): verify checksums, provenance, and signed tags
 - [Backup and restore](docs/self-hosting/backup-and-restore.md): backup plan before upgrades
@@ -269,7 +269,7 @@ Start here for deployment and operations:
 |-------|-----------|
 | Frontend | Vite 6, React 19, TanStack Router, Tailwind CSS 4, shadcn/ui |
 | Backend | Python 3.11+, FastAPI, Strawberry GraphQL |
-| Databases | PostgreSQL 16 (registry), ClickHouse (telemetry) |
+| Databases | PostgreSQL 16 (registry), DuckDB (telemetry) |
 | Queue | Redis + arq |
 | CLI | Python, Typer, Rich |
 | Telemetry | Session hooks, local transcript reconciliation, push-based ingest |

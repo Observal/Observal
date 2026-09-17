@@ -12,23 +12,31 @@ write_files:
   - path: /opt/observal/docker-compose.yml
     content: |
       services:
-        clickhouse:
-          image: clickhouse/clickhouse-server:25.6
+        duckdb:
+          image: ghcr.io/observal/observal-duckdb:${image_tag}
           restart: unless-stopped
           ports:
-            - "8123:8123"
-            - "9000:9000"
+            - "8484:8484"
           environment:
-            CLICKHOUSE_DB: ${clickhouse_db}
-            CLICKHOUSE_USER: default
-            CLICKHOUSE_PASSWORD: ${clickhouse_password}
-            MAX_SERVER_MEMORY_USAGE_RATIO: "0.8"
+            DUCKDB_PATH: /data/analytics.duckdb
+            DUCKDB_ANALYTICS_TOKEN: ${duckdb_analytics_token}
+            DUCKDB_MEMORY_LIMIT: "1GB"
           volumes:
-            - /data/clickhouse:/var/lib/clickhouse
+            - /data/duckdb:/data
           deploy:
             resources:
               limits:
-                memory: 4G
+                memory: 2G
+          healthcheck:
+            test:
+              [
+                "CMD-SHELL",
+                "/app/.venv/bin/python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8484/health')\"",
+              ]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 15s
 
         redis:
           image: redis:7-alpine
@@ -80,9 +88,9 @@ runcmd:
     mount /dev/sdc /data
     echo '/dev/sdc /data ext4 defaults,nofail 0 2' >> /etc/fstab
 %{ if observability_prometheus_enabled }
-  - mkdir -p /data/clickhouse /data/prometheus /data/redis
+  - mkdir -p /data/duckdb /data/prometheus /data/redis
 %{ else }
-  - mkdir -p /data/clickhouse /data/redis
+  - mkdir -p /data/duckdb /data/redis
 %{ endif }
   - systemctl enable docker
   - systemctl start docker

@@ -36,7 +36,7 @@ async def refresh_user_profiles(ctx: dict):
     Best-effort warm-up only. Correctness never depends on this job: a stale
     or missing profile is rebuilt lazily on first request, and a user skipped
     here keeps an old ``computed_at`` so that lazy path still fires. It exists
-    so the registry home page rarely pays for a ClickHouse scan.
+    so the registry home page rarely pays for an analytics scan.
 
     Cost scales with *active* users, not registered ones. One query collects
     everyone with a session in the window, so an idle account costs nothing

@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Loguru audit sink: buffers records and batch-inserts to ClickHouse."""
+"""Loguru audit sink: buffers records and batch-inserts to DuckDB."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ async def audit_sink(message: str) -> None:
     if not extra.get("audit"):
         return
 
-    # Format timestamp for ClickHouse DateTime64 (no timezone suffix)
+    # Format timestamp for DuckDB DateTime64 (no timezone suffix)
     ts_float = record["record"]["time"].get("timestamp", 0)
     if ts_float:
         dt = datetime.fromtimestamp(ts_float, tz=UTC)
@@ -68,13 +68,13 @@ async def audit_sink(message: str) -> None:
 
 
 async def _flush() -> None:
-    """Flush the buffer to ClickHouse. Must be called under _buffer_lock."""
+    """Flush the buffer to DuckDB. Must be called under _buffer_lock."""
     if not _buffer:
         return
     batch = list(_buffer)
     _buffer.clear()
     try:
-        from services.clickhouse import insert_audit_log
+        from services.analytics.duckdb import insert_audit_log
 
         await insert_audit_log(batch)
         optic.debug("audit sink flushed {} rows", len(batch))

@@ -907,7 +907,7 @@ def extract_tool_info(harness: str, parsed: dict) -> tuple[str | None, str | Non
 
 
 def _ts_claude_code(parsed: dict) -> str | None:
-    """Return ClickHouse timestamp string from a Claude Code JSONL line, or None."""
+    """Return DuckDB timestamp string from a Claude Code JSONL line, or None."""
     raw = parsed.get("timestamp")
     if not raw:
         return None
@@ -918,7 +918,7 @@ def _ts_claude_code(parsed: dict) -> str | None:
 
 
 def _ts_kiro(parsed: dict) -> str | None:
-    """Return ClickHouse timestamp string from a Kiro JSONL line, or None.
+    """Return the stored timestamp string from a Kiro JSONL line, or None.
 
     Kiro embeds unix epoch *seconds* at ``data.meta.timestamp``.  Only Prompt
     lines carry a timestamp; AssistantMessage and ToolResults inherit it.
@@ -942,7 +942,7 @@ def _ts_kiro(parsed: dict) -> str | None:
 
 
 def _ts_cursor(parsed: dict) -> str | None:
-    """Return ClickHouse timestamp string from a Cursor JSONL line, or None.
+    """Return the stored timestamp string from a Cursor JSONL line, or None.
 
     Cursor does not embed timestamps in its JSONL transcript lines.
     Return None so the caller uses ingestion time (now) as fallback.
@@ -951,7 +951,7 @@ def _ts_cursor(parsed: dict) -> str | None:
 
 
 def _ts_pi(parsed: dict) -> str | None:
-    """Return ClickHouse timestamp string from a Pi JSONL line, or None.
+    """Return the stored timestamp string from a Pi JSONL line, or None.
 
     Pi uses ISO timestamps at the entry level (``parsed["timestamp"]``).
     """
@@ -965,7 +965,7 @@ def _ts_pi(parsed: dict) -> str | None:
 
 
 def _ts_copilot_cli(parsed: dict) -> str | None:
-    """Return ClickHouse timestamp string from a Copilot CLI JSONL line, or None."""
+    """Return DuckDB timestamp string from a Copilot CLI JSONL line, or None."""
     raw = parsed.get("ts")
     if not raw:
         event = parsed.get("event")
@@ -980,7 +980,7 @@ def _ts_copilot_cli(parsed: dict) -> str | None:
 
 
 def _ts_antigravity(parsed: dict) -> str | None:
-    """Return ClickHouse timestamp string from an Antigravity transcript line."""
+    """Return DuckDB timestamp string from an Antigravity transcript line."""
     raw = parsed.get("created_at")
     if not raw:
         return None
@@ -1004,7 +1004,7 @@ _TS_EXTRACTORS: dict[str, object] = {
 
 
 def extract_timestamp(harness: str, parsed: dict) -> str | None:
-    """Return a ClickHouse-formatted timestamp string for a JSONL line, or None.
+    """Return a stored-format timestamp string for a JSONL line, or None.
 
     Returns None when the line has no timestamp -- callers should use a
     sentinel or inherit from a previous line rather than silently defaulting.
@@ -1058,7 +1058,7 @@ def get_extra_rows(
     agent_version: str | None,
     total_credits: float | None,
 ) -> list[dict]:
-    """Return any extra ClickHouse rows to insert after the main ingest loop.
+    """Return any extra DuckDB rows to insert after the main ingest loop.
 
     Dispatches to per-harness handlers via session_parser ID.
     Unknown harnesses fall back to _no_extra_rows (fail-open).

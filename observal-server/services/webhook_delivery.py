@@ -4,7 +4,7 @@
 """Async webhook delivery service with HMAC signing and retry logic.
 
 Delivers signed webhooks with exponential backoff. Records delivery
-outcomes to an in-memory buffer for batch-insert to ClickHouse.
+outcomes to an in-memory buffer for batch-insert to DuckDB.
 """
 
 import asyncio
@@ -20,7 +20,7 @@ from loguru import logger as optic
 from services.ssrf_guard import is_private_url
 from services.webhook_signer import HEADER_EVENT_ID, build_headers
 
-# Buffer for batch ClickHouse inserts (AD-1)
+# Buffer for batch DuckDB inserts (AD-1)
 _delivery_buffer: list[dict] = []
 _BUFFER_FLUSH_THRESHOLD = 1000
 
@@ -39,7 +39,7 @@ class DeliveryResult:
 
 @dataclass
 class DeliveryRecord:
-    """A single delivery attempt record for ClickHouse."""
+    """A single delivery attempt record for DuckDB."""
 
     delivery_id: UUID
     event_id: UUID
@@ -65,7 +65,7 @@ def _buffer_delivery_record(
     duration_ms: float,
     payload_size: int,
 ) -> None:
-    """Buffer a delivery record for later batch-insert to ClickHouse."""
+    """Buffer a delivery record for later batch-insert to DuckDB."""
     optic.trace("buffering delivery record for alert rule")
     from datetime import UTC, datetime
 
@@ -92,7 +92,7 @@ def _buffer_delivery_record(
 
 
 async def flush_delivery_records() -> int:
-    """Batch-insert buffered delivery records to ClickHouse.
+    """Batch-insert buffered delivery records to DuckDB.
 
     Called at end of evaluation cycle. Fire-and-forget: failures are
     logged but don't affect delivery outcomes.
@@ -107,12 +107,12 @@ async def flush_delivery_records() -> int:
     _delivery_buffer.clear()
 
     try:
-        from services.clickhouse import _insert_webhook_deliveries
+        from services.analytics.duckdb import _insert_webhook_deliveries
 
         await _insert_webhook_deliveries(records)
-        optic.info("Flushed {} delivery records to ClickHouse", len(records))
+        optic.info("Flushed {} delivery records to analytics", len(records))
     except Exception as e:
-        optic.error("Failed to flush delivery records to ClickHouse: {}", e)
+        optic.error("Failed to flush delivery records to analytics: {}", e)
         # Don't re-raise - delivery recording is best-effort
 
     return len(records)
@@ -131,7 +131,7 @@ async def deliver_webhook(
 
     Serializes payload once before the retry loop (AD-5: payload immutability).
     Generates a unique event_id per delivery for receiver idempotency (AD-2).
-    Buffers delivery records for batch-insert to ClickHouse (AD-1).
+    Buffers delivery records for batch-insert to DuckDB (AD-1).
 
     Args:
         webhook_url: Target URL (must pass SSRF validation).

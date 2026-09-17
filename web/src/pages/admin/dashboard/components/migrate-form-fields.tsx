@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+// SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
 import { UploadCloud } from "lucide-react";
@@ -21,9 +22,9 @@ export const ALL_SCOPE_OPTIONS: ScopeOption[] = [
 		description: "Users, agents, components, settings, reviews, and metadata.",
 	},
 	{
-		value: "clickhouse",
+		value: "telemetry",
 		title: "Telemetry data",
-		description: "Trace and span history stored in ClickHouse.",
+		description: "Session, audit, and security history stored in DuckDB.",
 	},
 	{
 		value: "both",

@@ -24,16 +24,10 @@ image_tag = "latest"
 # web_desired_count    = 2
 # worker_desired_count = 1
 
-# ── Data tier (ClickHouse on one EC2) ────────────────────────────────
-# clickhouse_mode      = "self_hosted"     # or "cloud", see below
+# ── Data tier (DuckDB analytics on one EC2) ─────────────────────────
 # data_instance_type   = "t3.large"
 # data_volume_size_gb  = 100
 # observability_stack  = "none"            # one of: none, prometheus, grafana
-
-# ── ClickHouse Cloud (uncomment if clickhouse_mode = "cloud") ─────────
-# clickhouse_mode           = "cloud"
-# clickhouse_cloud_url      = "https://abc123.us-east-1.aws.clickhouse.cloud:8443"
-# clickhouse_cloud_password = "..."
 
 # ── Managed services ──────────────────────────────────────────────────
 # db_instance_class = "db.t4g.small"

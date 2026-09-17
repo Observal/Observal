@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Observal Contributors
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """CLI contracts for embedded lifecycle and Docker server recovery."""
@@ -186,7 +187,7 @@ def test_status_json_can_report_unhealthy(isolated, monkeypatch: pytest.MonkeyPa
     service = MagicMock(port=8123)
     service.status.return_value = {
         "postgres": "running",
-        "clickhouse": "stopped",
+        "analytics": "stopped",
         "redis": "running",
         "api": "stopped",
     }
@@ -234,7 +235,7 @@ def test_reset_json_requires_force_and_reports_scope(isolated, monkeypatch: pyte
     accepted = runner.invoke(app, ["server", "reset", "--force", "--output", "json"])
 
     assert refused.exit_code == 7
-    assert json.loads(accepted.stdout)["deleted"] == ["postgres", "clickhouse", "redis", "generated secrets"]
+    assert json.loads(accepted.stdout)["deleted"] == ["postgres", "analytics", "redis", "generated secrets"]
     service.reset.assert_called_once_with()
 
 
@@ -315,13 +316,16 @@ def test_upgrade_applies_backup_images_and_health_check(isolated, monkeypatch: p
     release.assert_called_once_with("lock")
 
 
-def test_rollback_is_confined_and_reports_clickhouse_unchanged(isolated, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(("analytics_restored", "expected"), [(True, True), (False, False)])
+def test_rollback_is_confined_and_reports_restore_scope(
+    isolated, monkeypatch: pytest.MonkeyPatch, analytics_restored: bool, expected: bool
+) -> None:
     compose = prepare_compose(isolated, monkeypatch, "2.0.0")
     backup = isolated.root / "config/backups/v1.5.0-20260101T120000"
     backup.mkdir(parents=True)
     (backup / "pg.dump").write_bytes(b"backup")
     monkeypatch.setattr(isolated.backup, "list_backups", MagicMock(return_value=[{"path": str(backup)}]))
-    restore = MagicMock()
+    restore = MagicMock(return_value=analytics_restored)
     monkeypatch.setattr(isolated.backup, "restore_backup", restore)
     monkeypatch.setattr(isolated.upgrade_lock, "acquire_lock", MagicMock(return_value="lock"))
     monkeypatch.setattr(isolated.upgrade_lock, "release_lock", MagicMock())
@@ -332,7 +336,7 @@ def test_rollback_is_confined_and_reports_clickhouse_unchanged(isolated, monkeyp
     result = cmd_server._server_rollback(None, True)
 
     assert result["postgres_restored"] is True
-    assert result["clickhouse_restored"] is False
+    assert result["analytics_restored"] is expected
     restore.assert_called_once_with(backup, compose)
     assert (compose / ".env").read_text() == "OBSERVAL_VERSION=1.5.0\n"
 

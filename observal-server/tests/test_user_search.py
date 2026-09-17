@@ -3,7 +3,7 @@
 
 from sqlalchemy.dialects import postgresql
 
-from services.user_search import build_user_search_stmt, clickhouse_in_condition
+from services.user_search import analytics_in_condition, build_user_search_stmt
 
 
 def test_build_user_search_stmt_uses_pg_trgm_similarity():
@@ -21,10 +21,10 @@ def test_build_user_search_stmt_caps_limit():
     assert 50 in compiled.params.values()
 
 
-def test_clickhouse_in_condition_adds_params():
-    params: dict[str, str] = {}
+def test_analytics_in_condition_binds_a_list_parameter():
+    params: dict[str, object] = {}
 
-    condition = clickhouse_in_condition("actor_id", ["u1", "u2"], "actor", params)
+    condition = analytics_in_condition("actor_id", ["u1", "u2"], "actor", params)
 
-    assert condition == "actor_id IN ({actor_0:String}, {actor_1:String})"
-    assert params == {"param_actor_0": "u1", "param_actor_1": "u2"}
+    assert condition == "list_contains(CAST($actor_values AS VARCHAR[]), actor_id)"
+    assert params == {"actor_values": ["u1", "u2"]}

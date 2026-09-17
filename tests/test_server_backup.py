@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Tests for observal_cli.server.backup."""
@@ -26,7 +27,7 @@ class TestListBackups:
         b1 = isolated_backups / "v0.7.0-20260521T120000"
         b1.mkdir(parents=True)
         (b1 / "pg.dump").write_bytes(b"fake pg dump data" * 100)
-        (b1 / "clickhouse_schema.sql").write_text("CREATE TABLE...")
+        (b1 / "analytics.tar.gz").write_bytes(b"fake analytics archive")
 
         b2 = isolated_backups / "v0.6.0-20260501T100000"
         b2.mkdir(parents=True)
@@ -36,8 +37,8 @@ class TestListBackups:
         assert len(results) == 2
         assert results[0]["name"] == "v0.7.0-20260521T120000"  # Most recent first
         assert results[0]["has_pg"] is True
-        assert results[0]["has_ch"] is True
-        assert results[1]["has_ch"] is False
+        assert results[0]["has_analytics"] is True
+        assert results[1]["has_analytics"] is False
 
 
 class TestPruneBackups:
@@ -69,3 +70,48 @@ class TestEstimateBackupSize:
         size = backup.estimate_backup_size(tmp_path)
         # Docker isn't running in tests, so it should return fallback
         assert size == 100 * 1024 * 1024
+
+
+class TestRestoreBackup:
+    """A restore has to bring back both stores, not just PostgreSQL."""
+
+    def _pg_restore_result(self):
+        from unittest.mock import MagicMock
+
+        result = MagicMock()
+        result.returncode = 0
+        result.stderr = b""
+        return result
+
+    def test_restores_analytics_when_archive_present(self, tmp_path, monkeypatch):
+        from unittest.mock import MagicMock
+
+        backup_dir = tmp_path / "v1.13.1-20260917T000000"
+        backup_dir.mkdir()
+        (backup_dir / "pg.dump").write_bytes(b"pg dump" * 50)
+        (backup_dir / "analytics.tar.gz").write_bytes(b"analytics archive")
+
+        analytics_restore = MagicMock()
+        monkeypatch.setattr(backup, "_restore_analytics", analytics_restore)
+        monkeypatch.setattr(backup.subprocess, "run", lambda *a, **k: self._pg_restore_result())
+
+        restored = backup.restore_backup(backup_dir, tmp_path)
+
+        assert restored is True
+        analytics_restore.assert_called_once_with(backup_dir / "analytics.tar.gz", tmp_path)
+
+    def test_skips_analytics_for_older_backups(self, tmp_path, monkeypatch):
+        from unittest.mock import MagicMock
+
+        backup_dir = tmp_path / "v1.0.0-20260101T000000"
+        backup_dir.mkdir()
+        (backup_dir / "pg.dump").write_bytes(b"pg dump" * 50)
+
+        analytics_restore = MagicMock()
+        monkeypatch.setattr(backup, "_restore_analytics", analytics_restore)
+        monkeypatch.setattr(backup.subprocess, "run", lambda *a, **k: self._pg_restore_result())
+
+        restored = backup.restore_backup(backup_dir, tmp_path)
+
+        assert restored is False
+        analytics_restore.assert_not_called()

@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Observal
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 # Copy to terraform.tfvars and fill in.
@@ -34,7 +35,7 @@ image_tag = "latest"
 # worker_memory        = 1024
 # worker_desired_count = 1
 
-# ── Data tier EC2 (Postgres, Redis, ClickHouse) ───────────────────────
+# ── Data tier EC2 (Postgres, Redis, DuckDB) ───────────────────────────
 # data_instance_type   = "t3.medium"
 # data_volume_size_gb  = 100
 # observability_stack  = "none"            # one of: none, prometheus, grafana

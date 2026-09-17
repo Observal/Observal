@@ -396,9 +396,9 @@ async def apply_resources(
     current_user: User = Depends(require_role(UserRole.admin)),
     db: AsyncSession = Depends(get_db),
 ):
-    """Re-apply resource tuning settings to ClickHouse without restart."""
+    """Re-apply resource tuning settings to the analytics store without restart."""
     optic.trace("user_id={}", current_user.id)
-    from services.clickhouse import RESOURCE_SETTINGS_MAP, apply_resource_settings
+    from services.analytics.duckdb import RESOURCE_SETTINGS_MAP, apply_resource_settings
 
     result = await db.execute(select(EnterpriseConfig).where(EnterpriseConfig.key.like("resource.%")))
     current = {cfg.key: cfg.value for cfg in result.scalars().all()}
@@ -422,7 +422,7 @@ async def apply_resources(
     applied_keys = [k for k in current if k in RESOURCE_SETTINGS_MAP]
     return {
         "applied": {k: current[k] for k in applied_keys},
-        "message": "ClickHouse resource settings applied",
+        "message": "Analytics resource settings applied",
     }
 
 
@@ -431,7 +431,7 @@ async def apply_resources(
 
 class _PurgeTracesInsightsResponse(BaseModel):
     project_id: str
-    clickhouse_tables: list[str]
+    analytics_tables: list[str]
     deleted_reports: int | None = None
     deleted_facets: int | None = None
     deleted_session_meta: int | None = None
@@ -447,17 +447,14 @@ async def purge_traces_and_insights(
     optic.warning("danger purge traces+insights requested by user={}", current_user.id)
     project_id = DEFAULT_PROJECT_ID
 
-    from services.clickhouse.client import _query as ch_query
+    from services.analytics.duckdb.client import _execute as analytics_execute
 
-    clickhouse_tables = ["session_events", "session_stats_agg"]
-    for table in clickhouse_tables:
+    analytics_tables = ["session_events", "session_stats_agg"]
+    for table in analytics_tables:
         try:
-            await ch_query(
-                f"ALTER TABLE {table} DELETE WHERE project_id = {{project_id:String}}",
-                {"param_project_id": project_id},
-            )
+            await analytics_execute(f"DELETE FROM {table} WHERE project_id = $project_id", {"project_id": project_id})
         except Exception as e:
-            optic.warning("danger purge failed for ClickHouse table {}: {}", table, e)
+            optic.warning("danger purge failed for analytics table {}: {}", table, e)
 
     agent_ids_stmt = select(Agent.id)
     report_result = await db.execute(delete(InsightReport).where(InsightReport.agent_id.in_(agent_ids_stmt)))
@@ -484,7 +481,7 @@ async def purge_traces_and_insights(
 
     return _PurgeTracesInsightsResponse(
         project_id=project_id,
-        clickhouse_tables=clickhouse_tables,
+        analytics_tables=analytics_tables,
         deleted_reports=report_result.rowcount,
         deleted_facets=facets_result.rowcount,
         deleted_session_meta=meta_result.rowcount,

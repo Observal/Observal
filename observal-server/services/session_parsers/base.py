@@ -79,7 +79,7 @@ def pick_timestamp(jsonl_ts: str | None, row_ts: str, ingested_at: str) -> str:
     """Return the best available timestamp string.
 
     Priority:
-    1. JSONL-level timestamp (ISO-8601) converted to ClickHouse format
+    1. JSONL-level timestamp (ISO-8601) converted to the stored timestamp format
     2. Row timestamp, if it is not the 1970 epoch sentinel
     3. ingested_at fallback
 

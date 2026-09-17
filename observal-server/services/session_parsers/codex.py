@@ -4,7 +4,7 @@
 
 """Codex CLI JSONL session parser (READ path).
 
-Normalizes raw ClickHouse rows into frontend-displayable events for the
+Normalizes raw DuckDB rows into frontend-displayable events for the
 trace viewer. Codex uses a distinct format:
   - {"type": "event_msg", "payload": {"type": "user_message|agent_message|..."}}
   - {"type": "response_item", "payload": {"role": "user|assistant", "content": [...]}}

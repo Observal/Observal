@@ -122,7 +122,7 @@ Subscriptions use `graphql-ws` protocol.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/health` | Readiness - checks DB + ClickHouse |
+| `GET` | `/health` | Readiness - checks DB + DuckDB |
 | `GET` | `/healthz` | Liveness - is the API process alive |
 
 ## Rate limiting

@@ -6,7 +6,7 @@
 A profile is a small, deterministic summary of what a user actually works on
 (languages, tools, MCP servers, topic buckets), derived from their own
 sessions. It exists so registry recommendations can be personal without
-re-scanning ClickHouse on every page load.
+re-scanning DuckDB on every page load.
 
 Profiles are private to their owner. Nothing here stores prompt text or any
 other transcript content — only aggregate counts over metadata.

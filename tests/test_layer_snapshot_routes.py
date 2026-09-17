@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Observal Contributors
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Focused coverage for the layer snapshot routes."""
@@ -27,35 +28,36 @@ HASH_B = "fedcba9876543210"
 LOCK_HASH = "1122334455667788"
 
 _CHECK_SQL = """
-    SELECT count() as cnt
-    FROM layer_snapshots FINAL
-    WHERE project_id = {project_id:String}
-      AND hash = {hash:String}
-    FORMAT JSON
+    SELECT count(*) as cnt
+    FROM layer_snapshots
+    WHERE project_id = $project_id
+      AND hash = $hash
+
 """
 _GET_SQL = """
     SELECT hash, harness, content, uploaded_at, file_count, total_size, lockfile_hash
-    FROM layer_snapshots FINAL
-    WHERE project_id = {project_id:String}
-      AND hash = {hash:String}
+    FROM layer_snapshots
+    WHERE project_id = $project_id
+      AND hash = $hash
     LIMIT 1
-    FORMAT JSON
+
 """
 _DIFF_SQL = """
     SELECT hash, content
-    FROM layer_snapshots FINAL
-    WHERE project_id = {project_id:String}
-      AND hash IN ({hash_a:String}, {hash_b:String})
-    FORMAT JSON
+    FROM layer_snapshots
+    WHERE project_id = $project_id
+      AND hash IN ($hash_a, $hash_b)
+
 """
 _BASELINE_SQL = """
-    INSERT INTO layer_snapshots (hash, project_id, user_id, harness, content, file_count, total_size, lockfile_hash)
+    INSERT OR REPLACE INTO layer_snapshots
+        (hash, project_id, user_id, harness, content, file_count, total_size, lockfile_hash)
     VALUES (
-        {hash:String},
-        {project_id:String},
-        {user_id:String},
+        $hash,
+        $project_id,
+        $user_id,
         'baseline',
-        {content:String},
+        $content,
         0, 0, ''
     )
 """
@@ -147,8 +149,8 @@ def boundaries(monkeypatch):
     query = AsyncMock(return_value=response)
     insert = AsyncMock()
     redact = MagicMock(side_effect=lambda value: f"redacted:{value}")
-    monkeypatch.setattr("services.clickhouse.client._query", query)
-    monkeypatch.setattr("services.clickhouse.insert.insert_layer_snapshot", insert)
+    monkeypatch.setattr("services.analytics.duckdb.client._query", query)
+    monkeypatch.setattr("services.analytics.duckdb.insert.insert_layer_snapshot", insert)
     monkeypatch.setattr("services.secrets_redactor.redact_secrets", redact)
     return SimpleNamespace(response=response, query=query, insert=insert, redact=redact)
 
@@ -171,8 +173,8 @@ async def test_upload_serializes_redacted_manifest_and_inserts_exact_row_in_orde
 
     query_mock = AsyncMock(side_effect=query)
     insert_mock = AsyncMock(side_effect=insert)
-    monkeypatch.setattr("services.clickhouse.client._query", query_mock)
-    monkeypatch.setattr("services.clickhouse.insert.insert_layer_snapshot", insert_mock)
+    monkeypatch.setattr("services.analytics.duckdb.client._query", query_mock)
+    monkeypatch.setattr("services.analytics.duckdb.insert.insert_layer_snapshot", insert_mock)
     monkeypatch.setattr("services.secrets_redactor.redact_secrets", redact)
 
     payload = layer_snapshot.LayerSnapshotRequest.model_validate(
@@ -236,8 +238,8 @@ async def test_upload_serializes_redacted_manifest_and_inserts_exact_row_in_orde
         "drift": {"is_canonical": False, "drifted_files": [{"path": "user:mcp.json"}]},
     }
     assert query_mock.await_args.args[1] == {
-        "param_project_id": DEFAULT_PROJECT_ID,
-        "param_hash": HASH_A,
+        "project_id": DEFAULT_PROJECT_ID,
+        "hash": HASH_A,
     }
     assert _compact(query_mock.await_args.args[0]) == _compact(_CHECK_SQL)
     stored = dict(insert_mock.await_args.args[0])
@@ -300,8 +302,8 @@ async def test_duplicate_upload_is_a_no_mutation_success(boundaries):
     boundaries.redact.assert_not_called()
     boundaries.insert.assert_not_awaited()
     assert boundaries.query.await_args.args[1] == {
-        "param_project_id": DEFAULT_PROJECT_ID,
-        "param_hash": HASH_A,
+        "project_id": DEFAULT_PROJECT_ID,
+        "hash": HASH_A,
     }
 
 
@@ -502,7 +504,7 @@ async def test_get_snapshot_flattens_harnesses_and_prefers_manifest_lock_hash(mo
     }
     result = ClickHouseResponse([row])
     query = AsyncMock(return_value=result)
-    monkeypatch.setattr("services.clickhouse.client._query", query)
+    monkeypatch.setattr("services.analytics.duckdb.client._query", query)
 
     response = await _request(_app(), "GET", f"/api/v1/layer-snapshots/{HASH_A}")
 
@@ -520,8 +522,8 @@ async def test_get_snapshot_flattens_harnesses_and_prefers_manifest_lock_hash(mo
     assert result.json_calls == 1
     assert _compact(query.await_args.args[0]) == _compact(_GET_SQL)
     assert query.await_args.args[1] == {
-        "param_project_id": DEFAULT_PROJECT_ID,
-        "param_hash": HASH_A,
+        "project_id": DEFAULT_PROJECT_ID,
+        "hash": HASH_A,
     }
 
 
@@ -539,7 +541,7 @@ async def test_get_snapshot_uses_column_fallbacks_for_an_empty_manifest(monkeypa
             ]
         )
     )
-    monkeypatch.setattr("services.clickhouse.client._query", query)
+    monkeypatch.setattr("services.analytics.duckdb.client._query", query)
 
     response = await _request(_app(), "GET", f"/api/v1/layer-snapshots/{HASH_B}")
 
@@ -558,7 +560,7 @@ async def test_get_snapshot_uses_column_fallbacks_for_an_empty_manifest(monkeypa
 @pytest.mark.asyncio
 async def test_get_snapshot_not_found_has_exact_contract(monkeypatch):
     query = AsyncMock(return_value=ClickHouseResponse())
-    monkeypatch.setattr("services.clickhouse.client._query", query)
+    monkeypatch.setattr("services.analytics.duckdb.client._query", query)
 
     response = await _request(_app(), "GET", f"/api/v1/layer-snapshots/{HASH_A}")
 
@@ -587,7 +589,7 @@ async def test_get_snapshot_database_and_content_failures_return_500(monkeypatch
                 ]
             )
         )
-    monkeypatch.setattr("services.clickhouse.client._query", query)
+    monkeypatch.setattr("services.analytics.duckdb.client._query", query)
 
     response = await _request(_app(), "GET", f"/api/v1/layer-snapshots/{HASH_A}")
 
@@ -615,7 +617,7 @@ async def test_diff_snapshots_returns_exact_changes_and_query(monkeypatch):
     ]
     result = ClickHouseResponse(rows)
     query = AsyncMock(return_value=result)
-    monkeypatch.setattr("services.clickhouse.client._query", query)
+    monkeypatch.setattr("services.analytics.duckdb.client._query", query)
 
     response = await _request(_app(), "GET", f"/api/v1/layer-snapshots/{HASH_A}/diff/{HASH_B}")
 
@@ -635,9 +637,9 @@ async def test_diff_snapshots_returns_exact_changes_and_query(monkeypatch):
     assert result.raise_calls == 1
     assert _compact(query.await_args.args[0]) == _compact(_DIFF_SQL)
     assert query.await_args.args[1] == {
-        "param_project_id": DEFAULT_PROJECT_ID,
-        "param_hash_a": HASH_A,
-        "param_hash_b": HASH_B,
+        "project_id": DEFAULT_PROJECT_ID,
+        "hash_a": HASH_A,
+        "hash_b": HASH_B,
     }
 
 
@@ -651,7 +653,7 @@ async def test_diff_snapshots_returns_exact_changes_and_query(monkeypatch):
     ids=["first-missing", "second-missing"],
 )
 async def test_diff_not_found_contract_identifies_the_missing_hash(monkeypatch, rows, detail):
-    monkeypatch.setattr("services.clickhouse.client._query", AsyncMock(return_value=ClickHouseResponse(rows)))
+    monkeypatch.setattr("services.analytics.duckdb.client._query", AsyncMock(return_value=ClickHouseResponse(rows)))
 
     response = await _request(_app(), "GET", f"/api/v1/layer-snapshots/{HASH_A}/diff/{HASH_B}")
 
@@ -668,7 +670,7 @@ async def test_diff_database_and_content_failures_return_500(monkeypatch, failur
         query = AsyncMock(return_value=ClickHouseResponse(error=RuntimeError("query rejected")))
     else:
         query = AsyncMock(return_value=ClickHouseResponse([{"hash": HASH_A, "content": "not-json"}]))
-    monkeypatch.setattr("services.clickhouse.client._query", query)
+    monkeypatch.setattr("services.analytics.duckdb.client._query", query)
 
     response = await _request(_app(), "GET", f"/api/v1/layer-snapshots/{HASH_A}/diff/{HASH_B}")
 
@@ -679,7 +681,7 @@ async def test_diff_database_and_content_failures_return_500(monkeypatch, failur
 @pytest.mark.asyncio
 async def test_pin_baseline_serializes_exact_marker_and_query(monkeypatch):
     query = AsyncMock(return_value=SimpleNamespace())
-    monkeypatch.setattr("services.clickhouse.client._query", query)
+    monkeypatch.setattr("services.analytics.duckdb.client._execute", query)
     request = layer_snapshot.BaselinePinRequest(agent_id="agent-123", layer_hash=HASH_A)
 
     response = await inspect.unwrap(layer_snapshot.pin_baseline)(request, SimpleNamespace(), _user())
@@ -687,22 +689,22 @@ async def test_pin_baseline_serializes_exact_marker_and_query(monkeypatch):
     assert response.model_dump() == {"agent_id": "agent-123", "layer_hash": HASH_A, "pinned": True}
     assert _compact(query.await_args.args[0]) == _compact(_BASELINE_SQL)
     params = dict(query.await_args.args[1])
-    assert json.loads(params.pop("param_content")) == {
+    assert json.loads(params.pop("content")) == {
         "agent_id": "agent-123",
         "baseline": True,
         "pinned_hash": HASH_A,
     }
     assert params == {
-        "param_hash": "baseline:agent-123",
-        "param_project_id": DEFAULT_PROJECT_ID,
-        "param_user_id": str(USER_ID),
+        "hash": "baseline:agent-123",
+        "project_id": DEFAULT_PROJECT_ID,
+        "user_id": str(USER_ID),
     }
 
 
 @pytest.mark.asyncio
 async def test_pin_baseline_rejects_oversized_agent_id_before_query(monkeypatch):
     query = AsyncMock()
-    monkeypatch.setattr("services.clickhouse.client._query", query)
+    monkeypatch.setattr("services.analytics.duckdb.client._execute", query)
     agent_id = "a" * 101
 
     response = await _request(
@@ -730,7 +732,7 @@ async def test_pin_baseline_rejects_oversized_agent_id_before_query(monkeypatch)
 @pytest.mark.asyncio
 async def test_pin_baseline_exception_has_exact_500_contract(monkeypatch):
     query = AsyncMock(side_effect=RuntimeError("insert unavailable"))
-    monkeypatch.setattr("services.clickhouse.client._query", query)
+    monkeypatch.setattr("services.analytics.duckdb.client._execute", query)
 
     response = await _request(
         _app(),
@@ -742,24 +744,6 @@ async def test_pin_baseline_exception_has_exact_500_contract(monkeypatch):
     assert response.status_code == 500
     assert response.json() == {"detail": "Failed to pin baseline"}
     query.assert_awaited_once()
-
-
-@pytest.mark.asyncio
-async def test_pin_baseline_does_not_check_returned_http_status(monkeypatch):
-    result = ClickHouseResponse(error=RuntimeError("HTTP 500"))
-    query = AsyncMock(return_value=result)
-    monkeypatch.setattr("services.clickhouse.client._query", query)
-
-    response = await _request(
-        _app(),
-        "POST",
-        "/api/v1/layer-snapshots/baseline",
-        json={"agent_id": "agent-123", "layer_hash": HASH_A},
-    )
-
-    assert response.status_code == 200
-    assert response.json() == {"agent_id": "agent-123", "layer_hash": HASH_A, "pinned": True}
-    assert result.raise_calls == 0
 
 
 @pytest.mark.asyncio
@@ -790,7 +774,7 @@ async def test_every_route_requires_bearer_authentication(method, path, payload)
 @pytest.mark.parametrize("role", list(UserRole))
 async def test_every_authenticated_role_is_authorized_for_snapshot_reads(monkeypatch, role):
     query = AsyncMock(return_value=ClickHouseResponse())
-    monkeypatch.setattr("services.clickhouse.client._query", query)
+    monkeypatch.setattr("services.analytics.duckdb.client._query", query)
 
     response = await _request(_app(_user(role=role)), "GET", f"/api/v1/layer-snapshots/{HASH_A}")
 

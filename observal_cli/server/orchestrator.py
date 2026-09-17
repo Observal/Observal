@@ -1,9 +1,11 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Process orchestrator for embedded Observal services.
 
-Manages PostgreSQL, ClickHouse, and Redis as local subprocesses, then
+Manages PostgreSQL, the DuckDB analytics service, and Redis as local
+subprocesses, then
 starts the FastAPI application server. Handles startup ordering,
 health checks, initialization, and graceful shutdown.
 """
@@ -28,8 +30,8 @@ from observal_cli.server.config_gen import (
     generate_secret,
 )
 from observal_cli.server.constants import (
+    ANALYTICS_HTTP_PORT,
     API_PORT,
-    CLICKHOUSE_HTTP_PORT,
     CONFIG_DIR,
     DATA_DIR,
     KEYS_DIR,
@@ -89,6 +91,7 @@ class Orchestrator:
         for key, length in [
             ("POSTGRES_PASSWORD", 24),
             ("SECRET_KEY", 32),
+            ("DUCKDB_ANALYTICS_TOKEN", 32),
         ]:
             if key not in secrets:
                 secrets[key] = generate_secret(length)
@@ -121,7 +124,12 @@ class Orchestrator:
         env.update(
             {
                 "DATABASE_URL": f"postgresql+asyncpg://observal@127.0.0.1:{POSTGRES_PORT}/observal",
-                "CLICKHOUSE_URL": f"clickhouse://default@127.0.0.1:{CLICKHOUSE_HTTP_PORT}/observal",
+                "DUCKDB_ANALYTICS_URL": f"duckdb://127.0.0.1:{ANALYTICS_HTTP_PORT}/observal",
+                "DUCKDB_ANALYTICS_TOKEN": self._secrets["DUCKDB_ANALYTICS_TOKEN"],
+                "DUCKDB_PATH": str(self.data["analytics"] / "analytics.duckdb"),
+                # Exports and uploads stage inside the analytics data directory;
+                # the container default (/data/staging) is not writable here.
+                "DUCKDB_STAGING_DIR": str(self.data["analytics"] / "staging"),
                 "REDIS_URL": f"redis://127.0.0.1:{REDIS_PORT}",
                 "SECRET_KEY": self._secrets["SECRET_KEY"],
                 "JWT_KEY_DIR": str(KEYS_DIR),
@@ -276,72 +284,52 @@ class Orchestrator:
             capture_output=True,
         )
 
-    # ── ClickHouse ─────────────────────────────────────────────
+    # ── DuckDB analytics service ───────────────────────────────
 
-    def start_clickhouse(self) -> None:
-        """Start ClickHouse server."""
-        config_path = CONFIG_DIR / "clickhouse-config.xml"
-        if not config_path.exists():
-            generate_all_configs()
+    def start_analytics(self) -> None:
+        """Start the DuckDB analytics service that owns the analytics file."""
+        self.data["analytics"].mkdir(parents=True, exist_ok=True)
 
-        # Ensure data subdirs exist
-        ch_data = self.data["clickhouse"]
-        for subdir in ("tmp", "user_files", "format_schemas"):
-            (ch_data / subdir).mkdir(parents=True, exist_ok=True)
+        console.print("[blue]==>[/blue] Starting DuckDB analytics service...")
+        optic.info("starting DuckDB analytics service")
 
-        console.print("[blue]==>[/blue] Starting ClickHouse...")
-        optic.info("starting ClickHouse")
-
-        log_handle = (LOG_DIR / "clickhouse-startup.log").open("w")
+        log_handle = (LOG_DIR / "analytics-startup.log").open("w")
         self._log_handles.append(log_handle)
         proc = subprocess.Popen(
             [
-                str(self.bins["clickhouse"]),
-                "server",
-                "--config-file",
-                str(config_path),
-                "--pid-file",
-                str(self.pids["clickhouse"]),
+                self._find_python(),
+                "-m",
+                "uvicorn",
+                "services.analytics.duckdb.service:app",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(ANALYTICS_HTTP_PORT),
             ],
+            cwd=str(self._find_server_dir()),
+            env=self._build_env(),
             stdout=log_handle,
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
-        self._processes["clickhouse"] = proc
+        self._processes["analytics"] = proc
 
         # Write PID
-        self.pids["clickhouse"].write_text(str(proc.pid))
+        self.pids["analytics"].write_text(str(proc.pid))
 
         # Fail fast if process died on launch
-        self._check_immediate_death(proc, "clickhouse")
+        self._check_immediate_death(proc, "analytics")
 
-        # Wait for healthy
-        self._wait_for_clickhouse()
+        # Wait for healthy (the service applies its own migrations first)
+        self._wait_for_analytics()
 
-        # Create the 'observal' database (required before app can connect)
-        self._ensure_clickhouse_database()
+        console.print("[green]\u2713[/green] DuckDB analytics ready")
+        optic.info("DuckDB analytics is ready")
 
-        console.print("[green]\u2713[/green] ClickHouse ready")
-        optic.info("ClickHouse is ready")
-
-    def _ensure_clickhouse_database(self) -> None:
-        """Create the 'observal' database in ClickHouse if it doesn't exist."""
-        url = f"http://127.0.0.1:{CLICKHOUSE_HTTP_PORT}/"
-        try:
-            resp = httpx.post(
-                url,
-                content="CREATE DATABASE IF NOT EXISTS observal",
-                timeout=10,
-            )
-            if resp.status_code != 200:
-                console.print(f"[yellow]Warning:[/yellow] ClickHouse CREATE DATABASE returned {resp.status_code}")
-        except httpx.ConnectError:
-            raise ServiceError("ClickHouse became unreachable while creating database")
-
-    def _wait_for_clickhouse(self, timeout: int = 30) -> None:
-        """Wait for ClickHouse HTTP endpoint to respond."""
+    def _wait_for_analytics(self, timeout: int = 60) -> None:
+        """Wait for the analytics service health endpoint to respond."""
         deadline = time.time() + timeout
-        url = f"http://127.0.0.1:{CLICKHOUSE_HTTP_PORT}/ping"
+        url = f"http://127.0.0.1:{ANALYTICS_HTTP_PORT}/health"
         while time.time() < deadline:
             try:
                 resp = httpx.get(url, timeout=2)
@@ -351,12 +339,12 @@ class Orchestrator:
                 pass
             time.sleep(0.5)
         raise ServiceError(
-            f"ClickHouse did not become ready within {timeout}s. Check logs: {LOG_DIR / 'clickhouse-startup.log'}"
+            f"DuckDB analytics did not become ready within {timeout}s. Check logs: {LOG_DIR / 'analytics-startup.log'}"
         )
 
-    def stop_clickhouse(self) -> None:
-        """Stop ClickHouse server."""
-        pid_file = self.pids["clickhouse"]
+    def stop_analytics(self) -> None:
+        """Stop the DuckDB analytics service."""
+        pid_file = self.pids["analytics"]
         if pid_file.exists():
             try:
                 pid = int(pid_file.read_text().strip())
@@ -374,8 +362,8 @@ class Orchestrator:
                 pass
             pid_file.unlink(missing_ok=True)
 
-        if "clickhouse" in self._processes:
-            proc = self._processes.pop("clickhouse")
+        if "analytics" in self._processes:
+            proc = self._processes.pop("analytics")
             proc.terminate()
             try:
                 proc.wait(timeout=10)
@@ -592,7 +580,7 @@ class Orchestrator:
         return not self._pg_is_initialized()
 
     def run_migrations(self) -> None:
-        """Apply PostgreSQL and ClickHouse migrations before API startup."""
+        """Apply PostgreSQL and DuckDB analytics migrations before API startup."""
         env = self._build_env()
         server_dir = self._find_server_dir()
         python = self._find_python()
@@ -601,7 +589,7 @@ class Orchestrator:
 
         commands = (
             ([python, "-m", "alembic", "upgrade", "head"], "PostgreSQL"),
-            ([python, "-m", "services.clickhouse.migrations"], "ClickHouse"),
+            ([python, "-m", "services.analytics.duckdb.migrations"], "DuckDB analytics"),
         )
         for command, database in commands:
             console.print(f"[blue]==>[/blue] Running {database} migrations...")
@@ -727,13 +715,16 @@ class Orchestrator:
 
         try:
             self.start_postgres()
-            self.start_clickhouse()
             self.start_redis()
+
+            # Migrations run before the analytics service starts so it owns the
+            # database file exclusively from then on.
+            self.run_migrations()
+
+            self.start_analytics()
 
             if first_run:
                 console.print("[blue]==>[/blue] First run - initializing databases...")
-
-            self.run_migrations()
 
             self.start_api(foreground=foreground)
 
@@ -780,7 +771,7 @@ class Orchestrator:
         """Stop all services in reverse order."""
         self.stop_api()
         self.stop_redis()
-        self.stop_clickhouse()
+        self.stop_analytics()
         self.stop_postgres()
 
         # Close any open log file handles
@@ -818,15 +809,15 @@ class Orchestrator:
         else:
             statuses["postgres"] = "not initialized"
 
-        # ClickHouse
+        # DuckDB analytics
         try:
             resp = httpx.get(
-                f"http://127.0.0.1:{CLICKHOUSE_HTTP_PORT}/ping",
+                f"http://127.0.0.1:{ANALYTICS_HTTP_PORT}/health",
                 timeout=2,
             )
-            statuses["clickhouse"] = "running" if resp.status_code == 200 else "stopped"
+            statuses["analytics"] = "running" if resp.status_code == 200 else "stopped"
         except httpx.ConnectError:
-            statuses["clickhouse"] = "stopped"
+            statuses["analytics"] = "stopped"
 
         # Redis
         if self.bins["redis_cli"].exists():

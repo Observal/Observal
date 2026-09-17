@@ -76,7 +76,7 @@ def admin_user():
 
 def ch_mock(monkeypatch, *responses):
     mock = AsyncMock(side_effect=responses)
-    monkeypatch.setattr(dashboard, "_ch_json", mock)
+    monkeypatch.setattr(dashboard, "_analytics_json", mock)
     return mock
 
 
@@ -251,7 +251,7 @@ async def test_adoption_aggregates_months_current_users_and_departments(monkeypa
         "departments_covered": 2,
     }
     assert "INTERVAL 12 MONTH" in ch.await_args_list[0].args[0]
-    assert "toStartOfMonth(now())" in ch.await_args_list[1].args[0]
+    assert "date_trunc('month', now())" in ch.await_args_list[1].args[0]
     assert all("project_id = '{project_id}'" in call.args[0] for call in ch.await_args_list)
 
 
@@ -327,8 +327,8 @@ async def test_usage_by_category_resolves_agents_aggregates_and_builds_period_qu
         {"category": "Platform", "sessions": 8, "growth_pct": 100.0},
         {"category": "Uncategorized", "sessions": 7, "growth_pct": -22.2},
     ]
-    assert ch.await_args_list[0].args[1] == {"param_days": "30"}
-    assert ch.await_args_list[1].args[1] == {"param_days": "30", "param_days2": "60"}
+    assert ch.await_args_list[0].args[1] == {"days": "30"}
+    assert ch.await_args_list[1].args[1] == {"days": "30", "days2": "60"}
     assert "first_event_time < now()" in ch.await_args_list[1].args[0]
     assert "agents.id IN" in sql_text(db.execute.await_args.args[0])
 
@@ -558,7 +558,7 @@ async def test_departments_aggregate_agent_ownership_and_user_sessions(monkeypat
         },
     ]
     assert "GROUP BY agents.created_by" in sql_text(db.execute.await_args.args[0])
-    assert ch.await_args.args[1] == {"param_days": "7"}
+    assert ch.await_args.args[1] == {"days": "7"}
 
 
 @pytest.mark.asyncio
@@ -610,8 +610,8 @@ async def test_department_tokens_aggregate_current_and_previous_periods(monkeypa
             "trend_pct": 0.0,
         },
     ]
-    assert ch.await_args_list[0].args[1] == {"param_days": "30"}
-    assert ch.await_args_list[1].args[1] == {"param_days": "30", "param_days2": "60"}
+    assert ch.await_args_list[0].args[1] == {"days": "30"}
+    assert ch.await_args_list[1].args[1] == {"days": "30", "days2": "60"}
 
 
 @pytest.mark.asyncio
@@ -1011,8 +1011,8 @@ async def test_time_to_value_calculates_milestones_sorts_and_ignores_bad_dates(m
     ]
     assert "row_number() OVER" in ch.await_args_list[1].args[0]
     milestone_params = ch.await_args_list[1].args[1]
-    assert str(first) in milestone_params["param_aids"]
-    assert str(second) in milestone_params["param_aids"]
+    assert str(first) in milestone_params["aids"]
+    assert str(second) in milestone_params["aids"]
 
 
 @pytest.mark.asyncio
@@ -1227,7 +1227,7 @@ async def test_postgres_and_clickhouse_failures_are_not_silently_hidden(monkeypa
     with pytest.raises(RuntimeError, match="postgres unavailable"):
         await dashboard.get_exec_config(db, admin_user())
 
-    monkeypatch.setattr(dashboard, "_ch_json", AsyncMock(side_effect=RuntimeError("clickhouse unavailable")))
+    monkeypatch.setattr(dashboard, "_analytics_json", AsyncMock(side_effect=RuntimeError("clickhouse unavailable")))
     with pytest.raises(RuntimeError, match="clickhouse unavailable"):
         await dashboard.get_platform_coverage(admin_user())
 

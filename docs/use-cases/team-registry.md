@@ -23,7 +23,7 @@ Deploy once, everyone points at it.
 flowchart TB
     server["Observal server - API + Web UI"]
     db[(PostgreSQL)]
-    ch[(ClickHouse)]
+    ch[(DuckDB)]
     redis[(Redis)]
     a["Engineer A - Claude Code"]
     b["Engineer B - Kiro"]

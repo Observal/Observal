@@ -130,21 +130,19 @@ Standard initContainer: wait for Postgres readiness.
 {{- end }}
 
 {{/*
-Standard initContainer: wait for ClickHouse readiness.
+Standard initContainer: wait for the DuckDB analytics service readiness.
 */}}
-{{- define "observal.initWaitClickhouse" -}}
-{{- if .Values.clickhouse.enabled }}
-- name: wait-for-clickhouse
+{{- define "observal.initWaitAnalytics" -}}
+- name: wait-for-analytics
   image: curlimages/curl:8.8.0
   imagePullPolicy: IfNotPresent
   command:
     - sh
     - -c
     - |
-      until curl -sf http://{{ include "observal.fullname" . }}-clickhouse:8123/ping; do
-        echo "Waiting for ClickHouse..."; sleep 2;
+      until curl -sf http://{{ include "observal.fullname" . }}-duckdb:8484/health; do
+        echo "Waiting for DuckDB analytics..."; sleep 2;
       done
-{{- end }}
 {{- end }}
 
 {{/*

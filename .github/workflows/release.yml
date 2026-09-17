@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 # Curated release pipeline for Observal.
@@ -259,7 +260,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [api, web]
+        image: [api, web, duckdb]
         arch: [amd64, arm64]
         include:
           - arch: amd64
@@ -317,7 +318,7 @@ jobs:
       packages: write
     strategy:
       matrix:
-        image: [api, web]
+        image: [api, web, duckdb]
     steps:
       - name: Download digests
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -365,7 +366,6 @@ jobs:
           VERSION: ${{ needs.preflight.outputs.version }}
         run: |
           STAGING="observal-server-v${VERSION}"
-          mkdir -p "$STAGING/clickhouse/users.d"
           mkdir -p "$STAGING/grafana"
 
           # Standalone compose (pre-built images, no source needed)
@@ -378,8 +378,6 @@ jobs:
           cp .env.example "$STAGING/"
 
           # Supporting configs
-          cp -r docker/clickhouse/config.d "$STAGING/clickhouse/config.d"
-          cp docker/clickhouse/users.d/memory.xml "$STAGING/clickhouse/users.d/"
           cp -r grafana/provisioning "$STAGING/grafana/provisioning"
           cp -r grafana/dashboards "$STAGING/grafana/dashboards"
 
@@ -794,5 +792,6 @@ jobs:
           echo "$GH_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
           retry docker buildx imagetools inspect "${{ env.IMAGE_PREFIX }}-api:$VERSION"
           retry docker buildx imagetools inspect "${{ env.IMAGE_PREFIX }}-web:$VERSION"
+          retry docker buildx imagetools inspect "${{ env.IMAGE_PREFIX }}-duckdb:$VERSION"
           retry helm pull oci://ghcr.io/observal/charts/observal --version "$VERSION" --destination /tmp
           retry sh -c "uvx --refresh --from 'observal-cli==$PYTHON_VERSION' observal --version | grep -F '$PYTHON_VERSION'"

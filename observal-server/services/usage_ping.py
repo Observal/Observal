@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Privacy-bounded collection and delivery of aggregate installation usage."""
@@ -201,7 +202,7 @@ _ACTIVITY_INTEGER_FIELDS = (
 
 
 async def _session_metrics() -> tuple[dict[str, int], dict[str, int | float], dict[str, int]]:
-    from services.clickhouse.client import _query
+    from services.analytics.duckdb.client import _query
 
     totals = {"sessions_total": 0, "sessions_7d": 0, "sessions_30d": 0}
     activity: dict[str, int | float] = dict.fromkeys(_ACTIVITY_INTEGER_FIELDS, 0)
@@ -218,49 +219,55 @@ async def _session_metrics() -> tuple[dict[str, int], dict[str, int | float], di
     try:
         response = await _query(
             "SELECT "
-            "uniqExact(session_id) AS sessions_total, "
-            "uniqExactIf(session_id, last_event_time >= now() - INTERVAL 7 DAY) AS sessions_7d, "
-            "uniqExactIf(session_id, last_event_time >= now() - INTERVAL 30 DAY) AS sessions_30d, "
-            "uniqExactIf(user_id, user_id != '' AND last_event_time >= now() - INTERVAL 7 DAY) AS active_users_7d, "
-            "uniqExactIf(user_id, user_id != '' AND last_event_time >= now() - INTERVAL 30 DAY) AS active_users_30d, "
-            "uniqExactIf(agent_id, agent_id != '' AND last_event_time >= now() - INTERVAL 7 DAY) AS active_agents_7d, "
-            "uniqExactIf(agent_id, agent_id != '' AND last_event_time >= now() - INTERVAL 30 DAY) AS active_agents_30d, "
-            "sumIf(event_count, last_event_time >= now() - INTERVAL 7 DAY) AS events_7d, "
-            "sumIf(event_count, last_event_time >= now() - INTERVAL 30 DAY) AS events_30d, "
-            "sumIf(prompt_count, last_event_time >= now() - INTERVAL 7 DAY) AS prompts_7d, "
-            "sumIf(prompt_count, last_event_time >= now() - INTERVAL 30 DAY) AS prompts_30d, "
-            "sumIf(tool_call_count, last_event_time >= now() - INTERVAL 7 DAY) AS tool_calls_7d, "
-            "sumIf(tool_call_count, last_event_time >= now() - INTERVAL 30 DAY) AS tool_calls_30d, "
-            "sumIf(tool_result_count, last_event_time >= now() - INTERVAL 7 DAY) AS tool_results_7d, "
-            "sumIf(tool_result_count, last_event_time >= now() - INTERVAL 30 DAY) AS tool_results_30d, "
-            "sumIf(input_tokens, last_event_time >= now() - INTERVAL 7 DAY) AS input_tokens_7d, "
-            "sumIf(input_tokens, last_event_time >= now() - INTERVAL 30 DAY) AS input_tokens_30d, "
-            "sumIf(output_tokens, last_event_time >= now() - INTERVAL 7 DAY) AS output_tokens_7d, "
-            "sumIf(output_tokens, last_event_time >= now() - INTERVAL 30 DAY) AS output_tokens_30d, "
-            "sumIf(cache_read_tokens, last_event_time >= now() - INTERVAL 7 DAY) AS cache_read_tokens_7d, "
-            "sumIf(cache_read_tokens, last_event_time >= now() - INTERVAL 30 DAY) AS cache_read_tokens_30d, "
-            "sumIf(cache_write_tokens, last_event_time >= now() - INTERVAL 7 DAY) AS cache_write_tokens_7d, "
-            "sumIf(cache_write_tokens, last_event_time >= now() - INTERVAL 30 DAY) AS cache_write_tokens_30d, "
-            "sumIf(total_credits, last_event_time >= now() - INTERVAL 7 DAY) AS credits_7d, "
-            "sumIf(total_credits, last_event_time >= now() - INTERVAL 30 DAY) AS credits_30d, "
-            "sumIf(greatest(dateDiff('second', first_event_time, last_event_time), 0), "
-            "last_event_time >= now() - INTERVAL 30 DAY) AS session_duration_seconds_30d, "
-            "countIf(last_event_time >= now() - INTERVAL 30 DAY AND tool_call_count > 0) AS sessions_with_tools_30d, "
-            "countIf(last_event_time >= now() - INTERVAL 30 DAY AND input_tokens + output_tokens > 0) "
+            "count(DISTINCT session_id) AS sessions_total, "
+            "count(DISTINCT session_id) FILTER (WHERE last_event_time >= now() - INTERVAL 7 DAY) AS sessions_7d, "
+            "count(DISTINCT session_id) FILTER (WHERE last_event_time >= now() - INTERVAL 30 DAY) AS sessions_30d, "
+            "count(DISTINCT user_id) FILTER (WHERE user_id != '' AND last_event_time >= now() - INTERVAL 7 DAY) "
+            "AS active_users_7d, "
+            "count(DISTINCT user_id) FILTER (WHERE user_id != '' AND last_event_time >= now() - INTERVAL 30 DAY) "
+            "AS active_users_30d, "
+            "count(DISTINCT agent_id) FILTER (WHERE agent_id != '' AND last_event_time >= now() - INTERVAL 7 DAY) "
+            "AS active_agents_7d, "
+            "count(DISTINCT agent_id) FILTER (WHERE agent_id != '' AND last_event_time >= now() - INTERVAL 30 DAY) "
+            "AS active_agents_30d, "
+            "sum(event_count) FILTER (WHERE last_event_time >= now() - INTERVAL 7 DAY) AS events_7d, "
+            "sum(event_count) FILTER (WHERE last_event_time >= now() - INTERVAL 30 DAY) AS events_30d, "
+            "sum(prompt_count) FILTER (WHERE last_event_time >= now() - INTERVAL 7 DAY) AS prompts_7d, "
+            "sum(prompt_count) FILTER (WHERE last_event_time >= now() - INTERVAL 30 DAY) AS prompts_30d, "
+            "sum(tool_call_count) FILTER (WHERE last_event_time >= now() - INTERVAL 7 DAY) AS tool_calls_7d, "
+            "sum(tool_call_count) FILTER (WHERE last_event_time >= now() - INTERVAL 30 DAY) AS tool_calls_30d, "
+            "sum(tool_result_count) FILTER (WHERE last_event_time >= now() - INTERVAL 7 DAY) AS tool_results_7d, "
+            "sum(tool_result_count) FILTER (WHERE last_event_time >= now() - INTERVAL 30 DAY) AS tool_results_30d, "
+            "sum(input_tokens) FILTER (WHERE last_event_time >= now() - INTERVAL 7 DAY) AS input_tokens_7d, "
+            "sum(input_tokens) FILTER (WHERE last_event_time >= now() - INTERVAL 30 DAY) AS input_tokens_30d, "
+            "sum(output_tokens) FILTER (WHERE last_event_time >= now() - INTERVAL 7 DAY) AS output_tokens_7d, "
+            "sum(output_tokens) FILTER (WHERE last_event_time >= now() - INTERVAL 30 DAY) AS output_tokens_30d, "
+            "sum(cache_read_tokens) FILTER (WHERE last_event_time >= now() - INTERVAL 7 DAY) AS cache_read_tokens_7d, "
+            "sum(cache_read_tokens) FILTER (WHERE last_event_time >= now() - INTERVAL 30 DAY) AS cache_read_tokens_30d, "
+            "sum(cache_write_tokens) FILTER (WHERE last_event_time >= now() - INTERVAL 7 DAY) AS cache_write_tokens_7d, "
+            "sum(cache_write_tokens) FILTER (WHERE last_event_time >= now() - INTERVAL 30 DAY) "
+            "AS cache_write_tokens_30d, "
+            "sum(total_credits) FILTER (WHERE last_event_time >= now() - INTERVAL 7 DAY) AS credits_7d, "
+            "sum(total_credits) FILTER (WHERE last_event_time >= now() - INTERVAL 30 DAY) AS credits_30d, "
+            "sum(greatest(date_diff('second', first_event_time, last_event_time), 0)) "
+            "FILTER (WHERE last_event_time >= now() - INTERVAL 30 DAY) AS session_duration_seconds_30d, "
+            "count(*) FILTER (WHERE last_event_time >= now() - INTERVAL 30 DAY AND tool_call_count > 0) "
+            "AS sessions_with_tools_30d, "
+            "count(*) FILTER (WHERE last_event_time >= now() - INTERVAL 30 DAY AND input_tokens + output_tokens > 0) "
             "AS sessions_with_tokens_30d, "
-            "countIf(last_event_time >= now() - INTERVAL 30 DAY AND agent_id != '') "
+            "count(*) FILTER (WHERE last_event_time >= now() - INTERVAL 30 DAY AND agent_id != '') "
             "AS registered_agent_sessions_30d, "
-            "countIf(last_event_time >= now() - INTERVAL 30 DAY AND agent_id = '') "
+            "count(*) FILTER (WHERE last_event_time >= now() - INTERVAL 30 DAY AND agent_id = '') "
             "AS unregistered_agent_sessions_30d, "
-            "countIf(last_event_time >= now() - INTERVAL 30 DAY AND parent_session_id = '') "
+            "count(*) FILTER (WHERE last_event_time >= now() - INTERVAL 30 DAY AND parent_session_id = '') "
             "AS top_level_sessions_30d, "
-            "countIf(last_event_time >= now() - INTERVAL 30 DAY AND parent_session_id != '') "
+            "count(*) FILTER (WHERE last_event_time >= now() - INTERVAL 30 DAY AND parent_session_id != '') "
             "AS subagent_sessions_30d, "
-            "uniqExactIf(agent_version, agent_version != '' AND last_event_time >= now() - INTERVAL 30 DAY) "
+            "count(DISTINCT agent_version) FILTER (WHERE agent_version != '' AND last_event_time >= now() - INTERVAL 30 DAY) "
             "AS distinct_agent_versions_30d, "
-            "uniqExactIf(model, model != '' AND last_event_time >= now() - INTERVAL 30 DAY) "
+            "count(DISTINCT model) FILTER (WHERE model != '' AND last_event_time >= now() - INTERVAL 30 DAY) "
             "AS distinct_models_30d "
-            "FROM session_stats_agg FINAL FORMAT JSON"
+            "FROM session_stats_agg"
         )
         response.raise_for_status()
         rows = response.json().get("data", [])
@@ -286,9 +293,9 @@ async def _session_metrics() -> tuple[dict[str, int], dict[str, int | float], di
 
     try:
         response = await _query(
-            "SELECT countIf(event_type = '_parse_error') AS parse_errors_30d, "
-            "countIf(raw_line_truncated = 1) AS truncated_events_30d "
-            "FROM session_events FINAL WHERE timestamp >= now() - INTERVAL 30 DAY FORMAT JSON"
+            "SELECT count(*) FILTER (WHERE event_type = '_parse_error') AS parse_errors_30d, "
+            "count(*) FILTER (WHERE raw_line_truncated = 1) AS truncated_events_30d "
+            "FROM session_events WHERE timestamp >= now() - INTERVAL 30 DAY"
         )
         response.raise_for_status()
         rows = response.json().get("data", [])
@@ -300,9 +307,9 @@ async def _session_metrics() -> tuple[dict[str, int], dict[str, int | float], di
 
     try:
         response = await _query(
-            "SELECT harness, uniqExact(session_id) AS sessions "
-            "FROM session_stats_agg FINAL WHERE harness != '' GROUP BY harness "
-            "ORDER BY sessions DESC LIMIT 32 FORMAT JSON"
+            "SELECT harness, count(DISTINCT session_id) AS sessions "
+            "FROM session_stats_agg WHERE harness != '' GROUP BY harness "
+            "ORDER BY sessions DESC LIMIT 32"
         )
         response.raise_for_status()
         for row in response.json().get("data", [])[:32]:

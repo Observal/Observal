@@ -19,7 +19,7 @@ The primary assets are:
 
 ## Threat actors and assumptions
 
-Relevant actors include unauthenticated internet clients, malicious authenticated users, compromised user tokens, hostile registry submissions, compromised dependencies, and network attackers between clients and a remote deployment. Administrators and host operators are trusted to protect the host, secret files, backups, and TLS termination. PostgreSQL, ClickHouse, Redis, the API, and workers are trusted only inside the deployment network.
+Relevant actors include unauthenticated internet clients, malicious authenticated users, compromised user tokens, hostile registry submissions, compromised dependencies, and network attackers between clients and a remote deployment. Administrators and host operators are trusted to protect the host, secret files, backups, and TLS termination. PostgreSQL, DuckDB, Redis, the API, and workers are trusted only inside the deployment network.
 
 A host-level compromise, malicious administrator, compromised identity provider, or compromised GitHub release workflow is outside the controls of the application alone. Recovery procedures and external infrastructure controls must address those events.
 
@@ -28,7 +28,7 @@ A host-level compromise, malicious administrator, compromised identity provider,
 1. **Client to frontend:** Untrusted browsers, CLIs, harness hooks, and integrations cross the HTTPS boundary into nginx and the API. Packaged HTTP listeners bind to loopback by default. Remote access requires an operator-selected TLS proxy or an explicit non-loopback bind.
 2. **API authentication and authorization:** Requests cross from unauthenticated parsing into JWT, password, SSO, role, team, and ownership checks.
 3. **Registry execution inputs:** URLs, archives, MCP metadata, prompts, and harness configuration cross from users or external repositories into scanners and config generation.
-4. **Application to data services:** The API and workers cross the container network into PostgreSQL, ClickHouse, and Redis. Database ports bind to loopback in the server package by default.
+4. **Application to data services:** The API and workers cross the container network into PostgreSQL, DuckDB, and Redis. Database ports bind to loopback in the server package by default.
 5. **Secret storage:** Operator-controlled secret files and JWT or SAML key files cross into application memory. File-backed dynamic secrets are not copied into PostgreSQL or Redis.
 6. **External services:** OAuth providers, source repositories, webhooks, and model providers cross outbound HTTPS and SSRF policy boundaries.
 7. **Release supply chain:** Source and GitHub Actions identities cross into signed tags, built artifacts, provenance attestations, and public downloads.

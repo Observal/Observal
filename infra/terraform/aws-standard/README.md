@@ -1,6 +1,9 @@
+<!-- SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com> -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 # Observal AWS Standard Module
 
-Single-account, cost-optimized Terraform deployment for Observal on AWS. Runs the full stack (API, web frontend, background workers, Postgres, Redis, ClickHouse, Grafana, Prometheus) on two EC2 instances — one ECS EC2 cluster node for containers and one data-tier host for stateful services.
+Single-account, cost-optimized Terraform deployment for Observal on AWS. Runs the full stack (API, web frontend, background workers, Postgres, Redis, DuckDB analytics, Grafana, Prometheus) on two EC2 instances — one ECS EC2 cluster node for containers and one data-tier host for stateful services.
 
 ## Architecture
 
@@ -18,12 +21,12 @@ Private subnets:
     +-- Data host EC2 (t3.medium) running:
         - Postgres 18 (port 5432)
         - Redis 8 (port 6379)
-        - ClickHouse 26.5 (ports 8123, 9000)
+        - DuckDB analytics service (port 8484)
         - Grafana (port 3001)
         - Prometheus (port 9090)
 ```
 
-Internal DNS (`observal.internal` private Route53 zone) connects ECS tasks to the data host via stable names: `postgres.observal.internal`, `redis.observal.internal`, `clickhouse.observal.internal`.
+Internal DNS (`observal.internal` private Route53 zone) connects ECS tasks to the data host via stable names: `postgres.observal.internal`, `redis.observal.internal`, `duckdb.observal.internal`.
 
 ## Estimated Monthly Cost
 
@@ -58,7 +61,7 @@ Set `domain_name`, `route53_zone_id`, and `enable_tls = true` to provision an AC
 | Compute | ECS on EC2 (1 instance) | ECS Fargate (auto-scaling) |
 | Database | Postgres on EC2 | RDS Postgres (managed) |
 | Cache | Redis on EC2 | ElastiCache Redis (managed) |
-| ClickHouse | EC2 (same host) | EC2 or ClickHouse Cloud |
+| Analytics store | DuckDB on EC2 (same host) | DuckDB on EC2 (EBS-backed) |
 | HA | Single-AZ data tier | Multi-AZ managed services |
 | Cost | ~$120-155/mo | ~$300-800/mo |
 | BYO Security Groups | No | Yes |

@@ -137,6 +137,6 @@ resource "null_resource" "run_init" {
     aws_instance.data_host,
     aws_route53_record.postgres_internal,
     aws_route53_record.redis_internal,
-    aws_route53_record.clickhouse_internal,
+    aws_route53_record.analytics_internal,
   ]
 }

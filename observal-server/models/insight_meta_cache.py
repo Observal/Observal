@@ -15,7 +15,7 @@ from models.base import Base
 class InsightMetaCache(Base):
     """Caches batch session metadata for a given agent + time period.
 
-    This avoids re-querying ClickHouse for the same session data across
+    This avoids re-querying the analytics store for the same session data across
     report regenerations for the same period.
     """
 

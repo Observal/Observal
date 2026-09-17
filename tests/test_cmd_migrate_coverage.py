@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Observal Contributors
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Behavioral contracts for the portable migration CLI."""
@@ -326,7 +327,7 @@ def test_postgres_validation_rejects_bad_checksums(tmp_path: Path, monkeypatch: 
     assert result.stdout == ""
 
 
-def test_clickhouse_url_requires_hostname(tmp_path: Path) -> None:
+def test_one_way_migration_rejects_hostname_less_source(tmp_path: Path) -> None:
     source = tmp_path / "telemetry"
     source.mkdir()
 
@@ -335,10 +336,10 @@ def test_clickhouse_url_requires_hostname(tmp_path: Path) -> None:
         [
             "server",
             "migrate",
-            "import-telemetry",
+            "duckdb",
             "--clickhouse-url",
             "clickhouse://",
-            "--input-dir",
+            "--export-dir",
             str(source),
             "--output",
             "json",
@@ -354,7 +355,7 @@ def test_telemetry_export_requires_new_directory(tmp_path: Path, monkeypatch: py
     destination = tmp_path / "telemetry"
     destination.mkdir()
     operation = AsyncMock()
-    monkeypatch.setattr(migrate, "export_ch", operation)
+    monkeypatch.setattr(migrate, "export_duckdb_telemetry", operation)
 
     result = runner.invoke(
         app,
@@ -362,10 +363,8 @@ def test_telemetry_export_requires_new_directory(tmp_path: Path, monkeypatch: py
             "server",
             "migrate",
             "export-telemetry",
-            "--clickhouse-url",
-            "clickhouses://source/observal",
-            "--manifest",
-            str(tmp_path / "manifest.json"),
+            "--duckdb-url",
+            "duckdb://analytics-source:8484/observal",
             "--output-dir",
             str(destination),
             "--output",
@@ -377,10 +376,233 @@ def test_telemetry_export_requires_new_directory(tmp_path: Path, monkeypatch: py
     operation.assert_not_awaited()
 
 
+def test_duckdb_migration_reuses_export_directory_and_verifies(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The one-way migration loads an existing export and reports verification."""
+    export_dir = tmp_path / "telemetry-export"
+    export_dir.mkdir()
+
+    load = AsyncMock(
+        return_value=TelemetryImportResult(
+            migration_id="mig-1",
+            tables_imported=2,
+            tables_skipped=["layer_snapshots"],
+            rows_imported={"session_events": 10, "audit_log": 3},
+            duration_seconds=1.5,
+        )
+    )
+    verify = AsyncMock(
+        return_value=TelemetryValidationResult(
+            checksums_valid=True,
+            checksum_results={"session_events_2026-09.parquet": True},
+            row_count_results={"session_events": (10, 10), "audit_log": (3, 3)},
+            fk_results=None,
+        )
+    )
+    monkeypatch.setattr(migrate, "load_telemetry_into_duckdb", load)
+    monkeypatch.setattr(migrate, "verify_duckdb_telemetry", verify)
+
+    result = runner.invoke(
+        app,
+        [
+            "server",
+            "migrate",
+            "duckdb",
+            "--clickhouse-url",
+            "duckdb://analytics-source:8484/observal",
+            "--duckdb-url",
+            "duckdb://analytics:8484/observal",
+            "--duckdb-token",
+            "token",
+            "--export-dir",
+            str(export_dir),
+            "--skip-export",
+            "--output",
+            "json",
+        ],
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.exit_code == 0
+    assert payload["load"]["total_rows"] == 13
+    assert payload["verification"]["mismatched_tables"] == []
+    assert load.await_args.args[0].url == "duckdb://analytics:8484/observal"
+    assert load.await_args.args[0].token == "token"
+
+
+def test_duckdb_migration_fails_verification_mismatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    export_dir = tmp_path / "telemetry-export"
+    export_dir.mkdir()
+    monkeypatch.setattr(
+        migrate,
+        "load_telemetry_into_duckdb",
+        AsyncMock(
+            return_value=TelemetryImportResult(
+                migration_id="mig-1",
+                tables_imported=1,
+                tables_skipped=[],
+                rows_imported={"session_events": 9},
+                duration_seconds=0.5,
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        migrate,
+        "verify_duckdb_telemetry",
+        AsyncMock(
+            return_value=TelemetryValidationResult(
+                checksums_valid=True,
+                checksum_results={},
+                row_count_results={"session_events": (10, 9)},
+                fk_results=None,
+            )
+        ),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "server",
+            "migrate",
+            "duckdb",
+            "--clickhouse-url",
+            "duckdb://analytics-source:8484/observal",
+            "--export-dir",
+            str(export_dir),
+            "--skip-export",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 7
+    assert "session_events" in result.output
+
+
+def test_duckdb_migration_requires_export_for_fresh_runs(tmp_path: Path) -> None:
+    result = runner.invoke(
+        app,
+        [
+            "server",
+            "migrate",
+            "duckdb",
+            "--clickhouse-url",
+            "duckdb://analytics-source:8484/observal",
+            "--export-dir",
+            str(tmp_path / "missing"),
+            "--skip-export",
+        ],
+    )
+
+    assert result.exit_code != 0
+
+
+def test_duckdb_migration_tolerates_preexisting_target_rows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A target that already holds rows is not a verification failure."""
+    export_dir = tmp_path / "telemetry-export"
+    export_dir.mkdir()
+    monkeypatch.setattr(
+        migrate,
+        "load_telemetry_into_duckdb",
+        AsyncMock(
+            return_value=TelemetryImportResult(
+                migration_id="mig-1",
+                tables_imported=1,
+                tables_skipped=[],
+                rows_imported={"session_events": 10},
+                duration_seconds=0.5,
+                pre_rows={"session_events": 2},
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        migrate,
+        "verify_duckdb_telemetry",
+        AsyncMock(
+            return_value=TelemetryValidationResult(
+                checksums_valid=True,
+                checksum_results={},
+                row_count_results={"session_events": (10, 12)},
+                fk_results=None,
+            )
+        ),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "server",
+            "migrate",
+            "duckdb",
+            "--clickhouse-url",
+            "duckdb://analytics-source:8484/observal",
+            "--export-dir",
+            str(export_dir),
+            "--skip-export",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["verification"]["row_counts"]["session_events"]["extra_rows"] == 2
+    assert payload["verification"]["mismatched_tables"] == []
+
+
+def test_duckdb_migration_fails_when_a_fresh_table_loads_short(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A fresh table that took fewer rows than the manifest expects is fatal."""
+    export_dir = tmp_path / "telemetry-export"
+    export_dir.mkdir()
+    monkeypatch.setattr(
+        migrate,
+        "load_telemetry_into_duckdb",
+        AsyncMock(
+            return_value=TelemetryImportResult(
+                migration_id="mig-1",
+                tables_imported=1,
+                tables_skipped=[],
+                rows_imported={"session_events": 9},
+                duration_seconds=0.5,
+                pre_rows={"session_events": 0},
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        migrate,
+        "verify_duckdb_telemetry",
+        AsyncMock(
+            return_value=TelemetryValidationResult(
+                checksums_valid=True,
+                checksum_results={},
+                row_count_results={"session_events": (10, 10)},
+                fk_results=None,
+            )
+        ),
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "server",
+            "migrate",
+            "duckdb",
+            "--clickhouse-url",
+            "duckdb://analytics-source:8484/observal",
+            "--export-dir",
+            str(export_dir),
+            "--skip-export",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 7
+
+
 def test_telemetry_export_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     destination = tmp_path / "telemetry"
     operation = AsyncMock(return_value=telemetry_export_result(destination))
-    monkeypatch.setattr(migrate, "export_ch", operation)
+    monkeypatch.setattr(migrate, "export_duckdb_telemetry", operation)
 
     result = runner.invoke(
         app,
@@ -388,10 +610,8 @@ def test_telemetry_export_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
             "server",
             "migrate",
             "export-telemetry",
-            "--clickhouse-url",
-            "clickhouses://source/observal",
-            "--manifest",
-            str(tmp_path / "manifest.json"),
+            "--duckdb-url",
+            "duckdb://analytics-source:8484/observal",
             "--output-dir",
             str(destination),
             "--output",
@@ -400,16 +620,16 @@ def test_telemetry_export_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     )
 
     assert json.loads(result.stdout)["total_rows"] == 2500
-    assert isinstance(operation.await_args.args[3], migrate.NullProgressReporter)
+    assert isinstance(operation.await_args.args[2], migrate.NullProgressReporter)
 
 
 def test_telemetry_import_and_validation_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     source = tmp_path / "telemetry"
     source.mkdir()
-    monkeypatch.setattr(migrate, "import_ch", AsyncMock(return_value=telemetry_import_result()))
+    monkeypatch.setattr(migrate, "load_telemetry_into_duckdb", AsyncMock(return_value=telemetry_import_result()))
     monkeypatch.setattr(
         migrate,
-        "validate_ch",
+        "verify_duckdb_telemetry",
         AsyncMock(
             return_value=TelemetryValidationResult(
                 checksums_valid=True,
@@ -426,8 +646,8 @@ def test_telemetry_import_and_validation_json(tmp_path: Path, monkeypatch: pytes
             "server",
             "migrate",
             "import-telemetry",
-            "--clickhouse-url",
-            "clickhouses://target/observal",
+            "--duckdb-url",
+            "duckdb://analytics-target:8484/observal",
             "--input-dir",
             str(source),
             "--output",
@@ -436,13 +656,22 @@ def test_telemetry_import_and_validation_json(tmp_path: Path, monkeypatch: pytes
     )
     validated = runner.invoke(
         app,
-        ["server", "migrate", "validate-telemetry", "--input-dir", str(source), "--output", "json"],
+        [
+            "server",
+            "migrate",
+            "validate-telemetry",
+            "--duckdb-url",
+            "duckdb://analytics-target:8484/observal",
+            "--input-dir",
+            str(source),
+            "--output",
+            "json",
+        ],
     )
 
     assert json.loads(imported.stdout)["total_rows"] == 1234
     validation = json.loads(validated.stdout)
     assert validation["row_count_mismatches"] == 1
-    assert validation["orphan_groups"] == 1
 
 
 def test_all_migration_services_use_categorized_errors(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

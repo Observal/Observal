@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Configuration
@@ -13,7 +14,7 @@ Source deployments must override these before going live. Server-package setup g
 | ---------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `SECRET_KEY` or `SECRET_KEY_FILE` | `change-me-to-a-random-string` | Application encryption secret. Use a random value of at least 32 characters. |
 | `POSTGRES_PASSWORD` or `POSTGRES_PASSWORD_FILE` | `postgres` | PostgreSQL bootstrap credential. |
-| `CLICKHOUSE_PASSWORD` or generated hashed user config | `clickhouse` | ClickHouse credential. |
+| `DUCKDB_ANALYTICS_TOKEN` or `DUCKDB_ANALYTICS_TOKEN_FILE` | generated per install | Shared secret for the DuckDB analytics service. |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000`        | Scope to your real frontend origin(s). Configure as `deployment.cors_origins` in Admin Settings.                                   |
 | `deployment.frontend_url` | `http://localhost:3000`     | Used for OAuth redirects and email links. Configure in Admin Settings.                                                             |
 
@@ -38,9 +39,9 @@ The reader accepts files up to 64 KiB and removes one trailing newline. Setting 
 
 File-backed dynamic settings are marked externally managed in the admin API. Their contents are not imported into PostgreSQL or Redis, and the admin API rejects attempts to overwrite, delete, or revoke them.
 
-Supported file-backed boot credentials include `DATABASE_URL`, `CLICKHOUSE_URL`, `REDIS_URL`, `SECRET_KEY`, `OLD_SECRET_KEY`, `JWT_KEY_PASSWORD`, `GIT_CLONE_TOKEN`, and every `DEMO_*_PASSWORD`. SSO environment imports support the same form, including OAuth client secrets, Google and GitHub OAuth secrets, the insights provider key, SAML certificates, and the SAML key-encryption password. CLI tokens support `OBSERVAL_ACCESS_TOKEN_FILE`, `OBSERVAL_API_KEY_FILE`, and `OBSERVAL_TOKEN_FILE`.
+Supported file-backed boot credentials include `DATABASE_URL`, `DUCKDB_ANALYTICS_URL`, `REDIS_URL`, `SECRET_KEY`, `OLD_SECRET_KEY`, `JWT_KEY_PASSWORD`, `GIT_CLONE_TOKEN`, and every `DEMO_*_PASSWORD`. SSO environment imports support the same form, including OAuth client secrets, Google and GitHub OAuth secrets, the insights provider key, SAML certificates, and the SAML key-encryption password. CLI tokens support `OBSERVAL_ACCESS_TOKEN_FILE`, `OBSERVAL_API_KEY_FILE`, and `OBSERVAL_TOKEN_FILE`.
 
-PostgreSQL containers use `POSTGRES_PASSWORD_FILE`. The server package generates a hashed ClickHouse user configuration instead of putting its database password in `.env`. Service-specific subdirectories expose only the PostgreSQL password to PostgreSQL, the ClickHouse health credential to ClickHouse, and the Grafana and ClickHouse datasource credentials to Grafana.
+PostgreSQL containers use `POSTGRES_PASSWORD_FILE`. The server package generates a hashed DuckDB user configuration instead of putting its database password in `.env`. Service-specific subdirectories expose only the PostgreSQL password to PostgreSQL, the DuckDB health credential to DuckDB, and the Grafana and DuckDB datasource credentials to Grafana.
 
 ## SSO-only mode
 
@@ -72,7 +73,8 @@ Source deployments may use direct values:
 
 ```dotenv
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@observal-db:5432/observal
-CLICKHOUSE_URL=clickhouse://default:clickhouse@observal-clickhouse:8123/observal
+DUCKDB_ANALYTICS_URL=duckdb://observal-duckdb:8484/observal
+DUCKDB_ANALYTICS_TOKEN=change-me-to-a-unique-token
 REDIS_URL=redis://observal-redis:6379
 ```
 
@@ -80,7 +82,8 @@ Server-package installs use file references instead:
 
 ```dotenv
 DATABASE_URL_FILE=/run/secrets/database_url
-CLICKHOUSE_URL_FILE=/run/secrets/clickhouse_url
+DUCKDB_ANALYTICS_URL_FILE=/run/secrets/duckdb_analytics_url
+DUCKDB_ANALYTICS_TOKEN_FILE=/run/secrets/duckdb/duckdb_analytics_token
 REDIS_URL_FILE=/run/secrets/redis_url
 ```
 
@@ -101,13 +104,13 @@ RATE_LIMIT_AUTH_STRICT=5/minute    # login and password reset
 
 Tighten for higher-traffic deployments.
 
-## ClickHouse retention
+## DuckDB retention
 
 ```
 DATA_RETENTION_DAYS=90
 ```
 
-Session events older than this are removed from ClickHouse. Set to `0` to disable retention. The minimum non-zero value enforced on startup is 7.
+Session events older than this are removed from DuckDB. Set to `0` to disable retention. The minimum non-zero value enforced on startup is 7.
 
 ## JWT keys
 

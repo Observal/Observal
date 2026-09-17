@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Portable PostgreSQL and ClickHouse migration commands.
@@ -33,6 +34,7 @@ from observal_shared.migration import (
     ChConnParams,
     ChecksumMismatchError,
     ConnectionFailedError,
+    DuckDBConnParams,
     ExportResult,
     ImportResult,
     MigrationError,
@@ -43,11 +45,13 @@ from observal_shared.migration import (
     TelemetryValidationResult,
     ValidationResult,
     export_ch,
+    export_duckdb_telemetry,
     export_pg,
-    import_ch,
     import_pg,
-    validate_ch,
+    load_telemetry_into_duckdb,
     validate_pg,
+    verify_artifact_checksums,
+    verify_duckdb_telemetry,
 )
 from observal_shared.migration.connections import parse_clickhouse_url
 from observal_shared.migration.constants import _UUID_RE  # noqa: F401, re-exported for backward compat
@@ -167,8 +171,8 @@ migrate_app = typer.Typer(
         "  observal server migrate export --db-url postgresql://localhost/observal --file backup.tar.gz\n"
         "  observal server migrate validate --archive backup.tar.gz --output json\n"
         "  observal server migrate export-telemetry "
-        "--clickhouse-url clickhouses://localhost/observal "
-        "--manifest ./migration_manifest.json --output-dir ./telemetry-export"
+        "--duckdb-url duckdb://source-duckdb:8484/observal "
+        "--output-dir ./telemetry-export"
     )
 )
 
@@ -424,26 +428,33 @@ def validate_cmd(
 
 @migrate_app.command("export-telemetry")
 def export_telemetry_cmd(
-    clickhouse_url: str = typer.Option(
-        ..., "--clickhouse-url", envvar="CLICKHOUSE_URL", show_envvar=True, help="Source ClickHouse connection string"
+    duckdb_url: str = typer.Option(
+        "duckdb://127.0.0.1:8484/observal",
+        "--duckdb-url",
+        envvar="DUCKDB_ANALYTICS_URL",
+        show_envvar=True,
+        help="DuckDB analytics service connection string",
     ),
-    manifest: str = typer.Option(..., "--manifest", help="Path to Phase 1 migration_manifest.json"),
+    duckdb_token: str = typer.Option(
+        "",
+        "--duckdb-token",
+        envvar="DUCKDB_ANALYTICS_TOKEN",
+        show_envvar=True,
+        help="Bearer token for the DuckDB analytics service",
+    ),
     output_dir: str = typer.Option(..., "--output-dir", help="New directory for exported Parquet files"),
     output: Annotated[
         OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
     ] = OutputMode.table,
 ) -> None:
-    """Export ClickHouse telemetry data to Parquet files.
+    """Export DuckDB telemetry data to Parquet files.
 
-    Phase 2 of migration: exports session, audit, security, and webhook telemetry
-    tables as monthly Parquet partitions. Requires a completed Phase 1 export
-    (the migration_manifest.json produced by 'observal server migrate export').
-
-    Uses a time cutoff recorded at export start for consistency. The output
-    directory must not already exist.
+    Exports session, checkpoint, layer, audit, security, and webhook telemetry
+    tables as monthly Parquet partitions plus a checksummed manifest. The output
+    directory must not already exist; a failed export removes it entirely.
 
     Examples:
-        observal server migrate export-telemetry --clickhouse-url clickhouses://localhost/observal --manifest ./migration_manifest.json --output-dir ./telemetry-export
+        observal server migrate export-telemetry --duckdb-url duckdb://observal-duckdb:8484/observal --output-dir ./telemetry-export
     """
     _require_pyarrow()
     destination = Path(output_dir).expanduser()
@@ -451,19 +462,20 @@ def export_telemetry_cmd(
         fail(
             ErrorCategory.CONFLICT,
             "The telemetry export directory already exists.",
-            operation="Export ClickHouse telemetry",
+            operation="Export DuckDB telemetry",
             resource=str(destination),
             remediation="Choose a new --output-dir so failed exports can be cleaned safely.",
         )
-    _warn_clickhouse_cleartext(clickhouse_url, output)
     if not _is_json(output):
         rprint(f"[bold]Exporting telemetry to:[/bold] {escape(str(destination))}")
     try:
         result: TelemetryExportResult = asyncio.run(
-            export_ch(ChConnParams(url=clickhouse_url), Path(manifest).expanduser(), destination, _reporter(output))
+            export_duckdb_telemetry(
+                DuckDBConnParams(url=duckdb_url, token=duckdb_token), destination, _reporter(output)
+            )
         )
     except MigrationError as error:
-        _handle_migration_error(error, "Export ClickHouse telemetry")
+        _handle_migration_error(error, "Export DuckDB telemetry")
 
     payload = {
         "directory": result.output_dir,
@@ -490,37 +502,41 @@ def export_telemetry_cmd(
 
 @migrate_app.command("import-telemetry")
 def import_telemetry_cmd(
-    clickhouse_url: str = typer.Option(
-        ...,
-        "--clickhouse-url",
-        envvar="TARGET_CLICKHOUSE_URL",
+    duckdb_url: str = typer.Option(
+        "duckdb://127.0.0.1:8484/observal",
+        "--duckdb-url",
+        envvar="DUCKDB_ANALYTICS_URL",
         show_envvar=True,
-        help="Target ClickHouse connection string",
+        help="Target DuckDB analytics service connection string",
+    ),
+    duckdb_token: str = typer.Option(
+        "",
+        "--duckdb-token",
+        envvar="DUCKDB_ANALYTICS_TOKEN",
+        show_envvar=True,
+        help="Bearer token for the DuckDB analytics service",
     ),
     input_dir: str = typer.Option(..., "--input-dir", help="Directory containing Parquet files"),
     output: Annotated[
         OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
     ] = OutputMode.table,
 ) -> None:
-    """Import Parquet telemetry files into target ClickHouse.
+    """Import Parquet telemetry files into the DuckDB analytics service.
 
-    Phase 2 import: loads monthly Parquet partitions into the target ClickHouse.
-    Verifies checksums before importing. Skips partitions that already contain
-    data for idempotent re-runs. Persists resume state so interrupted imports
-    can continue where they left off.
+    Loads monthly Parquet partitions, replacing rows by primary key and pruning
+    incoming identities for append-only tables, so re-runs are idempotent.
 
     Examples:
-        observal server migrate import-telemetry --clickhouse-url clickhouses://localhost/observal --input-dir ./telemetry-export
-        observal server migrate import-telemetry --clickhouse-url clickhouses://localhost/observal --input-dir ./telemetry-export --output json
+        observal server migrate import-telemetry --duckdb-url duckdb://observal-duckdb:8484/observal --input-dir ./telemetry-export
+        observal server migrate import-telemetry --duckdb-url duckdb://observal-duckdb:8484/observal --input-dir ./telemetry-export --output json
     """
     _require_pyarrow()
-    _warn_clickhouse_cleartext(clickhouse_url, output)
     input_path = Path(input_dir).expanduser()
     if not input_path.is_dir():
         fail(
             ErrorCategory.NOT_FOUND,
             "The telemetry migration directory was not found.",
-            operation="Import ClickHouse telemetry",
+            operation="Import DuckDB telemetry",
             resource=str(input_path),
             remediation="Provide an existing telemetry export directory.",
         )
@@ -528,10 +544,12 @@ def import_telemetry_cmd(
         rprint(f"[bold]Importing telemetry from:[/bold] {escape(str(input_path))}")
     try:
         result: TelemetryImportResult = asyncio.run(
-            import_ch(ChConnParams(url=clickhouse_url), input_path, _reporter(output))
+            load_telemetry_into_duckdb(
+                DuckDBConnParams(url=duckdb_url, token=duckdb_token), input_path, _reporter(output)
+            )
         )
     except MigrationError as error:
-        _handle_migration_error(error, "Import ClickHouse telemetry")
+        _handle_migration_error(error, "Import DuckDB telemetry")
 
     payload = {
         "migration_id": result.migration_id,
@@ -561,33 +579,244 @@ def import_telemetry_cmd(
 # ── Validate telemetry command ───────────────────────────
 
 
-@migrate_app.command("validate-telemetry")
-def validate_telemetry_cmd(
-    input_dir: str = typer.Option(..., "--input-dir", help="Directory containing Parquet files"),
+@migrate_app.command("duckdb")
+def duckdb_migration_cmd(
     clickhouse_url: str | None = typer.Option(
         None,
         "--clickhouse-url",
-        envvar="TARGET_CLICKHOUSE_URL",
+        envvar="CLICKHOUSE_URL",
         show_envvar=True,
-        help="Target ClickHouse for row count comparison",
+        help="Source ClickHouse connection string (not needed with --skip-export)",
     ),
-    target_db_url: str | None = typer.Option(
-        None,
-        "--target-db-url",
-        envvar="TARGET_DATABASE_URL",
+    duckdb_url: str = typer.Option(
+        "duckdb://127.0.0.1:8484/observal",
+        "--duckdb-url",
+        envvar="DUCKDB_ANALYTICS_URL",
         show_envvar=True,
-        help="Target PostgreSQL for FK validation",
+        help="DuckDB analytics service connection string",
+    ),
+    duckdb_token: str = typer.Option(
+        "",
+        "--duckdb-token",
+        envvar="DUCKDB_ANALYTICS_TOKEN",
+        show_envvar=True,
+        help="Bearer token for the DuckDB analytics service",
+    ),
+    export_dir: str = typer.Option(
+        ...,
+        "--export-dir",
+        help="Directory to hold the Parquet telemetry export (must not exist for a fresh export)",
+    ),
+    skip_export: bool = typer.Option(
+        False,
+        "--skip-export",
+        help="Reuse an existing export directory instead of reading ClickHouse again",
+    ),
+    skip_verify: bool = typer.Option(
+        False,
+        "--skip-verify",
+        help="Skip the post-load row-count verification",
     ),
     output: Annotated[
         OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
     ] = OutputMode.table,
 ) -> None:
-    """Validate telemetry Parquet files and optionally check FK references.
+    """Migrate telemetry from ClickHouse to DuckDB (one way).
+
+    Runs the three cutover steps in order:
+
+      1. export every telemetry table from ClickHouse to Parquet;
+      2. upload those partitions to the DuckDB analytics service and load them;
+      3. verify row counts and artifact checksums against the manifest.
+
+    There is no reverse command: DuckDB is the destination store. ClickHouse is
+    left untouched, so the operation can be re-run or rolled back by redeploying
+    the previous release.
+
+    Examples:
+        observal server migrate duckdb --clickhouse-url clickhouse://ch:8123/observal --export-dir ./telemetry-export
+        observal server migrate duckdb --export-dir ./telemetry-export --skip-export --output json
+    """
+    _require_pyarrow()
+    if not skip_export:
+        if not clickhouse_url:
+            fail(
+                ErrorCategory.VALIDATION,
+                "A ClickHouse source URL is required to export telemetry.",
+                operation="Migrate telemetry to DuckDB",
+                resource="--clickhouse-url",
+                remediation="Pass --clickhouse-url (or CLICKHOUSE_URL), or reuse an existing export with --skip-export.",
+            )
+        _warn_clickhouse_cleartext(clickhouse_url, output)
+    destination = Path(export_dir).expanduser()
+    if not skip_export and destination.exists():
+        fail(
+            ErrorCategory.CONFLICT,
+            "The telemetry export directory already exists.",
+            operation="Migrate telemetry to DuckDB",
+            resource=str(destination),
+            remediation="Choose a new --export-dir, or pass --skip-export to reuse it.",
+        )
+    if skip_export and not destination.is_dir():
+        fail(
+            ErrorCategory.NOT_FOUND,
+            "The telemetry export directory was not found.",
+            operation="Migrate telemetry to DuckDB",
+            resource=str(destination),
+            remediation="Run the export step first, or omit --skip-export.",
+        )
+
+    if not _is_json(output):
+        rprint(f"[bold]Migrating telemetry to DuckDB[/bold] ({escape(duckdb_url)})")
+
+    try:
+        export_result = None
+        if not skip_export:
+            export_result = asyncio.run(
+                export_ch(
+                    ChConnParams(url=clickhouse_url),
+                    destination / "migration_manifest.json",
+                    destination,
+                    _reporter(output),
+                    require_phase1=False,
+                )
+            )
+        load_result = asyncio.run(
+            load_telemetry_into_duckdb(
+                DuckDBConnParams(url=duckdb_url, token=duckdb_token),
+                destination,
+                _reporter(output),
+            )
+        )
+        validation = None
+        if not skip_verify:
+            validation = asyncio.run(
+                verify_duckdb_telemetry(
+                    DuckDBConnParams(url=duckdb_url, token=duckdb_token),
+                    destination,
+                )
+            )
+    except MigrationError as error:
+        _handle_migration_error(error, "Migrate telemetry to DuckDB")
+
+    # A target that already holds rows (an instance that has been running, or a
+    # repeated migration) legitimately shows more rows than the export carries.
+    # Missing rows are fatal; extra rows are reported, and a fresh table must
+    # take exactly the exported row count.
+    row_counts = {
+        table: {
+            "manifest_rows": counts[0],
+            "duckdb_rows": counts[1],
+            "pre_rows": load_result.pre_rows.get(table, 0),
+            "loaded_rows": load_result.rows_imported.get(table, 0),
+            "missing_rows": max(0, counts[0] - counts[1]),
+            "extra_rows": max(0, counts[1] - counts[0]),
+            "matches": counts[0] <= counts[1]
+            and not (load_result.pre_rows.get(table, 0) == 0 and load_result.rows_imported.get(table, 0) != counts[0]),
+        }
+        for table, counts in ((validation.row_count_results if validation else None) or {}).items()
+    }
+    mismatched = [table for table, counts in row_counts.items() if counts["missing_rows"]]
+    incomplete = [
+        table
+        for table, counts in row_counts.items()
+        if counts["pre_rows"] == 0 and counts["loaded_rows"] != counts["manifest_rows"] and not counts["missing_rows"]
+    ]
+    payload = {
+        "export": {
+            "directory": str(destination),
+            "tables": (export_result.table_results if export_result else {}),
+            "total_rows": export_result.total_rows if export_result else None,
+        },
+        "load": {
+            "migration_id": load_result.migration_id,
+            "tables_imported": load_result.tables_imported,
+            "tables_skipped": load_result.tables_skipped,
+            "rows_imported": load_result.rows_imported,
+            "total_rows": sum(load_result.rows_imported.values()),
+            "duration_seconds": load_result.duration_seconds,
+        },
+        "verification": {
+            "checksums_valid": validation.checksums_valid if validation else None,
+            "row_counts": row_counts,
+            "mismatched_tables": mismatched,
+            "incomplete_tables": incomplete,
+        },
+    }
+    if validation and (not validation.checksums_valid or mismatched or incomplete):
+        summary = (
+            "; ".join(
+                f"{table}: expected {counts['manifest_rows']}, found {counts['duckdb_rows']} "
+                f"(loaded {counts['loaded_rows']}, pre-existing {counts['pre_rows']})"
+                for table, counts in row_counts.items()
+                if table in mismatched or table in incomplete
+            )
+            or "artifact checksum mismatch"
+        )
+        fail(
+            ErrorCategory.VALIDATION,
+            "DuckDB telemetry verification failed"
+            + (
+                f" for {', '.join(sorted(set(mismatched) | set(incomplete)))}"
+                if (mismatched or incomplete)
+                else " (checksum mismatch)"
+            ),
+            operation="Migrate telemetry to DuckDB",
+            resource=str(destination),
+            remediation="Re-run the load, then compare the manifest row counts with the DuckDB tables.",
+            detail=summary,
+        )
+
+    if _is_json(output):
+        output_json(payload)
+        return
+
+    rprint("\n[bold green]✓ DuckDB telemetry migration complete[/bold green]")
+    rprint(f"  Export dir: {escape(str(destination))}")
+    rprint(f"  Tables:     {load_result.tables_imported} loaded, {len(load_result.tables_skipped)} skipped")
+    rprint(f"  Rows:       {sum(load_result.rows_imported.values()):,}")
+    if load_result.tables_skipped:
+        rprint(f"  Skipped:    {', '.join(map(escape, load_result.tables_skipped))}")
+    if validation:
+        extras = [table for table, counts in row_counts.items() if counts["extra_rows"]]
+        rprint("  Verify:     [green]no exported rows are missing; checksums match[/green]")
+        if extras:
+            rprint(
+                "  [dim]Note:[/dim]     target already held rows for "
+                + ", ".join(f"{table} (+{row_counts[table]['extra_rows']})" for table in extras)
+            )
+    rprint("\n[dim]ClickHouse was not modified. Redeploy the previous release to roll back.[/dim]")
+
+
+# ── Validate telemetry command ───────────────────────────
+
+
+@migrate_app.command("validate-telemetry")
+def validate_telemetry_cmd(
+    input_dir: str = typer.Option(..., "--input-dir", help="Directory containing Parquet files"),
+    duckdb_url: str | None = typer.Option(
+        None,
+        "--duckdb-url",
+        envvar="DUCKDB_ANALYTICS_URL",
+        show_envvar=True,
+        help="DuckDB analytics service for row count comparison",
+    ),
+    duckdb_token: str = typer.Option(
+        "",
+        "--duckdb-token",
+        envvar="DUCKDB_ANALYTICS_TOKEN",
+        show_envvar=True,
+        help="Bearer token for the DuckDB analytics service",
+    ),
+    output: Annotated[
+        OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
+    ] = OutputMode.table,
+) -> None:
+    """Validate telemetry Parquet files and optionally compare against DuckDB.
 
     Verifies SHA-256 checksums for all Parquet files in the export directory.
-    Optionally compares row counts against a live ClickHouse instance and
-    checks foreign key references (agent_id, mcp_id, user_id) against
-    PostgreSQL to detect orphaned telemetry records.
+    When a DuckDB URL is supplied it also compares per-table row counts against
+    the live analytics service.
 
     Examples:
         observal server migrate validate-telemetry --input-dir ./telemetry-export
@@ -599,31 +828,26 @@ def validate_telemetry_cmd(
         fail(
             ErrorCategory.NOT_FOUND,
             "The telemetry migration directory was not found.",
-            operation="Validate ClickHouse telemetry",
+            operation="Validate DuckDB telemetry",
             resource=str(input_path),
             remediation="Provide an existing telemetry export directory.",
         )
-    if clickhouse_url:
-        _warn_clickhouse_cleartext(clickhouse_url, output)
     if not _is_json(output):
         rprint(f"[bold]Validating telemetry in:[/bold] {escape(str(input_path))}")
     try:
         result: TelemetryValidationResult = asyncio.run(
-            validate_ch(
-                ChConnParams(url=clickhouse_url) if clickhouse_url else None,
-                PgConnParams(dsn=target_db_url) if target_db_url else None,
-                input_path,
-                _reporter(output),
-            )
+            verify_duckdb_telemetry(DuckDBConnParams(url=duckdb_url, token=duckdb_token), input_path)
+            if duckdb_url
+            else verify_artifact_checksums(input_path)
         )
     except MigrationError as error:
-        _handle_migration_error(error, "Validate ClickHouse telemetry")
+        _handle_migration_error(error, "Validate DuckDB telemetry")
 
     if not result.checksums_valid:
         fail(
             ErrorCategory.VALIDATION,
-            "ClickHouse telemetry checksum validation failed.",
-            operation="Validate ClickHouse telemetry",
+            "DuckDB telemetry checksum validation failed.",
+            operation="Validate DuckDB telemetry",
             resource=str(input_path),
             remediation="Discard the export and create it again.",
         )
@@ -631,19 +855,12 @@ def validate_telemetry_cmd(
         table: {"manifest_rows": counts[0], "database_rows": counts[1], "matches": counts[0] == counts[1]}
         for table, counts in (result.row_count_results or {}).items()
     }
-    orphan_groups = {
-        key: value
-        for key, value in (result.fk_results or {}).items()
-        if not key.endswith("_truncated") and isinstance(value, list) and value
-    }
     payload = {
         "directory": str(input_path),
         "valid": True,
         "checksums": result.checksum_results,
         "row_counts": row_counts,
         "row_count_mismatches": sum(not item["matches"] for item in row_counts.values()),
-        "foreign_keys": result.fk_results or {},
-        "orphan_groups": len(orphan_groups),
     }
     if _is_json(output):
         output_json(payload)

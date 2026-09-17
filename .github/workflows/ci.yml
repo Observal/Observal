@@ -5,6 +5,7 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 # SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -298,16 +299,19 @@ jobs:
           API_IMAGE_COUNT="$(grep -c "image: ghcr.io/observal/observal-api:${VERSION}" chart-dist/rendered.yaml)"
           test "$API_IMAGE_COUNT" -ge 3
           grep -q "image: ghcr.io/observal/observal-web:${VERSION}" chart-dist/rendered.yaml
+          grep -q "image: ghcr.io/observal/observal-duckdb:${VERSION}" chart-dist/rendered.yaml
 
           helm template observal "chart-dist/observal-${VERSION}.tgz" \
             --namespace observal \
             --set api.image.tag=custom-api \
             --set worker.image.tag=custom-worker \
-            --set web.image.tag=custom-web > chart-dist/rendered-overrides.yaml
+            --set web.image.tag=custom-web \
+            --set duckdb.image.tag=custom-duckdb > chart-dist/rendered-overrides.yaml
 
           grep -q "image: ghcr.io/observal/observal-api:custom-api" chart-dist/rendered-overrides.yaml
           grep -q "image: ghcr.io/observal/observal-api:custom-worker" chart-dist/rendered-overrides.yaml
           grep -q "image: ghcr.io/observal/observal-web:custom-web" chart-dist/rendered-overrides.yaml
+          grep -q "image: ghcr.io/observal/observal-duckdb:custom-duckdb" chart-dist/rendered-overrides.yaml
 
 # ── Job 6: Docker build ───────────────────────────────────────────────────────
   docker-build:

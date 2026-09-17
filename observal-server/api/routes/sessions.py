@@ -11,7 +11,7 @@
 
 """Session listing and detail endpoints - backed by session_events table.
 
-Reads from the session_events ClickHouse table populated by the
+Reads from the session_events analytics table populated by the
 /api/v1/ingest/session endpoint.  Uses session parsers to transform
 raw JSONL rows into frontend-friendly event dicts.
 """
@@ -28,20 +28,20 @@ import services.dynamic_settings as ds
 from api.deps import require_role
 from database import async_session
 from models.user import User, UserRole
-from services.clickhouse import _query
-from services.user_search import clickhouse_in_condition, resolve_user_filter_values
+from services.analytics.duckdb import _query
+from services.user_search import analytics_in_condition, resolve_user_filter_values
 
 router = APIRouter(prefix="/api/v1/sessions", tags=["sessions"])
 
 
-async def _ch_json(sql: str, params: dict | None = None) -> list[dict]:
+async def _analytics_json(sql: str, params: dict | None = None) -> list[dict]:
     optic.trace("sql={}, params={}", sql, params)
     try:
-        r = await _query(f"{sql} FORMAT JSON", params)
+        r = await _query(sql, params)
         if r.status_code == 200:
             return r.json().get("data", [])
     except Exception as e:
-        optic.warning("clickhouse_query_failed: {}", e)
+        optic.warning("analytics_query_failed: {}", e)
     return []
 
 
@@ -191,32 +191,27 @@ async def _list_sessions_query(
     offset: int = 0,
     mine: bool = False,
 ) -> list[dict]:
-    """Session list from session_stats_agg FINAL.
-
-    session_stats_agg is an AggregatingMergeTree table fed by session_stats_mv.
-    FINAL merges parts at read time; at ~1 row per session this is fast and
-    avoids illegal nested-aggregation errors with SimpleAggregateFunction columns.
-    """
+    """Session list from session_stats_agg."""
     optic.trace("platform={}, days={}, is_admin={}", platform, days, is_admin)
     where_parts = ["session_id != ''", "parent_session_id = ''", "prompt_count > 0"]
     params: dict[str, str] = {}
 
     if mine or not is_admin:
-        where_parts.append("user_id = {uid:String}")
-        params["param_uid"] = uid
+        where_parts.append("user_id = $uid")
+        params["uid"] = uid
     if days is not None and days > 0:
         where_parts.append(f"last_event_time > now() - INTERVAL {int(days)} DAY")
     if platform:
-        where_parts.append("harness = {platform:String}")
-        params["param_platform"] = platform
+        where_parts.append("harness = $platform")
+        params["platform"] = platform
     if user_ids:
-        condition = clickhouse_in_condition("user_id", user_ids, "user", params)
+        condition = analytics_in_condition("user_id", user_ids, "user", params)
         if condition:
             where_parts.append(condition)
 
     where_clause = "WHERE " + " AND ".join(where_parts) + " "
 
-    return await _ch_json(
+    return await _analytics_json(
         "SELECT "
         "session_id, "
         "if(first_event_time > '2020-01-01 00:00:00' AND first_event_time < '2099-01-01 00:00:00', "
@@ -236,7 +231,7 @@ async def _list_sessions_query(
         "agent_id, "
         "agent_version, "
         "user_id "
-        "FROM session_stats_agg FINAL " + where_clause + "ORDER BY last_event_time DESC "
+        "FROM session_stats_agg " + where_clause + "ORDER BY last_event_time DESC "
         f"LIMIT {int(limit)} OFFSET {int(offset)}",
         params or None,
     )
@@ -251,18 +246,17 @@ async def sessions_summary(
     user_filter = ""
     params: dict[str, str] = {}
     if not is_admin:
-        user_filter = "AND user_id = {uid:String} "
-        params["param_uid"] = str(current_user.id)
+        user_filter = "AND user_id = $uid "
+        params["uid"] = str(current_user.id)
 
-    # Use pre-aggregated session_stats_agg - avoids a full session_events FINAL scan.
-    # AggregatingMergeTree + GROUP BY merges partial aggregates at read time; no FINAL needed.
-    rows = await _ch_json(
+    # Use the pre-aggregated session_stats_agg instead of scanning session_events.
+    rows = await _analytics_json(
         "SELECT "
-        "count() AS total, "
-        "countIf(toDate(last_event_time) = today()) AS today_sessions "
+        "count(*) AS total, "
+        "count(*) FILTER (WHERE CAST(last_event_time AS DATE) = today()) AS today_sessions "
         "FROM ( "
         "  SELECT session_id, max(last_event_time) AS last_event_time "
-        "  FROM session_stats_agg FINAL "
+        "  FROM session_stats_agg "
         "  WHERE session_id != '' " + user_filter + "  GROUP BY session_id "
         ")",
         params or None,
@@ -277,13 +271,12 @@ async def sessions_summary(
 @router.get("/stats")
 @cache(expire=ds.get_sync_int("data.cache_ttl_default", 30), namespace="otel")
 async def sessions_stats(current_user: User = Depends(require_role(UserRole.admin))):
-    # Use pre-aggregated session_stats_agg - avoids a full session_events FINAL scan.
-    # prompt_count / tool_call_count in the MV correspond to 'user_prompt' / 'tool_call'
+    # prompt_count / tool_call_count correspond to the 'user_prompt' / 'tool_call'
     # event types (legacy otel names 'user' / 'tool_use' are not present in V3 events).
     optic.trace("user_id={}", current_user.id)
-    rows = await _ch_json(
+    rows = await _analytics_json(
         "SELECT "
-        "count() AS total_sessions, "
+        "count(*) AS total_sessions, "
         "sum(prompt_count) AS total_prompts, "
         "0 AS total_api_requests, "
         "sum(tool_call_count) AS total_tool_calls, "
@@ -293,7 +286,7 @@ async def sessions_stats(current_user: User = Depends(require_role(UserRole.admi
         "    sum(prompt_count) AS prompt_count, "
         "    sum(tool_call_count) AS tool_call_count, "
         "    sum(event_count) AS event_count "
-        "  FROM session_stats_agg FINAL "
+        "  FROM session_stats_agg "
         "  WHERE session_id != '' "
         "  GROUP BY session_id "
         ")"
@@ -318,68 +311,65 @@ async def get_session(
 ):
     optic.trace("session_id={}, after_offset={}", session_id, after_offset)
     is_admin = _has_admin_trace_access(current_user)
-    identity_params: dict[str, str] = {"param_sid": session_id}
+    identity_params: dict[str, object] = {"sid": session_id}
     identity_user_filter = ""
     if not is_admin:
-        identity_params["param_uid"] = str(current_user.id)
-        identity_user_filter = "AND user_id = {uid:String} "
-    identity_rows = await _ch_json(
-        "SELECT project_id, user_id, harness FROM session_events FINAL "
-        "WHERE session_id = {sid:String} " + identity_user_filter + "ORDER BY ingested_at DESC LIMIT 1",
+        identity_params["uid"] = str(current_user.id)
+        identity_user_filter = "AND user_id = $uid "
+    identity_rows = await _analytics_json(
+        "SELECT project_id, user_id, harness FROM session_events "
+        "WHERE session_id = $sid " + identity_user_filter + "ORDER BY ingested_at DESC LIMIT 1",
         identity_params,
     )
     if not identity_rows:
         return {"session_id": session_id, "harness": "", "events": []}
 
     identity = identity_rows[0]
-    params: dict[str, str] = {
-        "param_sid": session_id,
-        "param_pid": str(identity["project_id"]),
-        "param_uid": str(identity["user_id"]),
-        "param_harness": str(identity["harness"]),
+    params: dict[str, object] = {
+        "sid": session_id,
+        "pid": str(identity["project_id"]),
+        "uid": str(identity["user_id"]),
+        "harness": str(identity["harness"]),
     }
-    identity_filter = "project_id = {pid:String} AND user_id = {uid:String} AND harness = {harness:String} "
+    identity_filter = "project_id = $pid AND user_id = $uid AND harness = $harness "
 
     # Build offset filter for incremental fetches
     _offset_filter = ""
     if after_offset is not None:
-        _offset_filter = "AND line_offset > {offset:UInt32} "
-        params["param_offset"] = str(after_offset)
+        _offset_filter = "AND line_offset > CAST($offset AS INTEGER) "
+        params["offset"] = str(after_offset)
 
-    # Fan out both FINAL scans in parallel - wall time ≈ max(t1, t2) not t1+t2.
-    # Stable identity partitioning lets ClickHouse run FINAL per partition.
+    # Fan out both session reads in parallel.
     _main_sql = (
         "SELECT "
         "line_offset, timestamp, event_type, content_preview, tool_name, tool_id, "
         "uuid, parent_uuid, content_length, harness, agent_id, agent_version, raw_line, raw_line_truncated, "
         "credits, ingested_at "
-        "FROM session_events FINAL "
-        "WHERE session_id = {sid:String} AND "
+        "FROM session_events "
+        "WHERE session_id = $sid AND "
         + identity_filter
         + "AND rendered = 1 "
         + _offset_filter
-        + "ORDER BY line_offset ASC "
-        "SETTINGS max_final_threads = 4, do_not_merge_across_partitions_select_final = 1"
+        + "ORDER BY line_offset ASC"
     )
     _sub_params = dict(params)
     _sub_offset_filter = ""
     if after_offset is not None:
-        _sub_offset_filter = "AND line_offset > {offset:UInt32} "
+        _sub_offset_filter = "AND line_offset > CAST($offset AS INTEGER) "
     _sub_sql = (
         "SELECT session_id, timestamp, event_type, content_preview, "
         "tool_name, tool_id, uuid, parent_uuid, content_length, harness, "
         "raw_line, raw_line_truncated, credits, ingested_at, line_offset "
-        "FROM session_events FINAL "
-        "WHERE parent_session_id = {sid:String} AND "
+        "FROM session_events "
+        "WHERE parent_session_id = $sid AND "
         + identity_filter
         + "AND rendered = 1 "
         + _sub_offset_filter
-        + "ORDER BY session_id, line_offset ASC "
-        "SETTINGS max_final_threads = 4, do_not_merge_across_partitions_select_final = 1"
+        + "ORDER BY session_id, line_offset ASC"
     )
     rows, sub_rows_all = await asyncio.gather(
-        _ch_json(_main_sql, params),
-        _ch_json(_sub_sql, _sub_params),
+        _analytics_json(_main_sql, params),
+        _analytics_json(_sub_sql, _sub_params),
     )
 
     if not rows:
@@ -455,9 +445,9 @@ async def bind_session_agent(
     optic.trace("session_id={}, agent_name={}", session_id, agent_name)
     is_admin = _is_admin_user(current_user)
     if not is_admin:
-        params = {"param_sid": session_id, "param_uid": str(current_user.id)}
-        ownership = await _ch_json(
-            "SELECT 1 FROM session_events WHERE session_id = {sid:String} AND user_id = {uid:String} LIMIT 1",
+        params = {"sid": session_id, "uid": str(current_user.id)}
+        ownership = await _analytics_json(
+            "SELECT 1 AS present FROM session_events WHERE session_id = $sid AND user_id = $uid LIMIT 1",
             params,
         )
         if not ownership:

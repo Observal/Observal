@@ -23,7 +23,7 @@ spec:
         runAsNonRoot: false
       initContainers:
         {{- include "observal.initWaitPostgres" . | nindent 8 }}
-        {{- include "observal.initWaitClickhouse" . | nindent 8 }}
+        {{- include "observal.initWaitAnalytics" . | nindent 8 }}
         {{- include "observal.initWaitRedis" . | nindent 8 }}
       containers:
         - name: init

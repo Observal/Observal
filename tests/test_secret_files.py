@@ -1,9 +1,11 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -36,6 +38,7 @@ def test_secret_file_rejects_ambiguous_missing_and_oversized_values(tmp_path):
 
 
 def test_server_boot_and_cli_tokens_use_secret_files(tmp_path, monkeypatch):
+    import config as config_module
     from config import _secret_overrides
     from observal_cli import config as cli_config
 
@@ -47,6 +50,8 @@ def test_server_boot_and_cli_tokens_use_secret_files(tmp_path, monkeypatch):
     git_token.write_text("git-token\n")
 
     monkeypatch.delenv("SECRET_KEY", raising=False)
+    # A developer's local .env must not leak into this resolution test.
+    monkeypatch.setattr(config_module, "dotenv_values", lambda *_args, **_kwargs: {})
     monkeypatch.setenv("SECRET_KEY_FILE", str(app_secret))
     monkeypatch.setenv("GIT_CLONE_TOKEN_FILE", str(git_token))
     monkeypatch.setenv("OBSERVAL_TOKEN_FILE", str(token))
@@ -160,20 +165,21 @@ def test_server_package_uses_secret_files_and_loopback_defaults():
     assert "POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password" in env_template
     assert "OBSERVAL_BIND_ADDRESS=127.0.0.1" in env_template
     assert "${OBSERVAL_BIND_ADDRESS:-127.0.0.1}" in compose
-    assert "password_sha256_hex" in setup
+    assert "duckdb_analytics_token" in setup
     assert "chmod 640" in setup
     assert "OBSERVAL_SECRET_GID" in compose
     assert "openssl rand -hex" in setup
     assert "docker-compose.tls.yml" not in setup
-    db_service = compose[compose.index("\n  observal-db:\n") : compose.index("\n  observal-clickhouse:\n")]
+    db_service = compose[compose.index("\n  observal-db:\n") : compose.index("\n  observal-duckdb:\n")]
     assert "env_file:" not in db_service
     assert "./secrets/postgres:/run/secrets:ro" in db_service
     assert "./secrets:/run/secrets:ro" not in db_service
 
-    clickhouse_service = compose[compose.index("\n  observal-clickhouse:\n") : compose.index("\n  observal-redis:\n")]
-    assert "env_file:" not in clickhouse_service
-    assert "./secrets/clickhouse:/run/secrets:ro" in clickhouse_service
-    assert "cat /run/secrets/clickhouse_password" in clickhouse_service
+    duckdb_service = compose[compose.index("\n  observal-duckdb:\n") : compose.index("\n  observal-redis:\n")]
+    assert "env_file:" not in duckdb_service
+    assert "./secrets/duckdb:/run/secrets:ro" in duckdb_service
+    assert "DUCKDB_ANALYTICS_TOKEN_FILE" in duckdb_service
+    assert "DUCKDB_PATH" in duckdb_service
 
     observability = (root / "docker/server-package/docker-compose.observability.yml").read_text()
     grafana = observability[observability.index("  observal-grafana:") :]
@@ -212,7 +218,16 @@ def test_server_package_new_install_generates_restricted_secrets(tmp_path):
     assert stat.S_IMODE(secret.stat().st_mode) == 0o640
     assert "SECRET_KEY=" not in (install / ".env").read_text()
     assert "OBSERVAL_BIND_ADDRESS=127.0.0.1" in (install / ".env").read_text()
-    assert "password_sha256_hex" in (install / "clickhouse/users.d/generated-password.xml").read_text()
+    assert (install / "secrets/duckdb/duckdb_analytics_token").read_text()
+    assert (install / "secrets/duckdb_analytics_url").read_text() == "duckdb://observal-duckdb:8484/observal"
+    # The API/worker containers mount ./secrets at /run/secrets, so every
+    # *_FILE path they are handed has to resolve inside that layout.
+    installed_env = (install / ".env").read_text()
+    for key in ("DUCKDB_ANALYTICS_URL_FILE", "DUCKDB_ANALYTICS_TOKEN_FILE"):
+        match = re.search(rf"^{key}=(\S+)$", installed_env, re.MULTILINE)
+        assert match, f"{key} missing from the generated .env"
+        host_path = install / "secrets" / match.group(1).removeprefix("/run/secrets/")
+        assert host_path.is_file(), f"{key} points at {host_path}, which does not exist"
     assert "Grafana administrator" in result.stdout
     assert (install / "secrets/grafana/grafana_admin_password").read_text() in result.stdout
     assert "Password file:" in result.stdout
@@ -268,7 +283,7 @@ def test_server_package_replacement_preserves_existing_credentials(tmp_path):
     (install / ".env").write_text(
         "SECRET_KEY=existing-secret\n"
         "POSTGRES_PASSWORD=existing-postgres\n"
-        "CLICKHOUSE_PASSWORD=existing-clickhouse\n"
+        "DUCKDB_ANALYTICS_TOKEN=existing-duckdb-token\n"
         "GRAFANA_ADMIN_PASSWORD=existing-grafana\n"
         "DEMO_SUPER_ADMIN_EMAIL=owner@example.com\n"
     )
@@ -284,8 +299,8 @@ def test_server_package_replacement_preserves_existing_credentials(tmp_path):
 
     assert (install / "secrets/secret_key").read_text() == "existing-secret"
     assert (install / "secrets/postgres/postgres_password").read_text() == "existing-postgres"
-    assert (install / "secrets/clickhouse/clickhouse_password").read_text() == "existing-clickhouse"
-    assert (install / "secrets/grafana/clickhouse_password").read_text() == "existing-clickhouse"
+    assert (install / "secrets/duckdb/duckdb_analytics_token").read_text() == "existing-duckdb-token"
     assert (install / "secrets/grafana/grafana_admin_password").read_text() == "existing-grafana"
     assert "existing-postgres" in (install / "secrets/database_url").read_text()
+    assert (install / "secrets/duckdb_analytics_url").read_text() == "duckdb://observal-duckdb:8484/observal"
     assert "DEMO_SUPER_ADMIN_EMAIL=owner@example.com" in (install / ".env").read_text()

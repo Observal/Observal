@@ -24,7 +24,7 @@ async def liveness():
 @router.get("/readyz", include_in_schema=False)
 @router.get("/health")
 async def readiness(db: AsyncSession = Depends(get_db)):
-    """K8s readiness probe. Checks Postgres, ClickHouse, and Redis connectivity."""
+    """K8s readiness probe. Checks Postgres, analytics, and Redis connectivity."""
     checks: dict[str, object] = {"status": "ok"}
 
     try:
@@ -36,13 +36,13 @@ async def readiness(db: AsyncSession = Depends(get_db)):
         checks["status"] = "unhealthy"
         return JSONResponse(content=checks, status_code=503)
 
-    from services.clickhouse import clickhouse_health
+    from services.analytics.duckdb import analytics_health
 
-    if not await clickhouse_health():
-        checks["clickhouse"] = "unreachable"
+    if not await analytics_health():
+        checks["analytics"] = "unreachable"
         checks["status"] = "degraded"
     else:
-        checks["clickhouse"] = "ok"
+        checks["analytics"] = "ok"
 
     from services.redis import ping as redis_ping
 

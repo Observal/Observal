@@ -5,7 +5,7 @@
 """Fuzz the server-side secrets redactor.
 
 ``services.secrets_redactor.redact_secrets`` runs on every transcript line and
-every content preview before either is written to ClickHouse. It is the last
+every content preview before either is written to DuckDB. It is the last
 control that keeps API keys, JWTs, connection-string passwords and PEM blocks
 out of stored telemetry, and it is driven entirely by regular expressions --
 so it carries both a correctness risk (a missed secret is a leak) and an

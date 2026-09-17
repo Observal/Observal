@@ -20,8 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db, require_role
 from models.user import User, UserRole
-from services.clickhouse import _query
-from services.user_search import clickhouse_user_conditions, resolve_user_filter_values
+from services.analytics.duckdb import _query
+from services.user_search import analytics_user_conditions, resolve_user_filter_values
 
 router = APIRouter(prefix="/api/v1/admin/audit-log", tags=["audit"])
 
@@ -80,7 +80,7 @@ async def list_audit_logs(
     if actor:
         if db is not None:
             values = await resolve_user_filter_values(db, actor)
-            actor_conditions = clickhouse_user_conditions(
+            actor_conditions = analytics_user_conditions(
                 id_column="actor_id",
                 email_column="actor_email",
                 values=values,
@@ -92,52 +92,44 @@ async def list_audit_logs(
         if actor_conditions:
             conditions.append("(" + " OR ".join(actor_conditions) + ")")
         else:
-            conditions.append("actor_email = {actor:String}")
-            params["param_actor"] = actor
+            conditions.append("actor_email = $actor")
+            params["actor"] = actor
     if action:
-        conditions.append("action = {action:String}")
-        params["param_action"] = action
+        conditions.append("action = $action")
+        params["action"] = action
     if resource_type:
-        conditions.append("resource_type = {rtype:String}")
-        params["param_rtype"] = resource_type
+        conditions.append("resource_type = $rtype")
+        params["rtype"] = resource_type
     if sensitivity:
-        conditions.append("sensitivity = {sens:String}")
-        params["param_sens"] = sensitivity
+        conditions.append("sensitivity = $sens")
+        params["sens"] = sensitivity
     if outcome:
-        conditions.append("outcome = {outc:String}")
-        params["param_outc"] = outcome
+        conditions.append("outcome = $outc")
+        params["outc"] = outcome
     if source:
-        conditions.append("source = {src:String}")
-        params["param_src"] = source
+        conditions.append("source = $src")
+        params["src"] = source
     if start_date:
-        conditions.append("timestamp >= {start:String}")
-        params["param_start"] = start_date.strftime("%Y-%m-%d %H:%M:%S")
+        conditions.append("timestamp >= CAST($start AS TIMESTAMP)")
+        params["start"] = start_date.strftime("%Y-%m-%d %H:%M:%S")
     if end_date:
-        conditions.append("timestamp <= {end:String}")
-        params["param_end"] = end_date.strftime("%Y-%m-%d %H:%M:%S")
+        conditions.append("timestamp <= CAST($end AS TIMESTAMP)")
+        params["end"] = end_date.strftime("%Y-%m-%d %H:%M:%S")
 
     where_clause = " AND ".join(conditions) if conditions else "1=1"
     sql = f"""SELECT {_ALL_COLUMNS}
               FROM audit_log
               WHERE {where_clause}
               ORDER BY timestamp DESC
-              LIMIT {{lim:UInt32}} OFFSET {{off:UInt32}}
-              FORMAT JSONEachRow"""
-    params["param_lim"] = str(limit)
-    params["param_off"] = str(offset)
+              LIMIT CAST($lim AS INTEGER) OFFSET CAST($off AS INTEGER)"""
+    params["lim"] = str(limit)
+    params["off"] = str(offset)
 
     resp = await _query(sql, params)
     if resp.status_code != 200:
         return []
 
-    rows = []
-    for line in resp.text.strip().split("\n"):
-        if line.strip():
-            try:
-                rows.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-    return rows
+    return resp.json().get("data", [])
 
 
 @router.get("/export")
@@ -166,7 +158,7 @@ async def export_audit_logs(
     if actor:
         if db is not None:
             values = await resolve_user_filter_values(db, actor)
-            actor_conditions = clickhouse_user_conditions(
+            actor_conditions = analytics_user_conditions(
                 id_column="actor_id",
                 email_column="actor_email",
                 values=values,
@@ -178,46 +170,38 @@ async def export_audit_logs(
         if actor_conditions:
             conditions.append("(" + " OR ".join(actor_conditions) + ")")
         else:
-            conditions.append("actor_email = {actor:String}")
-            params["param_actor"] = actor
+            conditions.append("actor_email = $actor")
+            params["actor"] = actor
     if action:
-        conditions.append("action = {action:String}")
-        params["param_action"] = action
+        conditions.append("action = $action")
+        params["action"] = action
     if resource_type:
-        conditions.append("resource_type = {rtype:String}")
-        params["param_rtype"] = resource_type
+        conditions.append("resource_type = $rtype")
+        params["rtype"] = resource_type
     if sensitivity:
-        conditions.append("sensitivity = {sens:String}")
-        params["param_sens"] = sensitivity
+        conditions.append("sensitivity = $sens")
+        params["sens"] = sensitivity
     if outcome:
-        conditions.append("outcome = {outc:String}")
-        params["param_outc"] = outcome
+        conditions.append("outcome = $outc")
+        params["outc"] = outcome
     if source:
-        conditions.append("source = {src:String}")
-        params["param_src"] = source
+        conditions.append("source = $src")
+        params["src"] = source
     if start_date:
-        conditions.append("timestamp >= {start:String}")
-        params["param_start"] = start_date.strftime("%Y-%m-%d %H:%M:%S")
+        conditions.append("timestamp >= CAST($start AS TIMESTAMP)")
+        params["start"] = start_date.strftime("%Y-%m-%d %H:%M:%S")
     if end_date:
-        conditions.append("timestamp <= {end:String}")
-        params["param_end"] = end_date.strftime("%Y-%m-%d %H:%M:%S")
+        conditions.append("timestamp <= CAST($end AS TIMESTAMP)")
+        params["end"] = end_date.strftime("%Y-%m-%d %H:%M:%S")
 
     where_clause = " AND ".join(conditions) if conditions else "1=1"
     sql = f"""SELECT {_ALL_COLUMNS}
               FROM audit_log WHERE {where_clause}
-              ORDER BY timestamp DESC LIMIT 10000
-              FORMAT JSONEachRow"""
+              ORDER BY timestamp DESC LIMIT 10000"""
 
     resp = await _query(sql, params)
 
-    rows = []
-    if resp.status_code == 200:
-        for line in resp.text.strip().split("\n"):
-            if line.strip():
-                try:
-                    rows.append(json.loads(line))
-                except json.JSONDecodeError:
-                    continue
+    rows = resp.json().get("data", []) if resp.status_code == 200 else []
 
     if format == "json":
         return StreamingResponse(

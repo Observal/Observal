@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """MigrationJob model for tracking data migration operations."""
@@ -22,7 +23,7 @@ class MigrationOperation(str, enum.Enum):
 
 class MigrationScope(str, enum.Enum):
     postgres = "postgres"
-    clickhouse = "clickhouse"
+    telemetry = "telemetry"
     both = "both"
 
 

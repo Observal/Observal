@@ -55,15 +55,23 @@ observal server migrate import --archive registry.tar.gz --output json
 
 Source commands read `DATABASE_URL`; target commands read `TARGET_DATABASE_URL`. Keep URLs out of output and logs. Never replace these commands with hand-written SQL.
 
-## ClickHouse telemetry migration
+## Telemetry migration
 
 ```bash
-observal server migrate export-telemetry --manifest registry.manifest.json --output-dir telemetry-export --output json
-observal server migrate validate-telemetry --input-dir telemetry-export --output json
-observal server migrate import-telemetry --input-dir telemetry-export --output json
+observal server migrate export-telemetry --duckdb-url duckdb://observal-duckdb:8484/observal --output-dir telemetry-export --output json
+observal server migrate validate-telemetry --duckdb-url duckdb://observal-duckdb:8484/observal --input-dir telemetry-export --output json
+observal server migrate import-telemetry --duckdb-url duckdb://observal-duckdb:8484/observal --input-dir telemetry-export --output json
 ```
 
-Source commands read `CLICKHOUSE_URL`; target commands read `TARGET_CLICKHOUSE_URL`. Export requires a new destination directory. Validate files and Registry references before import.
+These leaves move telemetry between DuckDB-backed instances; they read `DUCKDB_ANALYTICS_URL` and `DUCKDB_ANALYTICS_TOKEN`. Export requires a new destination directory. Validate files and Registry references before import.
+
+Upgrading an installation that still runs ClickHouse is a one-way operation:
+
+```bash
+observal server migrate duckdb --clickhouse-url clickhouse://default:clickhouse@observal-clickhouse:8123/observal --duckdb-url duckdb://observal-duckdb:8484/observal --export-dir telemetry-export --output json
+```
+
+The command exports, loads, and verifies; it never modifies ClickHouse and has no reverse direction.
 
 ## Safety checks
 

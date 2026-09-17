@@ -67,10 +67,10 @@ resource "aws_security_group" "ecs_instances" {
   tags = { Name = "${local.name}-ecs-instances-sg" }
 }
 
-# ── Data host (Postgres, Redis, ClickHouse, optional observability) ───────
+# ── Data host (Postgres, Redis, DuckDB analytics, optional observability) ──
 resource "aws_security_group" "data_host" {
   name        = "${local.name}-data-host"
-  description = "Data tier EC2: Postgres, Redis, ClickHouse, Grafana, Prometheus."
+  description = "Data tier EC2: Postgres, Redis, DuckDB analytics, Grafana, Prometheus."
   vpc_id      = local.vpc_id
 
   ingress {
@@ -90,17 +90,9 @@ resource "aws_security_group" "data_host" {
   }
 
   ingress {
-    description     = "ClickHouse HTTP from ECS instances"
-    from_port       = 8123
-    to_port         = 8123
-    protocol        = "tcp"
-    security_groups = [aws_security_group.ecs_instances.id]
-  }
-
-  ingress {
-    description     = "ClickHouse native protocol from ECS instances"
-    from_port       = 9000
-    to_port         = 9000
+    description     = "DuckDB analytics HTTP from ECS instances"
+    from_port       = 8484
+    to_port         = 8484
     protocol        = "tcp"
     security_groups = [aws_security_group.ecs_instances.id]
   }

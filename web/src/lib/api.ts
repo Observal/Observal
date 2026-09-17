@@ -752,7 +752,7 @@ export const admin = {
 	purgeTracesAndInsights: () =>
 		post<{
 			project_id: string;
-			clickhouse_tables: string[];
+			analytics_tables: string[];
 			deleted_reports?: number;
 			deleted_facets?: number;
 			deleted_session_meta?: number;

@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+// SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
 import { useMigrationDownloadToken } from "@/hooks/use-admin-api";
@@ -122,10 +123,12 @@ function ExportResultView({ result }: { result: MigrationExportResult }) {
 		<div className="space-y-2">
 			<p className="text-xs font-medium">Export Summary</p>
 			<div className="grid grid-cols-2 gap-2 text-xs">
-				<div>
-					<span className="text-muted-foreground">Total rows:</span>{" "}
-					{result.total_rows.toLocaleString()}
-				</div>
+				{result.total_rows != null && (
+					<div>
+						<span className="text-muted-foreground">Total rows:</span>{" "}
+						{result.total_rows.toLocaleString()}
+					</div>
+				)}
 				{result.archive_size_bytes != null && (
 					<div>
 						<span className="text-muted-foreground">Archive:</span>{" "}
@@ -139,13 +142,13 @@ function ExportResultView({ result }: { result: MigrationExportResult }) {
 					</div>
 				)}
 			</div>
-			{Object.keys(result.table_counts).length > 0 && (
+			{Object.keys(result.table_counts ?? {}).length > 0 && (
 				<details className="text-xs">
 					<summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-						Table breakdown ({Object.keys(result.table_counts).length} tables)
+						Table breakdown ({Object.keys(result.table_counts ?? {}).length} tables)
 					</summary>
 					<div className="mt-1 max-h-32 overflow-y-auto space-y-0.5 pl-2">
-						{Object.entries(result.table_counts).map(([t, c]) => (
+						{Object.entries(result.table_counts ?? {}).map(([t, c]) => (
 							<div key={t} className="flex justify-between">
 								<span className="truncate">{t}</span>
 								<span className="text-muted-foreground">{c}</span>

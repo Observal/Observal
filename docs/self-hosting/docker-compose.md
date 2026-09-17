@@ -48,7 +48,7 @@ First build takes a few minutes (pulls images, builds `observal-api` and `observ
 docker compose -f docker/docker-compose.yml ps
 ```
 
-Every service should show `healthy` or `running`. The API waits for Postgres, ClickHouse, and Redis to pass health checks before starting. Expect 15–30 seconds on first boot.
+Every service should show `healthy` or `running`. The API waits for Postgres, DuckDB, and Redis to pass health checks before starting. Expect 15–30 seconds on first boot.
 
 Hit the health endpoint:
 

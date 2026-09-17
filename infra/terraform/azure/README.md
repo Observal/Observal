@@ -1,9 +1,10 @@
 <!-- SPDX-FileCopyrightText: 2026 Tanvi Reddy -->
+<!-- SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Observal - Azure Terraform Module
 
-Deploy Observal to Azure using Container Apps, PostgreSQL Flexible Server, Azure Cache for Redis, and a self-hosted ClickHouse VM.
+Deploy Observal to Azure using Container Apps, PostgreSQL Flexible Server, Azure Cache for Redis, and a self-hosted DuckDB analytics VM.
 
 ## Architecture
 
@@ -20,10 +21,10 @@ Azure Container Apps (VNet-integrated)
     v (private VNet)
     ├── Azure Database for PostgreSQL Flexible Server (zone-redundant in prod)
     ├── Azure Cache for Redis (Standard tier, TLS-only)
-    └── Azure VM: ClickHouse + Prometheus (Premium SSD data disk)
+    └── Azure VM: DuckDB analytics + Prometheus (Premium SSD data disk)
     |
     v
-Azure Managed Grafana (connected to Log Analytics + ClickHouse)
+Azure Managed Grafana (connected to Log Analytics)
 ```
 
 ## Prerequisites
@@ -65,11 +66,11 @@ terraform output web_url
 | `staging.tfvars` | Cost-optimized, single replicas, smaller SKUs |
 | `prod.tfvars` | Zone-redundant PostgreSQL, HA Redis, autoscaling, larger VMs |
 
-## ClickHouse Modes
+## Analytics Storage
 
-Set `clickhouse_mode`:
-- `"self_hosted"` (default) - Azure VM with managed disk. Cheapest option.
-- `"cloud"` - ClickHouse Cloud. Supply `clickhouse_cloud_url` and `clickhouse_cloud_password`.
+The analytics store is DuckDB on the data VM's managed disk. The file is owned
+by the analytics service container, so scaling the VM happens by rebuilding that
+instance; the disk survives replacements.
 
 ## Estimated Monthly Cost (Staging)
 
@@ -78,7 +79,7 @@ Set `clickhouse_mode`:
 | Container Apps (3 apps, min replicas) | $30 |
 | PostgreSQL Flexible (B2s) | $25 |
 | Redis (Standard C0) | $15 |
-| ClickHouse VM (D2s_v5) | $70 |
+| Analytics VM (D2s_v5) | $70 |
 | Managed Grafana | $10 |
 | Log Analytics | $5 |
 | ACR (Basic) | $5 |

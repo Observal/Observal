@@ -258,53 +258,44 @@ class TestValidateCommand:
 
 
 class TestExportTelemetryCommand:
-    """Verify export-telemetry passes correct args to export_ch."""
+    """Verify export-telemetry passes correct args to export_duckdb_telemetry."""
 
-    @patch("observal_cli.cmd_migrate.export_ch", new_callable=AsyncMock)
-    def test_export_telemetry_passes_ch_params(self, mock_export_ch, tmp_path):
-        """export_ch receives ChConnParams, manifest path, output dir, and reporter."""
-        mock_export_ch.return_value = _make_telemetry_export_result()
+    @patch("observal_cli.cmd_migrate.export_duckdb_telemetry", new_callable=AsyncMock)
+    def test_export_telemetry_passes_duckdb_params(self, mock_export, tmp_path):
+        """export_duckdb_telemetry receives DuckDBConnParams, output dir, and reporter."""
+        mock_export.return_value = _make_telemetry_export_result()
 
-        manifest = tmp_path / "manifest.json"
-        manifest.write_text("{}")
         output_dir = tmp_path / "out"
 
         result = runner.invoke(
             migrate_app,
             [
                 "export-telemetry",
-                "--clickhouse-url",
-                "clickhouse://default:pass@localhost:8123/observal",
-                "--manifest",
-                str(manifest),
+                "--duckdb-url",
+                "duckdb://default:pass@localhost:8484/observal",
                 "--output-dir",
                 str(output_dir),
             ],
         )
 
         assert result.exit_code == 0, result.output
-        mock_export_ch.assert_called_once()
-        args = mock_export_ch.call_args[0]
-        # First arg: ChConnParams
-        assert args[0].url == "clickhouse://default:pass@localhost:8123/observal"
-        # Second arg: manifest path
-        assert args[1] == Path(str(manifest))
-        # Third arg: output dir
-        assert args[2] == Path(str(output_dir))
-        # Fourth arg: reporter
-        assert hasattr(args[3], "update")
+        mock_export.assert_called_once()
+        args = mock_export.call_args[0]
+        assert args[0].url == "duckdb://default:pass@localhost:8484/observal"
+        assert args[1] == Path(str(output_dir))
+        assert hasattr(args[2], "update")
 
 
 # ── Import telemetry command tests ───────────────────────────
 
 
 class TestImportTelemetryCommand:
-    """Verify import-telemetry passes correct args to import_ch."""
+    """Verify import-telemetry passes correct args to load_telemetry_into_duckdb."""
 
-    @patch("observal_cli.cmd_migrate.import_ch", new_callable=AsyncMock)
-    def test_import_telemetry_passes_ch_params(self, mock_import_ch, tmp_path):
-        """import_ch receives only the connection, input directory, and reporter."""
-        mock_import_ch.return_value = _make_telemetry_import_result()
+    @patch("observal_cli.cmd_migrate.load_telemetry_into_duckdb", new_callable=AsyncMock)
+    def test_import_telemetry_passes_duckdb_params(self, mock_import, tmp_path):
+        """load_telemetry_into_duckdb receives only the connection, input directory, and reporter."""
+        mock_import.return_value = _make_telemetry_import_result()
 
         input_dir = tmp_path / "telemetry"
         input_dir.mkdir()
@@ -313,28 +304,28 @@ class TestImportTelemetryCommand:
             migrate_app,
             [
                 "import-telemetry",
-                "--clickhouse-url",
-                "clickhouse://default:@localhost:8123/observal",
+                "--duckdb-url",
+                "duckdb://analytics:8484/observal",
                 "--input-dir",
                 str(input_dir),
             ],
         )
 
         assert result.exit_code == 0, result.output
-        mock_import_ch.assert_called_once()
-        args, kwargs = mock_import_ch.call_args
-        # First arg: ChConnParams
-        assert args[0].url == "clickhouse://default:@localhost:8123/observal"
+        mock_import.assert_called_once()
+        args, kwargs = mock_import.call_args
+        # First arg: DuckDBConnParams
+        assert args[0].url == "duckdb://analytics:8484/observal"
         # Second arg: input dir
         assert args[1] == input_dir
         # Third arg: reporter
         assert hasattr(args[2], "update")
         assert not kwargs
 
-    @patch("observal_cli.cmd_migrate.import_ch", new_callable=AsyncMock)
-    def test_import_telemetry_without_target_identity_flags(self, mock_import_ch, tmp_path):
+    @patch("observal_cli.cmd_migrate.load_telemetry_into_duckdb", new_callable=AsyncMock)
+    def test_import_telemetry_without_target_identity_flags(self, mock_import, tmp_path):
         """The import command has no target identity options."""
-        mock_import_ch.return_value = _make_telemetry_import_result()
+        mock_import.return_value = _make_telemetry_import_result()
 
         input_dir = tmp_path / "telemetry"
         input_dir.mkdir()
@@ -343,15 +334,15 @@ class TestImportTelemetryCommand:
             migrate_app,
             [
                 "import-telemetry",
-                "--clickhouse-url",
-                "clickhouse://default:@localhost:8123/observal",
+                "--duckdb-url",
+                "duckdb://analytics:8484/observal",
                 "--input-dir",
                 str(input_dir),
             ],
         )
 
         assert result.exit_code == 0, result.output
-        _, kwargs = mock_import_ch.call_args
+        _, kwargs = mock_import.call_args
         assert not kwargs
 
 
@@ -359,12 +350,12 @@ class TestImportTelemetryCommand:
 
 
 class TestValidateTelemetryCommand:
-    """Verify validate-telemetry passes correct args to validate_ch."""
+    """Verify validate-telemetry passes correct args to verify_duckdb_telemetry."""
 
-    @patch("observal_cli.cmd_migrate.validate_ch", new_callable=AsyncMock)
-    def test_validate_telemetry_with_all_options(self, mock_validate_ch, tmp_path):
-        """validate_ch receives ch_params, pg_params, input dir, and reporter."""
-        mock_validate_ch.return_value = _make_telemetry_validation_result()
+    @patch("observal_cli.cmd_migrate.verify_duckdb_telemetry", new_callable=AsyncMock)
+    def test_validate_telemetry_with_all_options(self, mock_validate, tmp_path):
+        """verify_duckdb_telemetry receives the target params and input dir."""
+        mock_validate.return_value = _make_telemetry_validation_result()
 
         input_dir = tmp_path / "telemetry"
         input_dir.mkdir()
@@ -375,29 +366,21 @@ class TestValidateTelemetryCommand:
                 "validate-telemetry",
                 "--input-dir",
                 str(input_dir),
-                "--clickhouse-url",
-                "clickhouse://default:@localhost:8123/observal",
-                "--target-db-url",
-                "postgresql://u:p@h/d",
+                "--duckdb-url",
+                "duckdb://analytics:8484/observal",
             ],
         )
 
         assert result.exit_code == 0, result.output
-        mock_validate_ch.assert_called_once()
-        args = mock_validate_ch.call_args[0]
-        # First arg: ChConnParams
-        assert args[0].url == "clickhouse://default:@localhost:8123/observal"
-        # Second arg: PgConnParams
-        assert args[1].dsn == "postgresql://u:p@h/d"
-        # Third arg: input dir
-        assert args[2] == input_dir
-        # Fourth arg: reporter
-        assert hasattr(args[3], "update")
+        mock_validate.assert_called_once()
+        args = mock_validate.call_args[0]
+        assert args[0].url == "duckdb://analytics:8484/observal"
+        assert args[1] == input_dir
 
-    @patch("observal_cli.cmd_migrate.validate_ch", new_callable=AsyncMock)
-    def test_validate_telemetry_without_optional_urls(self, mock_validate_ch, tmp_path):
-        """Without optional URLs, ch_params and pg_params should be None."""
-        mock_validate_ch.return_value = _make_telemetry_validation_result()
+    @patch("observal_cli.cmd_migrate.verify_artifact_checksums", new_callable=AsyncMock)
+    def test_validate_telemetry_without_target_checks_checksums_only(self, mock_checksums, tmp_path):
+        """Without a target URL, validation only checks artifact checksums."""
+        mock_checksums.return_value = _make_telemetry_validation_result()
 
         input_dir = tmp_path / "telemetry"
         input_dir.mkdir()
@@ -408,9 +391,7 @@ class TestValidateTelemetryCommand:
         )
 
         assert result.exit_code == 0, result.output
-        args = mock_validate_ch.call_args[0]
-        assert args[0] is None  # No ch_params
-        assert args[1] is None  # No pg_params
+        assert mock_checksums.call_args[0][0] == input_dir
 
 
 # ── Error handling tests ─────────────────────────────────────

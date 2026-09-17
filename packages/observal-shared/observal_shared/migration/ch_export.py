@@ -9,6 +9,7 @@ import hashlib
 import os
 import shutil
 import time
+import uuid
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -134,23 +135,29 @@ async def export_ch(
     manifest_path: Path,
     output_dir: Path,
     reporter: ProgressReporter,
+    *,
+    require_phase1: bool = True,
 ) -> TelemetryExportResult:
     """Export ClickHouse telemetry tables to monthly Parquet files.
 
-    Requires a Phase 1 PG manifest (migration_manifest.json) as prerequisite.
-    Raises PrerequisiteError if manifest is missing or Phase 1 incomplete.
+    Requires a Phase 1 PG manifest (migration_manifest.json) as prerequisite
+    unless ``require_phase1`` is False, which the one-way DuckDB migration uses
+    to export telemetry without moving registry data first.
     """
     import httpx as _httpx
 
     t0 = time.monotonic()
 
-    # Phase gate: read Phase 1 manifest
-    if not manifest_path.exists():
-        raise PrerequisiteError(f"Phase 1 manifest not found: {manifest_path}")
-    p1_manifest = read_manifest(manifest_path)
-    if not p1_manifest.get("phase1_completed_at"):
-        raise PrerequisiteError("Phase 1 has not completed. Run PG export first.")
-    migration_id = p1_manifest["migration_id"]
+    if require_phase1:
+        # Phase gate: read Phase 1 manifest
+        if not manifest_path.exists():
+            raise PrerequisiteError(f"Phase 1 manifest not found: {manifest_path}")
+        p1_manifest = read_manifest(manifest_path)
+        if not p1_manifest.get("phase1_completed_at"):
+            raise PrerequisiteError("Phase 1 has not completed. Run PG export first.")
+        migration_id = p1_manifest["migration_id"]
+    else:
+        migration_id = str(uuid.uuid4())
 
     # Record cutoff before any queries
     export_time_cutoff = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]

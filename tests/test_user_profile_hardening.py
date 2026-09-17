@@ -1,21 +1,20 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Adversarial tests for the ClickHouse array literal built from session ids.
+"""Adversarial tests for the session-id allowlist used by profile queries.
 
 Session ids arrive from client-supplied ingest payloads, so they are
-untrusted input that ends up inside a hand-built ClickHouse array literal.
-These tests pin the allowlist behaviour: anything that could alter the shape
-of that literal must be dropped, never escaped-and-kept.
+untrusted input. They are bound as a list parameter now, and these tests pin
+the allowlist behaviour: anything outside the charset is dropped outright.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from services.user_profile import _id_array, _mcp_server_name, _topics_for, users_with_recent_activity
+from services.user_profile import _mcp_server_name, _safe_session_ids, _topics_for, users_with_recent_activity
 
-# Each of these, if admitted, would change how ClickHouse parses the literal.
+# Each of these, if admitted, would widen what the analytics query accepts.
 HOSTILE_IDS = [
     "a'",  # bare quote
     "a\\",  # trailing backslash escapes the closing quote
@@ -40,9 +39,7 @@ HOSTILE_IDS = [
 
 @pytest.mark.parametrize("hostile", HOSTILE_IDS)
 def test_hostile_session_ids_are_dropped(hostile):
-    literal = _id_array([hostile])
-
-    assert literal == "[]", f"{hostile!r} survived into the literal"
+    assert _safe_session_ids([hostile]) == [], f"{hostile!r} survived the allowlist"
 
 
 def test_legitimate_ids_survive():
@@ -54,55 +51,38 @@ def test_legitimate_ids_survive():
         "ABC-123",
     ]
 
-    literal = _id_array(ids)
-
-    for sid in ids:
-        assert f"'{sid}'" in literal
-    assert literal.startswith("[") and literal.endswith("]")
+    assert _safe_session_ids(ids) == ids
 
 
 def test_hostile_ids_do_not_contaminate_good_ones():
-    """One bad id must not break the literal for the rest."""
-    literal = _id_array(["good-1", "a\\", "good-2", "') OR 1=1 --"])
-
-    assert literal == "['good-1','good-2']"
+    """One bad id must not drop the good ones."""
+    assert _safe_session_ids(["good-1", "a\\", "good-2", "') OR 1=1 --"]) == ["good-1", "good-2"]
 
 
-def test_literal_never_contains_escape_characters():
-    literal = _id_array(["a\\", "b'", "c" * 10])
+def test_bound_ids_keep_no_quote_or_backslash():
+    """Values travel bound, so quotes/backslashes never reach a SQL string."""
+    kept = _safe_session_ids(["a\\", "b'", "c" * 10])
 
-    assert "\\" not in literal
-    # Quotes appear only as the delimiters we emitted.
-    assert literal.count("'") % 2 == 0
+    assert kept == ["c" * 10]
 
 
 def test_sql_metacharacters_inside_the_charset_are_inert():
-    """`--` is admitted but harmless: it cannot escape the surrounding quotes.
-
-    Hyphens must stay legal (uuids contain them). Because the allowlist bars
-    quotes and backslashes, the value can never terminate its literal, so a
-    comment marker inside it is just two characters of a string.
-    """
-    literal = _id_array(["--comment"])
-
-    assert literal == "['--comment']"
-    assert "\\" not in literal
+    """`--` is admitted but harmless: it is a bound value, never SQL text."""
+    assert _safe_session_ids(["--comment"]) == ["--comment"]
 
 
-def test_empty_input_yields_empty_array():
-    assert _id_array([]) == "[]"
+def test_empty_input_yields_empty_list():
+    assert _safe_session_ids([]) == []
 
 
 def test_none_entries_are_tolerated():
-    assert _id_array([None, "ok-1"]) == "['ok-1']"  # type: ignore[list-item]
+    assert _safe_session_ids([None, "ok-1"]) == ["ok-1"]  # type: ignore[list-item]
 
 
 def test_array_is_capped():
     from services.user_profile import MAX_ID_ARRAY
 
-    literal = _id_array([f"id-{i}" for i in range(MAX_ID_ARRAY + 50)])
-
-    assert literal.count("','") == MAX_ID_ARRAY - 1
+    assert len(_safe_session_ids([f"id-{i}" for i in range(MAX_ID_ARRAY + 50)])) == MAX_ID_ARRAY
 
 
 # ── profile helpers under hostile input ───────────────────────────────────
@@ -148,7 +128,7 @@ async def test_active_users_returns_project_user_pairs(monkeypatch):
 
     async def fake_query(sql: str, params: dict):
         assert "session_stats_agg" in sql
-        assert "param_since" in params
+        assert "since" in params
         return _FakeResponse(rows)
 
     monkeypatch.setattr("services.user_profile._query", fake_query)

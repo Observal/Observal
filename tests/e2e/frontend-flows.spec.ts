@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2025 Observal Contributors
+// SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
 import { test, expect } from "@playwright/test";
@@ -11,6 +12,8 @@ import { loginToWebUI, API_BASE, getAccessToken } from "./helpers";
 test.describe("Frontend Flows", () => {
   // Use an existing approved agent for search/detail tests
   let agentName: string;
+  // Pull commands carry the canonical namespace/slug, not the display name.
+  let agentSlug: string;
 
   test.beforeAll(async () => {
     const token = await getAccessToken();
@@ -21,9 +24,11 @@ test.describe("Frontend Flows", () => {
     const agents = await res.json();
     if (Array.isArray(agents) && agents.length > 0) {
       agentName = agents[0].name;
+      agentSlug = agents[0].slug ?? agents[0].name;
     } else {
       // Create and approve one for fresh instances
       agentName = `e2e-agent-${Date.now()}`;
+      agentSlug = agentName;
       const createRes = await fetch(`${API_BASE}/api/v1/agents`, {
         method: "POST",
         headers: {
@@ -56,7 +61,10 @@ test.describe("Frontend Flows", () => {
           headers: { Authorization: `Bearer ${token}` },
         });
         const all = await fallback.json();
-        if (Array.isArray(all) && all.length > 0) agentName = all[0].name;
+        if (Array.isArray(all) && all.length > 0) {
+          agentName = all[0].name;
+          agentSlug = all[0].slug ?? all[0].name;
+        }
       }
     }
   });
@@ -107,7 +115,7 @@ test.describe("Frontend Flows", () => {
     // Verify clipboard contains the pull command
     const clipboardText = await page.evaluate(() => navigator.clipboard.readText());
     expect(clipboardText).toContain("observal agent pull");
-    expect(clipboardText).toContain(agentName);
+    expect(clipboardText.toLowerCase()).toContain(agentSlug.toLowerCase());
   });
 
   /**

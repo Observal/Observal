@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-# Backups bucket — ClickHouse snapshots, RDS exports, ad-hoc data dumps.
+# Backups bucket — DuckDB snapshots, RDS exports, ad-hoc data dumps.
 
 # tfsec:ignore:aws-s3-encryption-customer-key SSE-S3 (AES256) is the default; supply a CMK via aws_s3_bucket_server_side_encryption_configuration → kms_master_key_id for stricter compliance.
 resource "aws_s3_bucket" "backups" {

@@ -49,7 +49,7 @@ class TestConfigAllowlist:
     def test_allowlist_contains_expected_keys(self):
         expected = {
             "DATABASE_URL",
-            "CLICKHOUSE_URL",
+            "DUCKDB_ANALYTICS_URL",
             "REDIS_URL",
             "REDIS_SOCKET_TIMEOUT",
             "EVAL_MODEL_NAME",

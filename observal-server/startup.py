@@ -12,11 +12,11 @@ from config import settings
 from database import engine
 from models import Base
 from models.enterprise_config import RESTART_PENDING_KEY, EnterpriseConfig
+from services.analytics.duckdb import init_analytics
 from services.audit import setup_audit, shutdown_audit
 from services.audit.event_handlers import register_audit_handlers
 from services.audit.event_handlers import shutdown_audit as shutdown_audit_handlers
 from services.cache import close_cache, init_cache
-from services.clickhouse import init_clickhouse
 from services.crypto import init_key_manager
 from services.redis import close as close_redis
 
@@ -49,7 +49,7 @@ async def run_startup_tasks() -> None:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
             await ensure_columns(conn)
-        await init_clickhouse()
+        await init_analytics()
 
     ds.load_external_settings()
     await ds.load_sync_cache()

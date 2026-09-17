@@ -5,14 +5,14 @@ SPDX-License-Identifier: Apache-2.0
 
 # Resource Tuning
 
-Connection pool sizes, query limits, and timeout configuration. These settings control how Observal connects to its backing stores (PostgreSQL, Redis, ClickHouse). Most deployments work fine with defaults. Tune when you see connection timeouts, pool exhaustion, or slow queries under load.
+Connection pool sizes, query limits, and timeout configuration. These settings control how Observal connects to its backing stores (PostgreSQL, Redis, DuckDB). Most deployments work fine with defaults. Tune when you see connection timeouts, pool exhaustion, or slow queries under load.
 
 ## When to Tune
 
 - **Connection pool errors** in API logs ("pool exhausted", "connection timeout")
 - **Slow dashboard loads** under concurrent users (increase pool sizes)
 - **OOM kills** on the API container (decrease pool sizes, each connection uses memory)
-- **ClickHouse query timeouts** on large trace datasets (increase timeout)
+- **DuckDB query timeouts** on large trace datasets (increase timeout)
 
 ## PostgreSQL {#postgresql}
 
@@ -70,85 +70,76 @@ Socket timeout in seconds for Redis operations.
 
 **When to increase:** Redis is in a different availability zone or region, causing occasional timeout errors on valid operations.
 
-## ClickHouse {#clickhouse}
+## DuckDB {#analytics}
 
-### ClickHouse Max Connections {#clickhouse-max-connections}
+Analytics settings split in two: connection limits and timeouts are boot-time
+environment variables, while memory and thread tuning is pushed to the running
+service from the admin Resource Tuning card (or re-applied with
+`POST /api/v1/admin/resources/apply`).
 
-Maximum HTTP connections to ClickHouse for analytics queries.
+### DuckDB Connections and Timeouts (environment)
 
-| Value | Effect |
-|-------|--------|
-| `20` (default) | Sufficient for most dashboard and trace query workloads |
-| `50` | Heavy analytics usage with many concurrent dashboard viewers |
-| `10` | Small deployments or shared ClickHouse clusters |
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `DUCKDB_ANALYTICS_MAX_CONNECTIONS` | `100` | HTTP connection pool between api/worker and the analytics service |
+| `DUCKDB_ANALYTICS_TIMEOUT` | `30.0` | Client-side timeout for a single analytics request |
 
-### ClickHouse Keepalive {#clickhouse-keepalive}
-
-Persistent connections kept alive between requests.
-
-| Value | Effect |
-|-------|--------|
-| `10` (default) | Reduces connection overhead for frequent queries |
-| `5` | Lower memory usage, slightly higher latency on first query per burst |
-| `20` | Faster response for sustained dashboard usage |
-
-### ClickHouse Query Timeout {#clickhouse-query-timeout}
-
-Maximum seconds a single ClickHouse query can run before cancellation.
-
-| Value | Effect |
-|-------|--------|
-| `10.0` (default) | Prevents runaway queries; sufficient for most trace lookups |
-| `30.0` | Allow complex aggregation queries on large datasets |
-| `5.0` | Strict; kills slow queries fast but may break large time-range dashboards |
-
-**When to increase:** Dashboard "query timeout" errors on wide time ranges or high-cardinality group-by queries.
+Per-query execution limits belong to the service container:
+`DUCKDB_QUERY_TIMEOUT` (default `60`), `DUCKDB_MAX_RESULT_ROWS` (default
+`100000`), and `DUCKDB_READ_CONNECTIONS` (default `4`).
 
 ### Skip DDL on Startup {#skip-ddl-on-startup}
 
-Skip ClickHouse schema migrations on server startup.
+Skip PostgreSQL schema creation on server startup (`SKIP_DDL_ON_STARTUP`).
 
 | Value | Effect |
 |-------|--------|
-| `false` (default) | Schema migrations run automatically on every startup |
-| `true` | Skip DDL when a separate deployment migration job applies ClickHouse migrations |
+| `false` (default) | The API creates missing Postgres tables at boot |
+| `true` | Skip that step when the init container already prepared the database |
 
-**When to enable:** Large ClickHouse clusters where DDL operations are slow or require coordination, or when running multiple API replicas (only one should run migrations).
+Analytics DDL is never applied by the API: the DuckDB service runs its own
+versioned migrations before it accepts queries.
 
 ### Query Memory Limit {#query-memory-limit}
 
-Maximum memory a single ClickHouse query can use (in bytes).
+`resource.max_query_memory_mb` — memory ceiling applied to every analytics
+connection (`PRAGMA memory_limit`).
 
 | Value | Effect |
 |-------|--------|
-| `10000000000` / 10GB (default) | Generous; allows complex aggregations |
-| `5000000000` / 5GB | Conservative; prevents a single query from consuming all memory |
-| `20000000000` / 20GB | For dedicated ClickHouse instances with abundant RAM |
+| `1024` (default) | 1 GB ceiling; enough for dashboard and trace queries |
+| `4096` | Heavy insight generation on large session sets |
+| `512` | Small deployments sharing a host with other services |
 
-### GROUP BY Spill Threshold {#group-by-spill-threshold}
+**When to increase:** the service logs an out-of-memory error while generating
+insights or dashboards over wide time ranges.
 
-Row count at which GROUP BY operations spill to disk instead of keeping everything in memory.
+### DuckDB Threads {#analytics-threads}
 
-| Value | Effect |
-|-------|--------|
-| `1000000` (default) | Spill after 1M grouped rows; balances speed and memory |
-| `500000` | More aggressive spilling; lower memory usage but slower |
-| `5000000` | Keep more in memory; faster but higher peak memory usage |
-
-### ORDER BY Spill Threshold {#order-by-spill-threshold}
-
-Row count at which ORDER BY operations spill to disk.
+`resource.threads` — worker threads DuckDB uses per query (`PRAGMA threads`).
 
 | Value | Effect |
 |-------|--------|
-| `1000000` (default) | Same tradeoff as GROUP BY threshold |
+| `4` (default) | Balanced for a shared 4–8 vCPU host |
+| `8` | Faster scans when the analytics host has spare cores |
+| `2` | Keeps the API responsive when analytics shares its host |
 
-### JOIN Memory Limit {#join-memory-limit}
+### DuckDB Temp Directory {#analytics-temp-directory}
 
-Maximum memory for JOIN operations (in bytes).
+`resource.temp_directory` — where DuckDB spills larger-than-memory operations.
+Empty means DuckDB's default (next to the database file).
 
 | Value | Effect |
 |-------|--------|
-| `5000000000` / 5GB (default) | Allows large JOINs for cross-referencing traces |
-| `2000000000` / 2GB | Conservative; may fail on very large trace correlations |
-| `10000000000` / 10GB | For heavy analytics workloads |
+| empty (default) | Spills inside the analytics volume |
+| `/data/tmp` | Pin spills to the data volume explicitly |
+| a fast local disk | Faster large sorts/joins when the volume is network-attached |
+
+### Spills and Large Sorts {#analytics-spills}
+
+DuckDB spills GROUP BY, ORDER BY, and hash joins to disk automatically once they
+exceed the memory ceiling; there is no per-operator spill threshold to tune.
+Control the spill location with `resource.temp_directory` and the overall
+ceiling with `resource.max_query_memory_mb`. If wide-range insight reports spill
+constantly, give the analytics container a faster disk before raising the memory
+limit.

@@ -20,7 +20,7 @@ mirrored under `fuzz/oss-fuzz/`.
 | `support_redaction_fuzzer` | `observal_cli.support.redaction`, the single chokepoint for `observal doctor support bundle` |
 
 Every target runs entirely in-process. None of them opens a socket, reads
-credentials, touches PostgreSQL, ClickHouse or Redis, or depends on the clock,
+credentials, touches PostgreSQL, DuckDB or Redis, or depends on the clock,
 so a crash reproduces from its input alone.
 
 `session_jsonl_fuzzer` reads the first input byte as a harness selector

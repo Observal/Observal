@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Terraform <-> App environment consistency checker.
@@ -33,7 +34,6 @@ COMMON_VARS = {
     "environment",
     "name_prefix",
     "image_tag",
-    "clickhouse_mode",
 }
 
 PROVIDER_SPECIFIC: dict[str, set[str]] = {
@@ -79,8 +79,7 @@ PLACEHOLDER_DEFAULTS = {"change-me-to-a-random-string"}
 DOCKER_COMPOSE_ONLY = {
     "POSTGRES_USER",
     "POSTGRES_PASSWORD",
-    "CLICKHOUSE_USER",
-    "CLICKHOUSE_PASSWORD",
+    "DUCKDB_ANALYTICS_TOKEN",
     "SEED_DEMO_ACCOUNTS",
 }
 
@@ -215,7 +214,6 @@ KNOWN_NON_CONFIG_VARS = {
 RAW_SECRETS = {
     "GRAFANA_ADMIN_PASSWORD",
     "DB_PASSWORD",
-    "CLICKHOUSE_PASSWORD",
 }
 
 

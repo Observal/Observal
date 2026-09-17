@@ -180,7 +180,7 @@ async def test_build_payload_contains_only_aggregate_fields(monkeypatch: pytest.
 
 @pytest.mark.asyncio
 async def test_session_metrics_include_aggregates_and_limit_harnesses(monkeypatch: pytest.MonkeyPatch):
-    from services.clickhouse import client as clickhouse_client
+    from services.analytics.duckdb import client as clickhouse_client
 
     totals_response = MagicMock()
     totals_response.json.return_value = {

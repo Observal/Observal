@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 // SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
 // SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+// SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
 
@@ -675,7 +676,7 @@ export default function SettingsPage() {
 			const count = Object.keys(res.applied).length;
 			if (count > 0) {
 				toast.success(
-					`Applied ${count} resource setting${count > 1 ? "s" : ""} to ClickHouse`,
+					`Applied ${count} resource setting${count > 1 ? "s" : ""} to DuckDB`,
 				);
 			} else {
 				toast.info(

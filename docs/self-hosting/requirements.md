@@ -14,7 +14,7 @@ Minimum and recommended specs for running the Observal stack.
 | Developer | 2 vCPU | 4 GB | 20 GB | One engineer, local machine |
 | Small team (≤10) | 2 vCPU | 6 GB | 50 GB | Small deployment, moderate telemetry |
 | Team (10–50) | 4 vCPU | 12 GB | 200 GB + fast SSD | Typical production deployment |
-| Large team (50+) | 8+ vCPU | 32 GB | 500 GB + fast SSD | High telemetry volume; consider externalizing ClickHouse |
+| Large team (50+) | 8+ vCPU | 32 GB | 500 GB + fast SSD | High telemetry volume; consider externalizing DuckDB |
 
 The stack's Docker memory limits out-of-the-box:
 
@@ -23,15 +23,15 @@ The stack's Docker memory limits out-of-the-box:
 | `observal-api` | 512 MB |
 | `observal-worker` | 512 MB |
 | `observal-web` | 256 MB |
-| `observal-clickhouse` | 1 GB |
+| `observal-duckdb` | 1 GB |
 | `observal-redis` | 256 MB |
 | `observal-grafana` | 512 MB |
 
-ClickHouse is the memory-hungry one. On a long-running team server, bump it to 2–4 GB in `docker/docker-compose.yml`.
+DuckDB is the memory-hungry one. On a long-running team server, bump it to 2–4 GB in `docker/docker-compose.yml`.
 
 ## Disk: where the data goes
 
-The heaviest user of disk is **ClickHouse**. Growth depends on:
+The heaviest user of disk is **DuckDB**. Growth depends on:
 
 * Number and length of harness sessions
 * Raw transcript record size
@@ -62,7 +62,7 @@ For the **CLI** (developer machines, not the server):
 * **Outbound HTTPS**: required for image downloads and enabled integrations such as OAuth, webhooks, external Git repositories, or model providers.
 * **Inbound**: the server package routes the UI, API, and session telemetry through nginx on port `8000`.
 * **Between services**: the private `observal-net` bridge handles application traffic.
-* **Host bindings**: new server-package installs bind nginx, the direct web port, PostgreSQL, ClickHouse, Redis, Prometheus, and Grafana to `127.0.0.1` by default.
+* **Host bindings**: new server-package installs bind nginx, the direct web port, PostgreSQL, DuckDB, Redis, Prometheus, and Grafana to `127.0.0.1` by default.
 * **Secret access**: server-package setup records the operator's group as `OBSERVAL_SECRET_GID`; only that group is added to containers that need their service-specific files.
 
 ## TLS / HTTPS

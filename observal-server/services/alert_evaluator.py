@@ -13,7 +13,7 @@ from sqlalchemy import select
 from database import async_session
 from models.alert import AlertRule
 from models.alert_history import AlertHistory
-from services.clickhouse import _query
+from services.analytics.duckdb import _query
 from services.ssrf_guard import is_private_url  # noqa: F401 -- re-exported for callers
 
 LOOKBACK_MINUTES = 5
@@ -28,16 +28,15 @@ async def _query_error_rate(target_type: str, target_id: str, lookback_minutes: 
     """
     optic.trace("querying error rate for {} {}", target_type, target_id)
     sql = "SELECT 0 AS error_rate"
-    params: dict[str, str] = {"param_lookback": str(lookback_minutes)}
     try:
-        r = await _query(sql, params)
+        r = await _query(sql)
         r.raise_for_status()
-        text = r.text.strip()
-        if not text:
+        rows = r.json().get("data", [])
+        if not rows:
             return None
-        return float(text)
+        return float(rows[0]["error_rate"])
     except Exception as e:
-        optic.error("ClickHouse error_rate query failed: {}", e)
+        optic.error("analytics error_rate query failed: {}", e)
         return None
 
 
@@ -48,16 +47,15 @@ async def _query_latency_p99(target_type: str, target_id: str, lookback_minutes:
     """
     optic.trace("querying p99 latency for {} {}", target_type, target_id)
     sql = "SELECT 0 AS latency_p99"
-    params: dict[str, str] = {"param_lookback": str(lookback_minutes)}
     try:
-        r = await _query(sql, params)
+        r = await _query(sql)
         r.raise_for_status()
-        text = r.text.strip()
-        if not text:
+        rows = r.json().get("data", [])
+        if not rows:
             return None
-        return float(text)
+        return float(rows[0]["latency_p99"])
     except Exception as e:
-        optic.error("ClickHouse latency_p99 query failed: {}", e)
+        optic.error("analytics latency_p99 query failed: {}", e)
         return None
 
 
@@ -66,22 +64,22 @@ async def _query_token_usage(target_type: str, target_id: str, lookback_minutes:
     optic.trace("querying token usage for {} {}", target_type, target_id)
     sql = (
         "SELECT sum(input_tokens + output_tokens + cache_read_tokens + cache_write_tokens) AS token_usage "
-        "FROM session_stats_agg FINAL "
-        "WHERE last_event_time > now() - INTERVAL {lookback:UInt32} MINUTE"
+        "FROM session_stats_agg "
+        "WHERE last_event_time > now() - to_minutes(CAST($lookback AS BIGINT))"
     )
-    params: dict[str, str] = {"param_lookback": str(lookback_minutes)}
+    params: dict[str, str] = {"lookback": str(lookback_minutes)}
     if target_type == "agent":
-        sql += " AND agent_id = {target_id:String}"
-        params["param_target_id"] = target_id
+        sql += " AND agent_id = $target_id"
+        params["target_id"] = target_id
     try:
         r = await _query(sql, params)
         r.raise_for_status()
-        text = r.text.strip()
-        if not text:
+        rows = r.json().get("data", [])
+        if not rows:
             return None
-        return float(text)
+        return float(rows[0].get("token_usage") or 0)
     except Exception as e:
-        optic.error("ClickHouse token_usage query failed: {}", e)
+        optic.error("analytics token_usage query failed: {}", e)
         return None
 
 
@@ -207,6 +205,6 @@ async def evaluate_alerts(ctx: dict) -> None:
             except Exception as e:
                 optic.error("alert rule {} evaluation crashed: {}", rule.id, e)
 
-    # AD-1: Batch-flush delivery records to ClickHouse at end of cycle
+    # AD-1: Batch-flush delivery records to DuckDB at end of cycle
     await flush_delivery_records()
     optic.info("alert evaluation cycle complete")

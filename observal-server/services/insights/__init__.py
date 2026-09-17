@@ -205,7 +205,7 @@ def configure_insights():
     from models.insight_meta_cache import InsightMetaCache
     from models.insight_session_facets import InsightSessionFacets
     from models.insight_session_meta import InsightSessionMeta
-    from services.clickhouse import _query
+    from services.analytics.duckdb import _query
 
     from . import _deps
 

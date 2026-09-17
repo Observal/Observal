@@ -34,10 +34,10 @@ Observal has been installed! 🎉
    See: docs/self-hosting/kubernetes-helm.md
 {{- end }}
 
-{{- if .Values.clickhouse.enabled }}
-
-⚠️  WARNING: In-cluster ClickHouse is running (same caveat as above).
-{{- end }}
+⚠️  WARNING: In-cluster DuckDB analytics is running.
+   The DuckDB singleton must stay at exactly one replica: two writers would
+   corrupt the analytics file. Back it up with `observal server backup`
+   before upgrades.
 
   Useful commands:
     kubectl get pods -n {{ .Release.Namespace }}

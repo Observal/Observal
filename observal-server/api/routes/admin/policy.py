@@ -13,7 +13,7 @@ from api.deps import get_db, require_role
 from models.enterprise_config import EnterpriseConfig
 from models.user import User, UserRole
 from services.security_events import EventType, SecurityEvent, Severity, emit_security_event
-from services.user_search import clickhouse_user_conditions, resolve_user_filter_values
+from services.user_search import resolve_user_filter_values
 
 from ._router import router
 
@@ -42,21 +42,22 @@ async def get_security_events(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
-    """Query the deployment security event log from ClickHouse."""
+    """Query the deployment security event log from the analytics store."""
     del current_user
-    from services.clickhouse import _query
+    from services.analytics.duckdb import _query
+    from services.user_search import analytics_user_conditions
 
     conditions = ["1 = 1"]
-    params: dict[str, str] = {}
+    params: dict[str, object] = {}
     if event_type:
-        conditions.append("event_type = {et:String}")
-        params["param_et"] = event_type
+        conditions.append("event_type = $et")
+        params["et"] = event_type
     if severity:
-        conditions.append("severity = {sev:String}")
-        params["param_sev"] = severity
+        conditions.append("severity = $sev")
+        params["sev"] = severity
     if actor_email:
         values = await resolve_user_filter_values(db, actor_email)
-        actor_conditions = clickhouse_user_conditions(
+        actor_conditions = analytics_user_conditions(
             id_column="actor_id",
             email_column="actor_email",
             values=values,
@@ -66,19 +67,20 @@ async def get_security_events(
         if actor_conditions:
             conditions.append("(" + " OR ".join(actor_conditions) + ")")
         else:
-            conditions.append("actor_email = {ae:String}")
-            params["param_ae"] = actor_email
+            conditions.append("actor_email = $ae")
+            params["ae"] = actor_email
 
     limit = min(max(int(limit), 1), 1000)
     offset = max(int(offset), 0)
     sql = (
         f"SELECT * FROM security_events WHERE {' AND '.join(conditions)} "
-        f"ORDER BY timestamp DESC LIMIT {limit} OFFSET {offset} FORMAT JSON"
+        f"ORDER BY timestamp DESC LIMIT {limit} OFFSET {offset}"
     )
     response = await _query(sql, params)
     response.raise_for_status()
     data = response.json()
-    return {"events": data.get("data", []), "total": data.get("rows", 0)}
+    events = data.get("data", [])
+    return {"events": events, "total": data.get("rows", len(events))}
 
 
 @router.get("/trace-privacy")

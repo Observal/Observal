@@ -1,7 +1,8 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Build readable session transcripts from ClickHouse session_events.
+"""Build readable session transcripts from DuckDB session_events.
 
 Reads raw JSONL lines stored in session_events and formats them into a
 human-readable transcript suitable for LLM facet extraction.
@@ -45,12 +46,11 @@ async def build_session_transcript(session_id: str) -> str:
 
     sql = """
         SELECT line_offset, event_type, tool_name, raw_line
-        FROM session_events FINAL
-        WHERE session_id = {sid:String}
+        FROM session_events
+        WHERE session_id = $sid
         ORDER BY line_offset ASC
-        FORMAT JSON
     """
-    params = {"param_sid": session_id}
+    params = {"sid": session_id}
 
     try:
         r = await query(sql, params)

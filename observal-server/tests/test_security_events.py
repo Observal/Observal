@@ -47,7 +47,7 @@ class TestSecurityEventModel:
         assert d["severity"] == "warning"
         assert d["outcome"] == "failure"
 
-    def test_to_clickhouse_row(self):
+    def test_to_analytics_row(self):
         event = SecurityEvent(
             event_type=EventType.LOGIN_FAILURE,
             severity=Severity.WARNING,
@@ -56,7 +56,7 @@ class TestSecurityEventModel:
             source_ip="1.2.3.4",
             detail="Invalid email or password",
         )
-        row = event.to_clickhouse_row()
+        row = event.to_analytics_row()
         assert row["event_type"] == "auth.login.failure"
         assert row["severity"] == "warning"
         assert row["source_ip"] == "1.2.3.4"
@@ -117,7 +117,7 @@ class TestEmitSecurityEvent:
         assert caplog.records[0].levelno == logging.CRITICAL
 
     @pytest.mark.asyncio
-    async def test_emit_does_not_raise_on_clickhouse_failure(self, caplog):
+    async def test_emit_does_not_raise_on_analytics_failure(self, caplog):
         event = SecurityEvent(
             event_type=EventType.REGISTRATION,
             severity=Severity.INFO,
@@ -125,7 +125,7 @@ class TestEmitSecurityEvent:
         )
         with caplog.at_level(logging.DEBUG, logger="observal.security"):
             await emit_security_event(event)
-        # Should not raise even though ClickHouse is unavailable
+        # Should not raise even though DuckDB is unavailable
 
 
 class TestExtractRequestInfo:

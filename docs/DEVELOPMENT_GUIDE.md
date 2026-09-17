@@ -44,7 +44,7 @@
   * [Code coverage](DEVELOPMENT_GUIDE.md#code-coverage)
   * [Adding a database migration](DEVELOPMENT_GUIDE.md#adding-a-database-migration)
   * [Connecting to PostgreSQL directly](DEVELOPMENT_GUIDE.md#connecting-to-postgresql-directly)
-  * [Connecting to ClickHouse directly](DEVELOPMENT_GUIDE.md#connecting-to-clickhouse-directly)
+  * [Connecting to DuckDB directly](DEVELOPMENT_GUIDE.md#connecting-to-duckdb-directly)
   * [Debugging the API](DEVELOPMENT_GUIDE.md#debugging-the-api)
 * [Working on the Frontend](DEVELOPMENT_GUIDE.md#working-on-the-frontend)
   * [Running the frontend in isolation](DEVELOPMENT_GUIDE.md#running-the-frontend-in-isolation)
@@ -225,7 +225,7 @@ docker compose -f docker/docker-compose.yml ps
 | Web UI (direct)      | `http://localhost:3000` |
 | Prometheus, optional | `http://localhost:9090` |
 | Grafana, optional    | `http://localhost:3001` |
-| ClickHouse HTTP      | `http://localhost:8123` |
+| DuckDB HTTP      | `http://localhost:8123` |
 
 ### Install the CLI
 
@@ -276,7 +276,7 @@ make reset         # nuke all volumes and rebuild from scratch (destructive)
 | Situation                                                                                    | Target               | Notes                                                                                                                                                                                  |
 | -------------------------------------------------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Backend source changed                                                                       | `make rebuild-fast`  | Rebuilds the shared API image used by API, init, and worker.                                                                                                                           |
-| Worker, init, migration, or ClickHouse setup code changed                                    | `make rebuild-fast`  | These services use the same `observal-api` image. This is the safe path for schema and init path changes because it refreshes the image used by `observal-init` and `observal-worker`. |
+| Worker, init, migration, or DuckDB setup code changed                                    | `make rebuild-fast`  | These services use the same `observal-api` image. This is the safe path for schema and init path changes because it refreshes the image used by `observal-init` and `observal-worker`. |
 | Python dependencies changed in `observal-server/pyproject.toml` or `observal-server/uv.lock` | `make rebuild-fast`  | Docker reruns the Python dependency layer when those files change.                                                                                                                     |
 | Frontend source changed                                                                      | `make rebuild-fast`  | Rebuilds the web image.                                                                                                                                                                |
 | Frontend dependencies changed in `package.json`, `web/package.json`, or `pnpm-lock.yaml`     | `make rebuild-fast`  | Docker reruns the pnpm dependency layer when those files change.                                                                                                                       |
@@ -304,9 +304,9 @@ scripts/            Dev tooling scripts
 **Databases:**
 
 * **PostgreSQL**, relational data (users, agents, registry, feedback)
-* **ClickHouse**, session events, aggregates, audit events, and security events
+* **DuckDB**, session events, aggregates, audit events, and security events
 
-They are not interchangeable. Never write telemetry to Postgres or relational data to ClickHouse.
+They are not interchangeable. Never write telemetry to Postgres or relational data to DuckDB.
 
 **Supporting services:** Redis (pub/sub + arq job queue), arq worker, nginx reverse proxy. Prometheus and Grafana are optional.
 
@@ -471,27 +471,19 @@ docker compose -f docker/docker-compose.yml exec db \
 
 Useful for inspecting tables, running manual queries, or verifying migration results.
 
-### Connecting to ClickHouse directly
+### Connecting to DuckDB directly
 
-ClickHouse exposes an HTTP interface. Use the Play UI in your browser:
-
-```
-http://localhost:8123/play
-```
-
-Or query from the terminal:
+The analytics service exposes an HTTP SQL interface. Query it with the shared token:
 
 ```bash
-curl -s "http://localhost:8123/?query=SELECT+count()+FROM+session_events" \
-  -u "default:"
+curl -s -X POST http://localhost:8484/query \
+  -H "Authorization: Bearer $DUCKDB_ANALYTICS_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"sql": "SELECT count(*) AS rows FROM session_events"}'
 ```
 
-Or connect with the CLI client:
-
-```bash
-docker compose -f docker/docker-compose.yml exec clickhouse \
-  clickhouse-client --user default
-```
+The database file itself lives in the `duckdbdata` volume; only the service
+container may open it for writing.
 
 ### Debugging the API
 

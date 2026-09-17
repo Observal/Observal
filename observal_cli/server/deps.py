@@ -1,9 +1,11 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Download and manage dependency binaries (PostgreSQL, ClickHouse, Redis).
+"""Download and manage dependency binaries (PostgreSQL, Redis).
 
 Handles platform-specific downloads, checksum verification, and extraction.
+The analytics store is DuckDB, which ships in-process with the server package
+and therefore needs no downloaded binary.
 """
 
 from __future__ import annotations
@@ -123,8 +125,6 @@ def is_installed(service: str) -> bool:
     bins = get_bin_paths()
     if service == "postgres":
         return bins["postgres"].exists() and bins["initdb"].exists()
-    elif service == "clickhouse":
-        return bins["clickhouse"].exists()
     elif service == "redis":
         return bins["redis_server"].exists()
     return False
@@ -132,7 +132,7 @@ def is_installed(service: str) -> bool:
 
 def all_installed() -> bool:
     """Check if all dependency binaries are installed."""
-    return all(is_installed(svc) for svc in ("postgres", "clickhouse", "redis"))
+    return all(is_installed(svc) for svc in ("postgres", "redis"))
 
 
 def install_dependencies(force: bool = False) -> None:
@@ -182,7 +182,7 @@ def install_single(service: str, force: bool = False) -> None:
     """Download and install a single service's binaries.
 
     Args:
-        service: One of "postgres", "clickhouse", "redis".
+        service: One of "postgres", "redis".
         force: Re-download even if already installed.
     """
     if not force and is_installed(service):

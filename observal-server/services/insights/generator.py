@@ -6,7 +6,7 @@
 Ground-up V5 rewrite modeled after pi /insights.
 
 Pipeline:
-1. Extract deterministic session metadata from raw JSONL in ClickHouse
+1. Extract deterministic session metadata from raw JSONL in DuckDB
 2. Build transcripts for top sessions (for facet extraction)
 3. Extract facets via Haiku (goal, outcome, satisfaction, friction, instructions)
 4. Aggregate metas + facets into a focused data block
@@ -114,7 +114,7 @@ async def _run_pipeline(
     await _emit_progress(progress_callback, "extracting_metadata", 1, 9, "Extracting deterministic session metadata")
 
     # ── Step 1: Deterministic metadata extraction from raw JSONL ──────────
-    # This reads actual session content from ClickHouse and computes:
+    # This reads actual session content from DuckDB and computes:
     # lines added/removed, git commits, languages, tool errors, response
     # times, subagent usage, cost, etc.
     session_metas = await extract_all_session_metas(

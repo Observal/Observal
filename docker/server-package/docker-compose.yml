@@ -16,7 +16,7 @@ services:
     depends_on:
       observal-db:
         condition: service_healthy
-      observal-clickhouse:
+      observal-duckdb:
         condition: service_healthy
       observal-redis:
         condition: service_healthy
@@ -99,33 +99,37 @@ services:
     networks:
       - observal-net
 
-  observal-clickhouse:
-    image: clickhouse/clickhouse-server:26.6
+  # DuckDB analytics singleton: the only writer of the analytics database.
+  observal-duckdb:
+    image: ghcr.io/observal/observal-duckdb:${OBSERVAL_VERSION:-latest}
     group_add:
       - "${OBSERVAL_SECRET_GID:-1000}"
     ports:
-      - "${OBSERVAL_BIND_ADDRESS:-127.0.0.1}:${CLICKHOUSE_HOST_PORT:-8123}:8123"
+      - "${OBSERVAL_BIND_ADDRESS:-127.0.0.1}:${DUCKDB_HOST_PORT:-8484}:8484"
     environment:
-      MAX_SERVER_MEMORY_USAGE_RATIO: "0.8"
-      HEALTHCHECK_CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-}
+      DUCKDB_PATH: /data/analytics.duckdb
+      DUCKDB_ANALYTICS_TOKEN_FILE: /run/secrets/duckdb_analytics_token
+      DUCKDB_MEMORY_LIMIT: ${DUCKDB_MEMORY_LIMIT:-2GB}
     volumes:
-      - chdata:/var/lib/clickhouse
-      - ./clickhouse/config.d:/etc/clickhouse-server/config.d:ro
-      - ./clickhouse/users.d:/etc/clickhouse-server/users.d:ro
-      - ./secrets/clickhouse:/run/secrets:ro
+      - duckdbdata:/data
+      - ./secrets/duckdb:/run/secrets:ro
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "if [ -s /run/secrets/clickhouse_password ]; then clickhouse-client --password \"$$(cat /run/secrets/clickhouse_password)\" --query 'SELECT 1'; else clickhouse-client --password \"$${HEALTHCHECK_CLICKHOUSE_PASSWORD:-clickhouse}\" --query 'SELECT 1'; fi",
+          "/app/.venv/bin/python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8484/health')\"",
         ]
       interval: 5s
       timeout: 3s
       retries: 10
+      start_period: 10s
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     deploy:
       resources:
         limits:
-          memory: ${CLICKHOUSE_MEMORY_LIMIT:-2G}
+          memory: ${DUCKDB_MEMORY_LIMIT:-2GB}
     networks:
       - observal-net
 
@@ -218,7 +222,7 @@ services:
 
 volumes:
   pgdata:
-  chdata:
+  duckdbdata:
   redisdata:
   apidata:
 

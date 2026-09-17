@@ -3,8 +3,9 @@
 
 """Generate service configuration files for embedded mode.
 
-Creates minimal, locally-tuned configs for PostgreSQL, ClickHouse, and Redis
-that bind to 127.0.0.1 on non-standard ports.
+Creates minimal, locally-tuned configs for PostgreSQL and Redis that bind to
+127.0.0.1 on non-standard ports.  The DuckDB analytics service needs no config
+file: its settings travel in the process environment.
 """
 
 from __future__ import annotations
@@ -17,8 +18,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 from observal_cli.server.constants import (
-    CLICKHOUSE_HTTP_PORT,
-    CLICKHOUSE_TCP_PORT,
     CONFIG_DIR,
     LOG_DIR,
     POSTGRES_PORT,
@@ -100,79 +99,6 @@ def generate_pg_hba_conf() -> Path:
     return hba_path
 
 
-def generate_clickhouse_config() -> Path:
-    """Generate ClickHouse config for embedded mode.
-
-    Returns path to the generated config file.
-    """
-    conf_path = CONFIG_DIR / "clickhouse-config.xml"
-    data_path = get_data_paths()["clickhouse"]
-    log_path = LOG_DIR / "clickhouse.log"
-    error_log_path = LOG_DIR / "clickhouse-error.log"
-
-    content = dedent(f"""\
-        <?xml version="1.0"?>
-        <clickhouse>
-            <logger>
-                <level>warning</level>
-                <log>{log_path}</log>
-                <errorlog>{error_log_path}</errorlog>
-                <size>100M</size>
-                <count>3</count>
-            </logger>
-
-            <http_port>{CLICKHOUSE_HTTP_PORT}</http_port>
-            <tcp_port>{CLICKHOUSE_TCP_PORT}</tcp_port>
-            <listen_host>127.0.0.1</listen_host>
-
-            <path>{data_path}/</path>
-            <tmp_path>{data_path}/tmp/</tmp_path>
-            <user_files_path>{data_path}/user_files/</user_files_path>
-            <format_schema_path>{data_path}/format_schemas/</format_schema_path>
-
-            <max_server_memory_usage_ratio>0.5</max_server_memory_usage_ratio>
-            <max_concurrent_queries>20</max_concurrent_queries>
-
-            <mark_cache_size>5368709120</mark_cache_size>
-
-            <users>
-                <default>
-                    <password></password>
-                    <networks>
-                        <ip>127.0.0.1</ip>
-                    </networks>
-                    <profile>default</profile>
-                    <quota>default</quota>
-                    <access_management>1</access_management>
-                </default>
-            </users>
-
-            <profiles>
-                <default>
-                    <max_memory_usage>2000000000</max_memory_usage>
-                    <load_balancing>random</load_balancing>
-                </default>
-            </profiles>
-
-            <quotas>
-                <default>
-                    <interval>
-                        <duration>3600</duration>
-                        <queries>0</queries>
-                        <errors>0</errors>
-                        <result_rows>0</result_rows>
-                        <read_rows>0</read_rows>
-                        <execution_time>0</execution_time>
-                    </interval>
-                </default>
-            </quotas>
-        </clickhouse>
-    """)
-
-    conf_path.write_text(content)
-    return conf_path
-
-
 def generate_redis_conf() -> Path:
     """Generate Redis config for embedded mode.
 
@@ -225,6 +151,5 @@ def generate_all_configs() -> dict[str, Path]:
     ensure_dirs()
     return {
         "postgres": generate_postgres_conf(),
-        "clickhouse": generate_clickhouse_config(),
         "redis": generate_redis_conf(),
     }

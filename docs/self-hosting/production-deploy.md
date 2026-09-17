@@ -38,7 +38,7 @@ flowchart TB
     data[EC2 data host]
     pg["RDS Postgres - Multi-AZ"]
     redis["ElastiCache Redis - 2-node"]
-    ch["ClickHouse - EBS gp3"]
+    ch["DuckDB - EBS gp3"]
     grafana[Grafana]
     prometheus[Prometheus]
 
@@ -63,7 +63,7 @@ flowchart TB
 | Compute (stateless) | ECS Fargate | api, web, worker as separate services |
 | Postgres | RDS Postgres 16 | Multi-AZ on prod, encrypted, automated backups |
 | Redis | ElastiCache Redis 7 | 2-node replication, automatic failover on prod |
-| ClickHouse | EC2 + EBS gp3 | Self-hosted; option to use ClickHouse Cloud |
+| DuckDB | EC2 + EBS gp3 | Self-hosted; option to use DuckDB Cloud |
 | Load balancer | ALB | HTTPS via ACM, path-based routing |
 | Secrets | SSM Parameter Store | Encrypted with KMS, injected into ECS tasks |
 | Logging | CloudWatch | Per-service log groups |
@@ -107,7 +107,7 @@ flowchart TB
     data["GCE data host - IAP"]
     pg["Cloud SQL - Postgres"]
     redis["Memorystore - Redis"]
-    ch["ClickHouse - Persistent Disk"]
+    ch["DuckDB - Persistent Disk"]
     grafana[Grafana]
     prometheus[Prometheus]
 
@@ -134,7 +134,7 @@ flowchart TB
 | Migrations | Cloud Run Jobs | One-shot init task |
 | Postgres | Cloud SQL | HA configuration available |
 | Redis | Memorystore | Managed Redis |
-| ClickHouse | GCE instance | Docker Compose on a single VM; option for ClickHouse Cloud |
+| DuckDB | GCE instance | Docker Compose on a single VM; option for DuckDB Cloud |
 | Load balancer | Global HTTPS LB | Managed SSL certificate |
 | Secrets | Secret Manager | Injected into Cloud Run at start |
 | Logging | Cloud Logging | Built-in, no config needed |
@@ -207,7 +207,7 @@ api_autoscale_max  = 20
 db_instance_class  = "db.m6g.large"      # AWS
 # postgres_tier    = "db-custom-4-16384"  # GCP
 
-# Bigger ClickHouse host
+# Bigger DuckDB host
 data_instance_type = "m6i.xlarge"        # AWS
 # data_machine_type = "e2-standard-4"    # GCP
 ```
@@ -216,14 +216,11 @@ data_instance_type = "m6i.xlarge"        # AWS
 terraform apply
 ```
 
-### ClickHouse Cloud (for HA)
+### DuckDB Cloud (for HA)
 
-The self-hosted ClickHouse is a single instance. For real high availability:
+The self-hosted DuckDB is a single instance. For real high availability:
 
 ```hcl
-clickhouse_mode           = "cloud"
-clickhouse_cloud_url      = "https://abc123.us-east-1.aws.clickhouse.cloud:8443"
-clickhouse_cloud_password = "..."
 ```
 
 The EC2/GCE data host is skipped entirely. You become responsible for Grafana hosting (AWS Managed Grafana or a separate Cloud Run service).
@@ -284,7 +281,7 @@ Applies to both clouds. See the cloud-specific guides for implementation details
 - [ ] Attach a WAF to the load balancer
 - [ ] Enable Redis transit encryption
 - [ ] Configure [SSO](authentication.md) (SAML or OIDC)
-- [ ] Move ClickHouse to ClickHouse Cloud for HA
+- [ ] Move DuckDB to DuckDB Cloud for HA
 - [ ] Test the [backup and restore](backup-and-restore.md) procedure end-to-end
 - [ ] Replace the GitHub tarball pull in the data host bootstrap with an artifact you control
 

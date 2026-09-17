@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Property-based tests (Hypothesis) for the admin data migration service layer.
@@ -542,7 +543,15 @@ class TestCredentialExclusionFromLogs:
                 "total_rows": result.total_rows,
             }
         )
-        assert password not in result_str
+        # The generated password may coincide with a substring of the benign
+        # literals above (e.g. "expor" inside "/tmp/export.tar.gz"), so compare
+        # occurrence counts instead of a bare containment check.
+        # Include the JSON keys json.dumps emits, so a generated password that
+        # coincides with (say) "archive" is not mistaken for a leak.
+        benign = (
+            "archive_pathmigration_idtotal_rows" + result.archive_path + result.migration_id + str(result.total_rows)
+        )
+        assert result_str.count(password) <= benign.count(password), f"password leaked into result fields: {password!r}"
         assert dsn not in result_str
 
 

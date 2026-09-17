@@ -7,6 +7,7 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Boot-time configuration: env vars required to start the server.
@@ -29,7 +30,8 @@ from observal_shared.secrets import resolve_secret
 class Settings(BaseSettings):
     # Infrastructure
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/observal"
-    CLICKHOUSE_URL: str = "clickhouse://localhost:8123/observal"
+    DUCKDB_ANALYTICS_URL: str = "duckdb://localhost:8484/observal"
+    DUCKDB_ANALYTICS_TOKEN: str = ""
     REDIS_URL: str = "redis://localhost:6379"
     REDIS_SOCKET_TIMEOUT: float = 2.0
     REDIS_MAX_CONNECTIONS: int = 200
@@ -54,9 +56,8 @@ class Settings(BaseSettings):
     # Connection pool sizing (boot-time, pool created once at startup)
     DB_POOL_SIZE: int = 30
     DB_MAX_OVERFLOW: int = 50
-    CLICKHOUSE_MAX_CONNECTIONS: int = 100
-    CLICKHOUSE_MAX_KEEPALIVE: int = 100
-    CLICKHOUSE_TIMEOUT: float = 10.0
+    DUCKDB_ANALYTICS_MAX_CONNECTIONS: int = 100
+    DUCKDB_ANALYTICS_TIMEOUT: float = 30.0
 
     # Logging (boot-time, configured before event loop starts)
     LOG_LEVEL: str = "INFO"
@@ -80,7 +81,8 @@ class Settings(BaseSettings):
 
 _SECRET_FIELDS = (
     "DATABASE_URL",
-    "CLICKHOUSE_URL",
+    "DUCKDB_ANALYTICS_URL",
+    "DUCKDB_ANALYTICS_TOKEN",
     "REDIS_URL",
     "SECRET_KEY",
     "OLD_SECRET_KEY",

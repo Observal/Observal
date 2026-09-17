@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Version impact analysis for insight reports.
@@ -101,32 +102,32 @@ async def detect_layer_groups(
     sql = """
         SELECT
             if(
-                agent_version = '' AND {agent_version:String} = '__LEGACY_VERSION__',
+                agent_version = '' AND $agent_version = '__LEGACY_VERSION__',
                 '__LEGACY_VERSION__',
                 agent_version
             ) AS agent_version,
             layer_hash,
             count() AS sessions,
-            uniq(user_id) AS users,
+            count(DISTINCT user_id) AS users,
             avg(prompt_count) AS avg_prompts,
             avg(tool_call_count) AS avg_tool_calls,
-            avg(toFloat64(last_event_time - first_event_time)) AS avg_duration_seconds,
+            avg(CAST(epoch(last_event_time - first_event_time) AS DOUBLE)) AS avg_duration_seconds,
             sum(total_credits) / count() AS avg_cost,
             sum(input_tokens + output_tokens) / count() AS avg_tokens,
             -- Tool error proxy: sessions with high tool_result vs tool_call ratio
             -- (more results than calls = retries/errors)
-            countIf(tool_result_count > tool_call_count * 1.5) / count() AS tool_error_rate,
+            count(*) FILTER (WHERE tool_result_count > tool_call_count * 1.5) / count() AS tool_error_rate,
             -- Success proxy: sessions that complete (have a stop event) with reasonable duration
-            countIf(event_count > 5 AND prompt_count >= 1) / count() AS success_proxy
-        FROM session_stats_agg FINAL
-        WHERE (agent_id = {agent_id:String} OR agent_id = {agent_name:String})
-          AND last_event_time >= {t_start:String}
-          AND last_event_time <= {t_end:String}
+            count(*) FILTER (WHERE event_count > 5 AND prompt_count >= 1) / count() AS success_proxy
+        FROM session_stats_agg
+        WHERE (agent_id = $agent_id OR agent_id = $agent_name)
+          AND last_event_time >= $t_start
+          AND last_event_time <= $t_end
           AND layer_hash != ''
           AND __AGENT_VERSION_FILTER__
         GROUP BY
             if(
-                agent_version = '' AND {agent_version:String} = '__LEGACY_VERSION__',
+                agent_version = '' AND $agent_version = '__LEGACY_VERSION__',
                 '__LEGACY_VERSION__',
                 agent_version
             ),
@@ -134,16 +135,15 @@ async def detect_layer_groups(
         HAVING sessions >= 3
         ORDER BY sessions DESC
         LIMIT 20
-        FORMAT JSON
     """.replace("__LEGACY_VERSION__", LEGACY_UNVERSIONED_AGENT_VERSION).replace(
         "__AGENT_VERSION_FILTER__", agent_version_filter()
     )
     params = {
-        "param_agent_id": agent_id,
-        "param_agent_name": agent_name,
-        "param_t_start": period_start,
-        "param_t_end": period_end,
-        "param_agent_version": agent_version or "",
+        "agent_id": agent_id,
+        "agent_name": agent_name,
+        "t_start": period_start,
+        "t_end": period_end,
+        "agent_version": agent_version or "",
     }
 
     try:
@@ -195,14 +195,13 @@ async def fetch_layer_snapshots_for_groups(
 
     sql = """
         SELECT hash, content
-        FROM layer_snapshots FINAL
-        WHERE project_id = {project_id:String}
-          AND hash IN ({hashes:Array(String)})
-        FORMAT JSON
+        FROM layer_snapshots
+        WHERE project_id = $project_id
+          AND hash = ANY($hashes)
     """
     params = {
-        "param_project_id": project_id,
-        "param_hashes": "[" + ",".join(f"'{h}'" for h in safe_hashes) + "]",
+        "project_id": project_id,
+        "hashes": safe_hashes,
     }
 
     try:

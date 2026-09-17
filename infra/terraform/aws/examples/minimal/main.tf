@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 # Minimal working example. Apply from this directory:
@@ -36,8 +37,7 @@ module "observal" {
   # domain_name     = "observal.example.com"
   # route53_zone_id = "Z0123456789ABCDEFGHIJ"
 
-  # Uncomment to use ClickHouse Cloud instead of the bundled EC2:
-  # clickhouse_mode           = "cloud"
-  # clickhouse_cloud_url      = "https://abc123.us-east-1.aws.clickhouse.cloud:8443"
-  # clickhouse_cloud_password = var.clickhouse_cloud_password
+  # Uncomment to size the bundled data host for a larger telemetry history:
+  # data_instance_type = "t3.large"
+  # data_volume_size_gb = 200
 }

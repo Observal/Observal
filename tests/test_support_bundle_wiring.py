@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Tests for support bundle wiring: CLI registration, directory structure, and failure handling.
@@ -86,8 +87,8 @@ def _make_server_response(
             "data": {
                 "app_version": "0.9.0",
                 "alembic_revision": "abc123",
-                "clickhouse_version": "24.1",
-                "clickhouse_tables": ["traces", "spans"],
+                "analytics_version": "1.5.5",
+                "analytics_tables": ["session_events", "audit_log"],
             },
         }
     else:
@@ -104,7 +105,7 @@ def _make_server_response(
             "duration_ms": 30,
             "data": {
                 "postgres": {"status": "ok", "latency_ms": 5},
-                "clickhouse": {"status": "ok", "latency_ms": 8},
+                "analytics": {"status": "ok", "latency_ms": 8},
                 "redis": {"status": "ok", "latency_ms": 2},
             },
         }

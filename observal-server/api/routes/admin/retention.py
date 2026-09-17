@@ -108,12 +108,12 @@ async def preview_retention(
     if days < 7:
         raise HTTPException(status_code=422, detail="days must be >= 7")
 
-    from services.clickhouse import _query
+    from services.analytics.duckdb import _query
 
     response = await _query(
-        "SELECT count() AS cnt FROM session_events "
-        "WHERE project_id = {pid:String} AND timestamp < now() - INTERVAL {days:UInt32} DAY FORMAT JSON",
-        {"param_pid": DEFAULT_PROJECT_ID, "param_days": str(days)},
+        "SELECT count(*) AS cnt FROM session_events "
+        "WHERE project_id = $pid AND timestamp < now() - to_days(CAST($days AS BIGINT))",
+        {"pid": DEFAULT_PROJECT_ID, "days": str(days)},
     )
     counts = {"session_events": 0}
     if response.status_code == 200:
@@ -152,13 +152,13 @@ async def get_retention_stats(current_user: User = Depends(require_role(UserRole
             "next_purge_approx": None,
         }
 
-    from services.clickhouse import _query
+    from services.analytics.duckdb import _query
 
     response = await _query(
         "SELECT count(DISTINCT session_id) AS cnt, "
-        "if(cnt > 0, dateDiff('day', min(timestamp), now()), 0) AS age "
-        "FROM session_events WHERE project_id = {pid:String} FORMAT JSON",
-        {"param_pid": DEFAULT_PROJECT_ID},
+        "if(count(DISTINCT session_id) > 0, date_diff('day', min(timestamp), now()), 0) AS age "
+        "FROM session_events WHERE project_id = $pid",
+        {"pid": DEFAULT_PROJECT_ID},
     )
     total_traces = 0
     oldest_age_days = 0
@@ -174,9 +174,9 @@ async def get_retention_stats(current_user: User = Depends(require_role(UserRole
         if cutoff_soon > 0:
             response = await _query(
                 "SELECT count(DISTINCT session_id) AS cnt FROM session_events "
-                "WHERE project_id = {pid:String} "
-                "AND timestamp < now() - INTERVAL {days:UInt32} DAY FORMAT JSON",
-                {"param_pid": DEFAULT_PROJECT_ID, "param_days": str(cutoff_soon)},
+                "WHERE project_id = $pid "
+                "AND timestamp < now() - to_days(CAST($days AS BIGINT))",
+                {"pid": DEFAULT_PROJECT_ID, "days": str(cutoff_soon)},
             )
             if response.status_code == 200:
                 data = response.json().get("data", [])

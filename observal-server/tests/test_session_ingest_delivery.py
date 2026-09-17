@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 from __future__ import annotations
@@ -13,19 +14,19 @@ from pydantic import ValidationError
 from api.routes import ingest as ingest_route
 from api.routes.ingest import SessionIngestRequest
 from services import session_ingest
-from services.clickhouse import insert as clickhouse_insert
+from services.analytics.duckdb import insert as analytics_insert
 
 
 @pytest.mark.asyncio
-async def test_canonical_insert_waits_for_clickhouse_commit(monkeypatch):
-    response = MagicMock()
-    response.raise_for_status.return_value = None
-    query = AsyncMock(return_value=response)
-    monkeypatch.setattr(clickhouse_insert._client, "_query", query)
+async def test_canonical_insert_uses_the_analytics_insert_endpoint(monkeypatch):
+    insert = AsyncMock(return_value=1)
+    monkeypatch.setattr(analytics_insert._client, "_insert", insert)
 
-    await clickhouse_insert.insert_session_events([{"session_id": "session"}])
+    await analytics_insert.insert_session_events([{"session_id": "session"}])
 
-    assert query.await_args.args[1]["wait_for_async_insert"] == "1"
+    assert insert.await_args.args[0] == "session_events"
+    assert insert.await_args.args[1][0]["session_id"] == "session"
+    assert insert.await_args.args[1][0]["ingested_at"]
 
 
 @pytest.mark.asyncio

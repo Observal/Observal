@@ -165,7 +165,7 @@ async def ingest_session(
         )
         integrity_ok = integrity.ok
         if integrity.repair_from_line is not None:
-            from services.clickhouse import insert_session_checkpoint
+            from services.analytics.duckdb import insert_session_checkpoint
 
             acknowledged_line = integrity.repair_from_line - 1
             acknowledged_offset = integrity.repair_offset
@@ -228,7 +228,7 @@ async def get_session_checkpoint(
     current_user: User = Depends(require_role(UserRole.user)),
 ):
     """Return the caller's durable contiguous checkpoint for one session source."""
-    from services.clickhouse import query_session_checkpoint
+    from services.analytics.duckdb import query_session_checkpoint
 
     project_id = DEFAULT_PROJECT_ID
     acknowledged_line, acknowledged_offset = await query_session_checkpoint(

@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 # ── ALB ────────────────────────────────────────────────────────────────────
@@ -61,7 +62,7 @@ resource "aws_security_group" "ecs_tasks" {
     security_groups = [local.alb_sg_id]
   }
 
-  # tfsec:ignore:aws-ec2-no-public-egress-sgr Required: image pulls (ghcr.io), AWS API endpoints (SSM, CloudWatch, ECR), Postgres/Redis/ClickHouse in-VPC.
+  # tfsec:ignore:aws-ec2-no-public-egress-sgr Required: image pulls (ghcr.io), AWS API endpoints (SSM, CloudWatch, ECR), Postgres/Redis/DuckDB in-VPC.
   egress {
     description = "All egress"
     from_port   = 0
@@ -73,11 +74,10 @@ resource "aws_security_group" "ecs_tasks" {
   tags = { Name = "${local.name}-ecs-tasks-sg" }
 }
 
-# ── Data tier EC2 (ClickHouse plus optional observability) ─────────────────
+# ── Data tier EC2 (DuckDB plus optional observability) ─────────────────────
 resource "aws_security_group" "data_host" {
-  count       = local.clickhouse_self_hosted ? 1 : 0
   name        = "${local.name}-data-host"
-  description = "ClickHouse EC2 with optional observability. Inbound from ALB and ECS tasks."
+  description = "DuckDB EC2 with optional observability. Inbound from ALB and ECS tasks."
   vpc_id      = local.vpc_id
 
   dynamic "ingress" {
@@ -92,17 +92,9 @@ resource "aws_security_group" "data_host" {
   }
 
   ingress {
-    description     = "ClickHouse HTTP from ECS tasks"
-    from_port       = 8123
-    to_port         = 8123
-    protocol        = "tcp"
-    security_groups = [local.ecs_sg_id]
-  }
-
-  ingress {
-    description     = "ClickHouse native protocol from ECS tasks"
-    from_port       = 9000
-    to_port         = 9000
+    description     = "DuckDB analytics service from ECS tasks"
+    from_port       = 8484
+    to_port         = 8484
     protocol        = "tcp"
     security_groups = [local.ecs_sg_id]
   }

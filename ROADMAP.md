@@ -334,7 +334,7 @@ Raise the public score from 7.9 at roadmap creation to at least 9.0 and keep it 
 
 **Status:** In progress. [PR #1662](https://github.com/Observal/Observal/pull/1662) made migration failures fail safely instead of stamping a broken database as current. Coherent backup, health verification, and automatic full rollback remain.
 
-Harden `observal server upgrade` and explicit rollback around a coherent backup of PostgreSQL, API and JWT keys, ClickHouse data, and image and config state. Pull and recreate target containers, apply migrations, run health and smoke checks, and restore all previous state automatically on any failure. Do not add a remote arbitrary-execution control plane.
+Harden `observal server upgrade` and explicit rollback around a coherent backup of PostgreSQL, API and JWT keys, DuckDB data, and image and config state. Pull and recreate target containers, apply migrations, run health and smoke checks, and restore all previous state automatically on any failure. Do not add a remote arbitrary-execution control plane.
 
 **Complete when:** failure-injection tests at backup, pull, migration, startup, and health-check stages always end on a proven healthy target or previous stack, never a half-migrated deployment.
 

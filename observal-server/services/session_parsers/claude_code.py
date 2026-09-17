@@ -31,7 +31,7 @@ _META_TYPES = {
 def parse_rows(rows: list[dict]) -> list[dict]:
     """Parse raw_line Claude Code JSONL rows into normalised frontend events.
 
-    Each ClickHouse row contains a ``raw_line`` field holding one line of the
+    Each DuckDB row contains a ``raw_line`` field holding one line of the
     Claude Code session transcript.  This function expands each row into one
     or more virtual events that the frontend trace viewer understands.
 

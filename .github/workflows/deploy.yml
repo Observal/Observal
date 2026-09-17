@@ -65,5 +65,5 @@ jobs:
             done
 
             echo "API failed health check"
-            docker compose logs observal-api observal-init observal-lb observal-db observal-clickhouse --tail 20
+            docker compose logs observal-api observal-init observal-lb observal-db observal-duckdb --tail 20
             exit 1

@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Executive Dashboard API endpoints."""
@@ -18,7 +19,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db, require_role
-from api.routes.dashboard import _ch_json, _range_days
+from api.routes.dashboard import _analytics_json, _range_days
 from models.agent import Agent, AgentStatus, AgentVersion
 from models.download import AgentDownloadRecord
 from models.exec_config import ExecDashboardConfig
@@ -195,10 +196,10 @@ async def get_adoption(
     total_users = await db.scalar(select(func.count(User.id))) or 0
 
     # Monthly active users from session aggregates (last 12 months)
-    rows = await _ch_json(
-        "SELECT toStartOfMonth(first_event_time) AS month, "
+    rows = await _analytics_json(
+        "SELECT date_trunc('month', first_event_time) AS month, "
         "count(DISTINCT user_id) AS active "
-        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
+        "FROM session_stats_agg WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 12 MONTH "
         "GROUP BY month ORDER BY month",
     )
@@ -210,10 +211,10 @@ async def get_adoption(
         monthly.append(AdoptionPoint(month=str(r["month"])[:7], adoption_pct=pct))
 
     # Current month active users
-    current_rows = await _ch_json(
+    current_rows = await _analytics_json(
         "SELECT count(DISTINCT user_id) AS active "
-        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
-        "AND first_event_time >= toStartOfMonth(now())",
+        "FROM session_stats_agg WHERE project_id = '{project_id}' "
+        "AND first_event_time >= date_trunc('month', now())",
     )
     active_users = int(current_rows[0]["active"]) if current_rows else 0
     current_pct = round((active_users / total_users) * 100, 1) if total_users > 0 else 0.0
@@ -266,8 +267,8 @@ async def get_agent_counts(
     in_development = await db.scalar(dev_stmt) or 0
 
     # Active agents with sessions in the last 7 days
-    active_rows = await _ch_json(
-        "SELECT count(DISTINCT agent_id) AS cnt FROM session_stats_agg FINAL "
+    active_rows = await _analytics_json(
+        "SELECT count(DISTINCT agent_id) AS cnt FROM session_stats_agg "
         "WHERE project_id = '{project_id}' AND agent_id != '' "
         "AND first_event_time >= now() - INTERVAL 7 DAY",
     )
@@ -303,22 +304,22 @@ async def get_usage_by_category(
     days = _range_days(range_)
 
     # Current period sessions by agent
-    current_rows = await _ch_json(
-        "SELECT agent_id, count() AS cnt FROM session_stats_agg FINAL "
+    current_rows = await _analytics_json(
+        "SELECT agent_id, count(*) AS cnt FROM session_stats_agg "
         "WHERE project_id = '{project_id}' AND agent_id != '' "
-        "AND first_event_time >= now() - INTERVAL {days:UInt32} DAY "
+        "AND first_event_time >= now() - to_days(CAST($days AS BIGINT)) "
         "GROUP BY agent_id",
-        {"param_days": str(days)},
+        {"days": str(days)},
     )
 
     # Previous period
-    prev_rows = await _ch_json(
-        "SELECT agent_id, count() AS cnt FROM session_stats_agg FINAL "
+    prev_rows = await _analytics_json(
+        "SELECT agent_id, count(*) AS cnt FROM session_stats_agg "
         "WHERE project_id = '{project_id}' AND agent_id != '' "
-        "AND first_event_time >= now() - INTERVAL {days2:UInt32} DAY "
-        "AND first_event_time < now() - INTERVAL {days:UInt32} DAY "
+        "AND first_event_time >= now() - to_days(CAST($days2 AS BIGINT)) "
+        "AND first_event_time < now() - to_days(CAST($days AS BIGINT)) "
         "GROUP BY agent_id",
-        {"param_days": str(days), "param_days2": str(days * 2)},
+        {"days": str(days), "days2": str(days * 2)},
     )
 
     # Resolve agent_id → category from PG
@@ -368,9 +369,9 @@ async def get_platform_coverage(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Harness/platform coverage — distinct users and sessions per platform."""
-    rows = await _ch_json(
-        "SELECT harness, count(DISTINCT user_id) AS users, count() AS sessions "
-        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
+    rows = await _analytics_json(
+        "SELECT harness, count(DISTINCT user_id) AS users, count(*) AS sessions "
+        "FROM session_stats_agg WHERE project_id = '{project_id}' "
         "AND harness != '' "
         "GROUP BY harness ORDER BY sessions DESC",
     )
@@ -400,11 +401,11 @@ async def get_platforms(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Per-Harness platform comparison with composite scores."""
-    rows = await _ch_json(
-        "SELECT harness, count() AS sessions, "
+    rows = await _analytics_json(
+        "SELECT harness, count(*) AS sessions, "
         "count(DISTINCT user_id) AS users, "
         "round(avg(dateDiff('millisecond', first_event_time, last_event_time)), 1) AS avg_latency_ms "
-        "FROM session_stats_agg FINAL "
+        "FROM session_stats_agg "
         "WHERE project_id = '{project_id}' AND harness != '' "
         "GROUP BY harness ORDER BY sessions DESC",
     )
@@ -467,9 +468,9 @@ async def get_velocity(
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
     """Weekly trace counts with baseline comparison."""
-    rows = await _ch_json(
-        "SELECT toStartOfWeek(first_event_time) AS week, count() AS traces "
-        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
+    rows = await _analytics_json(
+        "SELECT date_trunc('week', first_event_time) AS week, count(*) AS traces "
+        "FROM session_stats_agg WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 12 WEEK "
         "GROUP BY week ORDER BY week",
     )
@@ -532,19 +533,19 @@ async def get_top_agents(
     rating_rows = (await db.execute(rating_stmt)).all()
     rating_map = {str(r.listing_id): round(float(r.avg_rating), 2) for r in rating_rows}
 
-    # Sessions from ClickHouse (last 30 days)
-    session_rows = await _ch_json(
-        "SELECT agent_id, count() AS sessions "
-        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
+    # Sessions from the analytics store (last 30 days)
+    session_rows = await _analytics_json(
+        "SELECT agent_id, count(*) AS sessions "
+        "FROM session_stats_agg WHERE project_id = '{project_id}' "
         "AND agent_id != '' AND first_event_time >= now() - INTERVAL 30 DAY "
         "GROUP BY agent_id ORDER BY sessions DESC LIMIT 50",
     )
     session_map = {r["agent_id"]: int(r["sessions"]) for r in session_rows}
 
     # Weekly trend (last 6 weeks) per agent
-    trend_rows = await _ch_json(
-        "SELECT agent_id, toStartOfWeek(first_event_time) AS week, count() AS cnt "
-        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
+    trend_rows = await _analytics_json(
+        "SELECT agent_id, date_trunc('week', first_event_time) AS week, count(*) AS cnt "
+        "FROM session_stats_agg WHERE project_id = '{project_id}' "
         "AND agent_id != '' AND first_event_time >= now() - INTERVAL 6 WEEK "
         "GROUP BY agent_id, week ORDER BY agent_id, week",
     )
@@ -651,7 +652,7 @@ async def get_departments(
         for dept_name, user_ids in dept_map.items():
             agent_count_by_dept[dept_name] = sum(user_agent_count.get(uid, 0) for uid in user_ids)
 
-    # Get session counts per user from ClickHouse
+    # Get session counts per user from the analytics store
     all_user_ids = []
     for uids in dept_map.values():
         all_user_ids.extend(uids)
@@ -659,12 +660,12 @@ async def get_departments(
     user_sessions: dict[str, int] = {}
     if all_user_ids:
         # Batch query: get session count per user in period
-        session_rows = await _ch_json(
-            "SELECT user_id, count() AS sessions "
-            "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
-            "AND first_event_time >= now() - INTERVAL {days:UInt32} DAY "
+        session_rows = await _analytics_json(
+            "SELECT user_id, count(*) AS sessions "
+            "FROM session_stats_agg WHERE project_id = '{project_id}' "
+            "AND first_event_time >= now() - to_days(CAST($days AS BIGINT)) "
             "GROUP BY user_id",
-            {"param_days": str(days)},
+            {"days": str(days)},
         )
         user_sessions = {r["user_id"]: int(r["sessions"]) for r in session_rows}
 
@@ -717,28 +718,28 @@ async def get_dept_tokens(
 
     # Current period: tokens and sessions per user. Session telemetry has no
     # monetary cost field, so cost remains zero.
-    current_rows = await _ch_json(
+    current_rows = await _analytics_json(
         "SELECT user_id, sum(input_tokens + output_tokens) AS tokens, "
-        "count() AS traces "
-        "FROM session_stats_agg FINAL "
+        "count(*) AS traces "
+        "FROM session_stats_agg "
         "WHERE project_id = '{project_id}' "
-        "AND first_event_time >= now() - INTERVAL {days:UInt32} DAY "
+        "AND first_event_time >= now() - to_days(CAST($days AS BIGINT)) "
         "GROUP BY user_id",
-        {"param_days": str(days)},
+        {"days": str(days)},
     )
     current_by_user: dict[str, dict] = {
         r["user_id"]: {"tokens": int(r["tokens"]), "traces": int(r["traces"]), "cost": 0.0} for r in current_rows
     }
 
     # Previous period: tokens per user (for trend)
-    prev_rows = await _ch_json(
+    prev_rows = await _analytics_json(
         "SELECT user_id, sum(input_tokens + output_tokens) AS tokens "
-        "FROM session_stats_agg FINAL "
+        "FROM session_stats_agg "
         "WHERE project_id = '{project_id}' "
-        "AND first_event_time >= now() - INTERVAL {days2:UInt32} DAY "
-        "AND first_event_time < now() - INTERVAL {days:UInt32} DAY "
+        "AND first_event_time >= now() - to_days(CAST($days2 AS BIGINT)) "
+        "AND first_event_time < now() - to_days(CAST($days AS BIGINT)) "
         "GROUP BY user_id",
-        {"param_days": str(days), "param_days2": str(days * 2)},
+        {"days": str(days), "days2": str(days * 2)},
     )
     prev_by_user: dict[str, int] = {r["user_id"]: int(r["tokens"]) for r in prev_rows}
 
@@ -816,9 +817,9 @@ async def get_cost_summary(
             configured=False,
         )
 
-    monthly_rows = await _ch_json(
-        "SELECT toStartOfMonth(first_event_time) AS month "
-        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
+    monthly_rows = await _analytics_json(
+        "SELECT date_trunc('month', first_event_time) AS month "
+        "FROM session_stats_agg WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 12 MONTH "
         "GROUP BY month ORDER BY month",
     )
@@ -934,11 +935,11 @@ async def get_strategic_insights(
     """Strategic insights derived from deployment telemetry data."""
 
     # 1. Model comparison from session_stats_agg
-    model_rows = await _ch_json(
+    model_rows = await _analytics_json(
         "SELECT model, "
-        "count() AS sessions, "
+        "count(*) AS sessions, "
         "round(avg(input_tokens + output_tokens)) AS avg_tokens "
-        "FROM session_stats_agg FINAL "
+        "FROM session_stats_agg "
         "WHERE project_id = '{project_id}' AND model != '' "
         "GROUP BY model "
         "HAVING sessions >= 5 "
@@ -947,11 +948,11 @@ async def get_strategic_insights(
     )
 
     # Completion proxy per model from session aggregates.
-    model_success_rows = await _ch_json(
+    model_success_rows = await _analytics_json(
         "SELECT model, "
-        "countIf(event_count > 5 AND prompt_count >= 1) AS successes, "
-        "count() AS total "
-        "FROM session_stats_agg FINAL "
+        "count(*) FILTER (WHERE event_count > 5 AND prompt_count >= 1) AS successes, "
+        "count(*) AS total "
+        "FROM session_stats_agg "
         "WHERE project_id = '{project_id}' AND model != '' "
         "AND first_event_time >= now() - INTERVAL 30 DAY "
         "GROUP BY model HAVING total >= 5",
@@ -997,8 +998,8 @@ async def get_strategic_insights(
     for uids in dept_map.values():
         all_user_ids.extend(uids)
 
-    user_session_rows = await _ch_json(
-        "SELECT user_id, count() AS sessions FROM session_stats_agg FINAL WHERE project_id = '{project_id}' GROUP BY user_id",
+    user_session_rows = await _analytics_json(
+        "SELECT user_id, count(*) AS sessions FROM session_stats_agg WHERE project_id = '{project_id}' GROUP BY user_id",
     )
     user_sessions = {r["user_id"]: int(r["sessions"]) for r in user_session_rows}
 
@@ -1034,12 +1035,12 @@ async def get_strategic_insights(
     quick_wins = []
 
     # 4. Platform comparison (task completion speed)
-    platform_rows = await _ch_json(
+    platform_rows = await _analytics_json(
         "SELECT harness, "
         "round(avg(dateDiff('millisecond', first_event_time, last_event_time))) AS avg_time_ms, "
-        "count() AS sessions, "
-        "countIf(event_count > 2) AS completed "
-        "FROM session_stats_agg FINAL "
+        "count(*) AS sessions, "
+        "count(*) FILTER (WHERE event_count > 2) AS completed "
+        "FROM session_stats_agg "
         "WHERE project_id = '{project_id}' AND harness != '' "
         "AND first_event_time != last_event_time "
         "GROUP BY harness "
@@ -1057,9 +1058,9 @@ async def get_strategic_insights(
     ]
 
     # 5. Power user analysis
-    user_value_rows = await _ch_json(
-        "SELECT user_id, count() AS sessions, sum(input_tokens + output_tokens) AS value "
-        "FROM session_stats_agg FINAL "
+    user_value_rows = await _analytics_json(
+        "SELECT user_id, count(*) AS sessions, sum(input_tokens + output_tokens) AS value "
+        "FROM session_stats_agg "
         "WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 30 DAY "
         "GROUP BY user_id "
@@ -1076,11 +1077,11 @@ async def get_strategic_insights(
         power_user_value_pct = 0
 
     # 6. Automatable task estimation (simple tasks = low tokens + high success)
-    auto_rows = await _ch_json(
+    auto_rows = await _analytics_json(
         "SELECT "
-        "countIf((input_tokens + output_tokens) < 3000 AND event_count <= 5) AS simple, "
-        "count() AS total "
-        "FROM session_stats_agg FINAL "
+        "count(*) FILTER (WHERE (input_tokens + output_tokens) < 3000 AND event_count <= 5) AS simple, "
+        "count(*) AS total "
+        "FROM session_stats_agg "
         "WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 30 DAY",
     )
@@ -1133,12 +1134,12 @@ async def get_developer_breakdown(
     # Total users in the deployment
     total_developers = await db.scalar(select(func.count(User.id))) or 0
 
-    # Per-user activity from ClickHouse (last 30 days)
-    user_rows = await _ch_json(
+    # Per-user activity from the analytics store (last 30 days)
+    user_rows = await _analytics_json(
         "SELECT user_id, "
-        "count() AS sessions, "
-        "sumIf(input_tokens + output_tokens, input_tokens IS NOT NULL) AS tokens "
-        "FROM session_stats_agg FINAL "
+        "count(*) AS sessions, "
+        "sum(input_tokens + output_tokens) FILTER (WHERE input_tokens IS NOT NULL) AS tokens "
+        "FROM session_stats_agg "
         "WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 30 DAY "
         "GROUP BY user_id "
@@ -1239,18 +1240,18 @@ async def get_inactivity_alerts(
     """Agents and users that were active in days 15-28 but inactive in last 14 days."""
 
     # Agents active 15-28 days ago but NOT in last 14 days
-    prev_agent_rows = await _ch_json(
-        "SELECT agent_id, count() AS sessions "
-        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
+    prev_agent_rows = await _analytics_json(
+        "SELECT agent_id, count(*) AS sessions "
+        "FROM session_stats_agg WHERE project_id = '{project_id}' "
         "AND agent_id != '' "
         "AND first_event_time >= now() - INTERVAL 28 DAY "
         "AND first_event_time < now() - INTERVAL 14 DAY "
         "GROUP BY agent_id HAVING sessions >= 5",
     )
 
-    recent_agent_rows = await _ch_json(
+    recent_agent_rows = await _analytics_json(
         "SELECT agent_id "
-        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
+        "FROM session_stats_agg WHERE project_id = '{project_id}' "
         "AND agent_id != '' "
         "AND first_event_time >= now() - INTERVAL 14 DAY "
         "GROUP BY agent_id",
@@ -1292,17 +1293,17 @@ async def get_inactivity_alerts(
             )
 
     # Users active 15-28 days ago but NOT in last 14 days
-    prev_user_rows = await _ch_json(
-        "SELECT user_id, count() AS sessions "
-        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
+    prev_user_rows = await _analytics_json(
+        "SELECT user_id, count(*) AS sessions "
+        "FROM session_stats_agg WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 28 DAY "
         "AND first_event_time < now() - INTERVAL 14 DAY "
         "GROUP BY user_id HAVING sessions >= 5",
     )
 
-    recent_user_rows = await _ch_json(
+    recent_user_rows = await _analytics_json(
         "SELECT user_id "
-        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
+        "FROM session_stats_agg WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 14 DAY "
         "GROUP BY user_id",
     )
@@ -1383,9 +1384,9 @@ async def get_time_to_value(
         return TimeToValueResponse(agents=[], avg_days_to_100=None)
 
     # Get cumulative session counts per agent per day
-    session_rows = await _ch_json(
-        "SELECT agent_id, min(first_event_time) AS first_session, count() AS total_sessions "
-        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
+    session_rows = await _analytics_json(
+        "SELECT agent_id, min(first_event_time) AS first_session, count(*) AS total_sessions "
+        "FROM session_stats_agg WHERE project_id = '{project_id}' "
         "AND agent_id != '' "
         "GROUP BY agent_id",
     )
@@ -1398,15 +1399,15 @@ async def get_time_to_value(
     day_100_map: dict[str, str] = {}
     if agents_over_100:
         # Get the date of the 100th session for each agent
-        milestone_rows = await _ch_json(
+        milestone_rows = await _analytics_json(
             "SELECT agent_id, first_event_time AS start_time "
             "FROM ("
             "  SELECT agent_id, first_event_time, "
             "    row_number() OVER (PARTITION BY agent_id ORDER BY first_event_time) AS rn "
-            "  FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
-            "  AND agent_id IN ({aids:String})"
+            "  FROM session_stats_agg WHERE project_id = '{project_id}' "
+            "  AND list_contains(CAST($aids AS VARCHAR[]), agent_id)"
             ") WHERE rn = 100",
-            {"param_aids": ",".join(f"'{a}'" for a in agents_over_100[:20])},
+            {"aids": agents_over_100[:20]},
         )
         for r in milestone_rows:
             day_100_map[r["agent_id"]] = r["start_time"]
@@ -1512,30 +1513,30 @@ async def generate_ai_insights(
     # 1. Adoption
     total_users = await db.scalar(select(func.count(User.id))) or 0
 
-    active_rows = await _ch_json(
+    active_rows = await _analytics_json(
         "SELECT count(DISTINCT user_id) AS active "
-        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
+        "FROM session_stats_agg WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 30 DAY",
     )
     active_users = int(active_rows[0]["active"]) if active_rows else 0
     adoption_pct = round((active_users / total_users) * 100, 1) if total_users > 0 else 0
 
     # 2. Model comparison
-    model_rows = await _ch_json(
-        "SELECT model, count() AS sessions, "
+    model_rows = await _analytics_json(
+        "SELECT model, count(*) AS sessions, "
         "round(avg(input_tokens + output_tokens)) AS avg_tokens "
-        "FROM session_stats_agg FINAL "
+        "FROM session_stats_agg "
         "WHERE project_id = '{project_id}' AND model != '' "
         "GROUP BY model HAVING sessions >= 3 "
         "ORDER BY sessions DESC LIMIT 10",
     )
 
     # 3. Platform comparison
-    platform_rows = await _ch_json(
-        "SELECT harness, count() AS sessions, "
+    platform_rows = await _analytics_json(
+        "SELECT harness, count(*) AS sessions, "
         "count(DISTINCT user_id) AS users, "
         "round(avg(dateDiff('millisecond', first_event_time, last_event_time)) / 1000) AS avg_task_seconds "
-        "FROM session_stats_agg FINAL "
+        "FROM session_stats_agg "
         "WHERE project_id = '{project_id}' AND harness != '' "
         "AND first_event_time != last_event_time "
         "GROUP BY harness HAVING sessions >= 3 "
@@ -1544,9 +1545,9 @@ async def generate_ai_insights(
 
     # 4. Department gaps
     dept_map = await resolve_user_departments(db)
-    user_session_rows = await _ch_json(
-        "SELECT user_id, count() AS sessions "
-        "FROM session_stats_agg FINAL WHERE project_id = '{project_id}' "
+    user_session_rows = await _analytics_json(
+        "SELECT user_id, count(*) AS sessions "
+        "FROM session_stats_agg WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 30 DAY "
         "GROUP BY user_id",
     )
@@ -1574,11 +1575,11 @@ async def generate_ai_insights(
     expensive_rows: list[dict] = []
 
     # 6. Automatable estimate
-    auto_rows = await _ch_json(
+    auto_rows = await _analytics_json(
         "SELECT "
-        "countIf((input_tokens + output_tokens) < 3000 AND event_count <= 5) AS simple, "
-        "count() AS total "
-        "FROM session_stats_agg FINAL "
+        "count(*) FILTER (WHERE (input_tokens + output_tokens) < 3000 AND event_count <= 5) AS simple, "
+        "count(*) AS total "
+        "FROM session_stats_agg "
         "WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 30 DAY",
     )
@@ -1586,9 +1587,9 @@ async def generate_ai_insights(
     total_count = int(auto_rows[0]["total"]) if auto_rows else 0
 
     # 7. Developer activity summary
-    dev_rows = await _ch_json(
-        "SELECT user_id, count() AS sessions "
-        "FROM session_stats_agg FINAL "
+    dev_rows = await _analytics_json(
+        "SELECT user_id, count(*) AS sessions "
+        "FROM session_stats_agg "
         "WHERE project_id = '{project_id}' "
         "AND first_event_time >= now() - INTERVAL 30 DAY "
         "GROUP BY user_id ORDER BY sessions DESC",

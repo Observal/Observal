@@ -23,7 +23,7 @@ See [`observal server upgrade`](../cli/server.md#observal-server-upgrade) for fu
 
 If you installed with `install-server.sh`, rerun the installer for the target release. Setup detects the existing `.env`. Choose the default **No** response when asked to replace configuration so custom values and existing direct credentials remain unchanged. The upgrade records the prior bind address when an older install has no `OBSERVAL_BIND_ADDRESS` setting.
 
-Back up `.env`, `secrets/`, and the `apidata` and `pgdata` volumes first. Choosing **Yes** intentionally rebuilds the general configuration from the new template; core application, PostgreSQL, ClickHouse, Grafana, and demo credentials are preserved or migrated into restricted files, but unrelated custom environment entries must be reapplied.
+Back up `.env`, `secrets/`, and the `apidata` and `pgdata` volumes first. Choosing **Yes** intentionally rebuilds the general configuration from the new template; core application, PostgreSQL, DuckDB, Grafana, and demo credentials are preserved or migrated into restricted files, but unrelated custom environment entries must be reapplied.
 
 ## Before a manual upgrade
 
@@ -49,12 +49,12 @@ docker compose -f docker/docker-compose.yml ps
 curl http://localhost/health
 ```
 
-The init container applies pending Postgres Alembic migrations and ClickHouse SQL migrations before the API starts. Watch the init logs for migration output:
+The init container applies pending Postgres Alembic migrations and DuckDB SQL migrations before the API starts. Watch the init logs for migration output:
 
 ```bash
 docker logs -f observal-init
 # Running database migrations...
-# Running ClickHouse migrations...
+# Running DuckDB migrations...
 ```
 
 ## Zero-downtime upgrade (small teams)
@@ -63,19 +63,19 @@ If you run a single instance and have a ~30-second maintenance window:
 
 1. Back up `pgdata`, `apidata`, `chdata`.
 2. Stop the API and worker: `docker compose stop observal-api observal-worker`.
-3. Apply migrations out of band with `alembic upgrade head` and `python -m services.clickhouse.migrations` from `observal-server`, or run the init container once.
+3. Apply migrations out of band with `alembic upgrade head` from `observal-server` (Postgres) and let the analytics service apply its own migrations at boot, or run the init container once.
 4. Pull/rebuild new images: `docker compose pull && docker compose build observal-api observal-worker`.
 5. Start: `docker compose up -d`.
 6. Smoke test: `observal auth status --output json && observal ops telemetry status --output json`.
 
-Web UI, Postgres, ClickHouse, Redis stay up throughout. Users see a brief API outage (~15–30 s).
+Web UI, Postgres, DuckDB, Redis stay up throughout. Users see a brief API outage (~15–30 s).
 
 ## Zero-downtime at scale
 
 For blue/green upgrades on large deployments:
 
 1. Run a second stack (`docker-compose.yml` with different project name and host ports) behind a reverse proxy.
-2. Apply migrations before traffic cutover. Alembic handles Postgres and `services.clickhouse.migrations` handles ClickHouse. Additive migrations should work with API N-1 and N during the rollout.
+2. Apply migrations before traffic cutover. Alembic handles Postgres; the analytics service applies its own DuckDB migrations when it boots. Additive migrations should work with API N-1 and N during the rollout.
 3. Bring up the green stack pointing at the same `pgdata` / `chdata` / `apidata` volumes.
 4. Flip the reverse proxy to green.
 5. Decommission blue.

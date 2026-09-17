@@ -1,8 +1,9 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 """API-level tests for exec dashboard endpoints.
 
-Uses mocked ClickHouse and in-memory SQLite for PostgreSQL.
+Uses mocked DuckDB and in-memory SQLite for PostgreSQL.
 Tests response shapes, auth enforcement, and edge cases.
 
 Run with: cd observal-server && pytest tests/test_exec_dashboard.py -v
@@ -31,15 +32,15 @@ def admin_user_id():
 
 @pytest.fixture
 def mock_ch_empty():
-    """Mock ClickHouse to return empty results."""
-    with patch("api.routes.exec_dashboard._ch_json", new_callable=AsyncMock) as mock:
+    """Mock DuckDB to return empty results."""
+    with patch("api.routes.exec_dashboard._analytics_json", new_callable=AsyncMock) as mock:
         mock.return_value = []
         yield mock
 
 
 @pytest.fixture
 def mock_ch_with_data():
-    """Mock ClickHouse with sample data for adoption endpoint."""
+    """Mock DuckDB with sample data for adoption endpoint."""
 
     async def fake_ch(sql, params=None):
         if "toStartOfMonth" in sql and "count(DISTINCT user_id)" in sql:
@@ -64,7 +65,7 @@ def mock_ch_with_data():
             ]
         return []
 
-    with patch("api.routes.exec_dashboard._ch_json", side_effect=fake_ch) as mock:
+    with patch("api.routes.exec_dashboard._analytics_json", side_effect=fake_ch) as mock:
         yield mock
 
 

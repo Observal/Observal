@@ -3,7 +3,7 @@
 
 # GCP deployment with Terraform
 
-End state: Observal running in your GCP project on Cloud Run, backed by Cloud SQL Postgres, Memorystore Redis, and a GCE instance for ClickHouse — with a Global HTTPS Load Balancer, managed SSL certificate, Secret Manager for credentials, and GCS for backups.
+End state: Observal running in your GCP project on Cloud Run, backed by Cloud SQL Postgres, Memorystore Redis, and a GCE instance for DuckDB — with a Global HTTPS Load Balancer, managed SSL certificate, Secret Manager for credentials, and GCS for backups.
 
 For the overall deployment strategy and comparison with AWS, see [Production deployment](production-deploy.md). If you want a simpler single-VM setup, see [Single-node deployment](single-node-deploy.md).
 
@@ -16,10 +16,10 @@ A single `terraform apply` creates:
 - **Cloud Run v2 job**: `init` (one-shot migrations + seeds)
 - **Cloud SQL Postgres** (Open-source distribution): optional HA, encrypted, automated backups
 - **Memorystore Redis**: BASIC or STANDARD_HA tier
-- **GCE instance** (data host): ClickHouse on a persistent disk, with optional Prometheus and Grafana, accessible via IAP SSH tunnel
+- **GCE instance** (data host): DuckDB on a persistent disk, with optional Prometheus and Grafana, accessible via IAP SSH tunnel
 - **Global HTTPS Load Balancer** with managed SSL certificate (when domain is supplied)
 - **Cloud DNS** A record pointing to the load balancer
-- **Secret Manager**: generated DB / ClickHouse / SECRET_KEY passwords, plus connection URLs injected into Cloud Run services
+- **Secret Manager**: generated DB / DuckDB / SECRET_KEY passwords, plus connection URLs injected into Cloud Run services
 - **GCS backups bucket**: versioned, lifecycle to Nearline → delete
 - **Artifact Registry**: for storing container images (optional)
 
@@ -128,11 +128,9 @@ redis_tier           = "BASIC"         # or STANDARD_HA
 
 For high-throughput installs, bump `data_machine_type` to `e2-standard-4`, `db_tier` to `db-custom-4-16384`, and `redis_tier` to `STANDARD_HA`.
 
-### ClickHouse Cloud
+### DuckDB Cloud
 
 ```hcl
-clickhouse_mode      = "cloud"
-clickhouse_cloud_url = "https://abc123.us-central1.gcp.clickhouse.cloud:8443"
 ```
 
 The GCE data host is skipped entirely.
@@ -145,7 +143,7 @@ The GCE data host is skipped entirely.
 $(terraform output -raw data_host_ssh_command)
 # Inside:
 sudo docker compose -f /opt/observal/docker-compose.data.yml ps
-sudo docker compose -f /opt/observal/docker-compose.data.yml logs -f clickhouse
+sudo docker compose -f /opt/observal/docker-compose.data.yml logs -f duckdb
 ```
 
 No public SSH. Access is through IAP (Identity-Aware Proxy) — authenticated, audited, no SSH keys to manage.
@@ -235,7 +233,7 @@ Cloud Run scales to zero when idle (if `min_instances = 0`), which can significa
 - [ ] Enable Cloud Armor (WAF) on the Global HTTPS Load Balancer
 - [ ] Enable Security Command Center in the project
 - [ ] Set up alerting on Cloud SQL CPU, memory, and Cloud Run error rates
-- [ ] Move ClickHouse to ClickHouse Cloud for HA
+- [ ] Move DuckDB to DuckDB Cloud for HA
 - [ ] Configure [SSO](authentication.md)
 - [ ] Test [backup and restore](backup-and-restore.md) end-to-end
 - [ ] Set up Terraform remote state in GCS

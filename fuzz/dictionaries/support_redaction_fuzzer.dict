@@ -8,7 +8,7 @@
 "https://"
 "postgresql://"
 "redis://"
-"clickhouse://"
+"duckdb://"
 "password"
 "secret"
 "token"

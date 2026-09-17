@@ -13,7 +13,7 @@ mkdir -p "$${DATA_DIR}"
 mount -o discard,defaults "$${DATA_DEVICE}" "$${DATA_DIR}"
 echo "UUID=$(blkid -s UUID -o value $${DATA_DEVICE}) $${DATA_DIR} ext4 discard,defaults,nofail 0 2" >> /etc/fstab
 
-mkdir -p "$${DATA_DIR}/clickhouse"
+mkdir -p "$${DATA_DIR}/duckdb"
 %{ if observability_grafana_enabled }
 mkdir -p "$${DATA_DIR}/grafana"
 %{ endif }
@@ -31,23 +31,27 @@ chmod +x /usr/libexec/docker/cli-plugins/docker-compose
 # Write docker-compose for the data stack
 cat > "$${DATA_DIR}/docker-compose.yml" <<'COMPOSE'
 services:
-  clickhouse:
-    image: clickhouse/clickhouse-server:26.5
+  duckdb:
+    image: ghcr.io/observal/observal-duckdb:${image_tag}
     restart: unless-stopped
     ports:
-      - "8123:8123"
-      - "9000:9000"
+      - "8484:8484"
     environment:
-      CLICKHOUSE_DB: ${clickhouse_db}
-      CLICKHOUSE_PASSWORD: ${clickhouse_password}
-      MAX_SERVER_MEMORY_USAGE_RATIO: "0.7"
+      DUCKDB_PATH: /data/analytics.duckdb
+      DUCKDB_ANALYTICS_TOKEN: ${duckdb_analytics_token}
+      DUCKDB_MEMORY_LIMIT: "1GB"
     volumes:
-      - /data/clickhouse:/var/lib/clickhouse
+      - /data/duckdb:/data
     healthcheck:
-      test: ["CMD-SHELL", "clickhouse-client --password ${clickhouse_password} --query 'SELECT 1'"]
+      test:
+        [
+          "CMD-SHELL",
+          "/app/.venv/bin/python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8484/health')\"",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 15s
 
 %{ if observability_grafana_enabled }
   grafana:
@@ -57,15 +61,11 @@ services:
       - "3000:3000"
     environment:
       GF_SECURITY_ADMIN_USER: ${grafana_admin_user}
-      GF_SECURITY_ADMIN_PASSWORD: ${clickhouse_password}
+      GF_SECURITY_ADMIN_PASSWORD: ${grafana_admin_password}
       GF_SERVER_ROOT_URL: "${grafana_root_url}/grafana"
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
-      GF_INSTALL_PLUGINS: grafana-clickhouse-datasource
     volumes:
       - /data/grafana:/var/lib/grafana
-    depends_on:
-      clickhouse:
-        condition: service_healthy
 %{ endif }
 %{ if observability_prometheus_enabled }
   prometheus:
@@ -87,9 +87,9 @@ global:
   evaluation_interval: 30s
 
 scrape_configs:
-  - job_name: clickhouse
+  - job_name: observal-api
     static_configs:
-      - targets: ["clickhouse:8123"]
+      - targets: []
 PROM
 
 %{ endif }
@@ -97,14 +97,14 @@ PROM
 cd "$${DATA_DIR}"
 docker compose up -d
 
-# Set up daily ClickHouse backup to GCS
-cat > /etc/cron.daily/clickhouse-backup <<'CRON'
+# Set up daily DuckDB snapshot to GCS
+cat > /etc/cron.daily/duckdb-backup <<'CRON'
 #!/bin/bash
-BACKUP_FILE="/tmp/clickhouse-backup-$(date +%Y%m%d).tar.gz"
-docker exec $(docker ps -q -f name=clickhouse) clickhouse-client \
-  --password "${clickhouse_password}" \
-  --query "BACKUP DATABASE ${clickhouse_db} TO Disk('backups', 'daily-$(date +%Y%m%d)')"
-gsutil -m rsync -r /data/clickhouse/backups/ gs://${backups_bucket}/clickhouse/
-find /data/clickhouse/backups/ -mtime +${data_retention_days} -delete
+BACKUP_FILE="/tmp/duckdb-backup-$(date +%Y%m%d).tar.gz"
+curl -fsS -X POST http://localhost:8484/admin/checkpoint \
+  -H "Authorization: Bearer ${duckdb_analytics_token}" >/dev/null || true
+docker exec $(docker ps -q -f name=duckdb) tar czf - -C /data . > "$${BACKUP_FILE}"
+gsutil cp "$${BACKUP_FILE}" "gs://${backups_bucket}/duckdb/$(date +%Y%m%d).tar.gz"
+rm -f "$${BACKUP_FILE}"
 CRON
-chmod +x /etc/cron.daily/clickhouse-backup
+chmod +x /etc/cron.daily/duckdb-backup

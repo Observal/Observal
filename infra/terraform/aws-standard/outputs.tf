@@ -17,7 +17,7 @@ output "ecs_cluster_name" {
 }
 
 output "data_host_instance_id" {
-  description = "EC2 instance ID for the data tier host (Postgres + Redis + ClickHouse + Grafana)."
+  description = "EC2 instance ID for the data tier host (Postgres + Redis + DuckDB analytics + Grafana)."
   value       = aws_instance.data_host.id
 }
 

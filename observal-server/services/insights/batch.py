@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Batch insight report generation — discovers agents needing reports and queues jobs.
@@ -19,7 +20,7 @@ from sqlalchemy import select
 from database import async_session
 from models.agent import Agent, AgentStatus, AgentVersion
 from models.insight_report import InsightReport, InsightReportStatus
-from services.clickhouse import _query
+from services.analytics.duckdb import _query
 from services.inbox import sources as inbox
 from services.insight_version_filters import agent_version_filter
 from services.redis import _get_arq_pool
@@ -298,17 +299,16 @@ async def _count_agent_sessions(agent_id: str, agent_name: str, since: str, agen
     """Count sessions for an agent/version since a given timestamp."""
     sql = """
         SELECT count() AS cnt
-        FROM session_stats_agg FINAL
-        WHERE (agent_id = {agent_id:String} OR agent_id = {aname:String})
-          AND last_event_time >= {t_start:String}
+        FROM session_stats_agg
+        WHERE (agent_id = $agent_id OR agent_id = $aname)
+          AND last_event_time >= $t_start
           AND __AGENT_VERSION_FILTER__
-        FORMAT JSON
     """.replace("__AGENT_VERSION_FILTER__", agent_version_filter())
     params = {
-        "param_agent_id": agent_id,
-        "param_aname": agent_name,
-        "param_t_start": since,
-        "param_agent_version": agent_version or "",
+        "agent_id": agent_id,
+        "aname": agent_name,
+        "t_start": since,
+        "agent_version": agent_version or "",
     }
     try:
         r = await _query(sql, params)
@@ -320,11 +320,10 @@ async def _count_agent_sessions(agent_id: str, agent_name: str, since: str, agen
 
     fallback_sql = """
         SELECT count(DISTINCT session_id) AS cnt
-        FROM session_events FINAL
-        WHERE (agent_id = {agent_id:String} OR agent_id = {aname:String})
-          AND timestamp >= {t_start:String}
+        FROM session_events
+        WHERE (agent_id = $agent_id OR agent_id = $aname)
+          AND timestamp >= $t_start
           AND __AGENT_VERSION_FILTER__
-        FORMAT JSON
     """.replace("__AGENT_VERSION_FILTER__", agent_version_filter(nullable=True))
     try:
         r = await _query(fallback_sql, params)

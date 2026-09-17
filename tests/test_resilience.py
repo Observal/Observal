@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Tests for resilience patterns: retries, health checks, and timeouts."""
@@ -10,17 +11,17 @@ import httpx
 import pytest
 
 # ---------------------------------------------------------------------------
-# ClickHouse _query retries on ConnectError
+# DuckDB analytics _query retries on ConnectError
 # ---------------------------------------------------------------------------
 
 
-class TestClickHouseRetry:
+class TestAnalyticsRetry:
     """Verify _query retries on transient connection errors."""
 
     @pytest.mark.asyncio
     async def test_query_retries_on_connect_error(self):
         """_query should retry up to 3 times on ConnectError."""
-        from services.clickhouse import _query
+        from services.analytics.duckdb import _query
 
         mock_client = AsyncMock()
         mock_resp = MagicMock()
@@ -33,7 +34,7 @@ class TestClickHouseRetry:
             ]
         )
 
-        with patch("services.clickhouse.client._get_client", return_value=mock_client):
+        with patch("services.analytics.duckdb.client._get_client", return_value=mock_client):
             resp = await _query("SELECT 1")
             assert resp.status_code == 200
             assert mock_client.post.call_count == 3
@@ -41,12 +42,12 @@ class TestClickHouseRetry:
     @pytest.mark.asyncio
     async def test_query_raises_after_max_retries(self):
         """_query should reraise ConnectError after exhausting retries."""
-        from services.clickhouse import _query
+        from services.analytics.duckdb import _query
 
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(side_effect=httpx.ConnectError("conn refused"))
 
-        with patch("services.clickhouse.client._get_client", return_value=mock_client):
+        with patch("services.analytics.duckdb.client._get_client", return_value=mock_client):
             with pytest.raises(httpx.ConnectError):
                 await _query("SELECT 1")
             assert mock_client.post.call_count == 3
@@ -54,14 +55,14 @@ class TestClickHouseRetry:
     @pytest.mark.asyncio
     async def test_query_retries_on_connect_timeout(self):
         """_query should retry on ConnectTimeout."""
-        from services.clickhouse import _query
+        from services.analytics.duckdb import _query
 
         mock_client = AsyncMock()
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_client.post = AsyncMock(side_effect=[httpx.ConnectTimeout("timeout"), mock_resp])
 
-        with patch("services.clickhouse.client._get_client", return_value=mock_client):
+        with patch("services.analytics.duckdb.client._get_client", return_value=mock_client):
             resp = await _query("SELECT 1")
             assert resp.status_code == 200
             assert mock_client.post.call_count == 2
@@ -69,55 +70,58 @@ class TestClickHouseRetry:
     @pytest.mark.asyncio
     async def test_query_does_not_retry_on_other_errors(self):
         """_query should NOT retry on non-transient errors like ReadError."""
-        from services.clickhouse import _query
+        from services.analytics.duckdb import _query
 
         mock_client = AsyncMock()
         mock_client.post = AsyncMock(side_effect=httpx.ReadError("broken pipe"))
 
-        with patch("services.clickhouse.client._get_client", return_value=mock_client):
+        with patch("services.analytics.duckdb.client._get_client", return_value=mock_client):
             with pytest.raises(httpx.ReadError):
                 await _query("SELECT 1")
             assert mock_client.post.call_count == 1
 
 
 # ---------------------------------------------------------------------------
-# ClickHouse clickhouse_health()
+# DuckDB analytics_health()
 # ---------------------------------------------------------------------------
 
 
-class TestClickHouseHealth:
-    """Verify clickhouse_health returns True/False."""
+class TestAnalyticsHealth:
+    """Verify analytics_health returns True/False."""
 
     @pytest.mark.asyncio
     async def test_health_returns_true_on_success(self):
-        from services.clickhouse import clickhouse_health
+        from services.analytics.duckdb import analytics_health
 
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
+        mock_resp = MagicMock(status_code=200)
+        mock_resp.json.return_value = {"status": "ok"}
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=mock_resp)
 
-        with patch("services.clickhouse.client._query", new_callable=AsyncMock, return_value=mock_resp):
-            assert await clickhouse_health() is True
+        with patch("services.analytics.duckdb.client._get_client", return_value=mock_client):
+            assert await analytics_health() is True
 
     @pytest.mark.asyncio
     async def test_health_returns_false_on_error(self):
-        from services.clickhouse import clickhouse_health
+        from services.analytics.duckdb import analytics_health
 
-        with patch(
-            "services.clickhouse._query",
-            new_callable=AsyncMock,
-            side_effect=httpx.ConnectError("unreachable"),
-        ):
-            assert await clickhouse_health() is False
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(side_effect=httpx.ConnectError("unreachable"))
+
+        with patch("services.analytics.duckdb.client._get_client", return_value=mock_client):
+            assert await analytics_health() is False
 
     @pytest.mark.asyncio
     async def test_health_returns_false_on_non_200(self):
-        from services.clickhouse import clickhouse_health
+        from services.analytics.duckdb import analytics_health
 
-        mock_resp = MagicMock()
-        mock_resp.status_code = 500
+        mock_resp = MagicMock(status_code=500)
+        mock_resp.json.return_value = {"status": "error"}
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=mock_resp)
 
-        with patch("services.clickhouse.client._query", new_callable=AsyncMock, return_value=mock_resp):
-            assert await clickhouse_health() is False
+        with patch("services.analytics.duckdb.client._get_client", return_value=mock_client):
+            assert await analytics_health() is False
 
 
 # ---------------------------------------------------------------------------

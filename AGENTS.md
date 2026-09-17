@@ -53,7 +53,7 @@ observal-server/       FastAPI server
   models/              SQLAlchemy models (PostgreSQL)
   schemas/             Pydantic request/response schemas
   services/            Business logic
-    clickhouse/        ClickHouse subpackage (client, schema, insert, query)
+    analytics/duckdb/  Analytics store subpackage (service container, client, schema, insert, query)
     harness/           Server-side harness adapters (config generation)
     session_parsers/   Per-harness JSONL parsers (9 modules covering all 10 harnesses)
     audit/             Compliance audit system (loguru-based)
@@ -106,7 +106,7 @@ Today only Kiro meets all four. A minimal harness has:
 - **Typer for CLI.** `B008` suppressed because Typer requires function calls in argument defaults.
 - **Skill files track CLI changes.** When any CLI command is added, removed, renamed, or has its flags changed, update the corresponding skill files in `observal_cli/skills/`. These are the agent's source of truth for command syntax.
 - **Dynamic settings** for runtime config: `from services.dynamic_settings import get, get_int, get_bool`. Non-boot settings live in the DB, not env vars.
-- **ClickHouse migrations** live in `observal-server/clickhouse/migrations/*.sql` and run through `services.clickhouse.migrations`. Keep Alembic for Postgres only. Never add ClickHouse DDL to startup code. The init container runs ClickHouse migrations after Alembic and before API startup.
+- **Analytics migrations** live in `observal-server/analytics/migrations/*.sql` and run through `services.analytics.duckdb.migrations`. Keep Alembic for Postgres only. Never add analytics DDL to startup code: the DuckDB service container applies its own migrations at boot, before it accepts queries.
 - **SSRF guard** for all outbound network: `from services.ssrf_guard import is_private_url`. Used in webhooks, git clone, MCP analysis.
 - **Conventional Commits**: `feat`, `fix`, `docs`, `refactor`, `test`, `build`, `ci`, `chore`. Scope in parens. No fixup commits (amend instead).
 
@@ -163,7 +163,7 @@ observal
 │   ├── patch / cleanup      #   install or remove telemetry hooks
 │   └── support              #   diagnostic bundle with redaction
 └── server                   # start, stop, restart, status, logs, install, reset, config
-    └── migrate              #   PostgreSQL and ClickHouse migration tools
+    └── migrate              #   PostgreSQL, instance-move, and one-way ClickHouse -> DuckDB tools
 ```
 
 `pull` is a subcommand (`observal agent pull`), not a top-level command. Run `observal --help` to confirm before documenting a command path.
@@ -179,14 +179,14 @@ Sub-packages: `agent/` (crud, install, draft), `admin/` (enterprise_settings, us
 ## Database architecture
 
 - **PostgreSQL**: relational data (users, agents, components, feedback, settings). SQLAlchemy async.
-- **ClickHouse**: session events, session aggregates, audit events, security events, and webhook deliveries. HTTP interface, MergeTree-family tables, bloom filter indexes. Schema changes use versioned SQL migrations in `observal-server/clickhouse/migrations/`. Runtime helpers stay in `services/clickhouse/`.
+- **DuckDB**: session events, session aggregates, audit events, security events, webhook deliveries, and layer snapshots. One service container (`observal-duckdb`, image built from `docker/Dockerfile.duckdb`) owns the database file and is its only writer; every other process talks to it over HTTP. Schema changes use versioned SQL migrations in `observal-server/analytics/migrations/`; runtime helpers stay in `services/analytics/duckdb/`.
 - **Redis**: pub/sub for GraphQL subscriptions, arq job queue, dynamic settings cache, auth token revocation.
 
 ## Telemetry pipeline
 
 ```
-harness ──→ session push hooks ──→ POST /api/v1/ingest/session ──→ ClickHouse
-CLI ──→ observal reconcile ──→ POST /api/v1/ingest/session ──→ ClickHouse
+harness ──→ session push hooks ──→ POST /api/v1/ingest/session ──→ DuckDB service
+CLI ──→ observal reconcile ──→ POST /api/v1/ingest/session ──→ DuckDB service
 ```
 
 Session delivery uses a local outbox and resumes after transient network failures.
@@ -202,7 +202,7 @@ Session delivery uses a local outbox and resumes after transient network failure
 ## Commands
 
 ```bash
-# Docker stack (10 services: init, api, db, clickhouse, redis, worker, web, lb, prometheus, grafana)
+# Docker stack (10 services: init, api, db, duckdb, redis, worker, web, lb, prometheus, grafana)
 make up                  # start
 make down                # stop
 make rebuild             # rebuild and restart

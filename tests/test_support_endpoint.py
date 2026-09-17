@@ -5,10 +5,10 @@
 
 Covers:
 - _run_collector wrapper: success, timeout, exception handling
-- _collect_versions: app version, alembic revision, CH version + tables
-- _collect_health: PG, CH, Redis, OTEL probes
+- _collect_versions: app version, alembic revision, analytics version + tables
+- _collect_health: PG, analytics, Redis, OTEL probes
 - _collect_config: returns allowlisted Settings fields only
-- _collect_aggregates: row counts per PG/CH table, no row contents
+- _collect_aggregates: row counts per PG/analytics table, no row contents
 - _collect_errors: error fingerprints from last 24h, max 50, stack_template only
 - _collect_logs: structured log lines from ring buffer, duration filtering
 - _parse_duration: human-friendly duration parsing
@@ -173,7 +173,7 @@ class TestCollectVersions:
         assert "error" in result["alembic_revision"]
 
     @pytest.mark.asyncio
-    async def test_returns_clickhouse_version(self):
+    async def test_returns_analytics_version(self):
         db = _mock_db()
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = "abc"
@@ -181,15 +181,15 @@ class TestCollectVersions:
 
         with patch("api.routes.support._query", new_callable=AsyncMock) as mock_query:
             mock_query.side_effect = [
-                _mock_ch_response(200, text="24.3.1.5"),
-                _mock_ch_response(200, json_data={"data": [{"name": "traces"}]}),
+                _mock_ch_response(200, json_data={"data": [{"version": "v1.5.5"}]}),
+                _mock_ch_response(200, json_data={"data": [{"table_name": "session_events"}]}),
             ]
             result = await _collect_versions(db)
 
-        assert result["clickhouse_version"] == "24.3.1.5"
+        assert result["analytics_version"] == "v1.5.5"
 
     @pytest.mark.asyncio
-    async def test_returns_clickhouse_tables(self):
+    async def test_returns_analytics_tables(self):
         db = _mock_db()
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = "abc"
@@ -197,15 +197,24 @@ class TestCollectVersions:
 
         with patch("api.routes.support._query", new_callable=AsyncMock) as mock_query:
             mock_query.side_effect = [
-                _mock_ch_response(200, text="24.3.1"),
-                _mock_ch_response(200, json_data={"data": [{"name": "traces"}, {"name": "spans"}, {"name": "scores"}]}),
+                _mock_ch_response(200, json_data={"data": [{"version": "v1.5.5"}]}),
+                _mock_ch_response(
+                    200,
+                    json_data={
+                        "data": [
+                            {"table_name": "session_events"},
+                            {"table_name": "session_stats_agg"},
+                            {"table_name": "audit_log"},
+                        ]
+                    },
+                ),
             ]
             result = await _collect_versions(db)
 
-        assert result["clickhouse_tables"] == ["traces", "spans", "scores"]
+        assert result["analytics_tables"] == ["session_events", "session_stats_agg", "audit_log"]
 
     @pytest.mark.asyncio
-    async def test_clickhouse_error_recorded(self):
+    async def test_analytics_error_recorded(self):
         db = _mock_db()
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = "abc"
@@ -215,7 +224,7 @@ class TestCollectVersions:
             mock_query.side_effect = ConnectionError("CH unreachable")
             result = await _collect_versions(db)
 
-        assert "error" in result["clickhouse_version"]
+        assert "error" in result["analytics_version"]
 
     @pytest.mark.asyncio
     async def test_build_hash_from_env(self):
@@ -284,7 +293,7 @@ class TestCollectHealth:
         assert result["postgres"]["error"] == "RuntimeError"
 
     @pytest.mark.asyncio
-    async def test_clickhouse_ok(self):
+    async def test_analytics_ok(self):
         db = _mock_db()
 
         with (
@@ -298,10 +307,10 @@ class TestCollectHealth:
 
             result = await _collect_health(db)
 
-        assert result["clickhouse"]["status"] == "ok"
+        assert result["analytics"]["status"] == "ok"
 
     @pytest.mark.asyncio
-    async def test_clickhouse_error(self):
+    async def test_analytics_error(self):
         db = _mock_db()
 
         with (
@@ -315,7 +324,7 @@ class TestCollectHealth:
 
             result = await _collect_health(db)
 
-        assert result["clickhouse"]["status"] == "error"
+        assert result["analytics"]["status"] == "error"
 
     @pytest.mark.asyncio
     async def test_redis_ok(self):
@@ -364,7 +373,7 @@ class TestCollectHealth:
 
             result = await _collect_health(db)
 
-        for probe_name in ("postgres", "clickhouse", "redis"):
+        for probe_name in ("postgres", "analytics", "redis"):
             assert "latency_ms" in result[probe_name], f"{probe_name} missing latency_ms"
             assert isinstance(result[probe_name]["latency_ms"], int)
 
@@ -447,7 +456,7 @@ class TestCollectAggregates:
         assert result["pg_table_counts"]["agents"] == 42
 
     @pytest.mark.asyncio
-    async def test_returns_ch_table_counts(self):
+    async def test_returns_analytics_table_counts(self):
         db = _mock_db()
         tables_result = MagicMock()
         tables_result.fetchall.return_value = []
@@ -455,18 +464,20 @@ class TestCollectAggregates:
 
         with patch("api.routes.support._query", new_callable=AsyncMock) as mock_query:
             mock_query.side_effect = [
-                # CH table list
-                _mock_ch_response(200, json_data={"data": [{"name": "traces"}, {"name": "spans"}]}),
-                # count for traces
-                _mock_ch_response(200, json_data={"data": [{"count()": 1000000}]}),
-                # count for spans
-                _mock_ch_response(200, json_data={"data": [{"count()": 5000000}]}),
+                # analytics table list
+                _mock_ch_response(
+                    200, json_data={"data": [{"table_name": "session_events"}, {"table_name": "audit_log"}]}
+                ),
+                # count for session_events
+                _mock_ch_response(200, json_data={"data": [{"cnt": 1000000}]}),
+                # count for audit_log
+                _mock_ch_response(200, json_data={"data": [{"cnt": 5000000}]}),
             ]
             result = await _collect_aggregates(db)
 
-        assert "ch_table_counts" in result
-        assert result["ch_table_counts"]["traces"] == 1000000
-        assert result["ch_table_counts"]["spans"] == 5000000
+        assert "analytics_table_counts" in result
+        assert result["analytics_table_counts"]["session_events"] == 1000000
+        assert result["analytics_table_counts"]["audit_log"] == 5000000
 
     @pytest.mark.asyncio
     async def test_counts_are_integers_not_row_contents(self):
@@ -480,8 +491,8 @@ class TestCollectAggregates:
 
         with patch("api.routes.support._query", new_callable=AsyncMock) as mock_query:
             mock_query.side_effect = [
-                _mock_ch_response(200, json_data={"data": [{"name": "traces"}]}),
-                _mock_ch_response(200, json_data={"data": [{"count()": 500}]}),
+                _mock_ch_response(200, json_data={"data": [{"table_name": "session_events"}]}),
+                _mock_ch_response(200, json_data={"data": [{"cnt": 500}]}),
             ]
             result = await _collect_aggregates(db)
 
@@ -489,9 +500,9 @@ class TestCollectAggregates:
         for table, count in result["pg_table_counts"].items():
             assert isinstance(count, int), f"PG table {table} has non-int count: {count}"
 
-        # CH counts are plain integers
-        for table, count in result["ch_table_counts"].items():
-            assert isinstance(count, int), f"CH table {table} has non-int count: {count}"
+        # analytics counts are plain integers
+        for table, count in result["analytics_table_counts"].items():
+            assert isinstance(count, int), f"analytics table {table} has non-int count: {count}"
 
     @pytest.mark.asyncio
     async def test_pg_error_recorded_per_table(self):
@@ -509,7 +520,7 @@ class TestCollectAggregates:
         assert "error" in result["pg_table_counts"]["broken_table"]
 
     @pytest.mark.asyncio
-    async def test_ch_error_recorded_per_table(self):
+    async def test_analytics_error_recorded_per_table(self):
         db = _mock_db()
         tables_result = MagicMock()
         tables_result.fetchall.return_value = []
@@ -517,15 +528,15 @@ class TestCollectAggregates:
 
         with patch("api.routes.support._query", new_callable=AsyncMock) as mock_query:
             mock_query.side_effect = [
-                _mock_ch_response(200, json_data={"data": [{"name": "broken"}]}),
-                ConnectionError("CH query failed"),
+                _mock_ch_response(200, json_data={"data": [{"table_name": "broken"}]}),
+                ConnectionError("analytics query failed"),
             ]
             result = await _collect_aggregates(db)
 
-        assert "error" in result["ch_table_counts"]["broken"]
+        assert "error" in result["analytics_table_counts"]["broken"]
 
     @pytest.mark.asyncio
-    async def test_unsafe_ch_table_name_skipped(self):
+    async def test_unsafe_analytics_table_name_skipped(self):
         db = _mock_db()
         tables_result = MagicMock()
         tables_result.fetchall.return_value = []
@@ -533,11 +544,11 @@ class TestCollectAggregates:
 
         with patch("api.routes.support._query", new_callable=AsyncMock) as mock_query:
             mock_query.side_effect = [
-                _mock_ch_response(200, json_data={"data": [{"name": "Robert'; DROP TABLE--"}]}),
+                _mock_ch_response(200, json_data={"data": [{"table_name": "Robert'; DROP TABLE--"}]}),
             ]
             result = await _collect_aggregates(db)
 
-        assert "unsafe table name" in result["ch_table_counts"]["Robert'; DROP TABLE--"]
+        assert "unsafe table name" in result["analytics_table_counts"]["Robert'; DROP TABLE--"]
 
 
 # ═════════════════════════════════════════════════════════════════════
@@ -893,7 +904,7 @@ class TestConfigAllowlistFiltering:
         """Boot-time allowlist contains infrastructure keys."""
         expected = {
             "DATABASE_URL",
-            "CLICKHOUSE_URL",
+            "DUCKDB_ANALYTICS_URL",
             "REDIS_URL",
             "JWT_SIGNING_ALGORITHM",
         }

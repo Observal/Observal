@@ -14,7 +14,7 @@
 #   • infra/terraform/aws-ec2 (single-instance — fmt+validate only)
 #
 # aws-ec2 is excluded from the matrix and consistency checks because it uses
-# different variable conventions (name vs name_prefix, no clickhouse_mode).
+# different variable conventions (name vs name_prefix).
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: Terraform

@@ -70,34 +70,35 @@ docker run --rm \
 docker compose -f docker/docker-compose.yml start observal-api
 ```
 
-## ClickHouse backup
+## DuckDB backup
 
 ### Option A - volume snapshot (simplest)
 
 ```bash
-docker compose -f docker/docker-compose.yml stop observal-clickhouse
+docker compose -f docker/docker-compose.yml stop observal-duckdb
 docker run --rm -v observal_chdata:/data -v "$(pwd)":/backup \
   alpine tar czf /backup/observal-ch-$(date +%Y%m%d).tar.gz -C /data .
-docker compose -f docker/docker-compose.yml start observal-clickhouse
+docker compose -f docker/docker-compose.yml start observal-duckdb
 ```
 
 Downtime: however long the tar takes (a minute to tens of minutes depending on size).
 
-### Option B - ClickHouse native `BACKUP` (no downtime)
+### Option B - service-side export (no downtime)
 
 ```bash
-docker compose -f docker/docker-compose.yml exec observal-clickhouse \
-  clickhouse-client --query "BACKUP DATABASE observal TO Disk('backups', 'observal-$(date +%Y%m%d).zip')"
+docker compose -f docker/docker-compose.yml exec observal-duckdb \
+  /app/.venv/bin/python -c "import json,os,urllib.request; \
+req=urllib.request.Request('http://127.0.0.1:8484/admin/backup', data=json.dumps({'destination': '/data/backup-$(date +%Y%m%d)'}).encode(), headers={'Authorization': 'Bearer ' + os.environ['DUCKDB_ANALYTICS_TOKEN'], 'Content-Type': 'application/json'}); \
+urllib.request.urlopen(req, timeout=1800).read()"
 ```
 
-Requires configuring a backup disk in ClickHouse config; see [ClickHouse docs](https://clickhouse.com/docs/en/operations/backup).
+The service runs `EXPORT DATABASE` into a directory of Parquet files plus a `load.sql`
+that recreates the schema. Copy that directory out of the container/volume before
+rotating backups.
 
-Restore:
-
-```bash
-docker compose -f docker/docker-compose.yml exec observal-clickhouse \
-  clickhouse-client --query "RESTORE DATABASE observal FROM Disk('backups', 'observal-20260421.zip')"
-```
+Restoring means stopping the service, replacing the database file (or importing the
+exported Parquet files into a fresh file), and starting the service again while the
+API is down.
 
 ## Restore order
 
@@ -106,7 +107,7 @@ If you're restoring from backup after a catastrophic failure:
 1. Stop the whole stack: `docker compose down`.
 2. Restore `apidata` (JWT keys) first.
 3. Restore `pgdata` (Postgres).
-4. Restore `chdata` (ClickHouse).
+4. Restore `chdata` (DuckDB).
 5. Bring up the stack: `docker compose up -d`.
 6. Smoke test: `observal auth login`, `observal auth status`.
 
@@ -139,12 +140,12 @@ A minimal cron setup (on the Docker host):
   docker compose -f docker/docker-compose.yml exec -T observal-api \
   tar czf - -C /data keys > /backups/keys-$(date +\%Y\%m\%d).tar.gz
 
-# Weekly Sunday at 04:00 - ClickHouse
+# Weekly Sunday at 04:00 - DuckDB
 0 4 * * 0 cd /opt/Observal && \
-  docker compose -f docker/docker-compose.yml stop observal-clickhouse && \
+  docker compose -f docker/docker-compose.yml stop observal-duckdb && \
   docker run --rm -v observal_chdata:/data -v /backups:/backup alpine \
     tar czf /backup/ch-$(date +\%Y\%m\%d).tar.gz -C /data . && \
-  docker compose -f docker/docker-compose.yml start observal-clickhouse
+  docker compose -f docker/docker-compose.yml start observal-duckdb
 ```
 
 Ship the `/backups` directory offsite (S3, B2, rsync to another host).

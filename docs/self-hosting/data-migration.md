@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Data migration
@@ -10,7 +11,7 @@ Only super admins can start migration jobs.
 ## What can be moved
 
 - **Registry data**: users, agents, components, versions, settings, review records, and related PostgreSQL data.
-- **Telemetry data**: session events, audit events, security events, and webhook delivery history stored in ClickHouse.
+- **Telemetry data**: session events, session checkpoints, session summaries, layer snapshots, audit events, security events, and webhook delivery history stored in DuckDB.
 - **Registry + telemetry**: a full instance move when both stores are available.
 
 ## Before you start
@@ -28,6 +29,7 @@ Only super admins can start migration jobs.
 3. Select **Export**.
 4. Choose the export scope:
    - **Registry data** for PostgreSQL records only.
+   - **Telemetry data** for session, audit, and security history only. The export is a single self-describing `telemetry_export.tar.gz` (Parquet partitions plus `telemetry_manifest.json`).
    - **Registry + telemetry** for a full move.
 5. Click **Start export**.
 6. Wait for the job to finish.
@@ -56,16 +58,54 @@ Do not import artifacts that fail checksum validation.
 2. Select **Import**.
 3. Upload the validated artifacts.
 4. Choose the import scope.
-5. Imports normalize all project-keyed telemetry to the deployment project `default`.
-6. Click **Start import**.
-7. Wait for the job to finish.
-8. Check agents, components, users, and sessions in the target instance.
+5. Telemetry-only imports accept the `telemetry_export.tar.gz` from the export as-is; a registry archive on its own is rejected because it carries no telemetry tables.
+6. Imports normalize all project-keyed telemetry to the deployment project `default`.
+7. Click **Start import**.
+8. Wait for the job to finish.
+9. Check agents, components, users, and sessions in the target instance.
 
 Imports are idempotent where possible. Existing rows are skipped rather than overwritten.
 
 ## CLI alternative
 
-The CLI uses the same shared migration core as the server jobs. Source commands read `DATABASE_URL` and `CLICKHOUSE_URL`; target commands read `TARGET_DATABASE_URL` and `TARGET_CLICKHOUSE_URL`.
+The CLI uses the same shared migration core as the server jobs. Source commands read `DATABASE_URL` and `DUCKDB_ANALYTICS_URL`; target commands read `TARGET_DATABASE_URL` and `DUCKDB_ANALYTICS_URL`.
+
+Upgrading an existing ClickHouse-backed installation is a one-way migration:
+
+```bash
+observal server migrate duckdb \
+  --clickhouse-url clickhouse://default:clickhouse@observal-clickhouse:8123/observal \
+  --duckdb-url duckdb://observal-duckdb:8484/observal \
+  --duckdb-token "$DUCKDB_ANALYTICS_TOKEN" \
+  --export-dir ./telemetry-export
+```
+
+The command exports Parquet partitions, loads them into the analytics service,
+and verifies checksums plus per-table row counts. It is idempotent per export,
+never modifies the ClickHouse source, and has no reverse direction.
+
+## Telemetry between two DuckDB instances
+
+The same artifact flow works between two DuckDB deployments:
+
+```bash
+observal server migrate export-telemetry \
+  --duckdb-url duckdb://source-duckdb:8484/observal \
+  --duckdb-token "$DUCKDB_ANALYTICS_TOKEN" \
+  --output-dir ./telemetry-export
+
+observal server migrate validate-telemetry --input-dir ./telemetry-export
+
+observal server migrate import-telemetry \
+  --duckdb-url duckdb://target-duckdb:8484/observal \
+  --duckdb-token "$DUCKDB_ANALYTICS_TOKEN" \
+  --input-dir ./telemetry-export
+```
+
+Exports carry every telemetry table, including `session_stats_agg`: summaries are
+written by the ingest path rather than rebuilt on import, so they must travel
+with the events. Imports replace rows by primary key and prune incoming
+identities for append-only tables, so repeating an import is safe.
 
 ```bash
 observal server migrate export --file backup.tar.gz --output json
@@ -73,13 +113,34 @@ observal server migrate validate --archive backup.tar.gz --output json
 observal server migrate import --archive backup.tar.gz --output json
 ```
 
-Telemetry commands are separate:
+Telemetry commands are separate (DuckDB source and target):
 
 ```bash
-observal server migrate export-telemetry --manifest backup-manifest.json --output-dir telemetry --output json
-observal server migrate validate-telemetry --input-dir telemetry --output json
-observal server migrate import-telemetry --input-dir telemetry --output json
+observal server migrate export-telemetry --duckdb-url duckdb://source-duckdb:8484/observal --output-dir telemetry --output json
+observal server migrate validate-telemetry --duckdb-url duckdb://target-duckdb:8484/observal --input-dir telemetry --output json
+observal server migrate import-telemetry --duckdb-url duckdb://target-duckdb:8484/observal --input-dir telemetry --output json
 ```
+
+### Copying telemetry with super-admin credentials only
+
+When you cannot reach the source analytics service directly, `scripts/fetch_seed_telemetry.py`
+drives the super-admin migration API on both sides: it starts an export on the
+source, waits for the job, downloads the artifact with checksum verification,
+uploads it to the target as a telemetry import, and prints the import result.
+
+```bash
+python scripts/fetch_seed_telemetry.py \
+  --source-url https://source.example.com \
+  --source-email admin@source.example.com \
+  --target-url http://localhost \
+  --target-email super@target.example.com \
+  --out .seed-telemetry
+```
+
+Passwords come from `--source-password`/`--target-password` or from
+`SOURCE_PASSWORD`/`TARGET_PASSWORD`. Add `--insecure` for a stack with a
+self-signed certificate. Re-running against a target that already holds the
+telemetry is safe: the import reports zero inserted rows.
 
 ## Cleanup
 

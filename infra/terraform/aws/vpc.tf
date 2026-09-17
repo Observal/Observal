@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 # All VPC networking resources are conditional on local.should_create_vpc.
@@ -141,7 +142,7 @@ resource "aws_flow_log" "main" {
   tags = { Name = "${local.name}-flow-logs" }
 }
 
-# ── Private DNS zone for VPC-internal resolution (ECS -> ClickHouse/Grafana) ──
+# ── Private DNS zone for VPC-internal resolution (ECS -> DuckDB/Grafana) ──
 
 resource "aws_route53_zone" "internal" {
   name = var.internal_dns_zone

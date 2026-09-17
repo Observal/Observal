@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Unit tests for REST API migration endpoints (10.1).
@@ -245,6 +246,31 @@ class TestConcurrencyCheck:
 # ══════════════════════════════════════════════════════════════════════════════
 
 
+class TestUploadScopeTransport:
+    """The upload endpoints must read their scope the way clients send it.
+
+    The web UI appends `scope` to the multipart FormData it uploads. Declaring
+    the parameter as a plain scalar made FastAPI read it from the query string
+    instead, so every import and validation silently ran with the default
+    `both` scope no matter which option the operator picked.
+    """
+
+    @skip_if_no_module
+    @pytest.mark.parametrize("endpoint_name", ["start_import", "start_validate"])
+    def test_scope_is_a_form_field(self, endpoint_name):
+        import inspect
+
+        from fastapi import params
+
+        endpoint = getattr(_migrate_mod, endpoint_name)
+        declaration = inspect.signature(endpoint).parameters["scope"].default
+
+        assert isinstance(declaration, params.Form), (
+            f"{endpoint_name} reads `scope` from the query string, so a multipart upload cannot set it"
+        )
+        assert declaration.default == MigrationScope.both
+
+
 class TestInvalidUploads:
     """Invalid upload files return 422."""
 
@@ -309,6 +335,43 @@ class TestInvalidUploads:
         ):
             await _validate_upload_files([mock_file], MigrationScope.postgres)
         assert exc_info.value.status_code == 422
+
+    @skip_if_no_module
+    @pytest.mark.asyncio
+    async def test_telemetry_scope_accepts_a_telemetry_archive(self):
+        """A telemetry export archive is a complete telemetry payload on its own."""
+        _validate_upload_files = _migrate_mod._validate_upload_files
+
+        mock_file = MagicMock()
+        mock_file.filename = "telemetry_export.tar.gz"
+        mock_file.size = 2048
+        mock_file.read = AsyncMock(return_value=b"\x1f\x8b\x08\x00" + b"\x00" * 100)
+        mock_file.seek = AsyncMock()
+
+        with patch("services.dynamic_settings.get_int", new_callable=AsyncMock, return_value=5 * 1024 * 1024 * 1024):
+            await _validate_upload_files([mock_file], MigrationScope.telemetry)
+
+    @skip_if_no_module
+    @pytest.mark.asyncio
+    async def test_telemetry_scope_rejects_a_registry_archive(self):
+        """A registry archive carries no telemetry tables, so it is rejected."""
+        from fastapi import HTTPException
+
+        _validate_upload_files = _migrate_mod._validate_upload_files
+
+        mock_file = MagicMock()
+        mock_file.filename = "observal_registry_20260101.tar.gz"
+        mock_file.size = 2048
+        mock_file.read = AsyncMock(return_value=b"\x1f\x8b\x08\x00" + b"\x00" * 100)
+        mock_file.seek = AsyncMock()
+
+        with (
+            patch("services.dynamic_settings.get_int", new_callable=AsyncMock, return_value=5 * 1024 * 1024 * 1024),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await _validate_upload_files([mock_file], MigrationScope.telemetry)
+        assert exc_info.value.status_code == 422
+        assert "not a telemetry export" in exc_info.value.detail
 
 
 # ══════════════════════════════════════════════════════════════════════════════

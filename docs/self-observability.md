@@ -11,7 +11,7 @@ Observal exposes health probes, structured logs, and Prometheus metrics for moni
 |----------|---------|----------|
 | `GET /livez` | Liveness probe | K8s/Docker: is the process alive? (no I/O) |
 | `GET /healthz` | Liveness probe (alias) | Same as `/livez` |
-| `GET /readyz` | Readiness probe | K8s/Docker: can the API serve traffic? Checks Postgres, ClickHouse, Redis |
+| `GET /readyz` | Readiness probe | K8s/Docker: can the API serve traffic? Checks Postgres, DuckDB, Redis |
 | `GET /health` | Readiness probe (alias) | Same as `/readyz` |
 | `GET /metrics` | Prometheus metrics | Scrape target for Prometheus |
 
@@ -22,7 +22,7 @@ Observal exposes health probes, structured logs, and Prometheus metrics for moni
   "status": "ok",
   "postgres": "ok",
   "initialized": true,
-  "clickhouse": "ok",
+  "analytics": "ok",
   "redis": "ok"
 }
 ```

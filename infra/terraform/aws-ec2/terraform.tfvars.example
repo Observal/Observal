@@ -42,12 +42,11 @@ env_overrides = {
   DEMO_USER_EMAIL           = ""
   DEMO_USER_PASSWORD        = ""
   DATABASE_URL              = ""
-  CLICKHOUSE_URL            = ""
+  DUCKDB_ANALYTICS_URL      = ""
+  DUCKDB_ANALYTICS_TOKEN    = ""
   REDIS_URL                 = ""
   POSTGRES_USER             = ""
   POSTGRES_PASSWORD         = ""
-  CLICKHOUSE_USER           = ""
-  CLICKHOUSE_PASSWORD       = ""
 }
 
 # VPC (optional — leave empty for default VPC)

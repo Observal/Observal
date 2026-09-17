@@ -117,7 +117,7 @@ variable "worker_desired_count" {
 # ── Data tier EC2 ─────────────────────────────────────────────────────────────
 
 variable "data_instance_type" {
-  description = "EC2 instance type for the data host (Postgres + Redis + ClickHouse)."
+  description = "EC2 instance type for the data host (Postgres + Redis + DuckDB analytics)."
   type        = string
   default     = "t3.medium"
 }

@@ -3,6 +3,7 @@
 
 """Observal standalone server management.
 
-Provides process orchestration for embedded PostgreSQL, ClickHouse, and Redis
+Provides process orchestration for embedded PostgreSQL, the DuckDB analytics
+service, and Redis
 services, enabling a zero-dependency self-hosted Observal deployment.
 """

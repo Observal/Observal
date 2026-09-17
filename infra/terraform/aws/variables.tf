@@ -46,7 +46,7 @@ variable "az_count" {
 }
 
 variable "internal_dns_zone" {
-  description = "Private Route 53 zone for VPC-internal DNS (e.g. clickhouse.observal.internal)."
+  description = "Private Route 53 zone for VPC-internal DNS (e.g. duckdb.observal.internal)."
   type        = string
   default     = "observal.internal"
 }
@@ -217,34 +217,10 @@ variable "run_init_on_apply" {
   default     = true
 }
 
-# ── Data tier (ClickHouse plus optional observability on EC2) ───────────────
-
-variable "clickhouse_mode" {
-  description = "Where ClickHouse lives. 'self_hosted' = EC2 + EBS managed by this module. 'cloud' = ClickHouse Cloud, supply clickhouse_cloud_url + clickhouse_cloud_password."
-  type        = string
-  default     = "self_hosted"
-  validation {
-    condition     = contains(["self_hosted", "cloud"], var.clickhouse_mode)
-    error_message = "clickhouse_mode must be 'self_hosted' or 'cloud'."
-  }
-}
-
-variable "clickhouse_cloud_url" {
-  description = "ClickHouse Cloud DSN (e.g. https://abc123.us-east-1.aws.clickhouse.cloud:8443). Required when clickhouse_mode = 'cloud'."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "clickhouse_cloud_password" {
-  description = "ClickHouse Cloud password. Required when clickhouse_mode = 'cloud'."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
+# ── Data tier (DuckDB analytics singleton plus optional observability on EC2) ──
 
 variable "data_instance_type" {
-  description = "EC2 instance type for the ClickHouse data host. 8 GB RAM is the floor for light use."
+  description = "EC2 instance type for the DuckDB analytics data host. 8 GB RAM is the floor for light use."
   type        = string
   default     = "t3.large"
 }

@@ -4,7 +4,8 @@
 
 set -eo pipefail
 
-# Bootstrap the data tier host: Postgres, Redis, ClickHouse, and optional observability via Docker Compose.
+# Bootstrap the data tier host: Postgres, Redis, the DuckDB analytics singleton,
+# and optional observability via Docker Compose.
 
 exec > >(tee /var/log/observal-bootstrap.log | logger -t observal-bootstrap -s 2>/dev/console) 2>&1
 echo "Observal data-host bootstrap starting at $(date -u)"
@@ -36,7 +37,7 @@ mkdir -p /data
 UUID=$(blkid -s UUID -o value "$DEVICE")
 grep -q "$UUID" /etc/fstab || echo "UUID=$UUID /data ext4 defaults,nofail 0 2" >> /etc/fstab
 mount -a
-mkdir -p /data/postgres /data/redis /data/clickhouse
+mkdir -p /data/postgres /data/redis /data/duckdb
 %{ if observability_grafana_enabled }
 mkdir -p /data/grafana
 %{ endif }
@@ -45,7 +46,7 @@ mkdir -p /data/prometheus
 %{ endif }
 chown -R 999:999 /data/postgres      || true   # postgres user
 chown -R 999:1000 /data/redis        || true   # redis user
-chown -R 101:101 /data/clickhouse    || true   # clickhouse user
+chown -R 1001:1001 /data/duckdb      || true   # appuser in the analytics image
 %{ if observability_grafana_enabled }
 chown -R 472:472 /data/grafana       || true   # grafana user
 %{ endif }
@@ -58,7 +59,7 @@ set +x
 fetch() { aws ssm get-parameter --with-decryption --name "$1" --region "${region}" --query Parameter.Value --output text; }
 
 DB_PASSWORD=$(fetch "${ssm_prefix}/DB_PASSWORD")
-CLICKHOUSE_PASSWORD=$(fetch "${ssm_prefix}/CLICKHOUSE_PASSWORD")
+DUCKDB_ANALYTICS_TOKEN=$(fetch "${ssm_prefix}/DUCKDB_ANALYTICS_TOKEN")
 set -x
 
 # ── Render docker-compose.yml ────────────────────────────────────
@@ -66,46 +67,12 @@ INSTALL_DIR=/opt/observal
 mkdir -p "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 
-# ClickHouse config
-mkdir -p "$INSTALL_DIR/clickhouse/config.d" "$INSTALL_DIR/clickhouse/users.d"
-
-cat > "$INSTALL_DIR/clickhouse/config.d/memory.xml" <<'CHCFG'
-<clickhouse>
-    <listen_host>::</listen_host>
-    <listen_host>0.0.0.0</listen_host>
-    <listen_try>1</listen_try>
-    <max_server_memory_usage_to_ram_ratio>0.8</max_server_memory_usage_to_ram_ratio>
-    <merge_tree>
-        <parts_to_delay_insert>200</parts_to_delay_insert>
-        <parts_to_throw_insert>500</parts_to_throw_insert>
-    </merge_tree>
-</clickhouse>
-CHCFG
-
-cat > "$INSTALL_DIR/clickhouse/users.d/default-user.xml" <<CHUSER
-<clickhouse>
-  <users>
-    <default remove="remove"></default>
-    <default>
-      <profile>default</profile>
-      <networks><ip>::/0</ip></networks>
-      <password><![CDATA[$${CLICKHOUSE_PASSWORD}]]></password>
-      <quota>default</quota>
-      <access_management>0</access_management>
-    </default>
-  </users>
-</clickhouse>
-CHUSER
-
 %{ if observability_prometheus_enabled }
 # Prometheus config
 cat > "$INSTALL_DIR/prometheus.yml" <<'PROM'
 global:
   scrape_interval: 30s
 scrape_configs:
-  - job_name: observal-clickhouse
-    static_configs:
-      - targets: ['clickhouse:9363']
   - job_name: observal-postgres
     static_configs:
       - targets: ['localhost:9187']
@@ -147,26 +114,28 @@ services:
       timeout: 5s
       retries: 5
 
-  clickhouse:
-    image: clickhouse/clickhouse-server:26.6
-    container_name: observal-clickhouse
+  duckdb:
+    image: ghcr.io/observal/observal-duckdb:${image_tag}
+    container_name: observal-duckdb
     restart: unless-stopped
     ports:
-      - "8123:8123"
-      - "9000:9000"
+      - "8484:8484"
     environment:
-      CLICKHOUSE_DB: observal
-      CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: "$${CLICKHOUSE_PASSWORD}"
+      DUCKDB_PATH: /data/analytics.duckdb
+      DUCKDB_ANALYTICS_TOKEN: "$${DUCKDB_ANALYTICS_TOKEN}"
+      DUCKDB_MEMORY_LIMIT: "1GB"
     volumes:
-      - /data/clickhouse:/var/lib/clickhouse
-      - ./clickhouse/config.d:/etc/clickhouse-server/config.d:ro
-      - ./clickhouse/users.d:/etc/clickhouse-server/users.d
+      - /data/duckdb:/data
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:8123/ping"]
+      test:
+        [
+          "CMD-SHELL",
+          "/app/.venv/bin/python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8484/health')\"",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 15s
 
 %{ if observability_grafana_enabled }
   grafana:
@@ -177,15 +146,11 @@ services:
       - "3001:3000"
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: "$${CLICKHOUSE_PASSWORD}"
-      GF_INSTALL_PLUGINS: grafana-clickhouse-datasource
+      GF_SECURITY_ADMIN_PASSWORD: "$${DUCKDB_ANALYTICS_TOKEN}"
       GF_SERVER_ROOT_URL: "${grafana_root_url}/grafana"
       GF_SERVER_SERVE_FROM_SUB_PATH: "true"
     volumes:
       - /data/grafana:/var/lib/grafana
-    depends_on:
-      clickhouse:
-        condition: service_healthy
 %{ endif }
 %{ if observability_prometheus_enabled }
   prometheus:
@@ -223,16 +188,16 @@ for i in $(seq 1 30); do
   sleep 10
 done
 
-# Wait for ClickHouse
-echo "Waiting for ClickHouse..."
+# Wait for the DuckDB analytics service
+echo "Waiting for the DuckDB analytics service..."
 for i in $(seq 1 30); do
-  if wget -q --spider http://localhost:8123/ping 2>/dev/null; then
-    echo "ClickHouse healthy after $i attempts"
+  if curl -fsS http://localhost:8484/health >/dev/null 2>&1; then
+    echo "DuckDB analytics healthy after $i attempts"
     break
   fi
   if [ "$i" -eq 30 ]; then
-    echo "ERROR: ClickHouse did not become healthy within 5 minutes"
-    docker compose -f "$INSTALL_DIR/docker-compose.yml" logs clickhouse | tail -30
+    echo "ERROR: DuckDB analytics did not become healthy within 5 minutes"
+    docker compose -f "$INSTALL_DIR/docker-compose.yml" logs duckdb | tail -30
     exit 1
   fi
   sleep 10

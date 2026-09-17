@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Observal on AWS - Terraform
@@ -10,10 +11,10 @@ Production-shaped self-hosted Observal in your own AWS account. One `terraform a
 - **ECS Fargate cluster** - `api`, `web`, `worker` as separate services with target-tracking CPU autoscaling. `init` runs as a one-shot `RunTask` on every image bump
 - **RDS Postgres 16** - Multi-AZ on `prod`, encrypted, automated backups, Performance Insights, Enhanced Monitoring, log exports
 - **ElastiCache Redis 7** - 2-node replication group with automatic failover on `prod`, slow-log to CloudWatch
-- **Data tier EC2**: single host running ClickHouse on EBS gp3, optional Prometheus and Grafana, ENI with static private IP, internal Route 53 zone for DNS, daily ClickHouse → S3 snapshot via systemd timer
+- **Data tier EC2**: single host running the DuckDB analytics service on EBS gp3, optional Prometheus and Grafana, ENI with static private IP, internal Route 53 zone for DNS, daily DuckDB snapshot to S3 via systemd timer
 - **S3 backups bucket**: versioned, AES256, lifecycle to STANDARD_IA → GLACIER_IR → expire, TLS-only access
 - **CloudWatch log groups**: per-service for ECS tasks, data host, RDS, Redis, VPC flow logs
-- **SSM Parameter Store**: generated DB / ClickHouse / SECRET_KEY / optional Grafana passwords, plus pre-built connection URLs injected into ECS tasks
+- **SSM Parameter Store**: generated DB / DuckDB token / SECRET_KEY / optional Grafana passwords, plus pre-built connection URLs injected into ECS tasks
 - **SSM Session Manager**: shell access to the data host, no SSH
 
 ## Architecture
@@ -27,7 +28,7 @@ Production-shaped self-hosted Observal in your own AWS account. One `terraform a
               ┌──────────────┐  ┌────────────────┐  ┌──────────┐
               │ ECS Fargate  │  │  EC2 data host │  │   ECS    │
               │ api service  │  │  (single AZ)   │  │   web    │
-              │  2..10×      │  │  ClickHouse    │  │ 2..6×    │
+              │  2..10×      │  │  DuckDB        │  │ 2..6×    │
               └─────┬────────┘  │  optional      │  └──────────┘
                     │           │  observability │
               ┌─────┴────────┐  └────────┬───────┘
@@ -43,7 +44,7 @@ Production-shaped self-hosted Observal in your own AWS account. One `terraform a
          └──────────────────────────────┘
 ```
 
-The stateless app tier (api/web/worker) lives on Fargate across both AZs with autoscaling and rolling deploys. The stateful data tier lives on a single EC2 with EBS so ClickHouse keeps its disk across instance replacements. Prometheus and Grafana are enabled with `observability_stack`. Real ClickHouse HA is out of scope; set `clickhouse_mode = "cloud"` and point at ClickHouse Cloud when you need it.
+The stateless app tier (api/web/worker) lives on Fargate across both AZs with autoscaling and rolling deploys. The stateful data tier lives on a single EC2 with EBS so the DuckDB file survives instance replacements. Prometheus and Grafana are enabled with `observability_stack`. DuckDB is a single-writer embedded database, so the data tier is not horizontally scalable; take the scheduled snapshots seriously and size the EBS volume for growth.
 
 ## Prerequisites
 
@@ -197,7 +198,7 @@ A working module-call example lives at [`examples/minimal`](examples/minimal/).
 
 ## What credentials and inputs are required?
 
-The module generates all application secrets (Postgres password, ClickHouse password, `SECRET_KEY`, Grafana admin) and stores them in SSM Parameter Store as `SecureString`s. ECS task definitions reference them via the `secrets` block, so they're injected as environment variables at task start, never written to disk.
+The module generates all application secrets (Postgres password, DuckDB analytics token, `SECRET_KEY`, Grafana admin) and stores them in SSM Parameter Store as `SecureString`s. ECS task definitions reference them via the `secrets` block, so they're injected as environment variables at task start, never written to disk.
 
 You only need to supply:
 
@@ -205,7 +206,7 @@ You only need to supply:
 2. **`region`** (default `us-east-1`).
 3. **(Optional) `domain_name` + `route53_zone_id`** for HTTPS on a real domain.
 4. **(Optional) `alb_ingress_cidrs`** to lock the ALB to specific IP ranges.
-5. **(Optional) `clickhouse_mode = "cloud"` + `clickhouse_cloud_*`** to use ClickHouse Cloud instead of self-hosting.
+5. **(Optional) `observability_stack = "grafana"`** to add bundled dashboards on the data host.
 
 ## Operating the install
 
@@ -265,7 +266,7 @@ Drop to single-AZ RDS, single Redis node, and `worker_desired_count = 0` for sta
 Bump `image_tag` in `terraform.tfvars` and re-apply. The `null_resource.run_init` rerun handles migrations; ECS handles the rolling deploy.
 
 ### Roll back
-Set `image_tag` to the previous version and re-apply. RDS / ClickHouse data are not affected.
+Set `image_tag` to the previous version and re-apply. RDS / DuckDB data are not affected.
 
 ### Tear down
 ```bash
@@ -275,7 +276,7 @@ The bootstrap module's bucket + table have `prevent_destroy = true`. Destroying 
 
 ### Disaster recovery
 - **Postgres**: automated daily snapshots (7-day retention on prod). Restore via `aws rds restore-db-instance-from-db-snapshot`.
-- **ClickHouse**: daily snapshot to the S3 backups bucket via systemd timer (see `user-data.sh.tftpl`). Restore with `clickhouse-client RESTORE`.
+- **DuckDB analytics**: daily snapshot to the S3 backups bucket via systemd timer (see `user-data.sh.tftpl`). Restore by unpacking the snapshot into the data host's DuckDB directory while the service is stopped.
 - **Terraform state**: S3 versioning is on - recover prior state with `aws s3api list-object-versions` + `cp --version-id`.
 
 ## Production hardening checklist
@@ -289,7 +290,7 @@ Before using in front of customers:
 - [ ] Add a WAF in front of the ALB (`aws_wafv2_web_acl_association`)
 - [ ] Set `transit_encryption_enabled = true` on the ElastiCache replication group and switch `REDIS_URL` to `rediss://...`
 - [ ] Replace the GitHub-tarball pull in `user-data.sh.tftpl` with your own signed artifact location
-- [ ] Move ClickHouse to ClickHouse Cloud (`clickhouse_mode = "cloud"`) for actual HA
+- [ ] Move the analytics store to a larger EBS volume or a dedicated data host as telemetry grows
 
 ## Layout
 
@@ -304,7 +305,7 @@ iam.tf                     # ECS execution + task roles, EC2 data-host role
 secrets.tf                 # random_password + SSM Parameter Store (raw + URLs)
 postgresql.tf              # RDS Postgres + Enhanced Monitoring role
 redis.tf                   # ElastiCache replication group
-clickhouse.tf              # data-tier EC2 (CH plus optional observability), private DNS
+analytics.tf               # data-tier EC2 (DuckDB plus optional observability), private DNS
 ecs.tf                     # Fargate cluster, task defs, services, autoscaling, init
 alb.tf                     # ALB, target groups, listeners, listener rules, ACM
 s3.tf                      # backups bucket with lifecycle and TLS-only policy

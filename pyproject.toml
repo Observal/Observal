@@ -130,7 +130,7 @@ skips = [
     "B101",  # assert used in tests
     "B104",  # 0.0.0.0 in string comparisons, not actual binds
     "B310",  # urllib.request.urlopen with known server URLs from config
-    "B608",  # ClickHouse {param:Type} and SQLite ? placeholders are parameterized, not injectable
+    "B608",  # DuckDB $name and SQLite ? placeholders are parameterized, not injectable
 ]
 
 [dependency-groups]

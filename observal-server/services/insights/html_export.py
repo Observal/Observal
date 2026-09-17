@@ -233,7 +233,7 @@ def render_report_html(report: dict) -> str:
     # ══════════════════════════════════════════════════════════════════════════
     # STATS ROW
     # ══════════════════════════════════════════════════════════════════════════
-    # Prefer rich metrics (from raw transcript analysis) over ClickHouse metrics
+    # Prefer rich metrics (from raw transcript analysis) over DuckDB metrics
     total_sessions = overview.get("total_sessions", sessions_analyzed)
     avg_dur = duration.get("avg_duration_seconds", 0)
     active_hours = rich.get("active_hours", 0) or ((avg_dur * total_sessions) / 3600 if avg_dur else 0)

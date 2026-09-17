@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Admin data migration routes."""
@@ -8,7 +9,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from fastapi import Depends, HTTPException, Query, UploadFile
+from fastapi import Depends, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from loguru import logger as optic
 from sqlalchemy import select
@@ -72,6 +73,7 @@ async def _validate_upload_files(files: list[UploadFile], scope: MigrationScope)
 
     has_archive = False
     has_parquet = False
+    has_telemetry_archive = False
 
     for f in files:
         # Check file size via content-length header (may be None for chunked uploads)
@@ -87,6 +89,13 @@ async def _validate_upload_files(files: list[UploadFile], scope: MigrationScope)
 
         if header[:2] == _MAGIC_TAR_GZ:
             has_archive = True
+            # The telemetry export ships as a self-describing tar.gz (Parquet
+            # tables plus telemetry_manifest.json), so it is a complete
+            # telemetry payload on its own. _run_import selects it by name.
+            # Only .tar.gz is recognised by the import job (jobs/migration.py
+            # selects `telemetry*.gz`), so a .tgz would import nothing.
+            if f.filename and f.filename.startswith("telemetry") and f.filename.endswith(".tar.gz"):
+                has_telemetry_archive = True
         elif header[:4] == _MAGIC_PARQUET:
             has_parquet = True
         else:
@@ -98,8 +107,11 @@ async def _validate_upload_files(files: list[UploadFile], scope: MigrationScope)
     # Scope consistency check
     if scope == MigrationScope.postgres and has_parquet and not has_archive:
         raise HTTPException(status_code=422, detail="Scope is 'postgres' but only Parquet files were uploaded")
-    if scope == MigrationScope.clickhouse and has_archive and not has_parquet:
-        raise HTTPException(status_code=422, detail="Scope is 'clickhouse' but only archive files were uploaded")
+    if scope == MigrationScope.telemetry and has_archive and not has_parquet and not has_telemetry_archive:
+        raise HTTPException(
+            status_code=422,
+            detail="Scope is 'telemetry' but the uploaded archive is not a telemetry export",
+        )
 
 
 async def _store_upload_files(files: list[UploadFile], job_id: uuid.UUID) -> Path:
@@ -174,13 +186,6 @@ async def start_export(
     """Start a data export job."""
     optic.debug("migration export requested scope={}", body.scope.value)
 
-    # Reject clickhouse-only scope (Req 3.9)
-    if body.scope == MigrationScope.clickhouse:
-        raise HTTPException(
-            status_code=422,
-            detail="Standalone ClickHouse export is not supported; use 'both' or 'postgres'",
-        )
-
     await _check_concurrency(db, MigrationOperation.export, body.scope)
 
     job = MigrationJob(
@@ -218,7 +223,7 @@ async def start_export(
 @router.post("/migrate/import", status_code=202)
 async def start_import(
     files: list[UploadFile],
-    scope: MigrationScope = MigrationScope.both,
+    scope: MigrationScope = Form(MigrationScope.both),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.super_admin)),
 ):
@@ -268,7 +273,7 @@ async def start_import(
 @router.post("/migrate/validate", status_code=202)
 async def start_validate(
     files: list[UploadFile],
-    scope: MigrationScope = MigrationScope.both,
+    scope: MigrationScope = Form(MigrationScope.both),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.super_admin)),
 ):

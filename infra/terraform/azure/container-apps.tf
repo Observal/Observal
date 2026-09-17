@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Tanvi Reddy
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 # Container Apps Environment with VNet integration
@@ -73,8 +74,13 @@ resource "azurerm_container_app" "api" {
   }
 
   secret {
-    name  = "clickhouse-url"
-    value = local.clickhouse_url
+    name  = "analytics-url"
+    value = local.analytics_url
+  }
+
+  secret {
+    name  = "analytics-token"
+    value = random_password.duckdb.result
   }
 
   secret {
@@ -119,8 +125,13 @@ resource "azurerm_container_app" "api" {
       }
 
       env {
-        name        = "CLICKHOUSE_URL"
-        secret_name = "clickhouse-url"
+        name        = "DUCKDB_ANALYTICS_URL"
+        secret_name = "analytics-url"
+      }
+
+      env {
+        name        = "DUCKDB_ANALYTICS_TOKEN"
+        secret_name = "analytics-token"
       }
 
       env {
@@ -254,8 +265,13 @@ resource "azurerm_container_app" "worker" {
   }
 
   secret {
-    name  = "clickhouse-url"
-    value = local.clickhouse_url
+    name  = "analytics-url"
+    value = local.analytics_url
+  }
+
+  secret {
+    name  = "analytics-token"
+    value = random_password.duckdb.result
   }
 
   secret {
@@ -289,8 +305,13 @@ resource "azurerm_container_app" "worker" {
       }
 
       env {
-        name        = "CLICKHOUSE_URL"
-        secret_name = "clickhouse-url"
+        name        = "DUCKDB_ANALYTICS_URL"
+        secret_name = "analytics-url"
+      }
+
+      env {
+        name        = "DUCKDB_ANALYTICS_TOKEN"
+        secret_name = "analytics-token"
       }
 
       env {
@@ -345,8 +366,13 @@ resource "azurerm_container_app_job" "init" {
   }
 
   secret {
-    name  = "clickhouse-url"
-    value = local.clickhouse_url
+    name  = "analytics-url"
+    value = local.analytics_url
+  }
+
+  secret {
+    name  = "analytics-token"
+    value = random_password.duckdb.result
   }
 
   secret {
@@ -374,8 +400,13 @@ resource "azurerm_container_app_job" "init" {
       }
 
       env {
-        name        = "CLICKHOUSE_URL"
-        secret_name = "clickhouse-url"
+        name        = "DUCKDB_ANALYTICS_URL"
+        secret_name = "analytics-url"
+      }
+
+      env {
+        name        = "DUCKDB_ANALYTICS_TOKEN"
+        secret_name = "analytics-token"
       }
 
       env {

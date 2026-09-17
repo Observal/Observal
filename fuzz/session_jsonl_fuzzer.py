@@ -7,7 +7,7 @@
 Session transcripts are the largest untrusted input Observal accepts. A coding
 harness writes JSONL to disk, a session-push hook (or ``observal reconcile``)
 uploads the raw lines to ``POST /api/v1/ingest/session``, and the server
-classifies each line before storing it verbatim in ClickHouse. The stored line
+classifies each line before storing it verbatim in DuckDB. The stored line
 is decoded again on the read path whenever the trace viewer opens a session.
 
 ``_session.replay`` drives both halves in-process. Nothing here touches the

@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 # These are set by configure() at application startup
 settings: Any = None
-query: Callable[..., Awaitable[Any]] | None = None  # ClickHouse query fn
+query: Callable[..., Awaitable[Any]] | None = None  # DuckDB query fn
 call_model: Callable[..., Awaitable[dict]] | None = None  # LLM model call fn
 db_session: Callable[..., Any] | None = None  # async_session factory
 

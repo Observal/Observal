@@ -44,7 +44,7 @@ class TestReadiness:
         app.dependency_overrides[get_db] = _mock_get_db
         try:
             with (
-                patch("services.clickhouse.clickhouse_health", new_callable=AsyncMock, return_value=True),
+                patch("services.analytics.duckdb.analytics_health", new_callable=AsyncMock, return_value=True),
                 patch("services.redis.ping", new_callable=AsyncMock, return_value=True),
             ):
                 async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -52,7 +52,7 @@ class TestReadiness:
             assert r.status_code == 200
             data = r.json()
             assert data["status"] == "ok"
-            assert data["clickhouse"] == "ok"
+            assert data["analytics"] == "ok"
             assert data["initialized"] is True
         finally:
             app.dependency_overrides.clear()

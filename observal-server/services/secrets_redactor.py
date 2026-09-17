@@ -7,7 +7,7 @@
 """Secrets redactor for trace ingestion.
 
 Strips API keys, tokens, passwords, and other secrets from trace data
-BEFORE storage in ClickHouse.  Designed to avoid over-stripping:
+BEFORE storage in DuckDB.  Designed to avoid over-stripping:
 
     REDACTED:  OPENAI_KEY=sk-proj-abc123...   →  OPENAI_KEY=**REDACTED**
     KEPT:      $OPENAI_KEY                     →  $OPENAI_KEY  (reference)

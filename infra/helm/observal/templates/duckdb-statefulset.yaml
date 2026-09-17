@@ -1,0 +1,107 @@
+# SPDX-FileCopyrightText: 2026 Observal contributors
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "observal.fullname" . }}-duckdb
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "observal.labels" . | nindent 4 }}
+    app.kubernetes.io/component: duckdb
+spec:
+  serviceName: {{ include "observal.fullname" . }}-duckdb
+  # The DuckDB service holds an exclusive OS file lock on a single database
+  # file. Two writers corrupt that file rather than degrade availability, so
+  # this must stay at exactly one replica.
+  replicas: 1
+  # OrderedReady starts and stops pods one at a time, so a rolling update can
+  # never have two processes holding the file lock.
+  podManagementPolicy: OrderedReady
+  updateStrategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "observal.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: duckdb
+  template:
+    metadata:
+      labels:
+        {{- include "observal.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: duckdb
+    spec:
+      # A freshly provisioned PVC mounts root-owned; fsGroup hands the volume
+      # to the service's group so the singleton can create the database and WAL.
+      securityContext:
+        fsGroup: 1001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: duckdb
+          image: {{ include "observal.image" (dict "global" .Values.global "image" .Values.duckdb.image "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ .Values.duckdb.image.pullPolicy }}
+          command:
+            - /app/.venv/bin/python
+            - -m
+            - uvicorn
+            - services.analytics.duckdb.service:app
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8484"
+          env:
+            - name: DUCKDB_PATH
+              value: /data/analytics.duckdb
+            # DuckDB sizes itself from the host's memory, not the cgroup, so
+            # the limit has to be pinned below the container limit.
+            - name: DUCKDB_MEMORY_LIMIT
+              value: {{ .Values.duckdb.memoryLimit | default "1500MB" | quote }}
+            - name: DUCKDB_ANALYTICS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "observal.secretName" . }}
+                  key: DUCKDB_ANALYTICS_TOKEN
+          {{- include "observal.securityContext" . | nindent 10 }}
+          ports:
+            - containerPort: 8484
+              name: http
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8484
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8484
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8484
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.duckdb.resources | nindent 12 }}
+          volumeMounts:
+            - mountPath: /data
+              name: duckdbdata
+            - mountPath: /tmp
+              name: tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+  volumeClaimTemplates:
+    - metadata:
+        name: duckdbdata
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.duckdb.storage.storageClassName }}
+        storageClassName: {{ .Values.duckdb.storage.storageClassName | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.duckdb.storage.size | quote }}

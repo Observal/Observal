@@ -230,7 +230,7 @@ def test_print_entry_formats_server_json_for_plain_and_colored_output() -> None:
 @pytest.mark.parametrize(
     ("level", "filter_text", "expected_params"),
     [
-        ("WARNING", "ClickHouse", {"level": "WARNING", "filter": "ClickHouse"}),
+        ("WARNING", "analytics", {"level": "WARNING", "filter": "analytics"}),
         ("debug", "", {"level": "debug"}),
         ("verbose", "", {"level": "verbose"}),
     ],

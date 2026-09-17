@@ -232,6 +232,7 @@ class TestAuditLogEndpoint:
         }
         fake_resp = MagicMock()
         fake_resp.status_code = 200
+        fake_resp.json.return_value = {"data": [fake_row]}
         fake_resp.text = json.dumps(fake_row)
 
         mock_query = AsyncMock(return_value=fake_resp)
@@ -301,6 +302,7 @@ class TestAuditLogEndpoint:
         }
         fake_resp = MagicMock()
         fake_resp.status_code = 200
+        fake_resp.json.return_value = {"data": [fake_row]}
         fake_resp.text = json.dumps(fake_row)
 
         mock_query = AsyncMock(return_value=fake_resp)
@@ -322,9 +324,9 @@ class TestAuditLogEndpoint:
         # Verify the SQL includes filter params
         sql_arg = mock_query.call_args[0][0]
         params_arg = mock_query.call_args[0][1]
-        assert "actor_email = {actor:String}" in sql_arg
-        assert "action = {action:String}" in sql_arg
-        assert "resource_type = {rtype:String}" in sql_arg
-        assert params_arg["param_actor"] == "admin@example.com"
-        assert params_arg["param_action"] == "user.created"
-        assert params_arg["param_rtype"] == "user"
+        assert "actor_email = $actor" in sql_arg
+        assert "action = $action" in sql_arg
+        assert "resource_type = $rtype" in sql_arg
+        assert params_arg["actor"] == "admin@example.com"
+        assert params_arg["action"] == "user.created"
+        assert params_arg["rtype"] == "user"

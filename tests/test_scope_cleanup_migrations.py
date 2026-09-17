@@ -39,13 +39,19 @@ def test_postgres_cleanup_is_the_next_alembic_revision():
     assert callable(migration.upgrade)
 
 
-def test_clickhouse_cleanup_stages_and_validates_keyed_tables():
-    path = ROOT / "observal-server" / "clickhouse" / "migrations" / "004_remove_legacy_scope.sql"
+def test_analytics_baseline_carries_the_post_cleanup_schema():
+    """The DuckDB baseline is already the post-scope-cleanup shape.
+
+    The ClickHouse 004 cleanup staged, validated, and renamed tables inside
+    ClickHouse; the DuckDB baseline inlines the final result, so there is no
+    cleanup migration to run and no ``project_id != 'default'`` leftovers to
+    guard against.
+    """
+    path = ROOT / "observal-server" / "analytics" / "migrations" / "001_baseline.sql"
     sql = path.read_text()
-    assert "session_events_scope_cleanup" in sql
-    assert "session_checkpoints_scope_cleanup" in sql
-    assert "session_stats_agg_scope_cleanup" in sql
-    assert "layer_snapshots_scope_cleanup" in sql
-    assert sql.count("throwIf") >= 6
-    assert "'default'" in sql
-    assert sql.count("DROP COLUMN IF EXISTS") >= 2
+    assert "session_events" in sql
+    assert "session_checkpoints" in sql
+    assert "session_stats_agg" in sql
+    assert "layer_snapshots" in sql
+    assert "_scope_cleanup" not in sql
+    assert "PRIMARY KEY (project_id, user_id, harness, session_id, line_offset)" in sql

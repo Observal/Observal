@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Maintenance background jobs: ClickHouse optimization, component source sync, retention."""
+"""Maintenance background jobs: analytics checkpointing, component source sync, retention."""
 
 from loguru import logger as optic
 
@@ -97,39 +97,27 @@ async def purge_inbox_items(ctx: dict):
         )
 
 
-async def maintain_clickhouse(ctx: dict):
-    """Periodic ClickHouse maintenance: compact parts to prevent OOM on long-running agents.
+async def maintain_analytics(ctx: dict):
+    """Periodic DuckDB maintenance: flush the write-ahead log.
 
-    OPTIMIZE TABLE (without FINAL) merges small parts into larger ones.
-    This is lightweight and safe to run frequently.  Without it, a
-    month-long agent session accumulates thousands of tiny parts that
-    bloat memory during merges and FINAL queries.
+    Checkpointing folds the WAL back into the database file, which keeps
+    restart recovery quick and bounds WAL growth on long-running deployments.
     """
-    optic.debug("maintain_clickhouse")
-    from services.clickhouse.client import _query
+    optic.debug("maintain_analytics")
+    from services.analytics.duckdb.client import _checkpoint, _query
 
-    tables = ["session_events", "session_stats_agg"]
-    for table in tables:
-        try:
-            await _query(f"OPTIMIZE TABLE {table}")
-        except Exception as e:
-            optic.warning("ClickHouse OPTIMIZE {} failed: {}", table, e)
+    try:
+        await _checkpoint()
+    except Exception as e:
+        optic.warning("DuckDB checkpoint failed: {}", e)
 
-    # Check part health: warn before things get critical
+    # Report table sizes so operators can watch growth.
     try:
         resp = await _query(
-            "SELECT table, count() as parts, sum(rows) as total_rows "
-            "FROM system.parts WHERE database = currentDatabase() AND active "
-            "GROUP BY table FORMAT JSON"
+            "SELECT table_name, estimated_size AS rows FROM duckdb_tables() ORDER BY estimated_size DESC"
         )
         if resp.status_code == 200:
             for row in resp.json().get("data", []):
-                parts = int(row.get("parts", 0))
-                if parts > 300:
-                    optic.warning(
-                        "ClickHouse table {} has {} active parts, merges may be falling behind",
-                        row["table"],
-                        parts,
-                    )
+                optic.debug("analytics table {} holds ~{} rows", row.get("table_name"), row.get("rows"))
     except Exception as e:
-        optic.debug("Part health check failed: {}", e)
+        optic.debug("Table size check failed: {}", e)

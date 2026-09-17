@@ -25,7 +25,7 @@ spec:
       {{- include "observal.podSecurityContext" . | nindent 6 }}
       initContainers:
         {{- include "observal.initWaitPostgres" . | nindent 8 }}
-        {{- include "observal.initWaitClickhouse" . | nindent 8 }}
+        {{- include "observal.initWaitAnalytics" . | nindent 8 }}
         {{- include "observal.initWaitRedis" . | nindent 8 }}
         {{- include "observal.initWaitInitJob" . | nindent 8 }}
         - name: prepare-jwt-keys

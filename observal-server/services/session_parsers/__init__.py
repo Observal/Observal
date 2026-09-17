@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Session JSONL parsers -- READ path (raw ClickHouse rows -> frontend events).
+"""Session JSONL parsers -- READ path (raw DuckDB rows -> frontend events).
 
 Dispatches to format-specific parsers based on the ``session_parser`` key in
 ``observal_shared.harness_registry.HARNESS_REGISTRY``. Dispatch is **strict**: an unknown harness

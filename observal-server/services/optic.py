@@ -45,7 +45,7 @@ def _ring_buffer_sink(message) -> None:
 
     Audit records (logger.bind(audit=True)) are excluded because they fire on
     every HTTP request and would drown out operational logs. Audit data goes
-    to the dedicated audit sink -> ClickHouse instead.
+    to the dedicated audit sink -> DuckDB instead.
     """
     global _buffer_ref
     try:

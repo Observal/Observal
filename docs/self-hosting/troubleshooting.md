@@ -1,5 +1,6 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Troubleshooting
@@ -44,19 +45,19 @@ Full list in [Ports and volumes](ports-and-volumes.md).
 
 ### Service stuck in `starting`
 
-The API depends on Postgres, ClickHouse, and Redis being healthy. Check each:
+The API depends on Postgres, DuckDB, and Redis being healthy. Check each:
 
 ```bash
 docker compose -f docker/docker-compose.yml ps
 docker compose -f docker/docker-compose.yml logs observal-db
-docker compose -f docker/docker-compose.yml logs observal-clickhouse
+docker compose -f docker/docker-compose.yml logs observal-duckdb
 docker compose -f docker/docker-compose.yml logs observal-redis
 ```
 
 Common causes:
 
-* ClickHouse stuck during initial `CREATE TABLE`. Restart it once the healthcheck passes on other DBs
-* `CLICKHOUSE_PASSWORD` mismatch between services and API config
+* DuckDB stuck during initial `CREATE TABLE`. Restart it once the healthcheck passes on other DBs
+* `DUCKDB_ANALYTICS_TOKEN` mismatch between services and API config
 
 ### Services restart in a loop
 
@@ -115,29 +116,31 @@ curl http://localhost/health
 
 If hooks are missing, run `observal doctor patch --harness <harness>`. If sessions still are not arriving, check `~/.observal/telemetry_buffer.db`; growth indicates pending session delivery rather than silent loss.
 
-### ClickHouse not receiving data
+### DuckDB not receiving data
 
-Check the `CLICKHOUSE_URL` the API is using:
+Check the `DUCKDB_ANALYTICS_URL` the API is using:
 
 ```bash
 docker compose -f docker/docker-compose.yml exec observal-api \
-  printenv CLICKHOUSE_URL
+  printenv DUCKDB_ANALYTICS_URL
 ```
 
-The source Compose default is `clickhouse://default:clickhouse@observal-clickhouse:8123/observal`. Mismatches typically happen after changing `CLICKHOUSE_PASSWORD` without updating the URL.
+The Compose default is `duckdb://observal-duckdb:8484/observal`. Check that the API's `DUCKDB_ANALYTICS_TOKEN` matches the service's token; a mismatch returns HTTP 401 from every analytics call.
 
-Server-package installs use `CLICKHOUSE_URL_FILE=/run/secrets/clickhouse_url`, a hashed ClickHouse user configuration, and a separate health-check password file. Confirm the file is mounted without printing it:
+Server-package installs use `DUCKDB_ANALYTICS_URL_FILE=/run/secrets/duckdb_analytics_url` and `DUCKDB_ANALYTICS_TOKEN_FILE=/run/secrets/duckdb/duckdb_analytics_token` (the token lives in the `duckdb/` sub-directory, which the analytics service mounts as its own `/run/secrets`). Confirm the files are readable by each side without printing them:
 
 ```bash
-docker compose exec observal-api test -r /run/secrets/clickhouse_url
-docker compose exec observal-clickhouse test -r /run/secrets/clickhouse_password
+docker compose exec observal-api test -r /run/secrets/duckdb_analytics_url
+docker compose exec observal-api test -r /run/secrets/duckdb/duckdb_analytics_token
+docker compose exec observal-duckdb test -r /run/secrets/duckdb_analytics_token
 ```
 
-Verify ClickHouse itself:
+Verify DuckDB itself:
 
 ```bash
-docker compose -f docker/docker-compose.yml exec observal-clickhouse \
-  clickhouse-client --query "SELECT count() FROM observal.session_events"
+docker compose -f docker/docker-compose.yml exec observal-duckdb \
+  /app/.venv/bin/python -c "import json,urllib.request; \
+print(urllib.request.urlopen(urllib.request.Request('http://localhost:8484/query', data=json.dumps({'sql': 'SELECT count(*) AS rows FROM session_events'}).encode(), headers={'Content-Type': 'application/json'})).read().decode())"
 ```
 
 ## Web UI

@@ -1,11 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Database backup and restore for Observal server upgrades.
 
 Supports:
   - PostgreSQL: pg_dump (custom format) via Docker exec
-  - ClickHouse: schema export via HTTP
+  - DuckDB analytics: checkpoint + volume archive via Docker exec
   - Backup retention pruning
 """
 
@@ -13,6 +14,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import time
 from datetime import UTC, datetime
 from pathlib import Path  # noqa: TC003 - used at runtime
 
@@ -25,7 +27,7 @@ DEFAULT_RETENTION = 3  # Keep last N backups
 
 
 def create_backup(compose_dir: Path, from_version: str) -> Path:
-    """Create a pre-upgrade backup of PostgreSQL + ClickHouse.
+    """Create a pre-upgrade backup of PostgreSQL + the DuckDB analytics store.
 
     Args:
         compose_dir: Directory containing docker-compose.yml.
@@ -75,44 +77,67 @@ def create_backup(compose_dir: Path, from_version: str) -> Path:
     pg_size_mb = pg_dump_path.stat().st_size / (1024 * 1024)
     rprint(f"[dim]  PostgreSQL: {pg_size_mb:.1f} MB[/dim]")
 
-    # ClickHouse schema export
-    ch_schema_path = backup_dir / "clickhouse_schema.sql"
-    rprint("[dim]  Backing up ClickHouse schema...[/dim]")
+    # DuckDB analytics: flush the WAL, then archive the data directory.
+    duckdb_archive = backup_dir / "analytics.tar.gz"
+    rprint("[dim]  Backing up DuckDB analytics...[/dim]")
     try:
-        result = subprocess.run(
+        # The service owns the database file; ask it to checkpoint first so the
+        # archived bytes include everything that was committed.
+        checkpoint = subprocess.run(
             [
                 "docker",
                 "compose",
                 "exec",
                 "-T",
-                "observal-clickhouse",
-                "clickhouse-client",
-                "--query",
-                "SELECT name, create_table_query FROM system.tables WHERE database = 'observal'",
+                "observal-duckdb",
+                "/app/.venv/bin/python",
+                "-c",
+                (
+                    "import os, urllib.request;"
+                    "token = os.environ.get('DUCKDB_ANALYTICS_TOKEN') or '';"
+                    "path = os.environ.get('DUCKDB_ANALYTICS_TOKEN_FILE');"
+                    "token = token or (open(path).read().strip() if path and os.path.exists(path) else '');"
+                    "req=urllib.request.Request('http://127.0.0.1:8484/admin/checkpoint', method='POST');"
+                    "req.add_header('Authorization', 'Bearer ' + token);"
+                    "urllib.request.urlopen(req, timeout=30).read()"
+                ),
             ],
             capture_output=True,
-            text=True,
             cwd=compose_dir,
-            timeout=60,
+            timeout=120,
         )
-        if result.returncode == 0:
-            ch_schema_path.write_text(result.stdout)
-            ch_schema_path.chmod(0o600)
-            rprint(f"[dim]  ClickHouse schema: {len(result.stdout)} bytes[/dim]")
+        if checkpoint.returncode != 0:
+            rprint("[yellow]  DuckDB checkpoint failed (non-critical)[/yellow]")
+
+        archive = subprocess.run(
+            ["docker", "compose", "exec", "-T", "observal-duckdb", "tar", "czf", "-", "-C", "/data", "."],
+            capture_output=True,
+            cwd=compose_dir,
+            timeout=600,
+        )
+        if archive.returncode == 0 and archive.stdout:
+            duckdb_archive.write_bytes(archive.stdout)
+            duckdb_archive.chmod(0o600)
+            rprint(f"[dim]  DuckDB analytics: {len(archive.stdout) / (1024 * 1024):.1f} MB[/dim]")
         else:
-            rprint("[yellow]  ClickHouse schema export failed (non-critical)[/yellow]")
+            rprint("[yellow]  DuckDB archive failed (non-critical)[/yellow]")
     except (subprocess.TimeoutExpired, OSError):
-        rprint("[yellow]  ClickHouse schema export timed out (non-critical)[/yellow]")
+        rprint("[yellow]  DuckDB archive timed out (non-critical)[/yellow]")
 
     return backup_dir
 
 
-def restore_backup(backup_path: Path, compose_dir: Path) -> None:
-    """Restore PostgreSQL from a backup.
+def restore_backup(backup_path: Path, compose_dir: Path) -> bool:
+    """Restore PostgreSQL and the DuckDB analytics store from a backup.
 
     Args:
-        backup_path: Path to backup directory containing pg.dump.
+        backup_path: Path to backup directory containing pg.dump (and, for
+            backups taken since the DuckDB cutover, analytics.tar.gz).
         compose_dir: Directory containing docker-compose.yml.
+
+    Returns:
+        True when the DuckDB analytics store was restored, False when the
+        backup predates it and only PostgreSQL came back.
     """
     pg_dump = backup_path / "pg.dump"
     if not pg_dump.exists():
@@ -148,6 +173,86 @@ def restore_backup(backup_path: Path, compose_dir: Path) -> None:
         raise RuntimeError(f"pg_restore failed: {result.stderr.decode()[:200]}")
 
     rprint("[dim]  PostgreSQL restored.[/dim]")
+
+    analytics_archive = backup_path / "analytics.tar.gz"
+    if analytics_archive.exists():
+        _restore_analytics(analytics_archive, compose_dir)
+        return True
+
+    rprint("[yellow]  No analytics archive in this backup; DuckDB telemetry was not restored.[/yellow]")
+    return False
+
+
+def _wait_for_service_healthy(compose_dir: Path, service: str, timeout: int = 180) -> bool:
+    """Poll a compose service until Docker reports it healthy."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        listed = subprocess.run(
+            ["docker", "compose", "ps", "-q", service],
+            cwd=compose_dir,
+            capture_output=True,
+            text=True,
+        )
+        container_ids = [line for line in listed.stdout.splitlines() if line.strip()]
+        if container_ids:
+            state = subprocess.run(
+                ["docker", "inspect", "-f", "{{.State.Health.Status}}", container_ids[0]],
+                capture_output=True,
+                text=True,
+            )
+            if state.stdout.strip() == "healthy":
+                return True
+        time.sleep(2)
+    return False
+
+
+def _restore_analytics(archive: Path, compose_dir: Path) -> None:
+    """Replace the DuckDB analytics data directory from a backup archive.
+
+    The analytics service owns the database file as its only writer, so it is
+    stopped for the swap and started again afterwards.
+    """
+    rprint("[dim]  Restoring DuckDB analytics...[/dim]")
+
+    subprocess.run(
+        ["docker", "compose", "stop", "observal-duckdb"],
+        cwd=compose_dir,
+        capture_output=True,
+        timeout=300,
+    )
+
+    with archive.open("rb") as handle:
+        result = subprocess.run(
+            [
+                "docker",
+                "compose",
+                "run",
+                "--rm",
+                "--no-deps",
+                "-T",
+                "observal-duckdb",
+                "sh",
+                "-c",
+                "find /data -mindepth 1 -delete && tar xzf - -C /data",
+            ],
+            stdin=handle,
+            capture_output=True,
+            cwd=compose_dir,
+            timeout=1800,
+        )
+    if result.returncode != 0:
+        raise RuntimeError(f"analytics restore failed: {result.stderr.decode()[:200]}")
+
+    subprocess.run(
+        ["docker", "compose", "up", "-d", "observal-duckdb"],
+        cwd=compose_dir,
+        capture_output=True,
+        timeout=300,
+    )
+    if not _wait_for_service_healthy(compose_dir, "observal-duckdb"):
+        raise RuntimeError("analytics service did not become healthy after the restore")
+
+    rprint("[dim]  DuckDB analytics restored.[/dim]")
 
 
 def prune_backups(retention: int = DEFAULT_RETENTION) -> list[Path]:
@@ -189,7 +294,7 @@ def list_backups() -> list[dict]:
                 "size_bytes": size_bytes,
                 "size_mb": round(size_bytes / (1024 * 1024), 1),
                 "has_pg": pg_dump.exists(),
-                "has_ch": (path / "clickhouse_schema.sql").exists(),
+                "has_analytics": (path / "analytics.tar.gz").exists(),
             }
         )
     return results

@@ -1,7 +1,8 @@
 # SPDX-FileCopyrightText: 2026 Observal
 # SPDX-License-Identifier: Apache-2.0
 
-# Data tier: a single EC2 host running Postgres, Redis, ClickHouse, and optional observability.
+# Data tier: a single EC2 host running Postgres, Redis, the DuckDB analytics
+# service, and optional observability.
 # All services run via Docker Compose, bootstrapped from user-data.
 
 data "aws_ami" "al2023" {
@@ -39,8 +40,9 @@ locals {
   data_host_user_data = templatefile("${path.module}/data-user-data.sh.tftpl", {
     region                           = var.region
     ssm_prefix                       = local.ssm_prefix
+    image_tag                        = var.image_tag
     db_password                      = random_password.db.result
-    clickhouse_password              = random_password.clickhouse.result
+    duckdb_analytics_token           = random_password.duckdb.result
     data_volume_size_gb              = local.effective_data_volume_size_gb
     log_group                        = aws_cloudwatch_log_group.data_host.name
     grafana_root_url                 = local.app_url
@@ -78,7 +80,7 @@ resource "aws_instance" "data_host" {
   depends_on = [
     aws_nat_gateway.main,
     aws_ssm_parameter.db_password,
-    aws_ssm_parameter.clickhouse_password,
+    aws_ssm_parameter.duckdb_analytics_token,
   ]
 }
 
@@ -106,9 +108,9 @@ resource "aws_route53_record" "redis_internal" {
   records = [aws_network_interface.data_host.private_ip]
 }
 
-resource "aws_route53_record" "clickhouse_internal" {
+resource "aws_route53_record" "analytics_internal" {
   zone_id = aws_route53_zone.internal.zone_id
-  name    = "clickhouse.${var.internal_dns_zone}"
+  name    = "duckdb.${var.internal_dns_zone}"
   type    = "A"
   ttl     = 60
   records = [aws_network_interface.data_host.private_ip]

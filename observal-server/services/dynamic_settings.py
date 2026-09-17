@@ -343,7 +343,7 @@ DEFAULTS: dict[str, str] = {
     "security.trace_privacy": "false",
     # Registry policy
     "registry.registered_agents_only": "false",
-    # Application retention policy, separate from the ClickHouse TTL below
+    # Application retention policy, separate from the DuckDB TTL below
     "retention.enabled": "false",
     "retention.trace_days": "",
     "retention.score_days": "",
@@ -374,9 +374,9 @@ DEFAULTS: dict[str, str] = {
     "resource.db_max_overflow": "20",
     "resource.redis_max_connections": "50",
     "resource.redis_socket_timeout": "2.0",
-    "resource.clickhouse_max_connections": "20",
-    "resource.clickhouse_max_keepalive": "10",
-    "resource.clickhouse_timeout": "10.0",
+    "resource.max_query_memory_mb": "1024",
+    "resource.threads": "4",
+    "resource.temp_directory": "",
     # Data
     "data.retention_days": "90",
     # Resolved inbox items are purged after this many days; open items never are.

@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 # ── Generated secrets ─────────────────────────────────────────────────────
@@ -8,9 +9,16 @@ resource "random_password" "db" {
   special = false
 }
 
-resource "random_password" "clickhouse" {
-  length  = 32
+resource "random_password" "duckdb" {
+  length  = 48
   special = false
+}
+
+# Renamed from random_password.clickhouse: keep the deployed token instead of
+# rotating it (the data host and the ECS tasks share this value).
+moved {
+  from = random_password.clickhouse
+  to   = random_password.duckdb
 }
 
 resource "random_password" "secret_key" {
@@ -33,17 +41,17 @@ resource "random_password" "grafana_admin" {
 locals {
   raw_secrets = merge(
     {
-      "DB_PASSWORD"         = random_password.db.result
-      "CLICKHOUSE_PASSWORD" = local.clickhouse_self_hosted ? random_password.clickhouse.result : var.clickhouse_cloud_password
-      "SECRET_KEY"          = random_password.secret_key.result
+      "DB_PASSWORD"            = random_password.db.result
+      "DUCKDB_ANALYTICS_TOKEN" = random_password.duckdb.result
+      "SECRET_KEY"             = random_password.secret_key.result
     },
     local.observability_grafana_enabled ? { "GRAFANA_ADMIN_PASSWORD" = random_password.grafana_admin.result } : {}
   )
 
   derived_urls = {
-    "DATABASE_URL"   = "postgresql+asyncpg://observal:${random_password.db.result}@${aws_db_instance.postgres.address}:${aws_db_instance.postgres.port}/observal"
-    "REDIS_URL"      = "redis://${aws_elasticache_replication_group.redis.primary_endpoint_address}:${aws_elasticache_replication_group.redis.port}"
-    "CLICKHOUSE_URL" = local.clickhouse_self_hosted ? "clickhouse://default:${random_password.clickhouse.result}@${local.clickhouse_host_internal}:8123/observal" : var.clickhouse_cloud_url
+    "DATABASE_URL"         = "postgresql+asyncpg://observal:${random_password.db.result}@${aws_db_instance.postgres.address}:${aws_db_instance.postgres.port}/observal"
+    "REDIS_URL"            = "redis://${aws_elasticache_replication_group.redis.primary_endpoint_address}:${aws_elasticache_replication_group.redis.port}"
+    "DUCKDB_ANALYTICS_URL" = "duckdb://${local.analytics_host_internal}:8484/observal"
   }
 }
 

@@ -4,7 +4,12 @@
 
 # `observal server migrate`
 
-Move PostgreSQL registry data and ClickHouse telemetry between Observal deployments.
+Move PostgreSQL registry data and telemetry between Observal deployments.
+
+The analytics store is DuckDB. Instances that still run ClickHouse use the
+one-way `duckdb` command below to move their telemetry across; the
+deployment-to-deployment commands further down move registry and telemetry data
+between two Observal instances.
 
 Migration uses the supplied database connections directly. Local shell and database access are the authorization boundary; the command does not authenticate against a configured Observal API.
 
@@ -14,16 +19,51 @@ Install the optional dependency first:
 pip install 'observal-cli[migrate]'
 ```
 
-Keep connection URLs in environment variables or secret files managed by the shell. Source commands read `DATABASE_URL` and `CLICKHOUSE_URL`; target commands read `TARGET_DATABASE_URL` and `TARGET_CLICKHOUSE_URL`. Explicit URL options remain available when no secret is embedded. Do not paste credentials into shared shell history, logs, or issue reports. JSON results and categorized errors never echo a connection URL.
+Keep connection URLs in environment variables or secret files managed by the shell. Source commands read `DATABASE_URL` and `DUCKDB_ANALYTICS_URL`; target commands read `TARGET_DATABASE_URL` and `DUCKDB_ANALYTICS_URL`. Explicit URL options remain available when no secret is embedded. Do not paste credentials into shared shell history, logs, or issue reports. JSON results and categorized errors never echo a connection URL.
 
 ## Workflow
 
 1. Export PostgreSQL. This creates a checksummed registry archive and a migration manifest.
 2. Validate and import PostgreSQL on the target.
-3. Export ClickHouse using the PostgreSQL migration manifest.
-4. Validate and import ClickHouse on the target.
+3. Export DuckDB using the PostgreSQL migration manifest.
+4. Validate and import DuckDB on the target.
 
 PostgreSQL must be imported first so referenced users and agents exist before telemetry validation.
+
+## One-way ClickHouse → DuckDB migration
+
+```bash
+observal server migrate duckdb \
+  --clickhouse-url clickhouse://default:clickhouse@observal-clickhouse:8123/observal \
+  --duckdb-url duckdb://observal-duckdb:8484/observal \
+  --duckdb-token "$DUCKDB_ANALYTICS_TOKEN" \
+  --export-dir ./telemetry-export
+```
+
+The command runs three steps:
+
+1. **Export** every telemetry table from ClickHouse to monthly Parquet partitions
+   plus a checksummed `telemetry_manifest.json`.
+2. **Load** those partitions into the DuckDB analytics service, replacing rows by
+   primary key (and pruning incoming identities for append-only tables) so
+   re-runs are idempotent.
+3. **Verify** artifact checksums and per-table row counts against the manifest.
+
+Verification fails (exit code 7 with a categorized error) when exported data is
+missing from DuckDB, or when a fresh table took fewer rows than the manifest
+expects. A target that already holds rows — a running instance, or a repeated
+migration — legitimately shows more rows than the export carries; those extra
+counts are reported per table instead of failing the run.
+
+ClickHouse is never modified, so a failed run can be repeated or abandoned, and
+the previous release remains a valid rollback target.
+
+Options:
+
+- `--export-dir` must not exist for a fresh export; pass `--skip-export` to retry
+  the load from an existing directory.
+- `--skip-verify` skips the row-count comparison (checksums are still reported).
+- `--duckdb-token` reads `DUCKDB_ANALYTICS_TOKEN` by default.
 
 ## PostgreSQL export
 
@@ -67,29 +107,32 @@ Validation checks archive structure and SHA-256 checksums. When a target URL is 
 
 Import verifies checksums before insertion. Existing rows are skipped according to the migration service's idempotent import rules. The result contains per-table inserted and skipped counts plus warnings.
 
-## ClickHouse export
+## Telemetry export (instance moves)
 
-ClickHouse export requires the PostgreSQL sidecar manifest and a new destination directory:
+These leaves move telemetry between two DuckDB-backed instances and require a
+new destination directory:
 
 ```bash
 observal server migrate export-telemetry \
-  --manifest registry.manifest.json \
+  --duckdb-url duckdb://source-duckdb:8484/observal \
   --output-dir telemetry-export \
   --output json
 ```
 
 The destination must not already exist. This lets the exporter remove the complete directory after failure without touching pre-existing files. The directory and streamed Parquet files use restrictive permissions and atomic temporary files.
 
-The export covers active session, checkpoint, layer, audit, security, and webhook tables. Older sources may omit tables. Each non-empty month produces a Parquet file, and `telemetry_manifest.json` records checksums, row counts, ranges, and the migration ID.
+The export covers every telemetry table (sessions, checkpoints, summaries, layer snapshots, audit, security, webhook deliveries). Each non-empty month produces a Parquet file, and `telemetry_manifest.json` records checksums, row counts, and the migration ID.
 
-## ClickHouse validation and import
+## Telemetry validation and import
 
 ```bash
 observal server migrate validate-telemetry \
+  --duckdb-url duckdb://target-duckdb:8484/observal \
   --input-dir telemetry-export \
   --output json
 
 observal server migrate import-telemetry \
+  --duckdb-url duckdb://target-duckdb:8484/observal \
   --input-dir telemetry-export \
   --output json
 ```
@@ -97,12 +140,11 @@ observal server migrate import-telemetry \
 Telemetry validation checks:
 
 * Parquet checksums
-* Manifest row counts against target ClickHouse when supplied
-* Agent and user references against target PostgreSQL when supplied
+* Manifest row counts against the target DuckDB service when a `--duckdb-url` is supplied
 
 Checksum failure is fatal. Row-count differences and orphan groups are returned explicitly.
 
-Telemetry import is resumable. Completed tables are skipped and progress state remains in the input directory. Imported project-keyed rows normalize to the deployment project `default`.
+Telemetry import is resumable. Completed tables are skipped and progress state remains in the input directory. Imported project-keyed rows normalize to the deployment project `default`. Use the one-way `duckdb` command above when the source is ClickHouse and the destination is a DuckDB deployment.
 
 ## Human and JSON behavior
 
@@ -127,7 +169,7 @@ Cleartext ClickHouse transport with credentials produces a human warning. JSON m
 # Source
 observal server migrate export --file registry.tar.gz --output json
 observal server migrate export-telemetry \
-  --manifest registry.manifest.json \
+  --duckdb-url duckdb://source-duckdb:8484/observal \
   --output-dir telemetry-export \
   --output json
 
@@ -135,9 +177,11 @@ observal server migrate export-telemetry \
 observal server migrate validate --archive registry.tar.gz --output json
 observal server migrate import --archive registry.tar.gz --output json
 observal server migrate validate-telemetry \
+  --duckdb-url duckdb://target-duckdb:8484/observal \
   --input-dir telemetry-export \
   --output json
 observal server migrate import-telemetry \
+  --duckdb-url duckdb://target-duckdb:8484/observal \
   --input-dir telemetry-export \
   --output json
 ```

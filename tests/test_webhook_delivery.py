@@ -220,7 +220,7 @@ class TestBufferAndFlush:
         _buffer_delivery_record(ALERT_RULE_ID, uuid.uuid4(), 1, TEST_URL, 200, "delivered", None, 100.0, 256)
         _buffer_delivery_record(ALERT_RULE_ID, uuid.uuid4(), 1, TEST_URL, 500, "failed", None, 200.0, 256)
 
-        with patch("services.clickhouse._insert_webhook_deliveries", new_callable=AsyncMock) as mock_insert:
+        with patch("services.analytics.duckdb._insert_webhook_deliveries", new_callable=AsyncMock) as mock_insert:
             count = await flush_delivery_records()
 
         assert count == 2

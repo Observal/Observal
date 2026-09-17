@@ -36,10 +36,10 @@ LIST_SQL_FILTERED = (
     "5 MINUTE) AS is_active, prompt_count, 0                   AS api_request_count, tool_result_count, "
     "input_tokens        AS total_input_tokens, output_tokens       AS total_output_tokens, "
     "cache_read_tokens   AS total_cache_read_tokens, cache_write_tokens  AS total_cache_write_tokens, "
-    "total_credits, model, harness, agent_id, agent_version, user_id FROM session_stats_agg FINAL "
-    "WHERE session_id != '' AND parent_session_id = '' AND prompt_count > 0 AND user_id = {uid:String} "
-    "AND last_event_time > now() - INTERVAL 365 DAY AND harness = {platform:String} "
-    "AND user_id IN ({user_0:String}, {user_1:String}) ORDER BY last_event_time DESC LIMIT 25 OFFSET 10"
+    "total_credits, model, harness, agent_id, agent_version, user_id FROM session_stats_agg "
+    "WHERE session_id != '' AND parent_session_id = '' AND prompt_count > 0 AND user_id = $uid "
+    "AND last_event_time > now() - INTERVAL 365 DAY AND harness = $platform "
+    "AND list_contains(CAST($user_values AS VARCHAR[]), user_id) ORDER BY last_event_time DESC LIMIT 25 OFFSET 10"
 )
 LIST_SQL_UNFILTERED = (
     "SELECT session_id, if(first_event_time > '2020-01-01 00:00:00' AND first_event_time < "
@@ -49,50 +49,47 @@ LIST_SQL_UNFILTERED = (
     "5 MINUTE) AS is_active, prompt_count, 0                   AS api_request_count, tool_result_count, "
     "input_tokens        AS total_input_tokens, output_tokens       AS total_output_tokens, "
     "cache_read_tokens   AS total_cache_read_tokens, cache_write_tokens  AS total_cache_write_tokens, "
-    "total_credits, model, harness, agent_id, agent_version, user_id FROM session_stats_agg FINAL "
+    "total_credits, model, harness, agent_id, agent_version, user_id FROM session_stats_agg "
     "WHERE session_id != '' AND parent_session_id = '' AND prompt_count > 0 "
     "ORDER BY last_event_time DESC LIMIT 50 OFFSET 0"
 )
 IDENTITY_SQL_USER = (
-    "SELECT project_id, user_id, harness FROM session_events FINAL WHERE session_id = {sid:String} "
-    "AND user_id = {uid:String} ORDER BY ingested_at DESC LIMIT 1"
+    "SELECT project_id, user_id, harness FROM session_events WHERE session_id = $sid "
+    "AND user_id = $uid ORDER BY ingested_at DESC LIMIT 1"
 )
 IDENTITY_SQL_ADMIN = (
-    "SELECT project_id, user_id, harness FROM session_events FINAL WHERE session_id = {sid:String} "
-    "ORDER BY ingested_at DESC LIMIT 1"
+    "SELECT project_id, user_id, harness FROM session_events WHERE session_id = $sid ORDER BY ingested_at DESC LIMIT 1"
 )
 MAIN_SQL = (
     "SELECT line_offset, timestamp, event_type, content_preview, tool_name, tool_id, uuid, parent_uuid, "
     "content_length, harness, agent_id, agent_version, raw_line, raw_line_truncated, credits, ingested_at "
-    "FROM session_events FINAL WHERE session_id = {sid:String} AND project_id = {pid:String} "
-    "AND user_id = {uid:String} AND harness = {harness:String} AND rendered = 1 ORDER BY line_offset ASC "
-    "SETTINGS max_final_threads = 4, do_not_merge_across_partitions_select_final = 1"
+    "FROM session_events WHERE session_id = $sid AND project_id = $pid "
+    "AND user_id = $uid AND harness = $harness AND rendered = 1 ORDER BY line_offset ASC"
 )
 SUB_SQL = (
     "SELECT session_id, timestamp, event_type, content_preview, tool_name, tool_id, uuid, parent_uuid, "
     "content_length, harness, raw_line, raw_line_truncated, credits, ingested_at, line_offset "
-    "FROM session_events FINAL WHERE parent_session_id = {sid:String} AND project_id = {pid:String} "
-    "AND user_id = {uid:String} AND harness = {harness:String} AND rendered = 1 "
-    "ORDER BY session_id, line_offset ASC SETTINGS max_final_threads = 4, "
-    "do_not_merge_across_partitions_select_final = 1"
+    "FROM session_events WHERE parent_session_id = $sid AND project_id = $pid "
+    "AND user_id = $uid AND harness = $harness AND rendered = 1 "
+    "ORDER BY session_id, line_offset ASC"
 )
 MAIN_SQL_OFFSET = MAIN_SQL.replace(
-    "AND rendered = 1 ORDER BY", "AND rendered = 1 AND line_offset > {offset:UInt32} ORDER BY"
+    "AND rendered = 1 ORDER BY", "AND rendered = 1 AND line_offset > CAST($offset AS INTEGER) ORDER BY"
 )
 SUB_SQL_OFFSET = SUB_SQL.replace(
-    "AND rendered = 1 ORDER BY", "AND rendered = 1 AND line_offset > {offset:UInt32} ORDER BY"
+    "AND rendered = 1 ORDER BY", "AND rendered = 1 AND line_offset > CAST($offset AS INTEGER) ORDER BY"
 )
 SUMMARY_SQL_USER = (
-    "SELECT count() AS total, countIf(toDate(last_event_time) = today()) AS today_sessions FROM (   "
-    "SELECT session_id, max(last_event_time) AS last_event_time   FROM session_stats_agg FINAL   "
-    "WHERE session_id != '' AND user_id = {uid:String}   GROUP BY session_id )"
+    "SELECT count(*) AS total, count(*) FILTER (WHERE CAST(last_event_time AS DATE) = today()) AS today_sessions FROM (   "
+    "SELECT session_id, max(last_event_time) AS last_event_time   FROM session_stats_agg   "
+    "WHERE session_id != '' AND user_id = $uid   GROUP BY session_id )"
 )
-SUMMARY_SQL_ADMIN = SUMMARY_SQL_USER.replace("AND user_id = {uid:String} ", "")
+SUMMARY_SQL_ADMIN = SUMMARY_SQL_USER.replace("AND user_id = $uid ", "")
 STATS_SQL = (
-    "SELECT count() AS total_sessions, sum(prompt_count) AS total_prompts, 0 AS total_api_requests, "
+    "SELECT count(*) AS total_sessions, sum(prompt_count) AS total_prompts, 0 AS total_api_requests, "
     "sum(tool_call_count) AS total_tool_calls, sum(event_count) AS total_events FROM (   SELECT session_id, "
     "    sum(prompt_count) AS prompt_count,     sum(tool_call_count) AS tool_call_count,     "
-    "sum(event_count) AS event_count   FROM session_stats_agg FINAL   WHERE session_id != ''   "
+    "sum(event_count) AS event_count   FROM session_stats_agg   WHERE session_id != ''   "
     "GROUP BY session_id )"
 )
 
@@ -167,21 +164,21 @@ async def _api_client(user=None, *, auth_error: HTTPException | None = None):
 
 
 @pytest.mark.asyncio
-async def test_ch_json_returns_data_and_passes_exact_query(monkeypatch):
+async def test_analytics_json_returns_data_and_passes_exact_query(monkeypatch):
     response = MagicMock(status_code=200)
     response.json.return_value = {"data": [{"session_id": "one"}], "meta": []}
     query = AsyncMock(return_value=response)
     monkeypatch.setattr(sessions, "_query", query)
 
-    result = await sessions._ch_json("SELECT 1", {"param_value": "x"})
+    result = await sessions._analytics_json("SELECT 1", {"value": "x"})
 
     assert result == [{"session_id": "one"}]
-    query.assert_awaited_once_with("SELECT 1 FORMAT JSON", {"param_value": "x"})
+    query.assert_awaited_once_with("SELECT 1", {"value": "x"})
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", ["http", "exception"])
-async def test_ch_json_maps_clickhouse_failures_to_empty_results(monkeypatch, failure):
+async def test_analytics_json_maps_clickhouse_failures_to_empty_results(monkeypatch, failure):
     if failure == "http":
         response = MagicMock(status_code=503)
         query = AsyncMock(return_value=response)
@@ -189,8 +186,8 @@ async def test_ch_json_maps_clickhouse_failures_to_empty_results(monkeypatch, fa
         query = AsyncMock(side_effect=RuntimeError("clickhouse unavailable"))
     monkeypatch.setattr(sessions, "_query", query)
 
-    assert await sessions._ch_json("SELECT broken") == []
-    query.assert_awaited_once_with("SELECT broken FORMAT JSON", None)
+    assert await sessions._analytics_json("SELECT broken") == []
+    query.assert_awaited_once_with("SELECT broken", None)
 
 
 @pytest.mark.parametrize(
@@ -214,7 +211,7 @@ def test_admin_trace_access_matrix(role, trace_privacy, is_admin, has_trace_acce
 @pytest.mark.asyncio
 async def test_list_query_uses_exact_filters_pagination_and_parameters(monkeypatch):
     query = AsyncMock(return_value=[{"session_id": "one"}])
-    monkeypatch.setattr(sessions, "_ch_json", query)
+    monkeypatch.setattr(sessions, "_analytics_json", query)
 
     result = await sessions._list_sessions_query(
         platform="kiro",
@@ -231,10 +228,9 @@ async def test_list_query_uses_exact_filters_pagination_and_parameters(monkeypat
     sql, params = query.await_args.args
     assert _sql(sql) == _sql(LIST_SQL_FILTERED)
     assert params == {
-        "param_uid": "me",
-        "param_platform": "kiro",
-        "param_user_0": "u1",
-        "param_user_1": "u2",
+        "uid": "me",
+        "platform": "kiro",
+        "user_values": ["u1", "u2"],
     }
 
 
@@ -242,7 +238,7 @@ async def test_list_query_uses_exact_filters_pagination_and_parameters(monkeypat
 @pytest.mark.parametrize("days", [None, 0, -3])
 async def test_list_query_leaves_admin_unfiltered_for_nonpositive_days(monkeypatch, days):
     query = AsyncMock(return_value=[])
-    monkeypatch.setattr(sessions, "_ch_json", query)
+    monkeypatch.setattr(sessions, "_analytics_json", query)
 
     await sessions._list_sessions_query(
         platform=None,
@@ -260,7 +256,7 @@ async def test_list_query_leaves_admin_unfiltered_for_nonpositive_days(monkeypat
 @pytest.mark.asyncio
 async def test_admin_mine_filter_is_user_scoped(monkeypatch):
     query = AsyncMock(return_value=[])
-    monkeypatch.setattr(sessions, "_ch_json", query)
+    monkeypatch.setattr(sessions, "_analytics_json", query)
 
     await sessions._list_sessions_query(
         platform=None,
@@ -273,9 +269,9 @@ async def test_admin_mine_filter_is_user_scoped(monkeypatch):
 
     sql, params = query.await_args.args
     assert _sql(sql) == _sql(
-        LIST_SQL_UNFILTERED.replace("prompt_count > 0 ORDER BY", "prompt_count > 0 AND user_id = {uid:String} ORDER BY")
+        LIST_SQL_UNFILTERED.replace("prompt_count > 0 ORDER BY", "prompt_count > 0 AND user_id = $uid ORDER BY")
     )
-    assert params == {"param_uid": "admin-id"}
+    assert params == {"uid": "admin-id"}
 
 
 @pytest.mark.asyncio
@@ -515,9 +511,9 @@ async def test_list_sessions_status_filter_only_removes_inactive_rows(monkeypatc
 @pytest.mark.parametrize(
     ("user", "expected_sql", "expected_params"),
     [
-        (_user(), SUMMARY_SQL_USER, {"param_uid": str(USER_ID)}),
+        (_user(), SUMMARY_SQL_USER, {"uid": str(USER_ID)}),
         (_user(UserRole.admin), SUMMARY_SQL_ADMIN, None),
-        (_user(UserRole.admin, trace_privacy=True), SUMMARY_SQL_USER, {"param_uid": str(USER_ID)}),
+        (_user(UserRole.admin, trace_privacy=True), SUMMARY_SQL_USER, {"uid": str(USER_ID)}),
         (_user(UserRole.super_admin, trace_privacy=True), SUMMARY_SQL_ADMIN, None),
     ],
 )
@@ -525,7 +521,7 @@ async def test_sessions_summary_applies_trace_visibility_and_transforms_counts(
     monkeypatch, user, expected_sql, expected_params
 ):
     query = AsyncMock(return_value=[{"total": "12", "today_sessions": 3}])
-    monkeypatch.setattr(sessions, "_ch_json", query)
+    monkeypatch.setattr(sessions, "_analytics_json", query)
 
     result = await sessions.sessions_summary(user)
 
@@ -538,7 +534,7 @@ async def test_sessions_summary_applies_trace_visibility_and_transforms_counts(
 @pytest.mark.asyncio
 async def test_sessions_summary_empty_result_returns_zeroes(monkeypatch):
     query = AsyncMock(return_value=[])
-    monkeypatch.setattr(sessions, "_ch_json", query)
+    monkeypatch.setattr(sessions, "_analytics_json", query)
 
     assert await sessions.sessions_summary(_user()) == {"total_sessions": 0, "today_sessions": 0}
 
@@ -579,7 +575,7 @@ async def test_sessions_summary_empty_result_returns_zeroes(monkeypatch):
 )
 async def test_sessions_stats_uses_exact_aggregate_and_transforms_counts(monkeypatch, rows, expected):
     query = AsyncMock(return_value=rows)
-    monkeypatch.setattr(sessions, "_ch_json", query)
+    monkeypatch.setattr(sessions, "_analytics_json", query)
 
     result = await sessions.sessions_stats.__wrapped__(current_user=_user(UserRole.admin))
 
@@ -591,33 +587,33 @@ async def test_sessions_stats_uses_exact_aggregate_and_transforms_counts(monkeyp
 @pytest.mark.parametrize("session_id", [str(AGENT_ID), "malformed';SELECT"])
 async def test_session_detail_empty_identity_preserves_identifier_and_user_isolation(monkeypatch, session_id):
     query = AsyncMock(return_value=[])
-    monkeypatch.setattr(sessions, "_ch_json", query)
+    monkeypatch.setattr(sessions, "_analytics_json", query)
 
     result = await sessions.get_session(session_id, current_user=_user())
 
     assert result == {"session_id": session_id, "harness": "", "events": []}
     sql, params = query.await_args.args
     assert _sql(sql) == _sql(IDENTITY_SQL_USER)
-    assert params == {"param_sid": session_id, "param_uid": str(USER_ID)}
+    assert params == {"sid": session_id, "uid": str(USER_ID)}
 
 
 @pytest.mark.asyncio
 async def test_admin_session_detail_uses_canonical_identity_for_both_event_queries(monkeypatch):
     identity = {"project_id": "project-a", "user_id": str(OTHER_USER_ID), "harness": "cursor"}
     query = AsyncMock(side_effect=[[identity], [], []])
-    monkeypatch.setattr(sessions, "_ch_json", query)
+    monkeypatch.setattr(sessions, "_analytics_json", query)
 
     result = await sessions.get_session("shared-id", after_offset=None, current_user=_user(UserRole.admin))
 
     params = {
-        "param_sid": "shared-id",
-        "param_pid": "project-a",
-        "param_uid": str(OTHER_USER_ID),
-        "param_harness": "cursor",
+        "sid": "shared-id",
+        "pid": "project-a",
+        "uid": str(OTHER_USER_ID),
+        "harness": "cursor",
     }
     assert result == {"session_id": "shared-id", "service_name": "", "events": [], "traces": []}
     assert [(_sql(item.args[0]), item.args[1]) for item in query.await_args_list] == [
-        (_sql(IDENTITY_SQL_ADMIN), {"param_sid": "shared-id"}),
+        (_sql(IDENTITY_SQL_ADMIN), {"sid": "shared-id"}),
         (_sql(MAIN_SQL), params),
         (_sql(SUB_SQL), params),
     ]
@@ -627,20 +623,20 @@ async def test_admin_session_detail_uses_canonical_identity_for_both_event_queri
 async def test_incremental_session_detail_uses_offset_for_parent_and_subagents(monkeypatch):
     identity = {"project_id": "project-a", "user_id": str(USER_ID), "harness": "claude-code"}
     query = AsyncMock(side_effect=[[identity], [], []])
-    monkeypatch.setattr(sessions, "_ch_json", query)
+    monkeypatch.setattr(sessions, "_analytics_json", query)
 
     result = await sessions.get_session("session", after_offset=7, current_user=_user())
 
     params = {
-        "param_sid": "session",
-        "param_pid": "project-a",
-        "param_uid": str(USER_ID),
-        "param_harness": "claude-code",
-        "param_offset": "7",
+        "sid": "session",
+        "pid": "project-a",
+        "uid": str(USER_ID),
+        "harness": "claude-code",
+        "offset": "7",
     }
     assert result == {"session_id": "session", "events": [], "max_offset": 7}
     assert [(_sql(item.args[0]), item.args[1]) for item in query.await_args_list] == [
-        (_sql(IDENTITY_SQL_USER), {"param_sid": "session", "param_uid": str(USER_ID)}),
+        (_sql(IDENTITY_SQL_USER), {"sid": "session", "uid": str(USER_ID)}),
         (_sql(MAIN_SQL_OFFSET), params),
         (_sql(SUB_SQL_OFFSET), params),
     ]
@@ -683,7 +679,7 @@ async def test_session_detail_parses_events_subagents_and_agent_name(monkeypatch
     parser = MagicMock(side_effect=[[{"event_name": "parent"}], [{"event_name": "a"}], [{"event_name": "b"}]])
     agent_db = _db(_result(scalar="Canonical Agent"))
     session_factory = _session_factory(agent_db)
-    monkeypatch.setattr(sessions, "_ch_json", query)
+    monkeypatch.setattr(sessions, "_analytics_json", query)
     monkeypatch.setattr("services.session_parsers.parse_raw_events", parser)
     monkeypatch.setattr(sessions, "async_session", session_factory)
 
@@ -704,13 +700,13 @@ async def test_session_detail_parses_events_subagents_and_agent_name(monkeypatch
         "max_offset": 9,
     }
     params = {
-        "param_sid": "session",
-        "param_pid": "project-a",
-        "param_uid": str(USER_ID),
-        "param_harness": "kiro",
+        "sid": "session",
+        "pid": "project-a",
+        "uid": str(USER_ID),
+        "harness": "kiro",
     }
     assert [(_sql(item.args[0]), item.args[1]) for item in query.await_args_list] == [
-        (_sql(IDENTITY_SQL_USER), {"param_sid": "session", "param_uid": str(USER_ID)}),
+        (_sql(IDENTITY_SQL_USER), {"sid": "session", "uid": str(USER_ID)}),
         (_sql(MAIN_SQL), params),
         (_sql(SUB_SQL), params),
     ]
@@ -729,7 +725,7 @@ async def test_session_detail_without_agent_uses_default_harness_and_no_database
     query = AsyncMock(side_effect=[[identity], rows, []])
     parser = MagicMock(return_value=[{"event_name": "event"}])
     session_factory = MagicMock(side_effect=AssertionError("database should not be opened"))
-    monkeypatch.setattr(sessions, "_ch_json", query)
+    monkeypatch.setattr(sessions, "_analytics_json", query)
     monkeypatch.setattr("services.session_parsers.parse_raw_events", parser)
     monkeypatch.setattr(sessions, "async_session", session_factory)
 
@@ -757,7 +753,7 @@ async def test_session_detail_agent_resolution_failures_do_not_hide_events(monke
     query = AsyncMock(side_effect=[[identity], rows, []])
     parser = MagicMock(return_value=[{"event_name": "event"}])
     agent_db = _db(error=db_error) if db_error else _db()
-    monkeypatch.setattr(sessions, "_ch_json", query)
+    monkeypatch.setattr(sessions, "_analytics_json", query)
     monkeypatch.setattr("services.session_parsers.parse_raw_events", parser)
     monkeypatch.setattr(sessions, "async_session", _session_factory(agent_db))
 
@@ -776,7 +772,7 @@ async def test_session_detail_agent_resolution_failures_do_not_hide_events(monke
 async def test_session_parser_failure_propagates(monkeypatch):
     identity = {"project_id": "project-a", "user_id": str(USER_ID), "harness": "cursor"}
     rows = [{"line_offset": 0, "harness": "cursor", "raw_line": "bad"}]
-    monkeypatch.setattr(sessions, "_ch_json", AsyncMock(side_effect=[[identity], rows, []]))
+    monkeypatch.setattr(sessions, "_analytics_json", AsyncMock(side_effect=[[identity], rows, []]))
     monkeypatch.setattr("services.session_parsers.parse_raw_events", MagicMock(side_effect=KeyError("parser")))
 
     with pytest.raises(KeyError, match="parser"):
@@ -789,15 +785,15 @@ async def test_bind_session_agent_checks_owner_and_sets_expiring_binding(monkeyp
     redis = MagicMock()
     redis.set = AsyncMock(return_value=True)
     get_redis = MagicMock(return_value=redis)
-    monkeypatch.setattr(sessions, "_ch_json", ownership)
+    monkeypatch.setattr(sessions, "_analytics_json", ownership)
     monkeypatch.setattr("services.redis.get_redis", get_redis)
 
     result = await sessions.bind_session_agent("session", agent_name="alice/reviewer", current_user=_user())
 
     assert result == {"session_id": "session", "agent_name": "alice/reviewer", "bound": True}
     ownership.assert_awaited_once_with(
-        "SELECT 1 FROM session_events WHERE session_id = {sid:String} AND user_id = {uid:String} LIMIT 1",
-        {"param_sid": "session", "param_uid": str(USER_ID)},
+        "SELECT 1 AS present FROM session_events WHERE session_id = $sid AND user_id = $uid LIMIT 1",
+        {"sid": "session", "uid": str(USER_ID)},
     )
     get_redis.assert_called_once_with()
     redis.set.assert_awaited_once_with("session_agent:session", "alice/reviewer", ex=86400)
@@ -809,7 +805,7 @@ async def test_admin_binding_skips_ownership_query(monkeypatch, role):
     ownership = AsyncMock()
     redis = MagicMock()
     redis.set = AsyncMock(return_value=True)
-    monkeypatch.setattr(sessions, "_ch_json", ownership)
+    monkeypatch.setattr(sessions, "_analytics_json", ownership)
     monkeypatch.setattr("services.redis.get_redis", MagicMock(return_value=redis))
 
     result = await sessions.bind_session_agent("session", agent_name="agent", current_user=_user(role))
@@ -823,7 +819,7 @@ async def test_admin_binding_skips_ownership_query(monkeypatch, role):
 async def test_denied_binding_returns_404_without_mutation(monkeypatch):
     ownership = AsyncMock(return_value=[])
     get_redis = MagicMock(side_effect=AssertionError("redis must not be touched"))
-    monkeypatch.setattr(sessions, "_ch_json", ownership)
+    monkeypatch.setattr(sessions, "_analytics_json", ownership)
     monkeypatch.setattr("services.redis.get_redis", get_redis)
 
     with pytest.raises(HTTPException) as exc:
@@ -843,7 +839,7 @@ async def test_binding_reports_redis_unavailability(monkeypatch, failure_at):
         side_effect=RedisError("redis unavailable") if failure_at == "get" else None,
         return_value=redis,
     )
-    monkeypatch.setattr(sessions, "_ch_json", AsyncMock())
+    monkeypatch.setattr(sessions, "_analytics_json", AsyncMock())
     monkeypatch.setattr("services.redis.get_redis", get_redis)
 
     result = await sessions.bind_session_agent("session", agent_name="agent", current_user=_user(UserRole.admin))
@@ -894,7 +890,7 @@ async def test_unexpected_binding_service_failure_propagates(monkeypatch):
 async def test_session_routes_require_authentication(monkeypatch, method, path):
     query = AsyncMock()
     get_redis = MagicMock()
-    monkeypatch.setattr(sessions, "_ch_json", query)
+    monkeypatch.setattr(sessions, "_analytics_json", query)
     monkeypatch.setattr("services.redis.get_redis", get_redis)
 
     async with _api_client(auth_error=HTTPException(status_code=401, detail="Missing credentials")) as client:
@@ -910,7 +906,7 @@ async def test_session_routes_require_authentication(monkeypatch, method, path):
 @pytest.mark.parametrize("role", [UserRole.user, UserRole.reviewer])
 async def test_sessions_stats_requires_admin_role(monkeypatch, role):
     query = AsyncMock()
-    monkeypatch.setattr(sessions, "_ch_json", query)
+    monkeypatch.setattr(sessions, "_analytics_json", query)
 
     async with _api_client(_user(role)) as client:
         response = await client.get("/api/v1/sessions/stats")
@@ -933,7 +929,7 @@ async def test_sessions_stats_requires_admin_role(monkeypatch, role):
 )
 async def test_session_query_validation_rejects_invalid_requests(monkeypatch, path, location, error_type):
     query = AsyncMock()
-    monkeypatch.setattr(sessions, "_ch_json", query)
+    monkeypatch.setattr(sessions, "_analytics_json", query)
 
     async with _api_client(_user()) as client:
         method = "post" if path.endswith("bind-agent") else "get"

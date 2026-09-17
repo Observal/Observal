@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Checkpoint: verify observal_shared.migration imports cleanly without FastAPI/typer/rich.
@@ -20,9 +21,10 @@ MIGRATION_SUBMODULES = (
     "observal_shared.migration",
     "observal_shared.migration.archive",
     "observal_shared.migration.ch_export",
-    "observal_shared.migration.ch_import",
     "observal_shared.migration.connections",
     "observal_shared.migration.constants",
+    "observal_shared.migration.duckdb_export",
+    "observal_shared.migration.duckdb_import",
     "observal_shared.migration.encoding",
     "observal_shared.migration.exceptions",
     "observal_shared.migration.pg_export",
@@ -88,9 +90,10 @@ class TestMigrationServiceImportsCleanly:
             assert callable(mig.export_pg)
             assert callable(mig.export_ch)
             assert callable(mig.import_pg)
-            assert callable(mig.import_ch)
             assert callable(mig.validate_pg)
-            assert callable(mig.validate_ch)
+            assert callable(mig.export_duckdb_telemetry)
+            assert callable(mig.load_telemetry_into_duckdb)
+            assert callable(mig.verify_duckdb_telemetry)
 
             # 5. Verify exception classes are accessible
             assert issubclass(mig.MigrationError, Exception)

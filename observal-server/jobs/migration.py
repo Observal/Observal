@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Migration background jobs: run_migration_job and purge_migration_artifacts."""
@@ -18,15 +19,15 @@ import services.dynamic_settings as ds
 from database import async_session
 from models.migration_job import MigrationJob, MigrationOperation, MigrationScope, MigrationStatus
 from observal_shared.migration import (
-    ChConnParams,
+    DuckDBConnParams,
     MigrationError,
     PgConnParams,
-    export_ch,
+    export_duckdb_telemetry,
     export_pg,
-    import_ch,
     import_pg,
-    validate_ch,
+    load_telemetry_into_duckdb,
     validate_pg,
+    verify_duckdb_telemetry,
 )
 from services.security_events import EventType, SecurityEvent, Severity, emit_security_event
 
@@ -76,12 +77,11 @@ async def _resolve_pg_conn() -> PgConnParams:
     return PgConnParams(dsn=dsn)
 
 
-async def _resolve_ch_conn() -> ChConnParams:
-    """Build ChConnParams from dynamic settings or boot config."""
+async def _resolve_analytics_conn() -> DuckDBConnParams:
+    """Build DuckDB connection params for this deployment's analytics service."""
     from config import settings
 
-    ch_url = await ds.get("migration.clickhouse_url", default=settings.CLICKHOUSE_URL)
-    return ChConnParams(url=ch_url)
+    return DuckDBConnParams(url=settings.DUCKDB_ANALYTICS_URL, token=settings.DUCKDB_ANALYTICS_TOKEN)
 
 
 def _build_artifact_dir(job_id: str) -> str:
@@ -154,7 +154,7 @@ async def run_migration_job(ctx: dict, job_id: str) -> None:
 
     # Resolve connections
     pg_conn = await _resolve_pg_conn()
-    ch_conn = await _resolve_ch_conn()
+    analytics_conn = await _resolve_analytics_conn()
 
     result_json = None
     artifacts_json = None
@@ -166,15 +166,15 @@ async def run_migration_job(ctx: dict, job_id: str) -> None:
         async with asyncio.timeout(timeout_seconds):
             if operation_type == MigrationOperation.export:
                 result_json, artifacts_json, schema_version = await _run_export(
-                    data_scope, pg_conn, ch_conn, artifact_dir, reporter
+                    data_scope, pg_conn, analytics_conn, artifact_dir, reporter
                 )
             elif operation_type == MigrationOperation.import_:
                 result_json, artifacts_json, schema_version = await _run_import(
-                    data_scope, pg_conn, ch_conn, artifact_dir, reporter
+                    data_scope, pg_conn, analytics_conn, artifact_dir, reporter
                 )
             elif operation_type == MigrationOperation.validate:
                 result_json, artifacts_json, schema_version = await _run_validate(
-                    data_scope, pg_conn, ch_conn, artifact_dir, reporter
+                    data_scope, pg_conn, analytics_conn, artifact_dir, reporter
                 )
             else:
                 raise MigrationError(f"Unknown operation type: {operation_type}")
@@ -248,7 +248,7 @@ async def run_migration_job(ctx: dict, job_id: str) -> None:
 async def _run_export(
     data_scope: MigrationScope,
     pg_conn: PgConnParams,
-    ch_conn: ChConnParams,
+    analytics_conn: DuckDBConnParams,
     artifact_dir: str,
     reporter: DbProgressReporter,
 ) -> tuple[dict | None, list | None, str | None]:
@@ -279,32 +279,28 @@ async def _run_export(
                 {"name": output_path.name, "size_bytes": archive_size, "sha256": archive_hash, "kind": "archive"}
             )
 
-    if data_scope in (MigrationScope.clickhouse, MigrationScope.both):
-        # Phase 2 CH export requires a Phase 1 manifest
-        manifest_path = Path(artifact_dir) / "pg_export.manifest.json"
-        if not manifest_path.exists():
-            # Fall back to looking in the archive staging area
-            manifest_path = Path(artifact_dir) / "migration_manifest.json"
-        ch_output_dir = Path(artifact_dir) / "telemetry"
-        ch_result = await export_ch(
-            ch_conn,
-            manifest_path,
-            ch_output_dir,
+    if data_scope in (MigrationScope.telemetry, MigrationScope.both):
+        # The telemetry artifact keeps the DuckDB exporter's layout so the
+        # importer, validator and CLI consumers do not change.
+        telemetry_output_dir = Path(artifact_dir) / "telemetry"
+        telemetry_result = await export_duckdb_telemetry(
+            analytics_conn,
+            telemetry_output_dir,
             reporter,
         )
-        result["telemetry_size_bytes"] = ch_result.total_size_bytes
+        result["telemetry_size_bytes"] = telemetry_result.total_size_bytes
 
         # Pack all telemetry Parquet files + manifest into a single tar.gz
         telemetry_archive_path = Path(artifact_dir) / "telemetry_export.tar.gz"
         import tarfile as _tarfile
 
         with _tarfile.open(telemetry_archive_path, "w:gz") as tar:
-            telemetry_manifest_path = ch_output_dir / "telemetry_manifest.json"
+            telemetry_manifest_path = telemetry_output_dir / "telemetry_manifest.json"
             if telemetry_manifest_path.exists():
                 tar.add(str(telemetry_manifest_path), arcname="telemetry_manifest.json")
-            for _table_name, table_info in ch_result.table_results.items():
+            for _table_name, table_info in telemetry_result.table_results.items():
                 for filename in table_info.get("files", []):
-                    filepath = ch_output_dir / filename
+                    filepath = telemetry_output_dir / filename
                     if filepath.exists():
                         tar.add(str(filepath), arcname=filename)
 
@@ -329,7 +325,7 @@ async def _run_export(
 async def _run_import(
     data_scope: MigrationScope,
     pg_conn: PgConnParams,
-    ch_conn: ChConnParams,
+    analytics_conn: DuckDBConnParams,
     artifact_dir: str,
     reporter: DbProgressReporter,
 ) -> tuple[dict | None, list | None, str | None]:
@@ -362,7 +358,7 @@ async def _run_import(
         result["tables_skipped"] = []
         schema_version = None
 
-    if data_scope in (MigrationScope.clickhouse, MigrationScope.both):
+    if data_scope in (MigrationScope.telemetry, MigrationScope.both):
         # Extract telemetry archive if present (from the new tar.gz format)
         import tarfile as _tarfile
 
@@ -378,15 +374,14 @@ async def _run_import(
         # Telemetry files may be in a subdirectory or the root
         telemetry_dir = artifact_path / "telemetry" if (artifact_path / "telemetry").is_dir() else artifact_path
 
-        ch_result = await import_ch(
-            ch_conn,
+        telemetry_result = await load_telemetry_into_duckdb(
+            analytics_conn,
             telemetry_dir,
             reporter,
         )
-        # Merge CH import results
-        for table, count in (ch_result.rows_imported or {}).items():
+        for table, count in (telemetry_result.rows_imported or {}).items():
             result["rows_inserted"][table] = result["rows_inserted"].get(table, 0) + count
-        result["tables_skipped"].extend(ch_result.tables_skipped)
+        result["tables_skipped"].extend(telemetry_result.tables_skipped)
 
     result["total_rows"] = sum(result["rows_inserted"].values()) + sum(result["rows_skipped"].values())
     result.setdefault("schema_version_diff", None)
@@ -397,7 +392,7 @@ async def _run_import(
 async def _run_validate(
     data_scope: MigrationScope,
     pg_conn: PgConnParams,
-    ch_conn: ChConnParams,
+    analytics_conn: DuckDBConnParams,
     artifact_dir: str,
     reporter: DbProgressReporter,
 ) -> tuple[dict | None, list | None, str | None]:
@@ -437,7 +432,7 @@ async def _run_validate(
                 table: list(counts) for table, counts in val_result.cross_db_results.items()
             }
 
-    if data_scope in (MigrationScope.clickhouse, MigrationScope.both):
+    if data_scope in (MigrationScope.telemetry, MigrationScope.both):
         # Extract telemetry archive if present (from the new tar.gz format)
         import tarfile as _tarfile
 
@@ -453,15 +448,13 @@ async def _run_validate(
         # Telemetry files may be in a subdirectory or the root
         telemetry_dir = artifact_path / "telemetry" if (artifact_path / "telemetry").is_dir() else artifact_path
 
-        ch_val = await validate_ch(
-            ch_conn,
-            pg_conn,
+        telemetry_val = await verify_duckdb_telemetry(
+            analytics_conn,
             telemetry_dir,
-            reporter,
         )
-        result["checksums_valid"] = result["checksums_valid"] and ch_val.checksums_valid
-        result["checksum_details"].update(ch_val.checksum_results or {})
-        result["orphaned_fk_refs"] = ch_val.fk_results
+        result["checksums_valid"] = result["checksums_valid"] and telemetry_val.checksums_valid
+        result["checksum_details"].update(telemetry_val.checksum_results or {})
+        result["orphaned_fk_refs"] = telemetry_val.fk_results
 
     return result, None, schema_version
 

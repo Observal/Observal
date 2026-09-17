@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Tanvi Reddy
 # SPDX-License-Identifier: Apache-2.0
 
-# Redis runs on the ClickHouse VM via Docker Compose (self_hosted mode).
+# Redis runs on the analytics data VM via Docker Compose (self_hosted mode).
 # When redis_mode = "enterprise", an Azure Managed Redis cluster is provisioned instead.
 #
 # Enterprise mode requires a subscription with Redis Enterprise quota.

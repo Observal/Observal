@@ -82,42 +82,41 @@ def test_range_days_maps_supported_periods_and_defaults(range_, expected):
 
 
 @pytest.mark.asyncio
-async def test_ch_json_rewrites_project_adds_final_setting_and_passes_exact_query(monkeypatch):
+async def test_analytics_json_rewrites_project_and_passes_exact_query(monkeypatch):
     response = MagicMock(status_code=200)
     response.json.return_value = {"data": [{"cnt": "3"}], "meta": []}
     query = AsyncMock(return_value=response)
     monkeypatch.setattr(dashboard, "_query", query)
-    sql = "SELECT count() AS cnt FROM events FINAL WHERE project_id = '{project_id}'"
-    params = {"param_days": "7"}
+    sql = "SELECT count(*) AS cnt FROM events WHERE project_id = '{project_id}'"
+    params = {"days": "7"}
 
-    result = await dashboard._ch_json(sql, params)
+    result = await dashboard._analytics_json(sql, params)
 
     assert result == [{"cnt": "3"}]
     query.assert_awaited_once_with(
-        "SELECT count() AS cnt FROM events FINAL WHERE project_id = 'default' "
-        "SETTINGS do_not_merge_across_partitions_select_final = 1 FORMAT JSON",
+        "SELECT count(*) AS cnt FROM events WHERE project_id = 'default'",
         params,
     )
-    assert sql == "SELECT count() AS cnt FROM events FINAL WHERE project_id = '{project_id}'"
-    assert params == {"param_days": "7"}
+    assert sql == "SELECT count(*) AS cnt FROM events WHERE project_id = '{project_id}'"
+    assert params == {"days": "7"}
 
 
 @pytest.mark.asyncio
-async def test_ch_json_preserves_existing_settings_and_maps_failures_to_empty(monkeypatch):
+async def test_analytics_json_maps_failures_to_empty(monkeypatch):
     successful = MagicMock(status_code=200)
     successful.json.return_value = {}
     unavailable = MagicMock(status_code=503)
     query = AsyncMock(side_effect=[successful, unavailable, RuntimeError("clickhouse unavailable")])
     monkeypatch.setattr(dashboard, "_query", query)
-    sql = "SELECT 1 FROM events FINAL SETTINGS max_final_threads = 2"
+    sql = "SELECT 1 FROM events SETTINGS max_final_threads = 2"
 
-    assert await dashboard._ch_json(sql) == []
-    assert await dashboard._ch_json("SELECT unavailable") == []
-    assert await dashboard._ch_json("SELECT broken") == []
+    assert await dashboard._analytics_json(sql) == []
+    assert await dashboard._analytics_json("SELECT unavailable") == []
+    assert await dashboard._analytics_json("SELECT broken") == []
     assert query.await_args_list == [
-        call(f"{sql} FORMAT JSON", None),
-        call("SELECT unavailable FORMAT JSON", None),
-        call("SELECT broken FORMAT JSON", None),
+        call(f"{sql}", None),
+        call("SELECT unavailable", None),
+        call("SELECT broken", None),
     ]
 
 
@@ -125,7 +124,7 @@ async def test_ch_json_preserves_existing_settings_and_maps_failures_to_empty(mo
 async def test_overview_stats_aggregates_postgres_and_clickhouse_with_exact_queries(monkeypatch):
     db = _db(scalar_values=[4, 3, 9])
     ch = AsyncMock(side_effect=[[{"cnt": "17"}], [{"cnt": 6}]])
-    monkeypatch.setattr(dashboard, "_ch_json", ch)
+    monkeypatch.setattr(dashboard, "_analytics_json", ch)
 
     result = await dashboard.overview_stats(range_="30d", db=db, current_user=None)
 
@@ -148,14 +147,14 @@ async def test_overview_stats_aggregates_postgres_and_clickhouse_with_exact_quer
     ]
     assert ch.await_args_list == [
         call(
-            "SELECT sum(tool_call_count) as cnt FROM session_stats_agg FINAL WHERE last_event_time > "
-            "now() - INTERVAL {days:UInt32} DAY",
-            {"param_days": "30"},
+            "SELECT sum(tool_call_count) as cnt FROM session_stats_agg WHERE last_event_time > "
+            "now() - to_days(CAST($days AS BIGINT))",
+            {"days": "30"},
         ),
         call(
-            "SELECT count() as cnt FROM session_stats_agg FINAL WHERE last_event_time > "
-            "now() - INTERVAL {days:UInt32} DAY",
-            {"param_days": "30"},
+            "SELECT count(*) as cnt FROM session_stats_agg WHERE last_event_time > "
+            "now() - to_days(CAST($days AS BIGINT))",
+            {"days": "30"},
         ),
     ]
 
@@ -163,7 +162,7 @@ async def test_overview_stats_aggregates_postgres_and_clickhouse_with_exact_quer
 @pytest.mark.asyncio
 async def test_overview_stats_returns_zeroes_for_empty_aggregates(monkeypatch):
     db = _db(scalar_values=[None, 0, None])
-    monkeypatch.setattr(dashboard, "_ch_json", AsyncMock(side_effect=[[], []]))
+    monkeypatch.setattr(dashboard, "_analytics_json", AsyncMock(side_effect=[[], []]))
 
     result = await dashboard.overview_stats(range_=None, db=db, current_user=_user())
 
@@ -182,7 +181,7 @@ async def test_overview_stats_returns_zeroes_for_empty_aggregates(monkeypatch):
 @pytest.mark.asyncio
 async def test_overview_stats_exposes_null_clickhouse_aggregate_as_invalid(monkeypatch):
     db = _db(scalar_values=[0, 0, 0])
-    monkeypatch.setattr(dashboard, "_ch_json", AsyncMock(side_effect=[[{"cnt": None}], []]))
+    monkeypatch.setattr(dashboard, "_analytics_json", AsyncMock(side_effect=[[{"cnt": None}], []]))
 
     with pytest.raises(TypeError):
         await dashboard.overview_stats(range_="7d", db=db, current_user=None)
@@ -802,6 +801,6 @@ async def test_postgres_failures_propagate_without_partial_dashboard_results(mon
 
     scalar_db = _db()
     scalar_db.scalar.side_effect = RuntimeError("postgres unavailable")
-    monkeypatch.setattr(dashboard, "_ch_json", AsyncMock(side_effect=[[], []]))
+    monkeypatch.setattr(dashboard, "_analytics_json", AsyncMock(side_effect=[[], []]))
     with pytest.raises(RuntimeError, match="postgres unavailable"):
         await dashboard.overview_stats(range_="7d", db=scalar_db, current_user=None)

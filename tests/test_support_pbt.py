@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Property-based tests for the support bundle redaction, manifest, and config modules.
@@ -81,7 +82,7 @@ def _aws_key_strategy():
 
 
 # URL userinfo strategy with supported schemes
-_SUPPORTED_SCHEMES = ["https", "http", "postgresql+asyncpg", "postgres", "redis", "clickhouse"]
+_SUPPORTED_SCHEMES = ["https", "http", "postgresql+asyncpg", "postgres", "redis", "duckdb", "clickhouse"]
 
 
 def _url_userinfo_strategy():

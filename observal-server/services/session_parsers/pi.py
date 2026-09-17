@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Pi session parser -- READ path (raw ClickHouse rows -> frontend events).
+"""Pi session parser -- READ path (raw DuckDB rows -> frontend events).
 
 Pi's JSONL format uses entry-level ``type`` + ``message.role`` structure.
 Tool calls use ``type: "toolCall"`` and tool results are ``role: "toolResult"``.

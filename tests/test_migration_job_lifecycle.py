@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Focused coverage for migration background job orchestration."""
@@ -20,7 +21,7 @@ import pytest
 
 import jobs.migration as migration
 from models.migration_job import MigrationOperation, MigrationScope, MigrationStatus
-from observal_shared.migration import ChConnParams, MigrationError, PgConnParams
+from observal_shared.migration import DuckDBConnParams, MigrationError, PgConnParams
 from observal_shared.migration.results import (
     ChecksumResult,
     ExportResult,
@@ -138,14 +139,14 @@ def statement_values(session: Session) -> dict:
 def install_job_boundaries(monkeypatch, factory: SessionFactory, artifact_root: Path):
     """Replace every external boundary used by ``run_migration_job``."""
     pg_conn = PgConnParams(dsn="postgresql://source/db")
-    ch_conn = ChConnParams(url="clickhouse://source/observal")
+    analytics_conn = DuckDBConnParams(url="duckdb://analytics-source:8484/observal")
     timeout = MagicMock(side_effect=lambda seconds: TimeoutContext())
     export = AsyncMock()
     import_ = AsyncMock()
     validate = AsyncMock()
     emit = AsyncMock()
     pg_resolver = AsyncMock(return_value=pg_conn)
-    ch_resolver = AsyncMock(return_value=ch_conn)
+    analytics_resolver = AsyncMock(return_value=analytics_conn)
     get_timeout = AsyncMock(return_value=17)
 
     monkeypatch.setattr(migration, "async_session", factory)
@@ -153,7 +154,7 @@ def install_job_boundaries(monkeypatch, factory: SessionFactory, artifact_root: 
     monkeypatch.setattr(migration, "_get_artifact_root", AsyncMock(return_value=str(artifact_root)))
     monkeypatch.setattr(migration.ds, "get_int", get_timeout)
     monkeypatch.setattr(migration, "_resolve_pg_conn", pg_resolver)
-    monkeypatch.setattr(migration, "_resolve_ch_conn", ch_resolver)
+    monkeypatch.setattr(migration, "_resolve_analytics_conn", analytics_resolver)
     monkeypatch.setattr(migration.asyncio, "timeout", timeout)
     monkeypatch.setattr(migration, "_run_export", export)
     monkeypatch.setattr(migration, "_run_import", import_)
@@ -162,14 +163,14 @@ def install_job_boundaries(monkeypatch, factory: SessionFactory, artifact_root: 
 
     return SimpleNamespace(
         pg_conn=pg_conn,
-        ch_conn=ch_conn,
+        analytics_conn=analytics_conn,
         timeout=timeout,
         export=export,
         import_=import_,
         validate=validate,
         emit=emit,
         pg_resolver=pg_resolver,
-        ch_resolver=ch_resolver,
+        analytics_resolver=analytics_resolver,
         get_timeout=get_timeout,
     )
 
@@ -233,18 +234,17 @@ async def test_connection_and_artifact_helpers_honor_configuration(monkeypatch):
     fake_config = ModuleType("config")
     fake_config.settings = SimpleNamespace(
         DATABASE_URL="postgresql+asyncpg://app:secret@db/observal",
-        CLICKHOUSE_URL="clickhouse://boot/observal",
+        DUCKDB_ANALYTICS_URL="duckdb://analytics:8484/observal",
+        DUCKDB_ANALYTICS_TOKEN="analytics-token",
     )
-    dynamic_get = AsyncMock(return_value="clickhouse://dynamic/observal")
     monkeypatch.setitem(sys.modules, "config", fake_config)
-    monkeypatch.setattr(migration.ds, "get", dynamic_get)
 
     pg_conn = await migration._resolve_pg_conn()
-    ch_conn = await migration._resolve_ch_conn()
+    analytics_conn = await migration._resolve_analytics_conn()
 
     assert pg_conn.dsn == fake_config.settings.DATABASE_URL
-    assert ch_conn.url == "clickhouse://dynamic/observal"
-    dynamic_get.assert_awaited_once_with("migration.clickhouse_url", default="clickhouse://boot/observal")
+    assert analytics_conn.url == "duckdb://analytics:8484/observal"
+    assert analytics_conn.token == "analytics-token"
 
     artifact_get = AsyncMock(return_value="/settings/artifacts")
     monkeypatch.setattr(migration.ds, "get", artifact_get)
@@ -354,7 +354,7 @@ async def test_job_dispatches_operation_and_persists_success(
     handler.assert_awaited_once_with(
         MigrationScope.both,
         boundaries.pg_conn,
-        boundaries.ch_conn,
+        boundaries.analytics_conn,
         expected_dir,
         reporter,
     )
@@ -363,7 +363,7 @@ async def test_job_dispatches_operation_and_persists_success(
     boundaries.get_timeout.assert_awaited_once_with("migration.job_timeout_seconds", default=3600)
     boundaries.timeout.assert_called_once_with(17)
     boundaries.pg_resolver.assert_awaited_once_with()
-    boundaries.ch_resolver.assert_awaited_once_with()
+    boundaries.analytics_resolver.assert_awaited_once_with()
 
     boundaries.emit.assert_awaited_once()
     event = boundaries.emit.await_args.args[0]
@@ -514,7 +514,7 @@ async def test_connection_resolution_failure_propagates_for_queue_retry(monkeypa
     assert job.status == MigrationStatus.running
     lookup.commit.assert_awaited_once_with()
     assert (tmp_path / str(job.id)).is_dir()
-    boundaries.ch_resolver.assert_not_awaited()
+    boundaries.analytics_resolver.assert_not_awaited()
     boundaries.export.assert_not_awaited()
     boundaries.emit.assert_not_awaited()
     assert factory.calls == 1
@@ -523,10 +523,10 @@ async def test_connection_resolution_failure_propagates_for_queue_retry(monkeypa
 @pytest.mark.asyncio
 async def test_export_both_packages_postgres_and_telemetry_artifacts(monkeypatch, tmp_path):
     pg_conn = PgConnParams("postgresql://source/db")
-    ch_conn = ChConnParams("clickhouse://source/observal")
+    analytics_conn = DuckDBConnParams("duckdb://analytics-source:8484/observal")
     reporter = MagicMock()
     export_pg = AsyncMock()
-    export_ch = AsyncMock()
+    export_duckdb_telemetry = AsyncMock()
 
     async def fake_export_pg(params, output_path, progress):
         assert params == pg_conn
@@ -542,9 +542,8 @@ async def test_export_both_packages_postgres_and_telemetry_artifacts(monkeypatch
             total_rows=2,
         )
 
-    async def fake_export_ch(params, manifest_path, output_dir, progress):
-        assert params == ch_conn
-        assert manifest_path == tmp_path / "pg_export.manifest.json"
+    async def fake_export_duckdb_telemetry(params, output_dir, progress):
+        assert params == analytics_conn
         assert progress is reporter
         output_dir.mkdir()
         (output_dir / "telemetry_manifest.json").write_text("{}", encoding="utf-8")
@@ -561,9 +560,9 @@ async def test_export_both_packages_postgres_and_telemetry_artifacts(monkeypatch
         )
 
     export_pg.side_effect = fake_export_pg
-    export_ch.side_effect = fake_export_ch
+    export_duckdb_telemetry.side_effect = fake_export_duckdb_telemetry
     monkeypatch.setattr(migration, "export_pg", export_pg)
-    monkeypatch.setattr(migration, "export_ch", export_ch)
+    monkeypatch.setattr(migration, "export_duckdb_telemetry", export_duckdb_telemetry)
     from observal_shared.migration import archive as archive_service
 
     hash_file = MagicMock(side_effect=lambda path: f"hash:{path.name}")
@@ -572,7 +571,7 @@ async def test_export_both_packages_postgres_and_telemetry_artifacts(monkeypatch
     result, artifacts, schema_version = await migration._run_export(
         MigrationScope.both,
         pg_conn,
-        ch_conn,
+        analytics_conn,
         str(tmp_path),
         reporter,
     )
@@ -591,18 +590,15 @@ async def test_export_both_packages_postgres_and_telemetry_artifacts(monkeypatch
     with tarfile.open(tmp_path / "telemetry_export.tar.gz", "r:gz") as archive:
         assert archive.getnames() == ["telemetry_manifest.json", "session_events.parquet"]
     export_pg.assert_awaited_once()
-    export_ch.assert_awaited_once()
+    export_duckdb_telemetry.assert_awaited_once()
     assert hash_file.call_count == 2
 
 
 @pytest.mark.asyncio
-async def test_clickhouse_export_uses_fallback_manifest_and_default_result_fields(monkeypatch, tmp_path):
-    fallback = tmp_path / "migration_manifest.json"
-    fallback.write_text("{}", encoding="utf-8")
+async def test_analytics_export_reports_default_result_fields(monkeypatch, tmp_path):
     export_pg = AsyncMock()
 
-    async def fake_export_ch(params, manifest_path, output_dir, reporter):
-        assert manifest_path == fallback
+    async def fake_export_duckdb_telemetry(params, output_dir, reporter):
         output_dir.mkdir()
         return TelemetryExportResult(
             output_dir=str(output_dir),
@@ -613,23 +609,23 @@ async def test_clickhouse_export_uses_fallback_manifest_and_default_result_field
             duration_seconds=1.0,
         )
 
-    export_ch = AsyncMock(side_effect=fake_export_ch)
+    export_duckdb_telemetry = AsyncMock(side_effect=fake_export_duckdb_telemetry)
     monkeypatch.setattr(migration, "export_pg", export_pg)
-    monkeypatch.setattr(migration, "export_ch", export_ch)
+    monkeypatch.setattr(migration, "export_duckdb_telemetry", export_duckdb_telemetry)
     from observal_shared.migration import archive as archive_service
 
     monkeypatch.setattr(archive_service, "_sha256_file", MagicMock(return_value="telemetry-hash"))
 
     result, artifacts, schema_version = await migration._run_export(
-        MigrationScope.clickhouse,
+        MigrationScope.telemetry,
         PgConnParams("postgresql://source/db"),
-        ChConnParams("clickhouse://source/observal"),
+        DuckDBConnParams("duckdb://analytics-source:8484/observal"),
         str(tmp_path),
         MagicMock(),
     )
 
     export_pg.assert_not_awaited()
-    export_ch.assert_awaited_once()
+    export_duckdb_telemetry.assert_awaited_once()
     assert result == {
         "telemetry_size_bytes": 0,
         "archive_size_bytes": None,
@@ -641,8 +637,8 @@ async def test_clickhouse_export_uses_fallback_manifest_and_default_result_field
 
 
 @pytest.mark.asyncio
-async def test_clickhouse_export_without_packed_output_has_no_artifact(monkeypatch, tmp_path):
-    export_ch = AsyncMock(
+async def test_telemetry_export_without_packed_output_has_no_artifact(monkeypatch, tmp_path):
+    export_duckdb_telemetry = AsyncMock(
         return_value=TelemetryExportResult(
             output_dir=str(tmp_path / "telemetry"),
             migration_id="migration-missing",
@@ -656,13 +652,13 @@ async def test_clickhouse_export_without_packed_output_has_no_artifact(monkeypat
     archive_context.__enter__.return_value = MagicMock()
     archive_context.__exit__.return_value = False
     open_archive = MagicMock(return_value=archive_context)
-    monkeypatch.setattr(migration, "export_ch", export_ch)
+    monkeypatch.setattr(migration, "export_duckdb_telemetry", export_duckdb_telemetry)
     monkeypatch.setattr(tarfile, "open", open_archive)
 
     result, artifacts, schema_version = await migration._run_export(
-        MigrationScope.clickhouse,
+        MigrationScope.telemetry,
         PgConnParams("postgresql://source/db"),
-        ChConnParams("clickhouse://source/observal"),
+        DuckDBConnParams("duckdb://analytics-source:8484/observal"),
         str(tmp_path),
         MagicMock(),
     )
@@ -690,7 +686,7 @@ async def test_postgres_export_without_output_has_no_artifact(monkeypatch, tmp_p
     result, artifacts, schema_version = await migration._run_export(
         MigrationScope.postgres,
         PgConnParams("postgresql://source/db"),
-        ChConnParams("clickhouse://source/observal"),
+        DuckDBConnParams("duckdb://analytics-source:8484/observal"),
         str(tmp_path),
         MagicMock(),
     )
@@ -720,7 +716,7 @@ async def test_import_both_extracts_telemetry_and_merges_row_counts(monkeypatch,
         rows_skipped={"users": 1},
         duration_seconds=1.0,
     )
-    ch_result = TelemetryImportResult(
+    telemetry_result = TelemetryImportResult(
         migration_id="migration-4",
         tables_imported=1,
         tables_skipped=["audit_log"],
@@ -728,24 +724,24 @@ async def test_import_both_extracts_telemetry_and_merges_row_counts(monkeypatch,
         duration_seconds=1.0,
     )
     import_pg = AsyncMock(return_value=pg_result)
-    import_ch = AsyncMock(return_value=ch_result)
+    load_telemetry_into_duckdb = AsyncMock(return_value=telemetry_result)
     monkeypatch.setattr(migration, "import_pg", import_pg)
-    monkeypatch.setattr(migration, "import_ch", import_ch)
+    monkeypatch.setattr(migration, "load_telemetry_into_duckdb", load_telemetry_into_duckdb)
     pg_conn = PgConnParams("postgresql://target/db")
-    ch_conn = ChConnParams("clickhouse://target/observal")
+    analytics_conn = DuckDBConnParams("duckdb://analytics-target:8484/observal")
     reporter = MagicMock()
 
     result, artifacts, schema_version = await migration._run_import(
         MigrationScope.both,
         pg_conn,
-        ch_conn,
+        analytics_conn,
         str(tmp_path),
         reporter,
     )
 
     import_pg.assert_awaited_once_with(pg_conn, pg_archive, reporter)
     telemetry_dir = tmp_path / "telemetry"
-    import_ch.assert_awaited_once_with(ch_conn, telemetry_dir, reporter)
+    load_telemetry_into_duckdb.assert_awaited_once_with(analytics_conn, telemetry_dir, reporter)
     assert (telemetry_dir / "telemetry_manifest.json").read_bytes() == b"{}"
     assert (telemetry_dir / "session_events.parquet").read_bytes() == b"parquet"
     assert result == {
@@ -760,7 +756,7 @@ async def test_import_both_extracts_telemetry_and_merges_row_counts(monkeypatch,
 
 
 @pytest.mark.asyncio
-async def test_postgres_import_does_not_call_clickhouse(monkeypatch, tmp_path):
+async def test_postgres_import_does_not_touch_duckdb(monkeypatch, tmp_path):
     pg_archive = tmp_path / "snapshot.tar.gz"
     write_tar(pg_archive, {"manifest.json": b"{}"})
     import_pg = AsyncMock(
@@ -772,32 +768,32 @@ async def test_postgres_import_does_not_call_clickhouse(monkeypatch, tmp_path):
             duration_seconds=1.0,
         )
     )
-    import_ch = AsyncMock()
+    load_telemetry_into_duckdb = AsyncMock()
     monkeypatch.setattr(migration, "import_pg", import_pg)
-    monkeypatch.setattr(migration, "import_ch", import_ch)
+    monkeypatch.setattr(migration, "load_telemetry_into_duckdb", load_telemetry_into_duckdb)
     pg_conn = PgConnParams("postgresql://target/db")
     reporter = MagicMock()
 
     result, artifacts, schema_version = await migration._run_import(
         MigrationScope.postgres,
         pg_conn,
-        ChConnParams("clickhouse://target/observal"),
+        DuckDBConnParams("duckdb://analytics-target:8484/observal"),
         str(tmp_path),
         reporter,
     )
 
     import_pg.assert_awaited_once_with(pg_conn, pg_archive, reporter)
-    import_ch.assert_not_awaited()
+    load_telemetry_into_duckdb.assert_not_awaited()
     assert result["total_rows"] == 3
     assert artifacts is None
     assert schema_version is None
 
 
 @pytest.mark.asyncio
-async def test_clickhouse_import_uses_artifact_root_without_telemetry_archive(monkeypatch, tmp_path):
+async def test_telemetry_import_uses_artifact_root_without_telemetry_archive(monkeypatch, tmp_path):
     (tmp_path / "telemetry_manifest.json").write_text("{}", encoding="utf-8")
     import_pg = AsyncMock()
-    import_ch = AsyncMock(
+    load_telemetry_into_duckdb = AsyncMock(
         return_value=TelemetryImportResult(
             migration_id="migration-5",
             tables_imported=0,
@@ -807,20 +803,20 @@ async def test_clickhouse_import_uses_artifact_root_without_telemetry_archive(mo
         )
     )
     monkeypatch.setattr(migration, "import_pg", import_pg)
-    monkeypatch.setattr(migration, "import_ch", import_ch)
-    ch_conn = ChConnParams("clickhouse://target/observal")
+    monkeypatch.setattr(migration, "load_telemetry_into_duckdb", load_telemetry_into_duckdb)
+    analytics_conn = DuckDBConnParams("duckdb://analytics-target:8484/observal")
     reporter = MagicMock()
 
     result, artifacts, schema_version = await migration._run_import(
-        MigrationScope.clickhouse,
+        MigrationScope.telemetry,
         PgConnParams("postgresql://target/db"),
-        ch_conn,
+        analytics_conn,
         str(tmp_path),
         reporter,
     )
 
     import_pg.assert_not_awaited()
-    import_ch.assert_awaited_once_with(ch_conn, tmp_path, reporter)
+    load_telemetry_into_duckdb.assert_awaited_once_with(analytics_conn, tmp_path, reporter)
     assert result["total_rows"] == 0
     assert result["rows_inserted"] == {}
     assert artifacts is None
@@ -836,7 +832,7 @@ async def test_postgres_import_requires_an_archive(monkeypatch, tmp_path):
         await migration._run_import(
             MigrationScope.postgres,
             PgConnParams("postgresql://target/db"),
-            ChConnParams("clickhouse://target/observal"),
+            DuckDBConnParams("duckdb://analytics-target:8484/observal"),
             str(tmp_path),
             MagicMock(),
         )
@@ -857,31 +853,31 @@ async def test_validate_both_extracts_telemetry_and_combines_results(monkeypatch
         checksum_results=[ChecksumResult("users", "abc", "abc", True)],
         cross_db_results={"users": (2, 3)},
     )
-    ch_result = TelemetryValidationResult(
+    telemetry_result = TelemetryValidationResult(
         checksums_valid=False,
         checksum_results={"events.parquet": False},
         fk_results={"orphaned_agent_ids": ["agent-1"]},
         row_count_results={"session_events": (4, 5)},
     )
     validate_pg = AsyncMock(return_value=pg_result)
-    validate_ch = AsyncMock(return_value=ch_result)
+    verify_duckdb_telemetry = AsyncMock(return_value=telemetry_result)
     monkeypatch.setattr(migration, "validate_pg", validate_pg)
-    monkeypatch.setattr(migration, "validate_ch", validate_ch)
+    monkeypatch.setattr(migration, "verify_duckdb_telemetry", verify_duckdb_telemetry)
     pg_conn = PgConnParams("postgresql://target/db")
-    ch_conn = ChConnParams("clickhouse://target/observal")
+    analytics_conn = DuckDBConnParams("duckdb://analytics-target:8484/observal")
     reporter = MagicMock()
 
     result, artifacts, schema_version = await migration._run_validate(
         MigrationScope.both,
         pg_conn,
-        ch_conn,
+        analytics_conn,
         str(tmp_path),
         reporter,
     )
 
     validate_pg.assert_awaited_once_with(pg_conn, pg_archive, reporter)
     telemetry_dir = tmp_path / "telemetry"
-    validate_ch.assert_awaited_once_with(ch_conn, pg_conn, telemetry_dir, reporter)
+    verify_duckdb_telemetry.assert_awaited_once_with(analytics_conn, telemetry_dir)
     assert (telemetry_dir / "events.parquet").read_bytes() == b"parquet"
     assert result == {
         "checksums_valid": False,
@@ -895,7 +891,7 @@ async def test_validate_both_extracts_telemetry_and_combines_results(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_postgres_validation_without_comparison_does_not_call_clickhouse(monkeypatch, tmp_path):
+async def test_postgres_validation_without_comparison_does_not_touch_duckdb(monkeypatch, tmp_path):
     pg_archive = tmp_path / "snapshot.tar.gz"
     write_tar(pg_archive, {"manifest.json": b"{}"})
     validate_pg = AsyncMock(
@@ -905,22 +901,22 @@ async def test_postgres_validation_without_comparison_does_not_call_clickhouse(m
             cross_db_results=None,
         )
     )
-    validate_ch = AsyncMock()
+    verify_duckdb_telemetry = AsyncMock()
     monkeypatch.setattr(migration, "validate_pg", validate_pg)
-    monkeypatch.setattr(migration, "validate_ch", validate_ch)
+    monkeypatch.setattr(migration, "verify_duckdb_telemetry", verify_duckdb_telemetry)
     pg_conn = PgConnParams("postgresql://target/db")
     reporter = MagicMock()
 
     result, artifacts, schema_version = await migration._run_validate(
         MigrationScope.postgres,
         pg_conn,
-        ChConnParams("clickhouse://target/observal"),
+        DuckDBConnParams("duckdb://analytics-target:8484/observal"),
         str(tmp_path),
         reporter,
     )
 
     validate_pg.assert_awaited_once_with(pg_conn, pg_archive, reporter)
-    validate_ch.assert_not_awaited()
+    verify_duckdb_telemetry.assert_not_awaited()
     assert result["checksums_valid"] is True
     assert result["row_count_comparison"] is None
     assert artifacts is None
@@ -928,10 +924,10 @@ async def test_postgres_validation_without_comparison_does_not_call_clickhouse(m
 
 
 @pytest.mark.asyncio
-async def test_clickhouse_validation_uses_root_and_accepts_empty_details(monkeypatch, tmp_path):
+async def test_telemetry_validation_uses_root_and_accepts_empty_details(monkeypatch, tmp_path):
     (tmp_path / "telemetry_manifest.json").write_text("{}", encoding="utf-8")
     validate_pg = AsyncMock()
-    validate_ch = AsyncMock(
+    verify_duckdb_telemetry = AsyncMock(
         return_value=TelemetryValidationResult(
             checksums_valid=True,
             checksum_results=None,
@@ -940,21 +936,21 @@ async def test_clickhouse_validation_uses_root_and_accepts_empty_details(monkeyp
         )
     )
     monkeypatch.setattr(migration, "validate_pg", validate_pg)
-    monkeypatch.setattr(migration, "validate_ch", validate_ch)
+    monkeypatch.setattr(migration, "verify_duckdb_telemetry", verify_duckdb_telemetry)
     pg_conn = PgConnParams("postgresql://target/db")
-    ch_conn = ChConnParams("clickhouse://target/observal")
+    analytics_conn = DuckDBConnParams("duckdb://analytics-target:8484/observal")
     reporter = MagicMock()
 
     result, artifacts, schema_version = await migration._run_validate(
-        MigrationScope.clickhouse,
+        MigrationScope.telemetry,
         pg_conn,
-        ch_conn,
+        analytics_conn,
         str(tmp_path),
         reporter,
     )
 
     validate_pg.assert_not_awaited()
-    validate_ch.assert_awaited_once_with(ch_conn, pg_conn, tmp_path, reporter)
+    verify_duckdb_telemetry.assert_awaited_once_with(analytics_conn, tmp_path)
     assert result["checksums_valid"] is True
     assert result["checksum_details"] == {}
     assert result["orphaned_fk_refs"] is None
@@ -971,7 +967,7 @@ async def test_postgres_validation_requires_an_archive(monkeypatch, tmp_path):
         await migration._run_validate(
             MigrationScope.postgres,
             PgConnParams("postgresql://target/db"),
-            ChConnParams("clickhouse://target/observal"),
+            DuckDBConnParams("duckdb://analytics-target:8484/observal"),
             str(tmp_path),
             MagicMock(),
         )
