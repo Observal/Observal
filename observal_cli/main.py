@@ -173,6 +173,7 @@ from observal_cli.cmd_auth import auth_app, register_config
 from observal_cli.cmd_bulk import bulk_app
 from observal_cli.cmd_co_authors import make_co_authors_typer
 from observal_cli.cmd_component import version_app
+from observal_cli.cmd_discover import discover_app
 from observal_cli.cmd_doctor import doctor_app
 from observal_cli.cmd_hook import hook_app
 from observal_cli.cmd_inbox import inbox_app
@@ -250,6 +251,7 @@ register_config(app)
 register_api(app)
 register_scan(app)
 register_outdated(app)
+app.add_typer(discover_app, name="discover")
 
 
 # ── Agent pull (full-featured, lives under `observal agent pull`) ──
