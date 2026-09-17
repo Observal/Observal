@@ -4,8 +4,8 @@
 # SPDX-License-Identifier: Apache-2.0
 name: observal
 command: observal
-description: "Operates the Observal CLI for discovery of approved resources, authentication, configuration, setup diagnosis, teamspaces, inbox work, scans, update checks, and authenticated API access. Use when about to build a helper from scratch or tell the user a capability is unavailable, and when the user wants to log in, configure Observal, inspect local harness setup, manage a teamspace or invitation, process inbox items, check installed registry items, or call an endpoint without a dedicated command."
-version: 2.8.0
+description: "Finds and loads the organization's approved resources for the task at hand, and operates the Observal CLI for authentication, configuration, setup diagnosis, teamspaces, inbox work, scans, update checks, and API access. Use when starting any substantive coding task, including code or security reviews, writing tests or documentation, querying a database or service, or running untrusted code: run observal discover search first and load an approved match before working from scratch or saying a capability is unavailable. Also use when the user wants to log in, configure Observal, inspect local harness setup, manage a teamspace or invitation, process inbox items, check installed registry items, or call an endpoint without a dedicated command."
+version: 2.8.1
 owner: observal
 ---
 
