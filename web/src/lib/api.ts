@@ -1001,11 +1001,22 @@ export type VersionConfig = {
 	recommended_cli_version: string;
 };
 
+export type HarnessMcpInstallMode = "file" | "setup_command" | "adapter" | "user_only";
+
+/** Verified per-harness runtime facts (see harness_registry.py). */
+export interface HarnessRuntimeFacts {
+	mcp_install_mode: HarnessMcpInstallMode;
+	dynamic_tools: boolean;
+	prompt_context_injection: boolean;
+	guidance_file_write: boolean;
+}
+
 export interface HarnessEntry {
 	name: string;
 	display_name: string;
 	capabilities: string[];
 	supported_models: string[];
+	runtime: HarnessRuntimeFacts;
 }
 
 interface HarnessesResponse {

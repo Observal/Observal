@@ -9,6 +9,36 @@ from __future__ import annotations
 
 from .harness_models import supported_model_ids
 
+# ── Runtime facts vocabulary ─────────────────────────────────
+#
+# Every harness carries four verified runtime facts that discovery and
+# activation gate on. A value is only set to a non-default when the behaviour
+# was checked against the harness's own documentation or adapter code; the
+# per-harness comment records the evidence. Unknown means the default.
+#
+# mcp_install_mode        how Observal gets an MCP server into the harness
+#   file            written to a config file the harness reads natively
+#   setup_command   installed by running the harness's own CLI command
+#   adapter         written to a file read by a third-party adapter
+#   user_only       only a user-scope config file exists
+# dynamic_tools           harness refreshes MCP tools mid-session
+#                         (notifications/tools/list_changed). Default False
+#                         until verified at runtime.
+# prompt_context_injection  a hook or extension can add context before
+#                         the model answers a prompt.
+# guidance_file_write     Observal may write an instruction file the harness
+#                         reads (AGENTS.md, rules, steering). Always False:
+#                         the bundled skill is the instruction channel.
+
+HARNESS_MCP_INSTALL_MODES: tuple[str, ...] = ("file", "setup_command", "adapter", "user_only")
+
+HARNESS_RUNTIME_FACT_KEYS: tuple[str, ...] = (
+    "mcp_install_mode",
+    "dynamic_tools",
+    "prompt_context_injection",
+    "guidance_file_write",
+)
+
 HARNESS_REGISTRY: dict[str, dict] = {
     "cursor": {
         "display_name": "Cursor",
@@ -47,6 +77,12 @@ HARNESS_REGISTRY: dict[str, dict] = {
             "SubagentStop": "subagentStop",
         },
         "config_dir": ".cursor",
+        # .cursor/mcp.json is read natively. No Observal hook spec exists for
+        # Cursor, so no verified context-injection path.
+        "mcp_install_mode": "file",
+        "dynamic_tools": False,
+        "prompt_context_injection": False,
+        "guidance_file_write": False,
     },
     "kiro": {
         "display_name": "Kiro",
@@ -84,6 +120,13 @@ HARNESS_REGISTRY: dict[str, dict] = {
             "UserPromptSubmit": "userPromptSubmit",
         },
         "config_dir": ".kiro",
+        # .kiro/settings/mcp.json is read natively. Kiro hooks docs: Prompt
+        # Submit hooks can "inject context - feed the agent additional
+        # instructions" (kiro.dev/docs/cli/hooks).
+        "mcp_install_mode": "file",
+        "dynamic_tools": False,
+        "prompt_context_injection": True,
+        "guidance_file_write": False,
     },
     "claude-code": {
         "display_name": "Claude Code",
@@ -123,6 +166,13 @@ HARNESS_REGISTRY: dict[str, dict] = {
             "SubagentStop": "SubagentStop",
         },
         "config_dir": ".claude",
+        # mcp_config is None above: servers are installed with `claude mcp add`
+        # (services/harness/claude_code.py). UserPromptSubmit hooks return
+        # stdout / hookSpecificOutput.additionalContext into the prompt.
+        "mcp_install_mode": "setup_command",
+        "dynamic_tools": False,
+        "prompt_context_injection": True,
+        "guidance_file_write": False,
     },
     "codex": {
         "display_name": "Codex",
@@ -159,6 +209,11 @@ HARNESS_REGISTRY: dict[str, dict] = {
             "Stop": "Stop",
         },
         "config_dir": ".codex",
+        # .codex/config.toml [mcp_servers] is read natively.
+        "mcp_install_mode": "file",
+        "dynamic_tools": False,
+        "prompt_context_injection": False,
+        "guidance_file_write": False,
     },
     "copilot": {
         "display_name": "Copilot",
@@ -194,6 +249,11 @@ HARNESS_REGISTRY: dict[str, dict] = {
             "Stop": "Stop",
         },
         "config_dir": ".vscode",
+        # .vscode/mcp.json is read natively.
+        "mcp_install_mode": "file",
+        "dynamic_tools": False,
+        "prompt_context_injection": False,
+        "guidance_file_write": False,
     },
     "copilot-cli": {
         "display_name": "Copilot CLI",
@@ -229,6 +289,11 @@ HARNESS_REGISTRY: dict[str, dict] = {
             "Stop": "sessionEnd",
         },
         "config_dir": ".copilot",
+        # ~/.copilot/mcp-config.json is read natively.
+        "mcp_install_mode": "file",
+        "dynamic_tools": False,
+        "prompt_context_injection": False,
+        "guidance_file_write": False,
     },
     "opencode": {
         "display_name": "OpenCode",
@@ -266,6 +331,11 @@ HARNESS_REGISTRY: dict[str, dict] = {
             "UserPromptSubmit": "message.updated",
         },
         "config_dir": ".config/opencode",
+        # opencode.json "mcp" block is read natively.
+        "mcp_install_mode": "file",
+        "dynamic_tools": False,
+        "prompt_context_injection": False,
+        "guidance_file_write": False,
     },
     "antigravity": {
         "display_name": "Antigravity",
@@ -303,6 +373,11 @@ HARNESS_REGISTRY: dict[str, dict] = {
             "UserPromptSubmit": "PreInvocation",
         },
         "config_dir": ".agents",
+        # .agents/mcp_config.json is read natively.
+        "mcp_install_mode": "file",
+        "dynamic_tools": False,
+        "prompt_context_injection": False,
+        "guidance_file_write": False,
     },
     "goose": {
         "display_name": "Goose",
@@ -343,6 +418,12 @@ HARNESS_REGISTRY: dict[str, dict] = {
             "UserPromptSubmit": "UserPromptSubmit",
         },
         "config_dir": ".config/goose",
+        # Goose reads extensions only from the single user-level config.yaml
+        # (mcp_config.project is None above).
+        "mcp_install_mode": "user_only",
+        "dynamic_tools": False,
+        "prompt_context_injection": False,
+        "guidance_file_write": False,
     },
     "pi": {
         "display_name": "Pi",
@@ -373,6 +454,13 @@ HARNESS_REGISTRY: dict[str, dict] = {
         "hook_scripts_dir": None,
         "hook_events_map": {},
         "config_dir": ".pi",
+        # Pi has no native MCP; ~/.pi/agent/mcp.json is read by the third-party
+        # pi-mcp-adapter. A Pi extension's before_agent_start handler can
+        # modify the system prompt for the turn (pi docs/extensions.md).
+        "mcp_install_mode": "adapter",
+        "dynamic_tools": False,
+        "prompt_context_injection": True,
+        "guidance_file_write": False,
     },
 }
 
@@ -448,3 +536,16 @@ def has_model_selection(harness: str) -> bool:
 def get_session_parser_id(harness: str) -> str:
     """Return the registered session parser ID for a harness."""
     return HARNESS_REGISTRY[harness]["session_parser"]
+
+
+def get_harness_runtime_facts(harness: str) -> dict[str, str | bool]:
+    """Return the verified runtime facts for a harness (see HARNESS_RUNTIME_FACT_KEYS)."""
+    spec = HARNESS_REGISTRY[harness]
+    return {key: spec[key] for key in HARNESS_RUNTIME_FACT_KEYS}
+
+
+def get_harnesses_with_fact(fact: str, value: str | bool = True) -> list[str]:
+    """Return harnesses whose runtime fact ``fact`` equals ``value``."""
+    if fact not in HARNESS_RUNTIME_FACT_KEYS:
+        raise KeyError(f"Unknown harness runtime fact: {fact}")
+    return [harness for harness, spec in HARNESS_REGISTRY.items() if spec[fact] == value]
