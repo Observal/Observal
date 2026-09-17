@@ -1107,6 +1107,61 @@ def agent_unarchive(
 # ═══════════════════════════════════════════════════════════════
 
 
+_SINCE_UNITS = {"m": 60, "h": 3600, "d": 86400, "w": 604800}
+
+
+def _parse_since(value: str, *, operation: str) -> int:
+    """Turn ``2h`` / ``3d`` / ``45m`` into seconds."""
+    text = (value or "").strip().lower()
+    match = re.fullmatch(r"(\d+)([mhdw])", text)
+    if not match:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Invalid --since value: {value}.",
+            operation=operation,
+            resource="--since",
+            remediation="Use a number and unit, e.g. 45m, 2h, 3d, 1w.",
+        )
+    return int(match.group(1)) * _SINCE_UNITS[match.group(2)]
+
+
+def _components_from_capabilities(since: str, *, operation: str) -> tuple[list[dict], list[str], list[str]]:
+    """Read the capability lock for this directory and shape it into agent components.
+
+    Returns (components, harnesses seen, skipped agent refs). Agents are
+    skipped because an Agent cannot nest another Agent; the user is told.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from observal_cli import capability_lock
+
+    window = timedelta(seconds=_parse_since(since, operation=operation))
+    uses = capability_lock.matching(harness=None, cwd=str(Path.cwd()), since=datetime.now(UTC) - window)
+    components: list[dict] = []
+    harnesses: list[str] = []
+    skipped: list[str] = []
+    for use in capability_lock.dedupe_latest(uses):
+        if use.harness and use.harness in VALID_HARNESSES and use.harness not in harnesses:
+            harnesses.append(use.harness)
+        if use.kind == "agent":
+            skipped.append(use.native_ref or use.component_id or use.identifier or "unknown")
+            continue
+        if use.kind not in VALID_COMPONENT_TYPES or not use.component_id:
+            continue
+        components.append(
+            {
+                "component_type": use.kind,
+                "component_id": use.component_id,
+                "native_ref": use.native_ref,
+                "version": use.version,
+                "identifier": use.identifier,
+                "mode": use.mode,
+                "used_at": use.ts,
+            }
+        )
+    return components, sorted(harnesses), skipped
+
+
 @agent_app.command(name="init")
 def agent_init(
     directory: str = typer.Option(".", "--dir", "-d", help="Directory to scaffold in"),
@@ -1118,6 +1173,12 @@ def agent_init(
     prompt: str | None = typer.Option(None, "--prompt", "-p", help="System prompt text"),
     prompt_file: str | None = typer.Option(None, "--prompt-file", help="Read system prompt from a file"),
     supported_harnesses: list[str] | None = typer.Option(None, "--harness", help="Supported harness (repeatable)"),
+    from_capabilities: bool = typer.Option(
+        False,
+        "--from-capabilities",
+        help="Pre-fill components from resources used in this directory (the capability lock)",
+    ),
+    since: str = typer.Option("24h", "--since", help="With --from-capabilities: how far back to look (e.g. 2h, 3d)"),
     output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Scaffold an observal-agent.yaml definition file.
@@ -1127,13 +1188,40 @@ def agent_init(
     observal-agent.yaml in the target directory. Use --beta to start
     at version 0.1.0 instead of 1.0.0.
 
+    With --from-capabilities, the components list is pre-filled from the
+    resources `observal discover use` and the install commands recorded for
+    this directory, so a session that worked can be saved as an Agent.
+
     Examples:
       observal agent init
       observal agent init --dir ./my-agent
       observal agent init --beta
+      observal agent init --from-capabilities --name pr-review-flow --output json
     """
     dir_path = Path(directory)
     yaml_path = dir_path / YAML_FILE
+
+    captured: list[dict] = []
+    captured_harnesses: list[str] = []
+    skipped_agents: list[str] = []
+    if from_capabilities:
+        captured, captured_harnesses, skipped_agents = _components_from_capabilities(
+            since, operation="Initialize agent definition"
+        )
+        if not captured and not skipped_agents:
+            fail(
+                ErrorCategory.NOT_FOUND,
+                f"No resources were used in {Path.cwd()} in the last {since}.",
+                operation="Initialize agent definition",
+                resource="capability lock",
+                remediation="Use `observal discover use <identifier>` or install something first, or widen --since.",
+            )
+        if description is None and output == "json":
+            description = f"Assembled from {len(captured)} resource(s) used in {Path.cwd().name}."
+        if prompt is None and prompt_file is None and output == "json":
+            prompt = "Use the attached components to complete the task."
+        if not supported_harnesses and captured_harnesses:
+            supported_harnesses = captured_harnesses
 
     if output == "json" and not any(
         value is not None
@@ -1240,11 +1328,29 @@ def agent_init(
         "success_criteria": None,
     }
 
+    if captured:
+        data["components"] = [
+            {"component_type": item["component_type"], "component_id": item["component_id"]} for item in captured
+        ]
+
     saved_path = _save_agent_yaml(dir_path, data, operation="Initialize agent definition")
     if output == "json":
-        output_json({"path": str(saved_path), "agent": data})
+        result: dict = {"path": str(saved_path), "agent": data}
+        if from_capabilities:
+            result["from_capabilities"] = {"components": captured, "skipped_agents": skipped_agents, "since": since}
+        output_json(result)
         return
     rprint(f"[green]✓ Created {esc(yaml_path)}[/green]")
+    if captured:
+        rprint(
+            f"  [dim]Pre-filled {len(captured)} component(s) from resources used here in the last {esc(since)}:[/dim]"
+        )
+        for item in captured:
+            rprint(f"    • {esc(item['component_type'])} {esc(item.get('native_ref') or item['component_id'])}")
+    for ref in skipped_agents:
+        rprint(
+            f"  [yellow]Skipped agent {esc(ref)}: an Agent cannot contain another Agent; add its components instead.[/yellow]"
+        )
 
 
 @agent_app.command(name="add")

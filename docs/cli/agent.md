@@ -153,6 +153,22 @@ observal agent init \
 
 The no-flag form is interactive. JSON mode requires complete flags and refuses to overwrite an existing definition. Writes are atomic.
 
+#### From a working session
+
+```bash
+observal agent init --from-capabilities --name pr-review-flow --dir ./pr-review-flow --output json
+observal agent init --from-capabilities --since 3d --name data-helper --output json
+```
+
+`--from-capabilities` pre-fills `components` and `supported_harnesses` from the
+resources recorded in the capability lock for the current directory (see
+[`observal discover`](discover.md)): everything loaded with `discover use` and
+every component installed here in the last 24 hours (`--since` accepts `45m`,
+`2h`, `3d`, `1w`). In JSON mode a default description and prompt are filled in
+when omitted. Agents cannot nest other agents, so a pulled agent is reported
+under `from_capabilities.skipped_agents` rather than added. Exit code `5` when
+nothing was used in the window.
+
 JSON returns:
 
 ```json
