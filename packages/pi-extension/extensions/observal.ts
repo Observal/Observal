@@ -74,6 +74,7 @@ interface ObservalState {
   config: ObservalConfig | null;
   sessionFile: string | null;
   sessionId: string;
+  cwd: string;
   byteOffset: number;
   lineCount: number;
   generation: number;
@@ -89,6 +90,12 @@ const SYNC_STATE_PATH = path.join(OBSERVAL_DIR, "sync_state.json");
 const LAYER_SNAPSHOT_PATH = path.join(OBSERVAL_DIR, "layer_snapshot.json");
 const LOCKFILE_PATH = path.join(OBSERVAL_DIR, "lockfile.json");
 const OUTBOX_DIR = path.join(OBSERVAL_DIR, "pi_session_outbox");
+// Written by `observal discover use` and the install commands; read here so the
+// session payload can say which registry resources this session relied on.
+const CAPABILITY_LOCK_PATH = path.join(OBSERVAL_DIR, "capability_lock.jsonl");
+const CAPABILITY_LEAD_MS = 15 * 60 * 1000;
+const CAPABILITY_FALLBACK_MS = 24 * 60 * 60 * 1000;
+const MAX_CAPABILITIES_PER_PUSH = 200;
 const TIMEOUT_MS = 5_000;
 const MAX_LINES_PER_CHUNK = 500;
 const RECOVERY_MAX_SESSIONS = 5;
@@ -302,7 +309,71 @@ export default function (pi: ExtensionAPI) {
     const layerSnapshot = buildPiLayerSnapshot(true);
     const layerHash = layerSnapshot.hash;
 
-    return { config, sessionFile, sessionId, byteOffset, lineCount, generation: 0, layerHash, layerSnapshot };
+    // Tools Pi runs (the bash tool included) inherit this process's environment,
+    // so `observal discover use` can record the exact Pi session it ran in.
+    if (sessionId) process.env.OBSERVAL_SESSION_ID = sessionId;
+    process.env.OBSERVAL_HARNESS = "pi";
+
+    return { config, sessionFile, sessionId, cwd: ctx.cwd, byteOffset, lineCount, generation: 0, layerHash, layerSnapshot };
+  }
+
+  // ─── Capability attribution ───────────────────────────────────────────────
+
+  function isSameOrUnder(candidate: string, root: string): boolean {
+    const relative = path.relative(path.resolve(root), path.resolve(candidate));
+    return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  }
+
+  function sessionStartedAtMs(sessionFile: string | null): number {
+    if (sessionFile) {
+      try {
+        const stat = fs.statSync(sessionFile);
+        const created = stat.birthtimeMs > 0 ? stat.birthtimeMs : stat.ctimeMs;
+        return created - CAPABILITY_LEAD_MS;
+      } catch { }
+    }
+    return Date.now() - CAPABILITY_FALLBACK_MS;
+  }
+
+  /** Capability-lock uses that belong to this session, shaped for the ingest payload. Best effort. */
+  function capabilitiesForSession(s: ObservalState): Array<Record<string, unknown>> {
+    try {
+      if (!fs.existsSync(CAPABILITY_LOCK_PATH)) return [];
+      const since = sessionStartedAtMs(s.sessionFile);
+      const latest = new Map<string, Record<string, unknown>>();
+      for (const line of fs.readFileSync(CAPABILITY_LOCK_PATH, "utf-8").split("\n")) {
+        if (!line.trim()) continue;
+        let use: Record<string, unknown>;
+        try { use = JSON.parse(line); } catch { continue; }
+        if (typeof use.ts !== "string" || typeof use.kind !== "string") continue;
+        const exact = typeof use.session_hint === "string" && use.session_hint === s.sessionId;
+        if (!exact) {
+          if (typeof use.harness === "string" && use.harness !== "pi") continue;
+          if (typeof use.cwd === "string" && use.cwd && s.cwd && !isSameOrUnder(use.cwd, s.cwd)) continue;
+          const at = Date.parse(use.ts);
+          if (Number.isNaN(at) || at < since) continue;
+        }
+        const key = (use.identifier as string) || `${use.kind}:${use.component_id ?? use.native_ref ?? ""}`;
+        const previous = latest.get(key);
+        if (!previous || String(previous.used_at) <= String(use.ts)) {
+          latest.set(key, {
+            identifier: use.identifier ?? null,
+            kind: use.kind,
+            component_id: use.component_id ?? null,
+            native_ref: use.native_ref ?? null,
+            version: use.version ?? null,
+            digest: use.digest ?? null,
+            mode: use.mode ?? "context",
+            source: use.source ?? "unknown",
+            used_at: use.ts,
+            confidence: exact ? "exact" : s.sessionFile ? "window" : "loose",
+          });
+        }
+      }
+      return [...latest.values()].slice(0, MAX_CAPABILITIES_PER_PUSH);
+    } catch {
+      return [];
+    }
   }
 
   function loadConfig(): ObservalConfig | null {
@@ -785,6 +856,8 @@ export default function (pi: ExtensionAPI) {
           session_hash: audit?.hash,
           hashed_line_count: audit?.lineCount,
         };
+        const finalCapabilities = capabilitiesForSession(s);
+        if (finalCapabilities.length > 0) payload.capabilities_used = finalCapabilities;
         const pending: PendingBatch = {
           session_id: s.sessionId,
           destination: s.config.server_url,
@@ -831,6 +904,8 @@ export default function (pi: ExtensionAPI) {
               }
             : {}),
         };
+        const chunkCapabilities = capabilitiesForSession(s);
+        if (chunkCapabilities.length > 0) payload.capabilities_used = chunkCapabilities;
         const pending: PendingBatch = {
           session_id: s.sessionId,
           destination: s.config.server_url,
