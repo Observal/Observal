@@ -4,14 +4,26 @@
 # SPDX-License-Identifier: Apache-2.0
 name: observal
 command: observal
-description: "Operates the Observal CLI for authentication, configuration, setup diagnosis, teamspaces, inbox work, scans, update checks, and authenticated API access. Use when the user wants to log in, configure Observal, inspect local harness setup, manage a teamspace or invitation, process inbox items, check installed registry items, or call an endpoint without a dedicated command."
-version: 2.7.0
+description: "Operates the Observal CLI for discovery of approved resources, authentication, configuration, setup diagnosis, teamspaces, inbox work, scans, update checks, and authenticated API access. Use when about to build a helper from scratch or tell the user a capability is unavailable, and when the user wants to log in, configure Observal, inspect local harness setup, manage a teamspace or invitation, process inbox items, check installed registry items, or call an endpoint without a dedicated command."
+version: 2.8.0
 owner: observal
 ---
 
 # Operating Observal
 
-Use this skill for core account, setup, local inventory, inbox, and teamspace work. Use the specialized `observal-agents`, `observal-registry`, `observal-ops`, `observal-admin`, or `observal-advanced` skill when its description matches more closely.
+Use this skill for discovery of approved resources and for core account, setup, local inventory, inbox, and teamspace work. Use the specialized `observal-agents`, `observal-registry`, `observal-ops`, `observal-admin`, or `observal-advanced` skill when its description matches more closely.
+
+## Search Observal before reinventing
+
+Before writing a helper, script, review checklist, or prompt from scratch, and before telling the user that a capability is unavailable, check whether the organization already has an approved resource for it:
+
+1. `observal discover search <what the user is trying to do> --output json` (plain words, no quoting needed).
+2. Read `results[]`. `score` is relevance only. Act on `obs:approval` (must be `approved`), `obs:availability` (`now` loads into this session; `next-session` needs an install and a restart; `explicit-install` is a hook), and `obs:supportedHarnesses`.
+3. Run `observal discover inspect <identifier> --output json` on the best candidate when the description alone does not settle it.
+4. Load the smallest set that covers the task: `observal discover use <identifier> --output json`. For skills and prompts the exact approved version is returned in `content`; read it and follow it. For MCP servers, agents, hooks, and sandboxes the response carries `next_step`, the install command that asks before changing anything: run it only with the user's agreement.
+5. Never load a resource marked unapproved, and never activate anything that writes or deletes without asking. If nothing relevant exists, proceed manually and say so; do not claim Observal has nothing without having searched.
+
+Details and edge cases: [Discovery](references/discovery.md).
 
 ## Execution contract
 
@@ -31,6 +43,7 @@ Use this skill for core account, setup, local inventory, inbox, and teamspace wo
 
 | Task | Read |
 | --- | --- |
+| Find and use an approved resource for the current task | [Discovery](references/discovery.md) |
 | Login, account, CLI config, scan, doctor, outdated, inbox | [Core workflows](references/core-workflows.md) |
 | Teamspaces, visibility review, members, requests, invitations | [Teamspace workflows](references/teamspaces.md) |
 | Exact command inventory or authenticated API escape hatch | [Generated command reference](references/commands.md) |

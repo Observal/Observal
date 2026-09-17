@@ -133,6 +133,7 @@ Vite 6 SPA with TanStack Router, not Next.js. `web/AGENTS.md` is the authoritati
 ```
 observal
 ├── api                      # authenticated JSON escape hatch for /api/v1 endpoints
+├── discover                 # search, inspect, use approved resources for the current task
 ├── scan                     # read-only discovery of what's installed
 ├── outdated                 # installed components with newer versions available
 ├── reconcile                # backfill sessions missed by automatic delivery

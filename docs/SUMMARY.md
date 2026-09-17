@@ -33,6 +33,7 @@
 * [Mutation retries and idempotency](cli/idempotency.md)
 * [observal auth](cli/auth.md)
 * [observal config](cli/config.md)
+* [observal discover](cli/discover.md)
 * [observal scan](cli/scan.md)
 * [observal outdated](cli/outdated.md)
 * [observal reconcile](cli/reconcile.md)

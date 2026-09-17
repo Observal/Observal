@@ -12,7 +12,17 @@
 
 ## Search and inspect
 
-Start broad with natural-language search, then narrow only when needed.
+For "is there something that does X?" start with cross-kind discovery, which ranks agents, MCP servers, skills, hooks, prompts, and sandboxes together and tells you whether each result can be used right now:
+
+```bash
+observal discover search review a pull request for authentication bugs --output json
+observal discover inspect urn:air:... --output json
+observal discover use urn:air:... --output json
+```
+
+Skills and prompts load into the current session; other kinds return the install command below as `next_step`. The `observal` skill's Discovery reference covers the fields in detail.
+
+For kind-specific browsing and filters, use the registry list commands. Start broad with natural-language search, then narrow only when needed.
 
 ```bash
 observal registry mcp list --search 'github docker' --output json

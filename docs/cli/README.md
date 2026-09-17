@@ -18,6 +18,7 @@ Complete reference for the `observal` CLI. Every subcommand has its own page; th
 | [`observal api`](api.md)                                                                   | Call authenticated JSON endpoints without a dedicated command                         |
 | [`observal auth`](auth.md)                                                                 | Authentication and account management                                                 |
 | [`observal config`](config.md)                                                             | Local CLI configuration, aliases                                                      |
+| [`observal discover`](discover.md)                                                         | Find approved resources for a task and use them in the current session                |
 | [`observal scan`](scan.md)                                                                 | Discover what's installed across your harnesses (read-only)                           |
 | [`observal outdated`](outdated.md)                                                         | Compare installed agent and component versions with the active registry               |
 | [`observal reconcile`](reconcile.md)                                                       | Backfill sessions missed by automatic telemetry delivery                              |

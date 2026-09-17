@@ -85,6 +85,12 @@ Every command available in the installed CLI. This block is generated from the T
 - `observal config set`: Set a validated user-managed CLI setting.
 - `observal config show`: Show effective CLI configuration without exposing credentials.
 
+**`observal discover`**: Find approved resources for a task and use them in this session
+
+- `observal discover inspect`: Show the complete entry for one resource.
+- `observal discover search`: Search approved resources for a task.
+- `observal discover use`: Activate a resource for the current task.
+
 **`observal doctor`**: Diagnose and patch harness settings for Observal telemetry
 
 - `observal doctor support`: Generate and inspect diagnostic support bundles. Bundles contain no customer data or row contents.
