@@ -37,6 +37,14 @@ export default defineConfig({
         target: "http://localhost:8000",
         changeOrigin: true,
       },
+      "/.well-known/ard.json": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+      "/.well-known/ai-catalog.json": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
       "/health": {
         target: "http://localhost:8000",
         changeOrigin: true,
