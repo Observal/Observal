@@ -23,8 +23,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import services.dynamic_settings as ds
-from api.deps import get_db, get_effective_agent_permission, get_effective_component_permission, optional_current_user
-from api.routes.ard import PUBLIC_SEARCH_SETTING
+from api.deps import get_db, get_effective_agent_permission, get_effective_component_permission
+from api.routes.ard import PUBLIC_SEARCH_SETTING, discovery_user
 from models.discovery_entry import DiscoveryEntry, DiscoveryKind, DiscoveryLifecycle
 from models.mcp import ListingStatus
 from models.user import User
@@ -47,7 +47,7 @@ async def get_artifact(
     entity_id: uuid.UUID,
     version: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(optional_current_user),
+    current_user: User | None = Depends(discovery_user),
 ) -> Response:
     try:
         discovery_kind = DiscoveryKind(kind)

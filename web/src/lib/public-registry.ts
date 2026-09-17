@@ -4,7 +4,8 @@
 export function isPublicRegistryPath(pathname: string): boolean {
   const segments = pathname.split("/").filter(Boolean);
   if (segments.length === 0) return true;
-  if (["leaderboard", "wiki"].includes(segments[0])) return segments.length === 1;
+  // Discovery search is served to guests under the same switch as the rest of the public registry.
+  if (["leaderboard", "wiki", "discover"].includes(segments[0])) return segments.length === 1;
   if (segments[0] === "components") {
     return segments.length === 1 || segments.length === 2 || segments.length === 4;
   }

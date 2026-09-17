@@ -59,8 +59,8 @@ All `{id}` parameters accept a UUID or a name.
 ## Discovery (ARD)
 
 Agentic Resource Discovery endpoints. Authentication is optional: anonymous
-callers see public, approved resources only when the `discovery.public_search`
-setting is on; authenticated callers see what the registry's visibility rules
+callers see public, approved resources only when `deployment.public_registry_enabled`
+is on; authenticated callers see what the registry's visibility rules
 already grant them (public, their teams', and their own drafts). Errors use the
 ARD envelope `{"errorCode": "INVALID_ARGUMENT", "message": "..."}`. See
 [ADR 0001](../adr/0001-agentic-resource-discovery.md).

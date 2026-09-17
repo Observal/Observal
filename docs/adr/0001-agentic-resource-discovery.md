@@ -134,10 +134,12 @@ Two filters apply, in order:
    `obs:lifecycle` explicitly.
 
 Unauthenticated requests receive only public, approved entries, and only when
-the new `discovery.public_search` dynamic setting is on (default off). When it
-is off, unauthenticated search returns an empty result set and the well-known
-manifest publishes `{"entries": []}`, both of which are conformant. The
-well-known manifest is always computed as an unauthenticated request.
+the registry-wide `deployment.public_registry_enabled` setting is on (default
+off), the same switch that governs anonymous browsing elsewhere. When it is
+off, unauthenticated search returns an empty result set and the well-known
+manifest carries only the registry's own `application/ai-registry+json` entry,
+both of which are conformant. The well-known manifest is always computed as an
+unauthenticated request.
 
 ## Decision 7: Media types and compatibility inputs
 

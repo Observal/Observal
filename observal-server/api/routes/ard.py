@@ -16,8 +16,9 @@ Observal-specific:
     GET  /api/v1/ard/entries/{identifier}   one complete entry by identifier
 
 Authentication is optional everywhere here. Anonymous callers see public,
-approved entries only when ``discovery.public_search`` is on; authenticated
-callers see what the registry's visibility rules already grant them.
+approved entries only when ``deployment.public_registry_enabled`` is on;
+authenticated callers see what the registry's visibility rules already grant
+them.
 """
 
 import re
@@ -31,7 +32,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import services.dynamic_settings as ds
-from api.deps import get_db, optional_current_user
+from api.deps import get_db, get_registry_user, optional_current_user
 from api.ratelimit import limiter
 from models.discovery_entry import DiscoveryEntry, DiscoveryLifecycle
 from models.user import User
@@ -52,7 +53,11 @@ from services.discovery.visibility import visible_entries_predicate
 
 router = APIRouter(tags=["ard"])
 
-PUBLIC_SEARCH_SETTING = "discovery.public_search"
+# Anonymous discovery follows the registry-wide public switch. Unlike the
+# other registry reads, a private deployment answers anonymous ARD calls with
+# an empty (still conformant) result rather than 401, and the manifest carries
+# only the registry's own entry.
+PUBLIC_SEARCH_SETTING = "deployment.public_registry_enabled"
 MANIFEST_LIMIT = 5000
 SEARCH_RATE_LIMIT = "60/minute"
 
@@ -71,6 +76,16 @@ async def _context() -> ProjectionContext:
 
 async def _public_search_enabled() -> bool:
     return await ds.get_bool(PUBLIC_SEARCH_SETTING, False)
+
+
+async def discovery_user(
+    request: Request,
+    current_user: User | None = Depends(optional_current_user),
+) -> User | None:
+    """Optional caller: anonymous stays None; signed-in callers get the registry's usual enforcement."""
+    if current_user is None:
+        return None
+    return await get_registry_user(request, current_user)
 
 
 def _search_source(ctx: ProjectionContext) -> str:
@@ -118,7 +133,7 @@ async def ard_search(
     request: Request,
     body: ArdSearchRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(optional_current_user),
+    current_user: User | None = Depends(discovery_user),
 ) -> JSONResponse:
     """ARD Search (§5.3.2). ``score`` is relevance only; approval and trust are separate fields."""
     ctx = await _context()
@@ -239,7 +254,7 @@ async def ard_list(
     page_size: int = Query(default=20, alias="pageSize", ge=1, le=MAX_PAGE_SIZE),
     page_token: str | None = Query(default=None, alias="pageToken", max_length=512),
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(optional_current_user),
+    current_user: User | None = Depends(discovery_user),
 ) -> JSONResponse:
     """ARD List (§5.3.4): deterministic, cacheable browsing with no relevance ranking."""
     if current_user is None and not await _public_search_enabled():
@@ -271,7 +286,7 @@ async def ard_list(
 async def ard_entry(
     identifier: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(optional_current_user),
+    current_user: User | None = Depends(discovery_user),
 ) -> JSONResponse:
     """Return one complete ARD entry. Observal-specific: the spec defines no fetch-by-id."""
     if current_user is None and not await _public_search_enabled():

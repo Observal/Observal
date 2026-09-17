@@ -21,7 +21,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.pool import NullPool
 
 import services.dynamic_settings as ds
-from api.deps import get_db, optional_current_user
+from api.deps import get_db
 from api.ratelimit import limiter
 from api.routes import ard, artifacts
 from models.discovery_entry import DiscoveryKind
@@ -84,7 +84,7 @@ def _app(sessions, user=None) -> FastAPI:
         return user
 
     app.dependency_overrides[get_db] = db_override
-    app.dependency_overrides[optional_current_user] = user_override
+    app.dependency_overrides[ard.discovery_user] = user_override
     return app
 
 
