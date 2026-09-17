@@ -19,7 +19,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-SKIP_DIRS = {"LICENSES", ".reuse", "node_modules", ".git", ".venv", "__pycache__"}
+SKIP_DIRS = {"LICENSES", ".reuse", "node_modules", ".git", ".venv", "__pycache__", "vendor"}
 SKIP_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".ico", ".woff", ".woff2", ".ttf", ".eot", ".map", ".lock"}
 
 

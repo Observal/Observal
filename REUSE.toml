@@ -355,3 +355,11 @@ path = "fuzz/corpus/**"
 SPDX-FileCopyrightText = "2026 RAWx18 <rawx18.dev@gmail.com>"
 # SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
 SPDX-License-Identifier = "Apache-2.0"
+
+# Vendored Agentic Resource Discovery specification assets (schemas and the
+# official conformance CLI), copied unmodified from ards-project/ard-spec.
+# Provenance and the pinned commit are recorded in VENDORED.md alongside them.
+[[annotations]]
+path = ["observal-server/vendor/ard/spec/**", "observal-server/vendor/ard/conformance/**", "observal-server/vendor/ard/LICENSE"]
+SPDX-FileCopyrightText = "2026 Agentic Resource Discovery project"
+SPDX-License-Identifier = "Apache-2.0"
