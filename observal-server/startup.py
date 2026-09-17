@@ -106,14 +106,58 @@ async def run_startup_tasks() -> None:
 
     configure_insights()
 
+    await start_discovery()
+
     # A successful startup applies all restart-required settings.
     async with session_factory() as db:
         await db.execute(delete(EnterpriseConfig).where(EnterpriseConfig.key == RESTART_PENDING_KEY))
         await db.commit()
 
 
+async def start_discovery() -> None:
+    """Install the reprojection hook and backfill the index if it is empty.
+
+    The backfill runs in the background so a large registry never delays
+    startup; the maintenance cron covers anything that fails here.
+    """
+    import asyncio
+
+    from sqlalchemy import func
+
+    from database import async_session as session_factory
+    from models.discovery_entry import DiscoveryEntry
+    from services.discovery import hooks as discovery_hooks
+    from services.discovery.projection import reproject_all
+
+    discovery_hooks.install()
+
+    async with session_factory() as db:
+        count = (await db.execute(select(func.count()).select_from(DiscoveryEntry))).scalar_one()
+    if count:
+        return
+
+    async def _backfill() -> None:
+        try:
+            async with session_factory() as db:
+                await reproject_all(db)
+        except Exception:
+            from loguru import logger as optic
+
+            optic.exception("discovery backfill failed")
+
+    task = asyncio.get_running_loop().create_task(_backfill())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+
+_background_tasks: set = set()
+
+
 async def run_shutdown_tasks() -> None:
     """Release application dependencies used by the FastAPI lifespan."""
+    from services.discovery import hooks as discovery_hooks
+
+    await discovery_hooks.drain()
     await shutdown_audit()
     await shutdown_audit_handlers()
 

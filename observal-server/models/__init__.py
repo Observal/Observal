@@ -12,6 +12,13 @@ from models.alert_history import AlertHistory
 from models.base import Base
 from models.component_bundle import ComponentBundle
 from models.component_source import ComponentSource
+from models.discovery_entry import (
+    DiscoveryEntry,
+    DiscoveryKind,
+    DiscoveryLifecycle,
+    DiscoverySourceKind,
+    DiscoveryVisibility,
+)
 from models.download import AgentDownloadRecord, ComponentDownloadRecord
 from models.enterprise_config import EnterpriseConfig
 from models.exec_config import ExecDashboardConfig
@@ -49,6 +56,11 @@ __all__ = [
     "ComponentBundle",
     "ComponentDownloadRecord",
     "ComponentSource",
+    "DiscoveryEntry",
+    "DiscoveryKind",
+    "DiscoveryLifecycle",
+    "DiscoverySourceKind",
+    "DiscoveryVisibility",
     "EnterpriseConfig",
     "ExecDashboardConfig",
     "ExporterConfig",
