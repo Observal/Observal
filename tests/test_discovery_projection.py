@@ -610,6 +610,31 @@ async def test_session_hook_schedules_reprojection_for_changed_resources(session
         discovery_hooks.uninstall()
 
 
+@pytest.mark.asyncio
+async def test_session_hook_waits_for_the_outermost_commit(sessions):
+    """A SAVEPOINT release also fires after_commit; scheduling there is too early.
+
+    The inbox delivery path wraps its writes in begin_nested() inside the same
+    transaction that created the listing, which is exactly how the first real
+    submit slipped past the index.
+    """
+    captured: list[set] = []
+    discovery_hooks.set_scheduler(captured.append)
+    discovery_hooks.install()
+    try:
+        async with sessions() as db:
+            owner = await fx.user(db)
+            listing = await fx.skill(db, owner)
+            async with db.begin_nested():
+                await fx.user(db)  # unrelated work inside a savepoint
+            assert captured == [], "savepoint release must not schedule"
+            await db.commit()
+        assert captured and (DiscoveryKind.skill, listing.id) in captured[-1]
+    finally:
+        discovery_hooks.set_scheduler(None)
+        discovery_hooks.uninstall()
+
+
 def test_collect_dirty_ignores_discovery_entries_and_unknown_types():
     entry = DiscoveryEntry(kind=DiscoveryKind.skill, local_entity_id=uuid.uuid4())
     assert discovery_hooks.collect_dirty([entry, object()]) == set()

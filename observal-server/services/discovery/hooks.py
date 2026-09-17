@@ -84,6 +84,12 @@ def _after_flush(session: Session, _flush_context) -> None:
 
 
 def _after_commit(session: Session) -> None:
+    # SQLAlchemy also fires after_commit when a SAVEPOINT is released
+    # (begin_nested), while the outer transaction is still open. Scheduling
+    # then would reproject before the rows are visible to another connection,
+    # so wait for the outermost commit.
+    if session.in_nested_transaction():
+        return
     dirty: DirtySet | None = session.info.pop(_INFO_KEY, None)
     if dirty:
         schedule(dirty)
