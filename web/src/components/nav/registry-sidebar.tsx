@@ -27,6 +27,7 @@ import { useInboxCounts } from "@/hooks/use-inbox-api";
 
 import {
 	Home,
+	Search,
 	Bot,
 	Blocks,
 	Hammer,
@@ -67,6 +68,7 @@ type NavItem = {
 
 const registryNav: NavItem[] = [
 	{ title: "Home", href: "/", icon: Home },
+	{ title: "Discover", href: "/discover", icon: Search },
 	{ title: "Agents", href: "/agents", icon: Bot },
 	{ title: "Leaderboard", href: "/leaderboard", icon: Trophy },
 	{ title: "Components", href: "/components", icon: Blocks },

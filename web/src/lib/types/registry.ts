@@ -421,3 +421,51 @@ export interface RecommendationsResponse {
 	profile_sessions: number;
 	topics: string[];
 }
+
+// ── Discovery (ARD) ─────────────────────────────────────────────────
+
+export type DiscoveryKind = "agent" | "mcp" | "skill" | "hook" | "prompt" | "sandbox";
+
+export type DiscoveryApproval = "approved" | "pending" | "rejected" | "archived" | "draft";
+
+export type DiscoveryAvailability =
+	| "now"
+	| "next-session"
+	| "explicit-install"
+	| "not-approved"
+	| "archived"
+	| "unsupported-in-harness";
+
+/** One entry of `results` in an ARD Search response. `score` is relevance only. */
+export interface DiscoverySearchResult {
+	identifier: string;
+	displayName?: string;
+	type?: string;
+	url?: string;
+	version?: string;
+	description?: string;
+	capabilities?: string[];
+	score: number;
+	source: string;
+	matchedOn?: string[];
+	"obs:kind"?: DiscoveryKind;
+	"obs:nativeRef"?: string | null;
+	"obs:approval"?: DiscoveryApproval;
+	"obs:visibility"?: "public" | "team" | "owner";
+	"obs:supportedHarnesses"?: string[];
+	"obs:availability"?: DiscoveryAvailability;
+	"obs:activatable"?: boolean;
+	"obs:artifactDigest"?: string | null;
+	"obs:publisher"?: string;
+}
+
+export interface DiscoverySearchResponse {
+	results: DiscoverySearchResult[];
+	pageToken?: string;
+}
+
+export interface DiscoverySearchFilter {
+	kind?: DiscoveryKind;
+	harness?: string;
+	includeUnapproved?: boolean;
+}
