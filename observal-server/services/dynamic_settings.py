@@ -388,6 +388,9 @@ DEFAULTS: dict[str, str] = {
     "observability.log_format": "json",  # 'json' or 'console' (colorized). Requires restart.
     "observability.enable_openapi": "false",
     "observability.enable_metrics": "false",
+    # Discovery (ARD). Anonymous search and the public well-known manifest stay
+    # off until an operator decides the approved public catalog may be listed.
+    "discovery.public_search": "false",
     # Misc
     "misc.harness_allowlist": "",
     "misc.default_harness": "",
@@ -515,6 +518,13 @@ SECTIONS: list[dict[str, Any]] = [
         "description": "Share aggregate adoption data with Observal on a super-admin-selected schedule. No prompts, traces, source code, credentials, or user identities are included.",
         "icon": "activity",
         "keys": [k for k in DEFAULTS if k.startswith("usage_ping.")],
+    },
+    {
+        "id": "discovery",
+        "title": "Discovery",
+        "description": "Agentic Resource Discovery (ARD) search. Public search lets anonymous clients search approved public resources and read /.well-known/ard.json.",
+        "icon": "search",
+        "keys": [k for k in DEFAULTS if k.startswith("discovery.")],
     },
     {
         "id": "security",

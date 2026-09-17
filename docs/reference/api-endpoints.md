@@ -56,6 +56,29 @@ All `{id}` parameters accept a UUID or a name.
 | `POST` | `/review/{id}/approve` | Approve |
 | `POST` | `/review/{id}/reject` | Reject |
 
+## Discovery (ARD)
+
+Agentic Resource Discovery endpoints. Authentication is optional: anonymous
+callers see public, approved resources only when the `discovery.public_search`
+setting is on; authenticated callers see what the registry's visibility rules
+already grant them (public, their teams', and their own drafts). Errors use the
+ARD envelope `{"errorCode": "INVALID_ARGUMENT", "message": "..."}`. See
+[ADR 0001](../adr/0001-agentic-resource-discovery.md).
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/.well-known/ard.json` | Manifest of the registry entry plus public approved resources |
+| `GET` | `/.well-known/ai-catalog.json` | Predecessor path, same document |
+| `POST` | `/api/v1/ard/search` | ARD Search. `score` is relevance only; `obs:approval`, `obs:availability`, `obs:supportedHarnesses` carry the rest |
+| `GET` | `/api/v1/ard/agents` | ARD List: deterministic browse with `filter`, `orderBy`, `pageSize`, `pageToken` |
+| `POST` | `/api/v1/ard/explore` | ARD Explore: `501` until facets ship |
+| `GET` | `/api/v1/ard/entries/{identifier}` | One complete entry by `urn:air:` identifier (Observal-specific) |
+| `GET` | `/api/v1/artifacts/{kind}/{uuid}/{version}` | Permanent versioned artifact; `Digest` and `X-Artifact-Digest` headers |
+
+Search request body follows the spec: `{"query": {"text": "...", "filter": {...}}, "federation": "none", "pageSize": 5}`.
+Supported filter terms: `type`, `tags`, `capabilities`, `publisher`, `version`,
+`obs:kind`, `obs:supportedHarnesses`, `obs:lifecycle`, `obs:activatable`.
+
 ## Telemetry
 
 | Method | Path | Description |

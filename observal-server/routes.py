@@ -9,6 +9,8 @@ from api.routes.admin import router as admin_router
 from api.routes.admin_sso import router as admin_sso_router
 from api.routes.agent import router as agent_router
 from api.routes.alert import router as alert_router
+from api.routes.ard import router as ard_router
+from api.routes.artifacts import router as artifacts_router
 from api.routes.audit import router as audit_router
 from api.routes.audit_log import router as audit_log_router
 from api.routes.auth import router as auth_router
@@ -83,6 +85,8 @@ REST_ROUTERS = (
     scim_router,
     exec_dashboard_router,
     recommendations_router,
+    ard_router,
+    artifacts_router,
 )
 
 
