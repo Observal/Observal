@@ -8,14 +8,37 @@ import json
 from datetime import UTC, datetime
 
 import httpx
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 from fastapi.testclient import TestClient
 
+from services.analytics.duckdb.client import _normalize_ts
 from services.analytics.duckdb.migrations import MigrationError, run_migrations
 from services.analytics.duckdb.service import ServiceSettings, create_app
 from services.analytics.duckdb.storage import AnalyticsStore
 
 TOKEN = "test-analytics-token"
+
+
+class _StoreResponse:
+    def __init__(self, columns, rows):
+        self.status_code = 200
+        self._data = [dict(zip(columns, row, strict=True)) for row in rows]
+
+    def raise_for_status(self):
+        return None
+
+    def json(self):
+        return {"data": self._data, "row_count": len(self._data)}
+
+
+def _store_query(store):
+    async def query(sql, params=None):
+        columns, rows = await store.query(sql, params)
+        return _StoreResponse(columns, rows)
+
+    return query
 
 
 def _auth() -> dict[str, str]:
@@ -54,6 +77,11 @@ def _session_event(**overrides) -> dict:
     }
     row.update(overrides)
     return row
+
+
+def test_timestamp_normalization_accepts_offsets_and_converts_to_utc():
+    assert _normalize_ts("2026-09-18T03:12:00.123456+02:00") == "2026-09-18 01:12:00.123"
+    assert _normalize_ts("2026-09-18T01:12:00Z") == "2026-09-18 01:12:00.000"
 
 
 def test_health_reports_schema_version(client):
@@ -234,8 +262,6 @@ class TestStagingDownloads:
 
 async def test_export_covers_every_telemetry_table_including_summaries(tmp_path):
     """Instance moves must carry session_stats_agg; it is not rebuilt on import."""
-    from services.analytics.duckdb.storage import AnalyticsStore
-
     store = AnalyticsStore(path=tmp_path / "analytics.duckdb", threads=2, read_connections=2, query_timeout=10.0)
     await store.start()
     try:
@@ -269,6 +295,80 @@ async def test_export_covers_every_telemetry_table_including_summaries(tmp_path)
         assert counts["session_stats_agg"] == 1
         assert (destination / "session_events_2026-09.parquet").exists()
         assert (destination / "session_stats_agg_2026-09.parquet").exists()
+    finally:
+        await store.close()
+
+
+async def test_bulk_load_preserves_store_owned_timestamps(tmp_path):
+    checkpoint_path = tmp_path / "session_checkpoints_2026-09.parquet"
+    pq.write_table(
+        pa.table(
+            {
+                "project_id": ["default"],
+                "user_id": ["user-1"],
+                "harness": ["pi"],
+                "session_id": ["sess-1"],
+                "acknowledged_line": [4],
+                "acknowledged_offset": [100],
+                "checkpoint_version": [2],
+                "updated_at": ["2024-02-03 04:05:06.000"],
+            }
+        ),
+        checkpoint_path,
+    )
+    store = AnalyticsStore(path=tmp_path / "analytics.duckdb", read_connections=1)
+    await store.start()
+    try:
+        await run_migrations(store)
+        assert await store.load_parquet("session_checkpoints", [str(checkpoint_path)]) == 1
+        _, rows = await store.query("SELECT strftime(updated_at, '%Y-%m-%d %H:%M:%S') FROM session_checkpoints")
+        assert rows == [("2024-02-03 04:05:06",)]
+    finally:
+        await store.close()
+
+
+async def test_insight_queries_execute_against_duckdb(tmp_path, monkeypatch):
+    from services.insights import batch, session_meta_extractor, version_impact
+
+    store = AnalyticsStore(path=tmp_path / "analytics.duckdb", read_connections=1)
+    await store.start()
+    try:
+        await run_migrations(store)
+        for index in range(3):
+            await store.execute(
+                "INSERT INTO session_stats_agg (project_id, session_id, agent_id, agent_version, user_id, "
+                "harness, layer_hash, first_event_time, last_event_time, event_count, prompt_count, "
+                "tool_call_count, tool_result_count, input_tokens, output_tokens, total_credits, summary_version) "
+                "VALUES ('default', $sid, 'agent-1', '1.0.0', $uid, 'pi', 'abc123', "
+                "TIMESTAMP '2026-09-01 10:00:00', TIMESTAMP '2026-09-01 10:05:00', 8, 2, 3, 3, 10, 5, 0.1, 1)",
+                {"sid": f"sess-{index}", "uid": f"user-{index}"},
+            )
+            await store.execute(
+                "INSERT INTO session_events (session_id, project_id, user_id, harness, line_offset, event_type, "
+                "timestamp, raw_line) VALUES ($sid, 'default', $uid, 'pi', 0, 'user_prompt', "
+                "TIMESTAMP '2026-09-01 10:00:00', $raw)",
+                {"sid": f"sess-{index}", "uid": f"user-{index}", "raw": f'{{"session": {index}}}'},
+            )
+        await store.execute(
+            "INSERT INTO layer_snapshots (hash, project_id, user_id, harness, content) "
+            "VALUES ('abc123', 'default', 'user-1', 'pi', '{\"files\": []}')"
+        )
+        query = _store_query(store)
+        monkeypatch.setattr(version_impact, "get_query", lambda: query)
+        monkeypatch.setattr(session_meta_extractor, "get_query", lambda: query)
+        monkeypatch.setattr(batch, "_query", query)
+
+        groups = await version_impact.detect_layer_groups("agent-1", "2026-09-01", "2026-09-02", "agent", "1.0.0")
+        snapshots = await version_impact.fetch_layer_snapshots_for_groups("default", ["abc123"])
+        transcripts = await session_meta_extractor.fetch_all_session_transcripts(
+            "agent-1", "2026-09-01", "2026-09-02", agent_version="1.0.0"
+        )
+        count = await batch._count_agent_sessions("agent-1", "agent", "2026-09-01", "1.0.0")
+
+        assert groups[0]["sessions"] == 3
+        assert snapshots == {"abc123": {"files": []}}
+        assert len(transcripts) == 3
+        assert count == 3
     finally:
         await store.close()
 

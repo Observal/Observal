@@ -80,7 +80,7 @@ async def get_security_events(
     response.raise_for_status()
     data = response.json()
     events = data.get("data", [])
-    return {"events": events, "total": data.get("rows", len(events))}
+    return {"events": events, "total": data.get("row_count", len(events))}
 
 
 @router.get("/trace-privacy")

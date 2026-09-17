@@ -107,22 +107,22 @@ async def detect_layer_groups(
                 agent_version
             ) AS agent_version,
             layer_hash,
-            count() AS sessions,
+            count(*) AS sessions,
             count(DISTINCT user_id) AS users,
             avg(prompt_count) AS avg_prompts,
             avg(tool_call_count) AS avg_tool_calls,
             avg(CAST(epoch(last_event_time - first_event_time) AS DOUBLE)) AS avg_duration_seconds,
-            sum(total_credits) / count() AS avg_cost,
-            sum(input_tokens + output_tokens) / count() AS avg_tokens,
+            sum(total_credits) / count(*) AS avg_cost,
+            sum(input_tokens + output_tokens) / count(*) AS avg_tokens,
             -- Tool error proxy: sessions with high tool_result vs tool_call ratio
             -- (more results than calls = retries/errors)
-            count(*) FILTER (WHERE tool_result_count > tool_call_count * 1.5) / count() AS tool_error_rate,
+            count(*) FILTER (WHERE tool_result_count > tool_call_count * 1.5) / count(*) AS tool_error_rate,
             -- Success proxy: sessions that complete (have a stop event) with reasonable duration
-            count(*) FILTER (WHERE event_count > 5 AND prompt_count >= 1) / count() AS success_proxy
+            count(*) FILTER (WHERE event_count > 5 AND prompt_count >= 1) / count(*) AS success_proxy
         FROM session_stats_agg
         WHERE (agent_id = $agent_id OR agent_id = $agent_name)
-          AND last_event_time >= $t_start
-          AND last_event_time <= $t_end
+          AND last_event_time >= CAST($t_start AS TIMESTAMP)
+          AND last_event_time <= CAST($t_end AS TIMESTAMP)
           AND layer_hash != ''
           AND __AGENT_VERSION_FILTER__
         GROUP BY
@@ -197,7 +197,7 @@ async def fetch_layer_snapshots_for_groups(
         SELECT hash, content
         FROM layer_snapshots
         WHERE project_id = $project_id
-          AND hash = ANY($hashes)
+          AND list_contains(CAST($hashes AS VARCHAR[]), hash)
     """
     params = {
         "project_id": project_id,

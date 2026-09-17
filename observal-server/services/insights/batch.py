@@ -298,10 +298,10 @@ async def run_single_report(report_id: str) -> None:
 async def _count_agent_sessions(agent_id: str, agent_name: str, since: str, agent_version: str | None = None) -> int:
     """Count sessions for an agent/version since a given timestamp."""
     sql = """
-        SELECT count() AS cnt
+        SELECT count(*) AS cnt
         FROM session_stats_agg
         WHERE (agent_id = $agent_id OR agent_id = $aname)
-          AND last_event_time >= $t_start
+          AND last_event_time >= CAST($t_start AS TIMESTAMP)
           AND __AGENT_VERSION_FILTER__
     """.replace("__AGENT_VERSION_FILTER__", agent_version_filter())
     params = {
@@ -322,7 +322,7 @@ async def _count_agent_sessions(agent_id: str, agent_name: str, since: str, agen
         SELECT count(DISTINCT session_id) AS cnt
         FROM session_events
         WHERE (agent_id = $agent_id OR agent_id = $aname)
-          AND timestamp >= $t_start
+          AND timestamp >= CAST($t_start AS TIMESTAMP)
           AND __AGENT_VERSION_FILTER__
     """.replace("__AGENT_VERSION_FILTER__", agent_version_filter(nullable=True))
     try:

@@ -22,12 +22,3 @@ locals {
   redis_url     = "redis://${google_redis_instance.main.host}:${google_redis_instance.main.port}"
   analytics_url = "duckdb://${google_compute_instance.data_host.network_interface[0].network_ip}:8484/observal"
 }
-
-resource "terraform_data" "observability_validation" {
-  lifecycle {
-    precondition {
-      condition     = contains(["none", "prometheus", "grafana"], var.observability_stack)
-      error_message = "observability_stack must be none, prometheus, or grafana."
-    }
-  }
-}

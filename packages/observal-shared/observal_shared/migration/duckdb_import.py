@@ -17,9 +17,10 @@ There is deliberately no reverse direction: DuckDB is the destination store.
 
 from __future__ import annotations
 
+import contextlib
 import time
-import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
@@ -31,8 +32,6 @@ from observal_shared.migration.exceptions import ConnectionFailedError, Migratio
 from observal_shared.migration.results import TelemetryImportResult, TelemetryValidationResult
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     import httpx
 
     from observal_shared.migration.progress import ProgressReporter
@@ -61,10 +60,6 @@ class DuckDBConnParams:
 def parse_duckdb_url(url: str) -> str:
     """Return the HTTP base URL for a ``duckdb://host:port/db`` connection string."""
     return DuckDBConnParams(url=url).http_base()
-
-
-def _table_files(export_dir: Path, table: str) -> list[Path]:
-    return sorted(export_dir.glob(f"{table}_*.parquet"))
 
 
 def _verify_artifact_checksums(export_dir: Path, manifest: dict) -> dict[str, bool]:
@@ -114,8 +109,23 @@ async def load_telemetry_into_duckdb(
         raise PrerequisiteError(f"telemetry export directory not found: {export_dir}")
 
     manifest_path = export_dir / MANIFEST_FILENAME
-    manifest = read_manifest(manifest_path) if manifest_path.exists() else {}
-    migration_id = str(manifest.get("migration_id") or uuid.uuid4())
+    if not manifest_path.exists():
+        raise PrerequisiteError(f"telemetry manifest not found: {manifest_path}")
+    manifest = read_manifest(manifest_path)
+    migration_id = str(manifest.get("migration_id") or "")
+    if not migration_id or not isinstance(manifest.get("tables"), dict):
+        raise PrerequisiteError(f"telemetry manifest is incomplete: {manifest_path}")
+    for table, table_meta in manifest["tables"].items():
+        filenames = table_meta.get("files") or []
+        checksums = table_meta.get("checksum") or {}
+        if (int(table_meta.get("row_count") or 0) > 0 and not filenames) or any(
+            name not in checksums for name in filenames
+        ):
+            raise PrerequisiteError(f"telemetry manifest is incomplete for {table}: {manifest_path}")
+    checksum_results = _verify_artifact_checksums(export_dir, manifest)
+    invalid = sorted(name for name, valid in checksum_results.items() if not valid)
+    if invalid:
+        raise MigrationError(f"telemetry artifact checksum failed: {', '.join(invalid)}")
 
     start = time.monotonic()
     owns_client = http_client is None
@@ -123,7 +133,6 @@ async def load_telemetry_into_duckdb(
     rows_imported: dict[str, int] = {}
     pre_rows: dict[str, int] = {}
     tables_skipped: list[str] = []
-    warnings: list[str] = []
 
     try:
         await reporter.update(phase="duckdb_import", pct=0, message="Checking analytics service")
@@ -135,9 +144,14 @@ async def load_telemetry_into_duckdb(
             raise ConnectionFailedError(f"analytics service unhealthy: HTTP {health.status_code}")
 
         tables = [cfg["name"] for cfg in CLICKHOUSE_TABLES]
+        manifest_tables = manifest["tables"]
         for index, table in enumerate(tables):
             pct = int((index / len(tables)) * 90) + 5
-            files = _table_files(export_dir, table)
+            table_meta = manifest_tables.get(table) or {}
+            filenames = table_meta.get("files") or []
+            files = [export_dir / Path(name).name for name in filenames]
+            if any(path.name != name or not path.is_file() for path, name in zip(files, filenames, strict=True)):
+                raise PrerequisiteError(f"telemetry manifest has missing or unsafe files for {table}")
             if not files:
                 tables_skipped.append(table)
                 await reporter.update(phase="duckdb_import", pct=pct, message=f"Skipping {table} (no files)")
@@ -154,14 +168,17 @@ async def load_telemetry_into_duckdb(
                 )
             except _httpx.HTTPError as e:
                 raise ConnectionFailedError(f"pre-count of {table} failed: {e}") from e
-            if existing.status_code == 200:
-                pre_rows[table] = int(((existing.json().get("data") or [{}])[0]).get("cnt") or 0)
+            if existing.status_code != 200:
+                raise MigrationError(f"pre-count of {table} failed: HTTP {existing.status_code} {existing.text[:200]}")
+            pre_rows[table] = int(((existing.json().get("data") or [{}])[0]).get("cnt") or 0)
             responses = await _upload_partitions(client, duckdb, files)
             paths: list[str] = []
             for upload in responses:
                 if upload.status_code != 200:
                     raise MigrationError(f"upload of {table} failed: HTTP {upload.status_code} {upload.text[:200]}")
                 paths.extend(upload.json().get("paths", []))
+            if len(paths) != len(files):
+                raise MigrationError(f"upload of {table} returned {len(paths)} paths for {len(files)} files")
             await reporter.update(phase="duckdb_import", pct=pct, message=f"Loading {table}")
             try:
                 load = await client.post(
@@ -187,7 +204,6 @@ async def load_telemetry_into_duckdb(
         tables_skipped=tables_skipped,
         rows_imported=rows_imported,
         duration_seconds=time.monotonic() - start,
-        warnings=warnings,
         pre_rows=pre_rows,
     )
 
@@ -208,13 +224,17 @@ async def _upload_partitions(
     responses: list[httpx.Response] = []
     for start in range(0, len(files), UPLOAD_BATCH_SIZE):
         batch = files[start : start + UPLOAD_BATCH_SIZE]
-        multipart = [("files", (path.name, path.read_bytes(), "application/octet-stream")) for path in batch]
-        try:
-            responses.append(
-                await client.post(f"{duckdb.http_base()}/admin/upload", files=multipart, headers=duckdb.headers())
-            )
-        except _httpx.HTTPError as e:
-            raise ConnectionFailedError(f"upload of {len(batch)} partition(s) failed: {e}") from e
+        with contextlib.ExitStack() as stack:
+            multipart = [
+                ("files", (path.name, stack.enter_context(path.open("rb")), "application/octet-stream"))
+                for path in batch
+            ]
+            try:
+                responses.append(
+                    await client.post(f"{duckdb.http_base()}/admin/upload", files=multipart, headers=duckdb.headers())
+                )
+            except _httpx.HTTPError as e:
+                raise ConnectionFailedError(f"upload of {len(batch)} partition(s) failed: {e}") from e
     return responses
 
 

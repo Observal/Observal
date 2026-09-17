@@ -30,6 +30,7 @@ import argparse
 import hashlib
 import json
 import os
+import secrets
 import ssl
 import sys
 import time
@@ -37,6 +38,10 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Iterator
 
 POLL_INTERVAL_SECONDS = 3.0
 POLL_TIMEOUT_SECONDS = 60 * 60
@@ -58,7 +63,7 @@ def _request(
     *,
     token: str | None = None,
     json_body: dict | None = None,
-    raw_body: bytes | None = None,
+    raw_body: bytes | Iterable[bytes] | None = None,
     content_type: str | None = None,
     context: ssl.SSLContext | None = None,
 ) -> tuple[int, bytes, dict]:
@@ -162,6 +167,26 @@ def wait_for_job(base_url: str, token: str, job_id: str, context: ssl.SSLContext
         time.sleep(POLL_INTERVAL_SECONDS)
 
 
+def _download_to_file(url: str, destination: Path, context: ssl.SSLContext) -> tuple[str, int]:
+    """Stream a download to disk while calculating its checksum."""
+    request = urllib.request.Request(url, headers={"Accept": "application/octet-stream"}, method="GET")
+    hasher = hashlib.sha256()
+    size = 0
+    try:
+        with (
+            urllib.request.urlopen(request, context=context, timeout=120) as response,
+            destination.open("wb") as output,
+        ):
+            while chunk := response.read(1024 * 1024):
+                output.write(chunk)
+                hasher.update(chunk)
+                size += len(chunk)
+    except (urllib.error.HTTPError, urllib.error.URLError, OSError) as exc:
+        destination.unlink(missing_ok=True)
+        raise ScriptError(f"GET {url} failed: {exc}") from exc
+    return hasher.hexdigest(), size
+
+
 def download_artifacts(base_url: str, token: str, job: dict, out_dir: Path, context: ssl.SSLContext) -> list[Path]:
     artifacts = job.get("artifacts") or []
     if not artifacts:
@@ -182,44 +207,43 @@ def download_artifacts(base_url: str, token: str, job: dict, out_dir: Path, cont
             context=context,
         )
         download_token = json.loads(body)["token"]
-        _, payload, _ = _request(
-            "GET",
-            f"{base_url.rstrip('/')}/api/v1/admin/migrate/download?token={urllib.parse.quote(download_token)}",
-            context=context,
-        )
-        digest = hashlib.sha256(payload).hexdigest()
-        if artifact.get("sha256") and digest != artifact["sha256"]:
-            raise ScriptError(f"{name}: checksum mismatch (expected {artifact['sha256']}, got {digest})")
         destination = out_dir / safe_name
-        destination.write_bytes(payload)
-        size_mb = len(payload) / (1024 * 1024)
+        download_url = (
+            f"{base_url.rstrip('/')}/api/v1/admin/migrate/download?token={urllib.parse.quote(download_token)}"
+        )
+        digest, size = _download_to_file(download_url, destination, context)
+        if artifact.get("sha256") and digest != artifact["sha256"]:
+            destination.unlink(missing_ok=True)
+            raise ScriptError(f"{name}: checksum mismatch (expected {artifact['sha256']}, got {digest})")
+        size_mb = size / (1024 * 1024)
         print(f"  downloaded {safe_name} ({size_mb:.1f} MiB, sha256 verified)", flush=True)
         written.append(destination)
     return written
 
 
-def start_import(base_url: str, token: str, scope: str, files: list[Path], context: ssl.SSLContext) -> str:
-    boundary = "----observal-seed-boundary"
-    chunks: list[bytes] = []
-    chunks.append((f'--{boundary}\r\nContent-Disposition: form-data; name="scope"\r\n\r\n{scope}\r\n').encode())
+def _multipart_body(boundary: str, scope: str, files: list[Path]) -> Iterator[bytes]:
+    yield f'--{boundary}\r\nContent-Disposition: form-data; name="scope"\r\n\r\n{scope}\r\n'.encode()
     for path in files:
-        chunks.append(
-            (
-                f"--{boundary}\r\n"
-                f'Content-Disposition: form-data; name="files"; filename="{path.name}"\r\n'
-                "Content-Type: application/octet-stream\r\n\r\n"
-            ).encode()
-        )
-        chunks.append(path.read_bytes())
-        chunks.append(b"\r\n")
-    chunks.append(f"--{boundary}--\r\n".encode())
-    payload = b"".join(chunks)
+        yield (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="files"; filename="{path.name}"\r\n'
+            "Content-Type: application/octet-stream\r\n\r\n"
+        ).encode()
+        with path.open("rb") as handle:
+            while chunk := handle.read(1024 * 1024):
+                yield chunk
+        yield b"\r\n"
+    yield f"--{boundary}--\r\n".encode()
+
+
+def start_import(base_url: str, token: str, scope: str, files: list[Path], context: ssl.SSLContext) -> str:
+    boundary = f"----observal-seed-{secrets.token_hex(16)}"
 
     _, body, _ = _request(
         "POST",
         f"{base_url.rstrip('/')}/api/v1/admin/migrate/import",
         token=token,
-        raw_body=payload,
+        raw_body=_multipart_body(boundary, scope, files),
         content_type=f"multipart/form-data; boundary={boundary}",
         context=context,
     )

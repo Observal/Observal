@@ -21,6 +21,7 @@ from observal_shared.migration.duckdb_import import (
     parse_duckdb_url,
     verify_duckdb_telemetry,
 )
+from observal_shared.migration.exceptions import MigrationError, PrerequisiteError
 from observal_shared.migration.progress import NullReporter
 from services.analytics.duckdb.service import ServiceSettings, create_app
 
@@ -159,6 +160,24 @@ async def test_verify_detects_row_count_drift(tmp_path):
 
             validation = await verify_duckdb_telemetry(params, export_dir, http_client=client)
             assert validation.row_count_results["session_events"] == (99, 2)
+
+
+async def test_load_rejects_missing_manifest_before_contacting_service(tmp_path):
+    export_dir = tmp_path / "broken-export"
+    export_dir.mkdir()
+    params = DuckDBConnParams(url="duckdb://analytics:8484/observal", token=TOKEN)
+
+    with pytest.raises(PrerequisiteError, match="manifest not found"):
+        await load_telemetry_into_duckdb(params, export_dir, NullReporter())
+
+
+async def test_load_rejects_corrupt_partition_before_contacting_service(tmp_path):
+    export_dir = _write_export(tmp_path)
+    (export_dir / "session_events_2026-09.parquet").write_bytes(b"corrupt")
+    params = DuckDBConnParams(url="duckdb://analytics:8484/observal", token=TOKEN)
+
+    with pytest.raises(MigrationError, match="checksum failed"):
+        await load_telemetry_into_duckdb(params, export_dir, NullReporter())
 
 
 async def test_load_requires_a_healthy_service(tmp_path):

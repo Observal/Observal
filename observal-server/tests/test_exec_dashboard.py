@@ -43,15 +43,15 @@ def mock_ch_with_data():
     """Mock DuckDB with sample data for adoption endpoint."""
 
     async def fake_ch(sql, params=None):
-        if "toStartOfMonth" in sql and "count(DISTINCT user_id)" in sql:
+        if "date_trunc('month'" in sql and "count(DISTINCT user_id)" in sql:
             return [{"month": "2026-04-01", "active": 5}, {"month": "2026-05-01", "active": 7}]
-        if "count(DISTINCT user_id) AS active" in sql and "toStartOfMonth(now())" in sql:
+        if "count(DISTINCT user_id) AS active" in sql and "date_trunc('month', now())" in sql:
             return [{"active": 7}]
         if "count(DISTINCT agent_id)" in sql:
             return [{"cnt": 3}]
-        if "count() AS sessions" in sql and "GROUP BY agent_id" in sql:
+        if "count(*) AS sessions" in sql and "GROUP BY agent_id" in sql:
             return [{"agent_id": "test-id", "sessions": 50}]
-        if "toStartOfWeek" in sql and "GROUP BY week" in sql:
+        if "date_trunc('week'" in sql and "GROUP BY week" in sql:
             return [
                 {"week": "2026-03-30", "traces": 80},
                 {"week": "2026-04-06", "traces": 95},

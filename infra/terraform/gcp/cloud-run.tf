@@ -120,16 +120,6 @@ resource "google_cloud_run_v2_service" "api" {
       }
 
       env {
-        name = "DUCKDB_ANALYTICS_TOKEN"
-        value_source {
-          secret_key_ref {
-            secret  = google_secret_manager_secret.app["DUCKDB_ANALYTICS_TOKEN"].secret_id
-            version = "latest"
-          }
-        }
-      }
-
-      env {
         name = "GOOGLE_OAUTH_CLIENT_ID"
         value_source {
           secret_key_ref {
@@ -302,6 +292,16 @@ resource "google_cloud_run_v2_service" "worker" {
         value_source {
           secret_key_ref {
             secret  = google_secret_manager_secret.app["DUCKDB_ANALYTICS_URL"].secret_id
+            version = "latest"
+          }
+        }
+      }
+
+      env {
+        name = "DUCKDB_ANALYTICS_TOKEN"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.app["DUCKDB_ANALYTICS_TOKEN"].secret_id
             version = "latest"
           }
         }

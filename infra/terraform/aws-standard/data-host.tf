@@ -42,7 +42,6 @@ locals {
     ssm_prefix                       = local.ssm_prefix
     image_tag                        = var.image_tag
     db_password                      = random_password.db.result
-    duckdb_analytics_token           = random_password.duckdb.result
     data_volume_size_gb              = local.effective_data_volume_size_gb
     log_group                        = aws_cloudwatch_log_group.data_host.name
     grafana_root_url                 = local.app_url

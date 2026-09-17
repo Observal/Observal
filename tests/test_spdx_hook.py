@@ -119,3 +119,5 @@ def test_injects_into_headers_the_extension_prefix_cannot_parse(hook, tmp_path, 
     assert inserted, "the committer's copyright line was not added"
     original = [i for i, line in enumerate(lines) if "2026 Original Author" in line]
     assert inserted[0] == original[0] + 1
+    expected_prefix = "-- " if filename.endswith(".sql") else ""
+    assert lines[inserted[0]].startswith(f"{expected_prefix}SPDX-FileCopyrightText:")

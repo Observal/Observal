@@ -41,7 +41,7 @@ async def test_init_analytics_applies_resource_settings_when_healthy():
 
 
 @pytest.mark.asyncio
-async def test_init_analytics_skips_resource_push_when_retention_is_disabled():
+async def test_init_analytics_still_applies_resource_settings_when_retention_is_disabled():
     import services.dynamic_settings as ds
 
     with (

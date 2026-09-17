@@ -147,7 +147,7 @@ async def test_overview_stats_aggregates_postgres_and_clickhouse_with_exact_quer
     ]
     assert ch.await_args_list == [
         call(
-            "SELECT sum(tool_call_count) as cnt FROM session_stats_agg WHERE last_event_time > "
+            "SELECT coalesce(sum(tool_call_count), 0) as cnt FROM session_stats_agg WHERE last_event_time > "
             "now() - to_days(CAST($days AS BIGINT))",
             {"days": "30"},
         ),
@@ -162,7 +162,7 @@ async def test_overview_stats_aggregates_postgres_and_clickhouse_with_exact_quer
 @pytest.mark.asyncio
 async def test_overview_stats_returns_zeroes_for_empty_aggregates(monkeypatch):
     db = _db(scalar_values=[None, 0, None])
-    monkeypatch.setattr(dashboard, "_analytics_json", AsyncMock(side_effect=[[], []]))
+    monkeypatch.setattr(dashboard, "_analytics_json", AsyncMock(side_effect=[[{"cnt": None}], [{"cnt": None}]]))
 
     result = await dashboard.overview_stats(range_=None, db=db, current_user=_user())
 
@@ -179,12 +179,14 @@ async def test_overview_stats_returns_zeroes_for_empty_aggregates(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_overview_stats_exposes_null_clickhouse_aggregate_as_invalid(monkeypatch):
+async def test_overview_stats_treats_null_analytics_aggregate_as_zero(monkeypatch):
     db = _db(scalar_values=[0, 0, 0])
     monkeypatch.setattr(dashboard, "_analytics_json", AsyncMock(side_effect=[[{"cnt": None}], []]))
 
-    with pytest.raises(TypeError):
-        await dashboard.overview_stats(range_="7d", db=db, current_user=None)
+    result = await dashboard.overview_stats(range_="7d", db=db, current_user=None)
+
+    assert result.total_tool_calls == 0
+    assert result.total_agent_interactions == 0
 
 
 @pytest.mark.asyncio

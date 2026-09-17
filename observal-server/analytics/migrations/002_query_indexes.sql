@@ -1,5 +1,5 @@
 -- SPDX-FileCopyrightText: 2026 Observal contributors
-# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
+-- SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 -- SPDX-License-Identifier: Apache-2.0
 --
 -- Read-path indexes for sessions, dashboards, insights, and governance.

@@ -99,7 +99,6 @@ def inject_copyright(path: Path, name: str, email: str, year: int):
         return
 
     prefix, suffix = style
-    new_line = f"{prefix}SPDX-FileCopyrightText: {year} {name} <{email}>{suffix}\n"
 
     raw = path.read_bytes()
     eol = b"\r\n" if b"\r\n" in raw[:1024] else b"\n"
@@ -113,7 +112,8 @@ def inject_copyright(path: Path, name: str, email: str, year: int):
     # corrupts the source.
     lines = text.splitlines(keepends=True)
     header_end = _header_block_end(lines, prefix)
-    if header_end == 0 and _starts_with_comment(lines):
+    header_has_copyright = any("SPDX-FileCopyrightText" in line for line in lines[:header_end])
+    if not header_has_copyright and _starts_with_comment(lines):
         # Templates, Helm partials, SQL files and license sidecars use comment
         # styles that do not match the extension-derived prefix, so fall back to
         # the file-wide scan rather than silently skipping the injection. Files
@@ -129,9 +129,11 @@ def inject_copyright(path: Path, name: str, email: str, year: int):
         return  # no existing copyright lines, skip
 
     matched = lines[last_copyright_idx]
-    indent = matched[: len(matched) - len(matched.lstrip())]
-    new_line_eol = indent + new_line.rstrip("\r\n") + nl
-    lines.insert(last_copyright_idx + 1, new_line_eol)
+    marker_index = matched.index("SPDX-FileCopyrightText")
+    actual_prefix = matched[:marker_index]
+    actual_suffix = suffix if matched.rstrip().endswith(suffix) and suffix else ""
+    new_line = f"{actual_prefix}SPDX-FileCopyrightText: {year} {name} <{email}>{actual_suffix}{nl}"
+    lines.insert(last_copyright_idx + 1, new_line)
     path.write_bytes("".join(lines).encode("utf-8", errors="replace"))
 
 

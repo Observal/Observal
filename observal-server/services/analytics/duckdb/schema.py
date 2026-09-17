@@ -9,7 +9,6 @@ push resource tuning to the service container and check its health.
 
 from loguru import logger as optic
 
-import services.analytics.duckdb._settings as _settings
 import services.analytics.duckdb.client as _client
 
 # Maps enterprise_config keys to DuckDB per-connection pragmas.
@@ -19,9 +18,6 @@ RESOURCE_SETTINGS_MAP: dict[str, tuple[str, str]] = {
     "resource.threads": ("threads", ""),
     "resource.temp_directory": ("temp_directory", ""),
 }
-
-# Re-export for tests and service wiring.
-_resource_overrides = _settings._resource_overrides
 
 
 async def apply_resource_settings(overrides: dict[str, str] | None = None) -> dict[str, str]:
@@ -75,8 +71,6 @@ async def apply_resource_settings(overrides: dict[str, str] | None = None) -> di
     if not pragmas:
         return {}
 
-    _settings._resource_overrides.clear()
-    _settings._resource_overrides.update(pragmas)
     await _client._apply_pragmas(pragmas)
     optic.info("DuckDB resource overrides applied: {}", pragmas)
     return pragmas

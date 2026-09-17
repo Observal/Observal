@@ -3,11 +3,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Shared DuckDB analytics settings - imported by both client and schema modules."""
 
-# Per-query overrides injected into every analytics request.
-# Populated from enterprise_config on startup and when an admin clicks "Apply".
-# NOTE: Mutated in-place by apply_resource_settings() in schema.py via .clear()/.update().
-_resource_overrides: dict[str, str] = {}
-
 # Tables the insert endpoint accepts, and the only columns callers may write.
 # The service never interpolates a caller-supplied table or column name into SQL.
 ANALYTICS_TABLES: dict[str, tuple[str, ...]] = {
@@ -153,6 +148,12 @@ ANALYTICS_DEDUPE_KEYS: dict[str, tuple[str, ...]] = {
 
 ANALYTICS_TABLES["session_stats_agg"] = SUMMARY_COLUMNS
 
+# Bulk migration preserves store-owned timestamp columns that callers cannot
+# set through the regular insert endpoint.
+ANALYTICS_LOAD_COLUMNS: dict[str, tuple[str, ...]] = dict(ANALYTICS_TABLES)
+ANALYTICS_LOAD_COLUMNS["session_checkpoints"] = (*ANALYTICS_TABLES["session_checkpoints"], "updated_at")
+ANALYTICS_LOAD_COLUMNS["layer_snapshots"] = (*ANALYTICS_TABLES["layer_snapshots"], "uploaded_at")
+
 # Time column used to partition a table into monthly Parquet exports.
 ANALYTICS_TIME_COLUMNS: dict[str, str] = {
     "session_events": "timestamp",
@@ -294,3 +295,9 @@ ANALYTICS_COLUMN_TYPES: dict[str, dict[str, str]] = {
         "updated_at": "TIMESTAMP",
     },
 }
+
+ANALYTICS_LOAD_COLUMN_TYPES: dict[str, dict[str, str]] = {
+    table: dict(types) for table, types in ANALYTICS_COLUMN_TYPES.items()
+}
+ANALYTICS_LOAD_COLUMN_TYPES["session_checkpoints"]["updated_at"] = "TIMESTAMP"
+ANALYTICS_LOAD_COLUMN_TYPES["layer_snapshots"]["uploaded_at"] = "TIMESTAMP"

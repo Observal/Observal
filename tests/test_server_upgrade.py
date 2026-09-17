@@ -316,9 +316,9 @@ def test_upgrade_applies_backup_images_and_health_check(isolated, monkeypatch: p
     release.assert_called_once_with("lock")
 
 
-@pytest.mark.parametrize(("analytics_restored", "expected"), [(True, True), (False, False)])
+@pytest.mark.parametrize("analytics_restored", [True, False])
 def test_rollback_is_confined_and_reports_restore_scope(
-    isolated, monkeypatch: pytest.MonkeyPatch, analytics_restored: bool, expected: bool
+    isolated, monkeypatch: pytest.MonkeyPatch, analytics_restored: bool
 ) -> None:
     compose = prepare_compose(isolated, monkeypatch, "2.0.0")
     backup = isolated.root / "config/backups/v1.5.0-20260101T120000"
@@ -336,7 +336,7 @@ def test_rollback_is_confined_and_reports_restore_scope(
     result = cmd_server._server_rollback(None, True)
 
     assert result["postgres_restored"] is True
-    assert result["analytics_restored"] is expected
+    assert result["analytics_restored"] is analytics_restored
     restore.assert_called_once_with(backup, compose)
     assert (compose / ".env").read_text() == "OBSERVAL_VERSION=1.5.0\n"
 

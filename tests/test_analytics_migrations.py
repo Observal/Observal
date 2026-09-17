@@ -7,6 +7,7 @@ import pytest
 
 from services.analytics.duckdb.migrations import (
     MIGRATIONS_DIR,
+    MigrationError,
     _checksum,
     _split_sql,
     run_migrations,
@@ -65,7 +66,7 @@ async def test_run_migrations_rejects_changed_files(tmp_path, monkeypatch):
     try:
         await run_migrations(store)
         migration.write_text("CREATE TABLE one (a INTEGER, b INTEGER);\n")
-        with pytest.raises(Exception, match="changed after it was applied"):
+        with pytest.raises(MigrationError, match="changed after it was applied"):
             await run_migrations(store)
     finally:
         await store.close()

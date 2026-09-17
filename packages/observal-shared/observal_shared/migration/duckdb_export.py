@@ -81,20 +81,25 @@ async def export_duckdb_telemetry(
             name = entry["name"]
             pct = int((index / max(len(files), 1)) * 90) + 5
             await reporter.update(phase="duckdb_export", pct=pct, message=f"Downloading {name}")
-            download = await client.get(
+            target = output_dir / name
+            hasher = hashlib.sha256()
+            async with client.stream(
+                "GET",
                 f"{duckdb.http_base()}/admin/file",
                 params={"path": f"{payload['destination']}/{name}"},
                 headers=duckdb.headers(),
-            )
-            if download.status_code != 200:
-                raise MigrationError(f"download of {name} failed: HTTP {download.status_code}")
-            target = output_dir / name
-            target.write_bytes(download.content)
+            ) as download:
+                if download.status_code != 200:
+                    raise MigrationError(f"download of {name} failed: HTTP {download.status_code}")
+                with target.open("wb") as handle:
+                    async for chunk in download.aiter_bytes(chunk_size=65536):
+                        handle.write(chunk)
+                        hasher.update(chunk)
             target.chmod(0o600)
-            digest = hashlib.sha256(download.content).hexdigest()
+            digest = hasher.hexdigest()
             if digest != entry.get("sha256"):
                 raise MigrationError(f"checksum mismatch while downloading {name}")
-            total_size += len(download.content)
+            total_size += target.stat().st_size
 
             table = next((cfg["name"] for cfg in CLICKHOUSE_TABLES if name.startswith(f"{cfg['name']}_")), None)
             if table is None:

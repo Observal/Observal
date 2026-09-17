@@ -11,14 +11,14 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
-import shutil
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
+from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from loguru import logger as optic
 from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings
@@ -191,8 +191,8 @@ def create_app(store: AnalyticsStore | None = None, settings: ServiceSettings | 
 
     @app.post("/admin/upload", dependencies=[Depends(require_token)])
     async def upload(files: Annotated[list[UploadFile], File()]) -> dict:
-        staging = Path(settings.DUCKDB_STAGING_DIR)
-        staging.mkdir(parents=True, exist_ok=True)
+        staging = Path(settings.DUCKDB_STAGING_DIR) / f"upload-{uuid4().hex}"
+        staging.mkdir(parents=True, exist_ok=False)
         saved: list[str] = []
         for upload_file in files:
             name = Path(upload_file.filename or "upload.parquet").name
@@ -221,9 +221,7 @@ def create_app(store: AnalyticsStore | None = None, settings: ServiceSettings | 
     async def export(payload: ExportRequest) -> dict:
         """Write the telemetry tables to monthly Parquet files under the staging dir."""
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-        destination = Path(settings.DUCKDB_STAGING_DIR) / f"export-{stamp}"
-        if destination.exists():
-            shutil.rmtree(destination)
+        destination = Path(settings.DUCKDB_STAGING_DIR) / f"export-{stamp}-{uuid4().hex}"
         try:
             counts = await store.export_parquet(str(destination), payload.tables)
         except TimeoutError as e:
@@ -232,8 +230,11 @@ def create_app(store: AnalyticsStore | None = None, settings: ServiceSettings | 
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)[:500]) from e
         files = []
         for path in sorted(destination.glob("*.parquet")):
-            digest = hashlib.sha256(path.read_bytes()).hexdigest()
-            files.append({"name": path.name, "size_bytes": path.stat().st_size, "sha256": digest})
+            hasher = hashlib.sha256()
+            with path.open("rb") as handle:
+                while chunk := handle.read(1024 * 1024):
+                    hasher.update(chunk)
+            files.append({"name": path.name, "size_bytes": path.stat().st_size, "sha256": hasher.hexdigest()})
         return {"destination": str(destination), "files": files, "row_counts": counts}
 
     @app.get("/admin/file", dependencies=[Depends(require_token)])
@@ -271,7 +272,10 @@ def create_app(store: AnalyticsStore | None = None, settings: ServiceSettings | 
     @app.exception_handler(Exception)
     async def unhandled(_request: Request, exc: Exception):  # pragma: no cover - safety net
         optic.exception("unhandled analytics service error: {}", exc)
-        raise exc
+        return JSONResponse(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            content={"detail": "internal analytics service error"},
+        )
 
     return app
 

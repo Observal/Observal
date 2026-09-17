@@ -100,7 +100,7 @@ class TestRestoreBackup:
         assert restored is True
         analytics_restore.assert_called_once_with(backup_dir / "analytics.tar.gz", tmp_path)
 
-    def test_skips_analytics_for_older_backups(self, tmp_path, monkeypatch):
+    def test_skips_analytics_when_archive_is_missing(self, tmp_path, monkeypatch):
         from unittest.mock import MagicMock
 
         backup_dir = tmp_path / "v1.0.0-20260101T000000"
@@ -115,3 +115,60 @@ class TestRestoreBackup:
 
         assert restored is False
         analytics_restore.assert_not_called()
+
+
+class TestAnalyticsRestoreSafety:
+    @staticmethod
+    def _archive(path):
+        import io
+        import tarfile
+
+        with tarfile.open(path, "w:gz") as bundle:
+            payload = b"duckdb"
+            member = tarfile.TarInfo("./analytics.duckdb")
+            member.size = len(payload)
+            bundle.addfile(member, io.BytesIO(payload))
+
+    def test_rejects_corrupt_archive_before_stopping_service(self, tmp_path, monkeypatch):
+        from unittest.mock import MagicMock
+
+        archive = tmp_path / "analytics.tar.gz"
+        archive.write_bytes(b"truncated")
+        run = MagicMock()
+        monkeypatch.setattr(backup.subprocess, "run", run)
+
+        with pytest.raises(RuntimeError, match="archive is invalid"):
+            backup._restore_analytics(archive, tmp_path)
+
+        run.assert_not_called()
+
+    def test_aborts_when_writer_cannot_be_stopped(self, tmp_path, monkeypatch):
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+
+        archive = tmp_path / "analytics.tar.gz"
+        self._archive(archive)
+        run = MagicMock(return_value=SimpleNamespace(returncode=1, stderr=b"busy"))
+        monkeypatch.setattr(backup.subprocess, "run", run)
+
+        with pytest.raises(RuntimeError, match="could not stop"):
+            backup._restore_analytics(archive, tmp_path)
+
+        assert run.call_count == 1
+
+    def test_extracts_to_staging_before_replacing_live_data(self, tmp_path, monkeypatch):
+        from types import SimpleNamespace
+        from unittest.mock import MagicMock
+
+        archive = tmp_path / "analytics.tar.gz"
+        self._archive(archive)
+        run = MagicMock(return_value=SimpleNamespace(returncode=0, stderr=b""))
+        monkeypatch.setattr(backup.subprocess, "run", run)
+        monkeypatch.setattr(backup, "_wait_for_service_healthy", MagicMock(return_value=True))
+
+        backup._restore_analytics(archive, tmp_path)
+
+        restore_command = run.call_args_list[1].args[0]
+        shell_script = restore_command[-1]
+        assert "tar xzf - -C /data/.restore" in shell_script
+        assert shell_script.index("tar xzf") < shell_script.index("find /data")

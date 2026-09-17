@@ -14,9 +14,10 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import tarfile
 import time
 from datetime import UTC, datetime
-from pathlib import Path  # noqa: TC003 - used at runtime
+from pathlib import Path
 
 from rich import print as rprint
 
@@ -80,9 +81,9 @@ def create_backup(compose_dir: Path, from_version: str) -> Path:
     # DuckDB analytics: flush the WAL, then archive the data directory.
     duckdb_archive = backup_dir / "analytics.tar.gz"
     rprint("[dim]  Backing up DuckDB analytics...[/dim]")
+    # The checkpoint is best-effort. A timeout must not prevent the archive,
+    # which is the only recoverable copy of the analytics volume.
     try:
-        # The service owns the database file; ask it to checkpoint first so the
-        # archived bytes include everything that was committed.
         checkpoint = subprocess.run(
             [
                 "docker",
@@ -108,21 +109,64 @@ def create_backup(compose_dir: Path, from_version: str) -> Path:
         )
         if checkpoint.returncode != 0:
             rprint("[yellow]  DuckDB checkpoint failed (non-critical)[/yellow]")
+    except (subprocess.TimeoutExpired, OSError):
+        rprint("[yellow]  DuckDB checkpoint timed out (non-critical)[/yellow]")
 
-        archive = subprocess.run(
-            ["docker", "compose", "exec", "-T", "observal-duckdb", "tar", "czf", "-", "-C", "/data", "."],
+    try:
+        stopped = subprocess.run(
+            ["docker", "compose", "stop", "observal-duckdb"],
             capture_output=True,
             cwd=compose_dir,
-            timeout=600,
+            timeout=300,
         )
-        if archive.returncode == 0 and archive.stdout:
-            duckdb_archive.write_bytes(archive.stdout)
+    except (subprocess.TimeoutExpired, OSError):
+        rprint("[yellow]  DuckDB stop timed out; analytics backup skipped[/yellow]")
+        return backup_dir
+    if stopped.returncode != 0:
+        rprint("[yellow]  DuckDB could not be stopped; analytics backup skipped[/yellow]")
+        return backup_dir
+
+    try:
+        with duckdb_archive.open("wb") as output:
+            archive = subprocess.run(
+                [
+                    "docker",
+                    "compose",
+                    "run",
+                    "--rm",
+                    "--no-deps",
+                    "-T",
+                    "observal-duckdb",
+                    "tar",
+                    "czf",
+                    "-",
+                    "--exclude=./staging",
+                    "-C",
+                    "/data",
+                    ".",
+                ],
+                stdout=output,
+                stderr=subprocess.PIPE,
+                cwd=compose_dir,
+                timeout=600,
+            )
+        if archive.returncode == 0 and duckdb_archive.stat().st_size:
             duckdb_archive.chmod(0o600)
-            rprint(f"[dim]  DuckDB analytics: {len(archive.stdout) / (1024 * 1024):.1f} MB[/dim]")
+            size_mb = duckdb_archive.stat().st_size / (1024 * 1024)
+            rprint(f"[dim]  DuckDB analytics: {size_mb:.1f} MB[/dim]")
         else:
+            duckdb_archive.unlink(missing_ok=True)
             rprint("[yellow]  DuckDB archive failed (non-critical)[/yellow]")
     except (subprocess.TimeoutExpired, OSError):
+        duckdb_archive.unlink(missing_ok=True)
         rprint("[yellow]  DuckDB archive timed out (non-critical)[/yellow]")
+    finally:
+        subprocess.run(
+            ["docker", "compose", "up", "-d", "observal-duckdb"],
+            capture_output=True,
+            cwd=compose_dir,
+            timeout=300,
+        )
 
     return backup_dir
 
@@ -206,6 +250,26 @@ def _wait_for_service_healthy(compose_dir: Path, service: str, timeout: int = 18
     return False
 
 
+def _validate_analytics_archive(archive: Path) -> None:
+    """Fully read and validate an analytics archive before touching live data."""
+    try:
+        with tarfile.open(archive, "r:gz") as bundle:
+            for member in bundle:
+                member_path = Path(member.name)
+                if member_path.is_absolute() or ".." in member_path.parts:
+                    raise RuntimeError(f"analytics archive contains unsafe path: {member.name}")
+                if member.issym() or member.islnk() or member.isdev():
+                    raise RuntimeError(f"analytics archive contains unsafe member: {member.name}")
+                if member.isfile():
+                    extracted = bundle.extractfile(member)
+                    if extracted is None:
+                        raise RuntimeError(f"analytics archive member is unreadable: {member.name}")
+                    while extracted.read(1024 * 1024):
+                        pass
+    except (tarfile.TarError, EOFError, OSError) as exc:
+        raise RuntimeError(f"analytics archive is invalid: {exc}") from exc
+
+
 def _restore_analytics(archive: Path, compose_dir: Path) -> None:
     """Replace the DuckDB analytics data directory from a backup archive.
 
@@ -213,42 +277,61 @@ def _restore_analytics(archive: Path, compose_dir: Path) -> None:
     stopped for the swap and started again afterwards.
     """
     rprint("[dim]  Restoring DuckDB analytics...[/dim]")
+    _validate_analytics_archive(archive)
 
-    subprocess.run(
+    stopped = subprocess.run(
         ["docker", "compose", "stop", "observal-duckdb"],
         cwd=compose_dir,
         capture_output=True,
         timeout=300,
     )
+    if stopped.returncode != 0:
+        raise RuntimeError(f"could not stop analytics service: {stopped.stderr.decode()[:200]}")
 
-    with archive.open("rb") as handle:
-        result = subprocess.run(
-            [
-                "docker",
-                "compose",
-                "run",
-                "--rm",
-                "--no-deps",
-                "-T",
-                "observal-duckdb",
-                "sh",
-                "-c",
-                "find /data -mindepth 1 -delete && tar xzf - -C /data",
-            ],
-            stdin=handle,
-            capture_output=True,
+    try:
+        with archive.open("rb") as handle:
+            result = subprocess.run(
+                [
+                    "docker",
+                    "compose",
+                    "run",
+                    "--rm",
+                    "--no-deps",
+                    "-T",
+                    "observal-duckdb",
+                    "sh",
+                    "-c",
+                    (
+                        "rm -rf /data/.restore && mkdir /data/.restore && "
+                        "tar xzf - -C /data/.restore && "
+                        "find /data -mindepth 1 -maxdepth 1 ! -name .restore -exec rm -rf {} + && "
+                        "cp -a /data/.restore/. /data/ && rm -rf /data/.restore"
+                    ),
+                ],
+                stdin=handle,
+                capture_output=True,
+                cwd=compose_dir,
+                timeout=1800,
+            )
+        if result.returncode != 0:
+            raise RuntimeError(f"analytics restore failed: {result.stderr.decode()[:200]}")
+    except Exception:
+        subprocess.run(
+            ["docker", "compose", "up", "-d", "observal-duckdb"],
             cwd=compose_dir,
-            timeout=1800,
+            capture_output=True,
+            timeout=300,
         )
-    if result.returncode != 0:
-        raise RuntimeError(f"analytics restore failed: {result.stderr.decode()[:200]}")
+        raise
 
-    subprocess.run(
+    started = subprocess.run(
         ["docker", "compose", "up", "-d", "observal-duckdb"],
         cwd=compose_dir,
         capture_output=True,
         timeout=300,
     )
+    if started.returncode != 0:
+        raise RuntimeError(f"could not start analytics service: {started.stderr.decode()[:200]}")
     if not _wait_for_service_healthy(compose_dir, "observal-duckdb"):
         raise RuntimeError("analytics service did not become healthy after the restore")
 

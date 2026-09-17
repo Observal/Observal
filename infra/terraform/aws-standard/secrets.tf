@@ -10,7 +10,7 @@ resource "random_password" "db" {
 }
 
 resource "random_password" "duckdb" {
-  length  = 48
+  length  = 32
   special = false
 }
 

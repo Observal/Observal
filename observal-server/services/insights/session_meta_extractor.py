@@ -440,8 +440,8 @@ async def fetch_session_stats(
         SELECT session_id, total_credits, harness, layer_hash
         FROM session_stats_agg
         WHERE (agent_id = $agent_id OR agent_id = $agent_name)
-          AND last_event_time >= $t_start
-          AND last_event_time <= $t_end
+          AND last_event_time >= CAST($t_start AS TIMESTAMP)
+          AND last_event_time <= CAST($t_end AS TIMESTAMP)
           AND __AGENT_VERSION_FILTER__
         GROUP BY session_id, total_credits, harness, layer_hash
     """.replace("__AGENT_VERSION_FILTER__", agent_version_filter())
@@ -472,12 +472,12 @@ async def fetch_session_stats(
         SELECT
             session_id,
             max(credits) AS total_credits,
-            max(harness) FILTER (WHERE harness != '') AS harness,
-            max(layer_hash) FILTER (WHERE layer_hash IS NOT NULL AND layer_hash != '') AS layer_hash
+            coalesce(max(harness) FILTER (WHERE harness != ''), '') AS harness,
+            coalesce(max(layer_hash) FILTER (WHERE layer_hash IS NOT NULL AND layer_hash != ''), '') AS layer_hash
         FROM session_events
         WHERE (agent_id = $agent_id OR agent_id = $agent_name)
-          AND timestamp >= $t_start
-          AND timestamp <= $t_end
+          AND timestamp >= CAST($t_start AS TIMESTAMP)
+          AND timestamp <= CAST($t_end AS TIMESTAMP)
           AND __AGENT_VERSION_FILTER__
         GROUP BY session_id
     """.replace("__AGENT_VERSION_FILTER__", agent_version_filter(nullable=True))
@@ -520,8 +520,8 @@ async def fetch_all_session_transcripts(
         SELECT session_id
         FROM session_stats_agg
         WHERE (agent_id = $agent_id OR agent_id = $agent_name)
-          AND last_event_time >= $t_start
-          AND last_event_time <= $t_end
+          AND last_event_time >= CAST($t_start AS TIMESTAMP)
+          AND last_event_time <= CAST($t_end AS TIMESTAMP)
           AND __AGENT_VERSION_FILTER__
         GROUP BY session_id
         ORDER BY min(last_event_time)
@@ -544,8 +544,8 @@ async def fetch_all_session_transcripts(
             SELECT DISTINCT session_id
             FROM session_events
             WHERE (agent_id = $agent_id OR agent_id = $agent_name)
-              AND timestamp >= $t_start
-              AND timestamp <= $t_end
+              AND timestamp >= CAST($t_start AS TIMESTAMP)
+              AND timestamp <= CAST($t_end AS TIMESTAMP)
               AND __AGENT_VERSION_FILTER__
             ORDER BY session_id
         """.replace("__AGENT_VERSION_FILTER__", agent_version_filter(nullable=True))
@@ -571,7 +571,7 @@ async def fetch_all_session_transcripts(
         batch_sql = """
             SELECT session_id, raw_line
             FROM session_events
-            WHERE session_id = ANY($ids)
+            WHERE list_contains(CAST($ids AS VARCHAR[]), session_id)
               AND raw_line != ''
             ORDER BY session_id, line_offset
         """

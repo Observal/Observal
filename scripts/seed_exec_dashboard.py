@@ -123,7 +123,10 @@ async def seed_postgres(pg_url: str, clean: bool) -> dict:
     """Seed deployment-wide dashboard data and return lookup dicts."""
     conn = await asyncpg.connect(**parse_pg_url(pg_url))
     try:
+        old_user_ids: list[uuid.UUID] = []
         if clean:
+            old_user_rows = await conn.fetch("SELECT id FROM users WHERE email LIKE '%@acme.corp'")
+            old_user_ids = [row["id"] for row in old_user_rows]
             agent_names = [name for name, _, _ in AGENTS]
             agent_rows = await conn.fetch("SELECT id FROM agents WHERE name = ANY($1::text[])", agent_names)
             for row in agent_rows:
@@ -271,7 +274,7 @@ async def seed_postgres(pg_url: str, clean: bool) -> dict:
                 budgets,
             )
             print("  Created exec_dashboard_config")
-        return {"user_map": user_map, "agent_map": agent_map}
+        return {"user_map": user_map, "agent_map": agent_map, "old_user_ids": old_user_ids}
     finally:
         await conn.close()
 
@@ -281,7 +284,14 @@ async def seed_postgres(pg_url: str, clean: bool) -> dict:
 # ---------------------------------------------------------------------------
 
 
-async def seed_analytics(duckdb_url: str, duckdb_token: str, user_map: dict, agent_map: dict, clean: bool):
+async def seed_analytics(
+    duckdb_url: str,
+    duckdb_token: str,
+    user_map: dict,
+    agent_map: dict,
+    clean: bool,
+    old_user_ids: list[uuid.UUID] | None = None,
+):
     """Seed session events plus their summaries into the DuckDB analytics store."""
     os.environ["DUCKDB_ANALYTICS_URL"] = duckdb_url
     if duckdb_token:
@@ -290,11 +300,15 @@ async def seed_analytics(duckdb_url: str, duckdb_token: str, user_map: dict, age
     from services.analytics.duckdb import client as analytics_client
     from services.analytics.duckdb.insert import insert_session_events, refresh_session_summary
 
-    if clean:
-        # Only the rows this script owns: seeded users, one project.
-        seeded_users = ", ".join(f"'{uid}'" for uid in user_map.values())
-        await analytics_client._execute(f"DELETE FROM session_stats_agg WHERE user_id IN ({seeded_users})")
-        await analytics_client._execute(f"DELETE FROM session_events WHERE user_id IN ({seeded_users})")
+    if clean and old_user_ids:
+        # Capture these IDs before PostgreSQL replaces the demo users. The
+        # deployment-wide project ID is shared with real telemetry and must
+        # never be used as the cleanup boundary.
+        ids = [str(user_id) for user_id in old_user_ids]
+        params = {"ids": ids}
+        predicate = "list_contains(CAST($ids AS VARCHAR[]), user_id)"
+        await analytics_client._execute(f"DELETE FROM session_stats_agg WHERE {predicate}", params)
+        await analytics_client._execute(f"DELETE FROM session_events WHERE {predicate}", params)
         print("  Cleaned seeded analytics rows")
 
     now = datetime.now(UTC)
@@ -449,7 +463,12 @@ async def main():
 
     print("\n[2/2] Seeding the DuckDB analytics store...")
     counts = await seed_analytics(
-        args.duckdb_url, args.duckdb_token, result["user_map"], result["agent_map"], args.clean
+        args.duckdb_url,
+        args.duckdb_token,
+        result["user_map"],
+        result["agent_map"],
+        args.clean,
+        result["old_user_ids"],
     )
 
     print("\n=== Done ===")

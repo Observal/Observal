@@ -135,15 +135,6 @@ data "aws_vpc" "vpc" {
 }
 
 # Cross-variable validation: subnets required when using BYO-VPC.
-resource "terraform_data" "observability_validation" {
-  lifecycle {
-    precondition {
-      condition     = contains(["none", "prometheus", "grafana"], var.observability_stack)
-      error_message = "observability_stack must be none, prometheus, or grafana."
-    }
-  }
-}
-
 resource "terraform_data" "byovpc_validation" {
   count = local.should_create_vpc ? 0 : 1
 

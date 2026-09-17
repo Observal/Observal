@@ -152,17 +152,16 @@ def _normalize_ts(value: str | None) -> str | None:
     """
     if value is None:
         return None
-    v = value.replace("T", " ").rstrip("Z")
-    if "." not in v:
-        v += ".000"
     try:
-        parsed = datetime.fromisoformat(v.replace(" ", "T") + "+00:00")
+        parsed = datetime.fromisoformat(value.strip())
+        parsed = parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
         if parsed >= _TS_SENTINEL_CUTOFF:
             optic.trace("clamping far-future timestamp {} to now", value)
-            v = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")[:23]
+            parsed = datetime.now(UTC)
+        return parsed.strftime("%Y-%m-%d %H:%M:%S.%f")[:23]
     except ValueError:
         optic.trace("could not parse timestamp '{}', passing through as-is", value)
-    return v
+        return value
 
 
 async def _invalidate_cache():

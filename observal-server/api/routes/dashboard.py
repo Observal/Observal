@@ -94,7 +94,7 @@ async def overview_stats(
     total_agents_coro = db.scalar(apply_visibility_filter(total_agents_stmt, Agent, current_user))
     total_users_coro = db.scalar(select(func.count(User.id)))
     tool_rows_coro = _analytics_json(
-        "SELECT sum(tool_call_count) as cnt FROM session_stats_agg WHERE last_event_time > now() - to_days(CAST($days AS BIGINT))",
+        "SELECT coalesce(sum(tool_call_count), 0) as cnt FROM session_stats_agg WHERE last_event_time > now() - to_days(CAST($days AS BIGINT))",
         {"days": str(days)},
     )
     agent_rows_coro = _analytics_json(
@@ -114,8 +114,8 @@ async def overview_stats(
         total_mcps=total_mcps or 0,
         total_agents=total_agents or 0,
         total_users=total_users or 0,
-        total_tool_calls=int(tool_rows[0].get("cnt", 0)) if tool_rows else 0,
-        total_agent_interactions=int(agent_rows[0].get("cnt", 0)) if agent_rows else 0,
+        total_tool_calls=int(tool_rows[0].get("cnt") or 0) if tool_rows else 0,
+        total_agent_interactions=int(agent_rows[0].get("cnt") or 0) if agent_rows else 0,
     )
 
 

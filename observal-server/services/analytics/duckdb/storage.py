@@ -25,6 +25,8 @@ from loguru import logger as optic
 from services.analytics.duckdb._settings import (
     ANALYTICS_COLUMN_TYPES,
     ANALYTICS_DEDUPE_KEYS,
+    ANALYTICS_LOAD_COLUMN_TYPES,
+    ANALYTICS_LOAD_COLUMNS,
     ANALYTICS_TABLES,
     ANALYTICS_TIME_COLUMNS,
 )
@@ -109,7 +111,6 @@ class AnalyticsStore:
         self._readers: asyncio.Queue[duckdb.DuckDBPyConnection] | None = None
         self._write_lock = asyncio.Lock()
         self._lock_file = None
-        self._started = False
 
     # ── lifecycle ────────────────────────────────────────────────────────────
 
@@ -128,7 +129,6 @@ class AnalyticsStore:
         for _ in range(self.read_connections):
             await self._readers.put(await asyncio.to_thread(self._connect))
         await self.apply_pragmas(self._baseline_pragmas())
-        self._started = True
         optic.info(
             "DuckDB analytics store ready (path={}, readers={}, threads={})",
             self.path,
@@ -144,7 +144,6 @@ class AnalyticsStore:
                 optic.debug("closing DuckDB connection failed: {}", e)
         self._writer = None
         self._readers = None
-        self._started = False
         if self._lock_file is not None:
             try:
                 fcntl.flock(self._lock_file.fileno(), fcntl.LOCK_UN)
@@ -277,8 +276,8 @@ class AnalyticsStore:
         column's declared type so ClickHouse-exported Parquet files load
         without per-file schema hand-holding.
         """
-        columns = ANALYTICS_TABLES.get(table)
-        types = ANALYTICS_COLUMN_TYPES.get(table)
+        columns = ANALYTICS_LOAD_COLUMNS.get(table)
+        types = ANALYTICS_LOAD_COLUMN_TYPES.get(table)
         if columns is None or types is None:
             raise ValueError(f"unknown analytics table: {table}")
         if not paths:
@@ -362,12 +361,23 @@ class AnalyticsStore:
         return await self._guard(con, _work)
 
     async def _guard(self, con: duckdb.DuckDBPyConnection, work: Callable[[], object]):
-        task = asyncio.to_thread(work)
+        task = asyncio.create_task(asyncio.to_thread(work))
         try:
-            return await asyncio.wait_for(task, timeout=self.query_timeout)
-        except TimeoutError:
-            optic.warning("DuckDB query exceeded {}s, interrupting", self.query_timeout)
+            return await asyncio.wait_for(asyncio.shield(task), timeout=self.query_timeout)
+        except (TimeoutError, asyncio.CancelledError) as exc:
+            # A cancelled to_thread awaitable does not stop its worker thread.
+            # Interrupt it and wait for the thread to leave DuckDB before the
+            # caller can return this connection to the reader pool (or release
+            # the writer lock). Reusing a still-busy connection can corrupt the
+            # next query with a delayed interrupt.
+            optic.warning("DuckDB query interrupted after {}s", self.query_timeout)
             await asyncio.to_thread(con.interrupt)
+            try:
+                await asyncio.shield(task)
+            except Exception:
+                pass
+            if isinstance(exc, asyncio.CancelledError):
+                raise
             raise TimeoutError(f"analytics query exceeded {self.query_timeout}s") from None
 
     async def export_parquet(self, destination: str, tables: list[str] | None = None) -> dict[str, int]:
@@ -398,11 +408,8 @@ class AnalyticsStore:
                     table_name: str = table,
                     time_col: str = time_column,
                 ) -> int:
-                    bounds = connection.execute(
-                        f"SELECT min(CAST({time_col} AS DATE)) AS lo, max(CAST({time_col} AS DATE)) AS hi, "
-                        f"count(*) AS n FROM {table_name}"
-                    ).fetchone()
-                    total = int(bounds[2] or 0)
+                    bounds = connection.execute(f"SELECT count(*) AS n FROM {table_name}").fetchone()
+                    total = int(bounds[0] or 0)
                     if total == 0:
                         return 0
                     months = connection.execute(

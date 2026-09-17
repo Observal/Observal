@@ -120,8 +120,9 @@ done
 
 echo "Setting up Observal server package..."
 
-# Clone only the server-package config files (nginx, grafana, prometheus configs)
-run_remote "rm -rf /opt/observal && git clone --depth 1 --branch $OBSERVAL_REF $OBSERVAL_REPO /opt/observal-src && mkdir -p /opt/observal && cp /opt/observal-src/docker/server-package/* /opt/observal/ && cp -r /opt/observal-src/docker/server-package/grafana /opt/observal/ 2>/dev/null || true && cp -r /opt/observal-src/docker/server-package/prometheus* /opt/observal/ 2>/dev/null || true && rm -rf /opt/observal-src"
+# Clone the package plus bind-mounted configuration files that the release
+# archive normally places beside docker-compose.yml.
+run_remote "rm -rf /opt/observal /opt/observal-src && git clone --depth 1 --branch $OBSERVAL_REF $OBSERVAL_REPO /opt/observal-src && mkdir -p /opt/observal && cp /opt/observal-src/docker/server-package/* /opt/observal/ && cp /opt/observal-src/docker/nginx.conf /opt/observal/ && cp -r /opt/observal-src/grafana /opt/observal/ && rm -rf /opt/observal-src"
 
 # ── Configure .env and secrets ───────────────────────────────────────────────
 
@@ -129,13 +130,12 @@ echo "Configuring environment..."
 FRONTEND_URL="${DOMAIN:+https://$DOMAIN}"
 FRONTEND_URL="${FRONTEND_URL:-http://$PUBLIC_IP}"
 
-# The packaged installer owns secret generation and the file-backed .env layout
-# (docker/server-package/setup.sh), including the DuckDB bearer token that the
-# API, worker and analytics service all share. Its prompts are: frontend URL,
-# HTTP bind address, observability stack. Loopback stays the bind default: the
-# compose load balancer publishes 80/443 itself.
-run_remote "cd /opt/observal && printf '%s\n%s\n%s\n' '$FRONTEND_URL' '127.0.0.1' '$OBSERVABILITY_STACK' | bash setup.sh"
-run_remote "cd /opt/observal && echo 'OBSERVAL_VERSION=$IMAGE_TAG' >> .env && chmod 600 .env"
+# The packaged installer owns secret generation and the file-backed .env layout.
+# Host nginx is the only public listener. The compose stack remains bound to
+# loopback so PostgreSQL, Redis, and DuckDB are never exposed with the web app.
+BIND_ADDRESS="127.0.0.1"
+API_HOST_PORT="8000"
+run_remote "cd /opt/observal && sed -i 's/^OBSERVAL_VERSION=.*/OBSERVAL_VERSION=$IMAGE_TAG/' env.template && printf '\nAPI_HOST_PORT=$API_HOST_PORT\n' >> env.template && printf '%s\n%s\n%s\n' '$FRONTEND_URL' '$BIND_ADDRESS' '$OBSERVABILITY_STACK' | bash setup.sh" 1200
 
 # Apply env overrides (skip empty values)
 while IFS='=' read -r key value; do
@@ -146,12 +146,29 @@ done < <(echo "$ENV_OVERRIDES" | python3 -c "import sys,json; [print(f'{k}={v}')
 
 # ── Configure TLS (if domain set) ───────────────────────────────────────────
 
+SERVER_NAME="${DOMAIN:-_}"
+NGINX_PROXY_CONFIG=$(printf '%s\n' \
+  'server {' \
+  '    listen 80;' \
+  "    server_name $SERVER_NAME;" \
+  '    location / {' \
+  '        proxy_pass http://127.0.0.1:8000;' \
+  '        proxy_set_header Host $host;' \
+  '        proxy_set_header X-Real-IP $remote_addr;' \
+  '        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;' \
+  '        proxy_set_header X-Forwarded-Proto $scheme;' \
+  '        proxy_http_version 1.1;' \
+  '        proxy_set_header Upgrade $http_upgrade;' \
+  '        proxy_set_header Connection "upgrade";' \
+  '    }' \
+  '}' | base64 | tr -d '\n')
+run_remote "apt-get update && apt-get install -y nginx && echo '$NGINX_PROXY_CONFIG' | base64 -d > /etc/nginx/sites-available/observal && ln -sf /etc/nginx/sites-available/observal /etc/nginx/sites-enabled/observal && rm -f /etc/nginx/sites-enabled/default && nginx -t && systemctl enable --now nginx" 1200
 if [ -n "$DOMAIN" ]; then
   echo "Obtaining TLS certificate for $DOMAIN..."
-  run_remote "certbot certonly --standalone -d $DOMAIN --non-interactive --agree-tos -m admin@$DOMAIN"
+  run_remote "apt-get install -y python3-certbot-nginx && certbot --nginx -d $DOMAIN --non-interactive --agree-tos --redirect -m admin@$DOMAIN" 1200
 fi
 
-# ── Pull and start (pre-built images — fast) ────────────────────────────────
+# ── Apply final configuration ───────────────────────────────────────────────
 
 COMPOSE_FILES="-f docker-compose.yml"
 COMPOSE_PROFILE_ARGS=""
@@ -162,11 +179,8 @@ if [ "$OBSERVABILITY_STACK" = "grafana" ]; then
   COMPOSE_PROFILE_ARGS="--profile grafana"
 fi
 
-echo "Pulling pre-built images from GHCR..."
-run_remote "cd /opt/observal && docker compose $COMPOSE_PROFILE_ARGS $COMPOSE_FILES pull" 300
-
-echo "Starting services..."
-run_remote "cd /opt/observal && docker compose $COMPOSE_PROFILE_ARGS $COMPOSE_FILES --env-file .env up -d"
+echo "Applying environment overrides..."
+run_remote "cd /opt/observal && docker compose $COMPOSE_PROFILE_ARGS $COMPOSE_FILES --env-file .env up -d --wait --wait-timeout 300" 1200
 
 # ── Health check ─────────────────────────────────────────────────────────────
 

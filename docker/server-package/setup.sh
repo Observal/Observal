@@ -56,14 +56,6 @@ env_value() {
     sed -n "s/^$1=//p" "$ENV_FILE" | tail -1
 }
 
-sha256() {
-    if command -v sha256sum >/dev/null 2>&1; then
-        sha256sum | cut -d' ' -f1
-    else
-        shasum -a 256 | cut -d' ' -f1
-    fi
-}
-
 command -v docker >/dev/null 2>&1 || die "Docker is required. Install: https://docs.docker.com/get-docker/"
 docker compose version >/dev/null 2>&1 || die "Docker Compose v2 is required."
 
@@ -157,20 +149,20 @@ DEMO_USER_EMAIL=$DEMO_USER_EMAIL
 EOF
 chmod 600 "$ENV_FILE"
 
-compose_args=(-f docker-compose.yml)
-profile_args=()
-if [ "$OBSERVABILITY_STACK" != "none" ]; then
-    compose_args+=(-f docker-compose.observability.yml)
-fi
+compose_command=(docker compose)
 if [ "$OBSERVABILITY_STACK" = "grafana" ]; then
-    profile_args+=(--profile grafana)
+    compose_command+=(--profile grafana)
+fi
+compose_command+=(-f docker-compose.yml)
+if [ "$OBSERVABILITY_STACK" != "none" ]; then
+    compose_command+=(-f docker-compose.observability.yml)
 fi
 
 info "Starting Observal services"
 cd "$INSTALL_DIR"
-docker compose "${profile_args[@]}" "${compose_args[@]}" --env-file .env up -d --wait --wait-timeout 300
+"${compose_command[@]}" --env-file .env up -d --wait --wait-timeout 300
 
-docker compose "${profile_args[@]}" "${compose_args[@]}" restart observal-lb
+"${compose_command[@]}" restart observal-lb
 
 info "Observal is running"
 info "Dashboard: $FRONTEND_URL"
