@@ -93,6 +93,10 @@
 * [Security assurance case](security/assurance-case.md)
 * [Release verification](security/release-verification.md)
 
+## Architecture Decisions
+
+* [ADR 0001: Agentic Resource Discovery](adr/0001-agentic-resource-discovery.md)
+
 ## Contributing
 
 * [Contributing Guide](../CONTRIBUTING.md)
