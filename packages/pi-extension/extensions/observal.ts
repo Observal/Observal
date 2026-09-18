@@ -324,13 +324,35 @@ export default function (pi: ExtensionAPI) {
     return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
   }
 
+  function firstLineTimestampMs(sessionFile: string): number | null {
+    // Pi transcripts open with {"type":"session", "timestamp": ...}. ctime is
+    // not used: on Linux it moves with every write.
+    try {
+      const fd = fs.openSync(sessionFile, "r");
+      try {
+        const buffer = Buffer.alloc(4096);
+        const read = fs.readSync(fd, buffer, 0, buffer.length, 0);
+        const first = buffer.toString("utf-8", 0, read).split("\n")[0] ?? "";
+        const record = JSON.parse(first);
+        const value = record?.timestamp ?? record?.ts ?? record?.created_at;
+        const parsed = typeof value === "number" ? (value > 1e11 ? value : value * 1000) : Date.parse(String(value ?? ""));
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+      } finally {
+        fs.closeSync(fd);
+      }
+    } catch {
+      return null;
+    }
+  }
+
   function sessionStartedAtMs(sessionFile: string | null): number {
     if (sessionFile) {
       try {
         const stat = fs.statSync(sessionFile);
-        const created = stat.birthtimeMs > 0 ? stat.birthtimeMs : stat.ctimeMs;
-        return created - CAPABILITY_LEAD_MS;
+        if (stat.birthtimeMs > 0) return stat.birthtimeMs - CAPABILITY_LEAD_MS;
       } catch { }
+      const first = firstLineTimestampMs(sessionFile);
+      if (first !== null) return first - CAPABILITY_LEAD_MS;
     }
     return Date.now() - CAPABILITY_FALLBACK_MS;
   }
@@ -370,7 +392,9 @@ export default function (pi: ExtensionAPI) {
           });
         }
       }
-      return [...latest.values()].slice(0, MAX_CAPABILITIES_PER_PUSH);
+      return [...latest.values()]
+        .sort((a, b) => String(b.used_at).localeCompare(String(a.used_at)))
+        .slice(0, MAX_CAPABILITIES_PER_PUSH);
     } catch {
       return [];
     }

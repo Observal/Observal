@@ -102,17 +102,18 @@ def _after_rollback(session: Session) -> None:
 async def reproject(dirty: DirtySet) -> None:
     """Reproject the given resources in a fresh session. Errors are logged, never raised."""
     from database import async_session
-    from services.discovery.projection import default_context, project_entity
+    from services.discovery.projection import project_entity, resolve_context
 
-    ctx = default_context()
     try:
         async with async_session() as db:
+            ctx = await resolve_context(db)
             for kind, entity_id in sorted(dirty, key=lambda item: (item[0].value, str(item[1]))):
+                # SAVEPOINT per resource so one failure only discards its own work.
                 try:
-                    await project_entity(db, kind, entity_id, ctx=ctx)
+                    async with db.begin_nested():
+                        await project_entity(db, kind, entity_id, ctx=ctx)
                 except Exception:
                     optic.exception("discovery reprojection failed kind={} id={}", kind.value, entity_id)
-                    await db.rollback()
             await db.commit()
         optic.debug("discovery reprojected {} resource(s)", len(dirty))
     except Exception:

@@ -155,9 +155,18 @@ _background_tasks: set = set()
 
 async def run_shutdown_tasks() -> None:
     """Release application dependencies used by the FastAPI lifespan."""
+    import asyncio
+
     from services.discovery import hooks as discovery_hooks
 
     await discovery_hooks.drain()
+    if _background_tasks:
+        # Give the initial backfill a bounded chance to commit; never hang shutdown on it.
+        _done, pending = await asyncio.wait(list(_background_tasks), timeout=10)
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
     await shutdown_audit()
     await shutdown_audit_handlers()
 

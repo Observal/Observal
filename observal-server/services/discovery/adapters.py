@@ -139,15 +139,17 @@ def project_skill(listing: SkillListing, version: SkillVersion) -> Projected:
         body = version.skill_md_content
     else:
         # No inline content: publish a minimal skill document that points at the source.
+        # Every value is JSON-quoted (valid YAML scalars) so a newline or colon in
+        # a source URL or ref cannot add front-matter keys or break the document.
         body = (
             "---\n"
-            f"name: {listing.slug}\n"
+            f"name: {json.dumps(listing.slug)}\n"
             f"description: {json.dumps(description)}\n"
-            f"source: {version.git_url or ''}\n"
-            f"ref: {version.git_ref or ''}\n"
-            f"path: {version.skill_path or '/'}\n"
+            f"source: {json.dumps(version.git_url or '')}\n"
+            f"ref: {json.dumps(version.git_ref or '')}\n"
+            f"path: {json.dumps(version.skill_path or '/')}\n"
             "---\n\n"
-            f"# {listing.name}\n\n{description}\n"
+            f"# {_clean(listing.name)}\n\n{description}\n"
         )
     return Projected(
         display_name=listing.name,

@@ -236,6 +236,24 @@ def test_use_prompt_renders_json_artifact(monkeypatch):
     assert get.call_args.args[0] == f"/api/v1/artifacts/prompt/{ENTITY}/1.2.0"
 
 
+def test_use_table_output_strips_terminal_control_sequences(monkeypatch):
+    hostile = "# Skill\x1b]0;owned\x07 body \x1b[31mred\x1b[0m \x1b[2J\x07 tail\ttab\n"
+    monkeypatch.setattr(discover.client, "get", Mock(return_value=_entry()))
+    monkeypatch.setattr(discover.client, "get_text", Mock(return_value=hostile))
+    result = _invoke("use", URN, "--harness", "pi")
+    assert result.exit_code == 0, result.output
+    assert "\x1b" not in result.output and "\x07" not in result.output
+    assert "# Skill body red  tail\ttab" in result.output
+    # JSON output is a data channel and stays byte-exact.
+    result = _invoke("use", URN, "--harness", "pi", "--output", "json")
+    assert json.loads(result.output)["content"] == hostile
+
+
+def test_sanitize_for_terminal_keeps_plain_text():
+    text = "line one\n\tindented — unicode ✓ and [brackets]\r\n"
+    assert discover.sanitize_for_terminal(text) == text
+
+
 # ── capability lock ──────────────────────────────────────────────────────
 
 
@@ -387,6 +405,52 @@ def test_build_payload_attaches_matching_capabilities(monkeypatch, tmp_path):
     used = payload["capabilities_used"]
     assert len(used) == 1
     assert used[0]["identifier"] == URN and used[0]["confidence"] == "window" and used[0]["mode"] == "context"
+
+
+def test_session_start_prefers_birthtime_then_first_line_never_ctime(monkeypatch, tmp_path):
+    transcript = tmp_path / "s.jsonl"
+    transcript.write_text('{"type": "session", "timestamp": "2026-09-20T10:00:00Z"}\n{"x": 1}\n', encoding="utf-8")
+
+    class _Stat:
+        st_birthtime = 0  # platform without birth time
+        st_ctime = datetime.now(UTC).timestamp()  # would be "now" on Linux after writes
+
+    monkeypatch.setattr(type(transcript), "stat", lambda self: _Stat())
+    started = sessions_base._session_started_at(transcript)
+    assert started == datetime(2026, 9, 20, 9, 45, tzinfo=UTC), "first-line timestamp minus the lead, not ctime"
+
+    (tmp_path / "no-ts.jsonl").write_text("not json\n", encoding="utf-8")
+    fallback = sessions_base._session_started_at(tmp_path / "no-ts.jsonl")
+    assert datetime.now(UTC) - fallback > timedelta(hours=23), "no signal: wide fallback window"
+
+
+def test_build_payload_caps_capabilities_to_the_ingest_contract(monkeypatch, tmp_path):
+    monkeypatch.setattr(sessions_base, "_resolve_agent", lambda *_a, **_k: (None, None))
+    monkeypatch.setattr(sessions_base, "_get_cached_layer_hash", lambda *_a, **_k: None)
+    now = datetime.now(UTC)
+    for i in range(250):
+        capability_lock.record(
+            kind="skill",
+            mode="context",
+            source="discover-cli",
+            harness="kiro",
+            cwd=tmp_path,
+            identifier=f"urn:air:x:skill:{i:04d}",
+            version="1.0.0",
+            now=now - timedelta(seconds=250 - i),
+        )
+    payload = sessions_base.build_payload(
+        session_id="s-cap",
+        lines=[],
+        start_offset=0,
+        hook_event="Stop",
+        line_count_before=0,
+        cwd=str(tmp_path),
+        harness="kiro",
+    )
+    used = payload["capabilities_used"]
+    assert len(used) == 200
+    assert used[0]["identifier"] == "urn:air:x:skill:0249", "most recent uses are kept"
 
 
 def test_build_payload_omits_field_when_nothing_matches(monkeypatch, tmp_path):

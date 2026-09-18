@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from models.discovery_entry import DiscoveryEntry, DiscoveryKind, DiscoveryLifecycle
-from services.discovery.identity import MEDIA_TYPE_REGISTRY, build_registry_urn
+from services.discovery.identity import MEDIA_TYPE_REGISTRY, build_registry_urn, identity_uri
 
 if TYPE_CHECKING:
     from services.discovery.search import Ranked
@@ -92,7 +92,7 @@ def registry_entry(publisher_domain: str, base_url: str, *, display_name: str = 
             "find an approved skill for reviewing pull requests",
             "which MCP servers can query our database",
         ],
-        "trustManifest": {"identity": {"domain": publisher_domain}},
+        "trustManifest": {"identity": identity_uri(publisher_domain), "identityType": "https"},
     }
 
 

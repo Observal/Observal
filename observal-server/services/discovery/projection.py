@@ -35,8 +35,11 @@ from models.discovery_entry import (
 from models.mcp import ListingStatus
 from services.discovery.adapters import ADAPTERS, NATIVE_KINDS, NATIVE_MODELS, Projected
 from services.discovery.identity import (
+    DEFAULT_PUBLISHER_DOMAIN,
     KIND_MEDIA_TYPES,
     build_urn,
+    identity_uri,
+    is_publisher_domain,
     publisher_domain_from_url,
 )
 from services.versioning import parse_semver
@@ -47,16 +50,26 @@ if TYPE_CHECKING:
 # ── Context ──────────────────────────────────────────────────────────────
 
 
+PUBLISHER_DOMAIN_SETTING = "discovery.publisher_domain"
+
+
 @dataclass(frozen=True, slots=True)
 class ProjectionContext:
-    """Deployment facts the projection needs: who publishes, and where artifacts live."""
+    """Deployment facts the projection needs: who publishes, and where artifacts live.
+
+    The publisher domain is part of every permanent identifier, so once a real
+    domain has been used it is pinned in the ``discovery.publisher_domain``
+    setting and no longer follows ``deployment.public_url``. The artifact base
+    URL is a location, not an identity, and always follows the public URL.
+    """
 
     publisher_domain: str
     artifact_base_url: str  # e.g. https://observal.acme.com
 
     @classmethod
-    def from_public_url(cls, public_url: str | None) -> ProjectionContext:
-        domain = publisher_domain_from_url(public_url)
+    def from_public_url(cls, public_url: str | None, *, pinned_domain: str | None = None) -> ProjectionContext:
+        domain = pinned_domain if pinned_domain and is_publisher_domain(pinned_domain) else None
+        domain = domain or publisher_domain_from_url(public_url)
         base = (public_url or "").strip().rstrip("/")
         if not base:
             base = f"https://{domain}"
@@ -71,7 +84,35 @@ class ProjectionContext:
 def default_context() -> ProjectionContext:
     import services.dynamic_settings as ds
 
-    return ProjectionContext.from_public_url(ds.get_sync("deployment.public_url", ""))
+    return ProjectionContext.from_public_url(
+        ds.get_sync("deployment.public_url", ""),
+        pinned_domain=ds.get_sync(PUBLISHER_DOMAIN_SETTING, ""),
+    )
+
+
+async def resolve_context(db: AsyncSession) -> ProjectionContext:
+    """Like :func:`default_context`, but pins the publisher domain the first time a real one is seen.
+
+    Identifiers minted under the placeholder domain are expected to change when
+    the deployment is configured; identifiers minted under a real domain must
+    not change again just because ``deployment.public_url`` moves.
+    """
+    import services.dynamic_settings as ds
+    from models.enterprise_config import EnterpriseConfig
+
+    public_url = await ds.get("deployment.public_url", "")
+    pinned = await ds.get(PUBLISHER_DOMAIN_SETTING, "")
+    ctx = ProjectionContext.from_public_url(public_url, pinned_domain=pinned)
+    if not pinned and ctx.publisher_domain != DEFAULT_PUBLISHER_DOMAIN:
+        existing = (
+            await db.execute(select(EnterpriseConfig).where(EnterpriseConfig.key == PUBLISHER_DOMAIN_SETTING))
+        ).scalar_one_or_none()
+        if existing is None:
+            db.add(EnterpriseConfig(key=PUBLISHER_DOMAIN_SETTING, value=ctx.publisher_domain))
+            await db.flush()
+            await ds.invalidate(PUBLISHER_DOMAIN_SETTING)
+            optic.info("discovery publisher domain pinned to {}", ctx.publisher_domain)
+    return ctx
 
 
 # ── Version selection ────────────────────────────────────────────────────
@@ -176,7 +217,7 @@ def build_ard_entry(
         "capabilities": projected.capabilities,
         "representativeQueries": projected.representative_queries,
         "tags": projected.tags,
-        "trustManifest": {"identity": {"domain": ctx.publisher_domain}},
+        "trustManifest": {"identity": identity_uri(ctx.publisher_domain), "identityType": "https"},
         "obs:kind": kind.value,
         "obs:nativeRef": f"{listing.namespace}/{listing.slug}@{version.version}",
         "obs:supportedHarnesses": projected.supported_harnesses,
@@ -317,7 +358,7 @@ async def reproject_all(
     Idempotent and safe to run at any time; this is the safety net under the
     per-change hook. Commits once at the end.
     """
-    ctx = ctx or default_context()
+    ctx = ctx or await resolve_context(db)
     now = datetime.now(UTC)
     stats = ProjectionStats()
 
@@ -325,11 +366,16 @@ async def reproject_all(
         listing_model = NATIVE_MODELS[kind][0]
         ids = list((await db.execute(select(listing_model.id))).scalars().all())
         live: set[uuid.UUID] = set()
+        failed: set[uuid.UUID] = set()
         for entity_id in ids:
+            # A SAVEPOINT per resource: one bad row must not abort the batch
+            # transaction and take every other update down with it.
             try:
-                entry = await project_entity(db, kind, entity_id, ctx=ctx, now=now)
+                async with db.begin_nested():
+                    entry = await project_entity(db, kind, entity_id, ctx=ctx, now=now)
             except Exception:
                 stats.failed += 1
+                failed.add(entity_id)
                 optic.exception("discovery projection failed kind={} id={}", kind.value, entity_id)
                 continue
             if entry is None:
@@ -346,7 +392,8 @@ async def reproject_all(
             DiscoveryEntry.tombstoned_at.is_(None),
         )
         for entry in (await db.execute(stale_stmt)).scalars().all():
-            if entry.local_entity_id not in live:
+            # A resource that failed to project is unknown, not gone; leave its entry alone.
+            if entry.local_entity_id not in live and entry.local_entity_id not in failed:
                 _tombstone(entry, now)
                 stats.tombstoned += 1
 
@@ -358,6 +405,7 @@ async def reproject_all(
 
 
 __all__ = [
+    "PUBLISHER_DOMAIN_SETTING",
     "ProjectionContext",
     "ProjectionStats",
     "build_ard_entry",
@@ -366,4 +414,5 @@ __all__ = [
     "default_context",
     "project_entity",
     "reproject_all",
+    "resolve_context",
 ]

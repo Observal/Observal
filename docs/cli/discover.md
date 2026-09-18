@@ -11,12 +11,12 @@ Discovery searches every kind at once (agents, MCP servers, skills, hooks, promp
 
 ```bash
 observal discover search review a pull request for authentication bugs
-observal discover search query postgres --type mcp --output json
+observal discover search 'query postgres' --type mcp --output json
 observal discover search generate tests --harness pi
 observal discover search release notes --include-unapproved
 ```
 
-The words after `search` are the query; no quoting needed.
+Quote the task as one argument. Several bare words are still joined into one query, but the text comes from the user and must never be spliced into a shell command unquoted.
 
 | Option | Description |
 | --- | --- |

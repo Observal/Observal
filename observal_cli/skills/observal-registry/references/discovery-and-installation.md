@@ -15,7 +15,7 @@
 For "is there something that does X?" start with cross-kind discovery, which ranks agents, MCP servers, skills, hooks, prompts, and sandboxes together and tells you whether each result can be used right now:
 
 ```bash
-observal discover search review a pull request for authentication bugs --output json
+observal discover search 'review a pull request for authentication bugs' --output json
 observal discover inspect urn:air:... --output json
 observal discover use urn:air:... --output json
 ```

@@ -157,8 +157,11 @@ async def ard_search(
     if page.next_page_token:
         content["pageToken"] = page.next_page_token
     # Federation: an omitted field means "auto" bounded by the upstream allowlist
-    # (ADR 0001, Decision 5). No upstreams are configured yet, so every mode is
-    # local-only and there are no referrals to return.
+    # (ADR 0001, Decision 5). No upstream registries can be configured yet, so
+    # every mode resolves to this registry alone; referrals mode says so with an
+    # explicit empty list rather than by omission.
+    if body.federation == "referrals":
+        content["referrals"] = []
     optic.debug(
         "ard search user={} results={} total={} federation={}",
         current_user.id if current_user else None,
@@ -244,6 +247,8 @@ def _apply_list_filter(stmt, expression: str | None):
         field_name, op, value = _parse_clause(clause)
         field = field_name.lower()
         raw_values = [_unquote(v) for v in value.split(",") if v.strip()]
+        if not raw_values:
+            raise InvalidSearchRequestError(f"filter clause for {field_name} has no value")
         if field == "type":
             stmt = stmt.where(DiscoveryEntry.media_type.in_([normalize_media_type(v) or v for v in raw_values]))
         elif field in ("publisherid", "publisher"):

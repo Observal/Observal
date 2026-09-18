@@ -10,7 +10,9 @@ Reproduces the registry's rules (ADR 0001, Decision 6) as a SQL predicate:
    team members, everything to admins and super-admins.
 2. Lifecycle — approved entries to everyone who passes (1); pending, rejected
    and draft entries only to the owner or a co-author (the owner fallback that
-   install already honours); archived entries only when asked for explicitly.
+   install already honours); reviewers additionally see pending entries, which
+   is their queue, but not other people's drafts or rejections; archived
+   entries only when asked for explicitly.
 
 Anonymous callers see public approved entries, and only when the deployment
 has switched public search on.
@@ -78,11 +80,16 @@ def lifecycle_predicate(user: Any | None, lifecycles: tuple[DiscoveryLifecycle, 
         clauses.append(DiscoveryEntry.lifecycle_status == DiscoveryLifecycle.approved)
     if unapproved_wanted and user is not None:
         in_unapproved = DiscoveryEntry.lifecycle_status.in_(list(unapproved_wanted))
-        if _is_admin(user) or _is_reviewer(user):
+        owner = DiscoveryEntry.owner_user_id == user.id
+        co_author = DiscoveryEntry.co_author_ids.like(f"%{user.id}%")
+        if _is_admin(user):
             clauses.append(in_unapproved)
+        elif _is_reviewer(user):
+            # A reviewer's mandate is the queue: pending items, plus their own work.
+            own = and_(in_unapproved, or_(owner, co_author))
+            queue = DiscoveryEntry.lifecycle_status == DiscoveryLifecycle.pending
+            clauses.append(or_(own, queue) if DiscoveryLifecycle.pending in wanted else own)
         else:
-            owner = DiscoveryEntry.owner_user_id == user.id
-            co_author = DiscoveryEntry.co_author_ids.like(f"%{user.id}%")
             clauses.append(and_(in_unapproved, or_(owner, co_author)))
     if not clauses:
         # Nothing the caller is allowed to see in the requested states.

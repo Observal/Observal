@@ -20,6 +20,8 @@ from models.user import UserRole
 from services.discovery import hooks as discovery_hooks
 from services.discovery.identity import (
     build_urn,
+    identity_uri,
+    is_publisher_domain,
     normalize_media_type,
     normalize_urn,
     parse_urn,
@@ -111,12 +113,29 @@ def test_media_type_normalisation(raw, expected):
         ("https://observal.acme.com", "observal.acme.com"),
         ("observal.acme.com:8443", "observal.acme.com"),
         ("http://localhost:8000", "observal.local"),
+        ("http://observal:8000", "observal.local"),  # single label is not an FQDN
+        ("http://10.0.0.5", "observal.local"),  # addresses are not publishers
         ("", "observal.local"),
         (None, "observal.local"),
     ],
 )
 def test_publisher_domain_from_public_url(url, domain):
     assert publisher_domain_from_url(url) == domain
+
+
+def test_is_publisher_domain_and_identity_uri():
+    assert is_publisher_domain("observal.acme.com")
+    assert not is_publisher_domain("observal")
+    assert not is_publisher_domain("192.168.1.1")
+    assert identity_uri("observal.acme.com") == "https://observal.acme.com"
+
+
+def test_pinned_domain_wins_over_public_url():
+    ctx = ProjectionContext.from_public_url("https://new-host.example.com", pinned_domain="observal.acme.com")
+    assert ctx.publisher_domain == "observal.acme.com", "identifiers do not follow a moved public URL"
+    assert ctx.artifact_base_url == "https://new-host.example.com", "artifact locations do"
+    ctx = ProjectionContext.from_public_url("https://new-host.example.com", pinned_domain="observal")
+    assert ctx.publisher_domain == "new-host.example.com", "an invalid pin is ignored"
 
 
 def test_projection_context_builds_artifact_urls():
@@ -198,6 +217,9 @@ async def test_skill_projects_to_conformant_entry(sessions):
         assert entry.activatable is True
         _validate_entry(entry.raw_entry)
         assert entry.raw_entry["obs:nativeRef"] == "acme/security-review@1.2.0"
+        trust = entry.raw_entry["trustManifest"]
+        assert trust == {"identity": "https://observal.example.com", "identityType": "https"}
+        assert isinstance(trust["identity"], str), "spec: identity is a URI string, not an object"
 
 
 @pytest.mark.asyncio
@@ -353,6 +375,38 @@ async def test_all_six_kinds_project_and_validate(sessions):
 
 
 @pytest.mark.asyncio
+async def test_reproject_all_isolates_failures_and_keeps_their_entries(sessions, monkeypatch):
+    """One resource that fails to project must neither abort the batch nor be tombstoned."""
+    from services.discovery import adapters, projection
+
+    async with sessions() as db:
+        owner = await fx.user(db)
+        good = await fx.skill(db, owner, name="Good")
+        bad = await fx.skill(db, owner, name="Bad", slug="bad")
+        await reproject_all(db, ctx=fx.CTX)
+
+        original = adapters.project_skill
+
+        def exploding(listing, version):
+            if listing.id == bad.id:
+                raise RuntimeError("boom")
+            return original(listing, version)
+
+        monkeypatch.setitem(projection.ADAPTERS, DiscoveryKind.skill, exploding)
+        good_row = (
+            await db.execute(select(DiscoveryEntry).where(DiscoveryEntry.local_entity_id == good.id))
+        ).scalar_one()
+        good_row.content_hash = "stale"  # forces the batch to rewrite this entry despite the failure
+        await db.commit()
+
+        stats = await reproject_all(db, ctx=fx.CTX)
+        assert stats.failed == 1 and stats.tombstoned == 0
+        rows = {r.display_name: r for r in (await db.execute(select(DiscoveryEntry))).scalars().all()}
+        assert rows["Bad"].tombstoned_at is None, "a failed projection is unknown, not gone"
+        assert rows["Good"].content_hash != "stale", "the batch still committed the healthy entry"
+
+
+@pytest.mark.asyncio
 async def test_reproject_all_tombstones_stale_entries(sessions):
     async with sessions() as db:
         owner = await fx.user(db)
@@ -388,6 +442,7 @@ async def test_visibility_mirrors_registry_rules(sessions):
 
         await fx.skill(db, owner, name="Public Approved")
         await fx.skill(db, owner, name="Public Pending", status=ListingStatus.pending, co_authors=[str(co_author.id)])
+        await fx.skill(db, owner, name="Public Rejected", slug="public-rejected", status=ListingStatus.rejected)
         await fx.skill(db, owner, name="Public Archived", status=ListingStatus.archived)
         await fx.skill(db, owner, name="Personal Private", is_private=True)
         await fx.skill(db, owner, name="Team Private", is_private=True, team_id=team.id)
@@ -397,11 +452,18 @@ async def test_visibility_mirrors_registry_rules(sessions):
         assert await _visible(db, stranger) == {"Public Approved"}
         # Team-private entries need membership, exactly as apply_visibility_filter requires;
         # a submitter who is not on the team does not see them either.
-        assert await _visible(db, owner) == {"Public Approved", "Public Pending", "Personal Private"}
+        assert await _visible(db, owner) == {"Public Approved", "Public Pending", "Public Rejected", "Personal Private"}
         assert await _visible(db, co_author) == {"Public Approved", "Public Pending"}
         assert await _visible(db, member) == {"Public Approved", "Team Private"}
+        # Reviewers see their queue (pending), not other people's rejections or drafts.
         assert await _visible(db, reviewer) == {"Public Approved", "Public Pending"}
-        assert await _visible(db, admin) == {"Public Approved", "Public Pending", "Personal Private", "Team Private"}
+        assert await _visible(db, admin) == {
+            "Public Approved",
+            "Public Pending",
+            "Public Rejected",
+            "Personal Private",
+            "Team Private",
+        }
 
 
 @pytest.mark.asyncio
@@ -524,6 +586,59 @@ def test_page_token_rejects_tampering():
         decode_page_token(token, "other-query")
     with pytest.raises(InvalidSearchRequestError):
         decode_page_token("!!not-base64", "abc")
+
+
+def test_type_and_kind_filters_are_separate_predicates():
+    filters = SearchFilters.from_ard_filter({"type": ["application/mcp-server-card+json"], "obs:kind": ["skill"]})
+    assert filters.media_types == ["application/mcp-server-card+json"]
+    assert filters.kinds == [DiscoveryKind.skill], "type must not leak into the kind predicate"
+
+
+@pytest.mark.asyncio
+async def test_disjoint_type_and_kind_return_nothing(sessions):
+    async with sessions() as db:
+        owner = await _seeded(db)
+        filters = SearchFilters.from_ard_filter({"type": ["application/mcp-server-card+json"], "obs:kind": ["skill"]})
+        page = await search_entries(db, text="pull requests github", filters=filters, user=owner)
+        assert page.results == []
+
+
+@pytest.mark.asyncio
+async def test_broad_query_ranks_the_best_match_even_among_many_candidates(sessions):
+    """The candidate cap must not drop a top-relevance entry that merely has an old last_seen_at."""
+    from datetime import UTC, datetime, timedelta
+
+    from services.discovery import search as search_mod
+
+    async with sessions() as db:
+        old = datetime(2026, 1, 1, tzinfo=UTC)
+        target = _entry("Widget Deployer", description="deploy widget")
+        target.local_entity_id = uuid.uuid4()
+        target.media_type = "application/ai-skill+md"
+        target.version = "1.0.0"
+        target.artifact_url = "https://x.test/a"
+        target.publisher_domain = "x.test"
+        target.visibility = DiscoveryVisibility.public
+        target.search_document = "widget deployer deploy widget"
+        target.last_seen_at = old
+        db.add(target)
+        for i in range(600):
+            filler = _entry(f"Filler {i:03d}", description="widget adjacent")
+            filler.local_entity_id = uuid.uuid4()
+            filler.media_type = "application/ai-skill+md"
+            filler.version = "1.0.0"
+            filler.artifact_url = f"https://x.test/f{i}"
+            filler.publisher_domain = "x.test"
+            filler.visibility = DiscoveryVisibility.public
+            filler.search_document = f"filler {i:03d} widget adjacent"
+            filler.last_seen_at = old + timedelta(days=1 + i)
+            db.add(filler)
+        await db.commit()
+
+        monkeypatch_limit = search_mod.CANDIDATE_LIMIT
+        assert monkeypatch_limit > 600
+        page = await search_entries(db, text="widget deployer", user=None, public_search_enabled=True, page_size=3)
+        assert page.results[0].entry.display_name == "Widget Deployer"
 
 
 def test_unknown_filter_term_is_rejected():

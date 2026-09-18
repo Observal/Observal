@@ -388,6 +388,10 @@ DEFAULTS: dict[str, str] = {
     "observability.log_format": "json",  # 'json' or 'console' (colorized). Requires restart.
     "observability.enable_openapi": "false",
     "observability.enable_metrics": "false",
+    # Discovery (ARD). The publisher domain is the first segment of every
+    # permanent identifier; it is pinned automatically the first time a real
+    # deployment.public_url is seen and changing it renames every identifier.
+    "discovery.publisher_domain": "",
     # Misc
     "misc.harness_allowlist": "",
     "misc.default_harness": "",
@@ -515,6 +519,13 @@ SECTIONS: list[dict[str, Any]] = [
         "description": "Share aggregate adoption data with Observal on a super-admin-selected schedule. No prompts, traces, source code, credentials, or user identities are included.",
         "icon": "activity",
         "keys": [k for k in DEFAULTS if k.startswith("usage_ping.")],
+    },
+    {
+        "id": "discovery",
+        "title": "Discovery",
+        "description": "Agentic Resource Discovery identifiers. The publisher domain is pinned from the public URL on first use; changing it renames every published identifier.",
+        "icon": "search",
+        "keys": [k for k in DEFAULTS if k.startswith("discovery.")],
     },
     {
         "id": "security",

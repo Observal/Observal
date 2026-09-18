@@ -132,9 +132,22 @@ def publisher_domain_from_url(public_url: str | None) -> str:
     if "://" not in candidate:
         candidate = f"https://{candidate}"
     host = (urlparse(candidate).hostname or "").lower().rstrip(".")
-    if not host or not _DOMAIN_RE.match(host) or host in {"localhost", "127.0.0.1", "0.0.0.0"}:
+    if not is_publisher_domain(host):
         return DEFAULT_PUBLISHER_DOMAIN
     return host
+
+
+def is_publisher_domain(host: str) -> bool:
+    """A publisher must be a fully qualified domain name: at least two labels, not an address."""
+    if not host or "." not in host or not _DOMAIN_RE.match(host):
+        return False
+    is_address = all(label.isdigit() for label in host.split("."))
+    return host not in {"localhost", "0.0.0.0"} and not is_address
+
+
+def identity_uri(publisher_domain: str) -> str:
+    """The trustManifest.identity value: an HTTPS FQDN URI whose domain matches the URN publisher."""
+    return f"https://{publisher_domain}"
 
 
 def build_urn(publisher_domain: str, kind: DiscoveryKind, entity_id: uuid.UUID) -> str:

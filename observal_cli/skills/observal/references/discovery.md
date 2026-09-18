@@ -21,13 +21,13 @@ Do not search for trivial edits the user described precisely, or when the user e
 ## Search
 
 ```bash
-observal discover search review a pull request for authentication bugs --output json
-observal discover search query postgres --type mcp --output json
-observal discover search generate playwright tests --harness pi --output json
-observal discover search release notes --include-unapproved --output json   # your own drafts too
+observal discover search 'review a pull request for authentication bugs' --output json
+observal discover search 'query postgres' --type mcp --output json
+observal discover search 'generate playwright tests' --harness pi --output json
+observal discover search 'release notes' --include-unapproved --output json   # your own drafts too
 ```
 
-`--type` accepts `agent`, `mcp`, `skill`, `hook`, `prompt`, `sandbox`. `--harness` restricts to resources that list that harness. Results are `results[]`, ranked by `score` (relevance only, 0-100), each with `matchedOn` explaining the match. An empty `results` is a successful answer: nothing matched.
+Quote the task as a single argument; the words are user text, not shell syntax. `--type` accepts `agent`, `mcp`, `skill`, `hook`, `prompt`, `sandbox`. `--harness` restricts to resources that list that harness. Results are `results[]`, ranked by `score` (relevance only, 0-100), each with `matchedOn` explaining the match. An empty `results` is a successful answer: nothing matched.
 
 Retry once with fewer or different words before concluding nothing exists.
 

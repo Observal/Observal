@@ -40,6 +40,7 @@ BENCHMARK = json.loads(FIXTURE.read_text(encoding="utf-8"))
 # "issue"), which is what semantic retrieval is for. Move the floors up when
 # the ranker improves; never down to make a change pass.
 RECALL_AT_5_FLOOR = 0.90
+COVERAGE_AT_5_FLOOR = 0.80  # every expected resource, not just one, must tend to appear
 MRR_AT_10_FLOOR = 0.85
 ZERO_RESULT_CEILING = 0.05
 
@@ -80,21 +81,30 @@ SLUG_BY_ID = {e.local_entity_id: spec["id"] for e, spec in zip(ENTRIES, BENCHMAR
 
 def _metrics(rankings: dict[str, list[str]]) -> dict[str, float]:
     recall_hits = 0
+    coverage = 0.0
     reciprocal = 0.0
     zero = 0
     for case in BENCHMARK["queries"]:
         got = rankings[case["text"]]
         expected = set(case["expected"])
+        top5 = set(got[:5])
         if not got:
             zero += 1
-        if expected & set(got[:5]):
+        if expected & top5:
             recall_hits += 1
+        # Per-resource: a query expecting three resources gets 1/3 credit per one found.
+        coverage += len(expected & top5) / len(expected)
         for rank, slug in enumerate(got[:10], start=1):
             if slug in expected:
                 reciprocal += 1 / rank
                 break
     n = len(BENCHMARK["queries"])
-    return {"recall@5": recall_hits / n, "mrr@10": reciprocal / n, "zero_result_rate": zero / n}
+    return {
+        "recall@5": recall_hits / n,
+        "coverage@5": coverage / n,
+        "mrr@10": reciprocal / n,
+        "zero_result_rate": zero / n,
+    }
 
 
 def _report(label: str, metrics: dict[str, float], rankings: dict[str, list[str]]) -> str:
@@ -129,6 +139,7 @@ def test_ranker_meets_quality_floors():
     report = _report("ranker", metrics, rankings)
     print(report)
     assert metrics["recall@5"] >= RECALL_AT_5_FLOOR, report
+    assert metrics["coverage@5"] >= COVERAGE_AT_5_FLOOR, report
     assert metrics["mrr@10"] >= MRR_AT_10_FLOOR, report
     assert metrics["zero_result_rate"] <= ZERO_RESULT_CEILING, report
 
@@ -159,4 +170,6 @@ async def test_end_to_end_search_does_not_lose_recall_to_the_prefilter(sessions)
     report = _report("end-to-end", metrics, rankings)
     print(report)
     assert metrics["recall@5"] >= RECALL_AT_5_FLOOR, report
+    assert metrics["coverage@5"] >= COVERAGE_AT_5_FLOOR, report
     assert metrics["mrr@10"] >= MRR_AT_10_FLOOR, report
+    assert metrics["zero_result_rate"] <= ZERO_RESULT_CEILING, report

@@ -28,13 +28,16 @@ from sqlalchemy import or_, select
 from api.sanitize import escape_like
 from api.search import keyword_tokens
 from models.discovery_entry import DiscoveryEntry, DiscoveryKind, DiscoveryLifecycle
-from services.discovery.identity import MEDIA_TYPE_KINDS, normalize_media_type
+from services.discovery.identity import normalize_media_type
 from services.discovery.visibility import DEFAULT_LIFECYCLES, visible_entries_predicate
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
-CANDIDATE_LIMIT = 500
+# Bounded so a pathological query cannot pull the whole table, but wide enough
+# that a broad query over a large deployment (low thousands of entries) still
+# ranks every candidate instead of dropping older ones before ranking.
+CANDIDATE_LIMIT = 5000
 MAX_PAGE_SIZE = 100
 DEFAULT_PAGE_SIZE = 10
 
@@ -97,8 +100,9 @@ class SearchFilters:
 
         for key in raw:
             if key == "type":
+                # type and obs:kind stay separate predicates so a disjoint pair returns nothing
+                # rather than the union, and unknown media types remain filterable.
                 filters.media_types = [normalize_media_type(v) or v for v in values(key)]
-                filters.kinds.extend(k for k in (MEDIA_TYPE_KINDS.get(m) for m in filters.media_types) if k)
             elif key == "tags":
                 filters.tags = [v.lower() for v in values(key)]
             elif key == "capabilities":

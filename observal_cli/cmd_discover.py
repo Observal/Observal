@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from contextlib import nullcontext
 from pathlib import Path
 
@@ -43,7 +44,7 @@ discover_app = typer.Typer(
         "Find approved resources for a task and use them in this session\n\n"
         "Examples:\n"
         '  observal discover search "review a pull request for auth bugs"\n'
-        "  observal discover search generate playwright tests --type skill --output json\n"
+        '  observal discover search "generate playwright tests" --type skill --output json\n'
         "  observal discover inspect urn:air:observal.acme.com:skill:5f2c...\n"
         "  observal discover use urn:air:observal.acme.com:skill:5f2c..."
     ),
@@ -66,6 +67,22 @@ _KIND_MEDIA = {
 
 # Kinds whose artifact is text the assistant can read right now.
 _CONTEXT_KINDS = {"skill", "prompt"}
+
+# Terminal control sequences (CSI, OSC, and other ESC-prefixed codes). An
+# approved artifact is still third-party text; it must not be able to drive
+# the terminal when printed in table mode. JSON output is left untouched.
+_TERMINAL_CONTROL_RE = re.compile(
+    r"\x1b\[[0-?]*[ -/]*[@-~]"  # CSI ... final byte
+    r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC ... BEL or ST
+    r"|\x1b[@-Z\\-_]"  # two-byte escapes (except CSI/OSC handled above)
+    r"|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]"  # other C0 controls, keep \t \n \r
+)
+
+
+def sanitize_for_terminal(text: str) -> str:
+    """Strip escape and control sequences so printed artifact text is inert."""
+    return _TERMINAL_CONTROL_RE.sub("", text)
+
 
 _AVAILABILITY_LABELS = {
     "now": "[green]now[/green]",
@@ -177,7 +194,7 @@ def _next_step(item: dict, harness: str | None) -> str | None:
 
 @discover_app.command("search")
 def discover_search(
-    words: list[str] = typer.Argument(..., help="What you are trying to do, in plain words"),
+    words: list[str] = typer.Argument(..., help="What you are trying to do (quote it as one argument)"),
     kind: str | None = typer.Option(
         None, "--type", "-t", help="Restrict to one kind: agent, mcp, skill, hook, prompt, sandbox"
     ),
@@ -193,9 +210,9 @@ def discover_search(
     strong match that is not usable yet is never mistaken for one that is.
 
     Examples:
-      observal discover search review a pull request for authentication bugs
+      observal discover search "review a pull request for authentication bugs"
       observal discover search "query postgres" --type mcp --output json
-      observal discover search generate tests --harness pi
+      observal discover search "generate tests" --harness pi
     """
     operation = "Search discoverable resources"
     text = " ".join(w.strip() for w in words if w.strip())
@@ -205,7 +222,7 @@ def discover_search(
             "A search needs some words to search for.",
             operation=operation,
             resource="search text",
-            remediation="Describe the task, e.g. `observal discover search review pull request for auth bugs`.",
+            remediation="Describe the task, e.g. `observal discover search 'review a pull request for auth bugs'`.",
         )
     kind_value = _kind_filter(kind, operation)
     harness_value = _resolve_harness(harness, operation) if harness else None
@@ -425,7 +442,7 @@ def discover_use(
     )
     rprint(f"[dim]Recorded in the capability lock for {esc(harness_value or 'unknown harness')} in {esc(cwd)}[/dim]")
     rprint()
-    print(shown)
+    print(sanitize_for_terminal(shown))
     if truncated:
         rprint()
         rprint(

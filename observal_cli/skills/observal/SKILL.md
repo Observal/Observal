@@ -17,7 +17,7 @@ Use this skill for discovery of approved resources and for core account, setup, 
 
 Before writing a helper, script, review checklist, or prompt from scratch, and before telling the user that a capability is unavailable, check whether the organization already has an approved resource for it:
 
-1. `observal discover search <what the user is trying to do> --output json` (plain words, no quoting needed).
+1. `observal discover search '<what the user is trying to do>' --output json`. Pass the task text as one single-quoted argument and never splice it into shell syntax unquoted; it is user-provided text.
 2. Read `results[]`. `score` is relevance only. Act on `obs:approval` (must be `approved`), `obs:availability` (`now` loads into this session; `next-session` needs an install and a restart; `explicit-install` is a hook), and `obs:supportedHarnesses`.
 3. Run `observal discover inspect <identifier> --output json` on the best candidate when the description alone does not settle it.
 4. Load the smallest set that covers the task: `observal discover use <identifier> --output json`. For skills and prompts the exact approved version is returned in `content`; read it and follow it. For MCP servers, agents, hooks, and sandboxes the response carries `next_step`, the install command that asks before changing anything: run it only with the user's agreement.

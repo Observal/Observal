@@ -75,6 +75,16 @@ changes on rename and on `transfer-owner`. The UUID never changes. The
 human-readable identity is still carried, as `obs:nativeRef`
 (`namespace/slug@version`), so clients can pivot to existing commands.
 
+**The publisher domain is pinned.** It is derived from `deployment.public_url`
+the first time a real fully qualified domain is seen and stored in the
+`discovery.publisher_domain` setting; after that, identifiers do not follow the
+public URL if the deployment moves hosts. Until a real domain is configured,
+identifiers use the placeholder `observal.local` and are expected to change
+once. Changing the pinned setting deliberately renames every identifier and is
+an administrator action. The artifact URL, by contrast, is a location and
+always follows the current public URL. Single-label hosts and IP addresses are
+never accepted as publishers.
+
 Externally ingested entries keep the identifier their publisher assigned.
 Observal never rewrites another publisher's URN.
 
@@ -185,8 +195,9 @@ weight inside it.
   so here rather than claiming otherwise.
 - **Explore.** Optional in the spec; added with search-quality work.
 - **Trust manifest verification.** Entries Observal publishes carry a
-  `trustManifest.identity` bound to the deployment domain. Verification of
-  third-party manifests arrives with external ingestion.
+  `trustManifest.identity` of `https://<publisher-domain>` (an HTTPS FQDN URI
+  string, `identityType: "https"`) bound to the URN's publisher segment.
+  Verification of third-party manifests arrives with external ingestion.
 
 ## Decision 10: Search baseline needs no external service
 

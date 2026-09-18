@@ -725,16 +725,58 @@ _CAPABILITY_LEAD_SECONDS = 15 * 60
 _CAPABILITY_FALLBACK_HOURS = 24
 
 
+_TIMESTAMP_KEYS = ("timestamp", "ts", "time", "created_at", "createdAt", "start_time")
+_MAX_CAPABILITIES_PER_PUSH = 200
+
+
+def _first_line_timestamp(session_jsonl: Path):
+    """The earliest timestamp a transcript carries in its first line, if any."""
+    import json
+    from datetime import UTC, datetime
+
+    try:
+        with session_jsonl.open("r", encoding="utf-8", errors="replace") as handle:
+            first = handle.readline()
+        record = json.loads(first)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(record, dict):
+        return None
+    for key in _TIMESTAMP_KEYS:
+        value = record.get(key)
+        if isinstance(value, int | float) and value > 0:
+            return datetime.fromtimestamp(value / 1000 if value > 1e11 else value, tz=UTC)
+        if isinstance(value, str) and value:
+            try:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    return None
+
+
 def _session_started_at(session_jsonl: Path | None):
+    """When the session began, minus a short lead.
+
+    Prefer the file's birth time where the platform records one, then the
+    transcript's own first timestamp. ``st_ctime`` is deliberately not used:
+    on Linux it moves with every write, which would silently drop uses from
+    the start of a long session. Without either signal, fall back to a wide
+    window rather than guess.
+    """
     from datetime import UTC, datetime, timedelta
 
     if session_jsonl is not None:
+        started = None
         try:
-            stat = session_jsonl.stat()
-            created = getattr(stat, "st_birthtime", None) or stat.st_ctime
-            return datetime.fromtimestamp(created, tz=UTC) - timedelta(seconds=_CAPABILITY_LEAD_SECONDS)
+            birth = getattr(session_jsonl.stat(), "st_birthtime", None)
+            if birth:
+                started = datetime.fromtimestamp(birth, tz=UTC)
         except OSError:
             pass
+        started = started or _first_line_timestamp(session_jsonl)
+        if started is not None:
+            return started - timedelta(seconds=_CAPABILITY_LEAD_SECONDS)
     return datetime.now(UTC) - timedelta(hours=_CAPABILITY_FALLBACK_HOURS)
 
 
@@ -757,7 +799,10 @@ def _capabilities_for_session(session_id: str, cwd: str, harness: str, session_j
         if not uses:
             return []
         confidence = "window" if session_jsonl is not None else "loose"
-        return capability_lock.to_payload(capability_lock.dedupe_latest(uses), confidence=confidence)
+        latest = capability_lock.dedupe_latest(uses)
+        # The ingest contract caps the list; keep the most recent distinct uses.
+        latest = sorted(latest, key=lambda u: u.ts, reverse=True)[:_MAX_CAPABILITIES_PER_PUSH]
+        return capability_lock.to_payload(latest, confidence=confidence)
     except Exception as exc:
         optic.debug("capability attribution skipped for {}: {}", session_id, exc)
         return []

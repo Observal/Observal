@@ -135,6 +135,15 @@ async def test_search_response_shape(sessions, settings):
 
 
 @pytest.mark.asyncio
+async def test_search_referrals_mode_returns_an_explicit_empty_list(sessions, settings):
+    owner, _, _ = await _seed(sessions)
+    async with _client(_app(sessions, owner)) as client:
+        resp = await client.post("/api/v1/ard/search", json={"query": {"text": "review"}, "federation": "referrals"})
+    assert resp.status_code == 200
+    assert resp.json()["referrals"] == []
+
+
+@pytest.mark.asyncio
 async def test_search_requires_text(sessions, settings):
     owner, _, _ = await _seed(sessions)
     async with _client(_app(sessions, owner)) as client:
@@ -228,6 +237,8 @@ async def test_list_is_deterministic_and_filterable(sessions, settings):
 
         bad = await client.get("/api/v1/ard/agents", params={"filter": "colour = 'blue'"})
         assert bad.status_code == 400
+        empty = await client.get("/api/v1/ard/agents", params={"filter": "displayName=,,,"})
+        assert empty.status_code == 400 and empty.json()["errorCode"] == "INVALID_ARGUMENT"
 
 
 @pytest.mark.asyncio
