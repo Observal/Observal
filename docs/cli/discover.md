@@ -16,7 +16,7 @@ observal discover search generate tests --harness pi
 observal discover search release notes --include-unapproved
 ```
 
-Quote the task as one argument. Several bare words are still joined into one query, but the text comes from the user and must never be spliced into a shell command unquoted.
+Pass the task as one shell-escaped argument (single-quote it and escape any embedded `'` as `'\''`). Several bare words are still joined into one query, but the text comes from the user and must never be spliced into a shell command unquoted.
 
 | Option | Description |
 | --- | --- |

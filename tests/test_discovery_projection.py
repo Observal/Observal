@@ -580,8 +580,13 @@ async def test_search_pagination_is_stable_and_complete(sessions):
 
 
 def test_page_token_rejects_tampering():
+    import base64
+
     token = encode_page_token(4, "abc")
     assert decode_page_token(token, "abc") == 4
+    overflow = base64.urlsafe_b64encode(b'{"o": 1e999, "f": "abc"}').decode().rstrip("=")
+    with pytest.raises(InvalidSearchRequestError):
+        decode_page_token(overflow, "abc")
     with pytest.raises(InvalidSearchRequestError):
         decode_page_token(token, "other-query")
     with pytest.raises(InvalidSearchRequestError):

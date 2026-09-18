@@ -268,7 +268,8 @@ def decode_page_token(token: str | None, fingerprint: str) -> int:
         if data.get("f") != fingerprint or offset < 0:
             raise ValueError
         return offset
-    except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+    except (ValueError, KeyError, TypeError, OverflowError, json.JSONDecodeError):
+        # OverflowError: json.loads accepts 1e999 as infinity and int() then overflows.
         raise InvalidSearchRequestError("invalid pageToken") from None
 
 

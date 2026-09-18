@@ -21,7 +21,6 @@ authenticated callers see what the registry's visibility rules already grant
 them.
 """
 
-import re
 from datetime import datetime
 from typing import Any
 
@@ -212,12 +211,42 @@ def _parse_timestamp(value: str) -> datetime:
 
 
 def _split_clauses(expression: str) -> list[str]:
-    """Split on a case-insensitive AND keyword without a backtracking regex."""
+    """Split on a case-insensitive AND keyword outside quotes, in one linear pass."""
     clauses: list[str] = []
-    for part in re.split(r"(?i)\bAND\b", expression):
-        part = part.strip()
-        if part:
-            clauses.append(part)
+    current: list[str] = []
+    quote: str | None = None
+    i = 0
+    n = len(expression)
+    while i < n:
+        ch = expression[i]
+        if quote:
+            current.append(ch)
+            if ch == quote:
+                quote = None
+            i += 1
+            continue
+        if ch in "'\"":
+            quote = ch
+            current.append(ch)
+            i += 1
+            continue
+        # A bare AND keyword: preceded and followed by whitespace or an edge.
+        if (
+            expression[i : i + 3].upper() == "AND"
+            and (i == 0 or expression[i - 1].isspace())
+            and (i + 3 == n or expression[i + 3].isspace())
+        ):
+            clause = "".join(current).strip()
+            if clause:
+                clauses.append(clause)
+            current = []
+            i += 3
+            continue
+        current.append(ch)
+        i += 1
+    clause = "".join(current).strip()
+    if clause:
+        clauses.append(clause)
     return clauses
 
 

@@ -434,6 +434,15 @@ def test_split_clauses_is_case_insensitive_and_ignores_blanks():
     assert ard._split_clauses("type = a and displayName = b AND  ") == ["type = a", "displayName = b"]
 
 
+def test_split_clauses_keeps_and_inside_quotes():
+    assert ard._split_clauses("displayName = 'Research AND Development' AND type = x") == [
+        "displayName = 'Research AND Development'",
+        "type = x",
+    ]
+    assert ard._split_clauses('displayName = "a and b"') == ['displayName = "a and b"']
+    assert ard._split_clauses("brandname = x") == ["brandname = x"], "AND inside a word is not a separator"
+
+
 def test_filter_parser_is_linear_on_adversarial_whitespace():
     """The inputs CodeQL described for the old regex: long runs of spaces after a field."""
     import time
