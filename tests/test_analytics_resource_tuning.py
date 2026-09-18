@@ -55,11 +55,15 @@ class TestApplyResourceSettings:
     """Unit tests for services.analytics.duckdb.apply_resource_settings."""
 
     @pytest.fixture(autouse=True)
-    def _stub_pragma_push(self):
-        """Stub the analytics-service HTTP push."""
+    def _reset_overrides(self):
+        """Clear overrides before/after each test and stub the HTTP push."""
+        import services.analytics.duckdb._settings as settings_mod
+
+        settings_mod._resource_overrides.clear()
         with patch("services.analytics.duckdb.schema._client._apply_pragmas", new_callable=AsyncMock) as push:
             self.push = push
             yield
+        settings_mod._resource_overrides.clear()
 
     async def test_memory_limit_is_pushed_in_megabytes(self):
         import services.analytics.duckdb as ch
@@ -98,16 +102,26 @@ class TestApplyResourceSettings:
         assert await ch.apply_resource_settings(overrides={"resource.unknown_setting": "100"}) == {}
         assert await ch.apply_resource_settings(overrides={}) == {}
 
-    async def test_each_apply_pushes_only_the_current_values(self):
+    async def test_swap_replaces_previous(self):
         import services.analytics.duckdb as ch
+        import services.analytics.duckdb._settings as settings_mod
+
+        await ch.apply_resource_settings(overrides={"resource.max_query_memory_mb": "400"})
+        assert settings_mod._resource_overrides == {"memory_limit": "400MB"}
+
+        await ch.apply_resource_settings(overrides={"resource.max_query_memory_mb": "200"})
+        assert settings_mod._resource_overrides == {"memory_limit": "200MB"}
+        assert self.push.await_args_list[-1] == call({"memory_limit": "200MB"})
+
+    async def test_swap_removes_dropped_keys(self):
+        import services.analytics.duckdb as ch
+        import services.analytics.duckdb._settings as settings_mod
 
         await ch.apply_resource_settings(overrides={"resource.max_query_memory_mb": "400", "resource.threads": "4"})
-        await ch.apply_resource_settings(overrides={"resource.max_query_memory_mb": "200"})
+        assert set(settings_mod._resource_overrides) == {"memory_limit", "threads"}
 
-        assert self.push.await_args_list == [
-            call({"memory_limit": "400MB", "threads": "4"}),
-            call({"memory_limit": "200MB"}),
-        ]
+        await ch.apply_resource_settings(overrides={"resource.max_query_memory_mb": "400"})
+        assert set(settings_mod._resource_overrides) == {"memory_limit"}
 
     async def test_fractional_value_rejected_by_validation(self):
         import services.analytics.duckdb as duckdb_client

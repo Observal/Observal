@@ -7,6 +7,7 @@ Re-exports the helpers every call site uses: query, execute, insert, health,
 timestamp helpers, migrations, and resource tuning.
 """
 
+from services.analytics.duckdb._settings import _resource_overrides
 from services.analytics.duckdb.client import (
     ANALYTICS_DB,
     ANALYTICS_HTTP,
@@ -45,6 +46,8 @@ from services.analytics.duckdb.schema import (
     init_analytics,
 )
 
+duckdb_health = analytics_health
+
 __all__ = [
     "ANALYTICS_DB",
     "ANALYTICS_HTTP",
@@ -60,8 +63,10 @@ __all__ = [
     "_normalize_ts",
     "_now_ms",
     "_query",
+    "_resource_overrides",
     "analytics_health",
     "apply_resource_settings",
+    "duckdb_health",
     "init_analytics",
     "insert_audit_log",
     "insert_layer_snapshot",

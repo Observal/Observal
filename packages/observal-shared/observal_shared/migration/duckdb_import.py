@@ -38,6 +38,7 @@ if TYPE_CHECKING:
 
 MANIFEST_FILENAME = "telemetry_manifest.json"
 DEFAULT_HTTP_PORT = 8484
+ALLOWED_TELEMETRY_TABLES = frozenset(cfg["name"] for cfg in CLICKHOUSE_TABLES)
 
 
 @dataclass(frozen=True)
@@ -71,6 +72,8 @@ def _validated_manifest_artifacts(export_dir: Path, manifest: dict) -> dict[str,
     root = export_dir.resolve()
     artifacts: dict[str, list[Path]] = {}
     for table, table_meta in tables.items():
+        if table not in ALLOWED_TELEMETRY_TABLES:
+            raise PrerequisiteError(f"telemetry manifest contains unknown table: {table!r}")
         if not isinstance(table_meta, dict):
             raise PrerequisiteError(f"telemetry manifest is incomplete for {table}")
         filenames = table_meta.get("files") or []

@@ -111,6 +111,7 @@ class AnalyticsStore:
         self._readers: asyncio.Queue[duckdb.DuckDBPyConnection] | None = None
         self._write_lock = asyncio.Lock()
         self._lock_file = None
+        self._started = False
 
     # ── lifecycle ────────────────────────────────────────────────────────────
 
@@ -129,6 +130,7 @@ class AnalyticsStore:
         for _ in range(self.read_connections):
             await self._readers.put(await asyncio.to_thread(self._connect))
         await self.apply_pragmas(self._baseline_pragmas())
+        self._started = True
         optic.info(
             "DuckDB analytics store ready (path={}, readers={}, threads={})",
             self.path,
@@ -144,6 +146,7 @@ class AnalyticsStore:
                 optic.debug("closing DuckDB connection failed: {}", e)
         self._writer = None
         self._readers = None
+        self._started = False
         if self._lock_file is not None:
             try:
                 fcntl.flock(self._lock_file.fileno(), fcntl.LOCK_UN)

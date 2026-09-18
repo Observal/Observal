@@ -28,3 +28,12 @@ locals {
     ManagedBy   = "terraform"
   }
 }
+
+resource "terraform_data" "observability_validation" {
+  lifecycle {
+    precondition {
+      condition     = contains(["none", "prometheus", "grafana"], var.observability_stack)
+      error_message = "observability_stack must be none, prometheus, or grafana."
+    }
+  }
+}

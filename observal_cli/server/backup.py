@@ -27,6 +27,31 @@ BACKUPS_DIR = CONFIG_DIR / "backups"
 DEFAULT_RETENTION = 3  # Keep last N backups
 
 
+def _restart_analytics_or_raise(compose_dir: Path) -> None:
+    """Start DuckDB after a backup attempt and require confirmed health."""
+    restart_error = ""
+    try:
+        restarted = subprocess.run(
+            ["docker", "compose", "up", "-d", "observal-duckdb"],
+            capture_output=True,
+            cwd=compose_dir,
+            timeout=300,
+        )
+        if restarted.returncode != 0:
+            restart_error = restarted.stderr.decode(errors="replace")[:200]
+    except subprocess.TimeoutExpired:
+        restart_error = "restart command timed out"
+    except OSError as exc:
+        restart_error = str(exc)
+
+    # A timed-out/non-zero compose command may still have started the service.
+    # Confirm its actual state before deciding whether the upgrade can proceed.
+    if _wait_for_service_healthy(compose_dir, "observal-duckdb", timeout=60):
+        return
+    detail = f": {restart_error}" if restart_error else ""
+    raise RuntimeError(f"DuckDB analytics did not recover after the backup attempt{detail}")
+
+
 def create_backup(compose_dir: Path, from_version: str) -> Path:
     """Create a pre-upgrade backup of PostgreSQL + the DuckDB analytics store.
 
@@ -165,17 +190,7 @@ def create_backup(compose_dir: Path, from_version: str) -> Path:
             duckdb_archive.unlink(missing_ok=True)
             rprint("[yellow]  DuckDB archive timed out (non-critical)[/yellow]")
     finally:
-        try:
-            restarted = subprocess.run(
-                ["docker", "compose", "up", "-d", "observal-duckdb"],
-                capture_output=True,
-                cwd=compose_dir,
-                timeout=300,
-            )
-            if restarted.returncode != 0:
-                rprint("[yellow]  DuckDB restart failed after backup attempt[/yellow]")
-        except (subprocess.TimeoutExpired, OSError):
-            rprint("[yellow]  DuckDB restart timed out after backup attempt[/yellow]")
+        _restart_analytics_or_raise(compose_dir)
 
     return backup_dir
 

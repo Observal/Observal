@@ -37,9 +37,7 @@ module "observal" {
   # domain_name     = "observal.example.com"
   # route53_zone_id = "Z0123456789ABCDEFGHIJ"
 
-  # Uncomment to size the bundled data host for a larger telemetry history.
-  # Presets ignore individual size variables, so custom sizing is required.
-  # sizing              = "custom"
-  # data_instance_type  = "t3.large"
+  # Uncomment to size the bundled data host for a larger telemetry history:
+  # data_instance_type = "t3.large"
   # data_volume_size_gb = 200
 }

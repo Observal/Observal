@@ -207,6 +207,39 @@ async def test_load_rejects_unsafe_manifest_path_before_hashing(tmp_path, monkey
     assert hashed is False
 
 
+async def test_verify_rejects_unknown_manifest_table_before_querying_service(tmp_path):
+    export_dir = tmp_path / "injected-export"
+    export_dir.mkdir()
+    injected_table = "session_events; CREATE TABLE exact_verify_probe(x INTEGER); --"
+    (export_dir / "telemetry_manifest.json").write_text(
+        json.dumps(
+            {
+                "migration_id": "injected",
+                "tables": {
+                    injected_table: {
+                        "files": [],
+                        "row_count": 0,
+                        "checksum": {},
+                    }
+                },
+            }
+        )
+    )
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json={"data": [{"cnt": 0}]})
+
+    transport = httpx.MockTransport(handler)
+    params = DuckDBConnParams(url="duckdb://analytics:8484/observal", token=TOKEN)
+    async with httpx.AsyncClient(transport=transport, base_url="http://analytics") as client:
+        with pytest.raises(PrerequisiteError, match="unknown table"):
+            await verify_duckdb_telemetry(params, export_dir, http_client=client)
+
+    assert requests == []
+
+
 async def test_load_rejects_corrupt_partition_before_contacting_service(tmp_path):
     export_dir = _write_export(tmp_path)
     (export_dir / "session_events_2026-09.parquet").write_bytes(b"corrupt")

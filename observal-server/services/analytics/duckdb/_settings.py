@@ -3,6 +3,11 @@
 # SPDX-License-Identifier: Apache-2.0
 """Shared DuckDB analytics settings - imported by both client and schema modules."""
 
+# Per-query overrides injected into every analytics request.
+# Populated from enterprise_config on startup and when an admin clicks "Apply".
+# NOTE: Mutated in-place by apply_resource_settings() in schema.py via .clear()/.update().
+_resource_overrides: dict[str, str] = {}
+
 # Tables the insert endpoint accepts, and the only columns callers may write.
 # The service never interpolates a caller-supplied table or column name into SQL.
 ANALYTICS_TABLES: dict[str, tuple[str, ...]] = {

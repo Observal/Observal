@@ -95,12 +95,40 @@ class TestCreateBackupSafety:
             raise AssertionError(f"unexpected command: {command}")
 
         monkeypatch.setattr(backup.subprocess, "run", run)
+        monkeypatch.setattr(backup, "_wait_for_service_healthy", lambda *_args, **_kwargs: True)
 
         created = backup.create_backup(tmp_path, "1.0.0")
 
         assert created.exists()
         assert ["docker", "compose", "up", "-d", "observal-duckdb"] in calls
         assert not (created / "analytics.tar.gz").exists()
+
+    def test_confirmed_restart_failure_is_fatal(self, tmp_path, monkeypatch):
+        from types import SimpleNamespace
+
+        monkeypatch.setattr(
+            backup.subprocess,
+            "run",
+            lambda *_args, **_kwargs: SimpleNamespace(returncode=1, stderr=b"image pull failed"),
+        )
+        monkeypatch.setattr(backup, "_wait_for_service_healthy", lambda *_args, **_kwargs: False)
+
+        with pytest.raises(RuntimeError, match=r"did not recover.*image pull failed"):
+            backup._restart_analytics_or_raise(tmp_path)
+
+    def test_restart_timeout_is_accepted_only_when_service_is_healthy(self, tmp_path, monkeypatch):
+        from subprocess import TimeoutExpired
+
+        def timeout(command, **_kwargs):
+            raise TimeoutExpired(command, 300)
+
+        monkeypatch.setattr(backup.subprocess, "run", timeout)
+        monkeypatch.setattr(backup, "_wait_for_service_healthy", lambda *_args, **_kwargs: True)
+        backup._restart_analytics_or_raise(tmp_path)
+
+        monkeypatch.setattr(backup, "_wait_for_service_healthy", lambda *_args, **_kwargs: False)
+        with pytest.raises(RuntimeError, match=r"did not recover.*timed out"):
+            backup._restart_analytics_or_raise(tmp_path)
 
 
 class TestRestoreBackup:
