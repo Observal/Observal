@@ -29,6 +29,7 @@ from services.analytics.duckdb._settings import (
     ANALYTICS_LOAD_COLUMNS,
     ANALYTICS_TABLES,
     ANALYTICS_TIME_COLUMNS,
+    ANALYTICS_UPSERT_KEYS,
 )
 
 if TYPE_CHECKING:
@@ -55,11 +56,6 @@ def _arrow_schema(table: str) -> pa.Schema:
     """Explicit Arrow schema for a table's insert columns."""
     types = ANALYTICS_COLUMN_TYPES[table]
     return pa.schema([(column, _ARROW_TYPES[duck_type]) for column, duck_type in types.items()])
-
-
-# Tables whose primary key makes a write idempotent (DuckDB
-# ReplacingMergeTree equivalents).  Everything else is append-only.
-UPSERT_TABLES = frozenset({"session_events", "session_checkpoints", "session_stats_agg", "layer_snapshots"})
 
 
 def _jsonable(value: Any) -> Any:
@@ -264,14 +260,25 @@ class AnalyticsStore:
             [{key: row.get(key) for key in columns} for row in rows],
             schema=_arrow_schema(table),
         )
-        verb = "INSERT OR REPLACE" if table in UPSERT_TABLES else "INSERT"
+        upsert_keys = ANALYTICS_UPSERT_KEYS.get(table)
         async with self._write_lock:
             con = self._require_writer()
 
             def _load() -> int:
                 con.register("_analytics_batch", batch)
                 try:
-                    con.execute(f"{verb} INTO {table} BY NAME SELECT * FROM _analytics_batch")
+                    con.execute("BEGIN TRANSACTION")
+                    if upsert_keys:
+                        matches = " AND ".join(f"incoming.{key} = {table}.{key}" for key in upsert_keys)
+                        con.execute(
+                            f"DELETE FROM {table} WHERE EXISTS ("
+                            f"SELECT 1 FROM _analytics_batch AS incoming WHERE {matches})"
+                        )
+                    con.execute(f"INSERT INTO {table} BY NAME SELECT * FROM _analytics_batch")
+                    con.execute("COMMIT")
+                except Exception:
+                    con.execute("ROLLBACK")
+                    raise
                 finally:
                     con.unregister("_analytics_batch")
                 return len(rows)
@@ -299,8 +306,8 @@ class AnalyticsStore:
             f"'{column}': {{'name': '{column}', 'type': '{types[column]}', 'default_value': NULL}}"
             for column in columns
         )
-        verb = "INSERT OR REPLACE" if replace and table in UPSERT_TABLES else "INSERT"
-        dedupe_keys = ANALYTICS_DEDUPE_KEYS.get(table)
+        identity_keys = ANALYTICS_UPSERT_KEYS.get(table) if replace else None
+        dedupe_keys = identity_keys or ANALYTICS_DEDUPE_KEYS.get(table)
         async with self._write_lock:
             con = self._require_writer()
 
@@ -319,7 +326,7 @@ class AnalyticsStore:
                             con.execute(
                                 f"DELETE FROM {table} WHERE EXISTS (SELECT 1 FROM {source} AS incoming WHERE {matches})"
                             )
-                        con.execute(f"{verb} INTO {table} ({column_list}) SELECT {column_list} FROM {source}")
+                        con.execute(f"INSERT INTO {table} ({column_list}) SELECT {column_list} FROM {source}")
                         con.execute("COMMIT")
                     except Exception:
                         con.execute("ROLLBACK")

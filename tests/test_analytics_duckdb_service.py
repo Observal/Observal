@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock
@@ -207,6 +208,55 @@ def test_reinserting_a_line_replaces_the_row(client):
         },
     ).json()["data"]
     assert rows == [{"content_preview": "edited"}]
+
+
+async def test_upsert_batch_avoids_duckdb_insert_or_replace_crash_path():
+    class RecordingConnection:
+        def __init__(self):
+            self.sql = []
+
+        def register(self, *_args):
+            return None
+
+        def unregister(self, *_args):
+            return None
+
+        def execute(self, sql, *_args):
+            self.sql.append(sql)
+            assert "INSERT OR REPLACE" not in sql
+            return self
+
+    store = AnalyticsStore(path=":memory:", read_connections=1)
+    connection = RecordingConnection()
+    store._writer = connection
+
+    assert await store.insert("session_events", [_session_event()]) == 1
+    assert connection.sql[0] == "BEGIN TRANSACTION"
+    assert connection.sql[-1] == "COMMIT"
+    assert any(sql.startswith("DELETE FROM session_events") for sql in connection.sql)
+    assert any(sql.startswith("INSERT INTO session_events") for sql in connection.sql)
+
+
+async def test_overlapping_batch_replay_remains_stable_under_read_pressure(tmp_path):
+    store = AnalyticsStore(path=tmp_path / "analytics.duckdb", threads=2, read_connections=4, query_timeout=10.0)
+    await store.start()
+    try:
+        await run_migrations(store)
+        rows = [_session_event(line_offset=index) for index in range(1_000)]
+
+        async def replay() -> None:
+            for _ in range(3):
+                assert await store.insert("session_events", rows) == len(rows)
+
+        async def read() -> None:
+            for _ in range(20):
+                await store.query("SELECT count(*), max(line_offset) FROM session_events")
+
+        await asyncio.gather(replay(), *(read() for _ in range(4)))
+        _, result = await store.query("SELECT count(*), max(line_offset) FROM session_events")
+        assert result == [(1_000, 999)]
+    finally:
+        await store.close()
 
 
 def test_insert_rejects_unknown_tables(client):

@@ -151,6 +151,17 @@ ANALYTICS_DEDUPE_KEYS: dict[str, tuple[str, ...]] = {
     "webhook_deliveries": ("delivery_id", "attempt_number"),
 }
 
+# Primary-key identities used for explicit transactional replacement. DuckDB's
+# INSERT OR REPLACE can hit a fatal internal index rollback path under repeated
+# overlapping writes and concurrent reads, so all replay paths use
+# DELETE + INSERT in one transaction instead.
+ANALYTICS_UPSERT_KEYS: dict[str, tuple[str, ...]] = {
+    "session_events": ("project_id", "user_id", "harness", "session_id", "line_offset"),
+    "session_checkpoints": ("project_id", "user_id", "harness", "session_id"),
+    "session_stats_agg": ("project_id", "user_id", "harness", "session_id"),
+    "layer_snapshots": ("project_id", "user_id", "hash"),
+}
+
 ANALYTICS_TABLES["session_stats_agg"] = SUMMARY_COLUMNS
 
 # Bulk migration preserves store-owned timestamp columns that callers cannot
