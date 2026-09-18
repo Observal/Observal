@@ -281,7 +281,7 @@ Applies to both clouds. See the cloud-specific guides for implementation details
 - [ ] Attach a WAF to the load balancer
 - [ ] Enable Redis transit encryption
 - [ ] Configure [SSO](authentication.md) (SAML or OIDC)
-- [ ] Move DuckDB to DuckDB Cloud for HA
+- [ ] Provide HA for the DuckDB analytics service and its persistent volume
 - [ ] Test the [backup and restore](backup-and-restore.md) procedure end-to-end
 - [ ] Replace the GitHub tarball pull in the data host bootstrap with an artifact you control
 

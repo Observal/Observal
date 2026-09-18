@@ -16,12 +16,15 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_init_analytics_requires_a_healthy_service():
-    with patch("services.analytics.duckdb.client.analytics_health", new=AsyncMock(return_value=False)):
+async def test_init_analytics_requires_authenticated_analytics_access():
+    health = AsyncMock(return_value=False)
+    with patch("services.analytics.duckdb.client.analytics_health", new=health):
         from services.analytics.duckdb import init_analytics
 
-        with pytest.raises(RuntimeError, match="unreachable"):
+        with pytest.raises(RuntimeError, match="authentication or connectivity failed"):
             await init_analytics()
+
+    health.assert_awaited_once_with(authenticated=True)
 
 
 @pytest.mark.asyncio
@@ -29,7 +32,7 @@ async def test_init_analytics_applies_resource_settings_when_healthy():
     import services.dynamic_settings as ds
 
     with (
-        patch("services.analytics.duckdb.client.analytics_health", new=AsyncMock(return_value=True)),
+        patch("services.analytics.duckdb.client.analytics_health", new=AsyncMock(return_value=True)) as health,
         patch("services.analytics.duckdb.schema.apply_resource_settings", new_callable=AsyncMock) as apply,
         patch.object(ds, "get_int", new=AsyncMock(return_value=90)),
     ):
@@ -37,6 +40,7 @@ async def test_init_analytics_applies_resource_settings_when_healthy():
 
         await init_analytics()
 
+    health.assert_awaited_once_with(authenticated=True)
     apply.assert_awaited_once()
 
 

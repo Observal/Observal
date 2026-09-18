@@ -14,7 +14,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.api
-    image: ghcr.io/observal/observal-api:latest
+    image: observal-api:local
     command: ["/app/entrypoint.sh"]
     env_file:
       - ../.env
@@ -41,7 +41,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.api
-    image: ghcr.io/observal/observal-api:latest
+    image: observal-api:local
     command:
       [
         "/app/.venv/bin/python",
@@ -107,7 +107,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.duckdb
-    image: ghcr.io/observal/observal-duckdb:latest
+    image: observal-duckdb:local
     env_file:
       - ../.env
     environment:
@@ -134,7 +134,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: ${DUCKDB_MEMORY_LIMIT:-2GB}
+          memory: ${DUCKDB_CONTAINER_MEMORY_LIMIT:-3GB}
     networks:
       - observal-net
 
@@ -191,7 +191,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.api
-    image: ghcr.io/observal/observal-api:latest
+    image: observal-api:local
     command:
       [
         "/app/.venv/bin/python",
@@ -228,7 +228,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.web
-    image: ghcr.io/observal/observal-web:latest
+    image: observal-web:local
     ports:
       - "${WEB_HOST_PORT:-3000}:3000"
     depends_on:

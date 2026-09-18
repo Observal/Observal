@@ -47,7 +47,7 @@ That's it. The `.env.example` ships with working defaults. The core services com
 | `observal-worker`     | internal                | Background jobs (arq)          |
 | `observal-init`       | internal                | Runs DB migrations, then exits |
 | `observal-db`         | `localhost:5432`        | PostgreSQL 16                  |
-| `observal-duckdb` | `localhost:8123`        | DuckDB                     |
+| `observal-duckdb` | `localhost:8484`        | DuckDB                     |
 | `observal-redis`      | `localhost:6379`        | Redis                          |
 
 Optional monitoring can be enabled with `make up-prometheus` or `make up-observability`. Prometheus listens on `http://localhost:9090`; Grafana listens on `http://localhost:3001` when the Grafana profile is enabled.

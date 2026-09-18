@@ -275,7 +275,10 @@ def test_server_package_upgrade_preserves_legacy_public_bind(tmp_path):
     updated = (install / ".env").read_text()
     assert existing in updated
     assert "OBSERVAL_BIND_ADDRESS=0.0.0.0" in updated
-    assert not (install / "secrets").exists()
+    assert "DUCKDB_ANALYTICS_URL_FILE=/run/secrets/duckdb_analytics_url" in updated
+    assert "DUCKDB_ANALYTICS_TOKEN_FILE=/run/secrets/duckdb/duckdb_analytics_token" in updated
+    assert (install / "secrets/duckdb/duckdb_analytics_token").stat().st_size > 0
+    assert (install / "secrets/duckdb_analytics_url").read_text() == "duckdb://observal-duckdb:8484/observal"
 
 
 def test_server_package_replacement_preserves_existing_credentials(tmp_path):

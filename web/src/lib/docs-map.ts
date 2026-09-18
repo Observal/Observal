@@ -83,7 +83,7 @@ export const SETTING_DOCS: Record<string, DocRef> = {
 	"resource.redis_max_connections": { file: "self-hosting/resource-tuning.md", anchor: "redis-max-connections", label: "Redis Max Connections" },
 	"resource.redis_socket_timeout": { file: "self-hosting/resource-tuning.md", anchor: "redis-timeout", label: "Redis Timeout" },
 	"resource.skip_ddl_on_startup": { file: "self-hosting/resource-tuning.md", anchor: "skip-ddl-on-startup", label: "Skip DDL on Startup" },
-	"resource.max_query_memory_mb": { file: "self-hosting/resource-tuning.md", anchor: "query-memory-limit", label: "Query Memory Limit" },
+	"resource.analytics_memory_limit_mb": { file: "self-hosting/resource-tuning.md", anchor: "analytics-memory-limit", label: "Analytics Memory Limit" },
 	"resource.threads": { file: "self-hosting/resource-tuning.md", anchor: "analytics-threads", label: "DuckDB Threads" },
 	"resource.temp_directory": { file: "self-hosting/resource-tuning.md", anchor: "analytics-temp-directory", label: "DuckDB Temp Directory" },
 

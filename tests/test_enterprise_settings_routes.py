@@ -808,7 +808,7 @@ async def test_apply_resources_passes_all_overrides_but_reports_only_supported_k
     expected = {"resource.max_query_memory_mb": "300", "resource.unknown": "9"}
     apply.assert_awaited_once_with(overrides=expected)
     assert response == {
-        "applied": {"resource.max_query_memory_mb": "300"},
+        "applied": {},
         "message": "Analytics resource settings applied",
     }
     event = boundaries.emit.await_args.args[0]

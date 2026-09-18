@@ -100,10 +100,12 @@ Skip PostgreSQL schema creation on server startup (`SKIP_DDL_ON_STARTUP`).
 Analytics DDL is never applied by the API: the DuckDB service runs its own
 versioned migrations before it accepts queries.
 
-### Query Memory Limit {#query-memory-limit}
+### Analytics Memory Limit {#analytics-memory-limit}
 
-`resource.max_query_memory_mb` — memory ceiling applied to every analytics
-connection (`PRAGMA memory_limit`).
+`resource.analytics_memory_limit_mb` — optional process-wide memory ceiling
+for the DuckDB analytics service (`PRAGMA memory_limit`). This is intentionally
+distinct from the legacy ClickHouse `resource.max_query_memory_mb`, which was a
+per-query limit and is ignored by DuckDB.
 
 | Value | Effect |
 |-------|--------|
@@ -140,6 +142,6 @@ Empty means DuckDB's default (next to the database file).
 DuckDB spills GROUP BY, ORDER BY, and hash joins to disk automatically once they
 exceed the memory ceiling; there is no per-operator spill threshold to tune.
 Control the spill location with `resource.temp_directory` and the overall
-ceiling with `resource.max_query_memory_mb`. If wide-range insight reports spill
+ceiling with `resource.analytics_memory_limit_mb`. If wide-range insight reports spill
 constantly, give the analytics container a faster disk before raising the memory
 limit.

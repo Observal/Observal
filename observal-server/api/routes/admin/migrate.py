@@ -133,19 +133,24 @@ async def _store_upload_files(files: list[UploadFile], job_id: uuid.UUID) -> Pat
         if not safe_name or safe_name in (".", ".."):
             safe_name = f"upload_{uuid.uuid4().hex[:8]}"
         dest = job_dir / safe_name
-        content = await f.read()
 
-        # Enforce size limit for files that didn't have Content-Length at validation time
+        # Enforce the limit while streaming so a multi-gigabyte migration does
+        # not need to fit in API process memory.
         max_bytes = await ds.get_int("migration.max_upload_bytes", default=_DEFAULT_MAX_UPLOAD_BYTES)
-        if len(content) > max_bytes:
-            # Clean up the job directory on size violation
+        written = 0
+        try:
+            with dest.open("wb") as handle:
+                while chunk := await f.read(1024 * 1024):
+                    written += len(chunk)
+                    if written > max_bytes:
+                        raise HTTPException(status_code=422, detail=f"File '{safe_name}' exceeds maximum upload size")
+                    handle.write(chunk)
+            os.chmod(dest, 0o600)
+        except Exception:
             import shutil
 
             shutil.rmtree(job_dir, ignore_errors=True)
-            raise HTTPException(status_code=422, detail=f"File '{safe_name}' exceeds maximum upload size")
-
-        dest.write_bytes(content)
-        os.chmod(dest, 0o600)
+            raise
 
     return job_dir
 

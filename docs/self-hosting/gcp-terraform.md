@@ -233,7 +233,7 @@ Cloud Run scales to zero when idle (if `min_instances = 0`), which can significa
 - [ ] Enable Cloud Armor (WAF) on the Global HTTPS Load Balancer
 - [ ] Enable Security Command Center in the project
 - [ ] Set up alerting on Cloud SQL CPU, memory, and Cloud Run error rates
-- [ ] Move DuckDB to DuckDB Cloud for HA
+- [ ] Provide HA for the DuckDB analytics service and its persistent disk
 - [ ] Configure [SSO](authentication.md)
 - [ ] Test [backup and restore](backup-and-restore.md) end-to-end
 - [ ] Set up Terraform remote state in GCS

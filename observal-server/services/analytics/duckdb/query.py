@@ -93,19 +93,35 @@ async def query_session_source_manifest(
     harness: str,
 ) -> list[tuple[int, int, str]]:
     """Return canonical source positions for final integrity auditing."""
+    page_size = 50_000
     sql = (
         "SELECT line_offset, source_end_offset, source_sha256 FROM session_events "
         "WHERE project_id = $pid AND user_id = $uid "
         "AND harness = $harness AND session_id = $sid "
-        "AND is_source_record = 1 ORDER BY line_offset"
+        "AND is_source_record = 1 AND line_offset > CAST($after AS BIGINT) "
+        "ORDER BY line_offset LIMIT CAST($limit AS INTEGER)"
     )
-    params = {"pid": project_id, "uid": user_id, "harness": harness, "sid": session_id}
-    r = await _client._query(sql, params)
-    r.raise_for_status()
-    return [
-        (int(row["line_offset"]), int(row.get("source_end_offset") or 0), str(row.get("source_sha256") or ""))
-        for row in r.json().get("data", [])
-    ]
+    manifest: list[tuple[int, int, str]] = []
+    after = -1
+    while True:
+        params = {
+            "pid": project_id,
+            "uid": user_id,
+            "harness": harness,
+            "sid": session_id,
+            "after": str(after),
+            "limit": str(page_size),
+        }
+        r = await _client._query(sql, params)
+        r.raise_for_status()
+        page = r.json().get("data", [])
+        manifest.extend(
+            (int(row["line_offset"]), int(row.get("source_end_offset") or 0), str(row.get("source_sha256") or ""))
+            for row in page
+        )
+        if len(page) < page_size:
+            return manifest
+        after = int(page[-1]["line_offset"])
 
 
 async def query_existing_for_dedup(

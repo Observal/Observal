@@ -81,6 +81,28 @@ if [ -f "$ENV_FILE" ]; then
     printf 'Replace it with a new configuration? [y/N]: '
     read -r confirm || confirm=""
     if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+        # New releases may add secret files consumed directly by Compose. Keep
+        # every existing value while backfilling only missing secrets.
+        mkdir -p "$SECRETS_DIR/duckdb"
+        chmod 750 "$SECRETS_DIR" "$SECRETS_DIR/duckdb"
+        if [ ! -s "$SECRETS_DIR/duckdb/duckdb_analytics_token" ]; then
+            write_secret duckdb/duckdb_analytics_token "$(existing_or_generated_secret duckdb/duckdb_analytics_token DUCKDB_ANALYTICS_TOKEN)"
+            info "Generated the required DuckDB analytics token"
+        fi
+        if [ ! -s "$SECRETS_DIR/duckdb_analytics_url" ]; then
+            write_secret duckdb_analytics_url "duckdb://observal-duckdb:8484/observal"
+        fi
+        if [ -z "$(env_value DUCKDB_ANALYTICS_URL)" ]; then
+            grep -q '^DUCKDB_ANALYTICS_URL_FILE=' "$ENV_FILE" ||
+                printf 'DUCKDB_ANALYTICS_URL_FILE=/run/secrets/duckdb_analytics_url\n' >>"$ENV_FILE"
+        fi
+        if [ -z "$(env_value DUCKDB_ANALYTICS_TOKEN)" ]; then
+            grep -q '^DUCKDB_ANALYTICS_TOKEN_FILE=' "$ENV_FILE" ||
+                printf 'DUCKDB_ANALYTICS_TOKEN_FILE=/run/secrets/duckdb/duckdb_analytics_token\n' >>"$ENV_FILE"
+        fi
+        grep -q '^OBSERVAL_SECRET_GID=' "$ENV_FILE" ||
+            printf 'OBSERVAL_SECRET_GID=%s\n' "$(id -g)" >>"$ENV_FILE"
+        chmod 600 "$ENV_FILE"
         info "Kept the existing configuration and bind address $previous_bind"
         exit 0
     fi
@@ -168,9 +190,9 @@ fi
 
 info "Starting Observal services"
 cd "$INSTALL_DIR"
-docker compose "${profile_args[@]}" "${compose_args[@]}" --env-file .env up -d --wait --wait-timeout 300
+docker compose ${profile_args[@]+"${profile_args[@]}"} "${compose_args[@]}" --env-file .env up -d --wait --wait-timeout 300
 
-docker compose "${profile_args[@]}" "${compose_args[@]}" restart observal-lb
+docker compose ${profile_args[@]+"${profile_args[@]}"} "${compose_args[@]}" restart observal-lb
 
 info "Observal is running"
 info "Dashboard: $FRONTEND_URL"

@@ -129,7 +129,9 @@ Apply one non-interactively:
 observal server upgrade --version 1.2.3 --force --output json
 ```
 
-An upgrade validates the target version and image, acquires the server upgrade lock, creates a managed PostgreSQL backup unless `--skip-backup` is set, pulls images, atomically updates `OBSERVAL_VERSION`, recreates containers, and runs the configured health check. A failed health check requests the previous image version again and returns an unavailable error.
+An upgrade validates the target version and image, acquires the server upgrade lock, creates a managed PostgreSQL and DuckDB backup unless `--skip-backup` is set, pulls images, atomically updates `OBSERVAL_VERSION`, recreates containers, and runs the configured health check. A failed health check requests the previous image version again and returns an unavailable error.
+
+Legacy deployments whose compose file still contains `observal-clickhouse` but no `observal-duckdb` are stopped before any state change. Complete the one-time [ClickHouse-to-DuckDB cutover](../architecture/duckdb-replacement.md#cutover-runbook), including refreshing the release compose file and creating the analytics token, before rerunning this command.
 
 JSON mutation requires `--force`; dry run does not.
 

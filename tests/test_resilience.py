@@ -102,6 +102,26 @@ class TestAnalyticsHealth:
             assert await analytics_health() is True
 
     @pytest.mark.asyncio
+    async def test_authenticated_health_uses_protected_version_endpoint(self):
+        from services.analytics.duckdb import client as analytics_client
+
+        mock_resp = MagicMock(status_code=200)
+        mock_resp.json.return_value = {"duckdb": "v1.5.5"}
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=mock_resp)
+
+        with (
+            patch.object(analytics_client, "ANALYTICS_TOKEN", "probe-token"),
+            patch.object(analytics_client, "_get_client", return_value=mock_client),
+        ):
+            assert await analytics_client.analytics_health(authenticated=True) is True
+
+        mock_client.get.assert_awaited_once_with(
+            analytics_client.ANALYTICS_HTTP + "/version",
+            headers={"Authorization": "Bearer probe-token"},
+        )
+
+    @pytest.mark.asyncio
     async def test_health_returns_false_on_error(self):
         from services.analytics.duckdb import analytics_health
 

@@ -154,5 +154,6 @@ dev = [
 # Exact pins for reproducible CLI binary builds (release pipeline).
 # `uv sync --frozen --group release` in the cli-binaries job installs these.
 release = [
+    "pyarrow==23.0.1",  # bundled so embedded ClickHouse -> DuckDB cutovers work
     "pyinstaller==6.21.0",
 ]

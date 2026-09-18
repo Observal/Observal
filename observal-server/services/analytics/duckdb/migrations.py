@@ -62,7 +62,10 @@ def _split_sql(sql: str) -> list[str]:
 
 
 def _checksum(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+    # SPDX and explanatory comment-only edits do not change a migration's
+    # executable content and must not invalidate already-applied migrations.
+    normalized = _strip_sql_comments(text)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 def _migration_files() -> list[Path]:
@@ -85,10 +88,19 @@ async def run_migrations(store) -> list[str]:
         version = path.stem
         checksum = _checksum(text)
         if version in applied:
-            if applied[version] != checksum:
+            # Builds before comment-normalized checksums stored the raw file
+            # digest. Accept that exact legacy value so this safety fix does
+            # not strand an already-running deployment.
+            legacy_checksum = hashlib.sha256(text.encode("utf-8")).hexdigest()
+            if applied[version] not in {checksum, legacy_checksum}:
                 raise MigrationError(
                     f"analytics migration {version} changed after it was applied "
                     f"(expected {applied[version][:12]}, found {checksum[:12]})"
+                )
+            if applied[version] == legacy_checksum and legacy_checksum != checksum:
+                await store.execute(
+                    f"UPDATE {MIGRATIONS_TABLE} SET checksum = $checksum WHERE version = $version",
+                    {"checksum": checksum, "version": version},
                 )
             continue
         optic.info("applying analytics migration {} ({})", version, path.name)

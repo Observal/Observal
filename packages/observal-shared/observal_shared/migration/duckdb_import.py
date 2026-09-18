@@ -223,6 +223,7 @@ async def load_telemetry_into_duckdb(
                     f"{duckdb.http_base()}/admin/load_parquet",
                     json={"table": table, "paths": paths, "replace": True},
                     headers=duckdb.headers(),
+                    timeout=_httpx.Timeout(None, connect=10.0),
                 )
             except _httpx.HTTPError as e:
                 raise ConnectionFailedError(f"load of {table} failed: {e}") from e
@@ -269,7 +270,12 @@ async def _upload_partitions(
             ]
             try:
                 responses.append(
-                    await client.post(f"{duckdb.http_base()}/admin/upload", files=multipart, headers=duckdb.headers())
+                    await client.post(
+                        f"{duckdb.http_base()}/admin/upload",
+                        files=multipart,
+                        headers=duckdb.headers(),
+                        timeout=_httpx.Timeout(None, connect=10.0),
+                    )
                 )
             except _httpx.HTTPError as e:
                 raise ConnectionFailedError(f"upload of {len(batch)} partition(s) failed: {e}") from e

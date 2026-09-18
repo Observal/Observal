@@ -374,7 +374,9 @@ DEFAULTS: dict[str, str] = {
     "resource.db_max_overflow": "20",
     "resource.redis_max_connections": "50",
     "resource.redis_socket_timeout": "2.0",
-    "resource.max_query_memory_mb": "1024",
+    # DuckDB's limit is global to the service, so it has a distinct key from
+    # ClickHouse's legacy per-query resource.max_query_memory_mb setting.
+    "resource.analytics_memory_limit_mb": "",
     "resource.threads": "4",
     "resource.temp_directory": "",
     # Data

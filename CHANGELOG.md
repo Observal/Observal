@@ -11,6 +11,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Breaking Changes
+
+- Replace ClickHouse telemetry storage with the DuckDB analytics service. Existing deployments must complete the [one-time cutover runbook](docs/architecture/duckdb-replacement.md#cutover-runbook), including refreshing deployment files, provisioning the shared analytics token, and verifying migrated telemetry before starting the new API.
+
 ## [1.13.1] - 2026-09-05
 
 ### Features

@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import shutil
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,6 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from loguru import logger as optic
 from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings
+from starlette.background import BackgroundTask
 
 from services.analytics.duckdb.migrations import run_migrations
 from services.analytics.duckdb.storage import AnalyticsStore
@@ -101,16 +103,27 @@ def create_app(store: AnalyticsStore | None = None, settings: ServiceSettings | 
     settings = settings or ServiceSettings()
     store = store or create_store(settings)
     token = settings.DUCKDB_ANALYTICS_TOKEN
-
-    if not token and not settings.DUCKDB_ALLOW_ANONYMOUS:
-        optic.warning("DUCKDB_ANALYTICS_TOKEN is unset: the analytics service will reject every request")
+    staging_root = Path(settings.DUCKDB_STAGING_DIR)
+    if staging_root == Path("/data/staging") and Path(settings.DUCKDB_PATH).parent != Path("/data"):
+        staging_root = Path(settings.DUCKDB_PATH).parent / "staging"
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        if not token and not settings.DUCKDB_ALLOW_ANONYMOUS:
+            raise RuntimeError("DUCKDB_ANALYTICS_TOKEN is required unless DUCKDB_ALLOW_ANONYMOUS is enabled")
+        staging = staging_root
+        database_path = Path(settings.DUCKDB_PATH).resolve()
+        if database_path == staging.resolve() or database_path.is_relative_to(staging.resolve()):
+            raise RuntimeError("DUCKDB_STAGING_DIR must not contain the DuckDB database file")
         await store.start()
-        if settings.DUCKDB_MIGRATE_ON_START:
-            await run_migrations(store)
         try:
+            # Staging files are disposable transfer artifacts. No transfer can
+            # be active after this process has acquired the database lock, so
+            # clear leftovers from crashes/restarts.
+            shutil.rmtree(staging, ignore_errors=True)
+            staging.mkdir(parents=True, exist_ok=True)
+            if settings.DUCKDB_MIGRATE_ON_START:
+                await run_migrations(store)
             yield
         finally:
             await store.close()
@@ -191,18 +204,24 @@ def create_app(store: AnalyticsStore | None = None, settings: ServiceSettings | 
 
     @app.post("/admin/upload", dependencies=[Depends(require_token)])
     async def upload(files: Annotated[list[UploadFile], File()]) -> dict:
-        staging = Path(settings.DUCKDB_STAGING_DIR) / f"upload-{uuid4().hex}"
+        staging = staging_root / f"upload-{uuid4().hex}"
         staging.mkdir(parents=True, exist_ok=False)
         saved: list[str] = []
-        for upload_file in files:
-            name = Path(upload_file.filename or "upload.parquet").name
-            if not name.endswith(".parquet"):
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{name}: only .parquet uploads")
-            target = staging / name
-            with target.open("wb") as handle:
-                while chunk := await upload_file.read(1024 * 1024):
-                    handle.write(chunk)
-            saved.append(str(target))
+        try:
+            for upload_file in files:
+                name = Path(upload_file.filename or "upload.parquet").name
+                if not name.endswith(".parquet"):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST, detail=f"{name}: only .parquet uploads"
+                    )
+                target = staging / name
+                with target.open("wb") as handle:
+                    while chunk := await upload_file.read(1024 * 1024):
+                        handle.write(chunk)
+                saved.append(str(target))
+        except Exception:
+            shutil.rmtree(staging, ignore_errors=True)
+            raise
         return {"paths": saved, "count": len(saved)}
 
     @app.post("/admin/load_parquet", dependencies=[Depends(require_token)])
@@ -211,17 +230,29 @@ def create_app(store: AnalyticsStore | None = None, settings: ServiceSettings | 
             loaded = await store.load_parquet(payload.table, payload.paths, replace=payload.replace)
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
-        except TimeoutError as e:
-            raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=str(e)) from e
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)[:500]) from e
+        finally:
+            staging = staging_root.resolve()
+            parents: set[Path] = set()
+            for raw_path in payload.paths:
+                candidate = Path(raw_path).resolve()
+                if candidate.is_relative_to(staging) and candidate.is_file():
+                    candidate.unlink(missing_ok=True)
+                    parents.add(candidate.parent)
+            for parent in parents:
+                if parent != staging:
+                    try:
+                        parent.rmdir()
+                    except OSError:
+                        pass
         return {"table": payload.table, "rows_loaded": loaded}
 
     @app.post("/admin/export", dependencies=[Depends(require_token)])
     async def export(payload: ExportRequest) -> dict:
         """Write the telemetry tables to monthly Parquet files under the staging dir."""
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-        destination = Path(settings.DUCKDB_STAGING_DIR) / f"export-{stamp}-{uuid4().hex}"
+        destination = staging_root / f"export-{stamp}-{uuid4().hex}"
         try:
             counts = await store.export_parquet(str(destination), payload.tables)
         except TimeoutError as e:
@@ -247,7 +278,7 @@ def create_app(store: AnalyticsStore | None = None, settings: ServiceSettings | 
         there. Callers pass either the absolute path returned by /admin/export,
         a path relative to staging, or a bare file name.
         """
-        configured = Path(settings.DUCKDB_STAGING_DIR)
+        configured = staging_root
         staging = configured.resolve()
         for candidate in staging.rglob("*"):
             if not candidate.is_file() or not candidate.resolve().is_relative_to(staging):
@@ -258,7 +289,21 @@ def create_app(store: AnalyticsStore | None = None, settings: ServiceSettings | 
                 # Exports report the configured root, which may be a symlink.
                 forms.add(str(configured / relative))
             if path in forms:
-                return FileResponse(candidate, media_type="application/octet-stream", filename=candidate.name)
+
+                def cleanup(file_path: Path = candidate) -> None:
+                    file_path.unlink(missing_ok=True)
+                    if file_path.parent != staging:
+                        try:
+                            file_path.parent.rmdir()
+                        except OSError:
+                            pass
+
+                return FileResponse(
+                    candidate,
+                    media_type="application/octet-stream",
+                    filename=candidate.name,
+                    background=BackgroundTask(cleanup),
+                )
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="file not found")
 
     @app.post("/admin/backup", dependencies=[Depends(require_token)])

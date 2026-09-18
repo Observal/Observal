@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock
 
 import httpx
 import pyarrow as pa
@@ -79,9 +80,47 @@ def _session_event(**overrides) -> dict:
     return row
 
 
+async def test_session_manifest_paginates_beyond_service_result_limit(monkeypatch):
+    import services.analytics.duckdb.query as query_module
+
+    first_page = [
+        {"line_offset": index, "source_end_offset": index + 1, "source_sha256": str(index)} for index in range(50_000)
+    ]
+    query = AsyncMock(
+        side_effect=[
+            _StoreResponse(
+                ["line_offset", "source_end_offset", "source_sha256"], [tuple(row.values()) for row in first_page]
+            ),
+            _StoreResponse(["line_offset", "source_end_offset", "source_sha256"], [(50_000, 50_001, "50000")]),
+        ]
+    )
+    monkeypatch.setattr(query_module._client, "_query", query)
+
+    manifest = await query_module.query_session_source_manifest("session", "project", "user", "pi")
+
+    assert len(manifest) == 50_001
+    assert query.await_count == 2
+    assert query.await_args_list[1].args[1]["after"] == "49999"
+
+
 def test_timestamp_normalization_accepts_offsets_and_converts_to_utc():
     assert _normalize_ts("2026-09-18T03:12:00.123456+02:00") == "2026-09-18 01:12:00.123"
     assert _normalize_ts("2026-09-18T01:12:00Z") == "2026-09-18 01:12:00.000"
+
+
+def test_service_refuses_to_start_without_token(tmp_path):
+    settings = ServiceSettings(
+        DUCKDB_PATH=str(tmp_path / "analytics.duckdb"),
+        DUCKDB_STAGING_DIR=str(tmp_path / "staging"),
+        DUCKDB_ANALYTICS_TOKEN="",
+        DUCKDB_ALLOW_ANONYMOUS=False,
+    )
+
+    with (
+        pytest.raises(RuntimeError, match="DUCKDB_ANALYTICS_TOKEN is required"),
+        TestClient(create_app(settings=settings)),
+    ):
+        pass
 
 
 def test_health_reports_schema_version(client):
@@ -89,12 +128,23 @@ def test_health_reports_schema_version(client):
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "ok"
-    assert body["schema_version"] == "002_query_indexes"
+    assert body["schema_version"] == "003_remove_secondary_art_indexes"
 
 
 def test_queries_require_a_token(client):
     assert client.post("/query", json={"sql": "SELECT 1"}).status_code == 401
     assert client.post("/query", json={"sql": "SELECT 1"}, headers={"Authorization": "Bearer nope"}).status_code == 401
+
+
+def test_timestamptz_results_serialize_with_clickhouse_timestamp_shape(client):
+    response = client.post(
+        "/query",
+        headers=_auth(),
+        json={"sql": "SELECT TIMESTAMPTZ '2026-05-28 15:24:08.054+00' AS timestamp"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["data"] == [{"timestamp": "2026-05-28 15:24:08.054"}]
 
 
 def test_query_round_trip_with_parameters(client):
@@ -135,7 +185,7 @@ def test_insert_session_events_accepts_ms_timestamps(client):
     ).json()["data"]
     assert [row["event_type"] for row in rows] == ["user_prompt", "tool_call"]
     assert rows[1]["tool_name"] == "Bash"
-    assert rows[0]["timestamp"].startswith("2026-09-17T09:00:00")
+    assert rows[0]["timestamp"] == "2026-09-17 09:00:00.000"
 
 
 def test_reinserting_a_line_replaces_the_row(client):
@@ -233,6 +283,10 @@ class TestStagingDownloads:
         with TestClient(create_app(settings=settings)) as test_client:
             yield test_client, staging
 
+    def test_startup_removes_stale_staging_artifacts(self, staging_client):
+        _client, staging = staging_client
+        assert list(staging.iterdir()) == []
+
     def test_serves_a_file_below_the_staging_root(self, staging_client):
         client, staging = staging_client
         exported = staging / "export-20260917T000000" / "session_events_2026-09.parquet"
@@ -243,6 +297,8 @@ class TestStagingDownloads:
 
         assert response.status_code == 200
         assert response.content == b"PAR1payload"
+        assert not exported.exists()
+        assert not exported.parent.exists()
 
     @pytest.mark.parametrize(
         "candidate",
@@ -327,6 +383,37 @@ async def test_bulk_load_preserves_store_owned_timestamps(tmp_path):
         await store.close()
 
 
+async def test_bulk_load_is_unbounded_and_rolls_back_dedupe_on_insert_failure(tmp_path, monkeypatch):
+    invalid_path = tmp_path / "audit_log_2026-09.parquet"
+    pq.write_table(pa.table({"event_id": ["event-1"]}), invalid_path)
+    store = AnalyticsStore(path=tmp_path / "analytics.duckdb", read_connections=1, query_timeout=5.0)
+    await store.start()
+    try:
+        await run_migrations(store)
+        await store.execute(
+            "INSERT INTO audit_log (event_id, timestamp) VALUES ('event-1', TIMESTAMP '2026-09-01 10:00:00')"
+        )
+        store.query_timeout = 0.001
+        original_guard = store._guard
+        timeouts = []
+
+        async def record_guard(con, work, *, enforce_timeout=True):
+            timeouts.append(enforce_timeout)
+            return await original_guard(con, work, enforce_timeout=enforce_timeout)
+
+        monkeypatch.setattr(store, "_guard", record_guard)
+        with pytest.raises(Exception, match="NOT NULL"):
+            await store.load_parquet("audit_log", [str(invalid_path)])
+
+        assert timeouts[-1] is False
+        monkeypatch.setattr(store, "_guard", original_guard)
+        store.query_timeout = 5.0
+        _, rows = await store.query("SELECT event_id FROM audit_log")
+        assert rows == [("event-1",)]
+    finally:
+        await store.close()
+
+
 async def test_insight_queries_execute_against_duckdb(tmp_path, monkeypatch):
     from services.insights import batch, session_meta_extractor, version_impact
 
@@ -382,13 +469,29 @@ async def test_migrations_are_idempotent_and_checksum_guarded(tmp_path):
     )
     await store.start()
     try:
-        assert await run_migrations(store) == ["001_baseline", "002_query_indexes"]
+        assert await run_migrations(store) == ["001_baseline", "002_query_indexes", "003_remove_secondary_art_indexes"]
         assert await run_migrations(store) == []
         await store.execute(
             "UPDATE analytics_schema_migrations SET checksum = 'tampered' WHERE version = '001_baseline'"
         )
         with pytest.raises(MigrationError):
             await run_migrations(store)
+    finally:
+        await store.close()
+
+
+async def test_query_rejects_results_above_configured_limit(tmp_path):
+    store = AnalyticsStore(
+        path=tmp_path / "analytics.duckdb",
+        threads=1,
+        read_connections=1,
+        query_timeout=5.0,
+        max_result_rows=2,
+    )
+    await store.start()
+    try:
+        with pytest.raises(ValueError, match="exceeds the 2-row response limit"):
+            await store.query("SELECT * FROM range(3)")
     finally:
         await store.close()
 

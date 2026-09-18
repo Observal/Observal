@@ -30,15 +30,15 @@ Two earlier attempts are abandoned:
 2. ``services/analytics`` becomes the only analytics client surface. It mirrors
    the shape of ``services/analytics/duckdb`` (``_query``/``_execute``/``_insert``,
    health, timestamp helpers) so call sites change SQL dialect, not plumbing.
-3. The SQL dialect is rewritten once, in place. No runtime translator, no
-   dual-backend query layer. DuckDB is deleted from the application at the
-   end of the cutover; the only DuckDB-aware code that remains is the
-   source side of the one-way migration tool.
-4. Migration is one-way (DuckDB -> DuckDB). There is no reverse tool.
+3. The SQL dialect is rewritten once, in place. No runtime translator or
+   dual-backend query layer remains. ClickHouse is deleted from the application
+   at the end of the cutover; the only ClickHouse-aware code that remains is
+   the source side of the one-way migration tool.
+4. Migration is one-way (ClickHouse -> DuckDB). There is no reverse tool.
 
 ## Schema mapping rules
 
-| DuckDB | DuckDB |
+| ClickHouse | DuckDB |
 |---|---|
 | ``LowCardinality(String)`` / ``String`` | ``VARCHAR`` |
 | ``DateTime64(3, 'UTC')`` | ``TIMESTAMP`` (UTC convention, microsecond-capable superset) |
@@ -123,28 +123,56 @@ risk is queueing latency rather than correctness.
 
 ## Cutover runbook
 
+> **Breaking deployment change:** a deployment using the ClickHouse compose
+> topology cannot be upgraded with only `docker compose pull`. The release
+> compose file and analytics token must be installed, and telemetry must be
+> copied before the new API is started. `observal server upgrade` detects the
+> legacy topology and stops with this runbook instead of attempting a lossy
+> upgrade and rollback.
+
 The migration is one-way and the ClickHouse source is never modified, so every
 step is safe to repeat and rollback is "redeploy the previous release".
 
-1. **Start the DuckDB service alongside the running stack.**
-   Compose: `docker compose up -d observal-duckdb` from the new release.
-   Helm: apply the chart; the `duckdb` StatefulSet comes up without touching the
-   ClickHouse release. Confirm `curl http://<host>:8484/health` reports
-   `{"status":"ok"}`.
-2. **Copy the telemetry across.**
+1. **Update the CLI, then back up the existing deployment and preserve its
+   files.** Download the `observal-server-v<VERSION>.tar.gz` asset from the target GitHub release into
+   a temporary directory. Do not extract it over the live directory yet. Keep
+   the old compose file and ClickHouse volume until the rollback window closes.
+2. **Install the new deployment files without replacing configuration.** Copy
+   `docker-compose.yml`, `nginx.conf`, and supporting observability files from
+   the release archive into the deployment directory. Keep the existing `.env`
+   and `secrets/` directory. Run `setup.sh`; when it detects the existing
+   configuration, choose to keep it. The script creates the missing
+   `secrets/duckdb/duckdb_analytics_token` file and adds only the required
+   DuckDB secret references to `.env`. For source checkouts instead, generate a
+   strong `DUCKDB_ANALYTICS_TOKEN` in `.env` before starting DuckDB.
+3. **Start only DuckDB alongside ClickHouse.** Run
+   `docker compose up -d observal-duckdb`. Do not use `--remove-orphans` yet;
+   the old ClickHouse container must remain available. Confirm the authenticated
+   endpoint, not just liveness:
+   `curl -H "Authorization: Bearer $(cat secrets/duckdb/duckdb_analytics_token)" http://127.0.0.1:8484/version`.
+4. **Copy the telemetry across.** Run:
    `observal server migrate duckdb --clickhouse-url <ch> --duckdb-url <duckdb>
-   --duckdb-token "$DUCKDB_ANALYTICS_TOKEN" --export-dir ./telemetry-export`
-   The command fails with a categorized error if any exported row is missing or
-   a fresh table took fewer rows than the manifest expects.
-3. **Deploy the new application version** (init, api, worker) and let the init
-   container finish Postgres migrations. Analytics migrations are applied by the
-   DuckDB service itself at boot; the init container no longer touches them.
-4. **Verify before declaring success:** `/health` shows `"analytics":"ok"`,
+   --duckdb-token "$DUCKDB_ANALYTICS_TOKEN" --export-dir ./telemetry-export`.
+   The command fails if any checksum differs or any exported row is missing.
+5. **Deploy the new application version** (init, API, and worker) and let the
+   init container finish PostgreSQL migrations. Analytics migrations are applied
+   by the DuckDB service itself at boot.
+6. **Verify before declaring success:** `/health` shows `"analytics":"ok"`,
    the sessions and insights pages render, one session detail opens, and
    `observal doctor support` shows the analytics tables with expected counts.
-5. **Keep ClickHouse for a rollback window.** Leave its volume in place (no
-   writes arrive once the new version is live). Rollback = redeploy the previous
-   release; the ClickHouse data is exactly as the migration left it.
-6. **Decommission** the ClickHouse service, volume, and any Terraform/Helm
-   resources once the rollback window closes. Take a final DuckDB snapshot
-   (daily S3 backup or `POST /admin/backup`) before deleting anything.
+7. **Keep ClickHouse for a rollback window.** Leave its volume in place. Rollback
+   means restoring the old compose file and redeploying the previous release.
+8. **Decommission** the ClickHouse container and volume only after the rollback
+   window. Take a final DuckDB snapshot first.
+
+### Embedded server cutover
+
+For an installation managed by `observal server start`, keep the old server
+running while updating the CLI, then stop and restart it with the new CLI. The
+legacy ClickHouse process and data directory are intentionally not deleted.
+The new DuckDB service uses port 8484 while the legacy ClickHouse process remains
+on 8123, so run step 4 against `clickhouse://127.0.0.1:8123/observal` and
+`duckdb://127.0.0.1:8484/observal`. Verify the migration before stopping the
+legacy ClickHouse process or removing its data. Release binaries include the
+migration runtime; source or minimal pip installations need the migration extra
+(`pip install 'observal-cli[migrate]'`).

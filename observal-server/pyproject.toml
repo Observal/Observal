@@ -57,6 +57,7 @@ dependencies = [
     "observal-shared",
     "joserfc>=1.6.7",
     "duckdb>=1.4.0",
+    "pytz>=2025.2",
 ]
 
 [tool.uv.sources]

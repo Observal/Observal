@@ -15,7 +15,10 @@ import services.analytics.duckdb.client as _client
 # Maps enterprise_config keys to DuckDB per-connection pragmas.
 # Only whitelisted, non-SQL settings are accepted.
 RESOURCE_SETTINGS_MAP: dict[str, tuple[str, str]] = {
-    "resource.max_query_memory_mb": ("memory_limit", "mb"),
+    # DuckDB's memory_limit is process-global, unlike ClickHouse's former
+    # per-query max_memory_usage setting. Do not reinterpret the legacy
+    # resource.max_query_memory_mb value as a global service limit.
+    "resource.analytics_memory_limit_mb": ("memory_limit", "mb"),
     "resource.threads": ("threads", ""),
     "resource.temp_directory": ("temp_directory", ""),
 }
@@ -86,8 +89,8 @@ async def init_analytics() -> None:
     """Initialize the analytics backend from the application side."""
     optic.info("initializing DuckDB analytics runtime settings")
 
-    if not await _client.analytics_health():
-        raise RuntimeError(f"DuckDB analytics service unreachable at {_client.ANALYTICS_HTTP}")
+    if not await _client.analytics_health(authenticated=True):
+        raise RuntimeError(f"DuckDB analytics authentication or connectivity failed at {_client.ANALYTICS_HTTP}")
 
     await apply_resource_settings()
 

@@ -34,6 +34,14 @@ def test_split_sql_respects_quotes():
     assert statements == ["INSERT INTO t VALUES ('a;b')", "SELECT 1"]
 
 
+def test_checksum_ignores_spdx_and_sql_comments():
+    sql = "CREATE TABLE example (id INTEGER);\n"
+    marker = "-- SPDX-"
+    commented = marker + "License-Identifier: Apache-2.0\n-- explanation\n" + sql
+
+    assert _checksum(commented) == _checksum(sql)
+
+
 def test_repo_baseline_migration_exists():
     assert (MIGRATIONS_DIR / "001_baseline.sql").exists()
 
@@ -52,6 +60,36 @@ async def test_run_migrations_applies_pending_files(tmp_path, monkeypatch):
         _, rows = await store.query("SELECT version, checksum FROM analytics_schema_migrations ORDER BY version")
         assert [row[0] for row in rows] == ["001_first", "002_second"]
         assert rows[0][1] == _checksum((tmp_path / "001_first.sql").read_text())
+    finally:
+        await store.close()
+
+
+async def test_run_migrations_accepts_and_normalizes_legacy_raw_checksum(tmp_path, monkeypatch):
+    import hashlib
+
+    monkeypatch.setattr("services.analytics.duckdb.migrations.MIGRATIONS_DIR", tmp_path)
+    migration = tmp_path / "001_first.sql"
+    text = "-- old comment\nCREATE TABLE one (a INTEGER);\n"
+    migration.write_text(text)
+
+    store = AnalyticsStore(path=tmp_path / "analytics.duckdb", threads=1, read_connections=1)
+    await store.start()
+    try:
+        await store.execute(
+            "CREATE TABLE analytics_schema_migrations ("
+            "version VARCHAR PRIMARY KEY, name VARCHAR, checksum VARCHAR, applied_at TIMESTAMP DEFAULT now())"
+        )
+        await store.execute(
+            "INSERT INTO analytics_schema_migrations (version, name, checksum) VALUES ($version, $name, $checksum)",
+            {"version": "001_first", "name": migration.name, "checksum": hashlib.sha256(text.encode()).hexdigest()},
+        )
+
+        assert await run_migrations(store) == []
+        _, rows = await store.query("SELECT checksum FROM analytics_schema_migrations WHERE version = '001_first'")
+        assert rows == [(_checksum(text),)]
+
+        migration.write_text("-- new SPDX/header comment\n" + text)
+        assert await run_migrations(store) == []
     finally:
         await store.close()
 

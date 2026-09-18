@@ -456,7 +456,6 @@ def export_telemetry_cmd(
     Examples:
         observal server migrate export-telemetry --duckdb-url duckdb://observal-duckdb:8484/observal --output-dir ./telemetry-export
     """
-    _require_pyarrow()
     destination = Path(output_dir).expanduser()
     if destination.exists():
         fail(
@@ -530,7 +529,6 @@ def import_telemetry_cmd(
         observal server migrate import-telemetry --duckdb-url duckdb://observal-duckdb:8484/observal --input-dir ./telemetry-export
         observal server migrate import-telemetry --duckdb-url duckdb://observal-duckdb:8484/observal --input-dir ./telemetry-export --output json
     """
-    _require_pyarrow()
     input_path = Path(input_dir).expanduser()
     if not input_path.is_dir():
         fail(
@@ -822,7 +820,6 @@ def validate_telemetry_cmd(
         observal server migrate validate-telemetry --input-dir ./telemetry-export
         observal server migrate validate-telemetry --input-dir ./telemetry-export --output json
     """
-    _require_pyarrow()
     input_path = Path(input_dir).expanduser()
     if not input_path.is_dir():
         fail(

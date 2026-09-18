@@ -129,7 +129,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: ${DUCKDB_MEMORY_LIMIT:-2GB}
+          memory: ${DUCKDB_CONTAINER_MEMORY_LIMIT:-3GB}
     networks:
       - observal-net
 

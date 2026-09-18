@@ -68,10 +68,18 @@ class TestApplyResourceSettings:
     async def test_memory_limit_is_pushed_in_megabytes(self):
         import services.analytics.duckdb as ch
 
-        applied = await ch.apply_resource_settings(overrides={"resource.max_query_memory_mb": "300"})
+        applied = await ch.apply_resource_settings(overrides={"resource.analytics_memory_limit_mb": "300"})
 
         assert applied == {"memory_limit": "300MB"}
         self.push.assert_awaited_once_with({"memory_limit": "300MB"})
+
+    async def test_legacy_per_query_memory_setting_is_not_reinterpreted_as_global(self):
+        import services.analytics.duckdb as ch
+
+        applied = await ch.apply_resource_settings(overrides={"resource.max_query_memory_mb": "300"})
+
+        assert applied == {}
+        self.push.assert_not_awaited()
 
     async def test_threads_and_temp_directory_are_pushed(self):
         import services.analytics.duckdb as ch
@@ -85,20 +93,20 @@ class TestApplyResourceSettings:
     async def test_zero_and_negative_values_ignored(self):
         import services.analytics.duckdb as ch
 
-        assert await ch.apply_resource_settings(overrides={"resource.max_query_memory_mb": "0"}) == {}
-        assert await ch.apply_resource_settings(overrides={"resource.max_query_memory_mb": "-100"}) == {}
+        assert await ch.apply_resource_settings(overrides={"resource.analytics_memory_limit_mb": "0"}) == {}
+        assert await ch.apply_resource_settings(overrides={"resource.analytics_memory_limit_mb": "-100"}) == {}
         self.push.assert_not_awaited()
 
     async def test_non_numeric_value_ignored(self):
         import services.analytics.duckdb as ch
 
-        assert await ch.apply_resource_settings(overrides={"resource.max_query_memory_mb": "not-a-number"}) == {}
+        assert await ch.apply_resource_settings(overrides={"resource.analytics_memory_limit_mb": "not-a-number"}) == {}
         assert await ch.apply_resource_settings(overrides={"resource.threads": "many"}) == {}
 
     async def test_empty_and_unknown_keys_ignored(self):
         import services.analytics.duckdb as ch
 
-        assert await ch.apply_resource_settings(overrides={"resource.max_query_memory_mb": ""}) == {}
+        assert await ch.apply_resource_settings(overrides={"resource.analytics_memory_limit_mb": ""}) == {}
         assert await ch.apply_resource_settings(overrides={"resource.unknown_setting": "100"}) == {}
         assert await ch.apply_resource_settings(overrides={}) == {}
 
@@ -106,10 +114,10 @@ class TestApplyResourceSettings:
         import services.analytics.duckdb as ch
         import services.analytics.duckdb._settings as settings_mod
 
-        await ch.apply_resource_settings(overrides={"resource.max_query_memory_mb": "400"})
+        await ch.apply_resource_settings(overrides={"resource.analytics_memory_limit_mb": "400"})
         assert settings_mod._resource_overrides == {"memory_limit": "400MB"}
 
-        await ch.apply_resource_settings(overrides={"resource.max_query_memory_mb": "200"})
+        await ch.apply_resource_settings(overrides={"resource.analytics_memory_limit_mb": "200"})
         assert settings_mod._resource_overrides == {"memory_limit": "200MB"}
         assert self.push.await_args_list[-1] == call({"memory_limit": "200MB"})
 
@@ -117,17 +125,21 @@ class TestApplyResourceSettings:
         import services.analytics.duckdb as ch
         import services.analytics.duckdb._settings as settings_mod
 
-        await ch.apply_resource_settings(overrides={"resource.max_query_memory_mb": "400", "resource.threads": "4"})
+        await ch.apply_resource_settings(
+            overrides={"resource.analytics_memory_limit_mb": "400", "resource.threads": "4"}
+        )
         assert set(settings_mod._resource_overrides) == {"memory_limit", "threads"}
 
-        await ch.apply_resource_settings(overrides={"resource.max_query_memory_mb": "400"})
+        await ch.apply_resource_settings(overrides={"resource.analytics_memory_limit_mb": "400"})
         assert set(settings_mod._resource_overrides) == {"memory_limit"}
 
     async def test_fractional_value_rejected_by_validation(self):
         import services.analytics.duckdb as duckdb_client
 
         # int("300.5") raises, so the override is dropped rather than truncated.
-        assert await duckdb_client.apply_resource_settings(overrides={"resource.max_query_memory_mb": "300.5"}) == {}
+        assert (
+            await duckdb_client.apply_resource_settings(overrides={"resource.analytics_memory_limit_mb": "300.5"}) == {}
+        )
 
     async def test_db_failure_gracefully_handled(self):
         import services.analytics.duckdb as ch
@@ -181,7 +193,7 @@ class TestResourceApplyEndpoint:
         from main import app
 
         mock_db = AsyncMock()
-        mock_db.execute = AsyncMock(return_value=_enterprise_rows({"resource.max_query_memory_mb": "300"}))
+        mock_db.execute = AsyncMock(return_value=_enterprise_rows({"resource.analytics_memory_limit_mb": "300"}))
 
         app.dependency_overrides[get_db] = lambda: mock_db
         app.dependency_overrides[get_current_user] = _make_admin
@@ -197,7 +209,7 @@ class TestResourceApplyEndpoint:
                     r = await ac.post("/api/v1/admin/resources/apply")
 
             assert r.status_code == 200
-            assert r.json()["applied"] == {"resource.max_query_memory_mb": "300"}
+            assert r.json()["applied"] == {"resource.analytics_memory_limit_mb": "300"}
         finally:
             app.dependency_overrides.clear()
 

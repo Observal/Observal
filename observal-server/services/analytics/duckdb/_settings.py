@@ -170,7 +170,7 @@ ANALYTICS_TIME_COLUMNS: dict[str, str] = {
     "webhook_deliveries": "timestamp",
 }
 
-# Target types for bulk loads from Parquet exports (DuckDB -> DuckDB).
+# Target types for bulk loads from ClickHouse or DuckDB Parquet exports.
 ANALYTICS_COLUMN_TYPES: dict[str, dict[str, str]] = {
     "security_events": {
         "event_id": "VARCHAR",

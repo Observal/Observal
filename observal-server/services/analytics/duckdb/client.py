@@ -104,15 +104,19 @@ async def _insert(table: str, rows: list[dict]) -> int:
     return int(resp.json().get("row_count") or 0)
 
 
-async def analytics_health() -> bool:
-    """Check analytics connectivity. Returns True if healthy."""
+async def analytics_health(*, authenticated: bool = False) -> bool:
+    """Check analytics connectivity and, optionally, authenticated access."""
     _t0 = time.perf_counter()
     try:
-        resp = await _get_client().get(ANALYTICS_HTTP + "/health")
-        healthy = resp.status_code == 200 and resp.json().get("status") == "ok"
+        endpoint = "/version" if authenticated else "/health"
+        resp = await _get_client().get(ANALYTICS_HTTP + endpoint, headers=_headers())
+        body = resp.json() if resp.status_code == 200 else {}
+        healthy = resp.status_code == 200 and (authenticated or body.get("status") == "ok")
         _elapsed = (time.perf_counter() - _t0) * 1000
         if healthy:
-            optic.debug("DuckDB analytics is reachable ({:.0f}ms)", _elapsed)
+            optic.debug(
+                "DuckDB analytics is reachable{} ({:.0f}ms)", " with authentication" if authenticated else "", _elapsed
+            )
         else:
             optic.warning("DuckDB analytics health check returned {} ({:.0f}ms)", resp.status_code, _elapsed)
         return healthy

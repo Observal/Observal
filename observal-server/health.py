@@ -38,7 +38,7 @@ async def readiness(db: AsyncSession = Depends(get_db)):
 
     from services.analytics.duckdb import analytics_health
 
-    if not await analytics_health():
+    if not await analytics_health(authenticated=True):
         checks["analytics"] = "unreachable"
         checks["status"] = "degraded"
     else:

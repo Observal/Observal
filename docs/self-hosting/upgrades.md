@@ -15,7 +15,13 @@ observal server upgrade --dry-run --output json
 observal server upgrade --version 0.9.0 --force --output json
 ```
 
-This pulls new Docker images, backs up PostgreSQL, recreates containers, and runs health checks. If the health check fails, it requests the previous image version again. Local shell and Docker access authorize the operation; the command does not require a reachable API or API role.
+This pulls new Docker images, backs up PostgreSQL and DuckDB, recreates containers, and runs health checks. If the health check fails, it requests the previous image version again. Local shell and Docker access authorize the operation; the command does not require a reachable API or API role.
+
+> **One-time ClickHouse cutover:** the standard upgrade command deliberately
+> refuses a legacy compose file. First follow the
+> [ClickHouse-to-DuckDB cutover runbook](../architecture/duckdb-replacement.md#cutover-runbook),
+> which refreshes the deployment files, creates the required analytics token,
+> and verifies telemetry before the new API starts.
 
 See [`observal server upgrade`](../cli/server.md#observal-server-upgrade) for full details.
 

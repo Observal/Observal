@@ -259,6 +259,16 @@ def test_install_json_categorizes_checksum_failure(isolated, monkeypatch: pytest
     assert json.loads(result.stderr)["error"]["category"] == "unavailable"
 
 
+def test_legacy_clickhouse_compose_requires_explicit_cutover(tmp_path: Path) -> None:
+    (tmp_path / "compose.yml").write_text("services:\n  observal-clickhouse:\n    image: clickhouse\n")
+    assert cmd_server._uses_legacy_clickhouse_compose(tmp_path) is True
+
+    (tmp_path / "compose.yml").write_text(
+        "services:\n  observal-clickhouse:\n    image: clickhouse\n  observal-duckdb:\n    image: duckdb\n"
+    )
+    assert cmd_server._uses_legacy_clickhouse_compose(tmp_path) is False
+
+
 def test_update_env_version_is_atomic_and_preserves_unrelated_values(tmp_path: Path) -> None:
     compose = tmp_path / "compose"
     compose.mkdir()

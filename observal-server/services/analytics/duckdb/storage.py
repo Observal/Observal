@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import fcntl
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -68,7 +68,13 @@ def _jsonable(value: Any) -> Any:
         return value
     if isinstance(value, Decimal):
         return float(value)
-    if isinstance(value, datetime | date | time):
+    if isinstance(value, datetime):
+        # Preserve the ClickHouse HTTP contract: UTC, space separator, and
+        # fixed millisecond precision without an explicit offset.
+        if value.tzinfo is not None:
+            value = value.astimezone(UTC).replace(tzinfo=None)
+        return value.strftime("%Y-%m-%d %H:%M:%S.%f")[:23]
+    if isinstance(value, date | time):
         return value.isoformat()
     if isinstance(value, timedelta):
         return value.total_seconds()
@@ -177,8 +183,8 @@ class AnalyticsStore:
         return duckdb.connect(self.path)
 
     def _baseline_pragmas(self) -> dict[str, str]:
-        # DuckDB stores naive UTC in DateTime64; DuckDB would otherwise
-        # interpret naive timestamps in the host's local timezone.
+        # Analytics timestamps are normalized to naive UTC; DuckDB would
+        # otherwise interpret them in the host's local timezone.
         pragmas = {"threads": str(self.threads), "enable_progress_bar": "false"}
         pragmas["TimeZone"] = "UTC"
         if self.memory_limit:
@@ -285,7 +291,6 @@ class AnalyticsStore:
             raise ValueError(f"unknown analytics table: {table}")
         if not paths:
             return 0
-        escaped_paths = ", ".join("'" + str(path).replace("'", "''") + "'" for path in paths)
         column_list = ", ".join(columns)
         # Declaring the schema makes DuckDB return every target column, with
         # NULLs for columns the exported Parquet files do not carry (DuckDB
@@ -296,31 +301,36 @@ class AnalyticsStore:
         )
         verb = "INSERT OR REPLACE" if replace and table in UPSERT_TABLES else "INSERT"
         dedupe_keys = ANALYTICS_DEDUPE_KEYS.get(table)
-        delete_sql = ""
-        if dedupe_keys:
-            matches = " AND ".join(f"incoming.{key} = {table}.{key}" for key in dedupe_keys)
-            delete_sql = (
-                f"DELETE FROM {table} WHERE EXISTS ("
-                f"SELECT 1 FROM read_parquet([{escaped_paths}], schema = MAP {{{declared}}}) AS incoming "
-                f"WHERE {matches})"
-            )
-        insert_sql = (
-            f"{verb} INTO {table} ({column_list}) "
-            f"SELECT {column_list} FROM read_parquet("
-            f"[{escaped_paths}], schema = MAP {{{declared}}})"
-        )
         async with self._write_lock:
             con = self._require_writer()
 
             def _load() -> int:
                 before = con.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
-                if delete_sql:
-                    con.execute(delete_sql)
-                con.execute(insert_sql)
+                # Import one partition per transaction. This bounds transaction
+                # memory, makes retries resumable, and keeps append-only table
+                # deduplication atomic with its corresponding insert.
+                for path in paths:
+                    escaped_path = "'" + str(path).replace("'", "''") + "'"
+                    source = f"read_parquet([{escaped_path}], schema = MAP {{{declared}}})"
+                    con.execute("BEGIN TRANSACTION")
+                    try:
+                        if dedupe_keys:
+                            matches = " AND ".join(f"incoming.{key} = {table}.{key}" for key in dedupe_keys)
+                            con.execute(
+                                f"DELETE FROM {table} WHERE EXISTS (SELECT 1 FROM {source} AS incoming WHERE {matches})"
+                            )
+                        con.execute(f"{verb} INTO {table} ({column_list}) SELECT {column_list} FROM {source}")
+                        con.execute("COMMIT")
+                    except Exception:
+                        con.execute("ROLLBACK")
+                        raise
                 after = con.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
                 return int(after - before)
 
-            return await self._guard(con, _load)
+            # Administrative bulk loads can legitimately exceed the ordinary
+            # interactive query timeout. Process shutdown/cancellation remains
+            # the outer operational bound.
+            return await self._guard(con, _load, enforce_timeout=False)
 
     # ── internals ────────────────────────────────────────────────────────────
 
@@ -358,14 +368,26 @@ class AnalyticsStore:
                     return [], [(count,)]
                 return [], []
             columns = [desc[0] for desc in (result.description or [])]
-            rows = result.fetchmany(self.max_result_rows)
+            rows = result.fetchmany(self.max_result_rows + 1)
+            if len(rows) > self.max_result_rows:
+                raise ValueError(
+                    f"analytics result exceeds the {self.max_result_rows}-row response limit; paginate the query"
+                )
             return columns, [_jsonable_row(row) for row in rows]
 
         return await self._guard(con, _work)
 
-    async def _guard(self, con: duckdb.DuckDBPyConnection, work: Callable[[], object]):
+    async def _guard(
+        self,
+        con: duckdb.DuckDBPyConnection,
+        work: Callable[[], object],
+        *,
+        enforce_timeout: bool = True,
+    ):
         task = asyncio.create_task(asyncio.to_thread(work))
         try:
+            if not enforce_timeout:
+                return await asyncio.shield(task)
             return await asyncio.wait_for(asyncio.shield(task), timeout=self.query_timeout)
         except (TimeoutError, asyncio.CancelledError) as exc:
             # A cancelled to_thread awaitable does not stop its worker thread.
@@ -373,7 +395,10 @@ class AnalyticsStore:
             # caller can return this connection to the reader pool (or release
             # the writer lock). Reusing a still-busy connection can corrupt the
             # next query with a delayed interrupt.
-            optic.warning("DuckDB query interrupted after {}s", self.query_timeout)
+            optic.warning(
+                "DuckDB query interrupted{}",
+                f" after {self.query_timeout}s" if isinstance(exc, TimeoutError) else " by cancellation",
+            )
             await asyncio.to_thread(con.interrupt)
             try:
                 await asyncio.shield(task)

@@ -519,6 +519,16 @@ def _require_compose_dir() -> Path:
     return compose_dir
 
 
+def _uses_legacy_clickhouse_compose(compose_dir: Path) -> bool:
+    """Return whether this deployment still needs the one-time analytics cutover."""
+    for name in ("docker-compose.yml", "compose.yml"):
+        path = compose_dir / name
+        if path.is_file():
+            compose = path.read_text(encoding="utf-8")
+            return "observal-clickhouse" in compose and "observal-duckdb" not in compose
+    return False
+
+
 def _get_current_server_version(compose_dir: Path) -> str:
     """Get current OBSERVAL_VERSION from .env file."""
     # Check .env in compose dir first, then parent (dev setup has .env at project root)
@@ -612,6 +622,19 @@ def _server_upgrade(version: str | None, skip_backup: bool, dry_run: bool, force
             detail=repr(error),
         )
 
+    if _uses_legacy_clickhouse_compose(compose_dir):
+        fail(
+            ErrorCategory.CONFLICT,
+            "This deployment still uses the legacy ClickHouse compose topology.",
+            operation="Upgrade Docker server",
+            resource=str(compose_dir),
+            remediation=(
+                "Complete the one-time ClickHouse-to-DuckDB cutover at "
+                "https://github.com/Observal/Observal/blob/main/docs/architecture/duckdb-replacement.md#cutover-runbook "
+                "before retrying. The command will not risk starting the new API without migrated telemetry."
+            ),
+        )
+
     if version:
         target = version.removeprefix("v")
     else:
@@ -658,6 +681,7 @@ def _server_upgrade(version: str | None, skip_backup: bool, dry_run: bool, force
         console.print(f"[dim]Dry run: would upgrade v{current} → v{target}[/dim]")
         console.print(f"[dim]  Pull: ghcr.io/observal/observal-api:{target}[/dim]")
         console.print(f"[dim]  Pull: ghcr.io/observal/observal-web:{target}[/dim]")
+        console.print(f"[dim]  Pull: ghcr.io/observal/observal-duckdb:{target}[/dim]")
         console.print(f"[dim]  Compose dir: {escape(str(compose_dir))}[/dim]")
         return {
             "status": "planned",
@@ -671,7 +695,7 @@ def _server_upgrade(version: str | None, skip_backup: bool, dry_run: bool, force
     if not force:
         console.print(f"  Current: [dim]v{current}[/dim]")
         console.print(f"  Target:  [green]v{target}[/green]")
-        console.print(f"  Images:  [dim]ghcr.io/observal/observal-{{api,web}}:{target}[/dim]")
+        console.print(f"  Images:  [dim]ghcr.io/observal/observal-{{api,web,duckdb}}:{target}[/dim]")
         if not typer.confirm("\nProceed with server upgrade?"):
             raise typer.Abort()
 

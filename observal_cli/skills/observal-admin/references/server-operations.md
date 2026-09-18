@@ -41,7 +41,9 @@ observal server upgrade --version VERSION --force --output json
 observal server rollback --force --output json
 ```
 
-Rollback restores PostgreSQL and managed Docker image state, not ClickHouse telemetry. Verify service status and version after completion.
+Rollback restores PostgreSQL, managed Docker image state, and DuckDB when the selected backup contains `analytics.tar.gz`. A legacy backup restores PostgreSQL only. Verify service status and version after completion.
+
+`server upgrade` refuses a legacy compose topology containing ClickHouse but no DuckDB. Complete the one-time cutover in `docs/architecture/duckdb-replacement.md`, including refreshing the release compose file and configuring the shared analytics token, before retrying.
 
 ## PostgreSQL migration
 
