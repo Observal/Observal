@@ -91,7 +91,7 @@ class PragmaRequest(BaseModel):
 
 class LoadParquetRequest(BaseModel):
     table: str = Field(min_length=1)
-    paths: list[str] = Field(min_length=1)
+    upload_ids: list[str] = Field(min_length=1)
     replace: bool = True
 
 
@@ -130,6 +130,7 @@ def create_app(store: AnalyticsStore | None = None, settings: ServiceSettings | 
 
     app = FastAPI(title="Observal DuckDB analytics service", lifespan=lifespan)
     app.state.store = store
+    uploads: dict[str, list[Path]] = {}
 
     async def require_token(authorization: Annotated[str | None, Header()] = None) -> None:
         if settings.DUCKDB_ALLOW_ANONYMOUS and not token:
@@ -204,7 +205,8 @@ def create_app(store: AnalyticsStore | None = None, settings: ServiceSettings | 
 
     @app.post("/admin/upload", dependencies=[Depends(require_token)])
     async def upload(files: Annotated[list[UploadFile], File()]) -> dict:
-        staging = staging_root / f"upload-{uuid4().hex}"
+        upload_id = uuid4().hex
+        staging = staging_root / f"upload-{upload_id}"
         staging.mkdir(parents=True, exist_ok=False)
         saved: list[str] = []
         try:
@@ -222,12 +224,21 @@ def create_app(store: AnalyticsStore | None = None, settings: ServiceSettings | 
         except Exception:
             shutil.rmtree(staging, ignore_errors=True)
             raise
-        return {"paths": saved, "count": len(saved)}
+        uploads[upload_id] = [Path(path) for path in saved]
+        return {"upload_id": upload_id, "files": [Path(path).name for path in saved], "count": len(saved)}
 
     @app.post("/admin/load_parquet", dependencies=[Depends(require_token)])
     async def load_parquet(payload: LoadParquetRequest) -> dict:
+        if len(set(payload.upload_ids)) != len(payload.upload_ids):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="duplicate upload id")
+        groups = [uploads.get(upload_id) for upload_id in payload.upload_ids]
+        if any(group is None for group in groups):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="upload not found or already consumed")
+        paths = [path for group in groups if group is not None for path in group]
+        for upload_id in payload.upload_ids:
+            uploads.pop(upload_id)
         try:
-            loaded = await store.load_parquet(payload.table, payload.paths, replace=payload.replace)
+            loaded = await store.load_parquet(payload.table, [str(path) for path in paths], replace=payload.replace)
         except ValueError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
         except Exception as e:
@@ -235,8 +246,8 @@ def create_app(store: AnalyticsStore | None = None, settings: ServiceSettings | 
         finally:
             staging = staging_root.resolve()
             parents: set[Path] = set()
-            for raw_path in payload.paths:
-                candidate = Path(raw_path).resolve()
+            for path in paths:
+                candidate = path.resolve()
                 if candidate.is_relative_to(staging) and candidate.is_file():
                     candidate.unlink(missing_ok=True)
                     parents.add(candidate.parent)

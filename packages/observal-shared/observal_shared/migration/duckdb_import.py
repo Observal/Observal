@@ -210,18 +210,24 @@ async def load_telemetry_into_duckdb(
                 raise MigrationError(f"pre-count of {table} failed: HTTP {existing.status_code} {existing.text[:200]}")
             pre_rows[table] = int(((existing.json().get("data") or [{}])[0]).get("cnt") or 0)
             responses = await _upload_partitions(client, duckdb, files)
-            paths: list[str] = []
+            upload_ids: list[str] = []
+            uploaded_count = 0
             for upload in responses:
                 if upload.status_code != 200:
                     raise MigrationError(f"upload of {table} failed: HTTP {upload.status_code} {upload.text[:200]}")
-                paths.extend(upload.json().get("paths", []))
-            if len(paths) != len(files):
-                raise MigrationError(f"upload of {table} returned {len(paths)} paths for {len(files)} files")
+                body = upload.json()
+                upload_id = body.get("upload_id")
+                if not isinstance(upload_id, str) or not upload_id:
+                    raise MigrationError(f"upload of {table} did not return an upload id")
+                upload_ids.append(upload_id)
+                uploaded_count += int(body.get("count") or 0)
+            if uploaded_count != len(files):
+                raise MigrationError(f"upload of {table} accepted {uploaded_count} files for {len(files)} partitions")
             await reporter.update(phase="duckdb_import", pct=pct, message=f"Loading {table}")
             try:
                 load = await client.post(
                     f"{duckdb.http_base()}/admin/load_parquet",
-                    json={"table": table, "paths": paths, "replace": True},
+                    json={"table": table, "upload_ids": upload_ids, "replace": True},
                     headers=duckdb.headers(),
                     timeout=_httpx.Timeout(None, connect=10.0),
                 )
