@@ -72,6 +72,37 @@ class TestEstimateBackupSize:
         assert size == 100 * 1024 * 1024
 
 
+class TestCreateBackupSafety:
+    @pytest.mark.parametrize("stop_failure", ["timeout", "nonzero"])
+    def test_restart_is_attempted_when_stop_does_not_succeed(self, tmp_path, monkeypatch, stop_failure):
+        from subprocess import TimeoutExpired
+        from types import SimpleNamespace
+
+        calls: list[list[str]] = []
+
+        def run(command, **_kwargs):
+            calls.append(command)
+            if "pg_dump" in command:
+                return SimpleNamespace(returncode=0, stdout=b"valid pg dump" * 20, stderr=b"")
+            if command[:4] == ["docker", "compose", "exec", "-T"]:
+                return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+            if command[2:4] == ["stop", "observal-duckdb"]:
+                if stop_failure == "timeout":
+                    raise TimeoutExpired(command, 300)
+                return SimpleNamespace(returncode=1, stdout=b"", stderr=b"stop failed")
+            if command[2:5] == ["up", "-d", "observal-duckdb"]:
+                return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+            raise AssertionError(f"unexpected command: {command}")
+
+        monkeypatch.setattr(backup.subprocess, "run", run)
+
+        created = backup.create_backup(tmp_path, "1.0.0")
+
+        assert created.exists()
+        assert ["docker", "compose", "up", "-d", "observal-duckdb"] in calls
+        assert not (created / "analytics.tar.gz").exists()
+
+
 class TestRestoreBackup:
     """A restore has to bring back both stores, not just PostgreSQL."""
 

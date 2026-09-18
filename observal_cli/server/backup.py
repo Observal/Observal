@@ -112,61 +112,70 @@ def create_backup(compose_dir: Path, from_version: str) -> Path:
     except (subprocess.TimeoutExpired, OSError):
         rprint("[yellow]  DuckDB checkpoint timed out (non-critical)[/yellow]")
 
+    # A failed or timed-out stop may still have stopped the container. Always
+    # attempt to bring it back once a stop was requested, including early-return
+    # paths where the analytics archive is skipped.
     try:
-        stopped = subprocess.run(
-            ["docker", "compose", "stop", "observal-duckdb"],
-            capture_output=True,
-            cwd=compose_dir,
-            timeout=300,
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        rprint("[yellow]  DuckDB stop timed out; analytics backup skipped[/yellow]")
-        return backup_dir
-    if stopped.returncode != 0:
-        rprint("[yellow]  DuckDB could not be stopped; analytics backup skipped[/yellow]")
-        return backup_dir
-
-    try:
-        with duckdb_archive.open("wb") as output:
-            archive = subprocess.run(
-                [
-                    "docker",
-                    "compose",
-                    "run",
-                    "--rm",
-                    "--no-deps",
-                    "-T",
-                    "observal-duckdb",
-                    "tar",
-                    "czf",
-                    "-",
-                    "--exclude=./staging",
-                    "-C",
-                    "/data",
-                    ".",
-                ],
-                stdout=output,
-                stderr=subprocess.PIPE,
+        try:
+            stopped = subprocess.run(
+                ["docker", "compose", "stop", "observal-duckdb"],
+                capture_output=True,
                 cwd=compose_dir,
-                timeout=600,
+                timeout=300,
             )
-        if archive.returncode == 0 and duckdb_archive.stat().st_size:
-            duckdb_archive.chmod(0o600)
-            size_mb = duckdb_archive.stat().st_size / (1024 * 1024)
-            rprint(f"[dim]  DuckDB analytics: {size_mb:.1f} MB[/dim]")
-        else:
+        except (subprocess.TimeoutExpired, OSError):
+            rprint("[yellow]  DuckDB stop timed out; analytics backup skipped[/yellow]")
+            return backup_dir
+        if stopped.returncode != 0:
+            rprint("[yellow]  DuckDB could not be stopped; analytics backup skipped[/yellow]")
+            return backup_dir
+
+        try:
+            with duckdb_archive.open("wb") as output:
+                archive = subprocess.run(
+                    [
+                        "docker",
+                        "compose",
+                        "run",
+                        "--rm",
+                        "--no-deps",
+                        "-T",
+                        "observal-duckdb",
+                        "tar",
+                        "czf",
+                        "-",
+                        "--exclude=./staging",
+                        "-C",
+                        "/data",
+                        ".",
+                    ],
+                    stdout=output,
+                    stderr=subprocess.PIPE,
+                    cwd=compose_dir,
+                    timeout=600,
+                )
+            if archive.returncode == 0 and duckdb_archive.stat().st_size:
+                duckdb_archive.chmod(0o600)
+                size_mb = duckdb_archive.stat().st_size / (1024 * 1024)
+                rprint(f"[dim]  DuckDB analytics: {size_mb:.1f} MB[/dim]")
+            else:
+                duckdb_archive.unlink(missing_ok=True)
+                rprint("[yellow]  DuckDB archive failed (non-critical)[/yellow]")
+        except (subprocess.TimeoutExpired, OSError):
             duckdb_archive.unlink(missing_ok=True)
-            rprint("[yellow]  DuckDB archive failed (non-critical)[/yellow]")
-    except (subprocess.TimeoutExpired, OSError):
-        duckdb_archive.unlink(missing_ok=True)
-        rprint("[yellow]  DuckDB archive timed out (non-critical)[/yellow]")
+            rprint("[yellow]  DuckDB archive timed out (non-critical)[/yellow]")
     finally:
-        subprocess.run(
-            ["docker", "compose", "up", "-d", "observal-duckdb"],
-            capture_output=True,
-            cwd=compose_dir,
-            timeout=300,
-        )
+        try:
+            restarted = subprocess.run(
+                ["docker", "compose", "up", "-d", "observal-duckdb"],
+                capture_output=True,
+                cwd=compose_dir,
+                timeout=300,
+            )
+            if restarted.returncode != 0:
+                rprint("[yellow]  DuckDB restart failed after backup attempt[/yellow]")
+        except (subprocess.TimeoutExpired, OSError):
+            rprint("[yellow]  DuckDB restart timed out after backup attempt[/yellow]")
 
     return backup_dir
 

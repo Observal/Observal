@@ -171,6 +171,42 @@ async def test_load_rejects_missing_manifest_before_contacting_service(tmp_path)
         await load_telemetry_into_duckdb(params, export_dir, NullReporter())
 
 
+@pytest.mark.parametrize("unsafe_name", ["../outside.parquet", "/tmp/outside.parquet"])
+async def test_load_rejects_unsafe_manifest_path_before_hashing(tmp_path, monkeypatch, unsafe_name):
+    export_dir = tmp_path / "broken-export"
+    export_dir.mkdir()
+    outside = tmp_path / "outside.parquet"
+    outside.write_bytes(b"must not be read")
+    (export_dir / "telemetry_manifest.json").write_text(
+        json.dumps(
+            {
+                "migration_id": "unsafe",
+                "tables": {
+                    "session_events": {
+                        "files": [unsafe_name],
+                        "row_count": 1,
+                        "checksum": {unsafe_name: "irrelevant"},
+                    }
+                },
+            }
+        )
+    )
+    hashed = False
+
+    def fail_if_hashed(_path):
+        nonlocal hashed
+        hashed = True
+        raise AssertionError("unsafe artifact was hashed")
+
+    monkeypatch.setattr("observal_shared.migration.duckdb_import._sha256_file", fail_if_hashed)
+    params = DuckDBConnParams(url="duckdb://analytics:8484/observal", token=TOKEN)
+
+    with pytest.raises(PrerequisiteError, match="unsafe filename"):
+        await load_telemetry_into_duckdb(params, export_dir, NullReporter())
+
+    assert hashed is False
+
+
 async def test_load_rejects_corrupt_partition_before_contacting_service(tmp_path):
     export_dir = _write_export(tmp_path)
     (export_dir / "session_events_2026-09.parquet").write_bytes(b"corrupt")

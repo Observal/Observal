@@ -62,15 +62,60 @@ def parse_duckdb_url(url: str) -> str:
     return DuckDBConnParams(url=url).http_base()
 
 
-def _verify_artifact_checksums(export_dir: Path, manifest: dict) -> dict[str, bool]:
+def _validated_manifest_artifacts(export_dir: Path, manifest: dict) -> dict[str, list[Path]]:
+    """Validate manifest filenames before any artifact is opened or hashed."""
+    tables = manifest.get("tables")
+    if not isinstance(tables, dict):
+        raise PrerequisiteError("telemetry manifest has no valid tables map")
+
+    root = export_dir.resolve()
+    artifacts: dict[str, list[Path]] = {}
+    for table, table_meta in tables.items():
+        if not isinstance(table_meta, dict):
+            raise PrerequisiteError(f"telemetry manifest is incomplete for {table}")
+        filenames = table_meta.get("files") or []
+        checksums = table_meta.get("checksum") or {}
+        if (
+            not isinstance(filenames, list)
+            or not all(isinstance(filename, str) for filename in filenames)
+            or not isinstance(checksums, dict)
+        ):
+            raise PrerequisiteError(f"telemetry manifest is incomplete for {table}")
+        if len(filenames) != len(set(filenames)) or set(checksums) != set(filenames):
+            raise PrerequisiteError(f"telemetry manifest file/checksum mismatch for {table}")
+        if int(table_meta.get("row_count") or 0) > 0 and not filenames:
+            raise PrerequisiteError(f"telemetry manifest has no files for non-empty table {table}")
+
+        paths: list[Path] = []
+        for filename in filenames:
+            if not isinstance(filename, str) or not filename or Path(filename).name != filename:
+                raise PrerequisiteError(f"telemetry manifest has unsafe filename for {table}: {filename!r}")
+            candidate = export_dir / filename
+            try:
+                resolved = candidate.resolve(strict=True)
+            except OSError as exc:
+                raise PrerequisiteError(f"telemetry artifact is missing for {table}: {filename}") from exc
+            if (
+                candidate.is_symlink()
+                or not resolved.is_relative_to(root)
+                or resolved.parent != root
+                or not resolved.is_file()
+            ):
+                raise PrerequisiteError(f"telemetry manifest has unsafe artifact for {table}: {filename}")
+            paths.append(resolved)
+        artifacts[table] = paths
+    return artifacts
+
+
+def _verify_artifact_checksums(
+    export_dir: Path, manifest: dict, artifacts: dict[str, list[Path]] | None = None
+) -> dict[str, bool]:
+    validated = artifacts if artifacts is not None else _validated_manifest_artifacts(export_dir, manifest)
     results: dict[str, bool] = {}
-    for table_meta in manifest.get("tables", {}).values():
-        for filename, expected in (table_meta.get("checksum") or {}).items():
-            path = export_dir / filename
-            if not path.exists():
-                results[filename] = False
-                continue
-            results[filename] = _sha256_file(path) == expected
+    for table, paths in validated.items():
+        checksums = manifest["tables"][table]["checksum"]
+        for path in paths:
+            results[path.name] = _sha256_file(path) == checksums[path.name]
     return results
 
 
@@ -80,7 +125,8 @@ async def verify_artifact_checksums(export_dir: Path) -> TelemetryValidationResu
     if not manifest_path.exists():
         raise PrerequisiteError(f"telemetry manifest not found: {manifest_path}")
     manifest = read_manifest(manifest_path)
-    results = _verify_artifact_checksums(export_dir, manifest)
+    artifacts = _validated_manifest_artifacts(export_dir, manifest)
+    results = _verify_artifact_checksums(export_dir, manifest, artifacts)
     return TelemetryValidationResult(
         checksums_valid=all(results.values()) if results else True,
         checksum_results=results,
@@ -115,14 +161,8 @@ async def load_telemetry_into_duckdb(
     migration_id = str(manifest.get("migration_id") or "")
     if not migration_id or not isinstance(manifest.get("tables"), dict):
         raise PrerequisiteError(f"telemetry manifest is incomplete: {manifest_path}")
-    for table, table_meta in manifest["tables"].items():
-        filenames = table_meta.get("files") or []
-        checksums = table_meta.get("checksum") or {}
-        if (int(table_meta.get("row_count") or 0) > 0 and not filenames) or any(
-            name not in checksums for name in filenames
-        ):
-            raise PrerequisiteError(f"telemetry manifest is incomplete for {table}: {manifest_path}")
-    checksum_results = _verify_artifact_checksums(export_dir, manifest)
+    manifest_artifacts = _validated_manifest_artifacts(export_dir, manifest)
+    checksum_results = _verify_artifact_checksums(export_dir, manifest, manifest_artifacts)
     invalid = sorted(name for name, valid in checksum_results.items() if not valid)
     if invalid:
         raise MigrationError(f"telemetry artifact checksum failed: {', '.join(invalid)}")
@@ -144,14 +184,9 @@ async def load_telemetry_into_duckdb(
             raise ConnectionFailedError(f"analytics service unhealthy: HTTP {health.status_code}")
 
         tables = [cfg["name"] for cfg in CLICKHOUSE_TABLES]
-        manifest_tables = manifest["tables"]
         for index, table in enumerate(tables):
             pct = int((index / len(tables)) * 90) + 5
-            table_meta = manifest_tables.get(table) or {}
-            filenames = table_meta.get("files") or []
-            files = [export_dir / Path(name).name for name in filenames]
-            if any(path.name != name or not path.is_file() for path, name in zip(files, filenames, strict=True)):
-                raise PrerequisiteError(f"telemetry manifest has missing or unsafe files for {table}")
+            files = manifest_artifacts.get(table, [])
             if not files:
                 tables_skipped.append(table)
                 await reporter.update(phase="duckdb_import", pct=pct, message=f"Skipping {table} (no files)")
