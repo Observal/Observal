@@ -3,6 +3,8 @@
 
 """Tests for the DuckDB analytics migration runner."""
 
+import shutil
+
 import pytest
 
 from services.analytics.duckdb.migrations import (
@@ -60,6 +62,69 @@ async def test_run_migrations_applies_pending_files(tmp_path, monkeypatch):
         _, rows = await store.query("SELECT version, checksum FROM analytics_schema_migrations ORDER BY version")
         assert [row[0] for row in rows] == ["001_first", "002_second"]
         assert rows[0][1] == _checksum((tmp_path / "001_first.sql").read_text())
+    finally:
+        await store.close()
+
+
+async def test_primary_index_removal_preserves_existing_telemetry(tmp_path, monkeypatch):
+    source_dir = MIGRATIONS_DIR
+    migration_dir = tmp_path / "migrations"
+    migration_dir.mkdir()
+    for name in ("001_baseline.sql", "002_query_indexes.sql", "003_remove_secondary_art_indexes.sql"):
+        shutil.copy(source_dir / name, migration_dir / name)
+    monkeypatch.setattr("services.analytics.duckdb.migrations.MIGRATIONS_DIR", migration_dir)
+
+    store = AnalyticsStore(path=tmp_path / "analytics.duckdb", threads=1, read_connections=1)
+    await store.start()
+    try:
+        await run_migrations(store)
+        await store.insert(
+            "session_events",
+            [
+                {
+                    "session_id": "session",
+                    "project_id": "default",
+                    "user_id": "user",
+                    "harness": "pi",
+                    "line_offset": 1,
+                    "event_type": "user_prompt",
+                    "timestamp": "2026-01-01 00:00:00.000",
+                    "raw_line": "preserved",
+                }
+            ],
+        )
+
+        shutil.copy(source_dir / "004_remove_primary_art_indexes.sql", migration_dir)
+        assert await run_migrations(store) == ["004_remove_primary_art_indexes"]
+        _, rows = await store.query("SELECT raw_line FROM session_events")
+        assert rows == [("preserved",)]
+        _, constraints = await store.query(
+            "SELECT table_name FROM duckdb_constraints() "
+            "WHERE constraint_type = 'PRIMARY KEY' AND table_name IN "
+            "('session_events', 'session_checkpoints', 'session_stats_agg', 'layer_snapshots')"
+        )
+        assert constraints == []
+    finally:
+        await store.close()
+
+
+async def test_failed_migration_rolls_back_every_schema_change(tmp_path, monkeypatch):
+    monkeypatch.setattr("services.analytics.duckdb.migrations.MIGRATIONS_DIR", tmp_path)
+    (tmp_path / "001_broken.sql").write_text(
+        "CREATE TABLE must_not_survive (a INTEGER);\nINSERT INTO missing_table VALUES (1);\n"
+    )
+
+    store = AnalyticsStore(path=tmp_path / "analytics.duckdb", threads=1, read_connections=1)
+    await store.start()
+    try:
+        with pytest.raises(Exception, match="missing_table"):
+            await run_migrations(store)
+        _, tables = await store.query(
+            "SELECT table_name FROM information_schema.tables WHERE table_name = 'must_not_survive'"
+        )
+        assert tables == []
+        _, applied = await store.query("SELECT version FROM analytics_schema_migrations")
+        assert applied == []
     finally:
         await store.close()
 

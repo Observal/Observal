@@ -350,33 +350,23 @@ async def pin_baseline(
 
     import json
 
-    from services.analytics.duckdb.client import _execute as analytics_execute
+    from services.analytics.duckdb.insert import insert_layer_snapshot
 
-    # Store/update baseline pin (use a dedicated table or settings)
-    # For now, store in layer_snapshots with a special marker
-    sql = """
-        INSERT OR REPLACE INTO layer_snapshots
-            (hash, project_id, user_id, harness, content, file_count, total_size, lockfile_hash)
-        VALUES (
-            $hash,
-            $project_id,
-            $user_id,
-            'baseline',
-            $content,
-            0, 0, ''
-        )
-    """
-    content = json.dumps({"agent_id": req.agent_id, "baseline": True, "pinned_hash": req.layer_hash})
-
+    # Store/update baseline pin as a special layer snapshot marker. Route it
+    # through the central transactional replay path rather than DuckDB's
+    # unstable INSERT OR REPLACE conflict handling.
     try:
-        await analytics_execute(
-            sql,
+        await insert_layer_snapshot(
             {
                 "hash": f"baseline:{req.agent_id}",
                 "project_id": project_id,
                 "user_id": user_id,
-                "content": content,
-            },
+                "harness": "baseline",
+                "content": json.dumps({"agent_id": req.agent_id, "baseline": True, "pinned_hash": req.layer_hash}),
+                "file_count": 0,
+                "total_size": 0,
+                "lockfile_hash": "",
+            }
         )
     except Exception as e:
         optic.error("failed to pin baseline: {}", e)

@@ -242,9 +242,15 @@ class AnalyticsStore:
         finally:
             self._release_reader(con)
 
-    async def execute(self, sql: str, params: dict | list | None = None) -> int:
+    async def execute(
+        self,
+        sql: str,
+        params: dict | list | None = None,
+        *,
+        enforce_timeout: bool = True,
+    ) -> int:
         async with self._write_lock:
-            _, rows = await self._run(self._require_writer(), sql, params, fetch=False)
+            _, rows = await self._run(self._require_writer(), sql, params, fetch=False, enforce_timeout=enforce_timeout)
         if not rows or not rows[0]:
             return 0
         return int(rows[0][0] or 0)
@@ -256,11 +262,38 @@ class AnalyticsStore:
             raise ValueError(f"unknown analytics table: {table}")
         if not rows:
             return 0
-        batch = pa.Table.from_pylist(
-            [{key: row.get(key) for key in columns} for row in rows],
-            schema=_arrow_schema(table),
-        )
         upsert_keys = ANALYTICS_UPSERT_KEYS.get(table)
+        if upsert_keys:
+            # Preserve caller order so duplicate identities inside one delivery
+            # deterministically keep the final payload without ever invoking
+            # DuckDB's constraint-conflict and index rollback machinery.
+            def _build_upsert_batch() -> pa.Table:
+                return pa.Table.from_pylist(
+                    [
+                        {**{key: row.get(key) for key in columns}, "_analytics_order": index}
+                        for index, row in enumerate(rows)
+                    ],
+                    schema=_arrow_schema(table).append(pa.field("_analytics_order", pa.uint64())),
+                )
+
+            batch = await asyncio.to_thread(_build_upsert_batch)
+            partition = ", ".join(upsert_keys)
+            source = (
+                "(SELECT * EXCLUDE (_analytics_order, _analytics_rank) FROM ("
+                "SELECT *, row_number() OVER (PARTITION BY "
+                f"{partition} ORDER BY _analytics_order DESC) AS _analytics_rank FROM _analytics_batch"
+                ") WHERE _analytics_rank = 1)"
+            )
+        else:
+
+            def _build_append_batch() -> pa.Table:
+                return pa.Table.from_pylist(
+                    [{key: row.get(key) for key in columns} for row in rows],
+                    schema=_arrow_schema(table),
+                )
+
+            batch = await asyncio.to_thread(_build_append_batch)
+            source = "_analytics_batch"
         async with self._write_lock:
             con = self._require_writer()
 
@@ -271,10 +304,9 @@ class AnalyticsStore:
                     if upsert_keys:
                         matches = " AND ".join(f"incoming.{key} = {table}.{key}" for key in upsert_keys)
                         con.execute(
-                            f"DELETE FROM {table} WHERE EXISTS ("
-                            f"SELECT 1 FROM _analytics_batch AS incoming WHERE {matches})"
+                            f"DELETE FROM {table} WHERE EXISTS (SELECT 1 FROM {source} AS incoming WHERE {matches})"
                         )
-                    con.execute(f"INSERT INTO {table} BY NAME SELECT * FROM _analytics_batch")
+                    con.execute(f"INSERT INTO {table} BY NAME SELECT * FROM {source}")
                     con.execute("COMMIT")
                 except Exception:
                     con.execute("ROLLBACK")
@@ -284,6 +316,67 @@ class AnalyticsStore:
                 return len(rows)
 
             return await self._guard(con, _load)
+
+    async def refresh_session_summary(self, project_id: str, user_id: str, harness: str, session_id: str) -> None:
+        """Atomically recompute one session summary from canonical events."""
+        params = {"pid": project_id, "uid": user_id, "harness": harness, "sid": session_id}
+        async with self._write_lock:
+            con = self._require_writer()
+
+            def _refresh() -> None:
+                con.execute("BEGIN TRANSACTION")
+                try:
+                    con.execute(
+                        "DELETE FROM session_stats_agg WHERE project_id = $pid AND user_id = $uid "
+                        "AND harness = $harness AND session_id = $sid",
+                        params,
+                    )
+                    con.execute(
+                        """
+                        INSERT INTO session_stats_agg
+                        SELECT
+                            project_id,
+                            session_id,
+                            coalesce(max(agent_id) FILTER (WHERE agent_id IS NOT NULL AND agent_id != ''), ''),
+                            coalesce(max(agent_version) FILTER (
+                                WHERE agent_version IS NOT NULL AND agent_version != ''
+                            ), ''),
+                            user_id,
+                            coalesce(max(parent_session_id) FILTER (WHERE parent_session_id IS NOT NULL), ''),
+                            harness,
+                            coalesce(max(layer_hash) FILTER (WHERE layer_hash IS NOT NULL AND layer_hash != ''), ''),
+                            min(timestamp) FILTER (
+                                WHERE rendered = 1 AND timestamp > TIMESTAMP '1971-01-01 00:00:00'
+                                AND timestamp < TIMESTAMP '2099-01-01 00:00:00'
+                            ),
+                            max(timestamp) FILTER (
+                                WHERE rendered = 1 AND timestamp > TIMESTAMP '1971-01-01 00:00:00'
+                                AND timestamp < TIMESTAMP '2099-01-01 00:00:00'
+                            ),
+                            count(*) FILTER (WHERE rendered = 1),
+                            count(*) FILTER (WHERE rendered = 1 AND event_type = 'user_prompt'),
+                            count(*) FILTER (WHERE rendered = 1 AND event_type = 'tool_call'),
+                            count(*) FILTER (WHERE rendered = 1 AND event_type = 'tool_result'),
+                            coalesce(sum(input_tokens) FILTER (WHERE rendered = 1), 0),
+                            coalesce(sum(output_tokens) FILTER (WHERE rendered = 1), 0),
+                            coalesce(sum(cache_read_tokens) FILTER (WHERE rendered = 1), 0),
+                            coalesce(sum(cache_write_tokens) FILTER (WHERE rendered = 1), 0),
+                            coalesce(max(credits), 0),
+                            coalesce(max(model) FILTER (WHERE rendered = 1 AND model != ''), ''),
+                            CAST(epoch_ms(now()) AS UBIGINT),
+                            now()
+                        FROM session_events
+                        WHERE project_id = $pid AND user_id = $uid AND harness = $harness AND session_id = $sid
+                        GROUP BY project_id, session_id, user_id, harness
+                        """,
+                        params,
+                    )
+                    con.execute("COMMIT")
+                except Exception:
+                    con.execute("ROLLBACK")
+                    raise
+
+            await self._guard(con, _refresh)
 
     async def load_parquet(self, table: str, paths: list[str], *, replace: bool = True) -> int:
         """Bulk-load service-local Parquet files into a whitelisted table.
@@ -318,7 +411,15 @@ class AnalyticsStore:
                 # deduplication atomic with its corresponding insert.
                 for path in paths:
                     escaped_path = "'" + str(path).replace("'", "''") + "'"
-                    source = f"read_parquet([{escaped_path}], schema = MAP {{{declared}}})"
+                    raw_source = f"read_parquet([{escaped_path}], schema = MAP {{{declared}}})"
+                    if dedupe_keys:
+                        partition = ", ".join(dedupe_keys)
+                        source = (
+                            f"(SELECT {column_list} FROM {raw_source} "
+                            f"QUALIFY row_number() OVER (PARTITION BY {partition}) = 1)"
+                        )
+                    else:
+                        source = raw_source
                     con.execute("BEGIN TRANSACTION")
                     try:
                         if dedupe_keys:
@@ -362,6 +463,7 @@ class AnalyticsStore:
         params: dict | list | None,
         *,
         fetch: bool,
+        enforce_timeout: bool = True,
     ) -> tuple[list[str], list[tuple]]:
         def _work() -> tuple[list[str], list[tuple]]:
             result = con.execute(sql, params) if params else con.execute(sql)
@@ -382,7 +484,7 @@ class AnalyticsStore:
                 )
             return columns, [_jsonable_row(row) for row in rows]
 
-        return await self._guard(con, _work)
+        return await self._guard(con, _work, enforce_timeout=enforce_timeout)
 
     async def _guard(
         self,

@@ -126,6 +126,16 @@ async def analytics_health(*, authenticated: bool = False) -> bool:
         return False
 
 
+async def _refresh_session_summary(project_id: str, user_id: str, harness: str, session_id: str) -> None:
+    """Atomically recompute one summary inside the analytics writer."""
+    resp = await _get_client().post(
+        ANALYTICS_HTTP + "/refresh_session_summary",
+        json={"project_id": project_id, "user_id": user_id, "harness": harness, "session_id": session_id},
+        headers=_headers(),
+    )
+    resp.raise_for_status()
+
+
 async def _checkpoint() -> None:
     """Force a DuckDB checkpoint (WAL flush)."""
     resp = await _get_client().post(ANALYTICS_HTTP + "/admin/checkpoint", headers=_headers())

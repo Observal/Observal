@@ -46,10 +46,10 @@ Two earlier attempts are abandoned:
 | ``Int32/Int64`` | ``INTEGER/BIGINT`` |
 | ``Float32/64`` | ``FLOAT/DOUBLE`` |
 | ``UUID`` | ``VARCHAR`` (callers already pass strings; avoids 128-bit ordering drift) |
-| ``ReplacingMergeTree(v) ORDER BY k`` + ``FINAL`` | ``PRIMARY KEY k`` + ``INSERT OR REPLACE`` |
+| ``ReplacingMergeTree(v) ORDER BY k`` + ``FINAL`` | logical identity keys + serialized, transactional batch deduplication and replacement |
 | ``AggregatingMergeTree`` + ``SimpleAggregateFunction`` | plain columns + writer-side recomputation (``refresh_session_summary``) |
 | ``MATERIALIZED VIEW session_stats_mv`` | removed; the ingest path already recomputes summaries explicitly |
-| projections / ``bloom_filter`` skip indexes | ART indexes on lookup columns, validated with ``EXPLAIN ANALYZE`` |
+| projections / ``bloom_filter`` skip indexes | DuckDB zone maps; mutable ART indexes are avoided on replay-heavy telemetry tables |
 | ``TTL`` | ``services/retention.py`` ``DELETE`` + periodic ``CHECKPOINT`` |
 | ``system.parts`` materialization probes | removed |
 | ``{name:Type}`` query parameters | service-side named parameters (``$name``) |

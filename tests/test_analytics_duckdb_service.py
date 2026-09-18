@@ -129,7 +129,7 @@ def test_health_reports_schema_version(client):
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "ok"
-    assert body["schema_version"] == "003_remove_secondary_art_indexes"
+    assert body["schema_version"] == "004_remove_primary_art_indexes"
 
 
 def test_queries_require_a_token(client):
@@ -235,6 +235,23 @@ async def test_upsert_batch_avoids_duckdb_insert_or_replace_crash_path():
     assert connection.sql[-1] == "COMMIT"
     assert any(sql.startswith("DELETE FROM session_events") for sql in connection.sql)
     assert any(sql.startswith("INSERT INTO session_events") for sql in connection.sql)
+
+
+async def test_duplicate_identities_inside_one_batch_keep_final_payload(tmp_path):
+    store = AnalyticsStore(path=tmp_path / "analytics.duckdb", read_connections=1)
+    await store.start()
+    try:
+        await run_migrations(store)
+        first = _session_event(line_offset=7)
+        first["raw_line"] = "first"
+        second = _session_event(line_offset=7)
+        second["raw_line"] = "second"
+
+        assert await store.insert("session_events", [first, second]) == 2
+        _, rows = await store.query("SELECT raw_line FROM session_events WHERE line_offset = 7")
+        assert rows == [("second",)]
+    finally:
+        await store.close()
 
 
 async def test_overlapping_batch_replay_remains_stable_under_read_pressure(tmp_path):
@@ -387,11 +404,21 @@ async def test_export_covers_every_telemetry_table_including_summaries(tmp_path)
                 }
             ],
         )
-        await store.execute(
-            "INSERT OR REPLACE INTO session_stats_agg (project_id, session_id, user_id, harness, "
-            "first_event_time, last_event_time, event_count, prompt_count, summary_version) "
-            "VALUES ('default', 'sess-1', 'user-1', 'claude-code', "
-            "TIMESTAMP '2026-09-01 10:00:00', TIMESTAMP '2026-09-01 10:00:00', 1, 1, 1)"
+        await store.insert(
+            "session_stats_agg",
+            [
+                {
+                    "project_id": "default",
+                    "session_id": "sess-1",
+                    "user_id": "user-1",
+                    "harness": "claude-code",
+                    "first_event_time": "2026-09-01 10:00:00.000",
+                    "last_event_time": "2026-09-01 10:00:00.000",
+                    "event_count": 1,
+                    "prompt_count": 1,
+                    "summary_version": 1,
+                }
+            ],
         )
 
         destination = tmp_path / "export"
@@ -519,7 +546,12 @@ async def test_migrations_are_idempotent_and_checksum_guarded(tmp_path):
     )
     await store.start()
     try:
-        assert await run_migrations(store) == ["001_baseline", "002_query_indexes", "003_remove_secondary_art_indexes"]
+        assert await run_migrations(store) == [
+            "001_baseline",
+            "002_query_indexes",
+            "003_remove_secondary_art_indexes",
+            "004_remove_primary_art_indexes",
+        ]
         assert await run_migrations(store) == []
         await store.execute(
             "UPDATE analytics_schema_migrations SET checksum = 'tampered' WHERE version = '001_baseline'"

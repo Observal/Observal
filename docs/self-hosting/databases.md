@@ -66,13 +66,14 @@ Core tables:
 
 One service container (`observal-duckdb`) owns the analytics database file and is its only writer; every other process reaches it over HTTP on port 8484. Never mount the same data directory into a second writer — DuckDB (and the service's own lock file) will refuse the second process.
 
-Idempotent ingest is expressed with primary keys rather than merge engines:
+Idempotent ingest is enforced by the single analytics writer rather than merge engines or mutable ART indexes:
 
-* `session_events`, `session_checkpoints`, `session_stats_agg`, and `layer_snapshots` have primary keys; writes use `INSERT OR REPLACE`, so re-ingested rows replace the previous version.
-* `audit_log`, `security_events`, and `webhook_deliveries` are append-only.
-* `session_stats_agg` is recomputed by the ingest path (`refresh_session_summary`); there is no materialized view.
+* `session_events`, `session_checkpoints`, `session_stats_agg`, and `layer_snapshots` have declared logical identity columns. The writer deduplicates each incoming batch and performs an atomic `DELETE` plus `INSERT`, so replayed rows replace the previous version.
+* These hot tables deliberately have no physical primary-key indexes. This avoids a fatal DuckDB index-rollback path under overlapping replay pressure while the single-writer transaction preserves logical uniqueness.
+* `audit_log`, `security_events`, and `webhook_deliveries` are append-only during live ingestion; migration replays deduplicate them by their stable event or delivery identities.
+* `session_stats_agg` is recomputed atomically by the ingest path (`refresh_session_summary`); there is no materialized view.
 
-Reads do not need `FINAL`: each primary key holds exactly one row.
+Reads do not need `FINAL`: committed replay transactions retain one row per logical identity.
 
 ### Retention (TTL)
 

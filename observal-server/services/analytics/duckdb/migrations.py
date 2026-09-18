@@ -79,7 +79,14 @@ async def _applied_migrations(store) -> dict[str, str]:
 
 async def run_migrations(store) -> list[str]:
     """Apply pending migrations.  Returns the versions applied this run."""
-    await store.execute(CREATE_MIGRATIONS_TABLE)
+
+    async def execute(sql: str, params: dict | None = None) -> int:
+        # Rebuilding or indexing a production-sized telemetry table may
+        # legitimately exceed the interactive query deadline. Container
+        # shutdown remains the operational cancellation boundary.
+        return await store.execute(sql, params, enforce_timeout=False)
+
+    await execute(CREATE_MIGRATIONS_TABLE)
     applied = await _applied_migrations(store)
     newly_applied: list[str] = []
 
@@ -98,18 +105,34 @@ async def run_migrations(store) -> list[str]:
                     f"(expected {applied[version][:12]}, found {checksum[:12]})"
                 )
             if applied[version] == legacy_checksum and legacy_checksum != checksum:
-                await store.execute(
+                await execute(
                     f"UPDATE {MIGRATIONS_TABLE} SET checksum = $checksum WHERE version = $version",
                     {"checksum": checksum, "version": version},
                 )
             continue
         optic.info("applying analytics migration {} ({})", version, path.name)
-        for statement in _split_sql(text):
-            await store.execute(statement)
-        await store.execute(
-            f"INSERT INTO {MIGRATIONS_TABLE} (version, name, checksum) VALUES ($version, $name, $checksum)",
-            {"version": version, "name": path.name, "checksum": checksum},
-        )
+        statements = _split_sql(text)
+        # DuckDB cannot CHECKPOINT inside a transaction. Apply every schema and
+        # data statement plus the migration record atomically, then run any
+        # explicit checkpoint only after commit. This is especially important
+        # for table-rebuild migrations: an interruption must expose either the
+        # old tables or the complete replacements, never a half-renamed schema.
+        transactional = [statement for statement in statements if statement.strip().upper() != "CHECKPOINT"]
+        checkpoints = [statement for statement in statements if statement.strip().upper() == "CHECKPOINT"]
+        await execute("BEGIN TRANSACTION")
+        try:
+            for statement in transactional:
+                await execute(statement)
+            await execute(
+                f"INSERT INTO {MIGRATIONS_TABLE} (version, name, checksum) VALUES ($version, $name, $checksum)",
+                {"version": version, "name": path.name, "checksum": checksum},
+            )
+            await execute("COMMIT")
+        except Exception:
+            await execute("ROLLBACK")
+            raise
+        for statement in checkpoints:
+            await execute(statement)
         newly_applied.append(version)
 
     if newly_applied:

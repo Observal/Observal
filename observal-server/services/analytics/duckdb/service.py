@@ -81,6 +81,13 @@ class InsertRequest(BaseModel):
     rows: list[dict[str, Any]] = Field(min_length=1)
 
 
+class SummaryRefreshRequest(BaseModel):
+    project_id: str = Field(min_length=1)
+    user_id: str = Field(min_length=1)
+    harness: str = Field(min_length=1)
+    session_id: str = Field(min_length=1)
+
+
 class BackupRequest(BaseModel):
     destination: str = Field(min_length=1)
 
@@ -192,6 +199,18 @@ def create_app(store: AnalyticsStore | None = None, settings: ServiceSettings | 
         except Exception as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)[:500]) from e
         return {"row_count": inserted}
+
+    @app.post("/refresh_session_summary", dependencies=[Depends(require_token)])
+    async def refresh_session_summary(payload: SummaryRefreshRequest) -> dict:
+        try:
+            await store.refresh_session_summary(
+                payload.project_id, payload.user_id, payload.harness, payload.session_id
+            )
+        except TimeoutError as e:
+            raise HTTPException(status_code=status.HTTP_504_GATEWAY_TIMEOUT, detail=str(e)) from e
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)[:500]) from e
+        return {"status": "ok"}
 
     @app.post("/admin/checkpoint", dependencies=[Depends(require_token)])
     async def checkpoint() -> dict:

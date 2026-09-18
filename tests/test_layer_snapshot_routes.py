@@ -49,19 +49,6 @@ _DIFF_SQL = """
       AND hash IN ($hash_a, $hash_b)
 
 """
-_BASELINE_SQL = """
-    INSERT OR REPLACE INTO layer_snapshots
-        (hash, project_id, user_id, harness, content, file_count, total_size, lockfile_hash)
-    VALUES (
-        $hash,
-        $project_id,
-        $user_id,
-        'baseline',
-        $content,
-        0, 0, ''
-    )
-"""
-
 _UPLOAD = inspect.unwrap(layer_snapshot.upload_layer_snapshot)
 
 
@@ -680,31 +667,34 @@ async def test_diff_database_and_content_failures_return_500(monkeypatch, failur
 
 @pytest.mark.asyncio
 async def test_pin_baseline_serializes_exact_marker_and_query(monkeypatch):
-    query = AsyncMock(return_value=SimpleNamespace())
-    monkeypatch.setattr("services.analytics.duckdb.client._execute", query)
+    insert = AsyncMock()
+    monkeypatch.setattr("services.analytics.duckdb.insert.insert_layer_snapshot", insert)
     request = layer_snapshot.BaselinePinRequest(agent_id="agent-123", layer_hash=HASH_A)
 
     response = await inspect.unwrap(layer_snapshot.pin_baseline)(request, SimpleNamespace(), _user())
 
     assert response.model_dump() == {"agent_id": "agent-123", "layer_hash": HASH_A, "pinned": True}
-    assert _compact(query.await_args.args[0]) == _compact(_BASELINE_SQL)
-    params = dict(query.await_args.args[1])
-    assert json.loads(params.pop("content")) == {
+    row = dict(insert.await_args.args[0])
+    assert json.loads(row.pop("content")) == {
         "agent_id": "agent-123",
         "baseline": True,
         "pinned_hash": HASH_A,
     }
-    assert params == {
+    assert row == {
         "hash": "baseline:agent-123",
         "project_id": DEFAULT_PROJECT_ID,
         "user_id": str(USER_ID),
+        "harness": "baseline",
+        "file_count": 0,
+        "total_size": 0,
+        "lockfile_hash": "",
     }
 
 
 @pytest.mark.asyncio
 async def test_pin_baseline_rejects_oversized_agent_id_before_query(monkeypatch):
-    query = AsyncMock()
-    monkeypatch.setattr("services.analytics.duckdb.client._execute", query)
+    insert = AsyncMock()
+    monkeypatch.setattr("services.analytics.duckdb.insert.insert_layer_snapshot", insert)
     agent_id = "a" * 101
 
     response = await _request(
@@ -726,13 +716,13 @@ async def test_pin_baseline_rejects_oversized_agent_id_before_query(monkeypatch)
             }
         ]
     }
-    query.assert_not_awaited()
+    insert.assert_not_awaited()
 
 
 @pytest.mark.asyncio
 async def test_pin_baseline_exception_has_exact_500_contract(monkeypatch):
-    query = AsyncMock(side_effect=RuntimeError("insert unavailable"))
-    monkeypatch.setattr("services.analytics.duckdb.client._execute", query)
+    insert = AsyncMock(side_effect=RuntimeError("insert unavailable"))
+    monkeypatch.setattr("services.analytics.duckdb.insert.insert_layer_snapshot", insert)
 
     response = await _request(
         _app(),
@@ -743,7 +733,7 @@ async def test_pin_baseline_exception_has_exact_500_contract(monkeypatch):
 
     assert response.status_code == 500
     assert response.json() == {"detail": "Failed to pin baseline"}
-    query.assert_awaited_once()
+    insert.assert_awaited_once()
 
 
 @pytest.mark.asyncio

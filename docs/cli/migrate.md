@@ -44,9 +44,9 @@ The command runs three steps:
 
 1. **Export** every telemetry table from ClickHouse to monthly Parquet partitions
    plus a checksummed `telemetry_manifest.json`.
-2. **Load** those partitions into the DuckDB analytics service, replacing rows by
-   primary key (and pruning incoming identities for append-only tables) so
-   re-runs are idempotent.
+2. **Load** those partitions into the DuckDB analytics service, transactionally
+   replacing rows by logical identity (and pruning incoming identities for
+   append-only tables) so re-runs are idempotent.
 3. **Verify** artifact checksums and per-table row counts against the manifest.
 
 Verification fails (exit code 7 with a categorized error) when exported data is

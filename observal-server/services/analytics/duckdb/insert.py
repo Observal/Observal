@@ -137,41 +137,7 @@ async def refresh_session_summary(session_id: str, project_id: str, user_id: str
     recomputation; DuckDB has no materialized views, so the recomputation is
     the only path.
     """
-    sql = """
-        INSERT OR REPLACE INTO session_stats_agg
-        SELECT
-            project_id,
-            session_id,
-            coalesce(max(agent_id) FILTER (WHERE agent_id IS NOT NULL AND agent_id != ''), '') AS agent_id,
-            coalesce(max(agent_version) FILTER (WHERE agent_version IS NOT NULL AND agent_version != ''), '') AS agent_version,
-            user_id,
-            coalesce(max(parent_session_id) FILTER (WHERE parent_session_id IS NOT NULL), '') AS parent_session_id,
-            harness,
-            coalesce(max(layer_hash) FILTER (WHERE layer_hash IS NOT NULL AND layer_hash != ''), '') AS layer_hash,
-            min(timestamp) FILTER (
-                WHERE rendered = 1 AND timestamp > TIMESTAMP '1971-01-01 00:00:00' AND timestamp < TIMESTAMP '2099-01-01 00:00:00'
-            ) AS first_event_time,
-            max(timestamp) FILTER (
-                WHERE rendered = 1 AND timestamp > TIMESTAMP '1971-01-01 00:00:00' AND timestamp < TIMESTAMP '2099-01-01 00:00:00'
-            ) AS last_event_time,
-            count(*) FILTER (WHERE rendered = 1) AS event_count,
-            count(*) FILTER (WHERE rendered = 1 AND event_type = 'user_prompt') AS prompt_count,
-            count(*) FILTER (WHERE rendered = 1 AND event_type = 'tool_call') AS tool_call_count,
-            count(*) FILTER (WHERE rendered = 1 AND event_type = 'tool_result') AS tool_result_count,
-            coalesce(sum(input_tokens) FILTER (WHERE rendered = 1), 0) AS input_tokens,
-            coalesce(sum(output_tokens) FILTER (WHERE rendered = 1), 0) AS output_tokens,
-            coalesce(sum(cache_read_tokens) FILTER (WHERE rendered = 1), 0) AS cache_read_tokens,
-            coalesce(sum(cache_write_tokens) FILTER (WHERE rendered = 1), 0) AS cache_write_tokens,
-            coalesce(max(credits), 0) AS total_credits,
-            coalesce(max(model) FILTER (WHERE rendered = 1 AND model != ''), '') AS model,
-            CAST(epoch_ms(now()) AS UBIGINT) AS summary_version,
-            now() AS updated_at
-        FROM session_events
-        WHERE project_id = $pid AND user_id = $uid AND harness = $harness AND session_id = $sid
-        GROUP BY project_id, session_id, user_id, harness
-    """
-    params = {"pid": project_id, "uid": user_id, "harness": harness, "sid": session_id}
-    await _client._execute(sql, params)
+    await _client._refresh_session_summary(project_id, user_id, harness, session_id)
 
 
 async def insert_layer_snapshot(row: dict) -> None:

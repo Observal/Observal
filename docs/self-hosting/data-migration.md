@@ -104,8 +104,8 @@ observal server migrate import-telemetry \
 
 Exports carry every telemetry table, including `session_stats_agg`: summaries are
 written by the ingest path rather than rebuilt on import, so they must travel
-with the events. Imports replace rows by primary key and prune incoming
-identities for append-only tables, so repeating an import is safe.
+with the events. Imports transactionally replace rows by logical identity and
+prune incoming identities for append-only tables, so repeating an import is safe.
 
 ```bash
 observal server migrate export --file backup.tar.gz --output json
