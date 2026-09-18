@@ -149,7 +149,7 @@ async def ard_search(
             public_search_enabled=await _public_search_enabled(),
         )
     except InvalidSearchRequestError as exc:
-        return _error(400, "INVALID_ARGUMENT", str(exc))
+        return _error(400, "INVALID_ARGUMENT", exc.message)
 
     harness = filters.harnesses[0] if len(filters.harnesses) == 1 else None
     source = _search_source(ctx)
@@ -180,7 +180,9 @@ async def ard_explore(_body: ArdExploreRequest) -> JSONResponse:
 
 # ── List ─────────────────────────────────────────────────────────────────
 
-_CLAUSE_RE = re.compile(r"^\s*(?P<field>[A-Za-z][A-Za-z0-9_.:-]*)\s*(?P<op>>=|<=|=|>|<)\s*(?P<value>.+?)\s*$")
+# Operators tried longest-first so ">=" is not read as ">" followed by "=".
+_LIST_OPERATORS = (">=", "<=", "=", ">", "<")
+_FIELD_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.:-")
 _LIST_ORDER_FIELDS = {
     "displayname": DiscoveryEntry.display_name,
     "name": DiscoveryEntry.display_name,
@@ -202,21 +204,46 @@ def _unquote(value: str) -> str:
 def _parse_timestamp(value: str) -> datetime:
     try:
         return datetime.fromisoformat(_unquote(value).replace("Z", "+00:00"))
-    except ValueError as exc:
-        raise InvalidSearchRequestError(f"invalid timestamp: {value}") from exc
+    except ValueError:
+        raise InvalidSearchRequestError("timestamp filters must be ISO 8601 values") from None
+
+
+def _split_clauses(expression: str) -> list[str]:
+    """Split on a case-insensitive AND keyword without a backtracking regex."""
+    clauses: list[str] = []
+    for part in re.split(r"(?i)\bAND\b", expression):
+        part = part.strip()
+        if part:
+            clauses.append(part)
+    return clauses
+
+
+def _parse_clause(clause: str) -> tuple[str, str, str]:
+    """Return (field, operator, value) for ``field op value`` with a linear scan."""
+    field_end = 0
+    while field_end < len(clause) and clause[field_end] in _FIELD_CHARS:
+        field_end += 1
+    field = clause[:field_end]
+    rest = clause[field_end:].lstrip()
+    if not field or not field[0].isalpha():
+        raise InvalidSearchRequestError("filter clauses must start with a field name")
+    for op in _LIST_OPERATORS:
+        if rest.startswith(op):
+            value = rest[len(op) :].strip()
+            if not value:
+                raise InvalidSearchRequestError(f"filter clause for {field} has no value")
+            return field, op, value
+    raise InvalidSearchRequestError(f"filter clause for {field} needs one of =, >, >=, <, <=")
 
 
 def _apply_list_filter(stmt, expression: str | None):
     """Apply the List API's EBNF-like filter (Appendix A). Clauses are ANDed; values may be comma-ORed."""
     if not expression or not expression.strip():
         return stmt
-    for clause in re.split(r"\s+AND\s+", expression.strip(), flags=re.IGNORECASE):
-        match = _CLAUSE_RE.match(clause)
-        if not match:
-            raise InvalidSearchRequestError(f"invalid filter clause: {clause!r}")
-        field = match.group("field").lower()
-        op = match.group("op")
-        raw_values = [_unquote(v) for v in match.group("value").split(",") if v.strip()]
+    for clause in _split_clauses(expression):
+        field_name, op, value = _parse_clause(clause)
+        field = field_name.lower()
+        raw_values = [_unquote(v) for v in value.split(",") if v.strip()]
         if field == "type":
             stmt = stmt.where(DiscoveryEntry.media_type.in_([normalize_media_type(v) or v for v in raw_values]))
         elif field in ("publisherid", "publisher"):
@@ -230,9 +257,9 @@ def _apply_list_filter(stmt, expression: str | None):
         elif field == "updatedafter":
             stmt = stmt.where(DiscoveryEntry.updated_at_source > _parse_timestamp(raw_values[0]))
         else:
-            raise InvalidSearchRequestError(f"unsupported filter field: {match.group('field')}")
+            raise InvalidSearchRequestError(f"unsupported filter field: {field_name}")
         if op not in ("=", ">", ">=") or (op != "=" and field not in ("createdafter", "updatedafter")):
-            raise InvalidSearchRequestError(f"operator {op!r} is not valid for {match.group('field')}")
+            raise InvalidSearchRequestError(f"operator {op} is not valid for {field_name}")
     return stmt
 
 
@@ -267,7 +294,7 @@ async def ard_list(
         base = _apply_list_filter(base, filter)
         stmt = _apply_order(base, order_by).offset(offset).limit(page_size + 1)
     except InvalidSearchRequestError as exc:
-        return _error(400, "INVALID_ARGUMENT", str(exc))
+        return _error(400, "INVALID_ARGUMENT", exc.message)
 
     rows = list((await db.execute(stmt)).scalars().all())
     total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar_one()

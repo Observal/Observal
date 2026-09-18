@@ -395,3 +395,50 @@ async def test_registry_api_passes_official_conformance(settings, tmp_path):
         server.should_exit = True
         thread.join(timeout=10)
         await engine.dispose()
+
+
+# ── List filter parser ───────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("clause", "expected"),
+    [
+        ("type = 'application/ai-skill+md'", ("type", "=", "'application/ai-skill+md'")),
+        ("createdAfter>='2026-01-01'", ("createdAfter", ">=", "'2026-01-01'")),
+        ("  displayName   =   Review  ", ("displayName", "=", "Review")),
+        ("publisherId = a.com,b.com", ("publisherId", "=", "a.com,b.com")),
+    ],
+)
+def test_parse_clause_accepts_spec_shapes(clause, expected):
+    assert ard._parse_clause(clause.strip()) == expected
+
+
+@pytest.mark.parametrize("clause", ["= x", "type", "type ~ x", "type =", "1abc = x"])
+def test_parse_clause_rejects_malformed(clause):
+    with pytest.raises(ard.InvalidSearchRequestError):
+        ard._parse_clause(clause)
+
+
+def test_split_clauses_is_case_insensitive_and_ignores_blanks():
+    assert ard._split_clauses("type = a and displayName = b AND  ") == ["type = a", "displayName = b"]
+
+
+def test_filter_parser_is_linear_on_adversarial_whitespace():
+    """The inputs CodeQL described for the old regex: long runs of spaces after a field."""
+    import time
+
+    for expression in ("A=" + " " * 5000, "A=a" + " " * 5000, " " * 5000 + "AND" + " " * 5000):
+        started = time.perf_counter()
+        try:
+            for clause in ard._split_clauses(expression):
+                ard._parse_clause(clause)
+        except ard.InvalidSearchRequestError:
+            pass
+        assert time.perf_counter() - started < 0.05, expression[:10]
+
+
+def test_filter_errors_never_echo_foreign_exception_text():
+    with pytest.raises(ard.InvalidSearchRequestError) as info:
+        ard._parse_timestamp("'not a date'")
+    assert info.value.message == "timestamp filters must be ISO 8601 values"
+    assert info.value.__cause__ is None

@@ -52,7 +52,15 @@ _WORD_RE = re.compile(r"[a-z0-9][a-z0-9_-]*")
 
 
 class InvalidSearchRequestError(ValueError):
-    """Raised for malformed queries; callers map it to ARD's INVALID_ARGUMENT."""
+    """Raised for malformed queries; callers map it to ARD's INVALID_ARGUMENT.
+
+    ``message`` is always a string this module chose, never another exception's
+    text, so routes can return it to the client as-is.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
 
 
 # ── Filters ──────────────────────────────────────────────────────────────
@@ -100,17 +108,21 @@ class SearchFilters:
             elif key == "version":
                 filters.versions = values(key)
             elif key in ("obs:kind", "kind"):
-                try:
-                    filters.kinds.extend(DiscoveryKind(v) for v in values(key))
-                except ValueError as exc:
-                    raise InvalidSearchRequestError(f"unknown kind in filter: {exc}") from exc
+                for v in values(key):
+                    try:
+                        filters.kinds.append(DiscoveryKind(v))
+                    except ValueError:
+                        raise InvalidSearchRequestError(f"unknown kind in filter: {v}") from None
             elif key in ("obs:supportedHarnesses", "obs:harness"):
                 filters.harnesses = values(key)
             elif key == "obs:lifecycle":
-                try:
-                    filters.lifecycles = tuple(DiscoveryLifecycle(v) for v in values(key))
-                except ValueError as exc:
-                    raise InvalidSearchRequestError(f"unknown lifecycle in filter: {exc}") from exc
+                lifecycles: list[DiscoveryLifecycle] = []
+                for v in values(key):
+                    try:
+                        lifecycles.append(DiscoveryLifecycle(v))
+                    except ValueError:
+                        raise InvalidSearchRequestError(f"unknown lifecycle in filter: {v}") from None
+                filters.lifecycles = tuple(lifecycles)
             elif key == "obs:activatable":
                 filters.activatable_only = str(values(key)[0]).lower() in ("true", "1", "yes")
             else:
@@ -252,8 +264,8 @@ def decode_page_token(token: str | None, fingerprint: str) -> int:
         if data.get("f") != fingerprint or offset < 0:
             raise ValueError
         return offset
-    except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
-        raise InvalidSearchRequestError("invalid pageToken") from exc
+    except (ValueError, KeyError, TypeError, json.JSONDecodeError):
+        raise InvalidSearchRequestError("invalid pageToken") from None
 
 
 # ── Search ───────────────────────────────────────────────────────────────
