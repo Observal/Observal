@@ -349,7 +349,7 @@ def test_migration_upload_proxy_streams_large_request_bodies():
         "docker/nginx-azure.conf",
     ):
         config = (root / relative).read_text(encoding="utf-8")
-        assert "^/api/v1/admin/migrate/(import|validate)$" in config
+        assert "^/api/v1/admin/migrate/(import|validate)/?$" in config
         assert "client_max_body_size 6g" in config
         assert "proxy_request_buffering off" in config
         assert "proxy_send_timeout 3600s" in config

@@ -71,9 +71,10 @@ class RequestSizeLimitMiddleware:
             return
         headers = dict(scope.get("headers", []))
         content_length = headers.get(b"content-length")
+        request_path = (scope.get("path") or "/").rstrip("/") or "/"
         request_limit = (
             self.max_migration_request_size_bytes
-            if scope.get("path") in MIGRATION_UPLOAD_PATHS
+            if request_path in MIGRATION_UPLOAD_PATHS
             else self.max_request_size_bytes
         )
         if content_length and int(content_length) > request_limit:
