@@ -31,6 +31,13 @@ from observal_shared.migration import (
 from observal_shared.migration.archive import _safe_tar_extract
 from services.security_events import EventType, SecurityEvent, Severity, emit_security_event
 
+MAX_MIGRATION_JOB_TIMEOUT_SECONDS = 86400
+
+
+def _bounded_migration_timeout(configured_timeout: int) -> int:
+    return min(max(configured_timeout, 1), MAX_MIGRATION_JOB_TIMEOUT_SECONDS)
+
+
 # ── DB-backed progress reporter ──────────────────────────────────────────────
 
 
@@ -150,8 +157,12 @@ async def run_migration_job(ctx: dict, job_id: str) -> None:
     # Build progress reporter
     reporter = DbProgressReporter(async_session, job_id)
 
-    # Get job timeout from dynamic settings
-    timeout_seconds = await ds.get_int("migration.job_timeout_seconds", default=3600)
+    # Keep the inner timeout aligned with arq's function-specific ceiling.
+    configured_timeout = await ds.get_int(
+        "migration.job_timeout_seconds",
+        default=MAX_MIGRATION_JOB_TIMEOUT_SECONDS,
+    )
+    timeout_seconds = _bounded_migration_timeout(configured_timeout)
 
     # Resolve connections
     pg_conn = await _resolve_pg_conn()

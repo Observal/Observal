@@ -174,6 +174,12 @@ def install_job_boundaries(monkeypatch, factory: SessionFactory, artifact_root: 
     )
 
 
+def test_migration_timeout_defaults_and_clamps_to_worker_ceiling():
+    assert migration._bounded_migration_timeout(0) == 1
+    assert migration._bounded_migration_timeout(3600) == 3600
+    assert migration._bounded_migration_timeout(172800) == migration.MAX_MIGRATION_JOB_TIMEOUT_SECONDS
+
+
 def write_tar(path: Path, members: dict[str, bytes]) -> None:
     with tarfile.open(path, "w:gz") as archive:
         for name, content in members.items():
@@ -360,7 +366,10 @@ async def test_job_dispatches_operation_and_persists_success(
     )
     for other_name in {"export", "import_", "validate"} - {handler_name}:
         getattr(boundaries, other_name).assert_not_awaited()
-    boundaries.get_timeout.assert_awaited_once_with("migration.job_timeout_seconds", default=3600)
+    boundaries.get_timeout.assert_awaited_once_with(
+        "migration.job_timeout_seconds",
+        default=migration.MAX_MIGRATION_JOB_TIMEOUT_SECONDS,
+    )
     boundaries.timeout.assert_called_once_with(17)
     boundaries.pg_resolver.assert_awaited_once_with()
     boundaries.ch_resolver.assert_awaited_once_with()
