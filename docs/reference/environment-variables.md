@@ -20,7 +20,8 @@ Every credential listed with file support accepts `NAME_FILE=/path/to/secret` in
 | `OLD_SECRET_KEY`         | unset                          | Previous secret during encrypted-setting rotation. Supports `OLD_SECRET_KEY_FILE`. |
 | `FRONTEND_URL`           | `http://localhost:3000`        | External frontend URL (OAuth redirects, email links)                                                                                                          |
 | `CORS_ALLOWED_ORIGINS`   | `http://localhost:3000`        | Comma-separated allowed CORS origins                                                                                                                          |
-| `MAX_REQUEST_SIZE_MB`    | `10`                           | Maximum request body size                                                                                                                                     |
+| `MAX_REQUEST_SIZE_MB`    | `10`                           | Maximum request body size for ordinary endpoints                                                                                                              |
+| `MAX_MIGRATION_REQUEST_SIZE_MB` | `6144`                | Maximum combined multipart request size for Admin migration import and validation uploads                                                                     |
 | `RATE_LIMIT_AUTH`        | `10/minute`                    | General auth-endpoint rate limit                                                                                                                              |
 | `RATE_LIMIT_AUTH_STRICT` | `5/minute`                     | Login and password-reset rate limit                                                                                                                           |
 

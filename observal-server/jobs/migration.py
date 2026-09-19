@@ -28,6 +28,7 @@ from observal_shared.migration import (
     validate_ch,
     validate_pg,
 )
+from observal_shared.migration.archive import _safe_tar_extract
 from services.security_events import EventType, SecurityEvent, Severity, emit_security_event
 
 # ── DB-backed progress reporter ──────────────────────────────────────────────
@@ -373,7 +374,7 @@ async def _run_import(
             extract_dir = artifact_path / "telemetry"
             extract_dir.mkdir(exist_ok=True)
             with _tarfile.open(telemetry_archives[0], "r:gz") as tar:
-                tar.extractall(extract_dir, filter="data")
+                _safe_tar_extract(tar, extract_dir)
 
         # Telemetry files may be in a subdirectory or the root
         telemetry_dir = artifact_path / "telemetry" if (artifact_path / "telemetry").is_dir() else artifact_path
@@ -448,7 +449,7 @@ async def _run_validate(
             extract_dir = artifact_path / "telemetry"
             extract_dir.mkdir(exist_ok=True)
             with _tarfile.open(telemetry_archives[0], "r:gz") as tar:
-                tar.extractall(extract_dir, filter="data")
+                _safe_tar_extract(tar, extract_dir)
 
         # Telemetry files may be in a subdirectory or the root
         telemetry_dir = artifact_path / "telemetry" if (artifact_path / "telemetry").is_dir() else artifact_path
@@ -461,6 +462,10 @@ async def _run_validate(
         )
         result["checksums_valid"] = result["checksums_valid"] and ch_val.checksums_valid
         result["checksum_details"].update(ch_val.checksum_results or {})
+        if ch_val.row_count_results:
+            comparisons = result["row_count_comparison"] or {}
+            comparisons.update({table: list(counts) for table, counts in ch_val.row_count_results.items()})
+            result["row_count_comparison"] = comparisons
         result["orphaned_fk_refs"] = ch_val.fk_results
 
     return result, None, schema_version

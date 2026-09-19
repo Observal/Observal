@@ -18,6 +18,7 @@ from services.audit.event_handlers import shutdown_audit as shutdown_audit_handl
 from services.cache import close_cache, init_cache
 from services.clickhouse import init_clickhouse
 from services.crypto import init_key_manager
+from services.migration_uploads import configure_migration_upload_tempdir
 from services.redis import close as close_redis
 
 
@@ -45,6 +46,7 @@ async def ensure_columns(conn) -> None:
 
 async def run_startup_tasks() -> None:
     """Initialize application dependencies used by the FastAPI lifespan."""
+    configure_migration_upload_tempdir()
     if not settings.SKIP_DDL_ON_STARTUP:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
