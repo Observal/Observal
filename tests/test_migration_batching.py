@@ -351,6 +351,8 @@ def test_migration_upload_proxy_streams_large_request_bodies():
         config = (root / relative).read_text(encoding="utf-8")
         assert "^/api/v1/admin/migrate/(import|validate)/?$" in config
         assert "client_max_body_size 6g" in config
+        assert "limit_conn_zone $binary_remote_addr zone=migration_uploads:10m" in config
+        assert "limit_conn migration_uploads 1" in config
         assert "proxy_request_buffering off" in config
         assert "proxy_send_timeout 3600s" in config
 
