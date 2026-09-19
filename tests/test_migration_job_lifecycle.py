@@ -1042,16 +1042,15 @@ async def test_purge_without_eligible_jobs_does_not_commit(monkeypatch):
     assert session.entered == session.exited == 1
 
 
-def test_migration_upload_tempdir_uses_persistent_artifact_volume(monkeypatch, tmp_path):
+def test_migration_upload_tempdir_uses_persistent_artifact_volume(tmp_path):
     import tempfile
 
     from services.migration_uploads import configure_migration_upload_tempdir
 
     artifact_root = tmp_path / "migration_artifacts"
     original_tempdir = tempfile.tempdir
-    monkeypatch.setenv("MIGRATION_ARTIFACT_ROOT", str(artifact_root))
     try:
-        upload_tempdir = configure_migration_upload_tempdir()
+        upload_tempdir = configure_migration_upload_tempdir(artifact_root)
         assert upload_tempdir == tmp_path / "migration_upload_tmp"
         assert upload_tempdir.is_dir()
         assert upload_tempdir.stat().st_mode & 0o777 == 0o700
