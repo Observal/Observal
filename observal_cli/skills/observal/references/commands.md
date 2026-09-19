@@ -228,7 +228,7 @@ Every command available in the installed CLI. This block is generated from the T
 - `observal server reset`: Stop embedded services and wipe database data and generated secrets.
 - `observal server config`: Show embedded server paths and ports.
 - `observal server rollback`: Restore PostgreSQL, DuckDB analytics telemetry, and the Docker image version from backup.
-- `observal server upgrade`: Upgrade a local Docker deployment.
+- `observal server upgrade`: Upgrade a local Docker deployment; performs the one-time ClickHouse-to-DuckDB telemetry cutover automatically on legacy deployments.
 - `observal server versions`: List Docker image versions and managed PostgreSQL backups.
 
 **`observal team`**: Manage teamspaces: creation, membership, access, and visibility.

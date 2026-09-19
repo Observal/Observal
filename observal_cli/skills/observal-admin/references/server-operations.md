@@ -43,7 +43,7 @@ observal server rollback --force --output json
 
 Rollback restores PostgreSQL, managed Docker image state, and DuckDB when the selected backup contains `analytics.tar.gz`. A legacy backup restores PostgreSQL only. Verify service status and version after completion.
 
-`server upgrade` refuses a legacy compose topology containing ClickHouse but no DuckDB. Complete the one-time cutover in `docs/architecture/duckdb-replacement.md`, including refreshing the release compose file and configuring the shared analytics token, before retrying.
+`server upgrade` detects a legacy ClickHouse deployment (ClickHouse compose file or `CLICKHOUSE_URL` in `.env` with no DuckDB token, plus this project's `observal-clickhouse` container) and runs the one-time cutover itself: PostgreSQL backup, release compose/nginx install (server-package) with the old file kept as `docker-compose.clickhouse.bak.yml`, analytics token provisioning, `observal-duckdb` start, ClickHouse export/load/verify, deploy, post-deploy re-verification, then `docker stop` of ClickHouse with its volume kept and a `.observal-cutover-complete.json` marker. Any failure before deploy leaves the old release running; a health-check failure after deploy restores the legacy compose file. `--dry-run` reports `clickhouse_cutover: true` when a cutover would run. The CLI must be upgraded first (`observal self upgrade`); the previous CLI cannot perform the cutover. Refuses when the compose file is legacy but no ClickHouse container exists. Embedded installs (`observal server start`) run the same cutover automatically on start, relaunching the old ClickHouse binary on port 18124 for the export.
 
 ## PostgreSQL migration
 
@@ -67,7 +67,7 @@ observal server migrate import-telemetry --duckdb-url duckdb://observal-duckdb:8
 
 These leaves move telemetry between DuckDB-backed instances; they read `DUCKDB_ANALYTICS_URL` and `DUCKDB_ANALYTICS_TOKEN`. Export requires a new destination directory. Validate files and Registry references before import.
 
-Upgrading an installation that still runs ClickHouse is a one-way operation:
+`observal server upgrade` runs this step automatically for Docker deployments. Use the standalone command for Helm, Terraform, or when driving the cutover by hand (it must run before `helm upgrade` / `terraform apply`):
 
 ```bash
 observal server migrate duckdb --clickhouse-url clickhouse://default:clickhouse@observal-clickhouse:8123/observal --duckdb-url duckdb://observal-duckdb:8484/observal --export-dir telemetry-export --output json

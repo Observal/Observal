@@ -700,6 +700,34 @@ class Orchestrator:
                 warnings.append("Kiro hooks were not installed; run observal doctor patch.")
         return warnings
 
+    # ── One-time ClickHouse cutover ────────────────────────────
+
+    def _run_embedded_cutover(self, legacy) -> None:
+        """Migrate a pre-DuckDB embedded ClickHouse data directory, then retire it.
+
+        Fails the start so the operator never runs the new API over an empty
+        analytics store while their history sits unmigrated on disk.
+        """
+        from observal_cli.cmd_migrate import RichProgressReporter
+        from observal_cli.server import cutover as _cutover
+
+        console.print("[blue]==>[/blue] Migrating ClickHouse telemetry to DuckDB (one-time cutover)...")
+        optic.info("embedded clickhouse cutover start data_dir={}", legacy.data_dir)
+        try:
+            result = _cutover.run_embedded_cutover(
+                legacy,
+                duckdb_url=f"duckdb://127.0.0.1:{ANALYTICS_HTTP_PORT}/observal",
+                token=self._secrets["DUCKDB_ANALYTICS_TOKEN"],
+                log=lambda m: console.print(f"  {m}"),
+                reporter=RichProgressReporter(),
+            )
+        except _cutover.CutoverError as error:
+            raise ServiceError(
+                f"ClickHouse to DuckDB cutover failed: {error}. {error.remediation} "
+                "Your ClickHouse data directory was not modified."
+            ) from error
+        console.print(f"[green]\u2713[/green] Telemetry migrated ({result.total_rows:,} rows)")
+
     # ── Full lifecycle ─────────────────────────────────────────
 
     def start_all(self, *, foreground: bool = True) -> None:
@@ -717,11 +745,22 @@ class Orchestrator:
             self.start_postgres()
             self.start_redis()
 
+            # A ClickHouse left behind by the previous CLI holds the analytics
+            # port; stop it before the DuckDB service starts.
+            from observal_cli.server import cutover as _cutover
+
+            embedded_legacy = _cutover.detect_embedded_legacy()
+            if _cutover.stop_orphan_embedded_clickhouse(embedded_legacy, lambda m: console.print(f"[dim]{m}[/dim]")):
+                optic.info("stopped orphaned embedded ClickHouse before analytics start")
+
             # Migrations run before the analytics service starts so it owns the
             # database file exclusively from then on.
             self.run_migrations()
 
             self.start_analytics()
+
+            if embedded_legacy.present:
+                self._run_embedded_cutover(embedded_legacy)
 
             if first_run:
                 console.print("[blue]==>[/blue] First run - initializing databases...")

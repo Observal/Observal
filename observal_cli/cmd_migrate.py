@@ -574,7 +574,109 @@ def import_telemetry_cmd(
             rprint(f"  [yellow]⚠[/yellow]  {escape(warning)}")
 
 
-# ── Validate telemetry command ───────────────────────────
+# ── ClickHouse -> DuckDB core (shared with the automatic cutover) ──────────
+
+
+class DuckDBVerificationError(MigrationError):
+    """Raised when the loaded DuckDB tables do not match the export manifest."""
+
+    def __init__(self, summary: str, payload: dict) -> None:
+        super().__init__(summary)
+        self.summary = summary
+        self.payload = payload
+
+
+def run_duckdb_migration(
+    *,
+    clickhouse_url: str | None,
+    duckdb: DuckDBConnParams,
+    export_dir: Path,
+    reporter,
+    skip_export: bool = False,
+    skip_verify: bool = False,
+) -> dict:
+    """Export ClickHouse telemetry, load it into DuckDB, and verify parity.
+
+    Returns the structured result payload. Raises ``MigrationError`` subclasses
+    (including ``DuckDBVerificationError``) so callers decide how to report.
+    """
+    export_result = None
+    if not skip_export:
+        if not clickhouse_url:
+            raise PrerequisiteError("a ClickHouse source URL is required to export telemetry")
+        export_result = asyncio.run(
+            export_ch(
+                ChConnParams(url=clickhouse_url),
+                export_dir / "migration_manifest.json",
+                export_dir,
+                reporter,
+                require_phase1=False,
+            )
+        )
+    load_result = asyncio.run(load_telemetry_into_duckdb(duckdb, export_dir, reporter))
+    validation = None
+    if not skip_verify:
+        validation = asyncio.run(verify_duckdb_telemetry(duckdb, export_dir))
+
+    # A target that already holds rows (an instance that has been running, or a
+    # repeated migration) legitimately shows more rows than the export carries.
+    # Missing rows are fatal; extra rows are reported, and a fresh table must
+    # take exactly the exported row count.
+    row_counts = {
+        table: {
+            "manifest_rows": counts[0],
+            "duckdb_rows": counts[1],
+            "pre_rows": load_result.pre_rows.get(table, 0),
+            "loaded_rows": load_result.rows_imported.get(table, 0),
+            "missing_rows": max(0, counts[0] - counts[1]),
+            "extra_rows": max(0, counts[1] - counts[0]),
+            "matches": counts[0] <= counts[1]
+            and not (load_result.pre_rows.get(table, 0) == 0 and load_result.rows_imported.get(table, 0) != counts[0]),
+        }
+        for table, counts in ((validation.row_count_results if validation else None) or {}).items()
+    }
+    mismatched = [table for table, counts in row_counts.items() if counts["missing_rows"]]
+    incomplete = [
+        table
+        for table, counts in row_counts.items()
+        if counts["pre_rows"] == 0 and counts["loaded_rows"] != counts["manifest_rows"] and not counts["missing_rows"]
+    ]
+    payload = {
+        "export": {
+            "directory": str(export_dir),
+            "tables": (export_result.table_results if export_result else {}),
+            "total_rows": export_result.total_rows if export_result else None,
+        },
+        "load": {
+            "migration_id": load_result.migration_id,
+            "tables_imported": load_result.tables_imported,
+            "tables_skipped": load_result.tables_skipped,
+            "rows_imported": load_result.rows_imported,
+            "total_rows": sum(load_result.rows_imported.values()),
+            "duration_seconds": load_result.duration_seconds,
+        },
+        "verification": {
+            "checksums_valid": validation.checksums_valid if validation else None,
+            "row_counts": row_counts,
+            "mismatched_tables": mismatched,
+            "incomplete_tables": incomplete,
+        },
+    }
+    if validation and (not validation.checksums_valid or mismatched or incomplete):
+        summary = (
+            "; ".join(
+                f"{table}: expected {counts['manifest_rows']}, found {counts['duckdb_rows']} "
+                f"(loaded {counts['loaded_rows']}, pre-existing {counts['pre_rows']})"
+                for table, counts in row_counts.items()
+                if table in mismatched or table in incomplete
+            )
+            or "artifact checksum mismatch"
+        )
+        raise DuckDBVerificationError(summary, payload)
+    return payload
+
+
+# ── ClickHouse -> DuckDB command ─────────────────────────
 
 
 @migrate_app.command("duckdb")
@@ -667,115 +769,46 @@ def duckdb_migration_cmd(
     if not _is_json(output):
         rprint(f"[bold]Migrating telemetry to DuckDB[/bold] ({escape(duckdb_url)})")
 
+    duckdb_params = DuckDBConnParams(url=duckdb_url, token=duckdb_token)
     try:
-        export_result = None
-        if not skip_export:
-            export_result = asyncio.run(
-                export_ch(
-                    ChConnParams(url=clickhouse_url),
-                    destination / "migration_manifest.json",
-                    destination,
-                    _reporter(output),
-                    require_phase1=False,
-                )
-            )
-        load_result = asyncio.run(
-            load_telemetry_into_duckdb(
-                DuckDBConnParams(url=duckdb_url, token=duckdb_token),
-                destination,
-                _reporter(output),
-            )
+        payload = run_duckdb_migration(
+            clickhouse_url=clickhouse_url,
+            duckdb=duckdb_params,
+            export_dir=destination,
+            reporter=_reporter(output),
+            skip_export=skip_export,
+            skip_verify=skip_verify,
         )
-        validation = None
-        if not skip_verify:
-            validation = asyncio.run(
-                verify_duckdb_telemetry(
-                    DuckDBConnParams(url=duckdb_url, token=duckdb_token),
-                    destination,
-                )
-            )
-    except MigrationError as error:
-        _handle_migration_error(error, "Migrate telemetry to DuckDB")
-
-    # A target that already holds rows (an instance that has been running, or a
-    # repeated migration) legitimately shows more rows than the export carries.
-    # Missing rows are fatal; extra rows are reported, and a fresh table must
-    # take exactly the exported row count.
-    row_counts = {
-        table: {
-            "manifest_rows": counts[0],
-            "duckdb_rows": counts[1],
-            "pre_rows": load_result.pre_rows.get(table, 0),
-            "loaded_rows": load_result.rows_imported.get(table, 0),
-            "missing_rows": max(0, counts[0] - counts[1]),
-            "extra_rows": max(0, counts[1] - counts[0]),
-            "matches": counts[0] <= counts[1]
-            and not (load_result.pre_rows.get(table, 0) == 0 and load_result.rows_imported.get(table, 0) != counts[0]),
-        }
-        for table, counts in ((validation.row_count_results if validation else None) or {}).items()
-    }
-    mismatched = [table for table, counts in row_counts.items() if counts["missing_rows"]]
-    incomplete = [
-        table
-        for table, counts in row_counts.items()
-        if counts["pre_rows"] == 0 and counts["loaded_rows"] != counts["manifest_rows"] and not counts["missing_rows"]
-    ]
-    payload = {
-        "export": {
-            "directory": str(destination),
-            "tables": (export_result.table_results if export_result else {}),
-            "total_rows": export_result.total_rows if export_result else None,
-        },
-        "load": {
-            "migration_id": load_result.migration_id,
-            "tables_imported": load_result.tables_imported,
-            "tables_skipped": load_result.tables_skipped,
-            "rows_imported": load_result.rows_imported,
-            "total_rows": sum(load_result.rows_imported.values()),
-            "duration_seconds": load_result.duration_seconds,
-        },
-        "verification": {
-            "checksums_valid": validation.checksums_valid if validation else None,
-            "row_counts": row_counts,
-            "mismatched_tables": mismatched,
-            "incomplete_tables": incomplete,
-        },
-    }
-    if validation and (not validation.checksums_valid or mismatched or incomplete):
-        summary = (
-            "; ".join(
-                f"{table}: expected {counts['manifest_rows']}, found {counts['duckdb_rows']} "
-                f"(loaded {counts['loaded_rows']}, pre-existing {counts['pre_rows']})"
-                for table, counts in row_counts.items()
-                if table in mismatched or table in incomplete
-            )
-            or "artifact checksum mismatch"
+    except DuckDBVerificationError as error:
+        tables = sorted(
+            set(error.payload["verification"]["mismatched_tables"])
+            | set(error.payload["verification"]["incomplete_tables"])
         )
         fail(
             ErrorCategory.VALIDATION,
             "DuckDB telemetry verification failed"
-            + (
-                f" for {', '.join(sorted(set(mismatched) | set(incomplete)))}"
-                if (mismatched or incomplete)
-                else " (checksum mismatch)"
-            ),
+            + (f" for {', '.join(tables)}" if tables else " (checksum mismatch)"),
             operation="Migrate telemetry to DuckDB",
             resource=str(destination),
             remediation="Re-run the load, then compare the manifest row counts with the DuckDB tables.",
-            detail=summary,
+            detail=error.summary,
         )
+    except MigrationError as error:
+        _handle_migration_error(error, "Migrate telemetry to DuckDB")
 
     if _is_json(output):
         output_json(payload)
         return
 
+    load = payload["load"]
+    row_counts = payload["verification"]["row_counts"]
     rprint("\n[bold green]✓ DuckDB telemetry migration complete[/bold green]")
     rprint(f"  Export dir: {escape(str(destination))}")
-    rprint(f"  Tables:     {load_result.tables_imported} loaded, {len(load_result.tables_skipped)} skipped")
-    rprint(f"  Rows:       {sum(load_result.rows_imported.values()):,}")
-    if load_result.tables_skipped:
-        rprint(f"  Skipped:    {', '.join(map(escape, load_result.tables_skipped))}")
-    if validation:
+    rprint(f"  Tables:     {load['tables_imported']} loaded, {len(load['tables_skipped'])} skipped")
+    rprint(f"  Rows:       {load['total_rows']:,}")
+    if load["tables_skipped"]:
+        rprint(f"  Skipped:    {', '.join(map(escape, load['tables_skipped']))}")
+    if row_counts:
         extras = [table for table, counts in row_counts.items() if counts["extra_rows"]]
         rprint("  Verify:     [green]no exported rows are missing; checksums match[/green]")
         if extras:

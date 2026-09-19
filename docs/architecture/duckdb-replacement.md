@@ -124,14 +124,58 @@ risk is queueing latency rather than correctness.
 ## Cutover runbook
 
 > **Breaking deployment change:** a deployment using the ClickHouse compose
-> topology cannot be upgraded with only `docker compose pull`. The release
-> compose file and analytics token must be installed, and telemetry must be
-> copied before the new API is started. `observal server upgrade` detects the
-> legacy topology and stops with this runbook instead of attempting a lossy
-> upgrade and rollback.
+> topology cannot be upgraded with only `docker compose pull`. The compose
+> topology, an analytics token, and every telemetry row must move before the
+> new API starts.
+
+### Automatic cutover (Docker Compose deployments)
+
+`observal server upgrade` performs the cutover itself when it finds a legacy
+deployment (a ClickHouse compose file or a `.env` with `CLICKHOUSE_URL` and no
+DuckDB token, plus this project's `observal-clickhouse` container):
+
+```bash
+observal self upgrade          # the CLI must be upgraded first
+observal server upgrade        # add --dry-run to see the plan
+```
+
+The upgrade then runs, in order, and stops at the first failure with the
+previous release still running:
+
+1. Backs up PostgreSQL (`~/.observal/config/backups/`). ClickHouse is never
+   written to.
+2. Installs the release `docker-compose.yml`/`nginx.conf` from the GitHub
+   release bundle (server-package installs) and keeps the old file as
+   `docker-compose.clickhouse.bak.yml`. Source checkouts must already have
+   pulled the new compose file; the command says so if not.
+3. Provisions `DUCKDB_ANALYTICS_TOKEN`/`DUCKDB_ANALYTICS_URL` (secrets files for
+   server-package installs, `.env` entries for source checkouts). Existing
+   values are never overwritten.
+4. Starts only `observal-duckdb` next to the running ClickHouse and waits for
+   its **authenticated** `/version` endpoint.
+5. Exports every telemetry table from ClickHouse to Parquet, loads it into
+   DuckDB, and verifies checksums and row counts. Any missing row aborts the
+   upgrade.
+6. Pulls and starts the new release, then health-checks it. If the health check
+   fails the legacy compose file is restored and the previous version restarted.
+7. Re-verifies `/health` reports `analytics: ok` and the DuckDB row counts hold.
+8. Stops the ClickHouse container (its volume is kept), writes
+   `.observal-cutover-complete.json` in the deployment directory, and prints
+   the command to delete the volume after the rollback window.
+
+Running `observal server upgrade` again is a normal upgrade: the marker file
+tells it the cutover already happened, and it will never start ClickHouse.
+
+Rollback within the window: `observal server rollback`, or restore
+`docker-compose.clickhouse.bak.yml` over `docker-compose.yml` and redeploy the
+previous version. The ClickHouse volume is exactly as the migration left it.
+
+### Manual runbook (Helm, Terraform, or when automation is not possible)
 
 The migration is one-way and the ClickHouse source is never modified, so every
 step is safe to repeat and rollback is "redeploy the previous release".
+**Helm and Terraform users must complete step 4 before `helm upgrade` /
+`terraform apply`: those remove the ClickHouse source.**
 
 1. **Update the CLI, then back up the existing deployment and preserve its
    files.** Download the `observal-server-v<VERSION>.tar.gz` asset from the target GitHub release into
@@ -167,12 +211,21 @@ step is safe to repeat and rollback is "redeploy the previous release".
 
 ### Embedded server cutover
 
-For an installation managed by `observal server start`, keep the old server
-running while updating the CLI, then stop and restart it with the new CLI. The
-legacy ClickHouse process and data directory are intentionally not deleted.
-The new DuckDB service uses port 8484 while the legacy ClickHouse process remains
-on 8123, so run step 4 against `clickhouse://127.0.0.1:8123/observal` and
-`duckdb://127.0.0.1:8484/observal`. Verify the migration before stopping the
-legacy ClickHouse process or removing its data. Release binaries include the
-migration runtime; source or minimal pip installations need the migration extra
-(`pip install 'observal-cli[migrate]'`).
+For an installation managed by `observal server start`, the cutover is
+automatic:
+
+```bash
+observal server stop
+observal self upgrade
+observal server start
+```
+
+The pre-DuckDB embedded ClickHouse listened on port 8124, which the DuckDB
+analytics service now owns, and the old `server stop` left ClickHouse running
+under the previous CLI. On start the new CLI therefore stops any ClickHouse
+process recorded in `~/.observal/run/clickhouse.pid`, starts DuckDB, relaunches
+the legacy ClickHouse binary on a temporary port (18124) against its existing
+data directory, migrates and verifies every table, stops it again, and writes
+`~/.observal/data/.clickhouse-cutover-complete.json`. The start fails (and the
+API is not launched) if verification fails; `~/.observal/data/clickhouse` is
+never modified and can be deleted once you are satisfied.

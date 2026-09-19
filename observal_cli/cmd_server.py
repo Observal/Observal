@@ -622,16 +622,21 @@ def _server_upgrade(version: str | None, skip_backup: bool, dry_run: bool, force
             detail=repr(error),
         )
 
-    if _uses_legacy_clickhouse_compose(compose_dir):
+    from observal_cli.server import cutover as _cutover
+
+    legacy = _cutover.detect_legacy_state(compose_dir)
+    needs_cutover = legacy.needs_cutover
+    if _uses_legacy_clickhouse_compose(compose_dir) and not needs_cutover and not legacy.marker_exists:
+        # Legacy compose but no ClickHouse container to migrate from: refuse
+        # rather than start the new API over an empty analytics store.
         fail(
             ErrorCategory.CONFLICT,
-            "This deployment still uses the legacy ClickHouse compose topology.",
+            "This deployment uses the legacy ClickHouse compose topology but no ClickHouse container exists.",
             operation="Upgrade Docker server",
             resource=str(compose_dir),
             remediation=(
-                "Complete the one-time ClickHouse-to-DuckDB cutover at "
-                "https://github.com/Observal/Observal/blob/main/docs/architecture/duckdb-replacement.md#cutover-runbook "
-                "before retrying. The command will not risk starting the new API without migrated telemetry."
+                "Recreate the previous release so its ClickHouse container and volume are present, then retry; "
+                f"or follow the manual runbook at {_cutover.RUNBOOK_URL}."
             ),
         )
 
@@ -683,12 +688,18 @@ def _server_upgrade(version: str | None, skip_backup: bool, dry_run: bool, force
         console.print(f"[dim]  Pull: ghcr.io/observal/observal-web:{target}[/dim]")
         console.print(f"[dim]  Pull: ghcr.io/observal/observal-duckdb:{target}[/dim]")
         console.print(f"[dim]  Compose dir: {escape(str(compose_dir))}[/dim]")
+        if needs_cutover:
+            console.print(
+                "[dim]  Cutover: migrate ClickHouse telemetry to DuckDB, verify, then stop "
+                f"{escape(legacy.clickhouse_container or 'observal-clickhouse')} (volume kept)[/dim]"
+            )
         return {
             "status": "planned",
             "current_version": current,
             "target_version": target,
             "compose_directory": str(compose_dir),
             "backup": not skip_backup,
+            "clickhouse_cutover": needs_cutover,
             "changed": False,
         }
 
@@ -696,6 +707,11 @@ def _server_upgrade(version: str | None, skip_backup: bool, dry_run: bool, force
         console.print(f"  Current: [dim]v{current}[/dim]")
         console.print(f"  Target:  [green]v{target}[/green]")
         console.print(f"  Images:  [dim]ghcr.io/observal/observal-{{api,web,duckdb}}:{target}[/dim]")
+        if needs_cutover:
+            console.print(
+                "  Cutover: [yellow]ClickHouse telemetry will be copied to DuckDB and verified; "
+                "ClickHouse is then stopped but its volume is kept for rollback.[/yellow]"
+            )
         if not typer.confirm("\nProceed with server upgrade?"):
             raise typer.Abort()
 
@@ -712,9 +728,35 @@ def _server_upgrade(version: str | None, skip_backup: bool, dry_run: bool, force
         )
 
     backup_path = None
+    cutover_result = None
+    cutover_duckdb: tuple[str, str] | None = None
     try:
-        # Backup
-        if not skip_backup:
+        if needs_cutover:
+            from observal_cli.cmd_migrate import RichProgressReporter
+
+            console.print("[blue]==>[/blue] ClickHouse → DuckDB cutover...")
+            try:
+                cutover_result, duck_url, duck_token = _cutover.run_cutover(
+                    legacy,
+                    current=current,
+                    target=target,
+                    repo=version_check._github_repo(),
+                    skip_backup=skip_backup,
+                    log=lambda msg: console.print(f"  {msg}"),
+                    reporter=RichProgressReporter(),
+                )
+            except _cutover.CutoverError as error:
+                fail(
+                    ErrorCategory.UNAVAILABLE,
+                    "The ClickHouse to DuckDB cutover did not complete; the previous release is still running.",
+                    operation="Upgrade Docker server",
+                    resource=str(compose_dir),
+                    remediation=error.remediation,
+                    detail=str(error),
+                )
+            cutover_duckdb = (duck_url, duck_token)
+            backup_path = Path(cutover_result.backup) if cutover_result.backup else None
+        elif not skip_backup:
             from observal_cli.server.backup import create_backup
 
             console.print("[blue]==>[/blue] Creating backup...")
@@ -785,6 +827,11 @@ def _server_upgrade(version: str | None, skip_backup: bool, dry_run: bool, force
         if not healthy:
             console.print("[red]Health check failed! Rolling back...[/red]")
             _update_env_version(compose_dir, current)
+            if cutover_result is not None:
+                # Put the ClickHouse topology back so the previous release
+                # starts against its untouched telemetry. DuckDB's container
+                # and volume are left in place as orphans for a retry.
+                _cutover.restore_legacy_compose(legacy)
             rollback = subprocess.run(
                 ["docker", "compose", "up", "-d"],
                 cwd=compose_dir,
@@ -800,9 +847,46 @@ def _server_upgrade(version: str | None, skip_backup: bool, dry_run: bool, force
                 detail=f"rollback_returncode={rollback.returncode}",
             )
 
+        cutover_summary = None
+        if cutover_result is not None and cutover_duckdb is not None:
+            console.print("[blue]==>[/blue] Verifying migrated telemetry behind the new API...")
+            try:
+                _cutover.verify_post_deploy(
+                    _get_health_url(compose_dir), cutover_duckdb[0], cutover_duckdb[1], cutover_result.row_counts
+                )
+            except _cutover.CutoverError as error:
+                # The new release is up but the analytics gate failed. Do not
+                # retire ClickHouse; the operator can roll back to it.
+                fail(
+                    ErrorCategory.VALIDATION,
+                    "The upgraded server is running but migrated telemetry failed verification.",
+                    operation="Upgrade Docker server",
+                    resource=str(compose_dir),
+                    remediation="ClickHouse is still available. Run `observal server rollback` to return to it, "
+                    "or re-run `observal server upgrade` to retry the cutover.",
+                    detail=str(error),
+                )
+            _cutover.retire_clickhouse(legacy, cutover_result, lambda msg: console.print(f"  {msg}"))
+            cutover_summary = {
+                "total_rows": cutover_result.total_rows,
+                "row_counts": cutover_result.row_counts,
+                "clickhouse_container": cutover_result.clickhouse_container,
+                "clickhouse_stopped": cutover_result.clickhouse_stopped,
+                "legacy_compose_backup": cutover_result.legacy_compose_backup,
+                "export_dir": cutover_result.export_dir,
+                "marker": str(legacy.marker_path),
+            }
+
         console.print(f"[green]✓ Upgraded to v{target}[/green]")
         if backup_path:
             console.print(f"  Backup: {escape(str(backup_path))}")
+        if cutover_summary:
+            console.print(f"  Telemetry: {cutover_summary['total_rows']:,} rows migrated to DuckDB and verified")
+            console.print(
+                "  ClickHouse: [dim]stopped, volume kept. Remove it after the rollback window with "
+                f"`docker compose -f {_cutover.LEGACY_COMPOSE_BACKUP} down -v {_cutover.CLICKHOUSE_SERVICE}` "
+                "once you are satisfied.[/dim]"
+            )
         console.print("  Rollback: [dim]observal server rollback[/dim]")
         return {
             "status": "upgraded",
@@ -810,6 +894,7 @@ def _server_upgrade(version: str | None, skip_backup: bool, dry_run: bool, force
             "target_version": target,
             "backup": str(backup_path) if backup_path else None,
             "compose_directory": str(compose_dir),
+            "clickhouse_cutover": cutover_summary,
             "changed": True,
         }
 
@@ -828,6 +913,11 @@ def server_upgrade(
     ] = OutputMode.table,
 ) -> None:
     """Upgrade a local Docker deployment.
+
+    A deployment still running ClickHouse is cut over automatically: telemetry
+    is copied to DuckDB and verified before the new release starts, and
+    ClickHouse is stopped (volume kept) only after the new API passes its
+    checks. Upgrade the CLI first with `observal self upgrade`.
 
     JSON mutation requires explicit confirmation. Dry run is read-only.
 

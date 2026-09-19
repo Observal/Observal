@@ -52,12 +52,15 @@ def _restart_analytics_or_raise(compose_dir: Path) -> None:
     raise RuntimeError(f"DuckDB analytics did not recover after the backup attempt{detail}")
 
 
-def create_backup(compose_dir: Path, from_version: str) -> Path:
+def create_backup(compose_dir: Path, from_version: str, *, include_analytics: bool = True) -> Path:
     """Create a pre-upgrade backup of PostgreSQL + the DuckDB analytics store.
 
     Args:
         compose_dir: Directory containing docker-compose.yml.
         from_version: Current server version (used in backup dir name).
+        include_analytics: Archive the DuckDB volume. Pass ``False`` for a
+            legacy ClickHouse deployment that has no ``observal-duckdb``
+            service yet; ClickHouse itself is never modified by the cutover.
 
     Returns:
         Path to the backup directory.
@@ -102,6 +105,10 @@ def create_backup(compose_dir: Path, from_version: str) -> Path:
 
     pg_size_mb = pg_dump_path.stat().st_size / (1024 * 1024)
     rprint(f"[dim]  PostgreSQL: {pg_size_mb:.1f} MB[/dim]")
+
+    if not include_analytics:
+        rprint("[dim]  Analytics: skipped (legacy ClickHouse volume is left untouched)[/dim]")
+        return backup_dir
 
     # DuckDB analytics: flush the WAL, then archive the data directory.
     duckdb_archive = backup_dir / "analytics.tar.gz"

@@ -88,6 +88,24 @@ For blue/green upgrades on large deployments:
 
 If a migration is **not** additive (rare, but happens: column drops, type changes), it gets called out in the CHANGELOG and requires a brief outage. Plan the window.
 
+## Upgrading from a ClickHouse release (one-time cutover)
+
+Releases before the DuckDB analytics service stored telemetry in ClickHouse.
+`observal server upgrade` (and `observal server start` for embedded installs)
+detects that topology and migrates the telemetry automatically before starting
+the new API. Upgrade the CLI **first**; the previous CLI has no cutover logic
+and its upgrade attempt will fail its health check and roll back:
+
+```bash
+observal self upgrade
+observal server upgrade
+```
+
+`docker compose pull && up` alone is **not** enough for this release. Helm and
+Terraform deployments must run the manual migration before applying, because
+the new charts and stacks no longer run ClickHouse. See the
+[cutover runbook](../architecture/duckdb-replacement.md#cutover-runbook).
+
 ## Rolling back
 
 If the new version breaks:

@@ -15,7 +15,7 @@ All notable changes to this project will be documented in this file.
 
 ### Breaking Changes
 
-- Replace ClickHouse telemetry storage with the DuckDB analytics service. Existing deployments must complete the [one-time cutover runbook](docs/architecture/duckdb-replacement.md#cutover-runbook), including refreshing deployment files, provisioning the shared analytics token, and verifying migrated telemetry before starting the new API.
+- Replace ClickHouse telemetry storage with the DuckDB analytics service. `observal server upgrade` (Docker) and `observal server start` (embedded) perform the one-time ClickHouse-to-DuckDB cutover automatically: back up, install the release topology, provision the analytics token, migrate and verify every telemetry table, deploy, re-verify, then stop ClickHouse while keeping its volume. Upgrade the CLI first (`observal self upgrade`). Helm and Terraform deployments follow the [manual runbook](docs/architecture/duckdb-replacement.md#cutover-runbook) before applying.
 
 ## [1.13.1] - 2026-09-05
 
