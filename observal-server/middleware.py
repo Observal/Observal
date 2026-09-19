@@ -57,8 +57,12 @@ CLI_USER_AGENT_PREFIXES = (
 )
 
 
+class RequestBodyTooLargeError(Exception):
+    """Raised while streaming an ASGI request body beyond its route limit."""
+
+
 class RequestSizeLimitMiddleware:
-    """Reject requests whose Content-Length exceeds the configured limit."""
+    """Reject declared or streamed request bodies that exceed route limits."""
 
     def __init__(self, app, max_request_size_bytes: int, max_migration_request_size_bytes: int):
         self.app = app
@@ -77,11 +81,34 @@ class RequestSizeLimitMiddleware:
             if request_path in MIGRATION_UPLOAD_PATHS
             else self.max_request_size_bytes
         )
-        if content_length and int(content_length) > request_limit:
+        if content_length:
+            try:
+                declared_length = int(content_length)
+            except ValueError:
+                response = JSONResponse(status_code=400, content={"detail": "Invalid Content-Length"})
+                await response(scope, receive, send)
+                return
+            if declared_length > request_limit:
+                response = JSONResponse(status_code=413, content={"detail": "Request body too large"})
+                await response(scope, receive, send)
+                return
+
+        bytes_received = 0
+
+        async def receive_with_limit():
+            nonlocal bytes_received
+            message = await receive()
+            if message["type"] == "http.request":
+                bytes_received += len(message.get("body", b""))
+                if bytes_received > request_limit:
+                    raise RequestBodyTooLargeError
+            return message
+
+        try:
+            await self.app(scope, receive_with_limit, send)
+        except RequestBodyTooLargeError:
             response = JSONResponse(status_code=413, content={"detail": "Request body too large"})
             await response(scope, receive, send)
-            return
-        await self.app(scope, receive, send)
 
 
 class SecurityHeadersMiddleware:
