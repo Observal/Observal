@@ -100,6 +100,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- add bounded, resumable ClickHouse telemetry migration exports
 - add an authenticated JSON API escape hatch and mixed Registry component bulk submission
 - standardize dedicated list JSON output with `items`, `total`, `page`, and `page_size`
 - make mutation retry behavior explicit and reserve automatic transient retries for reads
@@ -115,6 +116,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixes
 
+- support multi-artifact migration validation and import uploads
 - restore teamspace discovery, membership controls, private join requests, and empty personal deletion
 - require global review before a teamspace becomes public
 - let approved public teamspace owners and reviewers decide all team content
