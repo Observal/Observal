@@ -75,6 +75,10 @@ declared table columns and ignore it. Rows whose time column is NULL land in
   dashboards live in the in-app admin surfaces.
 - Verification of the migration relies on parity tests: the same Parquet export
   loaded into both engines, identical logical queries, diffed results.
+- Replay-heavy tables ship without primary keys or ART indexes, so ingest cost
+  grows linearly with table size while reads stay flat - see
+  [Scale ceiling without indexes](#scale-ceiling-without-indexes) for the
+  measured curve and the mitigations.
 
 ## Rejected alternatives
 
@@ -128,6 +132,43 @@ Caveats unchanged: single host, single writer, warm caches, synthetic rows. The
 remaining unknown is sustained concurrent ingest alongside dashboard traffic; the
 single-writer topology bounds that to one writer process by construction, so the
 risk is queueing latency rather than correctness.
+
+### Scale ceiling without indexes
+
+The baseline declares no primary keys and no ART indexes, and replay identity is
+maintained with ``DELETE`` + ``INSERT`` per batch. The delete half is written as
+``DELETE ... WHERE EXISTS (SELECT 1 FROM <batch>)``, which gives DuckDB no
+equality predicate it can prune row groups with, so **every upsert-keyed batch
+costs one pass over the table**. Ingest therefore degrades linearly with table
+size, while reads and append-only tables stay flat (zone maps still prune them).
+
+Measured on the running service (2026-09-20, one writer, 4 threads, 100-row
+batches over the real HTTP API, synthetic session_events rows with ~400-byte
+``raw_line``):
+
+| ``session_events`` rows | upsert batch | append-batch control (``audit_log``) |
+|---|---|---|
+| 1.85 M | 183 ms | - |
+| 3.0 M | 274 ms | 6.6 ms |
+| 6.0 M | 508 ms | 5.0 ms |
+
+Batch size is not the driver - 100 rows cost 183 ms and 500 rows cost 177 ms at
+1.85 M rows - and the same statement with an equality predicate instead of the
+``EXISTS`` probe costs 2 ms at 6 M rows, versus 624 ms for the probe. Reads at
+6 M rows: session detail 1.8 ms, dashboard session list 22.6 ms, 60-day
+aggregate 8.6 ms, ingest dedup lookup 5.5 ms.
+
+So a single-writer deployment sustains roughly 3-5 upserting batches per second
+at 3 M rows and ~2/s at 6 M; extrapolating the ~77 ms per additional million
+rows, ~30 M rows is ~2.3 s per batch. Batches arrive per session delivery, so
+this is the ingest ceiling, not a per-row cost; the outbox queues during bursts
+and drains at the writer's pace.
+
+This is the deliberate trade described in Consequences: index maintenance on the
+replay-heavy tables was the source of the fatal rollback path and the database
+file bloat. Installations that outgrow it should shard by project/user, shorten
+retention, or reintroduce an index on the upsert keys and accept the write-path
+cost - the 200k-row scale check above does not cover this regime.
 
 ## Cutover runbook
 
