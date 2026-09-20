@@ -54,6 +54,11 @@ docker compose -f docker/docker-compose.yml up --build -d
 
 First build pulls images and compiles the Vite frontend. Expect 3 to 5 minutes. Subsequent starts are under 30 seconds.
 
+The `observal-*` images in this file are built from the working tree and tagged
+`:local`, so `docker compose pull` cannot fetch them — build them with the
+commands above. Released images (used by server-package installs) are defined in
+`docker/server-package/docker-compose.yml`.
+
 **What comes up (10 services):**
 
 | Service               | URL                     | Purpose                                  |

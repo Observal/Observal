@@ -9,6 +9,12 @@
 # SPDX-FileCopyrightText: 2026 Yash Gadgil <yashgadgil08@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
+# Source-checkout topology: every observal-* service is built from this working
+# tree and tagged ":local", so the stack you run is the code you have. The
+# released images live in docker/server-package/docker-compose.yml, which is
+# what `observal server install/upgrade` deploys and what `docker compose pull`
+# targets. Pulling this file therefore fails by design for the observal-*
+# services - build them with `docker compose build` or `make up`.
 services:
   observal-init:
     build:
