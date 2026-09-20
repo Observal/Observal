@@ -30,7 +30,12 @@ from observal_shared.migration.ch_export import (
     _split_chunk,
     _table_windows,
 )
-from observal_shared.migration.ch_import import _rebuild_session_stats_chunk, _rewrite_project_id, import_ch
+from observal_shared.migration.ch_import import (
+    _rebuild_session_stats_chunk,
+    _rewrite_project_id,
+    _summary_rebuild_chunks,
+    import_ch,
+)
 from observal_shared.migration.connections import ChConnParams
 from observal_shared.migration.constants import CLICKHOUSE_TABLES
 from observal_shared.migration.exceptions import MigrationError
@@ -245,6 +250,54 @@ def test_manifest_accepts_complete_chunk_metadata(tmp_path):
     chunks = validate_telemetry_manifest(manifest)
 
     assert chunks["session_events"][0]["row_count"] == 1
+
+
+def test_manifest_normalizes_legacy_monthly_exports(tmp_path):
+    parquet_path = tmp_path / "session_events_2026-09.parquet"
+    pq.write_table(pa.table({"project_id": ["source"], "value": [1]}), parquet_path)
+    checksum = hashlib.sha256(parquet_path.read_bytes()).hexdigest()
+    tables = {
+        config["name"]: {"files": [], "row_count": 0, "checksum": {}, "time_range": None}
+        for config in CLICKHOUSE_TABLES
+    }
+    tables["session_events"] = {
+        "files": [parquet_path.name],
+        "row_count": 1,
+        "checksum": {parquet_path.name: checksum},
+        "time_range": {"min": "2026-09-01 00:00:00", "max": "2026-09-30 23:59:59"},
+    }
+    manifest = {
+        "migration_id": "legacy-migration",
+        "phase": "deep_copy",
+        "phase_status": "export_complete",
+        "export_time_cutoff": "2026-10-01 00:00:00.000",
+        "tables": tables,
+    }
+
+    chunks = validate_telemetry_manifest(manifest, tmp_path)
+
+    assert chunks["session_events"] == [
+        {
+            "chunk_id": "legacy:session_events:202609",
+            "range_start": "2026-09-01 00:00:00",
+            "range_end": "2026-10-01 00:00:00",
+            "bucket": 0,
+            "shard_count": 1,
+            "row_count": 1,
+            "file": parquet_path.name,
+            "size_bytes": parquet_path.stat().st_size,
+            "sha256": checksum,
+            "legacy": True,
+        }
+    ]
+
+
+def test_legacy_session_summary_rebuild_is_split_into_bounded_hash_shards():
+    chunks = _summary_rebuild_chunks([{"chunk_id": "legacy:session_events:202609", "legacy": True}])
+
+    assert len(chunks) == 64
+    assert {chunk["bucket"] for chunk in chunks} == set(range(64))
+    assert all(chunk["shard_count"] == 64 for chunk in chunks)
 
 
 def test_manifest_accepts_early_v2_sub_millisecond_chunk_ids(tmp_path):

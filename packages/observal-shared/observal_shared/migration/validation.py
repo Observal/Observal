@@ -192,7 +192,7 @@ async def validate_ch(
     if not manifest_path.exists():
         raise MigrationError("Telemetry manifest not found.")
     manifest = read_manifest(manifest_path)
-    chunks_by_table = validate_telemetry_manifest(manifest)
+    chunks_by_table = validate_telemetry_manifest(manifest, input_dir)
 
     await reporter.update(phase="validate", pct=0, message="Verifying telemetry chunks")
     checksum_results: dict[str, bool] = {}

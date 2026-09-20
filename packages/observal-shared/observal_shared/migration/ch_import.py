@@ -134,6 +134,20 @@ def _deduplication_token(migration_id: str, chunk_id: str, checksum: str) -> str
     return hashlib.sha256(f"{migration_id}:{chunk_id}:{checksum}".encode()).hexdigest()
 
 
+def _summary_rebuild_chunks(event_chunks: list[dict]) -> list[dict]:
+    """Return bounded hash shards for rebuilding imported session summaries."""
+    if event_chunks and event_chunks[0].get("legacy"):
+        return [
+            {
+                "chunk_id": f"legacy-summary:{bucket}:64",
+                "bucket": bucket,
+                "shard_count": 64,
+            }
+            for bucket in range(64)
+        ]
+    return event_chunks
+
+
 async def _rebuild_session_stats_chunk(
     http_url: str,
     db: str,
@@ -197,7 +211,7 @@ async def import_ch(
     if not manifest_path.exists():
         raise MigrationError("Telemetry manifest not found in input directory.")
     manifest = read_manifest(manifest_path)
-    chunks_by_table = validate_telemetry_manifest(manifest)
+    chunks_by_table = validate_telemetry_manifest(manifest, input_dir)
     migration_id = manifest["migration_id"]
 
     await reporter.update(phase="ch_import", pct=0, message="Verifying telemetry chunks")
@@ -321,7 +335,7 @@ async def import_ch(
     event_chunks = chunks_by_table["session_events"]
     if any(chunk.get("file") for chunk in event_chunks) and {"session_events", "session_stats_agg"}.issubset(existing):
         await reporter.update(phase="ch_import", pct=96, message="Rebuilding complete session summaries")
-        for chunk in event_chunks:
+        for chunk in _summary_rebuild_chunks(event_chunks):
             summary_state_id = f"session-summary:{chunk['chunk_id']}"
             if completed.get(summary_state_id, {}).get("source_manifest") == migration_id:
                 continue

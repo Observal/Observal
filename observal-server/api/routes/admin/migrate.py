@@ -8,7 +8,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from fastapi import Depends, HTTPException, Query, UploadFile
+from fastapi import Depends, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from loguru import logger as optic
 from sqlalchemy import select
@@ -235,7 +235,7 @@ async def start_export(
 @router.post("/migrate/import", status_code=202)
 async def start_import(
     files: list[UploadFile],
-    scope: MigrationScope = MigrationScope.both,
+    scope: MigrationScope = Form(MigrationScope.both),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.super_admin)),
 ):
@@ -285,7 +285,7 @@ async def start_import(
 @router.post("/migrate/validate", status_code=202)
 async def start_validate(
     files: list[UploadFile],
-    scope: MigrationScope = MigrationScope.both,
+    scope: MigrationScope = Form(MigrationScope.both),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.super_admin)),
 ):

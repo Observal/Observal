@@ -42,8 +42,97 @@ def _chunk_id_matches_metadata(
     )
 
 
-def validate_telemetry_manifest(manifest: dict) -> dict[str, list[dict]]:
+def _legacy_month_chunks(manifest: dict, input_dir: Path) -> dict[str, list[dict]]:
+    """Normalize pre-2.0 monthly manifests into bounded import chunks."""
+    import pyarrow.parquet as pq
+
+    if manifest.get("phase") != "deep_copy" or manifest.get("phase_status") != "export_complete":
+        raise MigrationError("Unsupported legacy telemetry manifest.")
+    if not manifest.get("migration_id"):
+        raise MigrationError("Telemetry manifest is missing migration_id.")
+    cutoff = manifest.get("export_time_cutoff")
+    if not isinstance(cutoff, str):
+        raise MigrationError("Telemetry manifest is missing export_time_cutoff.")
+    try:
+        datetime.fromisoformat(cutoff.replace(" ", "T").replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise MigrationError("Telemetry manifest has an invalid export_time_cutoff.") from exc
+
+    tables = manifest.get("tables")
+    if not isinstance(tables, dict):
+        raise MigrationError("Telemetry manifest tables must be an object.")
+    known = {cfg["name"] for cfg in CLICKHOUSE_TABLES}
+    unknown = sorted(set(tables) - known)
+    missing = sorted(known - set(tables))
+    if unknown:
+        raise MigrationError(f"Telemetry manifest contains unknown tables: {', '.join(unknown)}")
+    if missing:
+        raise MigrationError(f"Telemetry manifest is missing tables: {', '.join(missing)}")
+
+    result: dict[str, list[dict]] = {}
+    seen_filenames: set[str] = set()
+    for table_name in known:
+        table_info = tables[table_name]
+        if not isinstance(table_info, dict):
+            raise MigrationError(f"Telemetry manifest has invalid metadata for {table_name}.")
+        files = table_info.get("files", [])
+        checksums = table_info.get("checksum", {})
+        if not isinstance(files, list) or not isinstance(checksums, dict):
+            raise MigrationError(f"Telemetry manifest has invalid metadata for {table_name}.")
+
+        chunks: list[dict] = []
+        row_count = 0
+        filename_pattern = re.compile(rf"^{re.escape(table_name)}_(\d{{4}})-(\d{{2}})\.parquet$")
+        for filename in files:
+            if not isinstance(filename, str) or Path(filename).name != filename or filename in seen_filenames:
+                raise MigrationError(f"Telemetry manifest has an unsafe or duplicate filename for {table_name}.")
+            match = filename_pattern.fullmatch(filename)
+            digest = checksums.get(filename)
+            if not match or not isinstance(digest, str) or not _SHA256_RE.fullmatch(digest):
+                raise MigrationError(f"Telemetry manifest has invalid legacy chunk metadata for {filename}.")
+            year, month = (int(value) for value in match.groups())
+            try:
+                range_start = datetime(year, month, 1)
+            except ValueError as exc:
+                raise MigrationError(f"Telemetry manifest has an invalid month for {filename}.") from exc
+            range_end = (
+                range_start.replace(year=year + 1, month=1) if month == 12 else range_start.replace(month=month + 1)
+            )
+            filepath = input_dir / filename
+            if not filepath.is_file():
+                raise MigrationError(f"Telemetry chunk file is missing: {filename}")
+            try:
+                file_rows = pq.read_metadata(filepath).num_rows
+            except Exception as exc:
+                raise MigrationError(f"Telemetry chunk is not valid Parquet: {filename}") from exc
+            row_count += file_rows
+            seen_filenames.add(filename)
+            chunks.append(
+                {
+                    "chunk_id": f"legacy:{table_name}:{year:04d}{month:02d}",
+                    "range_start": range_start.isoformat(sep=" "),
+                    "range_end": range_end.isoformat(sep=" "),
+                    "bucket": 0,
+                    "shard_count": 1,
+                    "row_count": file_rows,
+                    "file": filename,
+                    "size_bytes": filepath.stat().st_size,
+                    "sha256": digest,
+                    "legacy": True,
+                }
+            )
+        if set(checksums) != set(files):
+            raise MigrationError(f"Telemetry manifest checksum list is incomplete for {table_name}.")
+        if table_info.get("row_count", 0) != row_count:
+            raise MigrationError(f"Telemetry manifest row count disagrees for {table_name}.")
+        result[table_name] = chunks
+    return result
+
+
+def validate_telemetry_manifest(manifest: dict, input_dir: Path | None = None) -> dict[str, list[dict]]:
     """Validate manifest structure and return chunks grouped by known table."""
+    if manifest.get("schema_version") is None and input_dir is not None:
+        return _legacy_month_chunks(manifest, input_dir)
     if manifest.get("schema_version") != TELEMETRY_MANIFEST_VERSION:
         raise MigrationError(
             f"Unsupported telemetry manifest schema {manifest.get('schema_version')!r}; "
