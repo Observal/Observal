@@ -38,10 +38,8 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 _DML_VERBS = frozenset({"INSERT", "UPDATE", "DELETE", "MERGE", "REPLACE"})
-# Export file names are built from caller-supplied table names and from the
-# partition directory DuckDB creates. Both are rebuilt from these patterns
-# before they touch a path, so no raw caller string ever reaches the filesystem.
-_SAFE_PATH_COMPONENT = re.compile(r"\A[A-Za-z0-9_]+\Z")
+# Export file names carry the partition value DuckDB created; only a real
+# YYYY-MM survives, everything else (including the NULL bucket) becomes "null".
 _SAFE_MONTH = re.compile(r"\A\d{4}-\d{2}\Z")
 _SQL_NOISE = (
     re.compile(r"'(?:[^']|'')*'"),
@@ -586,17 +584,17 @@ class AnalyticsStore:
         # summaries are written by the ingest path, not rebuilt from events on
         # import, so an export that skipped them would leave the target's
         # dashboards empty.
-        selected = tables or list(ANALYTICS_TABLES)
+        #
+        # The loop runs over the registry and only *filters* with the caller's
+        # list: request values must never reach the file paths built below.
+        requested = set(tables) if tables is not None else None
         counts: dict[str, int] = {}
-        for table in selected:
-            columns = ANALYTICS_TABLES.get(table)
-            time_column = ANALYTICS_TIME_COLUMNS.get(table)
-            table_match = _SAFE_PATH_COMPONENT.fullmatch(table) if isinstance(table, str) else None
-            if columns is None or time_column is None or table_match is None:
+        for table_name in ANALYTICS_TABLES:
+            if requested is not None and table_name not in requested:
                 continue
-            # Rebuilt from the validated pattern instead of reusing the caller's
-            # string, so the name that reaches the filesystem is never raw input.
-            table_name = table_match.group(0)
+            time_column = ANALYTICS_TIME_COLUMNS.get(table_name)
+            if time_column is None:
+                continue
             async with self._write_lock:
                 con = self._require_writer()
 
@@ -658,5 +656,5 @@ class AnalyticsStore:
                 # Instance moves and backups legitimately exceed the interactive
                 # query deadline on multi-million-row tables; only process
                 # shutdown bounds an administrative export.
-                counts[table] = await self._guard(con, _export, enforce_timeout=False)
+                counts[table_name] = await self._guard(con, _export, enforce_timeout=False)
         return counts
