@@ -578,7 +578,7 @@ def retire_clickhouse(state: LegacyState, result: CutoverResult, log: Callable[[
         stopped = _docker("stop", container, timeout=180)
         result.clickhouse_stopped = stopped.returncode == 0
         if result.clickhouse_stopped:
-            log(f"Stopped {container}; its volume is preserved for rollback")
+            log(f"Stopped {container}; its volume is preserved for archival, not rollback")
         else:
             log(f"[yellow]Could not stop {container}: {stopped.stderr.strip()[:120]}[/yellow]")
     result.completed_at = datetime.now(UTC).isoformat()
@@ -607,47 +607,60 @@ def cutover_marker(compose_dir: Path) -> dict | None:
     if not path.exists():
         return None
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        marker = json.loads(path.read_text(encoding="utf-8"))
     except ValueError:
         return {"corrupt": True}
+    return marker if isinstance(marker, dict) else {"corrupt": True}
 
 
-def restore_cutover_topology_for_rollback(compose_dir: Path, target_version: str) -> bool:
-    """Restore the saved ClickHouse topology when rolling back across cutover."""
-    marker = cutover_marker(compose_dir)
-    if marker is None:
-        return False
-    if marker.get("corrupt"):
-        raise CutoverError(
-            "the ClickHouse cutover marker is corrupt",
-            remediation=f"Inspect {compose_dir / MARKER_NAME} before retrying rollback.",
-        )
+def validate_duckdb_target(compose_dir: Path, target_version: str) -> None:
+    """Reject a post-cutover backend downgrade before any deployment mutation.
+
+    The completed cutover's destination is the earliest release this deployment
+    has verified against DuckDB. Do not guess compatibility for intermediate
+    releases, restore the legacy compose, or remove the permanent marker.
+    """
+    import yaml
+
     try:
-        crosses_cutover = Version(target_version) <= Version(str(marker.get("from_version", "")))
-    except InvalidVersion:
-        crosses_cutover = marker.get("from_version") == target_version
-    if not crosses_cutover:
-        return False
-    if marker.get("flavor") != "package":
+        marker = cutover_marker(compose_dir)
+    except OSError as error:
+        raise CutoverError("the analytics cutover marker cannot be read") from error
+    if marker is None:
+        return
+    try:
+        if marker.get("corrupt") or not isinstance(marker.get("to_version"), str):
+            raise ValueError("corrupt or incomplete marker")
+        minimum = Version(marker["to_version"])
+    except ValueError as error:
         raise CutoverError(
-            "the previous source-checkout topology cannot be restored automatically",
-            remediation="Check out the previous release's compose file, then retry rollback.",
+            "the analytics cutover marker has no valid DuckDB release boundary",
+            remediation=f"Recover {compose_dir / MARKER_NAME} from backup; do not delete it to bypass the guard.",
+        ) from error
+    try:
+        target = Version(target_version)
+    except InvalidVersion as error:
+        raise CutoverError("the target release version is invalid") from error
+    if target < minimum:
+        raise CutoverError(
+            f"completed analytics cutover requires DuckDB-compatible releases: v{target} is below v{minimum}",
+            remediation=f"Choose a release or managed backup at v{minimum} or newer. ClickHouse cannot be reactivated.",
         )
 
-    backup = compose_dir / LEGACY_COMPOSE_BACKUP
-    if not backup.is_file():
+    compose_path = next(
+        (compose_dir / name for name in ("docker-compose.yml", "compose.yml") if (compose_dir / name).is_file()),
+        compose_dir / "docker-compose.yml",
+    )
+    try:
+        compose = yaml.safe_load(compose_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, yaml.YAMLError) as error:
+        raise CutoverError("the post-cutover compose topology cannot be read") from error
+    services = compose.get("services") if isinstance(compose, dict) else None
+    if not isinstance(services, dict) or DUCKDB_SERVICE not in services or CLICKHOUSE_SERVICE in services:
         raise CutoverError(
-            f"the saved ClickHouse compose file is missing: {backup}",
-            remediation="Restore the saved compose file before retrying rollback; do not remove the ClickHouse volume.",
+            "a completed analytics cutover must retain the DuckDB-only compose topology",
+            remediation="Restore the DuckDB compose file, not the saved ClickHouse compose, before retrying.",
         )
-    active = compose_dir / "docker-compose.yml"
-    failed_new = compose_dir / "docker-compose.duckdb.rollback.yml"
-    if active.exists() and not failed_new.exists():
-        shutil.copy2(active, failed_new)
-    shutil.copy2(backup, active)
-    # Keep the marker until the caller confirms that the legacy stack is
-    # healthy. This makes a failed or timed-out rollback safely retryable.
-    return True
 
 
 # ── orchestration entry point ────────────────────────────────────────────────

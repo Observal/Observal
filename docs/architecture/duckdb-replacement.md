@@ -160,28 +160,37 @@ restores the legacy compose file and resumes those exact containers:
 6. Pulls and starts the new release, then health-checks it. If the health check
    fails the legacy compose file is restored and the previous version restarted.
 7. Re-verifies `/health` reports `analytics: ok` and the DuckDB row counts hold.
-8. Stops the ClickHouse container (its volume is kept), writes
-   `.observal-cutover-complete.json` in the deployment directory, and prints
-   the command to delete the volume after the rollback window.
+8. Stops the ClickHouse container (its volume is kept for archival only) and
+   writes `.observal-cutover-complete.json` in the deployment directory.
+   This permanently pins the deployment to DuckDB.
 
 Running `observal server upgrade` again is a normal upgrade: the marker file
 tells it the cutover already happened, and it will never start ClickHouse.
 
-Rollback within the window: `observal server rollback`, or restore
-`docker-compose.clickhouse.bak.yml` over `docker-compose.yml` and redeploy the
-previous version. The ClickHouse volume is exactly as the migration left it.
+After successful cutover, `observal server rollback` is an **application rollback
+on DuckDB**, never a return to ClickHouse. It accepts only releases at or above
+the marker's `to_version`, the first verified DuckDB release for this deployment.
+Older targets are rejected before restoring data or changing configuration;
+`server upgrade --version` enforces the same boundary. The DuckDB compose,
+secrets, and completion marker remain in place, even if rollback fails.
+Do not restore `docker-compose.clickhouse.bak.yml` after a completed cutover.
+The retained ClickHouse volume is an archive, not a live rollback target; it
+does not contain telemetry written since cutover. If no compatible backup
+exists yet, deploy a corrected DuckDB-compatible release instead.
 
 ### Manual runbook (Helm, Terraform, or when automation is not possible)
 
-The migration is one-way and the ClickHouse source is never modified, so every
-step is safe to repeat and rollback is "redeploy the previous release".
+The migration is one-way and the ClickHouse source is never modified. Before
+cutover completes, a failed deployment can resume the legacy stack. After
+successful cutover, application rollback must retain DuckDB and use a
+DuckDB-compatible release; never restore the old ClickHouse topology.
 **Helm and Terraform users must complete step 4 before `helm upgrade` /
 `terraform apply`: those remove the ClickHouse source.**
 
 1. **Update the CLI, then back up the existing deployment and preserve its
    files.** Download the `observal-server-v<VERSION>.tar.gz` asset from the target GitHub release into
    a temporary directory. Do not extract it over the live directory yet. Keep
-   the old compose file and ClickHouse volume until the rollback window closes.
+   the old compose file and ClickHouse volume for failed-cutover recovery and archival.
 2. **Install the new deployment files without replacing configuration.** Copy
    `docker-compose.yml`, `nginx.conf`, and supporting observability files from
    the release archive into the deployment directory. Keep the existing `.env`
@@ -205,10 +214,11 @@ step is safe to repeat and rollback is "redeploy the previous release".
 6. **Verify before declaring success:** `/health` shows `"analytics":"ok"`,
    the sessions and insights pages render, one session detail opens, and
    `observal doctor support` shows the analytics tables with expected counts.
-7. **Keep ClickHouse for a rollback window.** Leave its volume in place. Rollback
-   means restoring the old compose file and redeploying the previous release.
-8. **Decommission** the ClickHouse container and volume only after the rollback
-   window. Take a final DuckDB snapshot first.
+7. **Retire ClickHouse after verification.** Stop its container and retain its
+   volume for archival only. Application rollback must keep the DuckDB topology
+   and use a DuckDB-compatible release. Never restart ClickHouse after cutover.
+8. **Decommission** the archived ClickHouse container and volume when retention
+   requirements allow. Verify a DuckDB backup first.
 
 ### Embedded server cutover
 

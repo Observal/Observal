@@ -26,7 +26,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
-from observal_cli.errors import ErrorCategory, fail
+from observal_cli.errors import CliError, ErrorCategory, fail
 from observal_cli.render import OutputMode, output_json, output_json_line
 from observal_cli.server.constants import API_PORT, CONFIG_DIR, LOG_DIR, OBSERVAL_HOME
 
@@ -667,6 +667,18 @@ def _server_upgrade(version: str | None, skip_backup: bool, dry_run: bool, force
             detail=repr(error),
         )
 
+    try:
+        _cutover.validate_duckdb_target(compose_dir, target)
+    except _cutover.CutoverError as error:
+        fail(
+            ErrorCategory.CONFLICT,
+            "The target release is incompatible with the completed DuckDB cutover.",
+            operation="Upgrade Docker server",
+            resource=target,
+            remediation=error.remediation,
+            detail=str(error),
+        )
+
     if target == current:
         console.print(f"[green]Already on v{escape(current)}.[/green]")
         return {"status": "current", "current_version": current, "target_version": target, "changed": False}
@@ -710,7 +722,7 @@ def _server_upgrade(version: str | None, skip_backup: bool, dry_run: bool, force
         if needs_cutover:
             console.print(
                 "  Cutover: [yellow]ClickHouse telemetry will be copied to DuckDB and verified; "
-                "ClickHouse is then stopped but its volume is kept for rollback.[/yellow]"
+                "ClickHouse is then stopped and its volume kept for archival, not rollback.[/yellow]"
             )
         if not typer.confirm("\nProceed with server upgrade?"):
             raise typer.Abort()
@@ -872,8 +884,8 @@ def _server_upgrade(version: str | None, skip_backup: bool, dry_run: bool, force
                     "The upgraded server is running but migrated telemetry failed verification.",
                     operation="Upgrade Docker server",
                     resource=str(compose_dir),
-                    remediation="ClickHouse is still available. Run `observal server rollback` to return to it, "
-                    "or re-run `observal server upgrade` to retry the cutover.",
+                    remediation="Cutover has not completed. Inspect the analytics errors before retrying deployment; "
+                    "the legacy data has not been retired.",
                     detail=str(error),
                 )
             _cutover.retire_clickhouse(legacy, cutover_result, lambda msg: console.print(f"  {msg}"))
@@ -893,9 +905,9 @@ def _server_upgrade(version: str | None, skip_backup: bool, dry_run: bool, force
         if cutover_summary:
             console.print(f"  Telemetry: {cutover_summary['total_rows']:,} rows migrated to DuckDB and verified")
             console.print(
-                "  ClickHouse: [dim]stopped, volume kept. Remove it after the rollback window with "
-                f"`docker compose -f {_cutover.LEGACY_COMPOSE_BACKUP} down -v {_cutover.CLICKHOUSE_SERVICE}` "
-                "once you are satisfied.[/dim]"
+                "  ClickHouse: [dim]stopped, volume kept for archival only. "
+                "Rollback remains on DuckDB. Decommission the legacy volume separately "
+                "after verifying a DuckDB backup.[/dim]"
             )
         console.print("  Rollback: [dim]observal server rollback[/dim]")
         return {
@@ -956,6 +968,8 @@ def server_upgrade(
     try:
         with _quiet_output(output):
             result = _server_upgrade(version, skip_backup, dry_run, force)
+    except CliError:
+        raise
     except (RuntimeError, subprocess.SubprocessError) as error:
         fail(
             ErrorCategory.UNAVAILABLE,
@@ -970,7 +984,7 @@ def server_upgrade(
 
 
 def _server_rollback(from_backup: str | None, force: bool) -> dict:
-    """Restore PostgreSQL, analytics topology, and image version from a managed backup."""
+    """Restore a managed backup without reversing a completed DuckDB cutover."""
     from observal_cli.server import cutover as _cutover
     from observal_cli.server.backup import BACKUPS_DIR, list_backups, restore_backup
     from observal_cli.upgrade_lock import UpgradeLockError, acquire_lock, release_lock
@@ -1040,34 +1054,28 @@ def _server_rollback(from_backup: str | None, force: bool) -> dict:
         )
 
     try:
-        # Restore database
-        console.print("[blue]==>[/blue] Restoring database...")
-        analytics_restored = restore_backup(backup_dir, compose_dir)
-
-        # Revert version and, when this rollback crosses the one-way analytics
-        # cutover, restore the saved ClickHouse compose before recreating any
-        # containers. The ClickHouse volume was deliberately retained.
-        _update_env_version(compose_dir, prev_version)
+        # Validate under the upgrade lock, before restoring data or changing
+        # the image version. A completed cutover is a permanent backend boundary.
         try:
-            clickhouse_topology_restored = _cutover.restore_cutover_topology_for_rollback(compose_dir, prev_version)
+            _cutover.validate_duckdb_target(compose_dir, prev_version)
         except _cutover.CutoverError as error:
             fail(
-                ErrorCategory.UNAVAILABLE,
-                "The pre-cutover ClickHouse topology could not be restored.",
+                ErrorCategory.CONFLICT,
+                "Rollback cannot reverse the completed DuckDB cutover.",
                 operation="Rollback Docker server",
-                resource=str(compose_dir),
+                resource=str(backup_dir),
                 remediation=error.remediation,
                 detail=str(error),
             )
 
-        # Remove only containers that are absent from the restored legacy
-        # topology. Named volumes, including both analytics stores, are kept.
+        console.print("[blue]==>[/blue] Restoring database...")
+        analytics_restored = restore_backup(backup_dir, compose_dir)
+        _update_env_version(compose_dir, prev_version)
+
+        # Keep the DuckDB compose topology, volume, secrets, and cutover marker.
         console.print("[blue]==>[/blue] Recreating containers...")
-        compose_up = ["docker", "compose", "up", "-d"]
-        if clickhouse_topology_restored:
-            compose_up.append("--remove-orphans")
         recreate = subprocess.run(
-            compose_up,
+            ["docker", "compose", "up", "-d"],
             cwd=compose_dir,
             capture_output=True,
             timeout=300,
@@ -1107,8 +1115,6 @@ def _server_rollback(from_backup: str | None, force: bool) -> dict:
                 resource=_get_health_url(compose_dir),
                 remediation="Inspect Docker Compose logs before taking further action.",
             )
-        if clickhouse_topology_restored:
-            (compose_dir / _cutover.MARKER_NAME).unlink(missing_ok=True)
         console.print(f"[green]✓ Rolled back to v{prev_version}[/green]")
         if analytics_restored:
             console.print("[dim]DuckDB analytics telemetry restored from the backup.[/dim]")
@@ -1121,7 +1127,6 @@ def _server_rollback(from_backup: str | None, force: bool) -> dict:
             "backup": str(backup_dir),
             "postgres_restored": True,
             "analytics_restored": analytics_restored,
-            "clickhouse_topology_restored": clickhouse_topology_restored,
             "healthy": True,
         }
     finally:
@@ -1139,8 +1144,9 @@ def server_rollback(
     """Restore PostgreSQL, DuckDB analytics telemetry, and the Docker image version from backup.
 
     Backups taken since the DuckDB cutover include the analytics store, so
-    telemetry is restored with the registry data. JSON mode requires explicit
-    confirmation.
+    telemetry is restored with the registry data. After a completed cutover,
+    rollback stays on DuckDB and rejects releases older than the cutover's
+    destination before changing data. JSON mode requires explicit confirmation.
 
     Examples:
         observal server rollback --force --output json
@@ -1157,6 +1163,8 @@ def server_rollback(
     try:
         with _quiet_output(output):
             result = _server_rollback(from_backup, force)
+    except CliError:
+        raise
     except (RuntimeError, subprocess.SubprocessError) as error:
         fail(
             ErrorCategory.UNAVAILABLE,

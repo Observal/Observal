@@ -816,7 +816,10 @@ def duckdb_migration_cmd(
                 "  [dim]Note:[/dim]     target already held rows for "
                 + ", ".join(f"{table} (+{row_counts[table]['extra_rows']})" for table in extras)
             )
-    rprint("\n[dim]ClickHouse was not modified. Redeploy the previous release to roll back.[/dim]")
+    rprint(
+        "\n[dim]ClickHouse was not modified. After cutover, keep DuckDB for application rollbacks; "
+        "only redeploy DuckDB-compatible releases.[/dim]"
+    )
 
 
 # ── Validate telemetry command ───────────────────────────

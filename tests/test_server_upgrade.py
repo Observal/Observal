@@ -23,6 +23,7 @@ from typer.main import get_command
 from typer.testing import CliRunner
 
 from observal_cli import client, cmd_server
+from observal_cli.errors import CliError
 from observal_cli.main import app
 
 if TYPE_CHECKING:
@@ -347,40 +348,143 @@ def test_rollback_is_confined_and_reports_restore_scope(
 
     assert result["postgres_restored"] is True
     assert result["analytics_restored"] is analytics_restored
-    assert result["clickhouse_topology_restored"] is False
     restore.assert_called_once_with(backup, compose)
     assert (compose / ".env").read_text() == "OBSERVAL_VERSION=1.5.0\n"
 
 
-def test_rollback_across_cutover_restores_clickhouse_topology(isolated, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("explicit_backup", [False, True])
+@pytest.mark.parametrize("marker_contents", ['{"to_version":"2.0.0","flavor":"package"}', "{", "[]", "{}"])
+def test_rollback_across_cutover_is_rejected_before_mutations(
+    isolated, monkeypatch: pytest.MonkeyPatch, explicit_backup: bool, marker_contents: str
+) -> None:
     from observal_cli.server import cutover
 
-    compose = prepare_compose(isolated, monkeypatch, "2.0.0")
+    compose = prepare_compose(isolated, monkeypatch, "2.1.0")
     active = compose / "docker-compose.yml"
     active.write_text("services:\n  observal-duckdb: {}\n")
-    (compose / cutover.LEGACY_COMPOSE_BACKUP).write_text("services:\n  observal-clickhouse: {}\n")
+    legacy = compose / cutover.LEGACY_COMPOSE_BACKUP
+    legacy.write_text("services:\n  observal-clickhouse: {}\n")
     marker = compose / cutover.MARKER_NAME
-    marker.write_text(json.dumps({"from_version": "1.13.1", "to_version": "2.0.0", "flavor": "package"}))
+    marker.write_text(marker_contents)
 
     backup = isolated.root / "config/backups/v1.13.1-20260101T120000"
     backup.mkdir(parents=True)
     (backup / "pg.dump").write_bytes(b"backup")
     monkeypatch.setattr(isolated.backup, "list_backups", MagicMock(return_value=[{"path": str(backup)}]))
-    monkeypatch.setattr(isolated.backup, "restore_backup", MagicMock(return_value=False))
+    restore = MagicMock()
+    monkeypatch.setattr(isolated.backup, "restore_backup", restore)
     monkeypatch.setattr(isolated.upgrade_lock, "acquire_lock", MagicMock(return_value="lock"))
-    monkeypatch.setattr(isolated.upgrade_lock, "release_lock", MagicMock())
-    run = MagicMock(return_value=completed())
+    release = MagicMock()
+    monkeypatch.setattr(isolated.upgrade_lock, "release_lock", release)
+    run = MagicMock()
+    monkeypatch.setattr(cmd_server.subprocess, "run", run)
+
+    args = ["server", "rollback", "--force", "--output", "json"]
+    if explicit_backup:
+        args.extend(["--from-backup", str(backup)])
+    result = runner.invoke(app, args)
+
+    assert result.exit_code == 6, result.stderr
+    assert "DuckDB cutover" in result.stderr
+    assert not result.stdout
+    restore.assert_not_called()
+    run.assert_not_called()
+    release.assert_called_once_with("lock")
+    assert (compose / ".env").read_text() == "OBSERVAL_VERSION=2.1.0\n"
+    assert active.read_text() == "services:\n  observal-duckdb: {}\n"
+    assert legacy.read_text() == "services:\n  observal-clickhouse: {}\n"
+    assert marker.read_text() == marker_contents
+
+
+@pytest.mark.parametrize("analytics_restored", [False, True])
+@pytest.mark.parametrize("failure", [None, "restore", "recreate", "health"])
+def test_compatible_rollback_keeps_duckdb_and_marker_even_on_failure(
+    isolated, monkeypatch: pytest.MonkeyPatch, analytics_restored: bool, failure: str | None
+) -> None:
+    from observal_cli.server import cutover
+
+    compose = prepare_compose(isolated, monkeypatch, "2.1.0")
+    active = compose / "compose.yml"
+    active.write_text("services:\n  observal-duckdb: {}\n")
+    legacy = compose / cutover.LEGACY_COMPOSE_BACKUP
+    legacy.write_text("services:\n  observal-clickhouse: {}\n")
+    marker = compose / cutover.MARKER_NAME
+    marker.write_text(json.dumps({"from_version": "1.13.1", "to_version": "2.0.0", "flavor": "source"}))
+    marker_before = marker.read_bytes()
+    secret = compose / "secrets/duckdb/duckdb_analytics_token"
+    secret.parent.mkdir(parents=True)
+    secret.write_text("test-only-token")
+    backup = isolated.root / "config/backups/v2.0.0-20260101T120000"
+    backup.mkdir(parents=True)
+    (backup / "pg.dump").write_bytes(b"backup")
+    monkeypatch.setattr(isolated.backup, "list_backups", MagicMock(return_value=[{"path": str(backup)}]))
+    restore = MagicMock(return_value=analytics_restored)
+    if failure == "restore":
+        restore.side_effect = RuntimeError("injected restore failure")
+    monkeypatch.setattr(isolated.backup, "restore_backup", restore)
+    monkeypatch.setattr(isolated.upgrade_lock, "acquire_lock", MagicMock(return_value="lock"))
+    release = MagicMock()
+    monkeypatch.setattr(isolated.upgrade_lock, "release_lock", release)
+    run = MagicMock(return_value=completed(1 if failure == "recreate" else 0))
     monkeypatch.setattr(cmd_server.subprocess, "run", run)
     monkeypatch.setattr("time.sleep", MagicMock())
-    monkeypatch.setattr(httpx, "get", MagicMock(return_value=SimpleNamespace(status_code=200)))
+    monkeypatch.setattr(
+        httpx, "get", MagicMock(return_value=SimpleNamespace(status_code=503 if failure == "health" else 200))
+    )
 
-    result = cmd_server._server_rollback(None, True)
+    if failure:
+        with pytest.raises((CliError, RuntimeError)):
+            cmd_server._server_rollback(None, True)
+    else:
+        result = cmd_server._server_rollback(None, True)
+        assert result["status"] == "rolled_back"
+        assert result["to_version"] == "2.0.0"
+        assert result["analytics_restored"] is analytics_restored
+        assert "clickhouse_topology_restored" not in result
+    restore.assert_called_once_with(backup, compose)
+    if failure == "restore":
+        run.assert_not_called()
+        assert (compose / ".env").read_text() == "OBSERVAL_VERSION=2.1.0\n"
+    else:
+        run.assert_called_once()
+        assert run.call_args.args[0] == ["docker", "compose", "up", "-d"]
+        assert (compose / ".env").read_text() == "OBSERVAL_VERSION=2.0.0\n"
+    assert active.read_text() == "services:\n  observal-duckdb: {}\n"
+    assert legacy.read_text() == "services:\n  observal-clickhouse: {}\n"
+    assert marker.read_bytes() == marker_before
+    assert secret.read_text() == "test-only-token"
+    release.assert_called_once_with("lock")
 
-    assert result["clickhouse_topology_restored"] is True
-    assert active.read_text() == "services:\n  observal-clickhouse: {}\n"
-    assert (compose / "docker-compose.duckdb.rollback.yml").read_text() == "services:\n  observal-duckdb: {}\n"
-    assert not marker.exists()
-    assert ["docker", "compose", "up", "-d", "--remove-orphans"] in [call.args[0] for call in run.call_args_list]
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_upgrade_cannot_bypass_duckdb_release_boundary(
+    isolated, monkeypatch: pytest.MonkeyPatch, dry_run: bool
+) -> None:
+    from observal_cli.server import cutover
+
+    compose = prepare_compose(isolated, monkeypatch, "2.1.0")
+    (compose / "compose.yml").write_text("services:\n  observal-duckdb: {}\n")
+    marker = compose / cutover.MARKER_NAME
+    marker.write_text(json.dumps({"to_version": "2.0.0"}))
+    create = MagicMock()
+    monkeypatch.setattr(isolated.backup, "create_backup", create)
+    run = MagicMock()
+    monkeypatch.setattr(cmd_server.subprocess, "run", run)
+    image_check = MagicMock(return_value=True)
+    monkeypatch.setattr(isolated.version_check, "verify_server_image_exists", image_check)
+
+    args = ["server", "upgrade", "--version", "1.13.1", "--force", "--output", "json"]
+    if dry_run:
+        args.append("--dry-run")
+    result = runner.invoke(app, args)
+
+    assert result.exit_code == 6, result.stderr
+    assert "DuckDB cutover" in result.stderr
+    create.assert_not_called()
+    run.assert_not_called()
+    image_check.assert_not_called()
+    assert (compose / ".env").read_text() == "OBSERVAL_VERSION=2.1.0\n"
+    assert marker.exists()
 
 
 def test_rollback_rejects_external_backup(isolated, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

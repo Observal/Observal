@@ -295,18 +295,59 @@ def test_install_release_files_swaps_compose_and_keeps_legacy_copy(package_dir: 
     assert (package_dir / "docker-compose.yml").read_text() == LEGACY_COMPOSE
 
 
-def test_rollback_topology_restore_keeps_marker_until_health_confirmation(package_dir: Path) -> None:
+@pytest.mark.parametrize(
+    ("target", "compatible"),
+    [("1.13.1", False), ("1.99.0", False), ("2.0.0rc1", False), ("2.0.0", True), ("2.1.0", True), ("10.0.0", True)],
+)
+@pytest.mark.parametrize("flavor", ["package", "source"])
+def test_completed_cutover_pins_release_and_topology(
+    package_dir: Path, target: str, compatible: bool, flavor: str
+) -> None:
     backup = package_dir / cutover.LEGACY_COMPOSE_BACKUP
     backup.write_text(LEGACY_COMPOSE)
-    (package_dir / "docker-compose.yml").write_text(NEW_COMPOSE)
+    active = package_dir / "docker-compose.yml"
+    active.write_text(NEW_COMPOSE)
     marker = package_dir / cutover.MARKER_NAME
-    marker.write_text(json.dumps({"from_version": "1.13.1", "flavor": "package"}))
+    marker.write_text(json.dumps({"from_version": "1.13.1", "to_version": "2.0.0", "flavor": flavor}))
+    marker_before = marker.read_bytes()
 
-    assert cutover.restore_cutover_topology_for_rollback(package_dir, "1.13.1") is True
+    if compatible:
+        cutover.validate_duckdb_target(package_dir, target)
+    else:
+        with pytest.raises(cutover.CutoverError, match="requires DuckDB-compatible releases"):
+            cutover.validate_duckdb_target(package_dir, target)
+
+    assert active.read_text() == NEW_COMPOSE
+    assert backup.read_text() == LEGACY_COMPOSE
+    assert marker.read_bytes() == marker_before
+    assert not (package_dir / "docker-compose.duckdb.rollback.yml").exists()
+
+
+@pytest.mark.parametrize("contents", ["{", "[]", "null", "{}", '{"to_version":"broken"}', '{"to_version":2}'])
+def test_cutover_guard_fails_closed_on_invalid_marker(package_dir: Path, contents: str) -> None:
+    marker = package_dir / cutover.MARKER_NAME
+    marker.write_text(contents)
+    with pytest.raises(cutover.CutoverError, match="no valid DuckDB release boundary"):
+        cutover.validate_duckdb_target(package_dir, "2.0.0")
+    assert marker.read_text() == contents
+
+
+@pytest.mark.parametrize(
+    "topology",
+    [LEGACY_COMPOSE, "services: {}", "services: []", "services: [", "[]", NEW_COMPOSE + "  observal-clickhouse: {}\n"],
+)
+def test_cutover_guard_rejects_missing_duckdb_or_reintroduced_clickhouse(package_dir: Path, topology: str) -> None:
+    (package_dir / cutover.MARKER_NAME).write_text(json.dumps({"to_version": "2.0.0"}))
+    active = package_dir / "docker-compose.yml"
+    active.write_text(topology)
+    with pytest.raises(cutover.CutoverError, match="compose topology"):
+        cutover.validate_duckdb_target(package_dir, "2.1.0")
+    assert active.read_text() == topology
+
+
+def test_cutover_guard_does_not_block_pre_cutover_recovery(package_dir: Path) -> None:
+    cutover.validate_duckdb_target(package_dir, "1.13.1")
     assert (package_dir / "docker-compose.yml").read_text() == LEGACY_COMPOSE
-    assert (package_dir / "docker-compose.duckdb.rollback.yml").read_text() == NEW_COMPOSE
-    assert marker.exists()
-    assert cutover.restore_cutover_topology_for_rollback(package_dir, "2.0.0") is False
 
 
 def test_install_release_files_rejects_bundle_without_compose(package_dir: Path, monkeypatch) -> None:

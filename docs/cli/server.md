@@ -146,7 +146,9 @@ observal server rollback \
 
 Rollback accepts only backup directories under the managed backup root. It restores PostgreSQL, atomically restores the image version, recreates containers, and checks health.
 
-Rollback restores the DuckDB analytics store as well whenever the backup contains `analytics.tar.gz` (backups created by `observal server upgrade` do): the analytics service is stopped, its data directory is replaced, and the service is restarted and health-checked before containers are recreated. JSON and human results report `analytics_restored` accordingly, and any backup predating the DuckDB cutover restores PostgreSQL only. Use [`observal server migrate`](migrate.md) for telemetry export and import between deployments.
+**A completed ClickHouse-to-DuckDB cutover is permanent.** The cutover marker's `to_version` is the earliest verified DuckDB-compatible release for this deployment. Rollback rejects backups targeting older releases before restoring any database or changing configuration, even with `--force`. `server upgrade --version` enforces the same boundary. A missing or invalid release boundary in an existing marker, or a compose topology that reintroduces ClickHouse, blocks the operation. Restore damaged metadata from backup; do not delete the marker to bypass this guard. Compatible rollbacks retain the DuckDB topology, secrets, and completion marker, including on failure. The saved ClickHouse compose and volume are never reactivated.
+
+Rollback restores the DuckDB analytics store as well whenever the compatible backup contains `analytics.tar.gz` (normal post-cutover backups created by `observal server upgrade` do): the analytics service is stopped, its data directory is replaced, and the service is restarted and health-checked before containers are recreated. JSON and human results report `analytics_restored` accordingly. A compatible backup without an analytics archive restores PostgreSQL only and leaves DuckDB telemetry unchanged; a pre-cutover backup cannot be used to roll back a completed cutover. Use [`observal server migrate`](migrate.md) for telemetry export and import between deployments.
 
 ## Docker versions
 
