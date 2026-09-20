@@ -970,7 +970,8 @@ def server_upgrade(
 
 
 def _server_rollback(from_backup: str | None, force: bool) -> dict:
-    """Restore PostgreSQL and Docker image version from one managed backup."""
+    """Restore PostgreSQL, analytics topology, and image version from a managed backup."""
+    from observal_cli.server import cutover as _cutover
     from observal_cli.server.backup import BACKUPS_DIR, list_backups, restore_backup
     from observal_cli.upgrade_lock import UpgradeLockError, acquire_lock, release_lock
 
@@ -1043,13 +1044,30 @@ def _server_rollback(from_backup: str | None, force: bool) -> dict:
         console.print("[blue]==>[/blue] Restoring database...")
         analytics_restored = restore_backup(backup_dir, compose_dir)
 
-        # Revert version
+        # Revert version and, when this rollback crosses the one-way analytics
+        # cutover, restore the saved ClickHouse compose before recreating any
+        # containers. The ClickHouse volume was deliberately retained.
         _update_env_version(compose_dir, prev_version)
+        try:
+            clickhouse_topology_restored = _cutover.restore_cutover_topology_for_rollback(compose_dir, prev_version)
+        except _cutover.CutoverError as error:
+            fail(
+                ErrorCategory.UNAVAILABLE,
+                "The pre-cutover ClickHouse topology could not be restored.",
+                operation="Rollback Docker server",
+                resource=str(compose_dir),
+                remediation=error.remediation,
+                detail=str(error),
+            )
 
-        # Recreate containers with previous images
+        # Remove only containers that are absent from the restored legacy
+        # topology. Named volumes, including both analytics stores, are kept.
         console.print("[blue]==>[/blue] Recreating containers...")
+        compose_up = ["docker", "compose", "up", "-d"]
+        if clickhouse_topology_restored:
+            compose_up.append("--remove-orphans")
         recreate = subprocess.run(
-            ["docker", "compose", "up", "-d"],
+            compose_up,
             cwd=compose_dir,
             capture_output=True,
             timeout=300,
@@ -1089,6 +1107,8 @@ def _server_rollback(from_backup: str | None, force: bool) -> dict:
                 resource=_get_health_url(compose_dir),
                 remediation="Inspect Docker Compose logs before taking further action.",
             )
+        if clickhouse_topology_restored:
+            (compose_dir / _cutover.MARKER_NAME).unlink(missing_ok=True)
         console.print(f"[green]✓ Rolled back to v{prev_version}[/green]")
         if analytics_restored:
             console.print("[dim]DuckDB analytics telemetry restored from the backup.[/dim]")
@@ -1101,6 +1121,7 @@ def _server_rollback(from_backup: str | None, force: bool) -> dict:
             "backup": str(backup_dir),
             "postgres_restored": True,
             "analytics_restored": analytics_restored,
+            "clickhouse_topology_restored": clickhouse_topology_restored,
             "healthy": True,
         }
     finally:

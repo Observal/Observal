@@ -216,15 +216,27 @@ cat > /usr/local/bin/observal-duckdb-backup.sh <<'BACKUP'
 #!/bin/bash
 set -euo pipefail
 TS=$(date -u +%Y%m%dT%H%M%SZ)
-TOKEN=$(grep DUCKDB_ANALYTICS_TOKEN /opt/observal/.env | cut -d= -f2-)
+TOKEN=$(sed -n 's/^DUCKDB_ANALYTICS_TOKEN=//p' /opt/observal/.env | tail -1)
+SNAPSHOT_DIR="/data/backups/snapshot-$TS"
+ARCHIVE="/tmp/duckdb-$TS.tar.gz"
 
-# Ask the service to checkpoint so the archived bytes include every commit.
-curl -fsS -X POST http://localhost:8484/admin/checkpoint \
-  -H "Authorization: Bearer $TOKEN" >/dev/null || echo "WARN: checkpoint request failed, archiving anyway"
+cleanup() {
+  rm -f "$ARCHIVE"
+  docker exec observal-duckdb rm -rf "$SNAPSHOT_DIR" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
 
-docker exec observal-duckdb tar czf - -C /data . > "/tmp/duckdb-$TS.tar.gz"
-aws s3 cp "/tmp/duckdb-$TS.tar.gz" "s3://${backups_bucket}/duckdb/$TS.tar.gz" --quiet
-rm -f "/tmp/duckdb-$TS.tar.gz"
+# EXPORT DATABASE runs under the service's write lock. Archive that immutable
+# logical snapshot rather than the live database and WAL files.
+docker exec observal-duckdb mkdir -p /data/backups
+curl -fsS -X POST http://localhost:8484/admin/backup \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  --data-binary "{\"destination\":\"$SNAPSHOT_DIR\"}" >/dev/null
+
+docker exec observal-duckdb tar czf - -C "$SNAPSHOT_DIR" . > "$ARCHIVE"
+test -s "$ARCHIVE"
+aws s3 cp "$ARCHIVE" "s3://${backups_bucket}/duckdb/$TS.tar.gz" --quiet
 BACKUP
 chmod +x /usr/local/bin/observal-duckdb-backup.sh
 

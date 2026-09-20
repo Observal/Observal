@@ -45,6 +45,7 @@ from urllib.parse import urlparse, urlunparse
 
 import httpx
 from loguru import logger as optic
+from packaging.version import InvalidVersion, Version
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -284,28 +285,41 @@ def _running_service_containers(compose_dir: Path, service: str) -> list[str]:
     return [name for name in listed.stdout.splitlines() if name.strip()]
 
 
-def restart_legacy_writers(containers: list[str], log: Callable[[str], None]) -> None:
+def restart_legacy_writers(containers: list[str], log: Callable[[str], None]) -> list[str]:
     """Best-effort restart of writer containers stopped before a failed cutover."""
+    failed: list[str] = []
     for container in containers:
-        result = _docker("start", container, timeout=180)
+        try:
+            result = _docker("start", container, timeout=180)
+        except (OSError, subprocess.SubprocessError) as error:
+            failed.append(container)
+            log(f"[yellow]Could not restart {container}: {error}[/yellow]")
+            continue
         if result.returncode != 0:
+            failed.append(container)
             log(f"[yellow]Could not restart {container}: {result.stderr.strip()[:120]}[/yellow]")
+    return failed
 
 
-def quiesce_legacy_writers(state: LegacyState, log: Callable[[str], None]) -> list[str]:
-    """Stop every legacy API/worker container before fixing the export cutoff."""
+def quiesce_legacy_writers(
+    state: LegacyState,
+    log: Callable[[str], None],
+    stopped: list[str] | None = None,
+) -> list[str]:
+    """Stop every legacy writer, retaining ambiguous timeout targets for recovery."""
     containers = [
         container
         for service in LEGACY_WRITER_SERVICES
         for container in _running_service_containers(state.compose_dir, service)
     ]
-    stopped: list[str] = []
+    stopped = stopped if stopped is not None else []
     for container in containers:
+        # A timed-out ``docker stop`` may still have stopped the container, so
+        # record it before invoking Docker and always include it in recovery.
+        stopped.append(container)
         result = _docker("stop", container, timeout=180)
         if result.returncode != 0:
-            restart_legacy_writers(stopped, log)
             raise CutoverError(f"could not stop legacy writer {container}: {result.stderr.strip()[:200]}")
-        stopped.append(container)
     if stopped:
         log(f"Paused {len(stopped)} legacy API/worker container(s) for a consistent export")
     return stopped
@@ -428,15 +442,32 @@ def provision_duckdb_secrets(state: LegacyState, log: Callable[[str], None]) -> 
         token_file = duck_dir / "duckdb_analytics_token"
         if not token_file.is_file() or not token_file.read_text().strip():
             token_file.write_text(secrets.token_urlsafe(32) + "\n", encoding="utf-8")
-            token_file.chmod(0o600)
             log("Generated secrets/duckdb/duckdb_analytics_token")
         url_file = secrets_dir / "duckdb_analytics_url"
         if not url_file.is_file() or not url_file.read_text().strip():
             url_file.write_text(f"duckdb://{DUCKDB_SERVICE}:8484/observal\n", encoding="utf-8")
-            url_file.chmod(0o600)
+
+        configured_gid = _env_value(state.env_file, "OBSERVAL_SECRET_GID")
+        try:
+            secret_gid = int(configured_gid) if configured_gid else os.getgid()
+            if secret_gid < 0:
+                raise ValueError
+        except ValueError as error:
+            raise CutoverError(f"invalid OBSERVAL_SECRET_GID: {configured_gid!r}") from error
+        try:
+            for path in (secrets_dir, duck_dir, token_file, url_file):
+                os.chown(path, -1, secret_gid)
+            token_file.chmod(0o640)
+            url_file.chmod(0o640)
+        except OSError as error:
+            raise CutoverError(
+                f"could not make DuckDB secrets readable by container group {secret_gid}: {error}"
+            ) from error
+
         _append_env_lines(
             state.env_file,
             {
+                "OBSERVAL_SECRET_GID": str(secret_gid),
                 "DUCKDB_ANALYTICS_URL_FILE": "/run/secrets/duckdb_analytics_url",
                 "DUCKDB_ANALYTICS_TOKEN_FILE": "/run/secrets/duckdb/duckdb_analytics_token",
                 "DUCKDB_MEMORY_LIMIT": "2GB",
@@ -581,6 +612,44 @@ def cutover_marker(compose_dir: Path) -> dict | None:
         return {"corrupt": True}
 
 
+def restore_cutover_topology_for_rollback(compose_dir: Path, target_version: str) -> bool:
+    """Restore the saved ClickHouse topology when rolling back across cutover."""
+    marker = cutover_marker(compose_dir)
+    if marker is None:
+        return False
+    if marker.get("corrupt"):
+        raise CutoverError(
+            "the ClickHouse cutover marker is corrupt",
+            remediation=f"Inspect {compose_dir / MARKER_NAME} before retrying rollback.",
+        )
+    try:
+        crosses_cutover = Version(target_version) <= Version(str(marker.get("from_version", "")))
+    except InvalidVersion:
+        crosses_cutover = marker.get("from_version") == target_version
+    if not crosses_cutover:
+        return False
+    if marker.get("flavor") != "package":
+        raise CutoverError(
+            "the previous source-checkout topology cannot be restored automatically",
+            remediation="Check out the previous release's compose file, then retry rollback.",
+        )
+
+    backup = compose_dir / LEGACY_COMPOSE_BACKUP
+    if not backup.is_file():
+        raise CutoverError(
+            f"the saved ClickHouse compose file is missing: {backup}",
+            remediation="Restore the saved compose file before retrying rollback; do not remove the ClickHouse volume.",
+        )
+    active = compose_dir / "docker-compose.yml"
+    failed_new = compose_dir / "docker-compose.duckdb.rollback.yml"
+    if active.exists() and not failed_new.exists():
+        shutil.copy2(active, failed_new)
+    shutil.copy2(backup, active)
+    # Keep the marker until the caller confirms that the legacy stack is
+    # healthy. This makes a failed or timed-out rollback safely retryable.
+    return True
+
+
 # ── orchestration entry point ────────────────────────────────────────────────
 
 
@@ -610,10 +679,10 @@ def run_cutover(
     )
     optic.info("clickhouse cutover start flavor={} compose_dir={}", state.flavor, state.compose_dir)
 
-    clickhouse_url = ensure_clickhouse_running(state, log)
-    result.legacy_writer_containers = quiesce_legacy_writers(state, log)
-
     try:
+        clickhouse_url = ensure_clickhouse_running(state, log)
+        result.legacy_writer_containers = quiesce_legacy_writers(state, log, result.legacy_writer_containers)
+
         if not skip_backup:
             log("Backing up PostgreSQL")
             try:

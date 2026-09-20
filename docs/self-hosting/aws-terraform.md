@@ -26,7 +26,7 @@ A single `terraform apply` creates:
 * **SSM Parameter Store**: generated DB / DuckDB / SECRET\_KEY / optional Grafana passwords, plus pre-built connection URLs injected into ECS tasks
 * **SSM Session Manager**: shell access to the data host, no SSH
 
-DuckDB runs on EC2 as a single-writer service because there is no managed AWS equivalent. The EBS data volume keeps the analytics file durable across instance replacements, and the host is a singleton by design: two writers would corrupt that file. Recovery is backup-based (daily snapshot to S3), not HA.
+DuckDB runs on EC2 as a single-writer service because there is no managed AWS equivalent. The EBS data volume keeps the analytics file durable across instance replacements, and the host is a singleton by design: two writers would corrupt that file. Recovery is backup-based (daily snapshot to S3), not HA. Each S3 archive contains a consistent DuckDB `EXPORT DATABASE` snapshot (`schema.sql`, `load.sql`, and Parquet data), rather than a copy of live database and WAL files.
 
 ## Prerequisites
 

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import io
 import json
+import os
+import subprocess
 import tarfile
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
@@ -150,8 +152,11 @@ def test_provision_package_secrets_is_idempotent_and_never_overwrites(package_di
     token_file = package_dir / "secrets" / "duckdb" / "duckdb_analytics_token"
     first = token_file.read_text()
     assert len(first.strip()) >= 32
-    assert (token_file.stat().st_mode & 0o777) == 0o600
+    assert (token_file.stat().st_mode & 0o777) == 0o640
+    assert token_file.stat().st_gid == os.getgid()
+    assert ((package_dir / "secrets" / "duckdb_analytics_url").stat().st_mode & 0o777) == 0o640
     env = (package_dir / ".env").read_text()
+    assert f"OBSERVAL_SECRET_GID={os.getgid()}" in env
     assert "DUCKDB_ANALYTICS_TOKEN_FILE=/run/secrets/duckdb/duckdb_analytics_token" in env
     assert "CLICKHOUSE_URL_FILE=/run/secrets/clickhouse_url" in env  # untouched
     assert env.count("OBSERVAL_VERSION=") == 1
@@ -211,6 +216,53 @@ def test_quiesce_stops_all_legacy_api_and_worker_containers(source_dir: Path, mo
     ]
 
 
+def test_run_cutover_recovers_api_when_worker_stop_times_out(source_dir: Path, monkeypatch) -> None:
+    state = cutover.LegacyState(
+        compose_dir=source_dir,
+        compose_path=source_dir / "docker-compose.yml",
+        env_file=source_dir.parent / ".env",
+        flavor="source",
+        compose_has_clickhouse=False,
+        compose_has_duckdb=True,
+        env_has_clickhouse=True,
+        env_has_duckdb=False,
+        marker_path=source_dir / cutover.MARKER_NAME,
+        marker_exists=False,
+        clickhouse_container="clickhouse-1",
+    )
+    starts: list[str] = []
+
+    def docker(*args, **_kwargs):
+        if args[0] == "ps":
+            service_filter = " ".join(args)
+            name = "api-1" if "observal-api" in service_filter else "worker-1"
+            return SimpleNamespace(returncode=0, stdout=f"{name}\n", stderr="")
+        if args[:2] == ("stop", "api-1"):
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        if args[:2] == ("stop", "worker-1"):
+            raise subprocess.TimeoutExpired(["docker", "stop", "worker-1"], 180)
+        if args[0] == "start":
+            starts.append(args[1])
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        raise AssertionError(args)
+
+    monkeypatch.setattr(cutover, "_docker", docker)
+    monkeypatch.setattr(cutover, "ensure_clickhouse_running", lambda *_args: "clickhouse://source")
+
+    with pytest.raises(subprocess.TimeoutExpired):
+        cutover.run_cutover(
+            state,
+            current="1.13.1",
+            target="2.0.0",
+            repo="Observal/Observal",
+            skip_backup=True,
+            log=lambda _message: None,
+            reporter=object(),
+        )
+
+    assert starts == ["api-1", "worker-1"]
+
+
 # ── release files ─────────────────────────────────────────────────────────────
 
 
@@ -241,6 +293,20 @@ def test_install_release_files_swaps_compose_and_keeps_legacy_copy(package_dir: 
     assert (package_dir / "nginx.conf").read_text() == "server {}\n"
     assert cutover.restore_legacy_compose(state) is True
     assert (package_dir / "docker-compose.yml").read_text() == LEGACY_COMPOSE
+
+
+def test_rollback_topology_restore_keeps_marker_until_health_confirmation(package_dir: Path) -> None:
+    backup = package_dir / cutover.LEGACY_COMPOSE_BACKUP
+    backup.write_text(LEGACY_COMPOSE)
+    (package_dir / "docker-compose.yml").write_text(NEW_COMPOSE)
+    marker = package_dir / cutover.MARKER_NAME
+    marker.write_text(json.dumps({"from_version": "1.13.1", "flavor": "package"}))
+
+    assert cutover.restore_cutover_topology_for_rollback(package_dir, "1.13.1") is True
+    assert (package_dir / "docker-compose.yml").read_text() == LEGACY_COMPOSE
+    assert (package_dir / "docker-compose.duckdb.rollback.yml").read_text() == NEW_COMPOSE
+    assert marker.exists()
+    assert cutover.restore_cutover_topology_for_rollback(package_dir, "2.0.0") is False
 
 
 def test_install_release_files_rejects_bundle_without_compose(package_dir: Path, monkeypatch) -> None:

@@ -347,8 +347,40 @@ def test_rollback_is_confined_and_reports_restore_scope(
 
     assert result["postgres_restored"] is True
     assert result["analytics_restored"] is analytics_restored
+    assert result["clickhouse_topology_restored"] is False
     restore.assert_called_once_with(backup, compose)
     assert (compose / ".env").read_text() == "OBSERVAL_VERSION=1.5.0\n"
+
+
+def test_rollback_across_cutover_restores_clickhouse_topology(isolated, monkeypatch: pytest.MonkeyPatch) -> None:
+    from observal_cli.server import cutover
+
+    compose = prepare_compose(isolated, monkeypatch, "2.0.0")
+    active = compose / "docker-compose.yml"
+    active.write_text("services:\n  observal-duckdb: {}\n")
+    (compose / cutover.LEGACY_COMPOSE_BACKUP).write_text("services:\n  observal-clickhouse: {}\n")
+    marker = compose / cutover.MARKER_NAME
+    marker.write_text(json.dumps({"from_version": "1.13.1", "to_version": "2.0.0", "flavor": "package"}))
+
+    backup = isolated.root / "config/backups/v1.13.1-20260101T120000"
+    backup.mkdir(parents=True)
+    (backup / "pg.dump").write_bytes(b"backup")
+    monkeypatch.setattr(isolated.backup, "list_backups", MagicMock(return_value=[{"path": str(backup)}]))
+    monkeypatch.setattr(isolated.backup, "restore_backup", MagicMock(return_value=False))
+    monkeypatch.setattr(isolated.upgrade_lock, "acquire_lock", MagicMock(return_value="lock"))
+    monkeypatch.setattr(isolated.upgrade_lock, "release_lock", MagicMock())
+    run = MagicMock(return_value=completed())
+    monkeypatch.setattr(cmd_server.subprocess, "run", run)
+    monkeypatch.setattr("time.sleep", MagicMock())
+    monkeypatch.setattr(httpx, "get", MagicMock(return_value=SimpleNamespace(status_code=200)))
+
+    result = cmd_server._server_rollback(None, True)
+
+    assert result["clickhouse_topology_restored"] is True
+    assert active.read_text() == "services:\n  observal-clickhouse: {}\n"
+    assert (compose / "docker-compose.duckdb.rollback.yml").read_text() == "services:\n  observal-duckdb: {}\n"
+    assert not marker.exists()
+    assert ["docker", "compose", "up", "-d", "--remove-orphans"] in [call.args[0] for call in run.call_args_list]
 
 
 def test_rollback_rejects_external_backup(isolated, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

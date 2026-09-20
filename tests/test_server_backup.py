@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from observal_cli.server import backup
@@ -16,6 +18,16 @@ def isolated_backups(tmp_path, monkeypatch):
     """Redirect backup directory to tmp."""
     monkeypatch.setattr(backup, "BACKUPS_DIR", tmp_path / "backups")
     return tmp_path / "backups"
+
+
+def test_aws_scheduled_backup_archives_an_immutable_service_snapshot() -> None:
+    template = (Path(__file__).parents[1] / "infra/terraform/aws/user-data.sh.tftpl").read_text(encoding="utf-8")
+    script = template.split("cat > /usr/local/bin/observal-duckdb-backup.sh <<'BACKUP'", 1)[1].split("\nBACKUP", 1)[0]
+
+    assert "/admin/backup" in script
+    assert 'tar czf - -C "$SNAPSHOT_DIR" .' in script
+    assert "tar czf - -C /data ." not in script
+    assert "checkpoint request failed, archiving anyway" not in script
 
 
 class TestListBackups:
