@@ -7,7 +7,7 @@ Public API entry points:
     export_pg   — PostgreSQL snapshot export to .tar.gz archive
     import_pg   — Import PG archive into target database
     validate_pg — Validate PG archive checksums and row counts
-    export_ch   — ClickHouse telemetry export (used by the one-way DuckDB migration)
+    export_ch   — bounded, chunked ClickHouse telemetry export (one-way DuckDB migration)
     export_duckdb_telemetry / load_telemetry_into_duckdb / verify_duckdb_telemetry
                 — DuckDB telemetry instance moves
 

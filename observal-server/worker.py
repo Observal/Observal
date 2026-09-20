@@ -10,11 +10,12 @@
 """arq background worker: startup/shutdown hooks, job registration, and cron scheduling."""
 
 from arq.cron import cron
+from arq.worker import func
 from loguru import logger as optic
 
 from jobs.catalog import batch_generate_insights, generate_insight_report, refresh_user_profiles
 from jobs.maintenance import maintain_analytics, purge_inbox_items, sync_component_sources
-from jobs.migration import purge_migration_artifacts, run_migration_job
+from jobs.migration import MAX_MIGRATION_JOB_TIMEOUT_SECONDS, purge_migration_artifacts, run_migration_job
 from jobs.usage_ping import submit_usage_ping
 from logging_config import setup_logging
 from services.alert_evaluator import evaluate_alerts
@@ -54,7 +55,7 @@ class WorkerSettings:
         generate_insight_report,
         batch_generate_insights,
         run_retention_purge,
-        run_migration_job,
+        func(run_migration_job, timeout=MAX_MIGRATION_JOB_TIMEOUT_SECONDS),
         refresh_user_profiles,
         purge_inbox_items,
         submit_usage_ping,
@@ -77,4 +78,4 @@ class WorkerSettings:
     on_shutdown = shutdown
     redis_settings = parse_redis_settings()
     max_jobs = 15
-    job_timeout = 600  # 10 min (V2 insights with facet extraction needs more time)
+    job_timeout = 600  # 10 min default; migration has a function-specific 24-hour ceiling

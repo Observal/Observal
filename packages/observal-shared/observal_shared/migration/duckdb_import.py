@@ -27,9 +27,10 @@ from urllib.parse import urlparse
 from loguru import logger as optic
 
 from observal_shared.migration.archive import _sha256_file, read_manifest
-from observal_shared.migration.constants import CLICKHOUSE_TABLES
+from observal_shared.migration.constants import CLICKHOUSE_TABLES, TELEMETRY_MANIFEST_VERSION
 from observal_shared.migration.exceptions import ConnectionFailedError, MigrationError, PrerequisiteError
 from observal_shared.migration.results import TelemetryImportResult, TelemetryValidationResult
+from observal_shared.migration.telemetry_manifest import validate_telemetry_manifest
 
 if TYPE_CHECKING:
     import httpx
@@ -164,6 +165,10 @@ async def load_telemetry_into_duckdb(
     migration_id = str(manifest.get("migration_id") or "")
     if not migration_id or not isinstance(manifest.get("tables"), dict):
         raise PrerequisiteError(f"telemetry manifest is incomplete: {manifest_path}")
+    if manifest.get("schema_version") == TELEMETRY_MANIFEST_VERSION:
+        # Chunked ClickHouse exports carry per-chunk metadata; reject any manifest
+        # whose chunk list, checksums, and row counts disagree before opening files.
+        validate_telemetry_manifest(manifest)
     manifest_artifacts = _validated_manifest_artifacts(export_dir, manifest)
     checksum_results = _verify_artifact_checksums(export_dir, manifest, manifest_artifacts)
     invalid = sorted(name for name, valid in checksum_results.items() if not valid)

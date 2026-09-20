@@ -1,8 +1,10 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from sqlalchemy import delete, select
@@ -18,6 +20,7 @@ from services.audit.event_handlers import register_audit_handlers
 from services.audit.event_handlers import shutdown_audit as shutdown_audit_handlers
 from services.cache import close_cache, init_cache
 from services.crypto import init_key_manager
+from services.migration_uploads import configure_migration_upload_tempdir
 from services.redis import close as close_redis
 
 
@@ -53,6 +56,11 @@ async def run_startup_tasks() -> None:
 
     ds.load_external_settings()
     await ds.load_sync_cache()
+    artifact_root = os.environ.get("MIGRATION_ARTIFACT_ROOT") or ds.get_sync(
+        "migration.artifact_root",
+        str(Path.home() / ".observal" / "migration_artifacts"),
+    )
+    configure_migration_upload_tempdir(artifact_root)
     await ds.import_sso_env_once()
     await ds.reencrypt_on_key_rotation()
 

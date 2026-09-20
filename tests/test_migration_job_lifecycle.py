@@ -175,6 +175,12 @@ def install_job_boundaries(monkeypatch, factory: SessionFactory, artifact_root: 
     )
 
 
+def test_migration_timeout_defaults_and_clamps_to_worker_ceiling():
+    assert migration._bounded_migration_timeout(0) == 1
+    assert migration._bounded_migration_timeout(3600) == 3600
+    assert migration._bounded_migration_timeout(172800) == migration.MAX_MIGRATION_JOB_TIMEOUT_SECONDS
+
+
 def write_tar(path: Path, members: dict[str, bytes]) -> None:
     with tarfile.open(path, "w:gz") as archive:
         for name, content in members.items():
@@ -360,7 +366,10 @@ async def test_job_dispatches_operation_and_persists_success(
     )
     for other_name in {"export", "import_", "validate"} - {handler_name}:
         getattr(boundaries, other_name).assert_not_awaited()
-    boundaries.get_timeout.assert_awaited_once_with("migration.job_timeout_seconds", default=3600)
+    boundaries.get_timeout.assert_awaited_once_with(
+        "migration.job_timeout_seconds",
+        default=migration.MAX_MIGRATION_JOB_TIMEOUT_SECONDS,
+    )
     boundaries.timeout.assert_called_once_with(17)
     boundaries.pg_resolver.assert_awaited_once_with()
     boundaries.analytics_resolver.assert_awaited_once_with()
@@ -882,7 +891,7 @@ async def test_validate_both_extracts_telemetry_and_combines_results(monkeypatch
     assert result == {
         "checksums_valid": False,
         "checksum_details": {"users": True, "events.parquet": False},
-        "row_count_comparison": {"users": [2, 3]},
+        "row_count_comparison": {"users": [2, 3], "session_events": [4, 5]},
         "orphaned_fk_refs": {"orphaned_agent_ids": ["agent-1"]},
         "schema_version_diff": None,
     }
@@ -1036,3 +1045,20 @@ async def test_purge_without_eligible_jobs_does_not_commit(monkeypatch):
 
     session.commit.assert_not_awaited()
     assert session.entered == session.exited == 1
+
+
+def test_migration_upload_tempdir_uses_persistent_artifact_volume(tmp_path):
+    import tempfile
+
+    from services.migration_uploads import configure_migration_upload_tempdir
+
+    artifact_root = tmp_path / "migration_artifacts"
+    original_tempdir = tempfile.tempdir
+    try:
+        upload_tempdir = configure_migration_upload_tempdir(artifact_root)
+        assert upload_tempdir == tmp_path / "migration_upload_tmp"
+        assert upload_tempdir.is_dir()
+        assert upload_tempdir.stat().st_mode & 0o777 == 0o700
+        assert tempfile.tempdir == str(upload_tempdir)
+    finally:
+        tempfile.tempdir = original_tempdir

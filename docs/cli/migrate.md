@@ -42,8 +42,10 @@ observal server migrate duckdb \
 
 The command runs three steps:
 
-1. **Export** every telemetry table from ClickHouse to monthly Parquet partitions
-   plus a checksummed `telemetry_manifest.json`.
+1. **Export** every telemetry table from ClickHouse as bounded, deterministic
+   time-and-hash Parquet chunks plus a checksummed `telemetry_manifest.json`.
+   Each ClickHouse query stays bounded independently of total dataset size;
+   memory-limited chunks are split again and retried automatically.
 2. **Load** those partitions into the DuckDB analytics service, transactionally
    replacing rows by logical identity (and pruning incoming identities for
    append-only tables) so re-runs are idempotent.

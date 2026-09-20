@@ -5,6 +5,7 @@
 """Admin data migration routes."""
 
 import os
+import shutil
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -33,7 +34,8 @@ from ._router import router
 
 # ── Constants ──────────────────────────────────────────────
 
-_DEFAULT_MAX_UPLOAD_BYTES = 5 * 1024 * 1024 * 1024  # 5 GB
+_DEFAULT_MAX_UPLOAD_BYTES = 5 * 1024 * 1024 * 1024  # 5 GB per artifact
+_UPLOAD_COPY_CHUNK_BYTES = 8 * 1024 * 1024
 _DOWNLOAD_TOKEN_TTL_SECONDS = 300  # 5 minutes
 
 # Magic bytes for file validation
@@ -68,91 +70,89 @@ async def _check_concurrency(db: AsyncSession, operation_type: MigrationOperatio
 
 
 async def _validate_upload_files(files: list[UploadFile], scope: MigrationScope) -> None:
-    """Validate uploaded files: size limit, magic bytes, scope consistency."""
+    """Validate artifact size, magic bytes, unique names, and requested scope."""
+    if not files:
+        raise HTTPException(status_code=422, detail="At least one migration artifact is required")
+
     max_bytes = await ds.get_int("migration.max_upload_bytes", default=_DEFAULT_MAX_UPLOAD_BYTES)
+    has_pg_archive = False
+    has_telemetry = False
+    safe_names: set[str] = set()
 
-    has_archive = False
-    has_parquet = False
-    has_telemetry_archive = False
+    for file in files:
+        raw_name = file.filename or ""
+        safe_name = Path(raw_name).name
+        if not safe_name or safe_name in {".", ".."}:
+            raise HTTPException(status_code=422, detail="Migration artifact has an invalid filename")
+        if safe_name in safe_names:
+            raise HTTPException(status_code=422, detail=f"Duplicate migration artifact filename: '{safe_name}'")
+        safe_names.add(safe_name)
 
-    for f in files:
-        # Check file size via content-length header (may be None for chunked uploads)
-        if f.size is not None and f.size > max_bytes:
-            raise HTTPException(status_code=422, detail=f"File '{f.filename}' exceeds maximum upload size")
+        if file.size is not None and file.size > max_bytes:
+            raise HTTPException(status_code=422, detail=f"File '{safe_name}' exceeds maximum upload size")
 
-        # Read first 4 bytes for magic byte validation
-        header = await f.read(4)
-        await f.seek(0)
-
+        header = await file.read(4)
+        await file.seek(0)
         if len(header) < 2:
-            raise HTTPException(status_code=422, detail=f"File '{f.filename}' is too small to validate")
+            raise HTTPException(status_code=422, detail=f"File '{safe_name}' is too small to validate")
 
         if header[:2] == _MAGIC_TAR_GZ:
-            has_archive = True
-            # The telemetry export ships as a self-describing tar.gz (Parquet
-            # tables plus telemetry_manifest.json), so it is a complete
-            # telemetry payload on its own. _run_import selects it by name.
-            # Only .tar.gz is recognised by the import job (jobs/migration.py
-            # selects `telemetry*.gz`), so a .tgz would import nothing.
-            if f.filename and f.filename.startswith("telemetry") and f.filename.endswith(".tar.gz"):
-                has_telemetry_archive = True
+            if safe_name.lower().startswith("telemetry"):
+                has_telemetry = True
+            else:
+                has_pg_archive = True
         elif header[:4] == _MAGIC_PARQUET:
-            has_parquet = True
+            has_telemetry = True
         else:
             raise HTTPException(
                 status_code=422,
-                detail=f"File '{f.filename}' has unsupported format (expected .tar.gz or .parquet)",
+                detail=f"File '{safe_name}' has unsupported format (expected .tar.gz or .parquet)",
             )
 
-    # Scope consistency check
-    if scope == MigrationScope.postgres and has_parquet and not has_archive:
-        raise HTTPException(status_code=422, detail="Scope is 'postgres' but only Parquet files were uploaded")
-    if scope == MigrationScope.telemetry and has_archive and not has_parquet and not has_telemetry_archive:
+    if scope == MigrationScope.postgres and (not has_pg_archive or has_telemetry):
+        raise HTTPException(status_code=422, detail="Registry scope requires one PostgreSQL archive only")
+    if scope == MigrationScope.telemetry and (not has_telemetry or has_pg_archive):
+        raise HTTPException(status_code=422, detail="Telemetry scope requires telemetry artifacts only")
+    if scope == MigrationScope.both and not (has_pg_archive and has_telemetry):
         raise HTTPException(
             status_code=422,
-            detail="Scope is 'telemetry' but the uploaded archive is not a telemetry export",
+            detail="Registry + telemetry scope requires both the PostgreSQL and telemetry export artifacts",
         )
 
 
 async def _store_upload_files(files: list[UploadFile], job_id: uuid.UUID) -> Path:
-    """Store uploaded files to the artifact directory with restrictive permissions."""
-    # Prefer env var (Docker volume), then dynamic setting, then fallback
+    """Stream uploaded artifacts to private persistent storage in bounded chunks."""
     artifact_root = os.environ.get("MIGRATION_ARTIFACT_ROOT")
     if not artifact_root:
         artifact_root = await ds.get(
             "migration.artifact_root", default=str(Path.home() / ".observal" / "migration_artifacts")
         )
     job_dir = Path(artifact_root) / str(job_id)
-    job_dir.mkdir(parents=True, exist_ok=True)
+    job_dir.mkdir(parents=True, exist_ok=False)
     os.chmod(job_dir, 0o700)
+    max_bytes = await ds.get_int("migration.max_upload_bytes", default=_DEFAULT_MAX_UPLOAD_BYTES)
 
-    for f in files:
-        # Sanitize filename to prevent path traversal
-        raw_name = f.filename or f"upload_{uuid.uuid4().hex[:8]}"
-        safe_name = Path(raw_name).name  # strip any directory components
-        if not safe_name or safe_name in (".", ".."):
-            safe_name = f"upload_{uuid.uuid4().hex[:8]}"
-        dest = job_dir / safe_name
-
-        # Enforce the limit while streaming so a multi-gigabyte migration does
-        # not need to fit in API process memory.
-        max_bytes = await ds.get_int("migration.max_upload_bytes", default=_DEFAULT_MAX_UPLOAD_BYTES)
-        written = 0
-        try:
-            with dest.open("wb") as handle:
-                while chunk := await f.read(1024 * 1024):
-                    written += len(chunk)
-                    if written > max_bytes:
+    try:
+        for file in files:
+            safe_name = Path(file.filename or "").name
+            destination = job_dir / safe_name
+            bytes_written = 0
+            await file.seek(0)
+            with open(destination, "xb") as output:
+                os.chmod(destination, 0o600)
+                while chunk := await file.read(_UPLOAD_COPY_CHUNK_BYTES):
+                    bytes_written += len(chunk)
+                    if bytes_written > max_bytes:
                         raise HTTPException(status_code=422, detail=f"File '{safe_name}' exceeds maximum upload size")
-                    handle.write(chunk)
-            os.chmod(dest, 0o600)
-        except Exception:
-            import shutil
-
-            shutil.rmtree(job_dir, ignore_errors=True)
-            raise
-
-    return job_dir
+                    output.write(chunk)
+                output.flush()
+                os.fsync(output.fileno())
+        return job_dir
+    except BaseException:
+        # asyncio cancellation is a BaseException on supported Python versions;
+        # remove partially copied artifacts when clients disconnect mid-upload.
+        shutil.rmtree(job_dir, ignore_errors=True)
+        raise
 
 
 def _job_to_response(job: MigrationJob) -> MigrationJobResponse:

@@ -80,7 +80,8 @@ observal server migrate duckdb \
   --export-dir ./telemetry-export
 ```
 
-The command exports Parquet partitions, loads them into the analytics service,
+The command exports bounded Parquet chunks (so total telemetry size is not
+limited by ClickHouse query memory), loads them into the analytics service,
 and verifies checksums plus per-table row counts. It is idempotent per export,
 never modifies the ClickHouse source, and has no reverse direction.
 
