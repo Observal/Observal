@@ -543,6 +543,33 @@ def test_agent_init_from_capabilities_prefills_components(monkeypatch, tmp_path,
     assert "Assembled from 2 resource(s)" in saved["description"]
 
 
+def test_agent_init_from_capabilities_stays_interactive_with_inferred_harness(monkeypatch, tmp_path, _agent_boundaries):
+    monkeypatch.chdir(tmp_path)
+    capability_lock.record(
+        kind="skill",
+        mode="context",
+        source="discover-cli",
+        harness="kiro",
+        cwd=tmp_path,
+        identifier=URN,
+        component_id=ENTITY,
+        native_ref="acme/security-review@1.2.0",
+        version="1.2.0",
+        now=datetime.now(UTC),
+    )
+
+    result = runner.invoke(
+        agent.agent_app,
+        ["init", "--dir", str(tmp_path / "out"), "--from-capabilities"],
+        input="my-agent\n\nReview pull requests.\n\nFollow the review checklist.\n",
+    )
+
+    assert result.exit_code == 0, result.output
+    saved = yaml.safe_load((tmp_path / "out" / agent.YAML_FILE).read_text(encoding="utf-8"))
+    assert saved["supported_harnesses"] == ["kiro"]
+    assert saved["components"] == [{"component_type": "skill", "component_id": ENTITY}]
+
+
 def test_agent_init_from_capabilities_with_empty_lock_is_not_found(monkeypatch, tmp_path, _agent_boundaries):
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(agent.agent_app, ["init", "--from-capabilities", "--name", "x", "--output", "json"])

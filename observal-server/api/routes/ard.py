@@ -27,7 +27,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from loguru import logger as optic
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import services.dynamic_settings as ds
@@ -286,7 +286,9 @@ def _apply_list_filter(stmt, expression: str | None):
         elif field in ("publisherid", "publisher"):
             stmt = stmt.where(DiscoveryEntry.publisher_domain.in_([v.lower() for v in raw_values]))
         elif field == "displayname":
-            stmt = stmt.where(func.lower(DiscoveryEntry.display_name).like(f"%{raw_values[0].lower()}%"))
+            stmt = stmt.where(
+                or_(*[func.lower(DiscoveryEntry.display_name).like(f"%{value.lower()}%") for value in raw_values])
+            )
         elif field in ("obs:kind", "kind"):
             stmt = stmt.where(DiscoveryEntry.kind.in_(raw_values))
         elif field == "createdafter":

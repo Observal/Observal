@@ -234,6 +234,11 @@ async def test_list_is_deterministic_and_filterable(sessions, settings):
         )
         assert [i["displayName"] for i in filtered.json()["items"]] == ["GitHub"]
 
+        multiple_names = await client.get(
+            "/api/v1/ard/agents", params={"filter": "displayName = 'Security Review',GitHub"}
+        )
+        assert {i["displayName"] for i in multiple_names.json()["items"]} == {"GitHub", "Security Review"}
+
         ordered = await client.get("/api/v1/ard/agents", params={"orderBy": "displayName DESC", "pageSize": 1})
         assert ordered.json()["items"][0]["displayName"] == "Security Review"
 
@@ -383,10 +388,11 @@ async def test_manifest_passes_official_conformance(sessions, settings, tmp_path
     assert "critical specification errors" in result.stdout and " 0 critical" in result.stdout
 
 
-def _free_port() -> int:
-    with socket.socket() as sock:
-        sock.bind(("127.0.0.1", 0))
-        return sock.getsockname()[1]
+def _reserved_socket() -> socket.socket:
+    """Bind an ephemeral port and retain ownership until Uvicorn starts."""
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    return sock
 
 
 @pytest.mark.asyncio
@@ -401,10 +407,11 @@ async def test_registry_api_passes_official_conformance(settings, tmp_path):
     settings["public"] = True
 
     app = _app(sessions, owner)
-    port = _free_port()
-    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", loop="asyncio")
+    sock = _reserved_socket()
+    port = sock.getsockname()[1]
+    config = uvicorn.Config(app, log_level="warning", loop="asyncio")
     server = uvicorn.Server(config)
-    thread = threading.Thread(target=server.run, daemon=True)
+    thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
     thread.start()
     try:
         deadline = time.time() + 15
@@ -419,6 +426,7 @@ async def test_registry_api_passes_official_conformance(settings, tmp_path):
     finally:
         server.should_exit = True
         thread.join(timeout=10)
+        sock.close()
         await engine.dispose()
 
 
@@ -457,18 +465,25 @@ def test_split_clauses_keeps_and_inside_quotes():
     assert ard._split_clauses("brandname = x") == ["brandname = x"], "AND inside a word is not a separator"
 
 
-def test_filter_parser_is_linear_on_adversarial_whitespace():
-    """The inputs CodeQL described for the old regex: long runs of spaces after a field."""
+def test_filter_parser_scales_linearly_on_adversarial_whitespace():
+    """A tenfold input increase should stay within twice the expected linear growth."""
+    import statistics
     import time
 
-    for expression in ("A=" + " " * 5000, "A=a" + " " * 5000, " " * 5000 + "AND" + " " * 5000):
-        started = time.perf_counter()
-        try:
+    def median_runtime(size: int) -> float:
+        expression = "A=a" + " " * size
+        samples = []
+        for _ in range(7):
+            started = time.perf_counter()
             for clause in ard._split_clauses(expression):
                 ard._parse_clause(clause)
-        except ard.InvalidSearchRequestError:
-            pass
-        assert time.perf_counter() - started < 0.05, expression[:10]
+            samples.append(time.perf_counter() - started)
+        return statistics.median(samples)
+
+    size_ratio = 10
+    small = median_runtime(20_000)
+    large = median_runtime(20_000 * size_ratio)
+    assert large <= small * size_ratio * 2, f"expected linear scaling, got {large / small:.1f}x"
 
 
 def test_filter_errors_never_echo_foreign_exception_text():

@@ -1200,6 +1200,10 @@ def agent_init(
     dir_path = Path(directory)
     yaml_path = dir_path / YAML_FILE
 
+    flag_mode = any(
+        value is not None
+        for value in (name, version, description, model_name, prompt, prompt_file, supported_harnesses)
+    )
     captured: list[dict] = []
     captured_harnesses: list[str] = []
     skipped_agents: list[str] = []
@@ -1222,10 +1226,7 @@ def agent_init(
         if not supported_harnesses and captured_harnesses:
             supported_harnesses = captured_harnesses
 
-    if output == "json" and not any(
-        value is not None
-        for value in (name, version, description, model_name, prompt, prompt_file, supported_harnesses)
-    ):
+    if output == "json" and not flag_mode:
         fail(
             ErrorCategory.VALIDATION,
             "JSON mode cannot run the interactive agent initializer.",
@@ -1247,9 +1248,6 @@ def agent_init(
             raise typer.Abort()
 
     default_version = "0.1.0" if beta else "1.0.0"
-    flag_mode = any(
-        x is not None for x in (name, version, description, model_name, prompt, prompt_file, supported_harnesses)
-    )
     if flag_mode:
         if not name or not description or not (prompt or prompt_file):
             fail(
@@ -1292,7 +1290,9 @@ def agent_init(
         description = text_input("Description")
         model_name = text_input("Model name", default="claude-sonnet-4")
         prompt_text = text_input("System prompt")
-        harnesses = list(VALID_HARNESSES)
+        harnesses = _validate_harnesses(
+            supported_harnesses or list(VALID_HARNESSES), operation="Initialize agent definition"
+        )
 
     name = _slugify(raw_name)
     if name != raw_name:
