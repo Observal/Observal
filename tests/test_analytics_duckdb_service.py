@@ -432,6 +432,145 @@ async def test_export_covers_every_telemetry_table_including_summaries(tmp_path)
         await store.close()
 
 
+async def test_export_scans_each_table_once_and_ignores_the_query_timeout(tmp_path, monkeypatch):
+    """Multi-month exports must not re-scan the table per month, and are unbounded.
+
+    Regression: the export used to run under the interactive query deadline and
+    re-scanned the source table once per month plus a count and a NULL check.
+    """
+    executed: list[str] = []
+    guard_calls: list[bool] = []
+    original_guard = AnalyticsStore._guard
+
+    async def _spy_guard(self, con, work, *, enforce_timeout: bool = True):
+        guard_calls.append(enforce_timeout)
+        return await original_guard(self, con, work, enforce_timeout=enforce_timeout)
+
+    class _RecordingConnection:
+        def __init__(self, con):
+            self._con = con
+
+        def execute(self, sql, *args, **kwargs):
+            executed.append(sql)
+            return self._con.execute(sql, *args, **kwargs)
+
+        def __getattr__(self, name):
+            return getattr(self._con, name)
+
+    monkeypatch.setattr(AnalyticsStore, "_guard", _spy_guard)
+    store = AnalyticsStore(path=tmp_path / "analytics.duckdb", read_connections=1)
+    await store.start()
+    try:
+        await run_migrations(store)
+        rows = []
+        for month in ("2026-01", "2026-02", "2026-03"):
+            for offset in range(3):
+                rows.append(
+                    {
+                        "session_id": f"sess-{month}-{offset}",
+                        "project_id": "default",
+                        "user_id": "user-1",
+                        "harness": "pi",
+                        "line_offset": offset,
+                        "event_type": "user_prompt",
+                        "timestamp": f"{month}-01 10:00:0{offset}.000",
+                        "raw_line": "{}",
+                    }
+                )
+        await store.insert("session_events", rows)
+        store._writer = _RecordingConnection(store._writer)
+
+        destination = tmp_path / "export"
+        guard_calls.clear()
+        counts = await store.export_parquet(str(destination), ["session_events"])
+
+        assert counts == {"session_events": 9}
+        assert guard_calls == [False], "administrative exports must not be time-boxed"
+        table_reads = [sql for sql in executed if "FROM session_events" in sql]
+        assert len(table_reads) == 1, f"table scanned {len(table_reads)} times: {table_reads}"
+        assert [p.name for p in sorted(destination.glob("*.parquet"))] == [
+            "session_events_2026-01.parquet",
+            "session_events_2026-02.parquet",
+            "session_events_2026-03.parquet",
+        ]
+        assert not list(destination.glob(".*")), "partition staging directory must be removed"
+    finally:
+        await store.close()
+
+
+async def test_export_round_trips_into_a_fresh_store(tmp_path):
+    """Exported files load back with the same rows, partition column and all."""
+    source = AnalyticsStore(path=tmp_path / "source.duckdb", read_connections=1)
+    target = AnalyticsStore(path=tmp_path / "target.duckdb", read_connections=1)
+    await source.start()
+    await target.start()
+    try:
+        await run_migrations(source)
+        await run_migrations(target)
+        await source.insert(
+            "session_events",
+            [
+                {
+                    "session_id": f"sess-{month}",
+                    "project_id": "default",
+                    "user_id": "user-1",
+                    "harness": "pi",
+                    "line_offset": 0,
+                    "event_type": "user_prompt",
+                    "timestamp": f"{month}-01 10:00:00.000",
+                    "raw_line": '{"type":"user"}',
+                }
+                for month in ("2026-01", "2026-02", "2026-03")
+            ],
+        )
+        destination = tmp_path / "export"
+        counts = await source.export_parquet(str(destination), ["session_events"])
+
+        loaded = await target.load_parquet(
+            "session_events", [str(path) for path in sorted(destination.glob("*.parquet"))]
+        )
+        assert counts == {"session_events": 3}
+        assert loaded == 3
+        _, rows = await target.query("SELECT session_id, raw_line FROM session_events ORDER BY session_id")
+        assert rows == [
+            ("sess-2026-01", '{"type":"user"}'),
+            ("sess-2026-02", '{"type":"user"}'),
+            ("sess-2026-03", '{"type":"user"}'),
+        ]
+    finally:
+        await source.close()
+        await target.close()
+
+
+async def test_export_writes_null_time_rows_to_their_own_file(tmp_path):
+    store = AnalyticsStore(path=tmp_path / "analytics.duckdb", read_connections=1)
+    await store.start()
+    try:
+        await run_migrations(store)
+        await store.insert(
+            "session_stats_agg",
+            [
+                {
+                    "project_id": "default",
+                    "session_id": "sess-1",
+                    "user_id": "user-1",
+                    "harness": "pi",
+                    "first_event_time": None,
+                    "event_count": 1,
+                    "summary_version": 0,
+                }
+            ],
+        )
+        destination = tmp_path / "export"
+        counts = await store.export_parquet(str(destination), ["session_stats_agg"])
+
+        assert counts == {"session_stats_agg": 1}
+        assert (destination / "session_stats_agg_null.parquet").exists()
+        assert list(destination.glob("session_stats_agg_20*.parquet")) == []
+    finally:
+        await store.close()
+
+
 async def test_bulk_load_preserves_store_owned_timestamps(tmp_path):
     checkpoint_path = tmp_path / "session_checkpoints_2026-09.parquet"
     pq.write_table(

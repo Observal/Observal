@@ -55,6 +55,12 @@ Two earlier attempts are abandoned:
 | ``{name:Type}`` query parameters | service-side named parameters (``$name``) |
 | ``countIf/sumIf/anyIf/minIf/maxIf/anyLastIf`` | ``COUNT(*) FILTER (WHERE ...)``, ``MIN/MAX(...) FILTER``, ``arg_max`` |
 
+Exports keep the ClickHouse exporter's monthly layout (``<table>_<YYYY>-<MM>.parquet``).
+The service writes them with a single partitioned ``COPY``, so each file also
+carries the partition value as ``_analytics_month``; importers select the
+declared table columns and ignore it. Rows whose time column is NULL land in
+``<table>_null.parquet``.
+
 ## Consequences
 
 - One writer process keeps DuckDB honest; no shared volume between services.

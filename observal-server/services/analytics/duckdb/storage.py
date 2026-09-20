@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import asyncio
 import fcntl
+import re
+import shutil
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -523,6 +525,13 @@ class AnalyticsStore:
         Mirrors the ClickHouse exporter's layout (``<table>_<YYYY>-<MM>.parquet``)
         so the same manifest, import and validation code consume the result.
         Returns per-table row counts.
+
+        Each table is scanned exactly once. DuckDB's partitioned COPY writes one
+        file per month in a single pass; filtering the table once per month
+        instead re-reads the whole table for every month of history. The
+        partition value also lands inside the file as ``_analytics_month`` -
+        the loaders select the table's declared columns, so the extra column is
+        ignored on import.
         """
         target = Path(destination)
         target.mkdir(parents=True, exist_ok=True)
@@ -544,37 +553,54 @@ class AnalyticsStore:
                     connection: duckdb.DuckDBPyConnection = con,
                     table_name: str = table,
                     time_col: str = time_column,
+                    destination: Path = target,
                 ) -> int:
-                    bounds = connection.execute(f"SELECT count(*) AS n FROM {table_name}").fetchone()
-                    total = int(bounds[0] or 0)
-                    if total == 0:
-                        return 0
-                    months = connection.execute(
-                        f"SELECT DISTINCT strftime(CAST({time_col} AS DATE), '%Y-%m') AS month "
-                        f"FROM {table_name} WHERE {time_col} IS NOT NULL ORDER BY month"
-                    ).fetchall()
-                    for (month,) in months:
-                        base = Path(destination) / f"{table_name}_{month}.parquet"
-                        escaped = str(base).replace("'", "''")
+                    parts = destination / f".{table_name}.parts"
+                    parts.mkdir(parents=True, exist_ok=True)
+                    escaped_parts = str(parts).replace("'", "''")
+                    try:
                         connection.execute(
-                            f"COPY (SELECT * FROM {table_name} "
-                            f"WHERE strftime(CAST({time_col} AS DATE), '%Y-%m') = '{month}') "
-                            f"TO '{escaped}' (FORMAT PARQUET)"
+                            f"COPY (SELECT *, strftime(CAST({time_col} AS DATE), '%Y-%m') AS _analytics_month "
+                            f"FROM {table_name}) "
+                            f"TO '{escaped_parts}' (FORMAT PARQUET, PARTITION_BY (_analytics_month))"
                         )
-                    # Rows with a NULL time column would otherwise be counted in
-                    # the manifest but never written, so they get their own file.
-                    unpartitioned = int(
-                        connection.execute(f"SELECT count(*) FROM {table_name} WHERE {time_col} IS NULL").fetchone()[0]
-                        or 0
-                    )
-                    if unpartitioned:
-                        base = Path(destination) / f"{table_name}_null.parquet"
-                        escaped = str(base).replace("'", "''")
-                        connection.execute(
-                            f"COPY (SELECT * FROM {table_name} WHERE {time_col} IS NULL) "
-                            f"TO '{escaped}' (FORMAT PARQUET)"
-                        )
-                    return total
+                        total = 0
+                        for partition in sorted(parts.iterdir()):
+                            if not partition.is_dir():
+                                continue
+                            # DuckDB names partitions "<column>=<value>" and writes
+                            # the NULL bucket as __HIVE_DEFAULT_PARTITION__, which
+                            # becomes the exporter's "<table>_null.parquet".
+                            value = partition.name.split("=", 1)[-1]
+                            month = value if re.fullmatch(r"\d{4}-\d{2}", value) else "null"
+                            target_file = destination / f"{table_name}_{month}.parquet"
+                            chunks = sorted(partition.glob("*.parquet"))
+                            if not chunks:
+                                continue
+                            if len(chunks) == 1:
+                                chunks[0].replace(target_file)
+                            else:
+                                # A partition DuckDB flushed more than once still
+                                # has to arrive as one file per month.
+                                escaped_chunk_dir = str(partition).replace("'", "''")
+                                escaped_target = str(target_file).replace("'", "''")
+                                connection.execute(
+                                    f"COPY (SELECT * FROM read_parquet('{escaped_chunk_dir}/*.parquet')) "
+                                    f"TO '{escaped_target}' (FORMAT PARQUET)"
+                                )
+                            escaped_target = str(target_file).replace("'", "''")
+                            total += int(
+                                connection.execute(f"SELECT count(*) FROM read_parquet('{escaped_target}')").fetchone()[
+                                    0
+                                ]
+                                or 0
+                            )
+                        return total
+                    finally:
+                        shutil.rmtree(parts, ignore_errors=True)
 
-                counts[table] = await self._guard(con, _export)
+                # Instance moves and backups legitimately exceed the interactive
+                # query deadline on multi-million-row tables; only process
+                # shutdown bounds an administrative export.
+                counts[table] = await self._guard(con, _export, enforce_timeout=False)
         return counts
