@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import importlib.util
+import inspect
 import os
 import sys
 import uuid
@@ -129,6 +130,15 @@ skip_if_no_module = pytest.mark.skipif(_migrate_mod is None, reason="Cannot load
 
 class TestStartEndpoints:
     """Start endpoints return 202 with a job_id."""
+
+    @skip_if_no_module
+    @pytest.mark.parametrize("endpoint_name", ["start_import", "start_validate"])
+    def test_upload_scope_is_read_from_multipart_form(self, endpoint_name):
+        """The UI sends scope in FormData, not in the query string."""
+        from fastapi.params import Form
+
+        endpoint = getattr(_migrate_mod, endpoint_name)
+        assert isinstance(inspect.signature(endpoint).parameters["scope"].default, Form)
 
     @skip_if_no_module
     @pytest.mark.asyncio

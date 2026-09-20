@@ -243,6 +243,46 @@ def test_manifest_accepts_complete_chunk_metadata(tmp_path):
     assert chunks["session_events"][0]["row_count"] == 1
 
 
+def test_manifest_normalizes_legacy_monthly_exports(tmp_path):
+    parquet_path = tmp_path / "session_events_2026-09.parquet"
+    pq.write_table(pa.table({"project_id": ["source"], "value": [1]}), parquet_path)
+    checksum = hashlib.sha256(parquet_path.read_bytes()).hexdigest()
+    tables = {
+        config["name"]: {"files": [], "row_count": 0, "checksum": {}, "time_range": None}
+        for config in CLICKHOUSE_TABLES
+    }
+    tables["session_events"] = {
+        "files": [parquet_path.name],
+        "row_count": 1,
+        "checksum": {parquet_path.name: checksum},
+        "time_range": {"min": "2026-09-01 00:00:00", "max": "2026-09-30 23:59:59"},
+    }
+    manifest = {
+        "migration_id": "legacy-migration",
+        "phase": "deep_copy",
+        "phase_status": "export_complete",
+        "export_time_cutoff": "2026-10-01 00:00:00.000",
+        "tables": tables,
+    }
+
+    chunks = validate_telemetry_manifest(manifest, tmp_path)
+
+    assert chunks["session_events"] == [
+        {
+            "chunk_id": "legacy:session_events:202609",
+            "range_start": "2026-09-01 00:00:00",
+            "range_end": "2026-10-01 00:00:00",
+            "bucket": 0,
+            "shard_count": 1,
+            "row_count": 1,
+            "file": parquet_path.name,
+            "size_bytes": parquet_path.stat().st_size,
+            "sha256": checksum,
+            "legacy": True,
+        }
+    ]
+
+
 def test_manifest_accepts_early_v2_sub_millisecond_chunk_ids(tmp_path):
     manifest = _manifest_with_one_chunk(tmp_path)
     chunk = manifest["tables"]["session_events"]["chunks"][0]
