@@ -9,7 +9,6 @@ timestamp helpers, migrations, and resource tuning.
 
 from services.analytics.duckdb._settings import _resource_overrides
 from services.analytics.duckdb.client import (
-    ANALYTICS_DB,
     ANALYTICS_HTTP,
     ANALYTICS_TOKEN,
     _apply_pragmas,
@@ -49,7 +48,6 @@ from services.analytics.duckdb.schema import (
 duckdb_health = analytics_health
 
 __all__ = [
-    "ANALYTICS_DB",
     "ANALYTICS_HTTP",
     "ANALYTICS_TOKEN",
     "RESOURCE_SETTINGS_MAP",

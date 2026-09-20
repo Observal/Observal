@@ -37,6 +37,33 @@ from services.analytics.duckdb._settings import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+_DML_VERBS = frozenset({"INSERT", "UPDATE", "DELETE", "MERGE", "REPLACE"})
+_SQL_NOISE = (
+    re.compile(r"'(?:[^']|'')*'"),
+    re.compile(r'"(?:[^"]|"")*"'),
+    re.compile(r"--[^\n]*"),
+    re.compile(r"/\*.*?\*/", re.DOTALL),
+)
+
+
+def _statement_verb(sql: str) -> str:
+    """Return the statement's verb, looking through a leading WITH clause.
+
+    ``/execute`` reports an affected-row count only for DML; a naive first-token
+    check misses ``WITH ... DELETE`` (and would be fooled by a verb inside a
+    string literal or comment).
+    """
+    stripped = sql
+    for pattern in _SQL_NOISE:
+        stripped = pattern.sub(" ", stripped)
+    tokens = re.findall(r"[A-Za-z_]+", stripped)
+    if not tokens:
+        return ""
+    if tokens[0].upper() != "WITH":
+        return tokens[0].upper()
+    return next((token.upper() for token in tokens[1:] if token.upper() in _DML_VERBS), "WITH")
+
+
 # Arrow carriers for DuckDB column types.  Timestamps stay text so DuckDB
 # applies exactly the same TIMESTAMP conversion as parameterized inserts, and
 # unsigned columns keep their full range (int64 inference would overflow).
@@ -113,6 +140,7 @@ class AnalyticsStore:
 
         self._writer: duckdb.DuckDBPyConnection | None = None
         self._readers: asyncio.Queue[duckdb.DuckDBPyConnection] | None = None
+        self._reader_connections: list[duckdb.DuckDBPyConnection] = []
         self._write_lock = asyncio.Lock()
         self._lock_file = None
         self._started = False
@@ -132,7 +160,9 @@ class AnalyticsStore:
             ) from e
         self._readers = asyncio.Queue()
         for _ in range(self.read_connections):
-            await self._readers.put(await asyncio.to_thread(self._connect))
+            connection = await asyncio.to_thread(self._connect)
+            self._reader_connections.append(connection)
+            await self._readers.put(connection)
         await self.apply_pragmas(self._baseline_pragmas())
         self._started = True
         optic.info(
@@ -150,6 +180,7 @@ class AnalyticsStore:
                 optic.debug("closing DuckDB connection failed: {}", e)
         self._writer = None
         self._readers = None
+        self._reader_connections.clear()
         self._started = False
         if self._lock_file is not None:
             try:
@@ -193,23 +224,35 @@ class AnalyticsStore:
         connections: list[duckdb.DuckDBPyConnection] = []
         if self._writer is not None:
             connections.append(self._writer)
-        if self._readers is not None:
-            connections.extend(list(self._readers._queue))
+        # Readers are tracked explicitly: a connection checked out of the pool
+        # still needs the pragmas (TimeZone is per-connection) and must be
+        # closed on shutdown, and asyncio.Queue._queue is private API.
+        connections.extend(self._reader_connections)
         return connections
 
     # ── pragmas and admin ────────────────────────────────────────────────────
 
-    async def apply_pragmas(self, pragmas: dict[str, str]) -> None:
+    async def apply_pragmas(self, pragmas: dict[str, str]) -> list[str]:
+        """Apply settings to the writer and every reader connection.
+
+        Returns the names that were applied. Names that are not plain
+        identifiers are skipped - they cannot be interpolated into SET - so
+        callers can report exactly what took effect.
+        """
         if not pragmas:
-            return
+            return []
+        applied: list[str] = []
         for pragma, value in pragmas.items():
             if not pragma.replace("_", "").isalnum():
+                optic.warning("skipping analytics pragma with an invalid name: {}", pragma)
                 continue
             quoted = value.replace("'", "''")
             statement = f"SET {pragma} = '{quoted}'"
             async with self._write_lock:
                 for con in self._all_connections():
                     await asyncio.to_thread(con.execute, statement)
+            applied.append(pragma)
+        return applied
 
     async def checkpoint(self) -> None:
         async with self._write_lock:
@@ -472,8 +515,7 @@ class AnalyticsStore:
             if not fetch:
                 # DuckDB reports the affected-row count as a one-column result
                 # set for DML, which is what the /execute contract returns.
-                verb = sql.lstrip().split(None, 1)[0].upper() if sql.strip() else ""
-                if verb in {"INSERT", "UPDATE", "DELETE", "MERGE", "REPLACE"} and result.description:
+                if _statement_verb(sql) in _DML_VERBS and result.description:
                     affected = result.fetchall()
                     count = int(affected[0][0]) if affected and affected[0] and affected[0][0] is not None else 0
                     return [], [(count,)]

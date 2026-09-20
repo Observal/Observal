@@ -293,6 +293,9 @@ class Orchestrator:
         console.print("[blue]==>[/blue] Starting DuckDB analytics service...")
         optic.info("starting DuckDB analytics service")
 
+        # start() ran the DuckDB migrations in this process before the service
+        # was launched, so the service boots with migrations disabled.
+        env = {**self._build_env(), "DUCKDB_MIGRATE_ON_START": "0"}
         log_handle = (LOG_DIR / "analytics-startup.log").open("w")
         self._log_handles.append(log_handle)
         proc = subprocess.Popen(
@@ -307,7 +310,7 @@ class Orchestrator:
                 str(ANALYTICS_HTTP_PORT),
             ],
             cwd=str(self._find_server_dir()),
-            env=self._build_env(),
+            env=env,
             stdout=log_handle,
             stderr=subprocess.STDOUT,
             start_new_session=True,
@@ -752,9 +755,22 @@ class Orchestrator:
             embedded_legacy = _cutover.detect_embedded_legacy()
             if _cutover.stop_orphan_embedded_clickhouse(embedded_legacy, lambda m: console.print(f"[dim]{m}[/dim]")):
                 optic.info("stopped orphaned embedded ClickHouse before analytics start")
+            if embedded_legacy.data_without_binary:
+                console.print(
+                    f"[yellow]ClickHouse data found at {embedded_legacy.data_dir} but "
+                    f"{embedded_legacy.binary} is missing; the embedded cutover cannot run "
+                    "and that telemetry will not be migrated.[/yellow]"
+                )
+                optic.warning(
+                    "embedded ClickHouse data present without a binary: {} (binary {} missing)",
+                    embedded_legacy.data_dir,
+                    embedded_legacy.binary,
+                )
 
-            # Migrations run before the analytics service starts so it owns the
-            # database file exclusively from then on.
+            # Migrations run here, before the analytics service starts, so a
+            # failed migration is reported by the CLI; the service is then
+            # started with DUCKDB_MIGRATE_ON_START=0 to avoid applying them
+            # twice.
             self.run_migrations()
 
             self.start_analytics()

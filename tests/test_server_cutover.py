@@ -654,6 +654,26 @@ def test_embedded_detection_and_orphan_stop(tmp_path: Path, monkeypatch) -> None
     assert not legacy.pid_file.exists()
 
 
+def test_embedded_data_without_binary_is_flagged(tmp_path: Path, monkeypatch) -> None:
+    """ClickHouse data with no binary left must be reported, not skipped silently."""
+    from observal_cli.server import constants
+
+    root = tmp_path / ".observal"
+    for name in ("BIN_DIR", "DATA_DIR", "CONFIG_DIR", "LOG_DIR", "RUN_DIR"):
+        monkeypatch.setattr(constants, name, root / name.lower())
+
+    legacy = cutover.detect_embedded_legacy()
+    legacy.data_dir.mkdir(parents=True)
+    legacy.binary.parent.mkdir(parents=True, exist_ok=True)
+
+    detected = cutover.detect_embedded_legacy()
+    assert detected.present is False
+    assert detected.data_without_binary is True
+
+    legacy.binary.write_text("")
+    assert cutover.detect_embedded_legacy().data_without_binary is False
+
+
 def test_compose_project_name_prefers_env_then_directory(tmp_path, monkeypatch) -> None:
     compose_dir = tmp_path / "My Deploy"
     compose_dir.mkdir()

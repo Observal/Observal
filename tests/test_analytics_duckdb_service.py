@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 from services.analytics.duckdb.client import _normalize_ts
 from services.analytics.duckdb.migrations import MigrationError, run_migrations
 from services.analytics.duckdb.service import ServiceSettings, create_app
-from services.analytics.duckdb.storage import AnalyticsStore
+from services.analytics.duckdb.storage import AnalyticsStore, _statement_verb
 
 TOKEN = "test-analytics-token"
 
@@ -570,6 +570,41 @@ async def test_export_writes_null_time_rows_to_their_own_file(tmp_path):
         assert list(destination.glob("session_stats_agg_20*.parquet")) == []
     finally:
         await store.close()
+
+
+def test_statement_verb_looks_through_with_clauses():
+    """`WITH ... DELETE` reports an affected-row count; a verb inside a literal does not."""
+    assert _statement_verb("DELETE FROM session_events WHERE line_offset = 1") == "DELETE"
+    assert _statement_verb("-- comment\nINSERT INTO t VALUES (1)") == "INSERT"
+    assert (
+        _statement_verb(
+            "WITH doomed AS (SELECT 1 AS id) DELETE FROM session_events WHERE line_offset IN (SELECT id FROM doomed)"
+        )
+        == "DELETE"
+    )
+    assert _statement_verb("WITH x AS (SELECT 'DELETE' AS word) SELECT * FROM x") == "WITH"
+    assert _statement_verb("   ") == ""
+
+
+async def test_apply_pragmas_reports_applied_names_and_covers_checked_out_readers(tmp_path):
+    store = AnalyticsStore(path=tmp_path / "analytics.duckdb", read_connections=2)
+    await store.start()
+    try:
+        reader = await store._readers.get()
+        assert reader in store._all_connections(), "a checked-out reader still needs pragmas and closing"
+
+        applied = await store.apply_pragmas({"threads": "2", "not a pragma": "1"})
+
+        assert applied == ["threads"]
+    finally:
+        await store.close()
+
+
+def test_pragmas_endpoint_reports_only_applied_names(client):
+    response = client.post("/admin/pragmas", headers=_auth(), json={"pragmas": {"threads": "2", "bad name!": "x"}})
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok", "applied": ["threads"]}
 
 
 async def test_bulk_load_preserves_store_owned_timestamps(tmp_path):

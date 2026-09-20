@@ -756,6 +756,16 @@ class EmbeddedLegacy:
     def present(self) -> bool:
         return self.binary.is_file() and self.data_dir.is_dir() and not self.marker_path.exists()
 
+    @property
+    def data_without_binary(self) -> bool:
+        """ClickHouse data is on disk but the binary that could serve it is gone.
+
+        The embedded CLI used to download the binary into ``~/.observal/bin``;
+        an installation that removed it (or moved the data directory) would
+        otherwise skip the cutover silently and leave its telemetry behind.
+        """
+        return self.data_dir.is_dir() and not self.binary.is_file() and not self.marker_path.exists()
+
 
 def detect_embedded_legacy() -> EmbeddedLegacy:
     from observal_cli.server.constants import BIN_DIR, CONFIG_DIR, DATA_DIR, LOG_DIR, RUN_DIR
@@ -810,6 +820,10 @@ def _embedded_cutover_config(legacy: EmbeddedLegacy) -> Path:
     data = legacy.data_dir
     conf = legacy.config_dir / "clickhouse-cutover.xml"
     conf.parent.mkdir(parents=True, exist_ok=True)
+    # The throwaway instance runs for the duration of the export only. It binds
+    # loopback (listen_host plus the users/networks entry below), so the default
+    # user keeps the empty password the legacy binary shipped with - it is never
+    # reachable off-host.
     conf.write_text(
         f"""<?xml version="1.0"?>
 <clickhouse>

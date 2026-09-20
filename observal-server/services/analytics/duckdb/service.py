@@ -220,8 +220,8 @@ def create_app(store: AnalyticsStore | None = None, settings: ServiceSettings | 
 
     @app.post("/admin/pragmas", dependencies=[Depends(require_token)])
     async def pragmas(payload: PragmaRequest) -> dict:
-        await store.apply_pragmas(payload.pragmas)
-        return {"status": "ok", "applied": sorted(payload.pragmas)}
+        applied = await store.apply_pragmas(payload.pragmas)
+        return {"status": "ok", "applied": sorted(applied)}
 
     @app.post("/admin/upload", dependencies=[Depends(require_token)])
     async def upload(files: Annotated[list[UploadFile], File()]) -> dict:

@@ -21,7 +21,6 @@ from config import settings
 
 _parsed = urlparse(settings.DUCKDB_ANALYTICS_URL.replace("duckdb://", "http://"))
 ANALYTICS_HTTP = f"http://{_parsed.hostname}:{_parsed.port or 8484}"
-ANALYTICS_DB = _parsed.path.strip("/") or "observal"
 ANALYTICS_TOKEN = settings.DUCKDB_ANALYTICS_TOKEN
 
 _client: httpx.AsyncClient | None = None

@@ -494,6 +494,9 @@ class TestAnalyticsLifecycle:
         orch.start_analytics()
 
         assert isolated_runtime.data["analytics"].is_dir()
+        # start() already applied the DuckDB migrations, so the service must not
+        # run them again on boot.
+        assert popen.call_args.kwargs["env"]["DUCKDB_MIGRATE_ON_START"] == "0"
         command = popen.call_args.args[0]
         assert command == [
             "/python",

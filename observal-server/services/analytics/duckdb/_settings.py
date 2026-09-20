@@ -116,7 +116,9 @@ ANALYTICS_TABLES: dict[str, tuple[str, ...]] = {
     ),
 }
 
-# Columns owned by the store itself (never accepted from callers).
+# Columns the store writes when it refreshes a session summary. They stay in
+# the session_stats_agg insert surface so migration loads and replays can carry
+# them, which is why the bulk loader uses the same list.
 SUMMARY_COLUMNS: tuple[str, ...] = (
     "project_id",
     "session_id",
