@@ -91,9 +91,6 @@ node_modules
 *.bak
 scripts/seed_demo.py
 .playwright-cli/
-# Playwright artifacts (e2e runs from tests/e2e)
-tests/e2e/test-results/
-tests/e2e/playwright-report/
 
 # Local analytics scratch: generated DuckDB files and benchmark outputs
 /data/
