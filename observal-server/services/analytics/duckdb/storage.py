@@ -38,6 +38,11 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 _DML_VERBS = frozenset({"INSERT", "UPDATE", "DELETE", "MERGE", "REPLACE"})
+# Export file names are built from caller-supplied table names and from the
+# partition directory DuckDB creates. Both are rebuilt from these patterns
+# before they touch a path, so no raw caller string ever reaches the filesystem.
+_SAFE_PATH_COMPONENT = re.compile(r"\A[A-Za-z0-9_]+\Z")
+_SAFE_MONTH = re.compile(r"\A\d{4}-\d{2}\Z")
 _SQL_NOISE = (
     re.compile(r"'(?:[^']|'')*'"),
     re.compile(r'"(?:[^"]|"")*"'),
@@ -586,14 +591,18 @@ class AnalyticsStore:
         for table in selected:
             columns = ANALYTICS_TABLES.get(table)
             time_column = ANALYTICS_TIME_COLUMNS.get(table)
-            if columns is None or time_column is None:
+            table_match = _SAFE_PATH_COMPONENT.fullmatch(table) if isinstance(table, str) else None
+            if columns is None or time_column is None or table_match is None:
                 continue
+            # Rebuilt from the validated pattern instead of reusing the caller's
+            # string, so the name that reaches the filesystem is never raw input.
+            table_name = table_match.group(0)
             async with self._write_lock:
                 con = self._require_writer()
 
                 def _export(
                     connection: duckdb.DuckDBPyConnection = con,
-                    table_name: str = table,
+                    table_name: str = table_name,
                     time_col: str = time_column,
                     destination: Path = target,
                 ) -> int:
@@ -614,8 +623,11 @@ class AnalyticsStore:
                             # the NULL bucket as __HIVE_DEFAULT_PARTITION__, which
                             # becomes the exporter's "<table>_null.parquet".
                             value = partition.name.split("=", 1)[-1]
-                            month = value if re.fullmatch(r"\d{4}-\d{2}", value) else "null"
+                            month_match = _SAFE_MONTH.fullmatch(value)
+                            month = month_match.group(0) if month_match else "null"
                             target_file = destination / f"{table_name}_{month}.parquet"
+                            if target_file.resolve().parent != target.resolve():
+                                continue
                             chunks = sorted(partition.glob("*.parquet"))
                             if not chunks:
                                 continue
@@ -624,10 +636,12 @@ class AnalyticsStore:
                             else:
                                 # A partition DuckDB flushed more than once still
                                 # has to arrive as one file per month.
-                                escaped_chunk_dir = str(partition).replace("'", "''")
+                                escaped_chunks = ", ".join(
+                                    "'" + str(chunk).replace("'", "''") + "'" for chunk in chunks
+                                )
                                 escaped_target = str(target_file).replace("'", "''")
                                 connection.execute(
-                                    f"COPY (SELECT * FROM read_parquet('{escaped_chunk_dir}/*.parquet')) "
+                                    f"COPY (SELECT * FROM read_parquet([{escaped_chunks}])) "
                                     f"TO '{escaped_target}' (FORMAT PARQUET)"
                                 )
                             escaped_target = str(target_file).replace("'", "''")

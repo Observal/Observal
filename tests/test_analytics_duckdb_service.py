@@ -572,6 +572,22 @@ async def test_export_writes_null_time_rows_to_their_own_file(tmp_path):
         await store.close()
 
 
+async def test_export_skips_table_names_that_are_not_plain_identifiers(tmp_path):
+    """Table names land in file paths, so anything outside the whitelist is skipped."""
+    store = AnalyticsStore(path=tmp_path / "analytics.duckdb", read_connections=1)
+    await store.start()
+    try:
+        await run_migrations(store)
+
+        destination = tmp_path / "export"
+        counts = await store.export_parquet(str(destination), ["../escape", "session/events", "session_events;DROP"])
+
+        assert counts == {}
+        assert list(destination.iterdir()) == []
+    finally:
+        await store.close()
+
+
 def test_statement_verb_looks_through_with_clauses():
     """`WITH ... DELETE` reports an affected-row count; a verb inside a literal does not."""
     assert _statement_verb("DELETE FROM session_events WHERE line_offset = 1") == "DELETE"
