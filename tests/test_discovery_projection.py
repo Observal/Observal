@@ -138,6 +138,17 @@ def test_pinned_domain_wins_over_public_url():
     assert ctx.publisher_domain == "new-host.example.com", "an invalid pin is ignored"
 
 
+def test_placeholder_identity_transitions_once_to_a_real_domain():
+    placeholder = ProjectionContext.from_public_url("http://localhost:8000")
+    configured = ProjectionContext.from_public_url("https://observal.acme.com", pinned_domain="")
+    pinned = ProjectionContext.from_public_url("https://moved.example.net", pinned_domain=configured.publisher_domain)
+
+    assert placeholder.publisher_domain == "observal.local"
+    assert configured.publisher_domain == "observal.acme.com"
+    assert pinned.publisher_domain == "observal.acme.com"
+    assert pinned.artifact_base_url == "https://moved.example.net"
+
+
 def test_projection_context_builds_artifact_urls():
     ctx = ProjectionContext.from_public_url("https://observal.acme.com/")
     entity = uuid.uuid4()

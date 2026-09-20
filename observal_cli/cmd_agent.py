@@ -1194,8 +1194,7 @@ def agent_init(
 
     Examples:
       observal agent init
-      observal agent init --dir ./my-agent
-      observal agent init --beta
+      observal agent init --dir ./my-agent --beta
       observal agent init --from-capabilities --name pr-review-flow --output json
     """
     dir_path = Path(directory)

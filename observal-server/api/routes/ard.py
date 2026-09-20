@@ -37,7 +37,7 @@ from models.discovery_entry import DiscoveryEntry, DiscoveryLifecycle
 from models.user import User
 from schemas.ard import ArdExploreRequest, ArdSearchRequest
 from services.discovery.identity import normalize_media_type, normalize_urn
-from services.discovery.projection import ProjectionContext
+from services.discovery.projection import PUBLISHER_DOMAIN_SETTING, ProjectionContext
 from services.discovery.search import (
     DEFAULT_PAGE_SIZE,
     MAX_PAGE_SIZE,
@@ -70,7 +70,10 @@ def _error(status: int, code: str, message: str) -> JSONResponse:
 
 
 async def _context() -> ProjectionContext:
-    return ProjectionContext.from_public_url(await ds.get("deployment.public_url", ""))
+    return ProjectionContext.from_public_url(
+        await ds.get("deployment.public_url", ""),
+        pinned_domain=await ds.get(PUBLISHER_DOMAIN_SETTING, ""),
+    )
 
 
 async def _public_search_enabled() -> bool:

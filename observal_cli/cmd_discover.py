@@ -43,8 +43,7 @@ discover_app = typer.Typer(
     help=(
         "Find approved resources for a task and use them in this session\n\n"
         "Examples:\n"
-        '  observal discover search "review a pull request for auth bugs"\n'
-        '  observal discover search "generate playwright tests" --type skill --output json\n'
+        '  observal discover search "review a pull request for auth bugs" --output json\n'
         "  observal discover inspect urn:air:observal.acme.com:skill:5f2c...\n"
         "  observal discover use urn:air:observal.acme.com:skill:5f2c..."
     ),

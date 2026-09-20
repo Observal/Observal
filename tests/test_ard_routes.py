@@ -44,12 +44,14 @@ def _disable_rate_limits():
 
 @pytest.fixture()
 def settings(monkeypatch):
-    """Patch dynamic settings: public URL fixed, public search toggled per test."""
-    state = {"public": False}
+    """Patch dynamic settings: public URL and publisher identity are mutable per test."""
+    state = {"public": False, "public_url": PUBLIC_URL, "publisher_domain": ""}
 
     async def fake_get(key, default=None):
         if key == "deployment.public_url":
-            return PUBLIC_URL
+            return state["public_url"]
+        if key == "discovery.publisher_domain":
+            return state["publisher_domain"]
         return default or ""
 
     async def fake_get_bool(key, default=None):
@@ -286,6 +288,18 @@ async def test_manifest_publishes_registry_entry_and_public_resources(sessions, 
 
         legacy = (await client.get("/.well-known/ai-catalog.json")).json()
         assert legacy == opened
+
+
+@pytest.mark.asyncio
+async def test_manifest_keeps_pinned_identity_when_public_url_moves(sessions, settings):
+    settings["publisher_domain"] = "observal.example.com"
+    settings["public_url"] = "https://moved.example.net"
+    async with _client(_app(sessions, None)) as client:
+        registry = (await client.get("/.well-known/ard.json")).json()["entries"][0]
+
+    assert registry["identifier"] == "urn:air:observal.example.com:registry:observal"
+    assert registry["trustManifest"] == {"identity": "https://observal.example.com", "identityType": "https"}
+    assert registry["url"] == "https://moved.example.net/api/v1/ard"
 
 
 # ── Artifacts ────────────────────────────────────────────────────────────
