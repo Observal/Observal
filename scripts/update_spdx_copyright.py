@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 """
 Pre-commit hook: ensures the committer's SPDX-FileCopyrightText line is present
@@ -98,7 +99,6 @@ def inject_copyright(path: Path, name: str, email: str, year: int):
         return
 
     prefix, suffix = style
-    new_line = f"{prefix}SPDX-FileCopyrightText: {year} {name} <{email}>{suffix}\n"
 
     raw = path.read_bytes()
     eol = b"\r\n" if b"\r\n" in raw[:1024] else b"\n"
@@ -106,19 +106,61 @@ def inject_copyright(path: Path, name: str, email: str, year: int):
 
     text = raw.decode("utf-8", errors="replace")
 
-    # Insert after the last existing SPDX-FileCopyrightText line
+    # Insert after the last SPDX-FileCopyrightText line of the leading comment
+    # block only. Files that generate SPDX headers (release tooling, manifest
+    # writers) mention the pattern inside strings further down; injecting there
+    # corrupts the source.
     lines = text.splitlines(keepends=True)
+    header_end = _header_block_end(lines, prefix)
+    header_has_copyright = any("SPDX-FileCopyrightText" in line for line in lines[:header_end])
+    if not header_has_copyright and _starts_with_comment(lines):
+        # Templates, Helm partials, SQL files and license sidecars use comment
+        # styles that do not match the extension-derived prefix, so fall back to
+        # the file-wide scan rather than silently skipping the injection. Files
+        # that do not start with a comment (e.g. generators whose strings merely
+        # mention SPDX) keep the header-only restriction.
+        header_end = len(lines)
     last_copyright_idx = -1
-    for i, line in enumerate(lines):
+    for i, line in enumerate(lines[:header_end]):
         if "SPDX-FileCopyrightText" in line:
             last_copyright_idx = i
 
     if last_copyright_idx == -1:
         return  # no existing copyright lines, skip
 
-    new_line_eol = new_line.rstrip("\r\n") + nl
-    lines.insert(last_copyright_idx + 1, new_line_eol)
+    matched = lines[last_copyright_idx]
+    marker_index = matched.index("SPDX-FileCopyrightText")
+    actual_prefix = matched[:marker_index]
+    actual_suffix = suffix if matched.rstrip().endswith(suffix) and suffix else ""
+    new_line = f"{actual_prefix}SPDX-FileCopyrightText: {year} {name} <{email}>{actual_suffix}{nl}"
+    lines.insert(last_copyright_idx + 1, new_line)
     path.write_bytes("".join(lines).encode("utf-8", errors="replace"))
+
+
+def _header_block_end(lines: list[str], prefix: str) -> int:
+    """Index one past the leading run of blank and comment lines."""
+    marker = prefix.strip()
+    end = 0
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped or stripped.startswith(marker):
+            end = index + 1
+            continue
+        break
+    return end
+
+
+COMMENT_STARTS = ("#", "//", "--", "/*", "{{/*", "<!--", ";", "*", "SPDX-")
+
+
+def _starts_with_comment(lines: list[str]) -> bool:
+    """True when the first non-blank line looks like a comment in any style."""
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        return stripped.startswith(COMMENT_STARTS)
+    return False
 
 
 def add_fresh_header(path: Path, name: str, email: str, year: int):
