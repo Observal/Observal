@@ -8,6 +8,7 @@ from api.graphql import get_context_dep, schema
 from api.routes.admin import router as admin_router
 from api.routes.admin_sso import router as admin_sso_router
 from api.routes.agent import router as agent_router
+from api.routes.agent_shares import router as agent_shares_router
 from api.routes.alert import router as alert_router
 from api.routes.audit import router as audit_router
 from api.routes.audit_log import router as audit_log_router
@@ -53,6 +54,7 @@ REST_ROUTERS = (
     registry_router,
     review_router,
     agent_router,
+    agent_shares_router,
     preview_router,
     skill_router,
     hook_router,

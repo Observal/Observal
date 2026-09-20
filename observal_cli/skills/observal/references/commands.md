@@ -229,6 +229,13 @@ Every command available in the installed CLI. This block is generated from the T
 - `observal server upgrade`: Upgrade a local Docker deployment.
 - `observal server versions`: List Docker image versions and managed PostgreSQL backups.
 
+**`observal share`**: Share version-pinned Agents installed in the current repository.
+
+- `observal share candidates`: List shareable Agent versions tracked in the current repository.
+- `observal share create`: Select repository Agents and create an opaque, expiring share link.
+- `observal share open`: Open a share and, after confirmation, pull its accessible Agents.
+- `observal share revoke`: Revoke a share link immediately.
+
 **`observal team`**: Manage teamspaces: creation, membership, access, and visibility.
 
 - `observal team invite`: Manage private-team invitation links.
