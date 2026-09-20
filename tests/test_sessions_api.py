@@ -64,14 +64,15 @@ MAIN_SQL = (
     "SELECT line_offset, timestamp, event_type, content_preview, tool_name, tool_id, uuid, parent_uuid, "
     "content_length, harness, agent_id, agent_version, raw_line, raw_line_truncated, credits, ingested_at "
     "FROM session_events WHERE session_id = $sid AND project_id = $pid "
-    "AND user_id = $uid AND harness = $harness AND rendered = 1 ORDER BY line_offset ASC"
+    "AND user_id = $uid AND harness = $harness AND rendered = 1 ORDER BY line_offset ASC "
+    f"LIMIT {sessions._DETAIL_PAGE_SIZE}"
 )
 SUB_SQL = (
     "SELECT session_id, timestamp, event_type, content_preview, tool_name, tool_id, uuid, parent_uuid, "
     "content_length, harness, raw_line, raw_line_truncated, credits, ingested_at, line_offset "
     "FROM session_events WHERE parent_session_id = $sid AND project_id = $pid "
     "AND user_id = $uid AND harness = $harness AND rendered = 1 "
-    "ORDER BY session_id, line_offset ASC"
+    f"ORDER BY session_id, line_offset ASC LIMIT {sessions._DETAIL_PAGE_SIZE}"
 )
 MAIN_SQL_OFFSET = MAIN_SQL.replace(
     "AND rendered = 1 ORDER BY", "AND rendered = 1 AND line_offset > CAST($offset AS INTEGER) ORDER BY"
@@ -640,6 +641,70 @@ async def test_incremental_session_detail_uses_offset_for_parent_and_subagents(m
         (_sql(MAIN_SQL_OFFSET), params),
         (_sql(SUB_SQL_OFFSET), params),
     ]
+
+
+@pytest.mark.asyncio
+async def test_session_detail_pages_past_the_analytics_row_limit(monkeypatch):
+    """A session longer than one page is read to the end with a line_offset cursor.
+
+    Regression: an unpaged read tripped the store's response-row limit and the
+    endpoint reported the session as having no events.
+    """
+    identity = {"project_id": "project-a", "user_id": str(USER_ID), "harness": "pi"}
+    full_page = [
+        {
+            "line_offset": str(offset),
+            "timestamp": "2026-09-01 10:00:00.000",
+            "event_type": "tool_call",
+            "content_preview": "",
+            "raw_line": "{}",
+            "harness": "pi",
+        }
+        for offset in range(sessions._DETAIL_PAGE_SIZE)
+    ]
+    query = AsyncMock(side_effect=[[identity], full_page, [], []])
+    monkeypatch.setattr(sessions, "_analytics_json", query)
+
+    result = await sessions.get_session("session", after_offset=None, current_user=_user())
+
+    assert result["max_offset"] == sessions._DETAIL_PAGE_SIZE - 1
+    calls = [(item.args[0], item.args[1]) for item in query.await_args_list]
+    assert len(calls) == 4
+    assert "cursor" not in calls[1][1], "first page must not carry a cursor"
+    assert str(sessions._DETAIL_PAGE_SIZE - 1) == calls[2][1]["cursor"]
+    assert "AND line_offset > CAST($cursor AS INTEGER)" in calls[2][0]
+    assert calls[2][0].startswith(calls[1][0].split("ORDER BY")[0])
+
+
+@pytest.mark.asyncio
+async def test_session_detail_surfaces_analytics_failure(monkeypatch):
+    """An unreachable analytics store must not look like a session without events."""
+    failed = MagicMock(status_code=502, text="analytics service unreachable")
+    monkeypatch.setattr(sessions, "_query", AsyncMock(return_value=failed))
+
+    with pytest.raises(HTTPException) as error:
+        await sessions.get_session("session", current_user=_user())
+
+    assert error.value.status_code == 502
+    assert "analytics" in error.value.detail
+
+
+@pytest.mark.asyncio
+async def test_analytics_json_returns_empty_only_when_not_strict(monkeypatch):
+    """A failed analytics read must not be reported as an empty session."""
+    failed = MagicMock(status_code=502, text="analytics query exceeded 60s")
+    monkeypatch.setattr(sessions, "_query", AsyncMock(return_value=failed))
+
+    assert await sessions._analytics_json("SELECT 1") == []
+    with pytest.raises(HTTPException) as status_error:
+        await sessions._analytics_json("SELECT 1", strict=True)
+    assert status_error.value.status_code == 502
+
+    monkeypatch.setattr(sessions, "_query", AsyncMock(side_effect=RuntimeError("connection refused")))
+    assert await sessions._analytics_json("SELECT 1") == []
+    with pytest.raises(HTTPException) as transport_error:
+        await sessions._analytics_json("SELECT 1", strict=True)
+    assert transport_error.value.status_code == 502
 
 
 @pytest.mark.asyncio

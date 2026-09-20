@@ -34,15 +34,52 @@ from services.user_search import analytics_in_condition, resolve_user_filter_val
 router = APIRouter(prefix="/api/v1/sessions", tags=["sessions"])
 
 
-async def _analytics_json(sql: str, params: dict | None = None) -> list[dict]:
+async def _analytics_json(sql: str, params: dict | None = None, *, strict: bool = False) -> list[dict]:
+    """Run an analytics query and return its rows.
+
+    Endpoints that tolerate a degraded read leave *strict* off and get an empty
+    list.  Session detail sets it: an analytics failure must not be reported as
+    a session without events.
+    """
     optic.trace("sql={}, params={}", sql, params)
     try:
         r = await _query(sql, params)
         if r.status_code == 200:
             return r.json().get("data", [])
+        if strict:
+            raise HTTPException(status_code=502, detail=f"analytics query failed: HTTP {r.status_code}")
+        optic.warning("analytics_query_failed status={} body={}", r.status_code, r.text[:200])
+    except HTTPException:
+        raise
     except Exception as e:
+        if strict:
+            raise HTTPException(status_code=502, detail=f"analytics query failed: {e}") from e
         optic.warning("analytics_query_failed: {}", e)
     return []
+
+
+# Session detail reads page through the analytics store in windows well below
+# DUCKDB_MAX_RESULT_ROWS. A single unpaged read of a long session used to trip
+# the store's response-row limit, which the caller then reported as a session
+# with no events.
+_DETAIL_PAGE_SIZE = 20_000
+
+
+async def _analytics_pages(build_page, page_size: int = _DETAIL_PAGE_SIZE) -> list[dict]:
+    """Read every page of an analytics query ordered by a forward cursor.
+
+    *build_page* receives the last row of the previous page (``None`` on the
+    first call) and returns the SQL and parameters for the next page.
+    """
+    rows: list[dict] = []
+    cursor: dict | None = None
+    while True:
+        sql, params = build_page(cursor)
+        page = await _analytics_json(sql, params, strict=True)
+        rows.extend(page)
+        if len(page) < page_size:
+            return rows
+        cursor = page[-1]
 
 
 def _is_admin_user(user: User) -> bool:
@@ -320,6 +357,7 @@ async def get_session(
         "SELECT project_id, user_id, harness FROM session_events "
         "WHERE session_id = $sid " + identity_user_filter + "ORDER BY ingested_at DESC LIMIT 1",
         identity_params,
+        strict=True,
     )
     if not identity_rows:
         return {"session_id": session_id, "harness": "", "events": []}
@@ -339,37 +377,50 @@ async def get_session(
         _offset_filter = "AND line_offset > CAST($offset AS INTEGER) "
         params["offset"] = str(after_offset)
 
-    # Fan out both session reads in parallel.
-    _main_sql = (
+    # Fan out both session reads in parallel, one page at a time.
+    _main_base = (
         "SELECT "
         "line_offset, timestamp, event_type, content_preview, tool_name, tool_id, "
         "uuid, parent_uuid, content_length, harness, agent_id, agent_version, raw_line, raw_line_truncated, "
         "credits, ingested_at "
         "FROM session_events "
-        "WHERE session_id = $sid AND "
-        + identity_filter
-        + "AND rendered = 1 "
-        + _offset_filter
-        + "ORDER BY line_offset ASC"
+        "WHERE session_id = $sid AND " + identity_filter + "AND rendered = 1 " + _offset_filter
     )
     _sub_params = dict(params)
     _sub_offset_filter = ""
     if after_offset is not None:
         _sub_offset_filter = "AND line_offset > CAST($offset AS INTEGER) "
-    _sub_sql = (
+    _sub_base = (
         "SELECT session_id, timestamp, event_type, content_preview, "
         "tool_name, tool_id, uuid, parent_uuid, content_length, harness, "
         "raw_line, raw_line_truncated, credits, ingested_at, line_offset "
         "FROM session_events "
-        "WHERE parent_session_id = $sid AND "
-        + identity_filter
-        + "AND rendered = 1 "
-        + _sub_offset_filter
-        + "ORDER BY session_id, line_offset ASC"
+        "WHERE parent_session_id = $sid AND " + identity_filter + "AND rendered = 1 " + _sub_offset_filter
     )
+
+    def _main_page(cursor: dict | None) -> tuple[str, dict]:
+        page_params = dict(params)
+        cursor_filter = ""
+        if cursor is not None:
+            cursor_filter = "AND line_offset > CAST($cursor AS INTEGER) "
+            page_params["cursor"] = str(cursor["line_offset"])
+        return f"{_main_base}{cursor_filter}ORDER BY line_offset ASC LIMIT {_DETAIL_PAGE_SIZE}", page_params
+
+    def _sub_page(cursor: dict | None) -> tuple[str, dict]:
+        page_params = dict(_sub_params)
+        cursor_filter = ""
+        if cursor is not None:
+            cursor_filter = (
+                "AND (session_id > $cursor_sid OR "
+                "(session_id = $cursor_sid AND line_offset > CAST($cursor_offset AS INTEGER))) "
+            )
+            page_params["cursor_sid"] = str(cursor["session_id"])
+            page_params["cursor_offset"] = str(cursor["line_offset"])
+        return f"{_sub_base}{cursor_filter}ORDER BY session_id, line_offset ASC LIMIT {_DETAIL_PAGE_SIZE}", page_params
+
     rows, sub_rows_all = await asyncio.gather(
-        _analytics_json(_main_sql, params),
-        _analytics_json(_sub_sql, _sub_params),
+        _analytics_pages(_main_page),
+        _analytics_pages(_sub_page),
     )
 
     if not rows:
