@@ -256,7 +256,7 @@ class AnalyticsStore:
         return int(rows[0][0] or 0)
 
     async def insert(self, table: str, rows: list[dict]) -> int:
-        """Insert rows through Arrow, upserting tables that carry a primary key."""
+        """Insert rows through Arrow, replacing prior rows for upsert-keyed tables."""
         columns = ANALYTICS_TABLES.get(table)
         if columns is None:
             raise ValueError(f"unknown analytics table: {table}")

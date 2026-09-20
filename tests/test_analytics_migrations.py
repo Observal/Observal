@@ -3,8 +3,6 @@
 
 """Tests for the DuckDB analytics migration runner."""
 
-import shutil
-
 import pytest
 
 from services.analytics.duckdb.migrations import (
@@ -66,44 +64,52 @@ async def test_run_migrations_applies_pending_files(tmp_path, monkeypatch):
         await store.close()
 
 
-async def test_primary_index_removal_preserves_existing_telemetry(tmp_path, monkeypatch):
-    source_dir = MIGRATIONS_DIR
-    migration_dir = tmp_path / "migrations"
-    migration_dir.mkdir()
-    for name in ("001_baseline.sql", "002_query_indexes.sql", "003_remove_secondary_art_indexes.sql"):
-        shutil.copy(source_dir / name, migration_dir / name)
-    monkeypatch.setattr("services.analytics.duckdb.migrations.MIGRATIONS_DIR", migration_dir)
+async def test_baseline_declares_no_constraints_or_art_indexes(tmp_path):
+    """The shipped baseline is the final schema: no PRIMARY KEY, no ART indexes.
 
+    Replay identity lives in ANALYTICS_UPSERT_KEYS (DELETE + INSERT), so a fresh
+    database must not carry a constraint-backed index for telemetry tables.
+    """
+    store = AnalyticsStore(path=tmp_path / "analytics.duckdb", threads=1, read_connections=1)
+    await store.start()
+    try:
+        assert await run_migrations(store) == ["001_baseline"]
+        _, constraints = await store.query(
+            "SELECT table_name FROM duckdb_constraints() "
+            "WHERE constraint_type = 'PRIMARY KEY' AND table_name <> 'analytics_schema_migrations'"
+        )
+        assert constraints == []
+        _, indexes = await store.query(
+            "SELECT index_name FROM duckdb_indexes() WHERE table_name <> 'analytics_schema_migrations'"
+        )
+        assert indexes == []
+    finally:
+        await store.close()
+
+
+async def test_upsert_keys_replace_rows_without_a_primary_key(tmp_path):
+    """Replay replaces the previous payload for the same line offset."""
     store = AnalyticsStore(path=tmp_path / "analytics.duckdb", threads=1, read_connections=1)
     await store.start()
     try:
         await run_migrations(store)
-        await store.insert(
-            "session_events",
-            [
-                {
-                    "session_id": "session",
-                    "project_id": "default",
-                    "user_id": "user",
-                    "harness": "pi",
-                    "line_offset": 1,
-                    "event_type": "user_prompt",
-                    "timestamp": "2026-01-01 00:00:00.000",
-                    "raw_line": "preserved",
-                }
-            ],
-        )
 
-        shutil.copy(source_dir / "004_remove_primary_art_indexes.sql", migration_dir)
-        assert await run_migrations(store) == ["004_remove_primary_art_indexes"]
+        def event(raw_line: str) -> dict:
+            return {
+                "session_id": "session",
+                "project_id": "default",
+                "user_id": "user",
+                "harness": "pi",
+                "line_offset": 1,
+                "event_type": "user_prompt",
+                "timestamp": "2026-01-01 00:00:00.000",
+                "raw_line": raw_line,
+            }
+
+        await store.insert("session_events", [event("first")])
+        await store.insert("session_events", [event("replayed")])
         _, rows = await store.query("SELECT raw_line FROM session_events")
-        assert rows == [("preserved",)]
-        _, constraints = await store.query(
-            "SELECT table_name FROM duckdb_constraints() "
-            "WHERE constraint_type = 'PRIMARY KEY' AND table_name IN "
-            "('session_events', 'session_checkpoints', 'session_stats_agg', 'layer_snapshots')"
-        )
-        assert constraints == []
+        assert rows == [("replayed",)]
     finally:
         await store.close()
 
@@ -125,36 +131,6 @@ async def test_failed_migration_rolls_back_every_schema_change(tmp_path, monkeyp
         assert tables == []
         _, applied = await store.query("SELECT version FROM analytics_schema_migrations")
         assert applied == []
-    finally:
-        await store.close()
-
-
-async def test_run_migrations_accepts_and_normalizes_legacy_raw_checksum(tmp_path, monkeypatch):
-    import hashlib
-
-    monkeypatch.setattr("services.analytics.duckdb.migrations.MIGRATIONS_DIR", tmp_path)
-    migration = tmp_path / "001_first.sql"
-    text = "-- old comment\nCREATE TABLE one (a INTEGER);\n"
-    migration.write_text(text)
-
-    store = AnalyticsStore(path=tmp_path / "analytics.duckdb", threads=1, read_connections=1)
-    await store.start()
-    try:
-        await store.execute(
-            "CREATE TABLE analytics_schema_migrations ("
-            "version VARCHAR PRIMARY KEY, name VARCHAR, checksum VARCHAR, applied_at TIMESTAMP DEFAULT now())"
-        )
-        await store.execute(
-            "INSERT INTO analytics_schema_migrations (version, name, checksum) VALUES ($version, $name, $checksum)",
-            {"version": "001_first", "name": migration.name, "checksum": hashlib.sha256(text.encode()).hexdigest()},
-        )
-
-        assert await run_migrations(store) == []
-        _, rows = await store.query("SELECT checksum FROM analytics_schema_migrations WHERE version = '001_first'")
-        assert rows == [(_checksum(text),)]
-
-        migration.write_text("-- new SPDX/header comment\n" + text)
-        assert await run_migrations(store) == []
     finally:
         await store.close()
 

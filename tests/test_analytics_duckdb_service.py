@@ -129,7 +129,7 @@ def test_health_reports_schema_version(client):
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "ok"
-    assert body["schema_version"] == "004_remove_primary_art_indexes"
+    assert body["schema_version"] == "001_baseline"
 
 
 def test_queries_require_a_token(client):
@@ -546,12 +546,7 @@ async def test_migrations_are_idempotent_and_checksum_guarded(tmp_path):
     )
     await store.start()
     try:
-        assert await run_migrations(store) == [
-            "001_baseline",
-            "002_query_indexes",
-            "003_remove_secondary_art_indexes",
-            "004_remove_primary_art_indexes",
-        ]
+        assert await run_migrations(store) == ["001_baseline"]
         assert await run_migrations(store) == []
         await store.execute(
             "UPDATE analytics_schema_migrations SET checksum = 'tampered' WHERE version = '001_baseline'"

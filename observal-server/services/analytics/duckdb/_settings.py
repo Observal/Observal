@@ -151,10 +151,11 @@ ANALYTICS_DEDUPE_KEYS: dict[str, tuple[str, ...]] = {
     "webhook_deliveries": ("delivery_id", "attempt_number"),
 }
 
-# Primary-key identities used for explicit transactional replacement. DuckDB's
-# INSERT OR REPLACE can hit a fatal internal index rollback path under repeated
-# overlapping writes and concurrent reads, so all replay paths use
-# DELETE + INSERT in one transaction instead.
+# Replay identities used for explicit transactional replacement. The analytics
+# baseline declares no PRIMARY KEY constraints: DuckDB's INSERT OR REPLACE can
+# hit a fatal internal index rollback path under repeated overlapping writes
+# and concurrent reads, so all replay paths use DELETE + INSERT in one
+# transaction instead.
 ANALYTICS_UPSERT_KEYS: dict[str, tuple[str, ...]] = {
     "session_events": ("project_id", "user_id", "harness", "session_id", "line_offset"),
     "session_checkpoints": ("project_id", "user_id", "harness", "session_id"),

@@ -353,18 +353,14 @@ class TestSchemaExpansion:
         ):
             assert re.search(rf"\b{column}\s+{column_type}\b", sql_blob), f"{column} {column_type} missing"
 
-    def test_new_indexes_in_baseline_migration(self):
-        from services.analytics.duckdb.migrations import MIGRATIONS_DIR
+    def test_audit_log_declares_no_art_indexes(self):
+        """Audit reads are served by zone maps; the baseline creates no ART indexes."""
+        from services.analytics.duckdb.migrations import MIGRATIONS_DIR, _strip_sql_comments
 
-        baseline = (MIGRATIONS_DIR / "001_baseline.sql").read_text()
-        composites = (MIGRATIONS_DIR / "002_query_indexes.sql").read_text()
-        # actor_id/action lead the composite indexes added in 002, so the
-        # baseline only carries the resource_type index.
-        assert "idx_audit_log_resource_type" in baseline
-        assert "idx_audit_log_actor_time" in composites
-        assert "idx_audit_log_filter" in composites
-        assert "idx_audit_log_actor ON" not in baseline
-        assert "idx_audit_log_action ON" not in baseline
+        baseline = _strip_sql_comments((MIGRATIONS_DIR / "001_baseline.sql").read_text())
+        assert "CREATE INDEX" not in baseline
+        assert "PRIMARY KEY" not in baseline
+        assert "CREATE TABLE IF NOT EXISTS audit_log" in baseline
 
 
 class TestInsertAuditLog:

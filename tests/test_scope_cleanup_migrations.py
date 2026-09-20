@@ -47,11 +47,13 @@ def test_analytics_baseline_carries_the_post_cleanup_schema():
     cleanup migration to run and no ``project_id != 'default'`` leftovers to
     guard against.
     """
+    from services.analytics.duckdb.migrations import _strip_sql_comments
+
     path = ROOT / "observal-server" / "analytics" / "migrations" / "001_baseline.sql"
-    sql = path.read_text()
+    sql = _strip_sql_comments(path.read_text())
     assert "session_events" in sql
     assert "session_checkpoints" in sql
     assert "session_stats_agg" in sql
     assert "layer_snapshots" in sql
     assert "_scope_cleanup" not in sql
-    assert "PRIMARY KEY (project_id, user_id, harness, session_id, line_offset)" in sql
+    assert "PRIMARY KEY" not in sql

@@ -2,12 +2,21 @@
 -- SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 -- SPDX-License-Identifier: Apache-2.0
 --
--- DuckDB analytics baseline.  This is the final ClickHouse schema
--- (001 + 002 + 003 + 004) expressed in DuckDB:
---   * ReplacingMergeTree(v) ORDER BY k  ->  PRIMARY KEY k + INSERT OR REPLACE
+-- DuckDB analytics baseline: the complete final schema in a single migration.
+--
+-- Mapping from the ClickHouse schema this replaces:
+--   * ReplacingMergeTree(v) ORDER BY k  ->  writer-side DELETE + INSERT in one
+--     transaction (ANALYTICS_UPSERT_KEYS in services/analytics/duckdb/_settings.py)
 --   * Aggregate combinators             ->  FILTER clauses (writer-side refresh)
---   * bloom_filter / set skip indexes   ->  ART indexes
+--   * projections / bloom_filter / set skip indexes  ->  DuckDB zone maps
 --   * TTL                               ->  services/retention.py DELETE job
+--
+-- No PRIMARY KEY constraints and no ART indexes are declared. Replay-heavy
+-- tables are replaced in bulk while concurrent readers hold older snapshots;
+-- mutable ART indexes on those tables triggered a fatal DuckDB index-rollback
+-- path and inflated the database file, and zone maps already prune the
+-- analytical scans these tables serve. Replay identity is enforced by the
+-- upsert keys above, never by a constraint.
 
 CREATE TABLE IF NOT EXISTS security_events (
     event_id    VARCHAR,
@@ -24,11 +33,6 @@ CREATE TABLE IF NOT EXISTS security_events (
     user_agent  VARCHAR DEFAULT '',
     detail      VARCHAR DEFAULT ''
 );
-
-CREATE INDEX IF NOT EXISTS idx_security_events_event_type ON security_events (event_type);
-CREATE INDEX IF NOT EXISTS idx_security_events_severity ON security_events (severity);
-CREATE INDEX IF NOT EXISTS idx_security_events_actor ON security_events (actor_id);
-CREATE INDEX IF NOT EXISTS idx_security_events_ts ON security_events (timestamp);
 
 CREATE TABLE IF NOT EXISTS audit_log (
     event_id      VARCHAR,
@@ -54,11 +58,6 @@ CREATE TABLE IF NOT EXISTS audit_log (
     source        VARCHAR DEFAULT 'server'
 );
 
--- actor_id and action are served by the composite indexes in 002_query_indexes
--- (idx_audit_log_actor_time, idx_audit_log_filter), which lead with them.
-CREATE INDEX IF NOT EXISTS idx_audit_log_resource_type ON audit_log (resource_type);
-CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log (timestamp);
-
 CREATE TABLE IF NOT EXISTS webhook_deliveries (
     delivery_id     VARCHAR,
     event_id        VARCHAR,
@@ -73,12 +72,9 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
     payload_size    UINTEGER
 );
 
-CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_alert ON webhook_deliveries (alert_rule_id, timestamp);
-CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_delivery ON webhook_deliveries (delivery_id);
-
--- Canonical session telemetry.  ClickHouse used ReplacingMergeTree(ingested_at)
--- with default-order dedup; the primary key plus INSERT OR REPLACE keeps one
--- row per (project, user, harness, session, line) with the newest payload.
+-- Canonical session telemetry. ClickHouse used ReplacingMergeTree(ingested_at)
+-- with default-order dedup; the ingest path now deletes and re-inserts one row
+-- per (project, user, harness, session, line) with the newest payload.
 CREATE TABLE IF NOT EXISTS session_events (
     session_id          VARCHAR NOT NULL,
     project_id          VARCHAR NOT NULL,
@@ -110,16 +106,8 @@ CREATE TABLE IF NOT EXISTS session_events (
     cache_read_tokens   INTEGER DEFAULT 0,
     cache_write_tokens  INTEGER DEFAULT 0,
     model               VARCHAR DEFAULT '',
-    raw_line_truncated  UTINYINT DEFAULT 0,
-    PRIMARY KEY (project_id, user_id, harness, session_id, line_offset)
+    raw_line_truncated  UTINYINT DEFAULT 0
 );
-
--- session_id is the leading column of the profile indexes added in
--- 002_query_indexes, so no separate single-column index is needed here.
-CREATE INDEX IF NOT EXISTS idx_session_events_user ON session_events (user_id);
-CREATE INDEX IF NOT EXISTS idx_session_events_event_type ON session_events (event_type);
-CREATE INDEX IF NOT EXISTS idx_session_events_ts ON session_events (timestamp);
-CREATE INDEX IF NOT EXISTS idx_session_events_line_hash ON session_events (line_hash);
 
 CREATE TABLE IF NOT EXISTS session_checkpoints (
     project_id          VARCHAR NOT NULL,
@@ -129,8 +117,7 @@ CREATE TABLE IF NOT EXISTS session_checkpoints (
     acknowledged_line   BIGINT NOT NULL DEFAULT -1,
     acknowledged_offset UBIGINT NOT NULL DEFAULT 0,
     checkpoint_version  UBIGINT NOT NULL DEFAULT 0,
-    updated_at          TIMESTAMP DEFAULT now(),
-    PRIMARY KEY (project_id, user_id, harness, session_id)
+    updated_at          TIMESTAMP DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS session_stats_agg (
@@ -155,13 +142,8 @@ CREATE TABLE IF NOT EXISTS session_stats_agg (
     total_credits       DOUBLE DEFAULT 0,
     model               VARCHAR DEFAULT '',
     summary_version     UBIGINT NOT NULL DEFAULT 0,
-    updated_at          TIMESTAMP DEFAULT now(),
-    PRIMARY KEY (project_id, user_id, harness, session_id)
+    updated_at          TIMESTAMP DEFAULT now()
 );
-
-CREATE INDEX IF NOT EXISTS idx_session_stats_user ON session_stats_agg (user_id);
-CREATE INDEX IF NOT EXISTS idx_session_stats_agent ON session_stats_agg (agent_id);
--- last_event_time leads idx_session_stats_active_user in 002_query_indexes.
 
 CREATE TABLE IF NOT EXISTS layer_snapshots (
     hash          VARCHAR NOT NULL,
@@ -172,6 +154,5 @@ CREATE TABLE IF NOT EXISTS layer_snapshots (
     uploaded_at   TIMESTAMP DEFAULT now(),
     file_count    USMALLINT DEFAULT 0,
     total_size    UINTEGER DEFAULT 0,
-    lockfile_hash VARCHAR DEFAULT '',
-    PRIMARY KEY (project_id, user_id, hash)
+    lockfile_hash VARCHAR DEFAULT ''
 );
