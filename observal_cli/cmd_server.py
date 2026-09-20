@@ -730,6 +730,7 @@ def _server_upgrade(version: str | None, skip_backup: bool, dry_run: bool, force
     backup_path = None
     cutover_result = None
     cutover_duckdb: tuple[str, str] | None = None
+    new_deploy_started = False
     try:
         if needs_cutover:
             from observal_cli.cmd_migrate import RichProgressReporter
@@ -789,6 +790,7 @@ def _server_upgrade(version: str | None, skip_backup: bool, dry_run: bool, force
 
         # Recreate containers
         console.print("[blue]==>[/blue] Recreating containers...")
+        new_deploy_started = True
         result = subprocess.run(
             ["docker", "compose", "up", "-d"],
             cwd=compose_dir,
@@ -798,6 +800,14 @@ def _server_upgrade(version: str | None, skip_backup: bool, dry_run: bool, force
         )
         if result.returncode != 0:
             _update_env_version(compose_dir, current)
+            if cutover_result is not None:
+                _cutover.restore_legacy_compose(legacy)
+                subprocess.run(
+                    ["docker", "compose", "up", "-d"],
+                    cwd=compose_dir,
+                    capture_output=True,
+                    timeout=300,
+                )
             fail(
                 ErrorCategory.UNAVAILABLE,
                 "Docker container recreation failed.",
@@ -898,6 +908,17 @@ def _server_upgrade(version: str | None, skip_backup: bool, dry_run: bool, force
             "changed": True,
         }
 
+    except BaseException:
+        # Before Compose starts replacing containers, the exact legacy writers
+        # still exist and can be resumed directly. run_cutover handles its own
+        # failures; this covers pull/version-update failures after it returns.
+        if cutover_result is not None and not new_deploy_started:
+            _update_env_version(compose_dir, current)
+            _cutover.restore_legacy_compose(legacy)
+            _cutover.restart_legacy_writers(
+                cutover_result.legacy_writer_containers, lambda msg: console.print(f"  {msg}")
+            )
+        raise
     finally:
         release_lock(lock)
 

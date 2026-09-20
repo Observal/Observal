@@ -10,7 +10,7 @@ import json
 import tarfile
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock
+from unittest.mock import ANY, MagicMock
 
 import httpx
 import pytest
@@ -170,7 +170,45 @@ def test_provision_source_env_appends_token(source_dir: Path, monkeypatch) -> No
     env = (source_dir.parent / ".env").read_text()
     assert "DUCKDB_ANALYTICS_URL=duckdb://observal-duckdb:8484/observal" in env
     assert "DUCKDB_ANALYTICS_TOKEN=" in env and "CLICKHOUSE_URL=" in env
-    assert cutover.detect_legacy_state(source_dir).env_has_duckdb is True
+    retry = cutover.detect_legacy_state(source_dir)
+    assert retry.env_has_duckdb is True
+    assert retry.needs_cutover is True  # no completion marker: a partial attempt must remain retryable
+
+
+def test_quiesce_stops_all_legacy_api_and_worker_containers(source_dir: Path, monkeypatch) -> None:
+    calls: list[tuple[str, ...]] = []
+
+    def docker(*args, **_kwargs):
+        calls.append(args)
+        if args[0] == "ps":
+            filters = " ".join(args)
+            if "observal-api" in filters:
+                return SimpleNamespace(returncode=0, stdout="api-1\napi-2\n", stderr="")
+            if "observal-worker" in filters:
+                return SimpleNamespace(returncode=0, stdout="worker-1\n", stderr="")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(cutover, "_docker", docker)
+    state = cutover.LegacyState(
+        compose_dir=source_dir,
+        compose_path=source_dir / "docker-compose.yml",
+        env_file=source_dir.parent / ".env",
+        flavor="source",
+        compose_has_clickhouse=False,
+        compose_has_duckdb=True,
+        env_has_clickhouse=True,
+        env_has_duckdb=False,
+        marker_path=source_dir / cutover.MARKER_NAME,
+        marker_exists=False,
+        clickhouse_container="clickhouse-1",
+    )
+
+    assert cutover.quiesce_legacy_writers(state, lambda _message: None) == ["api-1", "api-2", "worker-1"]
+    assert [call for call in calls if call[0] == "stop"] == [
+        ("stop", "api-1"),
+        ("stop", "api-2"),
+        ("stop", "worker-1"),
+    ]
 
 
 # ── release files ─────────────────────────────────────────────────────────────
@@ -334,6 +372,77 @@ def test_upgrade_runs_cutover_then_deploys_verifies_and_retires_clickhouse(upgra
     assert verify.call_args.args[3] == {"session_events": 79534}
     assert (compose_dir / cutover.MARKER_NAME).exists()
     assert "OBSERVAL_VERSION=2.0.0" in (compose_dir / ".env").read_text()
+
+
+def test_run_cutover_failure_restores_compose_and_restarts_quiesced_writers(package_dir: Path, monkeypatch) -> None:
+    monkeypatch.setattr(cutover.subprocess, "run", _docker_stub(["opt-observal-observal-clickhouse-1"]))
+    state = cutover.detect_legacy_state(package_dir)
+    writers = ["api-1", "worker-1"]
+    monkeypatch.setattr(cutover, "ensure_clickhouse_running", lambda *_args: "clickhouse://source")
+    monkeypatch.setattr(cutover, "quiesce_legacy_writers", lambda *_args: writers)
+
+    def install(*_args):
+        backup = package_dir / cutover.LEGACY_COMPOSE_BACKUP
+        backup.write_text(LEGACY_COMPOSE)
+        (package_dir / "docker-compose.yml").write_text(NEW_COMPOSE)
+        return backup
+
+    monkeypatch.setattr(cutover, "install_release_files", install)
+    monkeypatch.setattr(cutover, "provision_duckdb_secrets", lambda *_args: None)
+    monkeypatch.setattr(cutover, "start_duckdb_service", lambda *_args: ("duckdb://target", "token"))
+    monkeypatch.setattr(
+        cutover, "migrate_telemetry", MagicMock(side_effect=cutover.CutoverError("injected migration failure"))
+    )
+    restart = MagicMock()
+    monkeypatch.setattr(cutover, "restart_legacy_writers", restart)
+
+    with pytest.raises(cutover.CutoverError, match="injected migration failure"):
+        cutover.run_cutover(
+            state,
+            current="1.13.1",
+            target="2.0.0",
+            repo="Observal/Observal",
+            skip_backup=True,
+            log=lambda _message: None,
+            reporter=object(),
+        )
+
+    assert (package_dir / "docker-compose.yml").read_text() == LEGACY_COMPOSE
+    restart.assert_called_once_with(writers, ANY)
+
+
+def test_pull_failure_after_cutover_restores_compose_and_restarts_writers(upgrade_env: Path, monkeypatch) -> None:
+    compose_dir = upgrade_env
+
+    def run(cmd, **_kwargs):
+        if cmd[:3] == ["docker", "ps", "-a"]:
+            return SimpleNamespace(
+                returncode=0,
+                stdout="opt-observal-observal-clickhouse-1\n",
+                stderr="",
+            )
+        if cmd[:3] == ["docker", "compose", "pull"]:
+            return SimpleNamespace(returncode=1, stdout="", stderr="pull failed")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(cutover.subprocess, "run", run)
+
+    def successful_cutover(state, **_kwargs):
+        (compose_dir / "docker-compose.yml").write_text(NEW_COMPOSE)
+        result = cutover.CutoverResult(started_at="t0", legacy_writer_containers=["api-1", "worker-1"])
+        return result, "duckdb://127.0.0.1:8484/observal", "token"
+
+    monkeypatch.setattr(cutover, "run_cutover", successful_cutover)
+    restore = MagicMock(return_value=True)
+    restart = MagicMock()
+    monkeypatch.setattr(cutover, "restore_legacy_compose", restore)
+    monkeypatch.setattr(cutover, "restart_legacy_writers", restart)
+
+    with pytest.raises(CliError):
+        cmd_server._server_upgrade("2.0.0", False, False, True)
+
+    restore.assert_called_once()
+    restart.assert_called_once_with(["api-1", "worker-1"], ANY)
 
 
 def test_upgrade_cutover_failure_leaves_legacy_stack_untouched(upgrade_env: Path, monkeypatch) -> None:

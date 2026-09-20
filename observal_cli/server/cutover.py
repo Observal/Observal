@@ -53,6 +53,7 @@ MARKER_NAME = ".observal-cutover-complete.json"
 LEGACY_COMPOSE_BACKUP = "docker-compose.clickhouse.bak.yml"
 CLICKHOUSE_SERVICE = "observal-clickhouse"
 DUCKDB_SERVICE = "observal-duckdb"
+LEGACY_WRITER_SERVICES = ("observal-api", "observal-worker")
 RELEASE_FILES = ("docker-compose.yml", "nginx.conf", "docker-compose.observability.yml")
 RUNBOOK_URL = "https://github.com/Observal/Observal/blob/main/docs/architecture/duckdb-replacement.md#cutover-runbook"
 
@@ -85,7 +86,7 @@ class LegacyState:
     def needs_cutover(self) -> bool:
         if self.marker_exists:
             return False
-        legacy_shape = self.compose_has_clickhouse or (self.env_has_clickhouse and not self.env_has_duckdb)
+        legacy_shape = self.compose_has_clickhouse or self.env_has_clickhouse
         return legacy_shape and self.clickhouse_container is not None
 
 
@@ -100,6 +101,7 @@ class CutoverResult:
     export_dir: str = ""
     legacy_compose_backup: str | None = None
     clickhouse_container: str | None = None
+    legacy_writer_containers: list[str] = field(default_factory=list)
     row_counts: dict = field(default_factory=dict)
     total_rows: int = 0
     clickhouse_stopped: bool = False
@@ -175,7 +177,10 @@ def detect_legacy_state(compose_dir: Path) -> LegacyState:
         _env_value(env_file, "DUCKDB_ANALYTICS_TOKEN") or _env_value(env_file, "DUCKDB_ANALYTICS_TOKEN_FILE")
     )
     compose_has_clickhouse = CLICKHOUSE_SERVICE in compose_text
-    legacy_shape = compose_has_clickhouse or (env_has_clickhouse and not env_has_duckdb)
+    # CLICKHOUSE_URL remains authoritative until the completion marker exists.
+    # A failed attempt may already have installed the DuckDB compose/env values;
+    # it must still be detected and retried rather than treated as complete.
+    legacy_shape = compose_has_clickhouse or env_has_clickhouse
     # Only consult Docker when the files look legacy: a normal upgrade must not
     # depend on the daemon for detection.
     container = _find_clickhouse_container(compose_dir) if legacy_shape and not marker.exists() else None
@@ -261,6 +266,49 @@ def resolve_duckdb_params(state: LegacyState) -> tuple[str, str]:
 
 
 # ── steps ────────────────────────────────────────────────────────────────────
+
+
+def _running_service_containers(compose_dir: Path, service: str) -> list[str]:
+    project = compose_project_name(compose_dir)
+    listed = _docker(
+        "ps",
+        "--filter",
+        f"label=com.docker.compose.project={project}",
+        "--filter",
+        f"label=com.docker.compose.service={service}",
+        "--format",
+        "{{.Names}}",
+    )
+    if listed.returncode != 0:
+        raise CutoverError(f"could not list legacy {service} containers: {listed.stderr.strip()[:200]}")
+    return [name for name in listed.stdout.splitlines() if name.strip()]
+
+
+def restart_legacy_writers(containers: list[str], log: Callable[[str], None]) -> None:
+    """Best-effort restart of writer containers stopped before a failed cutover."""
+    for container in containers:
+        result = _docker("start", container, timeout=180)
+        if result.returncode != 0:
+            log(f"[yellow]Could not restart {container}: {result.stderr.strip()[:120]}[/yellow]")
+
+
+def quiesce_legacy_writers(state: LegacyState, log: Callable[[str], None]) -> list[str]:
+    """Stop every legacy API/worker container before fixing the export cutoff."""
+    containers = [
+        container
+        for service in LEGACY_WRITER_SERVICES
+        for container in _running_service_containers(state.compose_dir, service)
+    ]
+    stopped: list[str] = []
+    for container in containers:
+        result = _docker("stop", container, timeout=180)
+        if result.returncode != 0:
+            restart_legacy_writers(stopped, log)
+            raise CutoverError(f"could not stop legacy writer {container}: {result.stderr.strip()[:200]}")
+        stopped.append(container)
+    if stopped:
+        log(f"Paused {len(stopped)} legacy API/worker container(s) for a consistent export")
+    return stopped
 
 
 def ensure_clickhouse_running(state: LegacyState, log: Callable[[str], None]) -> str:
@@ -563,28 +611,37 @@ def run_cutover(
     optic.info("clickhouse cutover start flavor={} compose_dir={}", state.flavor, state.compose_dir)
 
     clickhouse_url = ensure_clickhouse_running(state, log)
+    result.legacy_writer_containers = quiesce_legacy_writers(state, log)
 
-    if not skip_backup:
-        log("Backing up PostgreSQL")
+    try:
+        if not skip_backup:
+            log("Backing up PostgreSQL")
+            try:
+                result.backup = str(create_backup(state.compose_dir, current, include_analytics=False))
+            except RuntimeError as error:
+                raise CutoverError(f"pre-cutover backup failed: {error}") from error
+
+        backup_compose = install_release_files(state, target, repo, log)
+        result.legacy_compose_backup = str(backup_compose) if backup_compose else None
+
+        provision_duckdb_secrets(state, log)
+        duckdb_url, token = start_duckdb_service(state, target, log)
+
+        export_dir = state.compose_dir / "telemetry-export" / datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        result.export_dir = str(export_dir)
+        log("Copying telemetry from ClickHouse into DuckDB")
+        payload = migrate_telemetry(clickhouse_url, duckdb_url, token, export_dir, reporter)
+        result.row_counts = {t: c["duckdb_rows"] for t, c in payload["verification"]["row_counts"].items()}
+        result.total_rows = payload["load"]["total_rows"]
+        log(f"Verified {result.total_rows:,} rows across {payload['load']['tables_imported']} tables")
+        return result, duckdb_url, token
+    except BaseException:
         try:
-            result.backup = str(create_backup(state.compose_dir, current, include_analytics=False))
-        except RuntimeError as error:
-            raise CutoverError(f"pre-cutover backup failed: {error}") from error
-
-    backup_compose = install_release_files(state, target, repo, log)
-    result.legacy_compose_backup = str(backup_compose) if backup_compose else None
-
-    provision_duckdb_secrets(state, log)
-    duckdb_url, token = start_duckdb_service(state, target, log)
-
-    export_dir = state.compose_dir / "telemetry-export" / datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    result.export_dir = str(export_dir)
-    log("Copying telemetry from ClickHouse into DuckDB")
-    payload = migrate_telemetry(clickhouse_url, duckdb_url, token, export_dir, reporter)
-    result.row_counts = {t: c["duckdb_rows"] for t, c in payload["verification"]["row_counts"].items()}
-    result.total_rows = payload["load"]["total_rows"]
-    log(f"Verified {result.total_rows:,} rows across {payload['load']['tables_imported']} tables")
-    return result, duckdb_url, token
+            restore_legacy_compose(state)
+        except OSError as error:
+            log(f"[yellow]Could not restore the legacy compose file: {error}[/yellow]")
+        restart_legacy_writers(result.legacy_writer_containers, log)
+        raise
 
 
 # ── embedded mode (observal server start) ────────────────────────────────────

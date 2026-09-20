@@ -131,19 +131,20 @@ risk is queueing latency rather than correctness.
 ### Automatic cutover (Docker Compose deployments)
 
 `observal server upgrade` performs the cutover itself when it finds a legacy
-deployment (a ClickHouse compose file or a `.env` with `CLICKHOUSE_URL` and no
-DuckDB token, plus this project's `observal-clickhouse` container):
+deployment (a ClickHouse compose file or a `.env` with `CLICKHOUSE_URL`, plus
+this project's `observal-clickhouse` container and no completion marker):
 
 ```bash
 observal self upgrade          # the CLI must be upgraded first
 observal server upgrade        # add --dry-run to see the plan
 ```
 
-The upgrade then runs, in order, and stops at the first failure with the
-previous release still running:
+The upgrade then runs, in order. It briefly pauses the legacy API and workers
+so no telemetry can arrive after the export cutoff. A failure before deployment
+restores the legacy compose file and resumes those exact containers:
 
-1. Backs up PostgreSQL (`~/.observal/config/backups/`). ClickHouse is never
-   written to.
+1. Pauses the legacy API and workers, then backs up PostgreSQL
+   (`~/.observal/config/backups/`). ClickHouse is never written to.
 2. Installs the release `docker-compose.yml`/`nginx.conf` from the GitHub
    release bundle (server-package installs) and keeps the old file as
    `docker-compose.clickhouse.bak.yml`. Source checkouts must already have
