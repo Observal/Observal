@@ -216,6 +216,34 @@ DuckDB-compatible release; never restore the old ClickHouse topology.
    `observal server migrate duckdb --clickhouse-url <ch> --duckdb-url <duckdb>
    --duckdb-token "$DUCKDB_ANALYTICS_TOKEN" --export-dir ./telemetry-export`.
    The command fails if any checksum differs or any exported row is missing.
+
+**Helm and Terraform equivalents for steps 2-3.** Neither topology has the
+compose file, so run DuckDB next to the still-running ClickHouse yourself; the
+new chart and stacks remove ClickHouse as soon as they are applied.
+
+- *Helm*: create the analytics token key in the release secret, then render only
+  the analytics objects from the new chart so the installed release (and its
+  ClickHouse StatefulSet) keeps running:
+
+  ```bash
+  kubectl create secret generic <release>-secret \
+    --from-literal=DUCKDB_ANALYTICS_TOKEN=<token> --dry-run=client -o yaml | kubectl apply -f -
+  helm template <release> infra/helm/observal --set duckdb.image.tag=<VERSION> \
+    --show-only templates/duckdb-statefulset.yaml --show-only templates/duckdb-service.yaml | kubectl apply -f -
+  kubectl rollout status statefulset/<release>-duckdb
+  ```
+
+  Then run step 4 against `duckdb://<release>-duckdb:8484/observal` before
+  `helm upgrade`. The upgrade leaves the ClickHouse PVC in place; it is an
+  archive, not a rollback target.
+- *Terraform*: the stacks run DuckDB on the data host, so apply that host first
+  and let its user-data bring the analytics container up beside ClickHouse:
+  `terraform apply -target=aws_instance.data_host` (AWS and the AWS-standard
+  stack), `-target=google_compute_instance.data_host` (GCP), or
+  `-target=azurerm_linux_virtual_machine.analytics` (Azure). Run step 4 against
+  `duckdb://duckdb.<internal_dns_zone>:8484/observal`, then apply the rest of
+  the stack - applying it in one pass removes ClickHouse before the export.
+
 5. **Deploy the new application version** (init, API, and worker) and let the
    init container finish PostgreSQL migrations. Analytics migrations are applied
    by the DuckDB service itself at boot.

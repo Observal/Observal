@@ -19,6 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CHANGELOG_ANCHOR = "All notable changes to this project will be documented in this file.\n\n"
+UNRELEASED_SECTION = re.compile(r"^## Unreleased[^\n]*\n(.*?)(?=^## |\Z)", re.MULTILINE | re.DOTALL)
 CATEGORIES = (
     "Security",
     "Features",
@@ -384,6 +385,17 @@ def render_release_notes(
     return "\n".join(lines)
 
 
+def _take_unreleased(text: str) -> tuple[str, str | None]:
+    """Split a leading ``## Unreleased`` section into (rest, body).
+
+    Returns ``None`` for the body when the changelog has no Unreleased section.
+    """
+    match = UNRELEASED_SECTION.match(text)
+    if not match:
+        return text, None
+    return text[match.end() :], match.group(1).strip("\n")
+
+
 def prepend_changelog(existing: str, section: str, version: str) -> str:
     if re.search(rf"^## \[{re.escape(version)}\]", existing, re.MULTILINE):
         raise ReleaseError(f"CHANGELOG.md already contains version {version}")
@@ -391,7 +403,15 @@ def prepend_changelog(existing: str, section: str, version: str) -> str:
     if position < 0:
         raise ReleaseError("CHANGELOG.md introduction was not found")
     position += len(CHANGELOG_ANCHOR)
-    return existing[:position] + section.rstrip() + "\n\n" + existing[position:]
+    rest, unreleased = _take_unreleased(existing[position:])
+    header = ""
+    if unreleased is not None:
+        # Hand-written Unreleased notes belong to the version being cut; leaving
+        # them in place would strand them under the new version header.
+        header = "## Unreleased\n\n"
+        if unreleased:
+            section = f"{section.rstrip()}\n\n{unreleased}"
+    return existing[:position] + header + section.rstrip() + "\n\n" + rest.lstrip("\n")
 
 
 def set_version(path: Path, version: str) -> None:

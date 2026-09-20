@@ -109,6 +109,41 @@ def test_changelog_rejects_duplicate_version():
         prepend_changelog(history, "## [1.0.0]", "1.0.0")
 
 
+def test_changelog_folds_hand_written_unreleased_notes_into_the_release():
+    """Unreleased notes must not be stranded under the new version header."""
+    history = (
+        "# Changelog\n\n"
+        "All notable changes to this project will be documented in this file.\n\n"
+        "## Unreleased\n\n"
+        "### Breaking Changes\n\n"
+        "- ClickHouse is no longer supported.\n\n"
+        "## [1.10.7] - hand-edited history\n\nKeep this text exactly.\n"
+    )
+    section = "## [1.10.8] - 2026-07-28\n\n### Fixes\n\n- Fixed it"
+
+    updated = prepend_changelog(history, section, "1.10.8")
+
+    assert updated.index("## Unreleased") < updated.index("## [1.10.8]")
+    assert updated.index("## [1.10.8]") < updated.index("- ClickHouse is no longer supported.")
+    assert updated.index("- ClickHouse is no longer supported.") < updated.index("## [1.10.7]")
+    assert updated.count("## Unreleased") == 1
+    assert updated.endswith("## [1.10.7] - hand-edited history\n\nKeep this text exactly.\n")
+
+
+def test_changelog_keeps_an_empty_unreleased_heading_at_the_top():
+    history = (
+        "# Changelog\n\n"
+        "All notable changes to this project will be documented in this file.\n\n"
+        "## Unreleased\n\n"
+        "## [1.10.7] - hand-edited history\n"
+    )
+
+    updated = prepend_changelog(history, "## [1.10.8] - 2026-07-28\n\n- Fixed it", "1.10.8")
+
+    assert updated.index("## Unreleased") < updated.index("## [1.10.8]")
+    assert updated.count("## Unreleased") == 1
+
+
 def test_changelog_requires_introduction():
     with pytest.raises(ReleaseError, match="introduction was not found"):
         prepend_changelog("# Changelog\n", "## [1.0.0]", "1.0.0")
