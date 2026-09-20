@@ -912,10 +912,9 @@ def server_upgrade(
         OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
     ] = OutputMode.table,
 ) -> None:
-    """Upgrade a local Docker deployment.
+    """Upgrade a local Docker deployment, cutting over legacy ClickHouse telemetry to DuckDB automatically.
 
-    A deployment still running ClickHouse is cut over automatically: telemetry
-    is copied to DuckDB and verified before the new release starts, and
+    Telemetry is copied to DuckDB and verified before the new release starts;
     ClickHouse is stopped (volume kept) only after the new API passes its
     checks. Upgrade the CLI first with `observal self upgrade`.
 
