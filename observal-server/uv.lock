@@ -2046,7 +2046,6 @@ dependencies = [
     { name = "boto3" },
     { name = "click" },
     { name = "cryptography" },
-    { name = "duckdb" },
     { name = "email-validator" },
     { name = "fastapi" },
     { name = "fastapi-cache2" },
@@ -2069,7 +2068,6 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "python-multipart" },
     { name = "python3-saml" },
-    { name = "pytz" },
     { name = "redis", extra = ["hiredis"] },
     { name = "slowapi" },
     { name = "sqlalchemy", extra = ["asyncio"] },
@@ -2082,11 +2080,19 @@ dependencies = [
     { name = "xxhash" },
 ]
 
+[package.optional-dependencies]
+analytics = [
+    { name = "duckdb" },
+    { name = "pytz" },
+]
+
 [package.dev-dependencies]
 dev = [
+    { name = "duckdb" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-xdist" },
+    { name = "pytz" },
     { name = "pyyaml" },
     { name = "rich" },
     { name = "typer" },
@@ -2103,7 +2109,7 @@ requires-dist = [
     { name = "boto3" },
     { name = "click", specifier = ">=8.3.3" },
     { name = "cryptography", specifier = ">=50.0.0" },
-    { name = "duckdb", specifier = ">=1.4.0" },
+    { name = "duckdb", marker = "extra == 'analytics'", specifier = ">=1.4.0" },
     { name = "email-validator" },
     { name = "fastapi", specifier = ">=0.136.0,!=0.136.3" },
     { name = "fastapi-cache2", specifier = ">=0.2.2" },
@@ -2126,7 +2132,7 @@ requires-dist = [
     { name = "python-dotenv" },
     { name = "python-multipart", specifier = ">=0.0.31" },
     { name = "python3-saml", specifier = ">=1.16.0" },
-    { name = "pytz", specifier = ">=2025.2" },
+    { name = "pytz", marker = "extra == 'analytics'", specifier = ">=2025.2" },
     { name = "redis", extras = ["hiredis"], specifier = ">=5.0" },
     { name = "slowapi" },
     { name = "sqlalchemy", extras = ["asyncio"] },
@@ -2138,12 +2144,15 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"] },
     { name = "xxhash", specifier = ">=3.4.0" },
 ]
+provides-extras = ["analytics"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "duckdb", specifier = ">=1.4.0" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=0.23" },
     { name = "pytest-xdist", specifier = ">=3.5" },
+    { name = "pytz", specifier = ">=2025.2" },
     { name = "pyyaml" },
     { name = "rich" },
     { name = "typer" },

@@ -56,9 +56,17 @@ dependencies = [
     "pyarrow>=15.0.0",
     "observal-shared",
     "joserfc>=1.6.7",
+    "anyio>=4.14.2",
+]
+
+[project.optional-dependencies]
+# DuckDB engine and its timezone table. Only the analytics service container
+# imports duckdb; the API, worker and init containers reach it over HTTP, so
+# the engine stays out of their images. pytz is required by duckdb's
+# TIMESTAMPTZ conversion, not by server code.
+analytics = [
     "duckdb>=1.4.0",
     "pytz>=2025.2",
-    "anyio>=4.14.2",
 ]
 
 [tool.uv.sources]
@@ -82,6 +90,9 @@ dev = [
     "pyyaml",
     "typer",
     "rich",
+    # The test suite drives the analytics store in-process.
+    "duckdb>=1.4.0",
+    "pytz>=2025.2",
 ]
 
 [tool.coverage.run]
