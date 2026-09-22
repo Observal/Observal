@@ -224,7 +224,6 @@ function DashboardContent() {
       />
       <div className="page-body mx-auto w-full">
         <PageIntro
-          eyebrow="Executive overview"
           title="AI Adoption Dashboard"
           subtitle="Monitor usage, impact, and investment across your organization."
         >

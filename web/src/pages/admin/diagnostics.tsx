@@ -99,7 +99,6 @@ export default function DiagnosticsPage() {
       />
       <div className="page-body mx-auto w-full">
         <PageIntro
-          eyebrow="System health"
           title="Diagnostics"
           subtitle="Inspect storage, signing keys, runtime configuration, and supporting services."
         >

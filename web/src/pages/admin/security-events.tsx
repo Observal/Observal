@@ -134,7 +134,7 @@ export default function SecurityEventsPage() {
     <>
       <PageHeader title="Security Events" breadcrumbs={[{ label: "Administration" }, { label: "Security" }]} />
       <div className="page-body mx-auto w-full">
-        <PageIntro eyebrow="Security operations" title="Security Events" subtitle="Investigate authentication, authorization, and policy activity." />
+        <PageIntro title="Security Events" subtitle="Investigate authentication, authorization, and policy activity." />
         <div className="space-y-5">
           {data && (
             <AdminMetricStrip>

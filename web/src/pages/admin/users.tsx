@@ -197,7 +197,6 @@ export default function UsersPage() {
       />
       <div className="page-body mx-auto w-full">
         <PageIntro
-          eyebrow="Access management"
           title="Users"
           subtitle="Manage accounts, departments, roles, and authentication access."
         >
