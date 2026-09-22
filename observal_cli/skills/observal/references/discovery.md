@@ -6,6 +6,7 @@
 ## Contents
 
 - When to search
+- Check what is already installed
 - Search
 - Inspect
 - Use
@@ -14,9 +15,20 @@
 
 ## When to search
 
-Search whenever the task could plausibly be covered by something the organization has already approved: reviews, test generation, documentation, querying a system, running code safely, connecting to a service. Search once, act on the result, and do not search again for the same need in the same session.
+Search whenever the task could plausibly be covered by something the organization has already approved: reviews, test generation, documentation, querying a system, running code safely, connecting to a service, drafting or research work, anything substantive. This is not limited to coding. Search once for each need. If it returns no results, retry once with fewer or different words, then act on the final result. Do not search again for the same need in the same session.
 
 Do not search for trivial edits the user described precisely, or when the user explicitly asked for a from-scratch solution.
+
+## Check what is already installed
+
+Before searching, and again before running any `next_step` install command, confirm the capability is not already present:
+
+```bash
+observal scan --output json                        # add --harness <harness> when the active harness is known
+observal outdated --no-report --output json
+```
+
+`scan` is read-only and lists the MCP servers, skills, Agents, and hooks installed for every registered harness, or for one harness with `--harness`; combine it with the tools and skills already loaded in the current session. Pass `--no-report` to `outdated` so an automatic check does not write to the user's inbox. If the resource is already there, use it directly and do not pull or install it again. A component that a user relies on every day must not be re-pulled on every session. Only a successful `outdated` result reporting a newer approved version is a reason to touch an existing install, and even then ask first. If `outdated` fails (authentication, server unavailable, rate limit), treat it as nonfatal: continue to discovery and leave existing installs alone.
 
 ## Search
 
