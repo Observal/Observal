@@ -82,7 +82,6 @@ export default function WikiPage() {
 				{!activePath ? (
 					<>
 						<PageIntro
-							eyebrow="Registry"
 							title="Wiki"
 							subtitle="Practical guidance for registry publishing, telemetry, administration, and operating Observal."
 						/>

@@ -588,7 +588,6 @@ function AgentListContent() {
 
       <div className="page-body w-full mx-auto">
         <PageIntro
-          eyebrow="Registry"
           title="Agents"
           subtitle="Discover installable agents, continue drafts, and manage releases you own."
         />

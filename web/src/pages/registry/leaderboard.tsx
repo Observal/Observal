@@ -190,7 +190,6 @@ export default function LeaderboardPage() {
 
       <div className="page-body w-full mx-auto space-y-0">
         <PageIntro
-          eyebrow="Registry"
           title="Leaderboard"
           subtitle="See what developers are adopting across the Registry."
         />

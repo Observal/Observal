@@ -414,7 +414,6 @@ export default function ComponentsPage() {
 
       <div className="page-body w-full mx-auto">
         <PageIntro
-          eyebrow="Registry"
           title="Components"
           subtitle="Browse and publish the MCP servers, skills, hooks, prompts, and sandboxes used by agents."
         />

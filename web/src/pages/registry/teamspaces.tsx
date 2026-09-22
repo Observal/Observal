@@ -479,7 +479,6 @@ export default function TeamspacesPage() {
         <PageHeader title="Teamspaces" breadcrumbs={[{ label: "Registry", href: "/" }, { label: "Teamspaces" }]} />
         <div className="page-body w-full mx-auto">
           <PageIntro
-            eyebrow="Registry"
             title="Teamspaces"
             subtitle="Shared publishing namespaces with members, visibility, catalogues, and review ownership."
           />
@@ -496,7 +495,6 @@ export default function TeamspacesPage() {
         <PageHeader title="Teamspaces" breadcrumbs={[{ label: "Registry", href: "/" }, { label: "Teamspaces" }]} />
         <div className="page-body w-full mx-auto">
           <PageIntro
-            eyebrow="Registry"
             title="Teamspaces"
             subtitle="Shared publishing namespaces with members, visibility, catalogues, and review ownership."
           />
@@ -516,7 +514,6 @@ export default function TeamspacesPage() {
 
       <div className="page-body w-full mx-auto">
         <PageIntro
-          eyebrow="Registry"
           title="Teamspaces"
           subtitle="Shared publishing namespaces with members, visibility, catalogues, and review ownership."
         />

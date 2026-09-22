@@ -155,7 +155,6 @@ export default function RegistryHome() {
 
       <div className="page-body w-full">
         <PageIntro
-          eyebrow="Registry"
           title="Registry"
           subtitle="Find trusted agents and keep track of the registry work connected to you."
         />

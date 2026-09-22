@@ -594,7 +594,6 @@ function AgentBuilderInner() {
 
       <div className="page-body w-full mx-auto">
         <PageIntro
-          eyebrow="Registry"
           title={isEditMode ? "Edit Agent" : "Agent Builder"}
           subtitle="Build one step at a time, then validate the complete package before review."
         />
