@@ -714,7 +714,6 @@ function DetailPane({ itemId, fallback }: { itemId: string; fallback: InboxItem 
 		<>
 			<PageIntro
 				size="pane"
-				eyebrow={INBOX_KIND_LABELS[item.kind] ?? "Notification"}
 				title={subjectPath(item)}
 				subtitle={item.body ?? undefined}
 			/>
@@ -983,7 +982,6 @@ export default function InboxPage() {
 
 			<DashboardContent className="max-[760px]:px-4 max-[760px]:pt-4 max-[760px]:pb-4">
 				<PageIntro
-					eyebrow="Work feed"
 					title="Inbox"
 					subtitle="Reviews, mentions, recommendations, and system updates that need attention."
 					className="max-[760px]:flex-col max-[760px]:items-start"

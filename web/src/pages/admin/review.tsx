@@ -851,7 +851,6 @@ export default function ReviewPage() {
       />
       <div className="page-body mx-auto w-full">
         <PageIntro
-          eyebrow="Quality and trust"
           title="Review Queue"
           subtitle="Select a submission to inspect its validation, changes, permissions, and dependencies."
         />

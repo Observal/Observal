@@ -802,7 +802,6 @@ export default function TracesPage() {
 			/>
 			<div className="page-body mx-auto w-full">
 				<PageIntro
-					eyebrow="Observability"
 					title="My Traces"
 					subtitle="Find active work quickly, then inspect the execution path and supporting evidence."
 				/>
