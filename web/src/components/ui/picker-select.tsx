@@ -47,6 +47,9 @@ export function PickerSelect({
   const [activeIndex, setActiveIndex] = useState(-1);
   const selected = options.find((option) => option.value === value);
 
+  const selectedIndex = (availableOptions: PickerSelectOption[]) =>
+    availableOptions.findIndex((option) => option.value === value && !option.disabled);
+
   const filteredOptions = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return options;
@@ -57,12 +60,15 @@ export function PickerSelect({
     if (!open) {
       setQuery("");
       setActiveIndex(-1);
-      return;
     }
+  }, [open]);
 
-    const selectedIndex = filteredOptions.findIndex((option) => option.value === value && !option.disabled);
-    setActiveIndex(selectedIndex);
-  }, [filteredOptions, open, value]);
+  const openWithSelectedOption = () => {
+    if (!open) {
+      setActiveIndex(selectedIndex(filteredOptions));
+      setOpen(true);
+    }
+  };
 
   const choose = (next: string) => {
     onValueChange(next);
@@ -95,7 +101,7 @@ export function PickerSelect({
               setQuery(event.target.value);
               setOpen(true);
             }}
-            onFocus={() => setOpen(true)}
+            onFocus={openWithSelectedOption}
             onKeyDown={(event) => {
               if (event.key === "ArrowDown") {
                 event.preventDefault();
@@ -105,9 +111,14 @@ export function PickerSelect({
                 event.preventDefault();
                 setOpen(true);
                 moveActiveOption(-1);
-              } else if (event.key === "Enter" && activeOption) {
-                event.preventDefault();
-                choose(activeOption.value);
+              } else if (event.key === "Enter") {
+                const optionToChoose = activeOption && !activeOption.disabled
+                  ? activeOption
+                  : filteredOptions.find((option) => !option.disabled);
+                if (optionToChoose) {
+                  event.preventDefault();
+                  choose(optionToChoose.value);
+                }
               } else if (event.key === "Escape") {
                 setOpen(false);
               }
@@ -118,13 +129,16 @@ export function PickerSelect({
             aria-expanded={open}
             aria-controls={listboxId}
             aria-activedescendant={open && activeIndex >= 0 ? `${listboxId}-${activeIndex}` : undefined}
-            aria-label={ariaLabel ?? placeholder}
+            aria-label={ariaLabel ?? (id ? undefined : placeholder)}
             disabled={disabled}
             className={cn("pr-9", inputClassName)}
           />
           <button
             type="button"
-            onClick={() => setOpen((current) => !current)}
+            onClick={() => {
+              if (open) setOpen(false);
+              else openWithSelectedOption();
+            }}
             disabled={disabled}
             className="absolute right-2 top-1/2 -translate-y-1/2 rounded text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
             aria-label={open ? "Hide options" : "Show options"}

@@ -51,7 +51,7 @@ function CodeBlock({ children }: { children: React.ReactNode }) {
 					type="button"
 					className="absolute top-2.5 right-2.5 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-white/10 hover:bg-white/15 rounded px-1.5 py-1 flex items-center gap-1"
 					onClick={() => { navigator.clipboard.writeText(codeText); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
-					aria-label="Copy code"
+					aria-label={copied ? "Code copied" : "Copy code"}
 				>
 					{copied ? (
 						<>

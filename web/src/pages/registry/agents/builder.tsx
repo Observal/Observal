@@ -177,6 +177,7 @@ function AgentBuilderInner() {
   const validation = useAgentValidation();
   const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
   const validateTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const validationKeyRef = useRef("");
 
   /* ── Load existing agent ── */
   useEffect(() => {
@@ -285,10 +286,15 @@ function AgentBuilderInner() {
         })),
     );
 
-    if (allComponents.length === 0) {
-      setValidationResult(null);
-      return;
-    }
+    const validationKey = JSON.stringify({
+      components: allComponents,
+      teamId: teamId || undefined,
+      visibility,
+    });
+    validationKeyRef.current = validationKey;
+    setValidationResult(null);
+
+    if (allComponents.length === 0) return;
 
     validateTimerRef.current = setTimeout(() => {
       validation.mutate(
@@ -298,9 +304,14 @@ function AgentBuilderInner() {
           visibility,
         },
         {
-          onSuccess: (result) => setValidationResult(result),
-          onError: () =>
-            setValidationResult({ valid: false, issues: [{ severity: "error", message: "Validation request failed" }] }),
+          onSuccess: (result) => {
+            if (validationKeyRef.current === validationKey) setValidationResult(result);
+          },
+          onError: () => {
+            if (validationKeyRef.current === validationKey) {
+              setValidationResult({ valid: false, issues: [{ severity: "error", message: "Validation request failed" }] });
+            }
+          },
         },
       );
     }, 500);
@@ -560,7 +571,7 @@ function AgentBuilderInner() {
     : (whoami?.username || whoami?.email || "acme");
 
   const identityComplete = Boolean(name.trim() && description.trim());
-  const behaviorComplete = Boolean(systemPrompt.trim());
+  const behaviorComplete = Boolean(systemPrompt.trim() || (selectedComponents.prompts ?? []).length > 0);
   const componentsComplete = totalComponents > 0;
   const componentsValid = componentsComplete && validationResult?.valid === true;
   const readinessPercent = Math.round(
@@ -1039,8 +1050,12 @@ function ReviewStage(props: {
     },
     {
       label: "Behavior",
-      detail: props.systemPrompt.trim() ? "System prompt is provided." : "Add a system prompt.",
-      ok: Boolean(props.systemPrompt.trim()),
+      detail: props.systemPrompt.trim()
+        ? "System prompt is provided."
+        : (props.selectedComponents.prompts ?? []).length > 0
+          ? "Prompt component is included."
+          : "Add a system prompt or prompt component.",
+      ok: Boolean(props.systemPrompt.trim() || (props.selectedComponents.prompts ?? []).length > 0),
       step: "behavior" as StepId,
     },
     {

@@ -591,10 +591,9 @@ export default function ComponentsPage() {
             {/* Column headers */}
             <div
               className="grid min-h-[40px] items-center gap-3 border-b border-border px-[22px] text-2xs font-medium uppercase tracking-[0.05em] text-muted-foreground"
-              style={{ gridTemplateColumns: "minmax(260px,1.7fr) 105px 86px minmax(120px,.7fr) 100px" }}
+              style={{ gridTemplateColumns: "minmax(260px,1.7fr) 86px minmax(120px,.7fr) 100px" }}
             >
               <span>Component</span>
-              <span>Type</span>
               <span>Version</span>
               <span>Used by</span>
               <span>Status</span>
