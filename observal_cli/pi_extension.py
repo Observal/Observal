@@ -27,6 +27,7 @@ automatic post-login install in cmd_auth.py.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -92,6 +93,29 @@ def manifest_path(home: Path | None = None) -> Path:
 
 def settings_path(home: Path | None = None) -> Path:
     return pi_agent_dir(home) / "settings.json"
+
+
+def _reserve_backup(home: Path | None = None) -> Path:
+    """Claim a free backup name by creating it, so two runs cannot pick the same one.
+
+    backup_path() only reports which name is free, which is fine for a message
+    or a dry run but races between the look-up and the copy: two processes both
+    see observal.ts.bak free, and the second overwrites the first one's copy of
+    the original. Creating the file with O_EXCL settles ownership up front.
+    """
+    base = extension_path(home)
+    base.parent.mkdir(parents=True, exist_ok=True)
+    candidate = base.with_name(f"{base.name}.bak")
+    index = 1
+    while True:
+        try:
+            handle = os.open(candidate, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            candidate = base.with_name(f"{base.name}.bak.{index}")
+            index += 1
+            continue
+        os.close(handle)
+        return candidate
 
 
 def backup_path(home: Path | None = None) -> Path:
@@ -273,8 +297,16 @@ def check_status(home: Path | None = None) -> PiExtensionStatus:
     try:
         installed = path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
-        # Everything we ship is UTF-8, so this is somebody else's file. Say so
-        # rather than failing: the contract is that we leave it alone.
+        # Ownership is settled by the manifest, not by whether the bytes decode.
+        # A tracked install that is no longer UTF-8 is still ours to repair;
+        # anything else is somebody else's file and we leave it alone.
+        manifest = _read_manifest(home)
+        if manifest is not None and manifest.get("managed") is True:
+            return PiExtensionStatus(
+                DRIFTED,
+                f"{path} is no longer valid UTF-8. Doctor can restore it, keeping a copy at {backup_path(home).name}.",
+                action="restore",
+            )
         return PiExtensionStatus(UNMANAGED, _unmanaged_message(path))
     except OSError as exc:
         raise OSError(f"{path}: {exc}") from exc
@@ -336,10 +368,11 @@ def install_or_refresh(
     if status.action is None:
         return PiExtensionResult(False)
 
-    backup = backup_path(home) if status.action in _BACKS_UP else None
     if dry_run:
-        return PiExtensionResult(True, status.action, backup)
+        # Report the name that would be used without creating anything.
+        return PiExtensionResult(True, status.action, backup_path(home) if status.action in _BACKS_UP else None)
 
+    backup = _reserve_backup(home) if status.action in _BACKS_UP else None
     if backup is not None:
         shutil.copy2(extension_path(home), backup)
     if status.action == "dedupe":
