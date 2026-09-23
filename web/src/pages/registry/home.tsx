@@ -13,7 +13,7 @@ import {
   Star,
   Terminal,
 } from "lucide-react";
-import { PageHeader, PageIntro } from "@/components/layouts/page-header";
+import { PageHeader } from "@/components/layouts/page-header";
 import { RecommendedForYou } from "@/components/registry/recommended-for-you";
 import { RegistryName } from "@/components/registry/registry-name";
 import { EntityGlyph } from "@/components/registry/entity-glyph";
@@ -154,11 +154,6 @@ export default function RegistryHome() {
       />
 
       <div className="page-body w-full">
-        <PageIntro
-          title="Registry"
-          subtitle="Find trusted agents and keep track of the registry work connected to you."
-        />
-
         {/* ── Guest CLI banner ── */}
         {!isAuthenticated && (
           <section

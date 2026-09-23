@@ -210,10 +210,7 @@ export default function AuditLogPage() {
     <>
       <PageHeader title="Audit Log" breadcrumbs={[{ label: "Administration" }, { label: "Audit Log" }]} />
       <div className="page-body mx-auto w-full">
-        <PageIntro
-          title="Audit Log"
-          subtitle="Inspect immutable records of authenticated API and administrative actions."
-        >
+        <PageIntro>
           <Button variant="outline" size="sm" onClick={handleExport}>
             <Download className="h-3.5 w-3.5" />
             Export CSV

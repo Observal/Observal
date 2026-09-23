@@ -43,7 +43,7 @@ import {
   TabsTrigger,
   TabsContent,
 } from "@/components/ui/tabs";
-import { PageHeader, PageIntro } from "@/components/layouts/page-header";
+import { PageHeader } from "@/components/layouts/page-header";
 import { BuilderStepNav } from "@/components/registry/registry-primitives";
 import { EntityGlyph } from "@/components/registry/entity-glyph";
 import { useRegistryItem, useAgentValidation, useTeams, useWhoami, useSaveDraft, useUpdateDraft, useStartEdit } from "@/hooks/use-api";
@@ -595,11 +595,6 @@ function AgentBuilderInner() {
       />
 
       <div className="page-body w-full mx-auto">
-        <PageIntro
-          title={isEditMode ? "Edit Agent" : "Agent Builder"}
-          subtitle="Build one step at a time, then validate the complete package before review."
-        />
-
         {/* Restore draft banner */}
         {showRestoreBanner && (
           <div className="mb-4 flex items-center gap-3 rounded-lg border border-info/20 bg-info/5 px-4 py-3">

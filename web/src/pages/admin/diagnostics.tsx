@@ -98,10 +98,7 @@ export default function DiagnosticsPage() {
         breadcrumbs={[{ label: "Administration" }, { label: "Diagnostics" }]}
       />
       <div className="page-body mx-auto w-full">
-        <PageIntro
-          title="Diagnostics"
-          subtitle="Inspect storage, signing keys, runtime configuration, and supporting services."
-        >
+        <PageIntro>
           <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
             <RefreshCw className={cn("h-3.5 w-3.5", isLoading && "animate-spin")} />
             Refresh

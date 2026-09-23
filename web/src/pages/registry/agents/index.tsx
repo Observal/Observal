@@ -39,7 +39,7 @@ import {
 import { registry, getUserRole } from "@/lib/api";
 import { useOptionalAuth } from "@/hooks/use-auth";
 import { hasMinRole } from "@/hooks/use-role-guard";
-import { PageHeader, PageIntro } from "@/components/layouts/page-header";
+import { PageHeader } from "@/components/layouts/page-header";
 import { TableSkeleton, CardSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -587,11 +587,6 @@ function AgentListContent() {
       />
 
       <div className="page-body w-full mx-auto">
-        <PageIntro
-          title="Agents"
-          subtitle="Discover installable agents, continue drafts, and manage releases you own."
-        />
-
         {/* ── Type Tabs ── */}
         <TypeTabs
           tabs={tabData}

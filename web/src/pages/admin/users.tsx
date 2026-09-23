@@ -196,10 +196,7 @@ export default function UsersPage() {
         breadcrumbs={[{ label: "Administration" }, { label: "Users" }]}
       />
       <div className="page-body mx-auto w-full">
-        <PageIntro
-          title="Users"
-          subtitle="Manage accounts, departments, roles, and authentication access."
-        >
+        <PageIntro>
           <Button size="sm" variant="outline" onClick={() => setShowBulkDept(true)}>
             <Users className="h-3.5 w-3.5" />
             Bulk departments

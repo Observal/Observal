@@ -5,7 +5,7 @@ import { useState, useEffect } from "react";
 import { useSearch } from "@tanstack/react-router";
 import { loadDoc, listDocPaths } from "@/lib/docs-loader";
 import { WikiRenderer } from "@/components/wiki/wiki-renderer";
-import { PageHeader, PageIntro } from "@/components/layouts/page-header";
+import { PageHeader } from "@/components/layouts/page-header";
 import { Loader2, ArrowLeft } from "lucide-react";
 import { WikiNavItem } from "@/components/registry/registry-primitives";
 
@@ -81,10 +81,6 @@ export default function WikiPage() {
 			<div className="page-body w-full">
 				{!activePath ? (
 					<>
-						<PageIntro
-							title="Wiki"
-							subtitle="Practical guidance for registry publishing, telemetry, administration, and operating Observal."
-						/>
 						<div className="grid grid-cols-1 gap-3.5 md:grid-cols-[200px_minmax(0,1fr)]">
 							{/* Sidebar navigation */}
 							<aside className="self-start rounded-xl bg-card p-2 shadow-sm">

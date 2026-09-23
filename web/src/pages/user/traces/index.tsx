@@ -57,7 +57,7 @@ import {
 	SummaryBarStatus,
 } from "@/components/ui/summary-bar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { PageHeader, PageIntro } from "@/components/layouts/page-header";
+import { PageHeader } from "@/components/layouts/page-header";
 import { TableSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
 import { StatusBadge } from "@/components/registry/status-badge";
@@ -801,10 +801,6 @@ export default function TracesPage() {
 				}
 			/>
 			<div className="page-body mx-auto w-full">
-				<PageIntro
-					title="My Traces"
-					subtitle="Find active work quickly, then inspect the execution path and supporting evidence."
-				/>
 				{isLoading ? (
 					<TableSkeleton rows={8} cols={8} />
 				) : isError ? (

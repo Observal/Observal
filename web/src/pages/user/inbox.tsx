@@ -981,11 +981,7 @@ export default function InboxPage() {
 			<PageHeader title="Inbox" breadcrumbs={[{ label: "Inbox" }]} />
 
 			<DashboardContent className="max-[760px]:px-4 max-[760px]:pt-4 max-[760px]:pb-4">
-				<PageIntro
-					title="Inbox"
-					subtitle="Reviews, mentions, recommendations, and system updates that need attention."
-					className="max-[760px]:flex-col max-[760px]:items-start"
-				>
+				<PageIntro className="max-[760px]:flex-col max-[760px]:items-start">
 					<Button
 						variant="ghost"
 						onClick={() => setRailOpen(true)}

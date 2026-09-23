@@ -223,10 +223,7 @@ function DashboardContent() {
         breadcrumbs={[{ label: "Administration" }, { label: "Dashboard" }]}
       />
       <div className="page-body mx-auto w-full">
-        <PageIntro
-          title="Executive Dashboard"
-          subtitle="Monitor usage, impact, and investment across your organization."
-        >
+        <PageIntro>
           <div className="flex items-center gap-1 rounded-xl bg-surface-raised p-1" aria-label="Dashboard date range">
             <Calendar className="ml-2 h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
             {RANGES.map((r) => (

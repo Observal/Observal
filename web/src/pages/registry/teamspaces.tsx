@@ -4,7 +4,7 @@
 import { Link } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
 import { Loader2, Lock, RefreshCw, Search, Users } from "lucide-react";
-import { PageHeader, PageIntro } from "@/components/layouts/page-header";
+import { PageHeader } from "@/components/layouts/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ErrorState } from "@/components/shared/error-state";
 import { Button } from "@/components/ui/button";
@@ -478,10 +478,6 @@ export default function TeamspacesPage() {
       <>
         <PageHeader title="Teamspaces" breadcrumbs={[{ label: "Registry", href: "/" }, { label: "Teamspaces" }]} />
         <div className="page-body w-full mx-auto">
-          <PageIntro
-            title="Teamspaces"
-            subtitle="Shared publishing namespaces with members, visibility, catalogues, and review ownership."
-          />
           <ErrorState message={error?.message} onRetry={() => refetch()} />
         </div>
       </>
@@ -494,10 +490,6 @@ export default function TeamspacesPage() {
       <>
         <PageHeader title="Teamspaces" breadcrumbs={[{ label: "Registry", href: "/" }, { label: "Teamspaces" }]} />
         <div className="page-body w-full mx-auto">
-          <PageIntro
-            title="Teamspaces"
-            subtitle="Shared publishing namespaces with members, visibility, catalogues, and review ownership."
-          />
           <CreatePanel
             firstTeamspace
             personalClaimed={personalClaimed}
@@ -513,11 +505,6 @@ export default function TeamspacesPage() {
       <PageHeader title="Teamspaces" breadcrumbs={[{ label: "Registry", href: "/" }, { label: "Teamspaces" }]} />
 
       <div className="page-body w-full mx-auto">
-        <PageIntro
-          title="Teamspaces"
-          subtitle="Shared publishing namespaces with members, visibility, catalogues, and review ownership."
-        />
-
         {/* ── Tabs ── */}
         <TypeTabs
           tabs={tabData}

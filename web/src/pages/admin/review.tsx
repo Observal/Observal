@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { PageHeader, PageIntro } from "@/components/layouts/page-header";
+import { PageHeader } from "@/components/layouts/page-header";
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
 import {
@@ -850,10 +850,6 @@ export default function ReviewPage() {
         ]}
       />
       <div className="page-body mx-auto w-full">
-        <PageIntro
-          title="Review Queue"
-          subtitle="Select a submission to inspect its validation, changes, permissions, and dependencies."
-        />
         <Tabs value={activeTab} onValueChange={setActiveTab}>
 
           <div className="mb-3.5 flex flex-wrap items-center gap-1 border-b border-border pb-2">

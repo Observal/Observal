@@ -39,7 +39,7 @@ import {
   SKILL_TASK_TYPES,
   SubmitComponentDialog,
 } from "@/components/registry/submit-component-dialog";
-import { PageHeader, PageIntro } from "@/components/layouts/page-header";
+import { PageHeader } from "@/components/layouts/page-header";
 import { TableSkeleton, CardSkeleton } from "@/components/shared/skeleton-layouts";
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -403,11 +403,6 @@ export default function ComponentsPage() {
       />
 
       <div className="page-body w-full mx-auto">
-        <PageIntro
-          title="Components"
-          subtitle="Browse and publish the MCP servers, skills, hooks, prompts, and sandboxes used by agents."
-        />
-
         <section aria-labelledby="component-view-label" className="mb-3.5">
           <p id="component-view-label" className="mb-1.5 text-2xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
             View

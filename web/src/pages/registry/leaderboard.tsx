@@ -7,7 +7,7 @@
 import { Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { Search, Users } from "lucide-react";
-import { PageHeader, PageIntro } from "@/components/layouts/page-header";
+import { PageHeader } from "@/components/layouts/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ErrorState } from "@/components/shared/error-state";
 import { TableSkeleton } from "@/components/shared/skeleton-layouts";
@@ -189,11 +189,6 @@ export default function LeaderboardPage() {
       />
 
       <div className="page-body w-full mx-auto space-y-0">
-        <PageIntro
-          title="Leaderboard"
-          subtitle="See what developers are adopting across the Registry."
-        />
-
         <div className="mb-4 flex flex-wrap items-center gap-2.5">
           <SegmentedControl
             options={[
