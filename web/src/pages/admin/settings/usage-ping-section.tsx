@@ -94,7 +94,7 @@ export function UsagePingSection({ settings, onChanged }: { settings: AdminSetti
         <div className="grid gap-3 border-t border-border pt-4 md:grid-cols-[minmax(0,1fr)_minmax(12rem,0.5fr)_auto] md:items-end">
           <label className="space-y-1.5">
             <span className="text-xs font-medium">Company name</span>
-            <Input value={companyName} onChange={(event) => setCompanyName(event.target.value)} maxLength={160} placeholder="Acme Engineering" />
+            <Input value={companyName} onChange={(event) => setCompanyName(event.target.value)} maxLength={160} placeholder="Enter your company name" />
           </label>
           <div className="space-y-1.5">
             <label htmlFor="usage-reporting-frequency" className="text-xs font-medium">Reporting frequency</label>
