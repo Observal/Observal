@@ -240,6 +240,30 @@ class TestCheckStatus:
         assert "0.0.1" in status.message
         assert CLI_VERSION in status.message
 
+    def test_same_version_content_drift_is_detected(self, tmp_path: Path):
+        # An editable install whose observal.ts was edited: the version never
+        # moves, so only a content comparison can notice.
+        extension = pi_extension.extension_path(tmp_path)
+        extension.parent.mkdir(parents=True)
+        extension.write_text(pi_extension.extension_source() + "\n// edited\n", encoding="utf-8")
+        write_json(pi_extension.manifest_path(tmp_path), {"managed": True, "version": CLI_VERSION})
+
+        status = pi_extension.check_status(home=tmp_path)
+
+        assert status.state == pi_extension.DRIFTED
+        assert status.action == "restore"
+
+    def test_same_version_matching_content_stays_current(self, tmp_path: Path):
+        extension = pi_extension.extension_path(tmp_path)
+        extension.parent.mkdir(parents=True)
+        extension.write_text(pi_extension.extension_source(), encoding="utf-8")
+        write_json(pi_extension.manifest_path(tmp_path), {"managed": True, "version": CLI_VERSION})
+
+        status = pi_extension.check_status(home=tmp_path)
+
+        assert status.state == pi_extension.CURRENT
+        assert status.action is None
+
     def test_local_manifest_newer_is_not_downgraded(self, tmp_path: Path):
         extension = tmp_path / ".pi/agent/extensions/observal.ts"
         extension.parent.mkdir(parents=True)
@@ -274,10 +298,10 @@ class TestInstallOrRefresh:
     def test_creates_parent_directories_on_first_install(self, tmp_path: Path):
         (tmp_path / ".pi/agent").mkdir(parents=True)
 
-        changed, action = pi_extension.install_or_refresh(dry_run=False, home=tmp_path)
+        result = pi_extension.install_or_refresh(dry_run=False, home=tmp_path)
 
-        assert changed is True
-        assert action == "install"
+        assert result.changed is True
+        assert result.action == "install"
         assert pi_extension.extension_path(tmp_path).read_text() == pi_extension.extension_source()
         assert read_json(pi_extension.manifest_path(tmp_path)) == {
             "managed": True,
@@ -287,18 +311,18 @@ class TestInstallOrRefresh:
     def test_dry_run_reports_without_writing(self, tmp_path: Path):
         (tmp_path / ".pi/agent").mkdir(parents=True)
 
-        changed, action = pi_extension.install_or_refresh(dry_run=True, home=tmp_path)
+        result = pi_extension.install_or_refresh(dry_run=True, home=tmp_path)
 
-        assert changed is True
-        assert action == "install"
+        assert result.changed is True
+        assert result.action == "install"
         assert not pi_extension.extension_path(tmp_path).exists()
 
     def test_noop_when_npm_is_configured(self, tmp_path: Path):
         write_json(tmp_path / ".pi/agent/settings.json", {"packages": ["npm:observal-pi"]})
 
-        changed, action = pi_extension.install_or_refresh(dry_run=False, home=tmp_path)
+        result = pi_extension.install_or_refresh(dry_run=False, home=tmp_path)
 
-        assert (changed, action) == (False, None)
+        assert (result.changed, result.action) == (False, None)
         assert not pi_extension.extension_path(tmp_path).exists()
 
     def test_noop_when_file_is_unmanaged(self, tmp_path: Path):
@@ -306,9 +330,9 @@ class TestInstallOrRefresh:
         extension.parent.mkdir(parents=True)
         extension.write_text("do not touch", encoding="utf-8")
 
-        changed, action = pi_extension.install_or_refresh(dry_run=False, home=tmp_path)
+        result = pi_extension.install_or_refresh(dry_run=False, home=tmp_path)
 
-        assert (changed, action) == (False, None)
+        assert (result.changed, result.action) == (False, None)
         assert extension.read_text() == "do not touch"
 
     def test_adopt_writes_manifest_without_changing_extension_bytes(self, tmp_path: Path):
@@ -317,9 +341,9 @@ class TestInstallOrRefresh:
         source = pi_extension.extension_source()
         extension.write_text(source, encoding="utf-8")
 
-        changed, action = pi_extension.install_or_refresh(dry_run=False, home=tmp_path)
+        result = pi_extension.install_or_refresh(dry_run=False, home=tmp_path)
 
-        assert (changed, action) == (True, "adopt")
+        assert (result.changed, result.action) == (True, "adopt")
         assert extension.read_text() == source
         assert read_json(pi_extension.manifest_path(tmp_path))["version"] == CLI_VERSION
 
@@ -328,9 +352,9 @@ class TestInstallOrRefresh:
         previous = extension.read_text()
         backup = pi_extension.backup_path(tmp_path)
 
-        changed, action = pi_extension.install_or_refresh(dry_run=False, home=tmp_path)
+        result = pi_extension.install_or_refresh(dry_run=False, home=tmp_path)
 
-        assert (changed, action) == (True, "migrate")
+        assert (result.changed, result.action) == (True, "migrate")
         assert extension.read_text() == pi_extension.extension_source()
         assert backup.read_text() == previous
         assert read_json(pi_extension.manifest_path(tmp_path))["version"] == CLI_VERSION
@@ -339,9 +363,9 @@ class TestInstallOrRefresh:
         extension = write_legacy_install(tmp_path)
         previous = extension.read_text()
 
-        changed, action = pi_extension.install_or_refresh(dry_run=True, home=tmp_path)
+        result = pi_extension.install_or_refresh(dry_run=True, home=tmp_path)
 
-        assert (changed, action) == (True, "migrate")
+        assert (result.changed, result.action) == (True, "migrate")
         assert extension.read_text() == previous
         assert not pi_extension.backup_path(tmp_path).exists()
         assert not pi_extension.manifest_path(tmp_path).exists()
@@ -379,9 +403,9 @@ class TestInstallOrRefresh:
         previous = extension.read_text()
         backup = pi_extension.backup_path(tmp_path)
 
-        changed, action = pi_extension.install_or_refresh(dry_run=False, home=tmp_path)
+        result = pi_extension.install_or_refresh(dry_run=False, home=tmp_path)
 
-        assert (changed, action) == (True, "dedupe")
+        assert (result.changed, result.action) == (True, "dedupe")
         assert not extension.exists()
         assert not pi_extension.manifest_path(tmp_path).exists()
         assert backup.read_text() == previous
@@ -390,9 +414,9 @@ class TestInstallOrRefresh:
         write_json(tmp_path / ".pi/agent/settings.json", {"packages": ["npm:observal-pi"]})
         extension = write_legacy_install(tmp_path)
 
-        changed, action = pi_extension.install_or_refresh(dry_run=True, home=tmp_path)
+        result = pi_extension.install_or_refresh(dry_run=True, home=tmp_path)
 
-        assert (changed, action) == (True, "dedupe")
+        assert (result.changed, result.action) == (True, "dedupe")
         assert extension.exists()
         assert not pi_extension.backup_path(tmp_path).exists()
 
@@ -412,10 +436,33 @@ class TestInstallOrRefresh:
         extension.parent.mkdir(parents=True)
         extension.write_text("do not touch", encoding="utf-8")
 
-        changed, action = pi_extension.install_or_refresh(dry_run=False, home=tmp_path)
+        result = pi_extension.install_or_refresh(dry_run=False, home=tmp_path)
 
-        assert (changed, action) == (False, None)
+        assert (result.changed, result.action) == (False, None)
         assert extension.read_text() == "do not touch"
+
+    def test_restore_rewrites_the_drifted_file_and_keeps_a_backup(self, tmp_path: Path):
+        extension = pi_extension.extension_path(tmp_path)
+        extension.parent.mkdir(parents=True)
+        edited = pi_extension.extension_source() + "\n// edited\n"
+        extension.write_text(edited, encoding="utf-8")
+        write_json(pi_extension.manifest_path(tmp_path), {"managed": True, "version": CLI_VERSION})
+
+        result = pi_extension.install_or_refresh(dry_run=False, home=tmp_path)
+
+        assert (result.changed, result.action) == (True, "restore")
+        assert extension.read_text(encoding="utf-8") == pi_extension.extension_source()
+        assert result.backup is not None and result.backup.read_text(encoding="utf-8") == edited
+        assert pi_extension.check_status(home=tmp_path).state == pi_extension.CURRENT
+
+    def test_install_or_refresh_accepts_a_precomputed_status(self, tmp_path: Path):
+        (tmp_path / ".pi/agent").mkdir(parents=True)
+        status = pi_extension.check_status(home=tmp_path)
+
+        result = pi_extension.install_or_refresh(dry_run=False, home=tmp_path, status=status)
+
+        assert result.action == "install"
+        assert pi_extension.extension_path(tmp_path).is_file()
 
 
 class TestRemove:
@@ -446,6 +493,26 @@ class TestRemove:
 
         assert pi_extension.remove(dry_run=False, home=tmp_path) is True
         assert not extension.exists()
+
+    def test_removing_a_pre_manifest_install_keeps_a_backup(self, tmp_path: Path):
+        extension = write_legacy_install(tmp_path)
+        previous = extension.read_text(encoding="utf-8")
+
+        assert pi_extension.remove(dry_run=False, home=tmp_path) is True
+
+        assert not extension.exists()
+        assert pi_extension.backup_path(tmp_path).with_name("observal.ts.bak").read_text(encoding="utf-8") == previous
+
+    def test_removing_a_tracked_install_leaves_no_backup(self, tmp_path: Path):
+        # Manifest-tracked content is ours byte for byte; a copy would be litter.
+        extension = pi_extension.extension_path(tmp_path)
+        extension.parent.mkdir(parents=True)
+        extension.write_text(pi_extension.extension_source(), encoding="utf-8")
+        write_json(pi_extension.manifest_path(tmp_path), {"managed": True, "version": CLI_VERSION})
+
+        assert pi_extension.remove(dry_run=False, home=tmp_path) is True
+
+        assert not extension.with_name("observal.ts.bak").exists()
 
     def test_leaves_npm_configuration_alone(self, tmp_path: Path):
         settings = tmp_path / ".pi/agent/settings.json"

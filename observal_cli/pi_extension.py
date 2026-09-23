@@ -45,6 +45,7 @@ STALE = "stale"
 NEWER = "newer"
 UNMANAGED = "unmanaged"
 MIGRATABLE = "migratable"
+DRIFTED = "drifted"
 NPM_DUPLICATE = "npm_duplicate"
 NPM_CURRENT = "npm_current"
 NPM_STALE = "npm_stale"
@@ -54,12 +55,25 @@ NPM_UNPINNED = "npm_unpinned"
 # recognize a pre-manifest install as ours; see _is_observal_authored.
 _SIGNATURE = "Observal session telemetry extension for Pi"
 
+# Actions that replace or delete a file whose exact provenance we cannot be
+# sure of, so the previous contents are kept alongside before we touch it.
+_BACKS_UP = frozenset({"migrate", "dedupe", "restore"})
+
+
+@dataclass(frozen=True)
+class PiExtensionResult:
+    """Outcome of install_or_refresh: what was done, and where the old file went."""
+
+    changed: bool
+    action: str | None = None
+    backup: Path | None = None
+
 
 @dataclass(frozen=True)
 class PiExtensionStatus:
     state: str
     message: str | None = None
-    action: str | None = None  # None | "install" | "refresh" | "adopt" | "migrate" | "dedupe"
+    action: str | None = None  # install | refresh | restore | adopt | migrate | dedupe
 
 
 def pi_agent_dir(home: Path | None = None) -> Path:
@@ -265,6 +279,17 @@ def check_status(home: Path | None = None) -> PiExtensionStatus:
                 )
             if manifest_version > current_version:
                 return PiExtensionStatus(NEWER)
+            # Same version but different bytes: an edited working copy, or a
+            # bundle that moved without a release. The version alone cannot see
+            # that, so compare content before calling the install clean.
+            if installed != expected:
+                return PiExtensionStatus(
+                    DRIFTED,
+                    f"{path} no longer matches the extension bundled with Observal "
+                    f"{get_current_version()}. Doctor can restore it, keeping a copy at "
+                    f"{backup_path(home).name}.",
+                    action="restore",
+                )
             return PiExtensionStatus(CURRENT)
 
     # No trustworthy manifest (missing, corrupt, or an unparseable version).
@@ -289,43 +314,49 @@ def check_status(home: Path | None = None) -> PiExtensionStatus:
     )
 
 
-def install_or_refresh(*, dry_run: bool, home: Path | None = None) -> tuple[bool, str | None]:
-    """Perform the recommended action, if any.
+def install_or_refresh(
+    *, dry_run: bool, home: Path | None = None, status: PiExtensionStatus | None = None
+) -> PiExtensionResult:
+    """Perform the action check_status recommends, if any.
 
-    Returns (changed, action) where action is "install" | "refresh" | "adopt"
-    | "migrate" | "dedupe", matching PiExtensionStatus.action, or (False, None)
-    if there is nothing to do. "migrate" and "dedupe" both copy the existing
-    file aside first; read backup_path() before calling if you need to report
-    where it went.
+    Pass `status` when the caller has already read it, to avoid a second scan
+    of the same files. Returns what was done and, for the actions that keep the
+    previous file, where that copy went.
     """
-    status = check_status(home)
+    status = status or check_status(home)
     if status.action is None:
-        return False, None
+        return PiExtensionResult(False)
+
+    backup = backup_path(home) if status.action in _BACKS_UP else None
     if dry_run:
-        return True, status.action
+        return PiExtensionResult(True, status.action, backup)
+
+    if backup is not None:
+        shutil.copy2(extension_path(home), backup)
     if status.action == "dedupe":
-        # Back up first: the header match also passes for a copy someone edited.
-        shutil.copy2(extension_path(home), backup_path(home))
         extension_path(home).unlink()
         manifest_path(home).unlink(missing_ok=True)
-        return True, status.action
-    if status.action == "migrate":
-        shutil.copy2(extension_path(home), backup_path(home))
+        return PiExtensionResult(True, status.action, backup)
     if status.action != "adopt":
         atomic_write(extension_path(home), extension_source())
     atomic_write(
         manifest_path(home),
         json.dumps({"managed": True, "version": get_current_version()}, indent=2) + "\n",
     )
-    return True, status.action
+    return PiExtensionResult(True, status.action, backup)
 
 
 def remove(*, dry_run: bool, home: Path | None = None) -> bool:
     """Remove an Observal-managed local install. Never touches npm config or unmanaged files."""
     status = check_status(home)
-    if status.state not in (CURRENT, STALE, NEWER, MIGRATABLE, NPM_DUPLICATE):
+    if status.state not in (CURRENT, STALE, NEWER, DRIFTED, MIGRATABLE, NPM_DUPLICATE):
         return False
+    # Manifest-tracked installs are ours byte for byte; the other two were
+    # recognised by header alone and may be a copy someone edited, so keep one.
+    keep_copy = status.state in (MIGRATABLE, NPM_DUPLICATE)
     if not dry_run:
+        if keep_copy and extension_path(home).is_file():
+            shutil.copy2(extension_path(home), backup_path(home))
         extension_path(home).unlink(missing_ok=True)
         manifest_path(home).unlink(missing_ok=True)
     return True
