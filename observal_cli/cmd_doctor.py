@@ -18,12 +18,10 @@ push session JSONL incrementally to the server.
 
 import hashlib
 import json
-import os
 import sys
 from contextlib import nullcontext, redirect_stdout
 from io import StringIO
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 
 import typer
 from loguru import logger as optic
@@ -38,6 +36,9 @@ from observal_cli.harness_specs.claude_code_hooks_spec import (
     get_desired_hooks,
 )
 from observal_cli.render import OutputMode, esc, output_json
+from observal_cli.shared.utils import (
+    atomic_write,
+)
 from observal_cli.shared.utils import (
     is_observal_hook_entry as _is_observal_hook_entry,
 )
@@ -85,23 +86,6 @@ def _value(value):
 
 def _capture(output: OutputMode | str):
     return redirect_stdout(StringIO()) if _value(output) == "json" else nullcontext()
-
-
-def _atomic_write(path: Path, content: str) -> None:
-    temporary: Path | None = None
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        existing_mode = path.stat().st_mode if path.exists() else None
-        with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False) as file:
-            temporary = Path(file.name)
-            file.write(content)
-        if existing_mode is not None:
-            os.chmod(temporary, existing_mode)
-        temporary.replace(path)
-    except OSError:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
-        raise
 
 
 # ── Diagnose command ─────────────────────────────────────────
@@ -856,7 +840,7 @@ def _cleanup_claude_code(dry_run: bool) -> bool:
             data.pop("env", None)
         if not data.get("hooks"):
             data.pop("hooks", None)
-        _atomic_write(settings_path, json.dumps(data, indent=2) + "\n")
+        atomic_write(settings_path, json.dumps(data, indent=2) + "\n")
         rprint(f"  [green]Written {esc(settings_path)}[/green]")
 
     if not changed:
@@ -899,7 +883,7 @@ def _cleanup_kiro(dry_run: bool) -> bool:
             verb = "Would clean" if dry_run else "Cleaned"
             rprint(f"  {verb} {esc(agent_profile.name)}")
             if not dry_run:
-                _atomic_write(agent_profile, json.dumps(agent_data, indent=2) + "\n")
+                atomic_write(agent_profile, json.dumps(agent_data, indent=2) + "\n")
 
     if not changed:
         rprint("  [dim]No Observal artifacts found in Kiro agents[/dim]")
@@ -961,7 +945,7 @@ def _cleanup_cursor(dry_run: bool) -> bool:
         if not dry_run:
             if not data.get("hooks"):
                 data.pop("hooks", None)
-            _atomic_write(hooks_path, json.dumps(data, indent=2) + "\n")
+            atomic_write(hooks_path, json.dumps(data, indent=2) + "\n")
             rprint(f"  [green]Written {esc(hooks_path)}[/green]")
     else:
         rprint("  [dim]No Observal artifacts found[/dim]")
@@ -1008,7 +992,7 @@ def _cleanup_codex(dry_run: bool) -> bool:
         if not dry_run:
             if not data.get("hooks"):
                 data.pop("hooks", None)
-            _atomic_write(hooks_path, json.dumps(data, indent=2) + "\n")
+            atomic_write(hooks_path, json.dumps(data, indent=2) + "\n")
             rprint(f"  [green]Written {esc(hooks_path)}[/green]")
     else:
         rprint("  [dim]No Observal artifacts found[/dim]")
@@ -1124,7 +1108,7 @@ def _cleanup_goose(dry_run: bool) -> bool:
         verb = "Would remove" if dry_run else "Removed"
         rprint(f"  {verb} Observal hooks from {esc(hooks_path)} (kept {len(foreign)} foreign event(s))")
         if not dry_run:
-            _atomic_write(hooks_path, json.dumps({**data, "hooks": foreign}, indent=2) + "\n")
+            atomic_write(hooks_path, json.dumps({**data, "hooks": foreign}, indent=2) + "\n")
         return True
 
     verb = "Would remove" if dry_run else "Removed"
@@ -1263,7 +1247,7 @@ def _patch_kiro(dry_run: bool) -> bool:
         verb = "Would repair" if dry_run else "Repaired"
         rprint(f"  {verb} {esc(profile)}")
         if not dry_run:
-            _atomic_write(profile, json.dumps(desired, indent=2) + "\n")
+            atomic_write(profile, json.dumps(desired, indent=2) + "\n")
     if not changed:
         rprint("  [dim]Already up to date[/dim]")
     return changed
@@ -1328,7 +1312,7 @@ def _patch_cursor(dry_run: bool) -> bool:
     result = {"version": 1, "hooks": merged_hooks}
 
     if not dry_run:
-        _atomic_write(hooks_path, json.dumps(result, indent=2) + "\n")
+        atomic_write(hooks_path, json.dumps(result, indent=2) + "\n")
 
     verb = "Would install" if dry_run else "Installed"
     rprint(f"  {verb} hooks in {esc(hooks_path)}")
@@ -1363,7 +1347,7 @@ def _patch_antigravity(dry_run: bool) -> bool:
 
     existing.update(desired)
     if not dry_run:
-        _atomic_write(hooks_path, json.dumps(existing, indent=2) + "\n")
+        atomic_write(hooks_path, json.dumps(existing, indent=2) + "\n")
 
     verb = "Would install" if dry_run else "Installed"
     rprint(f"  {verb} hooks in {esc(hooks_path)}")
@@ -1484,7 +1468,7 @@ def _patch_codex(dry_run: bool) -> bool:
 
         if not dry_run:
             codex_dir.mkdir(parents=True, exist_ok=True)
-            _atomic_write(hooks_path, json.dumps(result, indent=2) + "\n")
+            atomic_write(hooks_path, json.dumps(result, indent=2) + "\n")
 
         verb = "Would install" if dry_run else "Installed"
         rprint(f"  {verb} hooks in {esc(hooks_path)}")
@@ -1499,9 +1483,9 @@ def _patch_codex(dry_run: bool) -> bool:
                     content = content.replace("codex_hooks = false", "codex_hooks = true")
                 elif "codex_hooks" not in content:
                     content = f"codex_hooks = true\n{content}"
-                _atomic_write(config_path, content)
+                atomic_write(config_path, content)
             else:
-                _atomic_write(config_path, "codex_hooks = true\n")
+                atomic_write(config_path, "codex_hooks = true\n")
 
         verb = "Would enable" if dry_run else "Enabled"
         rprint(f"  {verb} codex_hooks flag in {esc(config_path)}")
@@ -1562,7 +1546,7 @@ def _patch_copilot(dry_run: bool) -> bool:
 
         if not dry_run:
             hooks_dir.mkdir(parents=True, exist_ok=True)
-            _atomic_write(hooks_path, json.dumps(result, indent=2) + "\n")
+            atomic_write(hooks_path, json.dumps(result, indent=2) + "\n")
 
         verb = "Would install" if dry_run else "Installed"
         rprint(f"  {verb} hooks in {esc(hooks_path)}")
@@ -1612,7 +1596,7 @@ def _patch_copilot(dry_run: bool) -> bool:
     if needs_ps1_update:
         if not dry_run:
             hooks_dir.mkdir(parents=True, exist_ok=True)
-            _atomic_write(ps1_path, ps1_content)
+            atomic_write(ps1_path, ps1_content)
         verb = "Would install" if dry_run else "Installed"
         rprint(f"  {verb} PowerShell wrapper at {esc(ps1_path)}")
         any_changes = True
@@ -1668,7 +1652,7 @@ def _patch_copilot_cli(dry_run: bool) -> bool:
 
     if not dry_run:
         hooks_dir.mkdir(parents=True, exist_ok=True)
-        _atomic_write(hooks_path, json.dumps(result, indent=2) + "\n")
+        atomic_write(hooks_path, json.dumps(result, indent=2) + "\n")
 
     verb = "Would install" if dry_run else "Installed"
     rprint(f"  {verb} hooks in {esc(hooks_path)}")
@@ -1696,7 +1680,7 @@ def _patch_opencode(dry_run: bool) -> bool:
 
     if not dry_run:
         plugins_dir.mkdir(parents=True, exist_ok=True)
-        _atomic_write(plugin_path, plugin_source)
+        atomic_write(plugin_path, plugin_source)
 
     verb = (
         "Would update"
@@ -1762,8 +1746,8 @@ def _patch_goose(dry_run: bool) -> bool:
 
     if not dry_run:
         hooks_path.parent.mkdir(parents=True, exist_ok=True)
-        _atomic_write(manifest_path, json.dumps(manifest, indent=2) + "\n")
-        _atomic_write(hooks_path, json.dumps({**existing, "hooks": merged}, indent=2) + "\n")
+        atomic_write(manifest_path, json.dumps(manifest, indent=2) + "\n")
+        atomic_write(hooks_path, json.dumps({**existing, "hooks": merged}, indent=2) + "\n")
 
     verb = "Would install" if dry_run else "Installed"
     rprint(f"  {verb} hook plugin at {esc(hooks_path.parent.parent)}")
