@@ -55,9 +55,11 @@ NPM_UNPINNED = "npm_unpinned"
 # recognize a pre-manifest install as ours; see _is_observal_authored.
 _SIGNATURE = "Observal session telemetry extension for Pi"
 
-# Actions that replace or delete a file whose exact provenance we cannot be
-# sure of, so the previous contents are kept alongside before we touch it.
-_BACKS_UP = frozenset({"migrate", "dedupe", "restore"})
+# Every action that replaces or deletes an existing file. "install" has no
+# prior file and "adopt" has already matched the bundle byte for byte, so only
+# those two can skip the copy: a manifest proves which version we wrote, never
+# that the bytes are still unedited.
+_BACKS_UP = frozenset({"refresh", "restore", "migrate", "dedupe"})
 
 
 @dataclass(frozen=True)
@@ -116,6 +118,14 @@ def extension_source() -> str:
         if path.exists():
             return path.read_text(encoding="utf-8")
     raise FileNotFoundError("Bundled Pi telemetry extension is missing")
+
+
+def _unmanaged_message(path: Path) -> str:
+    return (
+        f"{path} exists but is not managed by Observal. Remove it (or move it aside) and "
+        "re-run `observal doctor patch --harness pi` to let Observal manage the Pi extension, "
+        "or leave it as-is to keep using it unmanaged."
+    )
 
 
 def _is_observal_authored(content: str) -> bool:
@@ -186,7 +196,7 @@ def _is_observal_local_install(home: Path | None = None) -> bool:
         return True
     try:
         return _is_observal_authored(path.read_text(encoding="utf-8"))
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return False
 
 
@@ -262,6 +272,10 @@ def check_status(home: Path | None = None) -> PiExtensionStatus:
 
     try:
         installed = path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        # Everything we ship is UTF-8, so this is somebody else's file. Say so
+        # rather than failing: the contract is that we leave it alone.
+        return PiExtensionStatus(UNMANAGED, _unmanaged_message(path))
     except OSError as exc:
         raise OSError(f"{path}: {exc}") from exc
 
@@ -306,12 +320,7 @@ def check_status(home: Path | None = None) -> PiExtensionStatus:
             f"{backup_path(home).name}.",
             action="migrate",
         )
-    return PiExtensionStatus(
-        UNMANAGED,
-        f"{path} exists but is not managed by Observal. Remove it (or move it aside) and "
-        "re-run `observal doctor patch --harness pi` to let Observal manage the Pi extension, "
-        "or leave it as-is to keep using it unmanaged.",
-    )
+    return PiExtensionStatus(UNMANAGED, _unmanaged_message(path))
 
 
 def install_or_refresh(
@@ -351,9 +360,9 @@ def remove(*, dry_run: bool, home: Path | None = None) -> bool:
     status = check_status(home)
     if status.state not in (CURRENT, STALE, NEWER, DRIFTED, MIGRATABLE, NPM_DUPLICATE):
         return False
-    # Manifest-tracked installs are ours byte for byte; the other two were
-    # recognised by header alone and may be a copy someone edited, so keep one.
-    keep_copy = status.state in (MIGRATABLE, NPM_DUPLICATE)
+    # CURRENT is the only state that proves the bytes match what we shipped;
+    # every other one may be carrying someone's edits, so keep a copy.
+    keep_copy = status.state != CURRENT
     if not dry_run:
         if keep_copy and extension_path(home).is_file():
             shutil.copy2(extension_path(home), backup_path(home))

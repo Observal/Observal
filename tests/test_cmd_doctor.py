@@ -461,7 +461,7 @@ class TestPatchFunctions:
         assert _patch_pi(dry_run=False) is True
         extension = tmp_path / ".pi/agent/extensions/observal.ts"
         manifest = tmp_path / ".pi/agent/extensions/.observal-extension.json"
-        assert extension.read_text() == pi_extension.extension_source()
+        assert extension.read_text(encoding="utf-8") == pi_extension.extension_source()
         assert read_json(manifest) == {"managed": True, "version": CLI_VERSION}
         assert _patch_pi(dry_run=False) is False
 
@@ -485,40 +485,40 @@ class TestPatchFunctions:
 
         assert _patch_pi(dry_run=False) is True
 
-        assert extension.read_text() == pi_extension.extension_source()
+        assert extension.read_text(encoding="utf-8") == pi_extension.extension_source()
         manifest = read_json(tmp_path / ".pi/agent/extensions/.observal-extension.json")
         assert manifest["version"] == CLI_VERSION
 
     def test_patch_pi_migrates_a_pre_manifest_install_and_keeps_a_backup(self, tmp_path: Path):
         extension = legacy_extension(tmp_path)
-        previous = extension.read_text()
+        previous = extension.read_text(encoding="utf-8")
 
         assert _patch_pi(dry_run=False) is True
 
-        assert extension.read_text() == pi_extension.extension_source()
-        assert extension.with_name("observal.ts.bak").read_text() == previous
+        assert extension.read_text(encoding="utf-8") == pi_extension.extension_source()
+        assert extension.with_name("observal.ts.bak").read_text(encoding="utf-8") == previous
         manifest = read_json(tmp_path / ".pi/agent/extensions/.observal-extension.json")
         assert manifest == {"managed": True, "version": CLI_VERSION}
         assert _patch_pi(dry_run=False) is False
 
     def test_patch_pi_dry_run_migration_writes_nothing(self, tmp_path: Path):
         extension = legacy_extension(tmp_path)
-        previous = extension.read_text()
+        previous = extension.read_text(encoding="utf-8")
 
         assert _patch_pi(dry_run=True) is True
 
-        assert extension.read_text() == previous
+        assert extension.read_text(encoding="utf-8") == previous
         assert not extension.with_name("observal.ts.bak").exists()
 
     def test_patch_pi_removes_a_local_copy_that_duplicates_npm(self, tmp_path: Path):
         write_json(tmp_path / ".pi/agent/settings.json", {"packages": ["npm:observal-pi"]})
         extension = legacy_extension(tmp_path)
-        previous = extension.read_text()
+        previous = extension.read_text(encoding="utf-8")
 
         assert _patch_pi(dry_run=False) is True
 
         assert not extension.exists()
-        assert extension.with_name("observal.ts.bak").read_text() == previous
+        assert extension.with_name("observal.ts.bak").read_text(encoding="utf-8") == previous
         assert _patch_pi(dry_run=False) is False
 
     def test_patch_pi_still_reports_a_stale_npm_package_after_deduping(self, capsys, tmp_path: Path):
@@ -540,7 +540,7 @@ class TestPatchFunctions:
 
         assert _patch_pi(dry_run=False) is False
 
-        assert extension.read_text() == "hand-written extension"
+        assert extension.read_text(encoding="utf-8") == "hand-written extension"
 
     def test_patch_pi_never_overwrites_an_unmanaged_file(self, tmp_path: Path):
         extension = tmp_path / ".pi/agent/extensions/observal.ts"
@@ -549,7 +549,7 @@ class TestPatchFunctions:
 
         assert _patch_pi(dry_run=False) is False
 
-        assert extension.read_text() == "hand-written extension"
+        assert extension.read_text(encoding="utf-8") == "hand-written extension"
         assert not (tmp_path / ".pi/agent/extensions/.observal-extension.json").exists()
 
     def test_patch_pi_adopts_a_pre_manifest_install_without_rewriting_content(self, tmp_path: Path):
@@ -731,7 +731,7 @@ class TestCleanupFunctions:
         extension.write_text("hand-written extension", encoding="utf-8")
 
         assert _cleanup_pi(dry_run=False) is False
-        assert extension.read_text() == "hand-written extension"
+        assert extension.read_text(encoding="utf-8") == "hand-written extension"
 
     def test_cleanup_cursor_preserves_foreign_hooks(self, tmp_path: Path):
         hooks_path = tmp_path / ".cursor/hooks.json"

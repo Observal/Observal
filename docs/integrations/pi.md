@@ -104,8 +104,10 @@ observal doctor patch --harness pi
 ```
 
 This writes the bundled extension to `~/.pi/agent/extensions/observal.ts` when
-it is missing or differs from the bundled source, recording the CLI version it
-came from in an adjacent `.observal-extension.json`.
+it is missing, and refreshes a copy Observal recognises as its own when that
+copy has fallen behind or been edited, recording the CLI version it came from
+in an adjacent `.observal-extension.json`. A file Observal did not write is
+reported and left alone.
 
 If `npm:observal-pi` is registered in `~/.pi/agent/settings.json`, that takes
 precedence: nothing is installed locally, and a local copy Observal recognises
