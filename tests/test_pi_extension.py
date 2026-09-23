@@ -149,6 +149,18 @@ class TestCheckStatus:
         assert pi_extension.remove(dry_run=True, home=tmp_path) is False
         assert extension.read_bytes() == b"// caf\xe9 hand-written extension\n"
 
+    def test_a_tracked_file_that_is_not_utf8_is_still_ours_to_repair(self, tmp_path: Path):
+        # Ownership comes from the manifest, not from whether the bytes decode.
+        extension = pi_extension.extension_path(tmp_path)
+        extension.parent.mkdir(parents=True)
+        extension.write_bytes(b"// caf\xe9 corrupted but ours\n")
+        write_json(pi_extension.manifest_path(tmp_path), {"managed": True, "version": CLI_VERSION})
+
+        status = pi_extension.check_status(home=tmp_path)
+
+        assert status.state == pi_extension.DRIFTED
+        assert status.action == "restore"
+
     def test_npm_with_foreign_local_file_is_not_a_duplicate(self, tmp_path: Path):
         write_json(tmp_path / ".pi/agent/settings.json", {"packages": ["npm:observal-pi"]})
         extension = pi_extension.extension_path(tmp_path)
@@ -492,6 +504,44 @@ class TestInstallOrRefresh:
         assert result.action == "refresh"
         assert result.backup is not None
         assert result.backup.read_text(encoding="utf-8") == edited
+
+    def test_concurrent_backups_do_not_clobber_each_other(self, tmp_path: Path):
+        # Two runs must not both claim observal.ts.bak: the second copy would
+        # overwrite the first one's record of the original file.
+        extension = pi_extension.extension_path(tmp_path)
+        extension.parent.mkdir(parents=True)
+        extension.write_text("original", encoding="utf-8")
+
+        first = pi_extension._reserve_backup(tmp_path)
+        second = pi_extension._reserve_backup(tmp_path)
+
+        assert first != second
+        assert first.name == "observal.ts.bak"
+        assert second.name == "observal.ts.bak.1"
+
+    def test_install_or_refresh_claims_the_backup_before_copying(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+        # The name must be claimed on disk up front, not merely looked up, or a
+        # second run picks the same one and overwrites this run's copy.
+        extension = write_legacy_install(tmp_path)
+
+        def fail(*_args, **_kwargs):
+            raise RuntimeError("copy interrupted")
+
+        monkeypatch.setattr(pi_extension.shutil, "copy2", fail)
+
+        with pytest.raises(RuntimeError):
+            pi_extension.install_or_refresh(dry_run=False, home=tmp_path)
+
+        assert (extension.parent / "observal.ts.bak").exists()
+
+    def test_dry_run_reserves_nothing_on_disk(self, tmp_path: Path):
+        extension = write_legacy_install(tmp_path)
+
+        result = pi_extension.install_or_refresh(dry_run=True, home=tmp_path)
+
+        assert result.backup is not None
+        assert not result.backup.exists()
+        assert list(extension.parent.glob("*.bak*")) == []
 
 
 class TestRemove:
