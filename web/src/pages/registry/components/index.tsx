@@ -48,7 +48,6 @@ import { EntityGlyph, toEntityKind } from "@/components/registry/entity-glyph";
 import { RegistryName } from "@/components/registry/registry-name";
 import { registryItemPath, canonicalRouteParts } from "@/lib/registry-name";
 import { compactNumber } from "@/lib/utils";
-import { tagColorClasses } from "@/lib/tag-colors";
 import {
   TypeTabs,
   ViewToggle,
@@ -130,7 +129,6 @@ function ComponentCatalogCard({
     ? `${compactNumber(item.download_count as number)} agents`
     : undefined;
   const glyphKind = typeToGlyphKind(registryType);
-  const typeSingular = SINGULAR[registryType] ?? registryType;
 
   const cls = [
     "flex flex-col rounded-xl bg-card p-[18px] shadow-sm min-h-[160px]",
@@ -164,13 +162,11 @@ function ComponentCatalogCard({
         </p>
       )}
 
-      {/* Meta row: type-box + usage */}
-      <div className="mt-3.5 flex items-center gap-3 border-t border-border pt-3 text-[10px] text-muted-foreground">
-        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-medium ${tagColorClasses(glyphKind)}`}>
-          {typeSingular}
-        </span>
-        {usage && <span>{usage}</span>}
-      </div>
+      {usage && (
+        <div className="mt-3.5 border-t border-border pt-3 text-[10px] text-muted-foreground">
+          {usage}
+        </div>
+      )}
     </>
   );
 
@@ -207,7 +203,6 @@ function ComponentListRow({
     ? `${item.namespace}/${item.slug}`
     : item.qualified_name || item.name;
   const glyphKind = typeToGlyphKind(registryType);
-  const typeSingular = SINGULAR[registryType] ?? registryType;
   const version = (item.version as string | undefined) ?? "-";
   const usage = item.download_count != null
     ? `${compactNumber(item.download_count as number)} agents`
@@ -216,7 +211,7 @@ function ComponentListRow({
   return (
     <div
       className="grid min-h-[66px] cursor-pointer items-center gap-3 border-t border-border px-[22px] py-3 transition-colors first:border-t-0 hover:bg-surface-raised"
-      style={{ gridTemplateColumns: "minmax(260px,1.7fr) 105px 86px minmax(120px,.7fr) 100px" }}
+      style={{ gridTemplateColumns: "minmax(260px,1.7fr) 86px minmax(120px,.7fr) 100px" }}
       onClick={onClick}
       role="button"
       tabIndex={0}
@@ -230,11 +225,6 @@ function ComponentListRow({
           <span className="block truncate mt-0.5 font-mono text-[9px] text-muted-foreground">{handle}</span>
         </div>
       </div>
-
-      {/* Type box */}
-      <span className={`inline-flex w-fit items-center rounded-full px-2 py-0.5 text-2xs font-medium whitespace-nowrap ${tagColorClasses(glyphKind)}`}>
-        {typeSingular}
-      </span>
 
       {/* Version */}
       <span className="font-mono text-[10px] text-muted-foreground">{version}</span>

@@ -134,7 +134,7 @@ type GroupMode = "date" | "type" | "none";
 const GROUP_LABELS: Record<GroupMode, string> = {
 	date: "Date",
 	type: "Type",
-	none: "Nothing",
+	none: "No grouping",
 };
 
 // ── Small helpers ──────────────────────────────────────────────────────
