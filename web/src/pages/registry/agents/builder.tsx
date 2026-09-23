@@ -562,8 +562,10 @@ function AgentBuilderInner() {
   const identityComplete = Boolean(name.trim() && description.trim());
   const behaviorComplete = Boolean(systemPrompt.trim());
   const componentsComplete = totalComponents > 0;
-  const readinessPercent =
-    [identityComplete, behaviorComplete, componentsComplete, activeStep === "review"].filter(Boolean).length * 25;
+  const componentsValid = componentsComplete && validationResult?.valid === true;
+  const readinessPercent = Math.round(
+    ([identityComplete, behaviorComplete, componentsValid].filter(Boolean).length / 3) * 100,
+  );
 
   if (!ready) return null;
 
@@ -672,6 +674,7 @@ function AgentBuilderInner() {
                 mcpCount={mcpCount} skillCount={skillCount}
                 onEditStep={setActiveStep}
                 validationResult={validationResult}
+                componentsValid={componentsValid}
                 buildRequestBody={buildRequestBody}
               />
             )}
@@ -688,8 +691,7 @@ function AgentBuilderInner() {
               mcpCount={mcpCount} skillCount={skillCount}
               identityComplete={identityComplete}
               behaviorComplete={behaviorComplete}
-              componentsComplete={componentsComplete}
-              activeStep={activeStep}
+              componentsValid={componentsValid}
               readinessPercent={readinessPercent}
             />
           </aside>
@@ -1030,6 +1032,7 @@ function ReviewStage(props: {
   mcpCount: number; skillCount: number;
   onEditStep: (step: StepId) => void;
   validationResult: ValidationResult | null;
+  componentsValid: boolean;
   buildRequestBody: () => Record<string, unknown>;
 }) {
   const checks = [
@@ -1040,28 +1043,33 @@ function ReviewStage(props: {
       step: "identity" as StepId,
     },
     {
-      label: "Behavior and success criteria",
-      detail: "Prompt is valid · 1 intended purpose · 1 measurable target",
+      label: "Behavior",
+      detail: props.systemPrompt.trim() ? "System prompt is provided." : "Add a system prompt.",
       ok: Boolean(props.systemPrompt.trim()),
       step: "behavior" as StepId,
     },
     {
       label: "Components",
-      detail: `${props.mcpCount} MCP servers · ${props.skillCount} skill${props.skillCount !== 1 ? "s" : ""} · compatible with 3 harnesses`,
-      ok: props.totalComponents > 0,
+      detail: props.componentsValid
+        ? `${props.mcpCount} MCP servers · ${props.skillCount} skill${props.skillCount !== 1 ? "s" : ""} · validation passed`
+        : props.totalComponents > 0
+          ? "Run component validation before submission."
+          : "Add at least one component.",
+      ok: props.componentsValid,
       step: "components" as StepId,
     },
     {
-      label: "Ownership acknowledgement",
-      detail: "You are the creator or point of contact for this agent.",
+      label: "Ownership",
+      detail: "You will be recorded as this agent's point of contact.",
       ok: true,
       step: "review" as StepId,
     },
   ];
 
+  const isReady = checks.slice(0, 3).every((check) => check.ok);
   const body = props.buildRequestBody();
   const previewYaml = `${props.namespace}/${props.name || "agent"}@${props.version}
-model: ${body.model_name || "anthropic/claude-sonnet-4"}
+model: ${body.model_name || "<harness default>"}
 visibility: ${body.visibility || "public"}
 components:
   mcps: ${props.mcpCount}
@@ -1078,9 +1086,12 @@ review: required`;
               Confirm identity, behavior, compatibility, and ownership before submission.
             </p>
           </div>
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-raised px-2.5 py-1 text-2xs font-medium text-success">
-            <span className="h-1.5 w-1.5 rounded-full bg-success" />
-            Ready
+          <span className={cn(
+            "inline-flex items-center gap-1.5 rounded-full bg-surface-raised px-2.5 py-1 text-2xs font-medium",
+            isReady ? "text-success" : "text-warning",
+          )}>
+            <span className={cn("h-1.5 w-1.5 rounded-full", isReady ? "bg-success" : "bg-warning")} />
+            {isReady ? "Ready to submit" : "Needs attention"}
           </span>
         </div>
 
@@ -1152,8 +1163,7 @@ function SummaryPanel(props: {
   mcpCount: number; skillCount: number;
   identityComplete: boolean;
   behaviorComplete: boolean;
-  componentsComplete: boolean;
-  activeStep: string;
+  componentsValid: boolean;
   readinessPercent: number;
 }) {
   return (
@@ -1188,7 +1198,7 @@ function SummaryPanel(props: {
         <div className="mt-3 space-y-0 divide-y divide-border">
           <SettingRow label="Publish to" sub="Personal namespace" value={`${props.namespace}/`} />
           <SettingRow label="Visibility" sub="Available after approval" value={props.visibility === "team" ? "Team only" : "Public"} />
-          <SettingRow label="Model" sub="Default across harnesses" value={props.modelName || "Sonnet 4"} />
+          <SettingRow label="Model" sub="Default across harnesses" value={props.modelName || "Harness default"} />
           <SettingRow label="Components" sub={`${props.mcpCount} MCP servers · ${props.skillCount} skill${props.skillCount !== 1 ? "s" : ""}`} value={String(props.totalComponents)} />
         </div>
       </section>
@@ -1198,8 +1208,7 @@ function SummaryPanel(props: {
         <div className="mt-3 space-y-2">
           <ReadinessRow label="Identity and description" ok={props.identityComplete} />
           <ReadinessRow label="Prompt" ok={props.behaviorComplete} />
-          <ReadinessRow label="Component compatibility" ok={props.componentsComplete} />
-          <ReadinessRow label="Success metrics" ok={props.activeStep === "review"} />
+          <ReadinessRow label="Component validation" ok={props.componentsValid} />
         </div>
         {/* Progress bar */}
         <div className="mt-3 h-1 overflow-hidden rounded-full bg-surface-raised">
@@ -1275,7 +1284,7 @@ function BuilderFooter({
   return (
     <footer className="mt-3.5 flex flex-wrap items-center gap-2 rounded-xl bg-card px-5 py-3.5 shadow-sm">
       <p className="flex-1 text-2xs text-muted-foreground">
-        Draft saved locally 2 minutes ago. Nothing is published until review.
+        Nothing is published until review.
       </p>
       {prev ? (
         <Button variant="outline" size="sm" onClick={() => setActiveStep(prev)}>

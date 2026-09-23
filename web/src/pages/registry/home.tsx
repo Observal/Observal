@@ -210,7 +210,7 @@ export default function RegistryHome() {
             What are you working on?
           </h2>
           <p className="mt-2 max-w-[600px] text-sm text-muted-foreground">
-            Find an approved agent or assemble a workflow from trusted components.
+            Find an approved agent for the work you need to do.
           </p>
 
           <IntentSearch
@@ -218,7 +218,6 @@ export default function RegistryHome() {
             onChange={setSearch}
             onSubmit={handleSearch}
             placeholder='Try "review a Python service" or "database migration"'
-            kbdHint="⌘ K"
             className="mt-[22px] max-w-[780px]"
           />
 

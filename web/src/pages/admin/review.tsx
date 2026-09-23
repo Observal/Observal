@@ -118,7 +118,7 @@ function reviewChecks(item: ReviewItem): CheckCell[] {
         : { label: "Validation", value: "Not run", tone: "neutral" };
 
   const provenance: CheckCell = item.git_url
-    ? { label: "Provenance", value: "Sources verified", tone: "pass" }
+    ? { label: "Provenance", value: "Source link provided", tone: "neutral" }
     : { label: "Provenance", value: "No source link", tone: "neutral" };
 
   const blockers = componentBlockers(item);
