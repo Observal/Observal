@@ -1359,6 +1359,7 @@ _PI_ACTION_VERBS = {
     "refresh": ("Would update", "Updated"),
     "adopt": ("Would record install metadata for", "Recorded install metadata for"),
     "migrate": ("Would migrate", "Migrated"),
+    "restore": ("Would restore", "Restored"),
     "dedupe": ("Would remove the duplicate", "Removed the duplicate"),
 }
 
@@ -1369,10 +1370,10 @@ def _patch_pi(dry_run: bool) -> bool:
     rprint("[cyan]Pi - session telemetry extension[/cyan]")
 
     status = pi_extension.check_status()
-    backup = pi_extension.backup_path() if status.action in ("migrate", "dedupe") else None
-    changed, action = pi_extension.install_or_refresh(dry_run=dry_run)
+    result = pi_extension.install_or_refresh(dry_run=dry_run, status=status)
+    action, backup = result.action, result.backup
 
-    if not changed:
+    if not result.changed:
         if status.state == pi_extension.NOT_DETECTED:
             rprint("  [dim]No ~/.pi/agent/ directory - skipping[/dim]")
         elif status.state in (pi_extension.NPM_CURRENT, pi_extension.NPM_UNPINNED, pi_extension.NPM_STALE):

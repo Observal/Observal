@@ -1840,7 +1840,7 @@ def test_pi_extension_setup_is_silent_when_pi_not_detected(monkeypatch: pytest.M
     import observal_cli.pi_extension as pi_extension
 
     monkeypatch.setattr(pi_extension, "check_status", lambda: pi_extension.PiExtensionStatus(pi_extension.NOT_DETECTED))
-    install_or_refresh = MagicMock()
+    install_or_refresh = MagicMock(return_value=pi_extension.PiExtensionResult(True))
     monkeypatch.setattr(pi_extension, "install_or_refresh", install_or_refresh)
 
     auth._install_or_check_pi_extension()
@@ -1854,12 +1854,12 @@ def test_pi_extension_setup_installs_when_missing(monkeypatch: pytest.MonkeyPatc
 
     status = pi_extension.PiExtensionStatus(pi_extension.NOT_INSTALLED, "not installed", action="install")
     monkeypatch.setattr(pi_extension, "check_status", lambda: status)
-    install_or_refresh = MagicMock()
+    install_or_refresh = MagicMock(return_value=pi_extension.PiExtensionResult(True))
     monkeypatch.setattr(pi_extension, "install_or_refresh", install_or_refresh)
 
     auth._install_or_check_pi_extension()
 
-    install_or_refresh.assert_called_once_with(dry_run=False)
+    install_or_refresh.assert_called_once_with(dry_run=False, status=status)
     assert any("Installed the Pi telemetry extension" in message for message in printed)
 
 
@@ -1870,7 +1870,9 @@ def test_pi_extension_setup_refreshes_and_prompts_reload_when_stale(
 
     status = pi_extension.PiExtensionStatus(pi_extension.STALE, "stale", action="refresh")
     monkeypatch.setattr(pi_extension, "check_status", lambda: status)
-    monkeypatch.setattr(pi_extension, "install_or_refresh", MagicMock())
+    monkeypatch.setattr(
+        pi_extension, "install_or_refresh", MagicMock(return_value=pi_extension.PiExtensionResult(True))
+    )
 
     auth._install_or_check_pi_extension()
 
@@ -1884,12 +1886,12 @@ def test_pi_extension_setup_adopts_silently(monkeypatch: pytest.MonkeyPatch, pri
 
     status = pi_extension.PiExtensionStatus(pi_extension.CURRENT, action="adopt")
     monkeypatch.setattr(pi_extension, "check_status", lambda: status)
-    install_or_refresh = MagicMock()
+    install_or_refresh = MagicMock(return_value=pi_extension.PiExtensionResult(True))
     monkeypatch.setattr(pi_extension, "install_or_refresh", install_or_refresh)
 
     auth._install_or_check_pi_extension()
 
-    install_or_refresh.assert_called_once_with(dry_run=False)
+    install_or_refresh.assert_called_once_with(dry_run=False, status=status)
     assert printed == []
 
 
@@ -1900,13 +1902,13 @@ def test_pi_extension_setup_migrates_pre_manifest_install(monkeypatch: pytest.Mo
 
     status = pi_extension.PiExtensionStatus(pi_extension.MIGRATABLE, "older CLI", action="migrate")
     monkeypatch.setattr(pi_extension, "check_status", lambda: status)
-    monkeypatch.setattr(pi_extension, "backup_path", lambda: Path("/home/u/.pi/agent/extensions/observal.ts.bak"))
-    install_or_refresh = MagicMock()
+    backup = Path("/home/u/.pi/agent/extensions/observal.ts.bak")
+    install_or_refresh = MagicMock(return_value=pi_extension.PiExtensionResult(True, "migrate", backup))
     monkeypatch.setattr(pi_extension, "install_or_refresh", install_or_refresh)
 
     auth._install_or_check_pi_extension()
 
-    install_or_refresh.assert_called_once_with(dry_run=False)
+    install_or_refresh.assert_called_once_with(dry_run=False, status=status)
     output = "\n".join(printed)
     assert "Migrated the Pi telemetry extension" in output
     assert "observal.ts.bak" in output
@@ -1920,7 +1922,7 @@ def test_pi_extension_setup_warns_about_a_duplicate_without_deleting(
 
     status = pi_extension.PiExtensionStatus(pi_extension.NPM_DUPLICATE, "each session is sent twice", action="dedupe")
     monkeypatch.setattr(pi_extension, "check_status", lambda: status)
-    install_or_refresh = MagicMock()
+    install_or_refresh = MagicMock(return_value=pi_extension.PiExtensionResult(True))
     monkeypatch.setattr(pi_extension, "install_or_refresh", install_or_refresh)
 
     auth._install_or_check_pi_extension()
@@ -1936,7 +1938,7 @@ def test_pi_extension_setup_reports_stale_npm_without_installing_locally(
 
     status = pi_extension.PiExtensionStatus(pi_extension.NPM_STALE, "pi update npm:observal-pi")
     monkeypatch.setattr(pi_extension, "check_status", lambda: status)
-    install_or_refresh = MagicMock()
+    install_or_refresh = MagicMock(return_value=pi_extension.PiExtensionResult(True))
     monkeypatch.setattr(pi_extension, "install_or_refresh", install_or_refresh)
 
     auth._install_or_check_pi_extension()

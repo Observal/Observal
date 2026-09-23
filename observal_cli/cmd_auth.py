@@ -1562,19 +1562,18 @@ def _install_or_check_pi_extension():
         if status.action == "dedupe":
             # Deleting a file mid-login is too surprising; doctor patch does it.
             rprint(f"[yellow]{esc(status.message)}[/yellow]")
-        elif status.action in ("install", "refresh", "migrate"):
-            # Resolve before the write: a migration copies the untracked file
-            # aside, after which this returns the next free name instead.
-            backup = pi_extension.backup_path() if status.action == "migrate" else None
-            pi_extension.install_or_refresh(dry_run=False)
-            verb = {"install": "Installed", "refresh": "Updated", "migrate": "Migrated"}[status.action]
+        elif status.action in ("install", "refresh", "migrate", "restore"):
+            result = pi_extension.install_or_refresh(dry_run=False, status=status)
+            verb = {"install": "Installed", "refresh": "Updated", "migrate": "Migrated", "restore": "Restored"}[
+                status.action
+            ]
             rprint(f"[green]✓ {verb} the Pi telemetry extension.[/green]")
-            if backup is not None:
-                rprint(f"  [dim]Kept the previous file at {esc(backup)}.[/dim]")
+            if result.backup is not None:
+                rprint(f"  [dim]Kept the previous file at {esc(result.backup)}.[/dim]")
             if status.action != "install":
                 rprint("  [dim]Restart Pi or run /reload to activate.[/dim]")
         elif status.action == "adopt":
-            pi_extension.install_or_refresh(dry_run=False)
+            pi_extension.install_or_refresh(dry_run=False, status=status)
         elif status.message:
             rprint(f"[yellow]{esc(status.message)}[/yellow]")
     except Exception as exc:
