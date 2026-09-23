@@ -27,15 +27,13 @@ automatic post-login install in cmd_auth.py.
 from __future__ import annotations
 
 import json
-import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 
 from packaging.version import InvalidVersion, Version
 
-from observal_cli.shared.utils import load_jsonc
+from observal_cli.shared.utils import atomic_write, load_jsonc
 from observal_cli.version_check import get_current_version
 
 _NPM_SOURCE = "npm:observal-pi"
@@ -116,23 +114,6 @@ def _is_observal_authored(content: str) -> bool:
     someone else and is never written to.
     """
     return _SIGNATURE in content
-
-
-def _atomic_write(path: Path, content: str) -> None:
-    temporary: Path | None = None
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        existing_mode = path.stat().st_mode if path.exists() else None
-        with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False) as file:
-            temporary = Path(file.name)
-            file.write(content)
-        if existing_mode is not None:
-            os.chmod(temporary, existing_mode)
-        temporary.replace(path)
-    except OSError:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
-        raise
 
 
 def _npm_entry(settings: dict) -> str | None:
@@ -331,8 +312,8 @@ def install_or_refresh(*, dry_run: bool, home: Path | None = None) -> tuple[bool
     if status.action == "migrate":
         shutil.copy2(extension_path(home), backup_path(home))
     if status.action != "adopt":
-        _atomic_write(extension_path(home), extension_source())
-    _atomic_write(
+        atomic_write(extension_path(home), extension_source())
+    atomic_write(
         manifest_path(home),
         json.dumps({"managed": True, "version": get_current_version()}, indent=2) + "\n",
     )
