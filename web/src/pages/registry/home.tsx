@@ -336,6 +336,7 @@ export default function RegistryHome() {
           </Panel>
 
           {/* Agents gaining adoption */}
+          {(isAuthenticated || topAgentsLoading || Boolean(topAgents?.length) || Boolean(agentsError)) && (
           <Panel
             title={
               topAgents?.length
@@ -412,6 +413,7 @@ export default function RegistryHome() {
               </p>
             )}
           </Panel>
+          )}
 
           {/* Recent execution / More public agents */}
           <Panel

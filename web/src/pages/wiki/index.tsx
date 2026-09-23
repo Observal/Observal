@@ -6,7 +6,7 @@ import { useSearch } from "@tanstack/react-router";
 import { loadDoc, listDocPaths } from "@/lib/docs-loader";
 import { WikiRenderer } from "@/components/wiki/wiki-renderer";
 import { PageHeader, PageIntro } from "@/components/layouts/page-header";
-import { Loader2, ChevronRight, ArrowLeft } from "lucide-react";
+import { Loader2, ArrowLeft } from "lucide-react";
 import { WikiNavItem } from "@/components/registry/registry-primitives";
 
 function organizeBySection(paths: string[]): Record<string, string[]> {
@@ -120,29 +120,6 @@ export default function WikiPage() {
 									</pre>
 								</div>
 
-								<div className="mt-6 space-y-3">
-									<h3 className="text-base font-medium">Browse all pages</h3>
-									<div className="divide-y divide-border">
-										{sortedSections.map(([section, paths]) => (
-											<section key={section} className="grid gap-4 py-4 md:grid-cols-[140px_minmax(0,1fr)]">
-												<div>
-													<h4 className="text-xs font-medium">{sectionLabel(section)}</h4>
-													<p className="mt-0.5 text-[10px] text-muted-foreground">{paths.length} page{paths.length === 1 ? "" : "s"}</p>
-												</div>
-												<ul className="grid gap-x-6 gap-y-1 sm:grid-cols-2 xl:grid-cols-3">
-													{paths.sort().map((p) => (
-														<li key={p}>
-															<a href={docHref(p)} className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-xs text-foreground/75 transition-colors hover:bg-surface-raised hover:text-foreground">
-																<ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
-																<span className="min-w-0 flex-1 truncate">{pathToTitle(p)}</span>
-															</a>
-														</li>
-													))}
-												</ul>
-											</section>
-										))}
-									</div>
-								</div>
 							</div>
 						</div>
 					</>

@@ -224,7 +224,7 @@ function DashboardContent() {
       />
       <div className="page-body mx-auto w-full">
         <PageIntro
-          title="AI Adoption Dashboard"
+          title="Executive Dashboard"
           subtitle="Monitor usage, impact, and investment across your organization."
         >
           <div className="flex items-center gap-1 rounded-xl bg-surface-raised p-1" aria-label="Dashboard date range">

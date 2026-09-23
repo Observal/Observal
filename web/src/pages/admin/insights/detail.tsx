@@ -42,7 +42,7 @@ import {
 import { useInsightReport } from "@/hooks/use-api";
 import { useApplyInsightSuggestions } from "@/hooks/use-insights-api";
 import { Button } from "@/components/ui/button";
-import { PageHeader } from "@/components/layouts/page-header";
+import { PageHeader, PageIntro } from "@/components/layouts/page-header";
 import { ErrorState } from "@/components/shared/error-state";
 import { insights } from "@/lib/api";
 import { registryItemPath } from "@/lib/registry-name";
@@ -1986,6 +1986,10 @@ export default function InsightReportPage() {
 		<>
 			<PageHeader
 				title="Insight Report"
+				breadcrumbs={[
+					{ label: "Agents", href: "/agents" },
+					{ label: `Insight report · ${agentId}` },
+				]}
 				actionButtonsRight={
 					<div className="flex items-center gap-2">
 						{report?.status === "completed" && (
@@ -2016,6 +2020,10 @@ export default function InsightReportPage() {
 
 				{report && (
 					<div className="space-y-6">
+						<PageIntro
+							title="Insight report"
+							subtitle={`Agent ${agentId}`}
+						/>
 						{/* Header with status and metadata */}
 						<div className="flex items-center justify-between">
 							<StatusIndicator status={report.status} />

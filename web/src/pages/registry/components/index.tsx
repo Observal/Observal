@@ -418,28 +418,36 @@ export default function ComponentsPage() {
           subtitle="Browse and publish the MCP servers, skills, hooks, prompts, and sandboxes used by agents."
         />
 
-        {/* ── Discovery tabs (row 1) ── */}
-        <TypeTabs
-          tabs={discoveryTabData}
-          active={discoveryTab}
-          onTabChange={(v) => setDiscoveryTab(v as DiscoveryTab)}
-        />
+        <section aria-labelledby="component-view-label" className="mb-3.5">
+          <p id="component-view-label" className="mb-1.5 text-2xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
+            View
+          </p>
+          <TypeTabs
+            tabs={discoveryTabData}
+            active={discoveryTab}
+            onTabChange={(v) => setDiscoveryTab(v as DiscoveryTab)}
+          />
+        </section>
 
-        {/* ── Type tabs (row 2) ── */}
-        <TypeTabs
-          tabs={typeTabData}
-          active={activeType}
-          onTabChange={(v) => {
-            updateFilters({
-              type: v as RegistryType,
-              category: undefined,
-              task_type: undefined,
-              event: undefined,
-              scope: undefined,
-              runtime_type: undefined,
-            });
-          }}
-        />
+        <section aria-labelledby="component-type-label" className="mb-3.5">
+          <p id="component-type-label" className="mb-1.5 text-2xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
+            Component type
+          </p>
+          <TypeTabs
+            tabs={typeTabData}
+            active={activeType}
+            onTabChange={(v) => {
+              updateFilters({
+                type: v as RegistryType,
+                category: undefined,
+                task_type: undefined,
+                event: undefined,
+                scope: undefined,
+                runtime_type: undefined,
+              });
+            }}
+          />
+        </section>
 
         {/* ── Toolbar ── */}
         <RegistryToolbar>
