@@ -1382,11 +1382,11 @@ export default function SettingsPage() {
 										<p className="text-xs text-foreground/60 mb-3">{section.description}</p>
 									)}
 									{hasDeprecatedSettings && (
-										<div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+										<div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
 											<strong>Deprecated settings detected.</strong> AWS-specific credential fields are no longer used. Please configure the API Key field above with your provider key (or a{" "}
-											<a href="https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html" target="_blank" rel="noopener noreferrer" className="underline text-amber-300 hover:text-amber-100">Bedrock API key</a>
+											<a href="https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html" target="_blank" rel="noopener noreferrer" className="underline text-amber-950 hover:text-amber-800 dark:text-amber-300 dark:hover:text-amber-100">Bedrock API key</a>
 											) and use{" "}
-											<a href="https://docs.litellm.ai/docs/providers" target="_blank" rel="noopener noreferrer" className="underline text-amber-300 hover:text-amber-100">LiteLLM provider format</a>
+											<a href="https://docs.litellm.ai/docs/providers" target="_blank" rel="noopener noreferrer" className="underline text-amber-950 hover:text-amber-800 dark:text-amber-300 dark:hover:text-amber-100">LiteLLM provider format</a>
 											{" "}for model IDs. You can safely delete the old AWS settings.
 										</div>
 									)}

@@ -738,8 +738,9 @@ export function SubmitComponentDialog({
 
 					<div className="grid grid-cols-2 gap-3">
 						<div className="space-y-1.5">
-							<Label>Publish to</Label>
+							<Label htmlFor="component-publish-to">Publish to</Label>
 							<PickerSelect
+								id="component-publish-to"
 								value={(fixedTeamId ?? teamId) || "personal"}
 								disabled={fixedTeamId !== undefined || fixedVisibility !== undefined}
 								onValueChange={(value) => {
@@ -758,8 +759,9 @@ export function SubmitComponentDialog({
 							/>
 						</div>
 						<div className="space-y-1.5">
-							<Label>Visibility</Label>
+							<Label htmlFor="component-visibility">Visibility</Label>
 							<PickerSelect
+								id="component-visibility"
 								value={fixedVisibility ?? visibility}
 								disabled={fixedVisibility !== undefined || teamRequiresPrivate}
 								onValueChange={(value) => {
@@ -781,8 +783,9 @@ export function SubmitComponentDialog({
 					{type === "mcps" && (
 						<>
 							<div className="space-y-1.5">
-								<Label>Category</Label>
+								<Label htmlFor="component-category">Category</Label>
 								<PickerSelect
+									id="component-category"
 									value={category}
 									onValueChange={setCategory}
 									options={MCP_CATEGORIES.map((c) => ({ value: c, label: c }))}

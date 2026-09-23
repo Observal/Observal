@@ -49,8 +49,9 @@ function CodeBlock({ children }: { children: React.ReactNode }) {
 			{codeText && (
 				<button
 					type="button"
-					className="absolute top-2.5 right-2.5 opacity-0 group-hover:opacity-100 transition-opacity bg-white/10 hover:bg-white/15 rounded px-1.5 py-1 flex items-center gap-1"
+					className="absolute top-2.5 right-2.5 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring bg-white/10 hover:bg-white/15 rounded px-1.5 py-1 flex items-center gap-1"
 					onClick={() => { navigator.clipboard.writeText(codeText); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+					aria-label="Copy code"
 				>
 					{copied ? (
 						<>
@@ -115,7 +116,7 @@ function createComponents(basePath?: string): Components {
 	h2: ({ children, ...props }) => {
 		const id = extractId(children, props);
 		return (
-			<h2 id={id} className="scroll-mt-20 text-xl font-semibold mt-10 mb-4 pb-2 border-b border-[#08c9b9]/30 text-[#08c9b9]">
+			<h2 id={id} className="scroll-mt-20 text-xl font-semibold mt-10 mb-4 pb-2 border-b border-primary/30 text-foreground">
 				{children}
 			</h2>
 		);
@@ -123,7 +124,7 @@ function createComponents(basePath?: string): Components {
 	h3: ({ children, ...props }) => {
 		const id = extractId(children, props);
 		return (
-			<h3 id={id} className="scroll-mt-20 text-lg font-semibold mt-8 mb-3 text-[#7db4f5]">
+			<h3 id={id} className="scroll-mt-20 text-lg font-semibold mt-8 mb-3 text-foreground">
 				{children}
 			</h3>
 		);
@@ -131,7 +132,7 @@ function createComponents(basePath?: string): Components {
 	h4: ({ children, ...props }) => {
 		const id = extractId(children, props);
 		return (
-			<h4 id={id} className="scroll-mt-20 text-base font-semibold mt-7 mb-2 text-[#7db4f5]/80">
+			<h4 id={id} className="scroll-mt-20 text-base font-semibold mt-7 mb-2 text-foreground">
 				{children}
 			</h4>
 		);
