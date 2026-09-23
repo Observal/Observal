@@ -1457,7 +1457,7 @@ export default function SettingsPage() {
 												);
 												if (visibleDangerSettings.length === 0) return null;
 												return (
-												<details key={section.title} className="group rounded-md border-l-4 border-amber-500/60 border-2 border-border/70 bg-card">
+												<details key={section.title} className="group rounded-md border border-amber-500/40 bg-card">
 													<summary className="flex items-center gap-2 px-4 py-3 cursor-pointer select-none hover:bg-muted/30 transition-colors">
 														{sectionIcon(section)}
 														<span className="text-sm font-semibold text-foreground/80 flex-1">{section.title}</span>

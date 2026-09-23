@@ -2525,7 +2525,6 @@ html {
      accompanying static dot or icon already conveys the state. */
   .animate-ping,
   .animate-pulse,
-  .animate-bounce,
   .animate-breathe {
     animation: none !important;
   }
