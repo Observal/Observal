@@ -4,13 +4,40 @@
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from typing import TYPE_CHECKING
+
+import pytest
 
 from observal_shared.opencode_plugin_source import OPENCODE_PLUGIN_SOURCE, OPENCODE_PLUGIN_VERSION
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+def _node_supports_strip_types() -> tuple[bool, str]:
+    """Return whether `node --experimental-strip-types` can run on this machine."""
+    try:
+        version_output = subprocess.run(
+            ["node", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (FileNotFoundError, OSError):
+        return False, "node executable not found"
+    if version_output.returncode != 0:
+        return False, f"node --version failed: {version_output.stderr.strip()}"
+    match = re.search(r"v(\d+)\.(\d+)", version_output.stdout)
+    if not match:
+        return False, f"could not parse node version from {version_output.stdout.strip()!r}"
+    major, minor = int(match.group(1)), int(match.group(2))
+    # --experimental-strip-types landed in Node 22.6.0 (package.json engines).
+    if (major, minor) < (22, 6):
+        return False, f"requires Node >= 22.6 for --experimental-strip-types (found {version_output.stdout.strip()})"
+    return True, ""
 
 
 def test_generated_plugin_uses_durable_acknowledged_delivery():
@@ -23,6 +50,9 @@ def test_generated_plugin_uses_durable_acknowledged_delivery():
 
 
 def test_native_outbox_survives_restart_and_clears_only_after_ack(tmp_path: Path):
+    supported, reason = _node_supports_strip_types()
+    if not supported:
+        pytest.skip(reason)
     plugin = tmp_path / "plugin.ts"
     plugin.write_text(
         OPENCODE_PLUGIN_SOURCE
