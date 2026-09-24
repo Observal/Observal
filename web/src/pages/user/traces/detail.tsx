@@ -1933,16 +1933,21 @@ function SessionStats({
 				</div>
 			)}
 			{!stats.isCopilotCli && (
-				<div className="col-span-full space-y-1 border-t border-border pt-3">
-					<p className="text-2xs text-muted-foreground uppercase tracking-wide">
-						Models
-					</p>
-					<div className="flex flex-wrap gap-1">
-						{[...stats.models].map((m) => (
-							<Badge key={m}>{m.replace("claude-", "")}</Badge>
-						))}
+				<>
+					<div className="col-span-full">
+						<Separator />
 					</div>
-				</div>
+					<div className="col-span-full space-y-1">
+						<p className="text-2xs text-muted-foreground uppercase tracking-wide">
+							Models
+						</p>
+						<div className="flex flex-wrap gap-1">
+							{[...stats.models].map((m) => (
+								<Badge key={m}>{m.replace("claude-", "")}</Badge>
+							))}
+						</div>
+					</div>
+				</>
 			)}
 			{Object.keys(stats.tools).length > 0 && (
 				<div className="col-span-full space-y-1">
