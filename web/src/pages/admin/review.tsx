@@ -75,12 +75,6 @@ function typeLabel(type?: string): string {
   return singular.charAt(0).toUpperCase() + singular.slice(1);
 }
 
-function typeNoun(type?: string): string {
-  if (!type) return "submission";
-  const singular = type.endsWith("s") ? type.slice(0, -1) : type;
-  return singular === "mcp" ? "MCP server" : singular;
-}
-
 function qualifiedHandle(item: ReviewItem): string {
   const name = item.name ?? "unnamed";
   return item.owner ? `${item.owner}/${name}` : name;
@@ -375,22 +369,14 @@ function DetailPanel({ children }: { children: ReactNode }) {
 
 function ReviewDetailPanel({
   item,
-  pending,
   onViewDiff,
-  onApprove,
-  onReject,
 }: {
   item: ReviewItem;
-  pending: boolean;
   onViewDiff: (item: ReviewItem) => void;
-  onApprove: (id: string, type?: string) => void;
-  onReject: (id: string, reason: string, type?: string) => void;
 }) {
-  const [note, setNote] = useState("");
   const age = ageParts(item.submitted_at ?? item.created_at);
   const checks = reviewChecks(item);
   const context = reviewerContext(item);
-  const blocked = item.components_ready === false;
   const summary =
     item.description ?? "No description was supplied with this submission.";
   const meta = [
@@ -439,32 +425,11 @@ function ReviewDetailPanel({
         </ReviewChange>
         {context && <ReviewChange label="Reviewer context">{context}</ReviewChange>}
 
-        <ReviewNoteAndActions
-          note={note}
-          onNoteChange={setNote}
-          noteId={`review-note-${item.id}`}
-        >
+        <div className="mt-5 flex justify-end border-t border-border pt-4">
           <Button variant="ghost" onClick={() => onViewDiff(item)}>
             View full diff
           </Button>
-          <Button
-            variant="ghost"
-            className="text-destructive hover:text-destructive"
-            disabled={pending || !note.trim()}
-            title={note.trim() ? undefined : "Add a review note to reject this submission"}
-            onClick={() => onReject(item.id, note.trim(), item.type)}
-          >
-            <XCircle aria-hidden="true" />
-            Reject
-          </Button>
-          <Button
-            disabled={pending || blocked}
-            title={blocked ? "Blocked: a component this release depends on is not approved yet" : undefined}
-            onClick={() => onApprove(item.id, item.type)}
-          >
-            Approve {typeNoun(item.type)}
-          </Button>
-        </ReviewNoteAndActions>
+        </div>
       </div>
     </>
   );
@@ -883,10 +848,7 @@ export default function ReviewPage() {
                 <ReviewDetailPanel
                   key={selectedAgent.id}
                   item={selectedAgent}
-                  pending={reviewAction.isPending}
                   onViewDiff={handleViewDiff}
-                  onApprove={handleApprove}
-                  onReject={handleReject}
                 />
               ),
               queue: (
@@ -915,10 +877,7 @@ export default function ReviewPage() {
                 <ReviewDetailPanel
                   key={selectedComponent.id}
                   item={selectedComponent}
-                  pending={reviewAction.isPending}
                   onViewDiff={handleViewDiff}
-                  onApprove={handleApprove}
-                  onReject={handleReject}
                 />
               ),
               queue: componentList.map((item) => (
