@@ -91,7 +91,7 @@ export function UsagePingSection({ settings, onChanged }: { settings: AdminSetti
           <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Enable usage reporting" />
         </div>
 
-        <div className="grid gap-3 border-t border-border pt-4 md:grid-cols-[minmax(0,1fr)_minmax(12rem,0.5fr)_auto] md:items-end">
+        <div className="grid gap-3 border-t border-border pt-4 md:grid-cols-[minmax(0,1fr)_minmax(12rem,0.5fr)_auto] md:items-start">
           <label className="space-y-1.5">
             <span className="text-xs font-medium">Company name</span>
             <Input value={companyName} onChange={(event) => setCompanyName(event.target.value)} maxLength={160} placeholder="Enter your company name" />
@@ -112,7 +112,7 @@ export function UsagePingSection({ settings, onChanged }: { settings: AdminSetti
               {FREQUENCY_OPTIONS.find((option) => option.value === frequency)?.detail}
             </p>
           </div>
-          <Button onClick={save} disabled={saving}>
+          <Button className="md:mt-[22px]" onClick={save} disabled={saving}>
             {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-1.5 h-4 w-4" />}
             Save consent
           </Button>
