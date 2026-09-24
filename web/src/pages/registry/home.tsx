@@ -198,9 +198,6 @@ export default function RegistryHome() {
 
         {/* ── Intent box ── */}
         <section className="mb-[22px] rounded-xl bg-card p-[30px] shadow-sm animate-in">
-          <p className="mb-1.5 text-2xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
-            Start with intent
-          </p>
           <h2 className="max-w-[670px] text-balance text-[clamp(24px,3vw,38px)] font-semibold tracking-[-0.02em]">
             What are you working on?
           </h2>
