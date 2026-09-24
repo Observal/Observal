@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Ravi Chopra <shivamchopra1234567890@gmail.com>
 # SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
+# SPDX-FileCopyrightText: 2026 Rishank Jain <rishankj749@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 # =============================================================================
@@ -140,3 +141,56 @@ serviceAccount:
   create: true
   name: ""
   annotations: {}
+
+# PodDisruptionBudgets limit voluntary evictions (node drains, cluster
+# upgrades). With the default of one replica and minAvailable: 1, a drain
+# waits until another replica is available, so raise api.replicas and
+# worker.replicas or lower minAvailable before draining nodes.
+podDisruptionBudget:
+  api:
+    enabled: true
+    minAvailable: 1
+  worker:
+    enabled: true
+    minAvailable: 1
+
+# NetworkPolicies for the API and worker pods. Opt-in, and only enforced when
+# the cluster CNI supports NetworkPolicy (e.g. Calico, Cilium).
+networkPolicy:
+  enabled: false
+  # Pods of the ingress controller allowed to reach the API on port 8000.
+  # Defaults match the upstream ingress-nginx chart. Set both selectors to null
+  # to allow only the in-release web pods and api.extraIngress.
+  ingressController:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: ingress-nginx
+    podSelector:
+      matchLabels:
+        app.kubernetes.io/name: ingress-nginx
+  # Cluster DNS reachable from the worker on port 53 (UDP and TCP). Set both
+  # selectors to null to allow port 53 to any destination (e.g. NodeLocal DNSCache).
+  dns:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: kube-system
+    podSelector:
+      matchLabels:
+        k8s-app: kube-dns
+  # Required when enabled: Kubernetes API endpoint CIDRs, allowed on TCP 443 and
+  # 6443 for the worker's wait-for-init initContainer. List the endpoint
+  # addresses, then add each IPv4 address as /32 and each IPv6 address as /128:
+  #   kubectl get endpointslices -n default \
+  #     -l kubernetes.io/service-name=kubernetes \
+  #     -o jsonpath='{range .items[*].endpoints[*].addresses[*]}{.}{"\n"}{end}'
+  kubeApiServer:
+    cidrs: []
+  api:
+    # Additional NetworkPolicyIngressRule entries for API pods, e.g. a
+    # Prometheus scraper or a load balancer that targets pod IPs directly.
+    extraIngress: []
+  worker:
+    # Additional NetworkPolicyEgressRule entries for worker pods. Needed for
+    # external PostgreSQL/ClickHouse/Redis, Git source sync, alert webhooks,
+    # insight LLM providers, and usage reporting.
+    extraEgress: []

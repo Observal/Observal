@@ -5,6 +5,7 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 # SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
+# SPDX-FileCopyrightText: 2026 Rishank Jain <rishankj749@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -80,6 +81,7 @@ jobs:
             helm:
               - 'infra/helm/**'
               - 'docs/self-hosting/kubernetes-helm.md'
+              - 'tests/test_helm_networkpolicy_pdb.py'
               - '.github/workflows/ci.yml'
               - '.github/workflows/release.yml'
             docker:
@@ -262,13 +264,30 @@ jobs:
 
       - name: Lint chart
         if: needs.changes.outputs.helm == 'true'
-        run: helm lint infra/helm/observal
+        run: |
+          helm lint infra/helm/observal
+          helm lint infra/helm/observal \
+            --set networkPolicy.enabled=true \
+            --set 'networkPolicy.kubeApiServer.cidrs={10.0.0.1/32}'
 
       - name: Render chart
         if: needs.changes.outputs.helm == 'true'
         run: |
           mkdir -p chart-dist
           helm template observal infra/helm/observal --namespace observal > chart-dist/rendered.yaml
+
+          NP_ARGS=(--set networkPolicy.enabled=true --set 'networkPolicy.kubeApiServer.cidrs={10.0.0.1/32}')
+          helm template observal infra/helm/observal --namespace observal "${NP_ARGS[@]}" \
+            > chart-dist/rendered-networkpolicy.yaml
+          helm template observal infra/helm/observal --namespace observal "${NP_ARGS[@]}" \
+            --set postgresql.enabled=false \
+            --set postgresql.externalUrl=postgresql+asyncpg://observal:observal@postgres.example.com:5432/observal \
+            --set clickhouse.enabled=false \
+            --set clickhouse.externalUrl=clickhouse://default:observal@clickhouse.example.com:8123/observal \
+            --set redis.enabled=false \
+            --set redis.externalUrl=redis://redis.example.com:6379 \
+            --set-json 'networkPolicy.worker.extraEgress=[{"to":[{"ipBlock":{"cidr":"203.0.113.0/24"}}],"ports":[{"protocol":"TCP","port":5432}]}]' \
+            > chart-dist/rendered-external-datastores.yaml
 
       - name: Validate rendered manifests
         if: needs.changes.outputs.helm == 'true'
@@ -280,7 +299,17 @@ jobs:
             -summary \
             -kubernetes-version 1.27.0 \
             -schema-location 'https://raw.githubusercontent.com/yannh/kubernetes-json-schema/c8f4e61c63bc529749125ac566bccc6986e08d45/{{.NormalizedKubernetesVersion}}-standalone-strict/{{.ResourceKind}}{{.KindSuffix}}.json' \
-            /work/chart-dist/rendered.yaml
+            /work/chart-dist/rendered.yaml \
+            /work/chart-dist/rendered-networkpolicy.yaml \
+            /work/chart-dist/rendered-external-datastores.yaml
+
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        if: needs.changes.outputs.helm == 'true'
+
+      # The pytest job has no helm binary, so these rendered-manifest tests skip there and run here.
+      - name: Test rendered NetworkPolicy and PodDisruptionBudget manifests
+        if: needs.changes.outputs.helm == 'true'
+        run: uv run --no-project --with pytest --with pyyaml pytest --noconftest tests/test_helm_networkpolicy_pdb.py -q
 
       - name: Verify packaged chart appVersion image tags
         if: needs.changes.outputs.helm == 'true'

@@ -1,0 +1,45 @@
+# SPDX-FileCopyrightText: 2026 Rishank Jain <rishankj749@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+{{- if .Values.networkPolicy.enabled }}
+{{- $np := .Values.networkPolicy }}
+{{- $controller := dict }}
+{{- with $np.ingressController.namespaceSelector }}
+{{- $_ := set $controller "namespaceSelector" . }}
+{{- end }}
+{{- with $np.ingressController.podSelector }}
+{{- $_ := set $controller "podSelector" . }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "observal.fullname" . }}-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "observal.labels" . | nindent 4 }}
+    app.kubernetes.io/component: api
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "observal.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  # Egress is intentionally unrestricted: the API reaches identity providers,
+  # Git hosts, webhooks, and LLM catalogs in addition to the datastores.
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        # The web nginx proxies /api/, /health, and /.well-known/ to the API.
+        - podSelector:
+            matchLabels:
+              {{- include "observal.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: web
+        {{- with $controller }}
+        {{- toYaml (list .) | nindent 8 }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 8000
+    {{- with $np.api.extraIngress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}
