@@ -205,6 +205,35 @@ def test_worker_policy_denies_ingress_and_limits_egress_to_required_services():
     assert _ports(api_server[0]) == {("TCP", 443), ("TCP", 6443)}
 
 
+def test_worker_policy_datastore_peers_match_rendered_statefulsets():
+    docs = _render(NETWORK_POLICY_ON)
+    worker = _by_kind(docs, "NetworkPolicy")["observal-worker"]
+    statefulsets = {
+        sts["spec"]["template"]["metadata"]["labels"]["app.kubernetes.io/component"]: sts
+        for sts in _by_kind(docs, "StatefulSet").values()
+    }
+
+    matched = set()
+    for rule in worker["spec"]["egress"]:
+        for peer in rule.get("to", []):
+            if "podSelector" not in peer or "namespaceSelector" in peer:
+                continue
+            selector = peer["podSelector"]["matchLabels"]
+            component = selector["app.kubernetes.io/component"]
+            pod_template = statefulsets[component]["spec"]["template"]
+
+            assert selector.items() <= pod_template["metadata"]["labels"].items()
+            container_ports = {
+                (port.get("protocol", "TCP"), port["containerPort"])
+                for container in pod_template["spec"]["containers"]
+                for port in container.get("ports", [])
+            }
+            assert _ports(rule) <= container_ports
+            matched.add(component)
+
+    assert matched == set(statefulsets) == {"db", "clickhouse", "redis"}
+
+
 def test_worker_policy_dns_allows_any_destination_when_selectors_are_null():
     values = _merge(NETWORK_POLICY_ON, {"networkPolicy": {"dns": {"namespaceSelector": None, "podSelector": None}}})
     worker = _by_kind(_render(values), "NetworkPolicy")["observal-worker"]
