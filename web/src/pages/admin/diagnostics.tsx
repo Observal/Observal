@@ -116,18 +116,6 @@ export default function DiagnosticsPage() {
                 label="System status"
                 value={data.status === "ok" ? "Operational" : data.status}
                 detail={dataUpdatedAt ? `Updated ${new Date(dataUpdatedAt).toLocaleTimeString()}` : "Not yet refreshed"}
-                action={
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 gap-1 px-2 text-2xs"
-                    onClick={() => refetch()}
-                    disabled={isLoading}
-                  >
-                    <RefreshCw className={cn("h-3 w-3", isLoading && "animate-spin")} />
-                    Refresh
-                  </Button>
-                }
                 icon={<StatusIcon status={data.status} />}
                 tone={data.status === "ok" ? "success" : "warning"}
               />
@@ -193,6 +181,13 @@ export default function DiagnosticsPage() {
                   )}
                 </CheckPanel>
               )}
+            </div>
+
+            <div className="flex justify-end">
+              <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
+                <RefreshCw className={cn("h-3.5 w-3.5", isLoading && "animate-spin")} />
+                Refresh
+              </Button>
             </div>
           </div>
         ) : null}

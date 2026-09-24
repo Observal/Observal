@@ -211,8 +211,8 @@ export default function AuditLogPage() {
       <PageHeader title="Audit Log" breadcrumbs={[{ label: "Administration" }, { label: "Audit Log" }]} />
       <div className="page-body mx-auto w-full">
         <div className="space-y-5">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="min-w-0 flex-1 sm:max-w-4xl">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 flex-1 sm:pr-3">
               <SearchField
                 value={searchQuery}
                 onValueChange={handleSearchChange}
