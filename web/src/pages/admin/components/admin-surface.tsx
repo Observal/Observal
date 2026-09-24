@@ -68,23 +68,28 @@ export function AdminMetric({
   value,
   detail,
   icon,
+  action,
   tone = "default",
 }: {
   label: ReactNode;
   value: ReactNode;
   detail?: ReactNode;
   icon?: ReactNode;
+  action?: ReactNode;
   tone?: keyof typeof toneClasses;
 }) {
   return (
     <div className="min-w-0 bg-card px-5 py-4">
       <div className="flex items-center justify-between gap-3 text-2xs text-muted-foreground">
         <span>{label}</span>
-        {icon && (
-          <span aria-hidden="true" className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-surface-raised [&_svg]:h-3.5 [&_svg]:w-3.5">
-            {icon}
-          </span>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {action}
+          {icon && (
+            <span aria-hidden="true" className="grid h-7 w-7 place-items-center rounded-lg bg-surface-raised [&_svg]:h-3.5 [&_svg]:w-3.5">
+              {icon}
+            </span>
+          )}
+        </div>
       </div>
       <strong className={cn("mt-3 block text-2xl font-semibold tabular-nums tracking-[-0.025em]", toneClasses[tone])}>
         {value}

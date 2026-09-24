@@ -14,7 +14,7 @@ import {
   XCircle,
 } from "lucide-react";
 
-import { PageHeader, PageIntro } from "@/components/layouts/page-header";
+import { PageHeader } from "@/components/layouts/page-header";
 import { ErrorState } from "@/components/shared/error-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -98,13 +98,6 @@ export default function DiagnosticsPage() {
         breadcrumbs={[{ label: "Administration" }, { label: "Diagnostics" }]}
       />
       <div className="page-body mx-auto w-full">
-        <PageIntro>
-          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
-            <RefreshCw className={cn("h-3.5 w-3.5", isLoading && "animate-spin")} />
-            Refresh
-          </Button>
-        </PageIntro>
-
         {isError ? (
           <ErrorState message={(error as Error)?.message} onRetry={() => refetch()} />
         ) : isLoading && !data ? (
@@ -123,6 +116,18 @@ export default function DiagnosticsPage() {
                 label="System status"
                 value={data.status === "ok" ? "Operational" : data.status}
                 detail={dataUpdatedAt ? `Updated ${new Date(dataUpdatedAt).toLocaleTimeString()}` : "Not yet refreshed"}
+                action={
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 gap-1 px-2 text-2xs"
+                    onClick={() => refetch()}
+                    disabled={isLoading}
+                  >
+                    <RefreshCw className={cn("h-3 w-3", isLoading && "animate-spin")} />
+                    Refresh
+                  </Button>
+                }
                 icon={<StatusIcon status={data.status} />}
                 tone={data.status === "ok" ? "success" : "warning"}
               />
