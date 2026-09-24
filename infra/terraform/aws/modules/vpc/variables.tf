@@ -15,24 +15,23 @@ variable "vpc_cidr" {
 variable "azs" {
   description = "List of availability zones to use."
   type        = list(string)
+
+  validation {
+    condition     = length(var.azs) >= 1
+    error_message = "At least one availability zone must be specified."
+  }
 }
 
 variable "public_subnet_cidrs" {
-  description = "CIDRs for public subnets (one per AZ)."
+  description = "CIDRs for public subnets (one per AZ). If omitted or length does not match azs, CIDRs are derived from vpc_cidr."
   type        = list(string)
-  default     = ["10.42.0.0/24", "10.42.1.0/24"]
+  default     = []
 }
 
 variable "private_subnet_cidrs" {
-  description = "CIDRs for private subnets (one per AZ)."
+  description = "CIDRs for private subnets (one per AZ). If omitted or length does not match azs, CIDRs are derived from vpc_cidr."
   type        = list(string)
-  default     = ["10.42.10.0/24", "10.42.11.0/24"]
-}
-
-variable "internal_dns_zone" {
-  description = "Private Route 53 zone for VPC-internal DNS."
-  type        = string
-  default     = "observal.internal"
+  default     = []
 }
 
 variable "log_retention_days" {

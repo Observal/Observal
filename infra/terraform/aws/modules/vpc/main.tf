@@ -1,6 +1,15 @@
 # SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
+locals {
+  public_subnet_cidrs = length(var.public_subnet_cidrs) == length(var.azs) ? var.public_subnet_cidrs : [
+    for i, _ in var.azs : cidrsubnet(var.vpc_cidr, 8, i)
+  ]
+  private_subnet_cidrs = length(var.private_subnet_cidrs) == length(var.azs) ? var.private_subnet_cidrs : [
+    for i, _ in var.azs : cidrsubnet(var.vpc_cidr, 8, i + 10)
+  ]
+}
+
 resource "aws_vpc" "main" {
   cidr_block           = var.vpc_cidr
   enable_dns_hostnames = true
@@ -17,7 +26,7 @@ resource "aws_internet_gateway" "main" {
 resource "aws_subnet" "public" {
   count                   = length(var.azs)
   vpc_id                  = aws_vpc.main.id
-  cidr_block              = var.public_subnet_cidrs[count.index]
+  cidr_block              = local.public_subnet_cidrs[count.index]
   availability_zone       = var.azs[count.index]
   map_public_ip_on_launch = true
 
@@ -30,7 +39,7 @@ resource "aws_subnet" "public" {
 resource "aws_subnet" "private" {
   count             = length(var.azs)
   vpc_id            = aws_vpc.main.id
-  cidr_block        = var.private_subnet_cidrs[count.index]
+  cidr_block        = local.private_subnet_cidrs[count.index]
   availability_zone = var.azs[count.index]
 
   tags = merge(var.tags, {

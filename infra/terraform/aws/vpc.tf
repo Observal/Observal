@@ -13,11 +13,8 @@ module "vpc" {
   azs                  = local.azs
   public_subnet_cidrs  = var.public_subnet_cidrs
   private_subnet_cidrs = var.private_subnet_cidrs
-  internal_dns_zone    = var.internal_dns_zone
   log_retention_days   = var.log_retention_days
-  enable_flow_logs     = true
-
-  tags = { Name = local.name }
+  enable_flow_logs     = var.enable_flow_logs
 }
 
 resource "aws_route53_zone" "internal" {
