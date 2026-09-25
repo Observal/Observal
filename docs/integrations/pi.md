@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Dheirav <dheirav2005@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Pi
@@ -103,9 +104,16 @@ observal doctor patch --harness pi
 ```
 
 This writes the bundled extension to `~/.pi/agent/extensions/observal.ts` when
-it is missing or differs from the bundled source, and removes any legacy
-`npm:observal-pi` entry from `~/.pi/agent/settings.json` so the extension is
-not loaded twice. Restart Pi or run `/reload` afterwards.
+it is missing, and refreshes a copy Observal recognises as its own when that
+copy has fallen behind or been edited, recording the CLI version it came from
+in an adjacent `.observal-extension.json`. A file Observal did not write is
+reported and left alone.
+
+If `npm:observal-pi` is registered in `~/.pi/agent/settings.json`, that takes
+precedence: nothing is installed locally, and a local copy Observal recognises
+as its own is removed (kept as `observal.ts.bak`) so Pi does not load the
+extension twice. A local file Observal did not write is left alone. Restart Pi
+or run `/reload` afterwards.
 
 `doctor patch` refuses to run until `observal auth login` has written a server
 URL, although it does not contact the server.
