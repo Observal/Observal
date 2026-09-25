@@ -455,6 +455,19 @@ async def build_lock_document(db: AsyncSession, agent: Any, version: Any, *, per
     return document
 
 
+def stored_lock_digest(version: Any) -> str | None:
+    """Digest of the lock stored on an agent version, if it has a readable one."""
+    snapshot = getattr(version, "lock_snapshot", None)
+    if not isinstance(snapshot, str):
+        return None
+    try:
+        document = json.loads(snapshot)
+    except ValueError:
+        return None
+    digest = document.get("digest") if isinstance(document, dict) else None
+    return digest if isinstance(digest, str) else None
+
+
 async def lock_agent_version(db: AsyncSession, agent: Any, version: Any) -> dict:
     """Refresh and store the lock for a version that is being saved or approved."""
     await db.flush()

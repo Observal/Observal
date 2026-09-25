@@ -298,13 +298,20 @@ class AgentInstallRequest(BaseModel):
     options: dict = {}
     platform: str = ""  # e.g. "win32", "darwin", "linux" - empty = Unix default
     version: str | None = None  # Specific version to install (None = latest)
+    # Refuse the install when any component is unlocked, changed after it was
+    # locked, or pinned to a version that is not approved.
+    strict: bool = False
 
 
 class AgentInstallResponse(BaseModel):
     agent_id: uuid.UUID
     harness: str
+    # The agent version that was actually installed.
+    version: str | None = None
     config_snippet: dict
     warnings: list[str] = []
+    # The component versions that were installed and how they matched the lock.
+    lock: dict | None = None
 
 
 class AgentVersionCreateRequest(BaseModel):
