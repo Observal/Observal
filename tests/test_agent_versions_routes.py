@@ -31,6 +31,7 @@ from schemas.agent import (
     SuccessCriteria,
     SuccessMetric,
 )
+from services.agent_lock import PinnedListing
 
 NOW = datetime(2026, 4, 21, 12, 0, tzinfo=UTC)
 USER_ID = uuid.UUID("10000000-0000-0000-0000-000000000001")
@@ -246,6 +247,7 @@ def boundaries(monkeypatch):
 
     attach = AsyncMock(side_effect=fake_attach)
     lock = AsyncMock(return_value={})
+    pinned = AsyncMock(return_value={})
     infer = MagicMock(return_value=[])
     compute = MagicMock(return_value=[])
     generate = MagicMock(return_value={"files": {}})
@@ -263,6 +265,7 @@ def boundaries(monkeypatch):
     monkeypatch.setattr(routes, "validate_component_ids", validate_components)
     monkeypatch.setattr(agent_lock, "attach_pinned_components", attach)
     monkeypatch.setattr(agent_lock, "lock_agent_version", lock)
+    monkeypatch.setattr(agent_lock, "pinned_versions", pinned)
     monkeypatch.setattr(routes, "infer_required_features", infer)
     monkeypatch.setattr(routes, "compute_supported_harnesses", compute)
     monkeypatch.setattr(routes, "generate_agent_config", generate)
@@ -281,6 +284,7 @@ def boundaries(monkeypatch):
         pins=pins,
         attach=attach,
         lock=lock,
+        pinned=pinned,
         infer=infer,
         compute=compute,
         generate=generate,
@@ -591,6 +595,8 @@ async def test_create_resolves_components_builds_snapshot_and_reports_conflicts(
 
     boundaries.resolve_model.side_effect = resolve_model
     boundaries.generate.return_value = {"agent_profile": {"content": "review"}}
+    pinned_mcp = SimpleNamespace(version="4.1.0", command="npx")
+    boundaries.pinned.return_value = {("mcp", MCP_ID): pinned_mcp}
 
     response = await routes._create_agent_version(str(AGENT_ID), request, db, _user())
 
@@ -641,9 +647,14 @@ async def test_create_resolves_components_builds_snapshot_and_reports_conflicts(
     assert config_agent.name == agent.name
     assert config_agent.version == version.version
     assert config_agent.components == links
-    assert generate_call.kwargs == {
-        "mcp_listings": {MCP_ID: mcp_listing},
-        "options": {"_resolved_model": "claude-haiku-4", "_model_warnings": ["normalized alias"]},
+    # Stored release configs come from the pinned MCP release, not the listing's latest.
+    boundaries.pinned.assert_awaited_once_with(db, links)
+    generated_mcp = generate_call.kwargs["mcp_listings"][MCP_ID]
+    assert isinstance(generated_mcp, PinnedListing)
+    assert (generated_mcp.listing, generated_mcp.pinned_version) == (mcp_listing, pinned_mcp)
+    assert generate_call.kwargs["options"] == {
+        "_resolved_model": "claude-haiku-4",
+        "_model_warnings": ["normalized alias"],
     }
     boundaries.publish.assert_awaited_once_with(
         db,
