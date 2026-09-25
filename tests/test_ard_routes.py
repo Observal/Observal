@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """ARD endpoints, artifact endpoint, and conformance against the vendored spec tool."""
@@ -164,6 +165,98 @@ async def test_search_rejects_unknown_filter_and_bad_page_token(sessions, settin
         assert resp.status_code == 400 and resp.json()["errorCode"] == "INVALID_ARGUMENT"
         resp = await client.post("/api/v1/ard/search", json={"query": {"text": "review"}, "pageToken": "garbage"})
         assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"query": {"text": "review"}, "pageSize": 0},
+        {"query": {"text": "review"}, "pageSize": 1000},
+        {"query": {"text": "review"}, "federation": "everything"},
+        {"query": "review"},
+        ["not", "an", "object"],
+    ],
+)
+async def test_search_schema_errors_use_the_ard_envelope(sessions, settings, body):
+    """Appendix B: every 400 carries {errorCode, message}, including body validation failures."""
+    owner, _, _ = await _seed(sessions)
+    async with _client(_app(sessions, owner)) as client:
+        resp = await client.post("/api/v1/ard/search", json=body)
+    assert resp.status_code == 400
+    assert set(resp.json()) == {"errorCode", "message"}
+    assert resp.json()["errorCode"] == "INVALID_ARGUMENT"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        # "query" is both a request location and the search body's field, so only loc[0] may be stripped.
+        ({}, "query: Field required"),
+        ({"query": "review"}, "query: Input should be a valid dictionary or object to extract fields from"),
+        ({"query": {"text": 5}}, "query.text: Input should be a valid string"),
+        ({"query": {"text": "review"}, "pageSize": 0}, "pageSize: Input should be greater than or equal to 1"),
+        (
+            {"query": {"text": "review"}, "federation": "everything"},
+            "federation: Input should be 'auto', 'referrals' or 'none'",
+        ),
+    ],
+)
+async def test_search_schema_error_message_names_the_field(sessions, settings, body, message):
+    owner, _, _ = await _seed(sessions)
+    async with _client(_app(sessions, owner)) as client:
+        resp = await client.post("/api/v1/ard/search", json=body)
+    assert resp.status_code == 400
+    assert resp.json() == {"errorCode": "INVALID_ARGUMENT", "message": message}
+
+
+@pytest.mark.asyncio
+async def test_search_malformed_json_is_named_as_such(sessions, settings):
+    owner, _, _ = await _seed(sessions)
+    async with _client(_app(sessions, owner)) as client:
+        resp = await client.post(
+            "/api/v1/ard/search", content=b"{not json", headers={"content-type": "application/json"}
+        )
+    assert resp.status_code == 400
+    assert resp.json() == {"errorCode": "INVALID_ARGUMENT", "message": "Request body is not valid JSON"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("params", [{"pageSize": "0"}, {"pageSize": "1000"}, {"pageSize": "many"}])
+async def test_list_schema_errors_use_the_ard_envelope(sessions, settings, params):
+    owner, _, _ = await _seed(sessions)
+    async with _client(_app(sessions, owner)) as client:
+        resp = await client.get("/api/v1/ard/agents", params=params)
+    assert resp.status_code == 400
+    assert set(resp.json()) == {"errorCode", "message"}
+    assert resp.json()["errorCode"] == "INVALID_ARGUMENT"
+    assert "pageSize" in resp.json()["message"]
+
+
+def test_openapi_documents_400_envelope_not_422_for_ard_routes():
+    app = FastAPI()
+    app.include_router(ard.router)
+
+    @app.get("/api/v1/other")
+    async def other(limit: int = 10):
+        return {"limit": limit}
+
+    ard.document_ard_validation_errors(app)
+    paths = app.openapi()["paths"]
+
+    for path, method in [
+        ("/api/v1/ard/search", "post"),
+        ("/api/v1/ard/agents", "get"),
+        ("/api/v1/ard/explore", "post"),
+    ]:
+        responses = paths[path][method]["responses"]
+        assert "422" not in responses, path
+        assert responses["400"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/ArdError"}
+    assert "422" not in paths["/api/v1/ard/entries/{identifier}"]["get"]["responses"]
+    # Other routers keep FastAPI's default validation response.
+    assert "422" in paths["/api/v1/other"]["get"]["responses"]
+    assert app.openapi() is app.openapi()
 
 
 @pytest.mark.asyncio

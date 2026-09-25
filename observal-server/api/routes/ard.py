@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Agentic Resource Discovery endpoints.
@@ -21,11 +22,14 @@ authenticated callers see what the registry's visibility rules already grant
 them.
 """
 
+from collections.abc import Callable, Coroutine
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, FastAPI, Query, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from loguru import logger as optic
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,7 +39,7 @@ from api.deps import get_db, get_registry_user, optional_current_user
 from api.ratelimit import limiter
 from models.discovery_entry import DiscoveryEntry, DiscoveryLifecycle
 from models.user import User
-from schemas.ard import ArdExploreRequest, ArdSearchRequest
+from schemas.ard import ArdError, ArdExploreRequest, ArdSearchRequest
 from services.discovery.identity import normalize_media_type, normalize_urn
 from services.discovery.projection import PUBLISHER_DOMAIN_SETTING, ProjectionContext
 from services.discovery.search import (
@@ -50,7 +54,70 @@ from services.discovery.search import (
 from services.discovery.serialize import entry_document, list_item, manifest, search_result_item
 from services.discovery.visibility import visible_entries_predicate
 
-router = APIRouter(tags=["ard"])
+_REQUEST_LOCATIONS = frozenset({"body", "query", "path", "header", "cookie"})
+
+
+def _validation_message(exc: RequestValidationError) -> str:
+    """Name the first invalid field without echoing the client's input back."""
+    errors = exc.errors()
+    first = errors[0] if errors else {}
+    if first.get("type") == "json_invalid":
+        return "Request body is not valid JSON"
+    loc = tuple(first.get("loc", ()))
+    if loc and loc[0] in _REQUEST_LOCATIONS:
+        loc = loc[1:]  # strip only the location marker; "query" is also a search body field
+    field = ".".join(str(part) for part in loc)
+    message = first.get("msg", "invalid request")
+    return f"{field}: {message}" if field else message
+
+
+class _ArdRoute(APIRoute):
+    """Answer request-validation failures with the ARD error envelope.
+
+    FastAPI's default is a 422 ``{"detail": [...]}``. ARD Appendix B requires
+    every bad request to be a 400 carrying ``errorCode`` and ``message``, so a
+    malformed body or query parameter must not fall through to that default.
+    """
+
+    def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
+        handler = super().get_route_handler()
+
+        async def ard_handler(request: Request) -> Response:
+            try:
+                return await handler(request)
+            except RequestValidationError as exc:
+                return _error(400, "INVALID_ARGUMENT", _validation_message(exc))
+
+        return ard_handler
+
+
+router = APIRouter(tags=["ard"], route_class=_ArdRoute)
+
+_BAD_REQUEST: dict[int | str, dict[str, Any]] = {
+    400: {"model": ArdError, "description": "Invalid request (ARD error envelope)"},
+}
+
+
+def document_ard_validation_errors(app: FastAPI) -> None:
+    """Drop the 422 FastAPI documents for every route with inputs; ARD routes answer 400 instead.
+
+    FastAPI adds that 422 unless a route declares 422, 4XX or default, and
+    nothing declared later can remove it. 4XX and default would both be
+    wrong here, because auth (401) and rate-limit (429) failures do not use
+    the ARD envelope, so the schema is corrected once it has been generated.
+    """
+    ard_paths = {route.path_format for route in router.routes if isinstance(route, _ArdRoute)}
+    generate = app.openapi
+
+    def openapi() -> dict[str, Any]:
+        schema = generate()
+        for path in ard_paths:
+            for operation in schema.get("paths", {}).get(path, {}).values():
+                operation.get("responses", {}).pop("422", None)
+        return schema
+
+    app.openapi = openapi
+
 
 # Anonymous discovery follows the registry-wide public switch. Unlike the
 # other registry reads, a private deployment answers anonymous ARD calls with
@@ -129,7 +196,7 @@ async def well_known_ai_catalog(db: AsyncSession = Depends(get_db)) -> JSONRespo
 # ── Search ───────────────────────────────────────────────────────────────
 
 
-@router.post("/api/v1/ard/search")
+@router.post("/api/v1/ard/search", responses=_BAD_REQUEST)
 @limiter.limit(SEARCH_RATE_LIMIT)
 async def ard_search(
     request: Request,
@@ -177,7 +244,7 @@ async def ard_search(
 # ── Explore ──────────────────────────────────────────────────────────────
 
 
-@router.post("/api/v1/ard/explore")
+@router.post("/api/v1/ard/explore", responses=_BAD_REQUEST)
 async def ard_explore(_body: ArdExploreRequest) -> JSONResponse:
     """ARD Explore is optional; a registry without it returns 501 (§5.3.3)."""
     return _error(501, "NOT_IMPLEMENTED", "Explore is not implemented by this registry yet.")
@@ -313,7 +380,7 @@ def _apply_order(stmt, order_by: str | None):
     return stmt.order_by(direction, DiscoveryEntry.ard_identifier)
 
 
-@router.get("/api/v1/ard/agents")
+@router.get("/api/v1/ard/agents", responses=_BAD_REQUEST)
 async def ard_list(
     filter: str | None = Query(default=None, max_length=1000),  # spec parameter name
     order_by: str | None = Query(default=None, alias="orderBy", max_length=100),

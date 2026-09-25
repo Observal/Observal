@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 from fastapi import FastAPI
@@ -9,6 +10,7 @@ from api.routes.admin import router as admin_router
 from api.routes.admin_sso import router as admin_sso_router
 from api.routes.agent import router as agent_router
 from api.routes.alert import router as alert_router
+from api.routes.ard import document_ard_validation_errors
 from api.routes.ard import router as ard_router
 from api.routes.artifacts import router as artifacts_router
 from api.routes.audit import router as audit_router
@@ -104,3 +106,4 @@ def configure_routes(app: FastAPI) -> None:
     register_saml_health_probe(saml_health_probe)
     include_graphql_routes(app)
     include_rest_routes(app)
+    document_ard_validation_errors(app)
