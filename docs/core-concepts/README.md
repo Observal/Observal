@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Core concepts
@@ -29,6 +30,16 @@ Anyone can publish. Admin review controls what appears in the public listing, bu
 An agent or component has a canonical `namespace/slug` identity. The namespace is the owner's username. The slug is stable within that namespace. Display names can change without changing the canonical identity.
 
 UUIDs are the stable reconciliation key. The server supplies canonical namespace, slug, display name, qualified name, and review status. Installed versions in the local lockfile remain local pins.
+
+## Versions and locks
+
+Agents and components are versioned. An approved version never changes.
+
+Every agent version pins each of its components to one exact version, recorded with a content digest. Installing that agent version always installs those component versions, even after newer ones are approved. Agent versions released before pinning are the exception: a component they never locked installs at its latest approved release, with a warning. Only the agent's author moves them, by releasing a new agent version, which goes through review like any other.
+
+Installs are pinned too. The first `observal agent pull` in a project records the agent version it installed in `observal.lock`, a file meant to be committed. Later pulls, by anyone in that project, install the same agent version until someone moves it with `--upgrade` or `--version`. `~/.observal/lockfile.json` is each machine's record of what it has installed where. `--strict` refuses any install that does not match its lock.
+
+See [`observal agent pull`](../cli/pull.md#pinned-versions) and [`observal agent release`](../cli/agent.md#release-and-versions).
 
 ## Deployment mode
 

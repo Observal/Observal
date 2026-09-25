@@ -1,10 +1,11 @@
 ---
 # SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
+<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
 # SPDX-License-Identifier: Apache-2.0
 name: observal-agents
 command: observal
 description: "Creates, authors, validates, publishes, updates, versions, pulls, archives, restores, transfers, and manages co-authors for Observal Agents. Use when the user wants to build or install an Agent, change an Agent definition, publish a draft, release a version, or manage Agent ownership."
-version: 2.2.0
+version: 2.3.0
 owner: observal
 ---
 
