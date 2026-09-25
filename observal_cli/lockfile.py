@@ -356,8 +356,15 @@ def upsert_standalone(
     namespace: str | None = None,
     slug: str | None = None,
     local_name: str | None = None,
+    version_id: str | None = None,
+    digest: str | None = None,
+    requested_version: str | None = None,
 ) -> None:
-    """Add or update a standalone component (MCP, skill, hook, etc.) in the lock file."""
+    """Add or update a standalone component (MCP, skill, hook, etc.) in the lock file.
+
+    ``version_id`` and ``digest`` identify the exact registry release that was
+    installed; ``requested_version`` is set when the user pinned it explicitly.
+    """
     optic.debug("upsert_standalone: harness={}, type={}, name={}", harness, component_type, name)
     data, registry = read_registry_lockfile(create=True)
     harness_section = _ensure_harness(registry, harness)
@@ -383,6 +390,12 @@ def upsert_standalone(
         entry["qualified_name"] = f"{namespace}/{slug}"
     if local_name:
         entry["local_name"] = local_name
+    if version_id:
+        entry["version_id"] = version_id
+    if digest:
+        entry["digest"] = digest
+    if requested_version:
+        entry["requested_version"] = requested_version
 
     # Find existing entry to update (match on type + id + scope + directory)
     existing_idx = _find_standalone_idx(standalone, component_type, component_id, scope, directory)

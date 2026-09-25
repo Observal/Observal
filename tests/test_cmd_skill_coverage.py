@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Observal Contributors
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 from __future__ import annotations
@@ -712,6 +713,9 @@ def test_install_command_registry_direct_tracks_project_metadata(monkeypatch):
         namespace="alice",
         slug="review-skill",
         local_name="alice-review-skill",
+        version_id=None,
+        digest=None,
+        requested_version="2.0.0",
     )
 
 

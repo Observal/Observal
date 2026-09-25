@@ -218,8 +218,17 @@ def test_use_mcp_points_at_install_command_and_records_nothing(monkeypatch):
     assert result.exit_code == 0, result.output
     data = json.loads(result.output)
     assert data["activated"] is False and data["mode"] == "next-session"
-    assert data["next_step"] == "observal registry mcp install acme/github --harness kiro"
+    # The install command pins the version the entry described.
+    assert data["next_step"] == "observal registry mcp install acme/github --harness kiro --version 1.4.2"
     assert capability_lock.read_all() == []
+
+
+def test_next_step_quotes_registry_references_for_the_shell():
+    hostile = {"obs:kind": "skill", "obs:nativeRef": "acme/x;touch pwned@1.0.0 $(id)"}
+
+    step = discover._next_step(hostile, "kiro")
+
+    assert step == "observal registry skill install 'acme/x;touch pwned' --harness kiro --version '1.0.0 $(id)'"
 
 
 def test_use_prompt_renders_json_artifact(monkeypatch):
