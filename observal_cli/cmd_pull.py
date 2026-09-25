@@ -411,7 +411,13 @@ def _write_file(path: Path, content: str | dict, *, merge_mcp: bool = False) -> 
     existed = path.exists()
 
     if isinstance(content, dict):
-        root_key = next(iter(content.keys())) if content else "mcpServers"
+        # The merged section is the first mapping (mcpServers, hooks, ...). Configs
+        # such as Cursor's hooks.json start with a scalar ("version": 1), which
+        # must not be mistaken for the section.
+        root_key = next(
+            (key for key, value in content.items() if isinstance(value, dict)),
+            next(iter(content), "mcpServers"),
+        )
         if path.suffix == ".toml":
             toml_str = _dict_to_toml(content)
             if existed and merge_mcp:
@@ -440,6 +446,9 @@ def _write_file(path: Path, content: str | dict, *, merge_mcp: bool = False) -> 
                 if not isinstance(section, dict) or not isinstance(incoming_servers, dict):
                     raise ValueError(f"cannot merge non-object JSON section {root_key}: {path}")
                 section.update(incoming_servers)
+                for key, value in content.items():
+                    if key != root_key and not isinstance(value, dict):
+                        existing[key] = value
                 _atomic_write_text(path, json.dumps(existing, indent=2) + "\n")
                 return "merged"
             _atomic_write_text(path, json.dumps(content, indent=2) + "\n")

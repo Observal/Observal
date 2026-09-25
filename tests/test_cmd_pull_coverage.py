@@ -421,6 +421,21 @@ def test_write_file_handles_toml_json_strings_and_empty_content(tmp_path: Path) 
     assert text_path.read_text() == "second"
 
 
+def test_write_file_merges_hooks_config_that_starts_with_a_scalar(tmp_path: Path) -> None:
+    # Cursor's hooks.json leads with "version": 1; pulling again must merge "hooks".
+    hooks_path = tmp_path / "hooks.json"
+    first = {"version": 1, "hooks": {"stop": [{"command": "observal"}]}}
+    hooks_path.write_text(json.dumps({"version": 1, "hooks": {"user": [{"command": "mine"}]}}))
+
+    assert cmd_pull._write_file(hooks_path, first, merge_mcp=True) == "merged"
+    assert cmd_pull._write_file(hooks_path, first, merge_mcp=True) == "merged"
+
+    assert json.loads(hooks_path.read_text()) == {
+        "version": 1,
+        "hooks": {"user": [{"command": "mine"}], "stop": [{"command": "observal"}]},
+    }
+
+
 def test_write_file_yaml_merges_or_preserves_existing_content(tmp_path: Path) -> None:
     path = tmp_path / "goose.yaml"
     path.write_text(yaml.safe_dump({"provider": "anthropic", "extensions": {"old": {"type": "stdio"}}}))
