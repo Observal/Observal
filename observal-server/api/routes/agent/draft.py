@@ -493,6 +493,11 @@ async def submit_draft(
         agent.latest_version.reviewed_at = datetime.now(UTC)
     else:
         agent.status = AgentStatus.pending
+    if agent.latest_version:
+        # Refresh the lock on submit; an auto-approved submit freezes it here.
+        from services.agent_lock import lock_agent_version
+
+        await lock_agent_version(db, agent, agent.latest_version)
     await db.commit()
     agent = await _load_agent(db, str(agent.id), prefer_user_id=current_user.id, current_user=current_user)
     name_map = await _resolve_component_names(agent.components, db)

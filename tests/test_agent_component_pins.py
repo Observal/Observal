@@ -136,3 +136,167 @@ async def test_bulk_create_pins_the_real_release_instead_of_latest(registry):
         await db.execute(select(AgentVersion).join(AgentVersion.agent).where(AgentVersion.version == "1.0.0"))
     ).scalar_one()
     assert await _pins(db, created) == [("1.4.2", mcp.latest_version_id)]
+
+
+async def test_yaml_snapshot_describes_the_pinned_prompt_release(registry):
+    from models.prompt import PromptVersion
+    from services.agent_snapshot import build_yaml_snapshot
+
+    db, owner, _mcp, agent = registry
+    prompt = await ds.prompt(db, owner)  # 0.3.0 "Write release notes for: {{changes}}"
+    version = AgentVersion(
+        id=uuid.uuid4(),
+        agent_id=agent.id,
+        version="5.0.0",
+        description="notes",
+        prompt="Summarise.",
+        model_name="claude-sonnet-4",
+        released_by=owner.id,
+        released_at=ds.NOW,
+    )
+    db.add(version)
+    await db.flush()
+    db.add(
+        AgentComponent(
+            agent_version_id=version.id,
+            component_type="prompt",
+            component_id=prompt.id,
+            component_name="Release Notes",
+            resolved_version="0.3.0",
+        )
+    )
+    newer = PromptVersion(
+        id=uuid.uuid4(),
+        listing_id=prompt.id,
+        version="1.0.0",
+        description="rewrite",
+        status=ListingStatus.approved,
+        category="documentation",
+        template="A DIFFERENT TEMPLATE",
+        released_by=owner.id,
+        released_at=ds.NOW,
+    )
+    db.add(newer)
+    await db.flush()
+    prompt.latest_version_id = newer.id
+
+    snapshot = await build_yaml_snapshot(version, db)
+
+    assert "Write release notes for" in snapshot
+    assert "A DIFFERENT TEMPLATE" not in snapshot
+
+
+async def test_draft_cannot_pin_and_render_another_users_unreviewed_release(registry):
+    """Regression: a draft pinned someone else's pending prompt release and then
+    read its template back through the draft's YAML snapshot."""
+    from fastapi import HTTPException
+
+    from api.routes.agent import draft
+    from models.prompt import PromptVersion
+    from schemas.agent import AgentCreateRequest
+
+    db, owner, _mcp, _agent = registry
+    prompt = await ds.prompt(db, owner)  # approved 0.3.0
+    db.add(
+        PromptVersion(
+            id=uuid.uuid4(),
+            listing_id=prompt.id,
+            version="1.0.0",
+            description="not reviewed yet",
+            status=ListingStatus.pending,
+            category="documentation",
+            template="UNREVIEWED TEMPLATE",
+            released_by=owner.id,
+            released_at=ds.NOW,
+        )
+    )
+    intruder = await ds.user(db)
+    await db.commit()
+    prompt_id, owner_id = prompt.id, owner.id
+
+    def request(name: str) -> AgentCreateRequest:
+        return AgentCreateRequest(
+            name=name,
+            version="0.1.0",
+            owner="someone",
+            description="probe",
+            prompt="probe",
+            model_name="claude-sonnet-4",
+            components=[ComponentRef(component_type="prompt", component_id=prompt_id, version="1.0.0")],
+        )
+
+    with pytest.raises(HTTPException) as error:
+        await draft.save_draft(request("probe"), db, intruder)
+    # A request that fails is rolled back, never committed.
+    await db.rollback()
+    owner = await db.get(type(owner), owner_id)
+
+    assert error.value.status_code == 400
+    assert error.value.detail[0]["reason"] == "prompt version '1.0.0' does not exist"
+    snapshots = (await db.execute(select(AgentVersion.yaml_snapshot))).scalars().all()
+    assert not any("UNREVIEWED TEMPLATE" in (snapshot or "") for snapshot in snapshots)
+
+    # The component's owner, building the agent and the release together, still can.
+    await draft.save_draft(request("own-draft"), db, owner)
+    snapshots = (await db.execute(select(AgentVersion.yaml_snapshot))).scalars().all()
+    assert any("UNREVIEWED TEMPLATE" in (snapshot or "") for snapshot in snapshots)
+
+
+async def test_version_review_requires_approved_pins_and_freezes_the_lock(registry, monkeypatch):
+    from models.user import UserRole
+    from schemas.agent import AgentVersionReviewRequest
+
+    db, owner, mcp, agent = registry
+    monkeypatch.setattr(agent_versions.inbox, "on_review_decided", AsyncMock())
+    pending = McpVersion(
+        id=uuid.uuid4(),
+        listing_id=mcp.id,
+        version="2.0.0",
+        description="pending release",
+        status=ListingStatus.pending,
+        transport="stdio",
+        command="npx",
+        args=["-y", "@acme/github@2.0.0"],
+        released_by=owner.id,
+        released_at=ds.NOW,
+    )
+    db.add(pending)
+    await db.flush()
+    candidate = AgentVersion(
+        id=uuid.uuid4(),
+        agent_id=agent.id,
+        version="4.0.0",
+        description="candidate",
+        prompt="Review.",
+        model_name="claude-sonnet-4",
+        status=agent_versions.AgentStatus.pending,
+        released_by=owner.id,
+        released_at=ds.NOW,
+    )
+    db.add(candidate)
+    await db.flush()
+    db.add(
+        AgentComponent(
+            agent_version_id=candidate.id,
+            component_type="mcp",
+            component_id=mcp.id,
+            component_name="GitHub",
+            resolved_version="2.0.0",
+            resolved_version_id=pending.id,
+        )
+    )
+    await db.commit()
+    reviewer = await ds.user(db, role=UserRole.admin)
+    approve = AgentVersionReviewRequest(action="approve")
+
+    with pytest.raises(agent_versions.HTTPException) as blocked:
+        await agent_versions._review_agent_version(str(agent.id), "4.0.0", approve, db, reviewer)
+    pending.status = ListingStatus.approved
+    await db.commit()
+    await agent_versions._review_agent_version(str(agent.id), "4.0.0", approve, db, reviewer)
+
+    assert blocked.value.status_code == 422
+    assert blocked.value.detail["blocking_components"][0]["version"] == "2.0.0"
+    await db.refresh(candidate)
+    lock = json.loads(candidate.lock_snapshot)
+    assert (lock["agent"]["version"], lock["status"], lock["components"][0]["version"]) == ("4.0.0", "locked", "2.0.0")

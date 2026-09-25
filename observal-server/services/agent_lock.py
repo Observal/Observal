@@ -474,6 +474,19 @@ async def lock_agent_version(db: AsyncSession, agent: Any, version: Any) -> dict
     return await build_lock_document(db, agent, version, persist=True)
 
 
+async def pinned_versions(db: AsyncSession, components: Iterable[Any]) -> dict[tuple[str, uuid.UUID], Any]:
+    """The version row each component is pinned to, keyed by (type, listing id)."""
+    components = list(components)
+    versions = await _versions_for(db, [(c.component_type, c.component_id) for c in components])
+    pinned: dict[tuple[str, uuid.UUID], Any] = {}
+    for component in components:
+        key = (component.component_type, component.component_id)
+        row, _source = _pinned_row(component, versions.get(key, []))
+        if row is not None:
+            pinned[key] = row
+    return pinned
+
+
 async def pinned_component_blockers(db: AsyncSession, components: Iterable[Any]) -> list[dict]:
     """Components whose pinned version is not approved, for the review gate."""
     components = list(components)
@@ -484,8 +497,11 @@ async def pinned_component_blockers(db: AsyncSession, components: Iterable[Any])
     for component in components:
         key = (component.component_type, component.component_id)
         listing = listings.get(key)
+        if listing is None:
+            # Unknown types and vanished listings are reported by install, not here.
+            continue
         row, _source = _pinned_row(component, versions.get(key, []))
-        if row is None and listing is not None:
+        if row is None:
             row = next((r for r in versions.get(key, []) if r.id == listing.latest_version_id), None)
         status = getattr(row, "status", None)
         if status in INSTALLABLE_STATUSES:
