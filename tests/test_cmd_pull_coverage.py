@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Focused boundary and behavior coverage for the agent pull command."""
@@ -728,10 +729,20 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
         "headers": [{"name": "Authorization"}, {"name": "X-Unset", "required": False}],
     }
 
+    version_detail = {
+        "version": "1.4.0",
+        "components": [
+            {"component_type": "mcp", "component_id": "mcp-1", "name": "github", "resolved_version": "2.0.0"},
+            {"component_type": "skill", "component_id": "skill-1", "name": "review-skill", "resolved_version": "3.0.0"},
+        ],
+    }
+
     def get(path: str):
         if path == "/api/v1/agents/agent-uuid":
             return detail
-        if path == "/api/v1/mcps/mcp-1":
+        if path == "/api/v1/agents/agent-uuid/versions/1.4.0":
+            return version_detail
+        if path == "/api/v1/mcps/mcp-1/versions/2.0.0":
             return listing
         raise AssertionError(path)
 
@@ -786,7 +797,38 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
         ],
         "_warnings": ["snippet warning"],
     }
-    boundaries.post.return_value = {"config_snippet": snippet, "warnings": ["server warning"]}
+    lock = {
+        "lock_version": 1,
+        "status": "locked",
+        "digest": "sha256:" + "a" * 64,
+        "problems": [],
+        "components": [
+            {
+                "type": "mcp",
+                "id": "mcp-1",
+                "qualified_name": "acme/github",
+                "version": "2.0.0",
+                "version_id": "mcp-version-2",
+                "digest": "sha256:" + "b" * 64,
+                "source": "lock",
+            },
+            {
+                "type": "skill",
+                "id": "skill-1",
+                "qualified_name": "acme/review-skill",
+                "version": "3.0.0",
+                "version_id": "skill-version-3",
+                "digest": "sha256:" + "c" * 64,
+                "source": "lock",
+            },
+        ],
+    }
+    boundaries.post.return_value = {
+        "config_snippet": snippet,
+        "warnings": ["server warning"],
+        "version": "1.4.0",
+        "lock": lock,
+    }
 
     mcp_path = target / ".config" / "mcp.json"
     mcp_path.parent.mkdir(parents=True)
@@ -839,10 +881,11 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
 
     assert result.exit_code == 0, result.output
     boundaries.resolve.assert_called_once_with("agent", "acme/reviewer")
+    # The requested version's pins drive MCP prompts, and each MCP is read once.
     assert boundaries.get.call_args_list == [
         call("/api/v1/agents/agent-uuid"),
-        call("/api/v1/mcps/mcp-1"),
-        call("/api/v1/mcps/mcp-1"),
+        call("/api/v1/agents/agent-uuid/versions/1.4.0"),
+        call("/api/v1/mcps/mcp-1/versions/2.0.0"),
     ]
     boundaries.local_name.assert_called_once_with(
         "claude-code",
@@ -928,12 +971,32 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
         scope="project",
         directory=str(target.resolve()),
         components=[
-            {"type": "mcp", "name": "github", "id": "mcp-1", "version": "2.1.0"},
-            {"type": "skill", "name": "review-skill", "id": "skill-1", "version": "3.0.0"},
+            {
+                "type": "mcp",
+                "name": "github",
+                "id": "mcp-1",
+                "version": "2.0.0",
+                "version_id": "mcp-version-2",
+                "digest": "sha256:" + "b" * 64,
+                "qualified_name": "acme/github",
+                "source": "lock",
+            },
+            {
+                "type": "skill",
+                "name": "review-skill",
+                "id": "skill-1",
+                "version": "3.0.0",
+                "version_id": "skill-version-3",
+                "digest": "sha256:" + "c" * 64,
+                "qualified_name": "acme/review-skill",
+                "source": "lock",
+            },
         ],
         namespace="acme",
         slug="reviewer",
         local_name="local-reviewer",
+        lock_digest="sha256:" + "a" * 64,
+        lock_status="locked",
     )
     boundaries.snapshot.assert_called_once_with(project_dir=str(target.resolve()))
     boundaries.adapter.persist_active_agent.assert_called_once_with("agent-uuid", "reviewer", "1.4.0")
@@ -1364,3 +1427,126 @@ def test_pull_rejects_irrelevant_model_refresh_before_http(
     assert "requires the interactive model picker" in result.output
     boundaries.resolve.assert_not_called()
     boundaries.get.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("options", "environment", "strict"),
+    [
+        ((), {}, False),
+        (("--strict",), {}, True),
+        ((), {"OBSERVAL_STRICT": "1"}, True),
+        (("--no-strict",), {"OBSERVAL_STRICT": "true"}, False),
+    ],
+)
+def test_pull_strict_flag_wins_over_the_environment(
+    pull_app: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    options: tuple[str, ...],
+    environment: dict[str, str],
+    strict: bool,
+) -> None:
+    monkeypatch.delenv("OBSERVAL_STRICT", raising=False)
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+
+    result = _invoke(pull_app, tmp_path / "project", *options)
+
+    assert result.exit_code == 0, result.output
+    body = boundaries.post.call_args.args[1]
+    assert body.get("strict", False) is strict
+
+
+def test_pull_json_reports_the_installed_version_and_lock(
+    pull_app: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+) -> None:
+    lock = {
+        "status": "partial",
+        "digest": "sha256:" + "d" * 64,
+        "problems": ["mcp 'legacy' is not locked"],
+        "components": [
+            {
+                "type": "mcp",
+                "id": "mcp-1",
+                "qualified_name": "acme/legacy",
+                "version": "2.0.0",
+                "source": "fallback-latest",
+            }
+        ],
+    }
+    boundaries.post.return_value = {
+        "config_snippet": {"agent_profile": {"path": "agent.md", "content": "agent\n"}},
+        "version": "1.0.0",
+        "lock": lock,
+    }
+
+    result = _invoke(pull_app, tmp_path / "project", "--output", "json")
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["agent"]["version"] == "1.0.0"
+    assert payload["lock"]["status"] == "partial"
+    assert payload["lock"]["problems"] == ["mcp 'legacy' is not locked"]
+    assert payload["lock"]["components"][0]["source"] == "fallback-latest"
+    assert boundaries.upsert.call_args.kwargs["version"] == "1.0.0"
+    assert boundaries.upsert.call_args.kwargs["lock_status"] == "partial"
+    boundaries.adapter.persist_active_agent.assert_called_once_with("agent-uuid", "reviewer", "1.0.0")
+
+
+def test_component_conflicts_match_components_by_registry_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    import observal_cli.lockfile as lockfile
+
+    registry = {
+        "harnesses": {
+            "cursor": {
+                "agents": [
+                    {
+                        "name": "older-agent",
+                        "components": [
+                            {"id": "same-id", "name": "Renamed MCP", "version": "1.0.0"},
+                            {"id": "other-id", "name": "shared", "version": "1.0.0"},
+                        ],
+                    }
+                ]
+            }
+        }
+    }
+    monkeypatch.setattr(lockfile, "read_registry_lockfile", MagicMock(return_value=({}, registry)))
+
+    conflicts = cmd_pull._component_conflicts(
+        "cursor",
+        "incoming",
+        [{"type": "mcp", "id": "same-id", "name": "github", "version": "2.0.0"}],
+    )
+
+    assert conflicts == ["mcp github: v2.0.0 (this agent) vs v1.0.0 (from older-agent)"]
+
+
+def test_mcp_spec_reads_the_pinned_version_and_falls_back_to_the_listing(monkeypatch: pytest.MonkeyPatch) -> None:
+    from observal_cli.errors import CliError, ErrorCategory
+
+    def get(path: str):
+        if path == "/api/v1/mcps/mcp-1/versions/1.0.0":
+            return {"environment_variables": [{"name": "PINNED"}]}
+        if path == "/api/v1/mcps/mcp-2/versions/1.0.0":
+            raise CliError(ErrorCategory.NOT_FOUND, "Version not found", operation="read", resource=path)
+        return {"environment_variables": [{"name": "LATEST"}]}
+
+    fetch = MagicMock(side_effect=get)
+    monkeypatch.setattr(cmd_pull.client, "get", fetch)
+    cache: dict = {}
+
+    pinned = cmd_pull._mcp_spec("mcp-1", "1.0.0", cache)
+    fallback = cmd_pull._mcp_spec("mcp-2", "1.0.0", cache)
+    cached = cmd_pull._mcp_spec("mcp-1", "1.0.0", cache)
+
+    assert pinned == cached == {"environment_variables": [{"name": "PINNED"}]}
+    assert fallback == {"environment_variables": [{"name": "LATEST"}]}
+    assert [c.args[0] for c in fetch.call_args_list] == [
+        "/api/v1/mcps/mcp-1/versions/1.0.0",
+        "/api/v1/mcps/mcp-2/versions/1.0.0",
+        "/api/v1/mcps/mcp-2",
+    ]
