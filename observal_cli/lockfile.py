@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Lock file management for Observal CLI.
@@ -248,11 +249,15 @@ def upsert_agent(
     namespace: str | None = None,
     slug: str | None = None,
     local_name: str | None = None,
+    lock_digest: str | None = None,
+    lock_status: str | None = None,
 ) -> None:
     """Add or update an agent entry in the lock file.
 
     Matches on (harness, agent_id, directory) for project-scoped or
-    (harness, agent_id) for user-scoped.
+    (harness, agent_id) for user-scoped. ``components`` are the exact versions
+    the server installed; ``lock_digest`` and ``lock_status`` describe the
+    agent version's lock they were installed from.
     """
     optic.debug("upsert_agent: harness={}, name={}, version={}", harness, name, version)
     data, registry = read_registry_lockfile(create=True)
@@ -278,6 +283,10 @@ def upsert_agent(
         entry["qualified_name"] = f"{namespace}/{slug}"
     if local_name:
         entry["local_name"] = local_name
+    if lock_digest:
+        entry["lock_digest"] = lock_digest
+    if lock_status:
+        entry["lock_status"] = lock_status
 
     # Find existing entry to update
     existing_idx = _find_agent_idx(agents, agent_id, scope, directory)
