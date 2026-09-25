@@ -212,7 +212,7 @@ class KiroAdapter(BaseAdapter):
         cwd: str,
     ) -> tuple[str | None, str | None] | None:
         """Resolve Kiro identity from session metadata, never the global hook environment."""
-        from observal_cli.lockfile import get_agent_by_name
+        from observal_cli.lockfile import agent_entry_is_registry_backed, get_agent_by_name
         from observal_cli.sessions.kiro import read_kiro_agent_name
 
         agent_name = read_kiro_agent_name(session_jsonl)
@@ -222,7 +222,7 @@ class KiroAdapter(BaseAdapter):
             entry = get_agent_by_name(agent_name, harness=self.harness_name, directory=cwd or None)
         except Exception:
             return None, None
-        if entry is None:
+        if not agent_entry_is_registry_backed(entry):
             return None, None
         return entry.get("id"), entry.get("version")
 

@@ -463,3 +463,70 @@ def test_kiro_ide_unknown_agent_is_left_unattributed(tmp_path: Path, monkeypatch
     ensure_loaded()
 
     assert get_adapter("kiro").resolve_session_agent_identity(transcript, "/work") == (None, None)
+
+
+# ── Attribution must not outlive the registry entry ───────────────
+#
+# The lockfile is local and can carry agents the current registry no longer
+# has. Attributing to one produces a session tagged with an id nothing can
+# resolve, which surfaces as an agent id with a blank name.
+
+
+def test_kiro_skips_attribution_for_an_agent_the_registry_lost(tmp_path: Path, monkeypatch):
+    """Reconciliation marked it "unavailable": the server reported it not found."""
+    import observal_cli.lockfile as lockfile
+
+    monkeypatch.setattr(
+        lockfile,
+        "get_agent_by_name",
+        lambda name, harness, directory=None: {
+            "id": "stale-uuid",
+            "version": "1.0.0",
+            "registry_status": "unavailable",
+        },
+    )
+    transcript = make_ide_session(tmp_path, sub_agents=("deleted-agent",))
+    ensure_loaded()
+
+    assert get_adapter("kiro").resolve_session_agent_identity(transcript, "/work") == (None, None)
+
+
+def test_kiro_attributes_when_reconciliation_has_not_run(tmp_path: Path, monkeypatch):
+    """No status means unknown, not disqualified - it must still attribute."""
+    import observal_cli.lockfile as lockfile
+
+    monkeypatch.setattr(
+        lockfile,
+        "get_agent_by_name",
+        lambda name, harness, directory=None: {"id": "agent-uuid", "version": "1.0.0"},
+    )
+    transcript = make_ide_session(tmp_path, sub_agents=("some-agent",))
+    ensure_loaded()
+
+    assert get_adapter("kiro").resolve_session_agent_identity(transcript, "/work") == (
+        "agent-uuid",
+        "1.0.0",
+    )
+
+
+def test_registry_backed_guard_covers_every_harness(monkeypatch):
+    """The same guard protects the shared OBSERVAL_AGENT_ID path, not just Kiro.
+
+    Every other harness bakes an agent id into its hook command at pull time and
+    trusts the lockfile entry it resolves to, so it is exposed to exactly the
+    same staleness.
+    """
+    import observal_cli.sessions.base as base
+
+    monkeypatch.setenv("OBSERVAL_AGENT_ID", "stale-uuid")
+    monkeypatch.setattr(
+        base,
+        "_lookup_lockfile_agent_by_id",
+        lambda agent_id, harness=None: {
+            "id": "stale-uuid",
+            "version": "1.0.0",
+            "registry_status": "unavailable",
+        },
+    )
+
+    assert base._resolve_agent("/work", [], None, harness="claude-code") == (None, None)

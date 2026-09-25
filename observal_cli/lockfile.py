@@ -448,6 +448,29 @@ def get_agent_for_directory(harness: str, directory: str) -> dict | None:
     return None
 
 
+# Statuses that lockfile reconciliation assigns to an entry the registry could
+# not confirm: "invalid" when the id is not even a UUID, "unavailable" when the
+# server explicitly reported it as not found.
+_UNCONFIRMED_REGISTRY_STATUSES = frozenset({"invalid", "unavailable"})
+
+
+def agent_entry_is_registry_backed(entry: dict | None) -> bool:
+    """Return True when a lockfile agent may be used to attribute a session.
+
+    Sessions are attributed from the local lockfile, which can outlive the
+    registry it was written against - agents get deleted, and a lockfile can
+    carry ids from a server that no longer has them. Attributing to one of
+    those produces a session tagged with an id nothing can resolve.
+
+    Entries are trusted by default: a missing status only means reconciliation
+    has not run, which is not evidence against the entry. Only a status that
+    reconciliation actively set to "not found" disqualifies it.
+    """
+    if not entry:
+        return False
+    return str(entry.get("registry_status") or "") not in _UNCONFIRMED_REGISTRY_STATUSES
+
+
 def get_agent_by_id(agent_id: str, harness: str | None = None) -> dict | None:
     """Find a lockfile agent by UUID, optionally scoped to one harness."""
     _, registry = read_registry_lockfile()
