@@ -54,6 +54,22 @@ from services.discovery.search import (
 from services.discovery.serialize import entry_document, list_item, manifest, search_result_item
 from services.discovery.visibility import visible_entries_predicate
 
+_REQUEST_LOCATIONS = frozenset({"body", "query", "path", "header", "cookie"})
+
+
+def _validation_message(exc: RequestValidationError) -> str:
+    """Name the first invalid field without echoing the client's input back."""
+    errors = exc.errors()
+    first = errors[0] if errors else {}
+    if first.get("type") == "json_invalid":
+        return "Request body is not valid JSON"
+    loc = tuple(first.get("loc", ()))
+    if loc and loc[0] in _REQUEST_LOCATIONS:
+        loc = loc[1:]  # strip only the location marker; "query" is also a search body field
+    field = ".".join(str(part) for part in loc)
+    message = first.get("msg", "invalid request")
+    return f"{field}: {message}" if field else message
+
 
 class _ArdRoute(APIRoute):
     """Answer request-validation failures with the ARD error envelope.
@@ -70,10 +86,7 @@ class _ArdRoute(APIRoute):
             try:
                 return await handler(request)
             except RequestValidationError as exc:
-                first = exc.errors()[0] if exc.errors() else {}
-                field = ".".join(str(part) for part in first.get("loc", ()) if part not in ("body", "query"))
-                message = first.get("msg", "invalid request")
-                return _error(400, "INVALID_ARGUMENT", f"{field}: {message}" if field else message)
+                return _error(400, "INVALID_ARGUMENT", _validation_message(exc))
 
         return ard_handler
 

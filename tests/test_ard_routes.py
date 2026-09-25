@@ -189,6 +189,40 @@ async def test_search_schema_errors_use_the_ard_envelope(sessions, settings, bod
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("body", "message"),
+    [
+        # "query" is both a request location and the search body's field, so only loc[0] may be stripped.
+        ({}, "query: Field required"),
+        ({"query": "review"}, "query: Input should be a valid dictionary or object to extract fields from"),
+        ({"query": {"text": 5}}, "query.text: Input should be a valid string"),
+        ({"query": {"text": "review"}, "pageSize": 0}, "pageSize: Input should be greater than or equal to 1"),
+        (
+            {"query": {"text": "review"}, "federation": "everything"},
+            "federation: Input should be 'auto', 'referrals' or 'none'",
+        ),
+    ],
+)
+async def test_search_schema_error_message_names_the_field(sessions, settings, body, message):
+    owner, _, _ = await _seed(sessions)
+    async with _client(_app(sessions, owner)) as client:
+        resp = await client.post("/api/v1/ard/search", json=body)
+    assert resp.status_code == 400
+    assert resp.json() == {"errorCode": "INVALID_ARGUMENT", "message": message}
+
+
+@pytest.mark.asyncio
+async def test_search_malformed_json_is_named_as_such(sessions, settings):
+    owner, _, _ = await _seed(sessions)
+    async with _client(_app(sessions, owner)) as client:
+        resp = await client.post(
+            "/api/v1/ard/search", content=b"{not json", headers={"content-type": "application/json"}
+        )
+    assert resp.status_code == 400
+    assert resp.json() == {"errorCode": "INVALID_ARGUMENT", "message": "Request body is not valid JSON"}
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("params", [{"pageSize": "0"}, {"pageSize": "1000"}, {"pageSize": "many"}])
 async def test_list_schema_errors_use_the_ard_envelope(sessions, settings, params):
     owner, _, _ = await _seed(sessions)

@@ -5,6 +5,7 @@
 <!-- SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 DoomsCoder <vedantkakade05@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn> -->
+<!-- SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Changelog
@@ -116,6 +117,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixes
 
+- answer malformed ARD search and list requests with a 400 ARD error envelope instead of a 422
 - support multi-artifact migration validation and import uploads
 - restore teamspace discovery, membership controls, private join requests, and empty personal deletion
 - require global review before a teamspace becomes public
