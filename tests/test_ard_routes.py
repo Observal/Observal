@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """ARD endpoints, artifact endpoint, and conformance against the vendored spec tool."""
@@ -164,6 +165,38 @@ async def test_search_rejects_unknown_filter_and_bad_page_token(sessions, settin
         assert resp.status_code == 400 and resp.json()["errorCode"] == "INVALID_ARGUMENT"
         resp = await client.post("/api/v1/ard/search", json={"query": {"text": "review"}, "pageToken": "garbage"})
         assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"query": {"text": "review"}, "pageSize": 0},
+        {"query": {"text": "review"}, "pageSize": 1000},
+        {"query": {"text": "review"}, "federation": "everything"},
+        {"query": "review"},
+        ["not", "an", "object"],
+    ],
+)
+async def test_search_schema_errors_use_the_ard_envelope(sessions, settings, body):
+    """Appendix B: every 400 carries {errorCode, message}, including body validation failures."""
+    owner, _, _ = await _seed(sessions)
+    async with _client(_app(sessions, owner)) as client:
+        resp = await client.post("/api/v1/ard/search", json=body)
+    assert resp.status_code == 400
+    assert set(resp.json()) == {"errorCode", "message"}
+    assert resp.json()["errorCode"] == "INVALID_ARGUMENT"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("params", [{"pageSize": "0"}, {"pageSize": "1000"}, {"pageSize": "many"}])
+async def test_list_schema_errors_use_the_ard_envelope(sessions, settings, params):
+    owner, _, _ = await _seed(sessions)
+    async with _client(_app(sessions, owner)) as client:
+        resp = await client.get("/api/v1/ard/agents", params=params)
+    assert resp.status_code == 400
+    assert set(resp.json()) == {"errorCode", "message"}
+    assert "pageSize" in resp.json()["message"]
 
 
 @pytest.mark.asyncio

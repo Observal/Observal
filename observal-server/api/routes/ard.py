@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Agentic Resource Discovery endpoints.
@@ -21,11 +22,14 @@ authenticated callers see what the registry's visibility rules already grant
 them.
 """
 
+from collections.abc import Callable, Coroutine
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.routing import APIRoute
 from loguru import logger as optic
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,7 +54,31 @@ from services.discovery.search import (
 from services.discovery.serialize import entry_document, list_item, manifest, search_result_item
 from services.discovery.visibility import visible_entries_predicate
 
-router = APIRouter(tags=["ard"])
+
+class _ArdRoute(APIRoute):
+    """Answer request-validation failures with the ARD error envelope.
+
+    FastAPI's default is a 422 ``{"detail": [...]}``. ARD Appendix B requires
+    every bad request to be a 400 carrying ``errorCode`` and ``message``, so a
+    malformed body or query parameter must not fall through to that default.
+    """
+
+    def get_route_handler(self) -> Callable[[Request], Coroutine[Any, Any, Response]]:
+        handler = super().get_route_handler()
+
+        async def ard_handler(request: Request) -> Response:
+            try:
+                return await handler(request)
+            except RequestValidationError as exc:
+                first = exc.errors()[0] if exc.errors() else {}
+                field = ".".join(str(part) for part in first.get("loc", ()) if part not in ("body", "query"))
+                message = first.get("msg", "invalid request")
+                return _error(400, "INVALID_ARGUMENT", f"{field}: {message}" if field else message)
+
+        return ard_handler
+
+
+router = APIRouter(tags=["ard"], route_class=_ArdRoute)
 
 # Anonymous discovery follows the registry-wide public switch. Unlike the
 # other registry reads, a private deployment answers anonymous ARD calls with
