@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Aryan Iyappan <aryaniyappan2006@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Version-specific endpoints for agents.
@@ -41,7 +42,7 @@ from schemas.agent import (  # noqa: TC001
     AgentVersionCreateRequest,
     AgentVersionReviewRequest,
 )
-from services.agent_resolver import resolve_component_versions, validate_component_ids
+from services.agent_resolver import validate_component_ids
 from services.harness import generate_agent_config
 from services.harness_capability_inference import compute_supported_harnesses, infer_required_features
 from services.inbox import sources as inbox
@@ -301,23 +302,20 @@ async def _create_agent_version(
     db.add(ver)
     await db.flush()
 
-    # Create AgentComponent records
-    from models.agent_component import AgentComponent
+    # Pin components. A release carries forward every pin from the agent's current
+    # release unless the component names a version or the author asked to refresh.
+    from services.agent_lock import attach_pinned_components
 
-    component_versions = await resolve_component_versions(req.components, db)
-    version_components: list[AgentComponent] = []
-    for order, cref in enumerate(req.components):
-        component = AgentComponent(
-            agent_version_id=ver.id,
-            component_type=cref.component_type,
-            component_id=cref.component_id,
-            component_name="",
-            resolved_version=component_versions.get((cref.component_type, cref.component_id), "latest"),
-            order_index=order,
-            config_override=cref.config_override,
-        )
-        db.add(component)
-        version_components.append(component)
+    current = agent.latest_version
+    version_components = await attach_pinned_components(
+        db,
+        ver.id,
+        req.components,
+        previous=list(current.components or []) if current is not None else [],
+        refresh=req.refresh_components,
+        require_approved=True,
+        current_user=current_user,
+    )
 
     # Infer harness features from components
     skill_comp_ids = [c.component_id for c in req.components if c.component_type == "skill"]
@@ -336,8 +334,10 @@ async def _create_agent_version(
     # Always build the snapshot from structured fields so caller-provided text
     # cannot drift from the version stored in the database.
     await db.flush()
+    from services.agent_lock import lock_agent_version
     from services.agent_snapshot import build_yaml_snapshot
 
+    await lock_agent_version(db, agent, ver)
     ver.yaml_snapshot = await build_yaml_snapshot(ver, db)
 
     # Pre-generate harness configs at release time (spec: no generation at request time)

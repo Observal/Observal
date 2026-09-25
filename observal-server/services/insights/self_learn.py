@@ -558,36 +558,32 @@ async def _create_agent_version_with_additions(
                 component_id=comp.component_id,
                 component_name=comp.component_name,
                 resolved_version=comp.resolved_version,
+                resolved_version_id=comp.resolved_version_id,
+                resolved_digest=comp.resolved_digest,
                 order_index=comp.order_index,
                 config_override=comp.config_override,
             )
         )
         order_idx = max(order_idx, (comp.order_index or 0) + 1)
 
-    # Link components created in this run. These are always born at 1.0.0,
-    # but resolve the name so later reports don't fall back to a UUID stub.
-    created_names = await _component_names(new_components, db)
-    for component in new_components:
-        db.add(
-            AgentComponent(
-                agent_version_id=new_version.id,
-                component_type=component.component_type,
-                component_id=component.component_id,
-                component_name=created_names.get(component.component_id, ""),
-                resolved_version="1.0.0",
-                order_index=order_idx,
-            )
-        )
-        order_idx += 1
-
-    # Link reused registry components at the version the registry actually
-    # has. Pinning a version that does not exist breaks agent pulls.
+    # Link components created in this run (pinned to the pending release they
+    # were born with) and reused registry components (pinned to the release the
+    # registry actually has; pinning a version that does not exist breaks pulls).
     #
     # Skip anything the agent already carries. The insights shortlist excludes
     # attached components, but `_find_existing_skill_match` does not, and an
     # agent can gain a component between report generation and apply. Adding it
     # twice would write two AgentComponent rows for one component, at differing
     # resolved_versions.
+    created_names = await _component_names(new_components, db)
+    refs: list[dict] = [
+        {
+            "component_type": component.component_type,
+            "component_id": component.component_id,
+            "component_name": created_names.get(component.component_id, ""),
+        }
+        for component in new_components
+    ]
     for resolved in linked_existing:
         if resolved.id in carried_ids:
             optic.info(
@@ -597,20 +593,24 @@ async def _create_agent_version_with_additions(
             )
             continue
         carried_ids.add(resolved.id)
-        db.add(
-            AgentComponent(
-                agent_version_id=new_version.id,
-                component_type=resolved.component_type,
-                component_id=resolved.id,
-                component_name=resolved.name,
-                resolved_version=resolved.latest_version,
-                order_index=order_idx,
-            )
+        refs.append(
+            {
+                "component_type": resolved.component_type,
+                "component_id": resolved.id,
+                "component_name": resolved.name,
+                "version": resolved.latest_version,
+            }
         )
-        order_idx += 1
+    from services.agent_lock import attach_pinned_components, lock_agent_version
+
+    # The components this run created are pending releases submitted under the
+    # agent owner's identity, so pin them as that submitter.
+    submitter = await db.get(User, submitter_id)
+    await attach_pinned_components(db, new_version.id, refs, order_start=order_idx, current_user=submitter)
 
     await db.flush()
     await _refresh_capability_inference(new_version, db)
+    await lock_agent_version(db, agent, new_version)
 
     # A pending self-learned version sits in the same queue as a hand-released
     # one; the reviewers who will clear it are told the same way.

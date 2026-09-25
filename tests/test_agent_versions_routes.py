@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Focused business coverage for the agent version routes."""
@@ -217,13 +218,34 @@ def _sql(statement) -> str:
 
 @pytest.fixture
 def boundaries(monkeypatch):
+    import services.agent_lock as agent_lock
     import services.agent_snapshot as snapshot
     import services.clickhouse as clickhouse
     import services.model_resolver as model_resolver
 
     load = AsyncMock()
     validate_components = AsyncMock(return_value=[])
-    resolve_versions = AsyncMock(return_value={})
+    pins: dict = {}
+
+    async def fake_attach(db, agent_version_id, refs, *, order_start=0, **_options):
+        # Stand in for the lock service: pin each ref to the version in ``pins``.
+        links = []
+        for offset, ref in enumerate(refs):
+            link = AgentComponent(
+                agent_version_id=agent_version_id,
+                component_type=ref.component_type,
+                component_id=ref.component_id,
+                component_name="",
+                resolved_version=pins.get((ref.component_type, ref.component_id), "1.0.0"),
+                order_index=order_start + offset,
+                config_override=ref.config_override,
+            )
+            db.add(link)
+            links.append(link)
+        return links
+
+    attach = AsyncMock(side_effect=fake_attach)
+    lock = AsyncMock(return_value={})
     infer = MagicMock(return_value=[])
     compute = MagicMock(return_value=[])
     generate = MagicMock(return_value={"files": {}})
@@ -239,7 +261,8 @@ def boundaries(monkeypatch):
     monkeypatch.setattr(routes, "datetime", _FixedDateTime)
     monkeypatch.setattr(routes, "_load_agent", load)
     monkeypatch.setattr(routes, "validate_component_ids", validate_components)
-    monkeypatch.setattr(routes, "resolve_component_versions", resolve_versions)
+    monkeypatch.setattr(agent_lock, "attach_pinned_components", attach)
+    monkeypatch.setattr(agent_lock, "lock_agent_version", lock)
     monkeypatch.setattr(routes, "infer_required_features", infer)
     monkeypatch.setattr(routes, "compute_supported_harnesses", compute)
     monkeypatch.setattr(routes, "generate_agent_config", generate)
@@ -255,7 +278,9 @@ def boundaries(monkeypatch):
     return SimpleNamespace(
         load=load,
         validate_components=validate_components,
-        resolve_versions=resolve_versions,
+        pins=pins,
+        attach=attach,
+        lock=lock,
         infer=infer,
         compute=compute,
         generate=generate,
@@ -523,14 +548,14 @@ async def test_create_surfaces_component_validation_errors_for_target_team(bound
         target_team_id=TEAM_ID,
         enforce_target=True,
     )
-    boundaries.resolve_versions.assert_not_awaited()
+    boundaries.attach.assert_not_awaited()
     db.add.assert_not_called()
 
 
 async def test_create_resolves_components_builds_snapshot_and_reports_conflicts(boundaries):
     agent = _agent(created_by=OTHER_USER_ID, co_authors=[str(USER_ID)])
     boundaries.load.return_value = agent
-    boundaries.resolve_versions.return_value = {("mcp", MCP_ID): "4.1.0", ("skill", SKILL_ID): "3.2.0"}
+    boundaries.pins.update({("mcp", MCP_ID): "4.1.0", ("skill", SKILL_ID): "3.2.0"})
     boundaries.infer.return_value = ["mcp_servers", "skills"]
     boundaries.compute.return_value = ["kiro", "claude-code"]
     skill_listing = SimpleNamespace(id=SKILL_ID, name="Reviewer")
@@ -592,7 +617,16 @@ async def test_create_resolves_components_builds_snapshot_and_reports_conflicts(
     ]
     assert links[0].config_override == {"safe": True}
     boundaries.validate_components.assert_awaited_once()
-    boundaries.resolve_versions.assert_awaited_once_with(request.components, db)
+    boundaries.attach.assert_awaited_once_with(
+        db,
+        VERSION_ID,
+        request.components,
+        previous=[],
+        refresh=False,
+        require_approved=True,
+        current_user=_user(),
+    )
+    boundaries.lock.assert_awaited_once_with(db, agent, version)
     proxy = boundaries.infer.call_args.args[0]
     assert proxy.components == request.components
     assert proxy.external_mcps == version.external_mcps
@@ -653,7 +687,9 @@ async def test_create_draft_skips_queue_and_has_no_warning(boundaries):
     assert response["status"] == "draft"
     assert "warnings" not in response
     boundaries.validate_components.assert_not_awaited()
-    boundaries.resolve_versions.assert_awaited_once_with([], db)
+    boundaries.attach.assert_awaited_once_with(
+        db, VERSION_ID, [], previous=[], refresh=False, require_approved=True, current_user=_user()
+    )
     boundaries.generate.assert_not_called()
     boundaries.publish.assert_awaited_once_with(
         db,

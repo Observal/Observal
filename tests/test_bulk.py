@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Tests for bulk agent creation endpoint.
@@ -138,14 +139,14 @@ class TestBulkCreate:
         app, db, _ = _app_with()
         db.execute = AsyncMock(return_value=_empty_result())
 
-        # Two flushes per item (agent, then version); no reviewers exist here, so
-        # delivery adds none. Failing the third fails the SECOND item, leaving a
-        # neighbour on each side to prove the batch carried on.
+        # Three flushes per item (agent, version, then the lock); no reviewers
+        # exist here, so delivery adds none. Failing the fourth fails the SECOND
+        # item, leaving a neighbour on each side to prove the batch carried on.
         flushes = {"n": 0}
 
         async def flaky_flush(*_a, **_k):
             flushes["n"] += 1
-            if flushes["n"] == 3:
+            if flushes["n"] == 4:
                 raise RuntimeError("simulated database failure")
 
         db.flush = AsyncMock(side_effect=flaky_flush)

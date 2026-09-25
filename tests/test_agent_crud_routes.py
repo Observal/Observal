@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Focused unit coverage for the agent CRUD routes."""
@@ -223,6 +224,7 @@ def _sql(statement) -> str:
 
 @pytest.fixture
 def boundaries(monkeypatch):
+    import services.agent_lock as agent_lock
     import services.agent_resolver as resolver
     import services.agent_snapshot as snapshot
     import services.registry_telemetry as registry_telemetry
@@ -237,7 +239,31 @@ def boundaries(monkeypatch):
     )
     publish_target = AsyncMock(return_value=target)
     validate_components = AsyncMock(return_value=[])
-    resolve_versions = AsyncMock(return_value={})
+    pins: dict = {}
+
+    async def fake_attach(db, agent_version_id, refs, *, previous=(), order_start=0, **_options):
+        # Stand in for the lock service: pin each ref to the version in ``pins``.
+        links = []
+        for offset, ref in enumerate(refs):
+            field = (
+                ref.get if isinstance(ref, dict) else lambda name, default=None, ref=ref: getattr(ref, name, default)
+            )
+            key = (field("component_type"), field("component_id"))
+            link = AgentComponent(
+                agent_version_id=agent_version_id,
+                component_type=key[0],
+                component_id=key[1],
+                component_name="",
+                resolved_version=pins.get(key, "1.0.0"),
+                order_index=order_start + offset,
+                config_override=field("config_override"),
+            )
+            db.add(link)
+            links.append(link)
+        return links
+
+    attach = AsyncMock(side_effect=fake_attach)
+    lock = AsyncMock(return_value={})
     build_snapshot = AsyncMock(return_value="snapshot: true\n")
     emit = MagicMock()
     invalidate = AsyncMock(return_value=0)
@@ -262,7 +288,8 @@ def boundaries(monkeypatch):
     monkeypatch.setattr(crud, "_validate_mcp_ids", validate_mcps)
     monkeypatch.setattr(crud, "identity_exists", identity_exists)
     monkeypatch.setattr(resolver, "validate_component_ids", validate_components)
-    monkeypatch.setattr(resolver, "resolve_component_versions", resolve_versions)
+    monkeypatch.setattr(agent_lock, "attach_pinned_components", attach)
+    monkeypatch.setattr(agent_lock, "lock_agent_version", lock)
     monkeypatch.setattr(snapshot, "build_yaml_snapshot", build_snapshot)
     monkeypatch.setattr(registry_telemetry, "insert_audit_log", clickhouse_insert)
 
@@ -270,7 +297,9 @@ def boundaries(monkeypatch):
         target=target,
         publish_target=publish_target,
         validate_components=validate_components,
-        resolve_versions=resolve_versions,
+        pins=pins,
+        attach=attach,
+        lock=lock,
         build_snapshot=build_snapshot,
         emit=emit,
         invalidate=invalidate,
@@ -346,7 +375,7 @@ async def test_create_team_agent_with_typed_components_maps_response_and_audit(b
         auto_approve=True,
     )
     boundaries.publish_target.return_value = boundaries.target
-    boundaries.resolve_versions.return_value = {("mcp", MCP_ID): "2.0.0", ("skill", SKILL_ID): "3.0.0"}
+    boundaries.pins.update({("mcp", MCP_ID): "2.0.0", ("skill", SKILL_ID): "3.0.0"})
     skill = SimpleNamespace(id=SKILL_ID)
     db = _creation_db(_result(scalar=None), _result(scalar_rows=[skill]))
     loaded = _agent(
@@ -427,7 +456,7 @@ async def test_create_team_agent_with_typed_components_maps_response_and_audit(b
 
 async def test_create_legacy_mcp_links_are_version_pinned_and_pending(boundaries, monkeypatch):
     second_mcp = uuid.UUID("50000000-0000-0000-0000-000000000002")
-    boundaries.validate_mcps.return_value = [SimpleNamespace(version="1.0.0"), SimpleNamespace(version="2.0.0")]
+    boundaries.pins.update({("mcp", MCP_ID): "1.0.0", ("mcp", second_mcp): "2.0.0"})
     db = _creation_db(_result(scalar=None))
     monkeypatch.setattr(crud, "_load_agent", AsyncMock(return_value=_agent()))
     request = _create_request(owner="", mcp_server_ids=[MCP_ID, second_mcp])
@@ -446,7 +475,13 @@ async def test_create_legacy_mcp_links_are_version_pinned_and_pending(boundaries
         (MCP_ID, "1.0.0", 0),
         (second_mcp, "2.0.0", 1),
     ]
-    boundaries.resolve_versions.assert_awaited_once_with([], db)
+    boundaries.attach.assert_awaited_once_with(
+        db,
+        version.id,
+        [{"component_type": "mcp", "component_id": MCP_ID}, {"component_type": "mcp", "component_id": second_mcp}],
+        current_user=_user(),
+    )
+    boundaries.lock.assert_awaited_once_with(db, new_agent, version)
 
 
 @pytest.mark.parametrize(
@@ -783,7 +818,7 @@ async def test_update_typed_components_refreshes_features_snapshot_and_response(
     agent = _agent(components=[old_mcp, old_skill])
     load = AsyncMock(side_effect=[agent, agent])
     monkeypatch.setattr(crud, "_load_agent", load)
-    boundaries.resolve_versions.return_value = {("mcp", MCP_ID): "4.0.0", ("skill", SKILL_ID): "5.0.0"}
+    boundaries.pins.update({("mcp", MCP_ID): "4.0.0", ("skill", SKILL_ID): "5.0.0"})
     current_mcp = _component(resolved_version="4.0.0")
     current_skill = _component("skill", SKILL_ID, resolved_version="5.0.0", order=1)
     skill_listing = SimpleNamespace(id=SKILL_ID)
@@ -860,8 +895,7 @@ async def test_update_typed_components_reports_validation_errors(boundaries, mon
 async def test_update_legacy_mcp_links_only_replaces_mcp_components(boundaries, monkeypatch):
     old = _component()
     current = _component(resolved_version="9.0.0")
-    listing = SimpleNamespace(version="9.0.0")
-    boundaries.validate_mcps.return_value = [listing]
+    boundaries.pins[("mcp", MCP_ID)] = "9.0.0"
     agent = _agent(components=[old])
     monkeypatch.setattr(crud, "_load_agent", AsyncMock(side_effect=[agent, agent]))
     db = _db(_result(scalar_rows=[old]), _result(scalar_rows=[current]))
@@ -872,6 +906,13 @@ async def test_update_legacy_mcp_links_only_replaces_mcp_components(boundaries, 
         [MCP_ID], db, current_user=ANY, target_team_id=None, enforce_target=True
     )
     db.delete.assert_awaited_once_with(old)
+    boundaries.attach.assert_awaited_once_with(
+        db,
+        agent.latest_version.id,
+        [{"component_type": "mcp", "component_id": MCP_ID}],
+        previous=[old],
+        current_user=_user(),
+    )
     replacement = db.add.call_args.args[0]
     assert (replacement.component_type, replacement.component_id, replacement.resolved_version) == (
         "mcp",
