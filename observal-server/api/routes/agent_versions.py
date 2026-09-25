@@ -447,6 +447,19 @@ async def _review_agent_version(
         )
 
     if req.action == "approve":
+        # Same gate as the review queue: the component releases this version pins
+        # must themselves be approved, and approval freezes the lock.
+        from services.agent_lock import lock_agent_version, pinned_component_blockers
+
+        blocking = await pinned_component_blockers(db, ver.components or [])
+        if blocking:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "Cannot approve: some components are not approved yet",
+                    "blocking_components": blocking,
+                },
+            )
         ver.status = AgentStatus.approved
         ver.rejection_reason = None
         ver.reviewed_by = current_user.id
@@ -454,6 +467,7 @@ async def _review_agent_version(
         # Flush version status change first to avoid CircularDependencyError
         # between Agent.latest_version (ManyToOne) and Agent.versions (OneToMany)
         await db.flush()
+        await lock_agent_version(db, agent, ver)
         # Update latest_version_id if this version is newer than (or equal to) the current latest
         current_latest = agent.latest_version
         new_parsed = parse_semver(ver.version)
