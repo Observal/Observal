@@ -250,16 +250,21 @@ async def install_hook(
     if listing.status == ListingStatus.archived:
         warnings.append(archived_install_warning("hook", listing.name))
 
+    from services.agent_lock import PinnedListing, content_digest, select_install_version
+
+    requested = await select_install_version(db, "hook", listing, req.version)
+    source = PinnedListing(listing, requested) if requested is not None else listing
+    installed = requested if requested is not None else getattr(listing, "latest_version", None)
+
     if current_user is not None:
         db.add(HookDownload(listing_id=listing.id, user_id=current_user.id, harness=req.harness))
-        latest_version = getattr(listing, "latest_version", None)
-        if latest_version:
-            latest_version.download_count += 1
+        if installed is not None:
+            installed.download_count = (installed.download_count or 0) + 1
         await commit_or_name_conflict(db, "hook")
 
     from services.hook_install_generator import generate_hook_install_config
 
-    result = generate_hook_install_config(listing, req.harness, local_name=req.local_name)
+    result = generate_hook_install_config(source, req.harness, local_name=req.local_name)
     return HookInstallResponse(
         listing_id=listing.id,
         harness=req.harness,
@@ -270,6 +275,9 @@ async def install_hook(
         source_fetch=result.get("source_fetch"),
         notes=result.get("notes", []),
         warnings=warnings,
+        version=source.version,
+        version_id=getattr(installed, "id", None),
+        digest=content_digest("hook", installed) if installed is not None else None,
     )
 
 

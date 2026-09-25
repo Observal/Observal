@@ -667,15 +667,16 @@ async def load_pinned_listings(
     return loaded
 
 
-async def select_install_version(db: AsyncSession, component_type: str, listing: Any, requested: str | None) -> Any:
-    """The version row a standalone install should use.
+async def select_install_version(
+    db: AsyncSession, component_type: str, listing: Any, requested: str | None
+) -> Any | None:
+    """The version row a standalone install asked for, or None for the current release.
 
-    Without a request this is the listing's current release. A requested version
-    must be approved or archived, or share the listing's own status so owners can
-    install their pending submissions.
+    A requested version must be approved or archived, or share the listing's own
+    status so owners can install their pending submissions.
     """
     if not requested:
-        return listing.latest_version
+        return None
     model = VERSION_MODELS[component_type]
     row = (
         await db.execute(select(model).where(model.listing_id == listing.id, model.version == requested))

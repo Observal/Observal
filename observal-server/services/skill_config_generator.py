@@ -171,9 +171,9 @@ def generate_skill_config(
         if script_filename:
             config["skill"]["script_filename"] = script_filename
 
-    # Include version info in the response
+    # Always say which version this config came from so installs can record it.
+    config["skill"]["version"] = getattr(source, "version", None)
     if version_override:
-        config["skill"]["version"] = getattr(version_override, "version", None)
         config["skill"]["latest_version"] = getattr(skill_listing, "version", None)
 
     # Generate harness-specific skill file

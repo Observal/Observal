@@ -7,6 +7,7 @@
 
 import uuid
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -77,6 +78,7 @@ def _listing_mock(model_cls, status=ListingStatus.pending, **extra):
     m.skill_md_content = None
     m.created_at = datetime.now(UTC)
     m.updated_at = datetime.now(UTC)
+    m.latest_version = SimpleNamespace(id=uuid.uuid4(), version=m.version, status=status, download_count=0)
     for k, v in extra.items():
         setattr(m, k, v)
     return m

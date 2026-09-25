@@ -165,6 +165,7 @@ class HookInstallRequest(BaseModel):
     harness: str
     local_name: str | None = None
     platform: str = ""  # e.g. "win32", "darwin", "linux" - empty = Unix default
+    version: str | None = None  # Specific version to install (None = latest)
 
 
 class HookFileEntry(BaseModel):
@@ -183,3 +184,7 @@ class HookInstallResponse(BaseModel):
     source_fetch: dict | None = None
     notes: list[str] = []
     warnings: list[str] = []
+    # The exact component version that was installed and its content digest.
+    version: str | None = None
+    version_id: uuid.UUID | None = None
+    digest: str | None = None
