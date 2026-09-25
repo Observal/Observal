@@ -75,6 +75,7 @@
 
 ## Integrations
 
+* [Claude Code](integrations/claude-code.md)
 * [Copilot](integrations/copilot.md)
 * [Cursor](integrations/cursor.md)
 * [Goose](integrations/goose.md)
