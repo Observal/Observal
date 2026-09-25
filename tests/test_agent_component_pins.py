@@ -300,3 +300,44 @@ async def test_version_review_requires_approved_pins_and_freezes_the_lock(regist
     await db.refresh(candidate)
     lock = json.loads(candidate.lock_snapshot)
     assert (lock["agent"]["version"], lock["status"], lock["components"][0]["version"]) == ("4.0.0", "locked", "2.0.0")
+
+
+async def test_lock_endpoint_serves_the_frozen_snapshot_and_builds_one_for_legacy_versions(registry):
+    from services.agent_lock import lock_agent_version
+
+    db, owner, _mcp, agent = registry
+    version = (await db.execute(select(AgentVersion).where(AgentVersion.agent_id == agent.id))).scalar_one()
+
+    legacy = await agent_versions._get_agent_version_lock(str(agent.id), "3.1.0", db, owner)
+    await lock_agent_version(db, agent, version)
+    await db.commit()
+    frozen = await agent_versions._get_agent_version_lock(str(agent.id), "3.1.0", db, owner)
+
+    assert version.lock_snapshot is not None
+    assert frozen == json.loads(version.lock_snapshot)
+    assert legacy["digest"] == frozen["digest"]
+    assert frozen["components"][0]["version"] == "1.4.2"
+
+
+async def test_release_harness_configs_come_from_the_pinned_mcp_release(registry):
+    """Release-time configs are stored and served, so they must match the lock."""
+    db, owner, mcp, agent = registry
+    await _approve_mcp_release(db, mcp, owner, "2.0.0")
+
+    version = await _release(db, owner, agent, mcp, "3.2.0", supported_harnesses=["claude-code"])
+
+    assert [pinned for pinned, _id in await _pins(db, version)] == ["1.4.2"]
+    config = json.dumps(version.harness_configs["claude-code"])
+    assert "@modelcontextprotocol/server-github" in config
+    assert "@acme/github@2.0.0" not in config
+
+
+async def test_outdated_endpoint_reports_pins_behind_the_latest_release(registry):
+    db, owner, mcp, agent = registry
+    before = await agent_versions._get_agent_version_outdated(str(agent.id), "3.1.0", db, owner)
+    await _approve_mcp_release(db, mcp, owner, "2.0.0")
+    after = await agent_versions._get_agent_version_outdated(str(agent.id), "3.1.0", db, owner)
+
+    assert before["summary"] == {"total": 1, "outdated": 0, "unlocked": 0, "archived": 0}
+    assert after["summary"]["outdated"] == 1
+    assert (after["components"][0]["pinned_version"], after["components"][0]["latest_version"]) == ("1.4.2", "2.0.0")

@@ -539,7 +539,8 @@ async def pin_freshness(db: AsyncSession, components: Iterable[Any]) -> list[dic
                 "id": str(component.component_id),
                 "name": getattr(listing, "name", "") or component.component_name,
                 "qualified_name": getattr(listing, "qualified_name", ""),
-                "pinned_version": getattr(row, "version", None),
+                # An unlocked legacy pin reports what it recorded, usually "latest".
+                "pinned_version": getattr(row, "version", None) or component.resolved_version,
                 "latest_version": getattr(latest, "version", None),
                 "outdated": bool(pinned_key and latest_key and latest_key > pinned_key),
                 "archived": getattr(listing, "status", None) == ListingStatus.archived,
