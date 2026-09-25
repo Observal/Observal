@@ -54,6 +54,22 @@ from .helpers import (
     _validate_mcp_ids,
 )
 
+# Fields stored on the agent version rather than the agent identity.
+_VERSION_OWNED_FIELDS = (
+    "version",
+    "version_bump_type",
+    "description",
+    "prompt",
+    "model_name",
+    "model_config_json",
+    "models_by_harness",
+    "supported_harnesses",
+    "external_mcps",
+    "components",
+    "mcp_server_ids",
+)
+_EDITABLE_VERSION_STATUSES = frozenset({AgentStatus.draft, AgentStatus.pending, AgentStatus.rejected})
+
 
 @router.post("", response_model=AgentResponse)
 async def create_agent(
@@ -642,6 +658,22 @@ async def update_agent(
         raise HTTPException(
             status_code=422,
             detail="Teamspace cannot be changed here. Recreate the agent under the target teamspace.",
+        )
+
+    # An approved version is a lock that installs and pins depend on. Its contents
+    # never change in place; edits become a new release that goes through review.
+    latest = agent.latest_version
+    edits_version = "success_criteria" in req.model_fields_set or any(
+        getattr(req, field) is not None for field in _VERSION_OWNED_FIELDS
+    )
+    if edits_version and latest is not None and latest.status not in _EDITABLE_VERSION_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Version {latest.version} is {latest.status.value} and cannot be edited in place. "
+                f"Release a new version instead: observal agent release {agent.namespace}/{agent.slug} --bump patch "
+                f"(POST /api/v1/agents/{agent.id}/versions)."
+            ),
         )
 
     if req.version_bump_type and req.version is None:
