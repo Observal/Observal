@@ -477,7 +477,8 @@ export default function ComponentsPage() {
                   updateFilters({ namespace: user.username });
                 }}
                 placeholder="Publisher"
-                className="h-[34px] min-w-[145px] w-auto"
+                className="min-w-[145px] w-auto"
+                inputClassName="h-[34px]"
               />
             </>
           )}
