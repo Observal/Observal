@@ -188,7 +188,7 @@ def test_json_reports_current_outdated_and_inbox_state(
     payload = json.loads(result.stdout)
     assert [item["status"] for item in payload["items"]] == ["outdated", "current"]
     assert payload["items"][0]["upgrade_command"] == (
-        "observal agent pull acme/reviewer --harness claude-code --no-prompt"
+        "observal agent pull acme/reviewer --harness claude-code --no-prompt --upgrade"
     )
     assert payload["items"][1]["upgrade_command"] is None
     assert payload["summary"] == {"total": 2, "outdated": 1, "current": 1, "missing": 0, "unknown": 0}
@@ -490,7 +490,7 @@ def test_no_report_prevents_inbox_write(
 @pytest.mark.parametrize(
     ("item_type", "expected"),
     [
-        ("agent", "observal agent pull acme/tool --harness pi --no-prompt"),
+        ("agent", "observal agent pull acme/tool --harness pi --no-prompt --upgrade"),
         ("mcp", "observal registry mcp install acme/tool --harness pi --no-prompt"),
         ("skill", "observal registry skill install acme/tool --harness pi"),
         ("hook", "observal registry hook install acme/tool --harness pi"),

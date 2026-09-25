@@ -307,7 +307,8 @@ def _upgrade_command(item: dict) -> str:
     target = shlex.quote(item["qualified_name"])
     harness = shlex.quote(item["harness"])
     if item["type"] == "agent":
-        return f"observal agent pull {target} --harness {harness} --no-prompt"
+        # A plain pull keeps the locked version; moving forward is explicit.
+        return f"observal agent pull {target} --harness {harness} --no-prompt --upgrade"
     prompt_flag = " --no-prompt" if item["type"] == "mcp" else ""
     return f"observal registry {item['type']} install {target} --harness {harness}{prompt_flag}"
 

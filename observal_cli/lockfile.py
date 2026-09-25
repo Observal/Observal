@@ -470,6 +470,14 @@ def get_agent_for_directory(harness: str, directory: str) -> dict | None:
     return None
 
 
+def installed_agent(harness: str, agent_id: str, *, scope: str, directory: str | None) -> dict | None:
+    """The lockfile entry for an agent already installed in this harness and place."""
+    _, registry = read_registry_lockfile()
+    agents = registry.get("harnesses", {}).get(harness, {}).get("agents", [])
+    index = _find_agent_idx(agents, agent_id, scope, directory)
+    return agents[index] if index is not None else None
+
+
 def get_agent_by_id(agent_id: str, harness: str | None = None) -> dict | None:
     """Find a lockfile agent by UUID, optionally scoped to one harness."""
     _, registry = read_registry_lockfile()
