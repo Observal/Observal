@@ -5,6 +5,7 @@
 <!-- SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 DoomsCoder <vedantkakade05@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn> -->
+<!-- SPDX-FileCopyrightText: 2026 Rishank Jain <rishankj749@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Changelog
@@ -104,6 +105,7 @@ All notable changes to this project will be documented in this file.
 - add an authenticated JSON API escape hatch and mixed Registry component bulk submission
 - standardize dedicated list JSON output with `items`, `total`, `page`, and `page_size`
 - make mutation retry behavior explicit and reserve automatic transient retries for reads
+- add opt-in Helm NetworkPolicies for API and worker pods and default PodDisruptionBudgets for both ([#1587](https://github.com/Observal/Observal/issues/1587))
 
 ### Breaking changes
 

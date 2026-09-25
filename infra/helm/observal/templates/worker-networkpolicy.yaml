@@ -1,0 +1,87 @@
+# SPDX-FileCopyrightText: 2026 Rishank Jain <rishankj749@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+{{- if .Values.networkPolicy.enabled }}
+{{- $np := .Values.networkPolicy }}
+{{- $dnsPeer := dict }}
+{{- with $np.dns.namespaceSelector }}
+{{- $_ := set $dnsPeer "namespaceSelector" . }}
+{{- end }}
+{{- with $np.dns.podSelector }}
+{{- $_ := set $dnsPeer "podSelector" . }}
+{{- end }}
+{{- if not $np.kubeApiServer.cidrs }}
+{{- fail "networkPolicy.enabled=true requires networkPolicy.kubeApiServer.cidrs: the worker's wait-for-init initContainer needs Kubernetes API access. Set the API endpoint CIDR(s), using /32 for IPv4 and /128 for IPv6 addresses listed by: kubectl get endpointslices -n default -l kubernetes.io/service-name=kubernetes -o jsonpath='{range .items[*].endpoints[*].addresses[*]}{.}{\"\\n\"}{end}'" }}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "observal.fullname" . }}-worker
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "observal.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "observal.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  # No ingress rules: the worker exposes no ports and accepts no inbound traffic.
+  policyTypes:
+    - Ingress
+    - Egress
+  egress:
+    # Cluster DNS. With no selectors configured, port 53 is open to any destination.
+    - ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+      {{- with $dnsPeer }}
+      to:
+        {{- toYaml (list .) | nindent 8 }}
+      {{- end }}
+    {{- if .Values.postgresql.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "observal.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: db
+      ports:
+        - protocol: TCP
+          port: 5432
+    {{- end }}
+    {{- if .Values.clickhouse.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "observal.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: clickhouse
+      ports:
+        - protocol: TCP
+          port: 8123
+    {{- end }}
+    {{- if .Values.redis.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "observal.selectorLabels" . | nindent 14 }}
+              app.kubernetes.io/component: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    {{- end }}
+    # Kubernetes API, polled by the wait-for-init initContainer.
+    - to:
+        {{- range $np.kubeApiServer.cidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+    {{- with $np.worker.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

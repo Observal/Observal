@@ -1,5 +1,6 @@
 {{/*
 SPDX-FileCopyrightText: 2026 Ravi Chopra <shivamchopra1234567890@gmail.com>
+SPDX-FileCopyrightText: 2026 Rishank Jain <rishankj749@gmail.com>
 SPDX-License-Identifier: Apache-2.0
 */}}
 
@@ -37,6 +38,22 @@ Observal has been installed! 🎉
 {{- if .Values.clickhouse.enabled }}
 
 ⚠️  WARNING: In-cluster ClickHouse is running (same caveat as above).
+{{- end }}
+
+{{- if and .Values.networkPolicy.enabled (not .Values.networkPolicy.worker.extraEgress) }}
+{{- $external := list }}
+{{- range $datastore := list "postgresql" "clickhouse" "redis" }}
+{{- if not (index $.Values $datastore).enabled }}
+{{- $external = append $external $datastore }}
+{{- end }}
+{{- end }}
+
+⚠️  WARNING: NetworkPolicy is enabled and networkPolicy.worker.extraEgress is empty.
+   The worker can only reach DNS, in-cluster datastores, and the Kubernetes API, so
+   Git source sync, alert webhooks, insight LLM calls, and usage reporting are blocked.
+{{- if $external }}
+   External datastores ({{ join ", " $external }}) are unreachable until added there too.
+{{- end }}
 {{- end }}
 
   Useful commands:
