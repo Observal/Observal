@@ -112,6 +112,21 @@ export interface AgentComponentReference {
 	status?: string;
 }
 
+/** A component of the agent's current version, as the agent detail response lists it. */
+export interface AgentComponentLink {
+	component_type: string;
+	component_id: string;
+	component_name?: string;
+	namespace?: string;
+	slug?: string;
+	qualified_name?: string;
+	/** The exact component version this agent version pins. */
+	version_ref: string;
+	order: number;
+	config_override?: Record<string, unknown> | null;
+	status?: string | null;
+}
+
 export interface SuccessMetric {
 	name: string;
 	target: string;
@@ -254,6 +269,29 @@ export interface VersionDiff {
 	version_b: string;
 	yaml_diff: string;
 	component_changes: ComponentChange[];
+}
+
+// ── Component pins ──────────────────────────────────────────────────
+
+/** One component an agent version pins, and how that pin compares with the registry. */
+export interface ComponentPinFreshness {
+	type: string;
+	id: string;
+	name: string;
+	qualified_name: string;
+	pinned_version: string | null;
+	latest_version: string | null;
+	outdated: boolean;
+	archived: boolean;
+	locked: boolean;
+}
+
+export interface AgentVersionOutdated {
+	agent_id: string;
+	qualified_name: string;
+	version: string;
+	components: ComponentPinFreshness[];
+	summary: { total: number; outdated: number; unlocked: number; archived: number };
 }
 
 // ── Review ──────────────────────────────────────────────────────────
