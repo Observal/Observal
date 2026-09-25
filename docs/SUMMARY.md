@@ -11,6 +11,7 @@
 
 * [Installation](README.md)
 * [Quickstart](getting-started/quickstart.md)
+* [Setup guide](getting-started/onboarding.md)
 
 ## Core Concepts
 

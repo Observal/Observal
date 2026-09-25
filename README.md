@@ -125,8 +125,16 @@ make up
 **Standalone binary** (no Python required):
 
 ```bash
+# macOS / Linux
 curl -fsSL https://raw.githubusercontent.com/Observal/Observal/main/install.sh | bash
 ```
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/Observal/Observal/main/install.ps1 | iex
+```
+
+Connecting to an existing server? See the [Setup guide](docs/getting-started/onboarding.md).
 
 **Python** (3.11+):
 
