@@ -347,6 +347,7 @@ class TestSubmitSkill:
             "updated_at": NOW,
             "download_count": 0,
             "user_permission": None,
+            "is_recommended": False,
         }
         assert events == [
             "add:SkillListing",

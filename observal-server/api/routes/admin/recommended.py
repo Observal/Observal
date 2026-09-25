@@ -5,14 +5,14 @@
 
 from __future__ import annotations
 
-import uuid
+import uuid  # noqa: TC003 - Pydantic needs uuid.UUID at runtime for validation
 from typing import Literal
 
 from fastapi import Depends, HTTPException
 from loguru import logger as optic
 from pydantic import BaseModel
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002 - FastAPI needs the type at runtime for Depends()
 
 from api.deps import get_db, require_role
 from models.agent import Agent

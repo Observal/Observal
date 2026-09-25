@@ -562,6 +562,7 @@ class TestSubmitMcp:
             "validation_results": [],
             "download_count": 0,
             "user_permission": None,
+            "is_recommended": False,
         }
         assert events == [
             "add:McpListing",
