@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 from contextlib import nullcontext
 from pathlib import Path
 
@@ -173,16 +174,24 @@ def _use_hint(item: dict) -> str:
 
 
 def _next_step(item: dict, harness: str | None) -> str | None:
-    """The existing command that installs a next-session resource; it already confirms."""
+    """The existing command that installs a next-session resource; it already confirms.
+
+    The command pins the version the discovery entry describes, so what gets
+    installed is what was searched and inspected.
+    """
     kind = item.get("obs:kind")
-    ref = (item.get("obs:nativeRef") or "").split("@", 1)[0]
+    ref, _, version = (item.get("obs:nativeRef") or "").partition("@")
     if not ref or not kind:
         return None
+    # The command is meant to be run as printed, and the reference comes from a
+    # registry response, so quote anything a shell would interpret.
+    ref = shlex.quote(ref)
     flag = f" --harness {harness}" if harness else " --harness <harness>"
+    pin = f" --version {shlex.quote(version)}" if version else ""
     if kind == "agent":
-        return f"observal agent pull {ref}{flag}"
+        return f"observal agent pull {ref}{flag}{pin}"
     if kind in ("mcp", "skill", "hook"):
-        return f"observal registry {kind} install {ref}{flag}"
+        return f"observal registry {kind} install {ref}{flag}{pin}"
     if kind == "sandbox":
         return f"observal registry sandbox show {ref} --output json"
     return None

@@ -739,12 +739,15 @@ def skill_install(
                 component_type="skill",
                 name=skill_info.get("name", resolved),
                 component_id=str(skill_info.get("id", resolved)),
-                version=version or skill_info.get("version") or skill_info.get("latest_version"),
+                version=result.get("version") or version or skill_info.get("version") or listing.get("version"),
                 scope=scope,
                 directory=directory,
                 namespace=listing.get("namespace"),
                 slug=listing.get("slug"),
                 local_name=local_name,
+                version_id=str(result["version_id"]) if result.get("version_id") else None,
+                digest=result.get("digest"),
+                requested_version=version,
             )
         except PermissionError as error:
             fail(
