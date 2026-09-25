@@ -102,6 +102,26 @@ def _validate_version(value: str, *, operation: str) -> str:
         )
 
 
+_EXACT_VERSION_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?$")
+
+
+def _validate_exact_version(value: str, *, operation: str, resource: str) -> str:
+    """Pinned and looked-up versions are matched exactly, so keep them exactly as written.
+
+    Unlike ``_validate_version``, this never normalizes: PEP 440 would turn
+    ``1.2.0-beta.1`` into ``1.2.0b1``, which names no registry version.
+    """
+    if not _EXACT_VERSION_RE.match(value):
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Invalid {resource}: {value}.",
+            operation=operation,
+            resource=resource,
+            remediation="Use an exact version such as 1.2.0.",
+        )
+    return value
+
+
 def _validate_harnesses(values: list[str], *, operation: str) -> list[str]:
     invalid = [value for value in values if value not in VALID_HARNESSES]
     if invalid:
@@ -1356,6 +1376,9 @@ def agent_init(
 def agent_add(
     component_type: str = typer.Argument(..., help="Component type: mcp, skill, hook, prompt, sandbox"),
     component_id: str = typer.Argument(..., help="Component ID (UUID)"),
+    version: str | None = typer.Option(
+        None, "--version", "-V", help="Pin an exact component version (default: keep or use latest approved)"
+    ),
     directory: str = typer.Option(".", "--dir", "-d", help="Directory containing observal-agent.yaml"),
     output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
@@ -1363,11 +1386,13 @@ def agent_add(
 
     Appends a component entry to the components list in your local
     observal-agent.yaml file. The component is referenced by type and
-    UUID. Duplicates are rejected.
+    UUID. Duplicates are rejected. With --version the agent pins that exact
+    release; without it the agent keeps its current pin, or pins the latest
+    approved release when it first gains the component.
 
     Examples:
       observal agent add mcp a1b2c3d4-e5f6-7890-abcd-ef1234567890
-      observal agent add skill b2c3d4e5-f6a7-8901-bcde-f12345678901
+      observal agent add skill b2c3d4e5-f6a7-8901-bcde-f12345678901 --version 1.2.0
       observal agent add hook c3d4e5f6-... --dir ./my-agent
     """
     component_type = component_type.strip().lower()
@@ -1380,6 +1405,8 @@ def agent_add(
             remediation=f"Choose from: {', '.join(sorted(VALID_COMPONENT_TYPES))}.",
         )
     component_id = _validate_component_id(component_id)
+    if version is not None:
+        version = _validate_exact_version(version, operation="Add agent component", resource="component version")
 
     dir_path = Path(directory)
     data = _load_agent_yaml(dir_path, operation="Add agent component")
@@ -1403,7 +1430,10 @@ def agent_add(
                 remediation="Choose a different component or leave the definition unchanged.",
             )
 
-    components.append({"component_type": component_type, "component_id": component_id})
+    entry = {"component_type": component_type, "component_id": component_id}
+    if version is not None:
+        entry["version"] = version
+    components.append(entry)
     data["components"] = components
     path = _save_agent_yaml(dir_path, data, operation="Add agent component")
     result = {"path": str(path), "component": components[-1]}
@@ -1476,6 +1506,9 @@ def agent_build(
         # API convention: plural resource name
         plural = {"mcp": "mcps", "skill": "skills", "hook": "hooks", "prompt": "prompts", "sandbox": "sandboxes"}
         endpoint = f"/api/v1/{plural[ctype]}/{cid}"
+        if comp.get("version"):
+            # A pinned version has to exist, not just the component.
+            endpoint = f"{endpoint}/versions/{comp['version']}"
         try:
             with _progress(output, f"Checking {ctype} {cid[:8]}..."):
                 client.get(endpoint)
@@ -1689,6 +1722,11 @@ def agent_release(
     name: str = typer.Argument(..., help="Agent name, ID, row number, or @alias"),
     bump: str = typer.Option(..., "--bump", help="Version bump type: patch, minor, or major"),
     directory: str = typer.Option(".", "--dir", "-d", help="Directory containing observal-agent.yaml"),
+    refresh_components: bool = typer.Option(
+        False,
+        "--refresh-components",
+        help="Move every component without a version in the YAML to its latest approved release",
+    ),
     output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Bump version and push a versioned release to the registry.
@@ -1697,10 +1735,16 @@ def agent_release(
     to the review queue. The YAML must contain all required fields including
     model_config_json: {} and external_mcps: [].
 
+    A release keeps every component at the version the current release
+    pinned, so components never change without the author asking. Pin one
+    component by giving it a `version` in the YAML, or pass
+    --refresh-components to move the rest to their latest approved release.
+    `observal agent outdated` shows what that would change.
+
     Examples:
       observal agent release my-agent --bump patch
       observal agent release my-agent --bump minor --dir /tmp/my-agent
-      observal agent release my-agent --bump major
+      observal agent release my-agent --bump patch --refresh-components
     """
     if bump not in ("patch", "minor", "major"):
         fail(
@@ -1756,6 +1800,7 @@ def agent_release(
         "components": data.get("components", []),
         "yaml_snapshot": raw_yaml,
         "success_criteria": data.get("success_criteria"),
+        "refresh_components": refresh_components,
     }
 
     if output != "json":
@@ -1824,3 +1869,77 @@ def agent_versions(
         )
 
     console.print(table)
+
+
+@agent_app.command(name="outdated")
+def agent_outdated(
+    name: str = typer.Argument(..., help="Agent name, ID, row number, or @alias"),
+    version: str | None = typer.Option(
+        None, "--version", "-V", help="Agent version to check (default: the latest version)"
+    ),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
+):
+    """Show which components an agent version pins behind their latest release.
+
+    Every agent version pins exact component versions, and pulls always
+    install those pins. Use this as the agent's author to see what a
+    refreshed release would change, then publish one with
+    `observal agent release <agent> --bump patch --refresh-components`.
+
+    Examples:
+      observal agent outdated alice/reviewer
+      observal agent outdated alice/reviewer --version 1.2.0 --output json
+    """
+    if version:
+        version = _validate_exact_version(version, operation="Check agent components", resource="agent version")
+    resolved = client.resolve_registry_reference("agent", name)
+    with _progress(output, "Checking pinned components..."):
+        if not version:
+            version = str(client.get(f"/api/v1/agents/{resolved}").get("version") or "")
+        data = client.get(f"/api/v1/agents/{resolved}/versions/{version}/outdated")
+
+    if output == "json":
+        output_json(data)
+        return
+
+    components = data.get("components", [])
+    if not components:
+        rprint(f"[dim]{esc(data.get('qualified_name', name))} v{esc(version)} has no components.[/dim]")
+        return
+
+    table = Table(title=f"{data.get('qualified_name', name)} v{version}", show_lines=False, padding=(0, 1))
+    table.add_column("TYPE", style="dim")
+    table.add_column("COMPONENT", style="cyan")
+    table.add_column("PINNED", style="yellow")
+    table.add_column("LATEST", style="green")
+    table.add_column("STATUS")
+    for item in components:
+        if not item.get("locked"):
+            status = "[yellow]unlocked[/yellow]"
+        elif item.get("outdated"):
+            status = "[yellow]outdated[/yellow]"
+        else:
+            status = "[green]current[/green]"
+        if item.get("archived"):
+            status += " [dim](archived)[/dim]"
+        table.add_row(
+            esc(item.get("type", "")),
+            esc(item.get("qualified_name") or item.get("name", "")),
+            esc(item.get("pinned_version") or "?"),
+            esc(item.get("latest_version") or "none"),
+            status,
+        )
+    console.print(table)
+
+    summary = data.get("summary", {})
+    if summary.get("outdated") or summary.get("unlocked"):
+        rprint(
+            f"\n[yellow]{summary.get('outdated', 0)} outdated, {summary.get('unlocked', 0)} unlocked.[/yellow] "
+            "Release a refreshed version to move pins forward:"
+        )
+        rprint(
+            f"  [cyan]observal agent release {esc(data.get('qualified_name', name))} --bump patch "
+            "--refresh-components[/cyan]"
+        )
+    else:
+        rprint("\n[green]✓ Every pinned component is on its latest approved release.[/green]")
