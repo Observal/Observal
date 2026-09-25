@@ -729,7 +729,7 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
     }
 
     def get(path: str):
-        if path == "/api/v1/agents/agent-uuid":
+        if path.startswith("/api/v1/agents/agent-uuid"):
             return detail
         if path == "/api/v1/mcps/mcp-1":
             return listing
@@ -840,7 +840,7 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
     assert result.exit_code == 0, result.output
     boundaries.resolve.assert_called_once_with("agent", "acme/reviewer")
     assert boundaries.get.call_args_list == [
-        call("/api/v1/agents/agent-uuid"),
+        call("/api/v1/agents/agent-uuid?version=1.4.0"),
         call("/api/v1/mcps/mcp-1"),
         call("/api/v1/mcps/mcp-1"),
     ]

@@ -224,9 +224,10 @@ async def save_draft(
     version.inferred_supported_harnesses = compute_supported_harnesses(version.required_capabilities)
 
     await db.flush()
-    from services.agent_snapshot import build_yaml_snapshot
+    from services.agent_snapshot import build_lock_snapshot, build_yaml_snapshot
 
     version.yaml_snapshot = await build_yaml_snapshot(version, db)
+    version.lock_snapshot = await build_lock_snapshot(version, db, agent_name=agent.name)
 
     await commit_or_name_conflict(db, "agent")
     agent = await _load_agent(db, str(agent.id), prefer_user_id=current_user.id, current_user=current_user)
@@ -409,9 +410,10 @@ async def update_draft(
 
     # Always rebuild the snapshot so reviewers see the latest state including
     # per-harness model overrides, prompt edits, and component swaps.
-    from services.agent_snapshot import build_yaml_snapshot
+    from services.agent_snapshot import build_lock_snapshot, build_yaml_snapshot
 
     version.yaml_snapshot = await build_yaml_snapshot(version, db)
+    version.lock_snapshot = await build_lock_snapshot(version, db, agent_name=agent.name)
 
     await db.commit()
     agent = await _load_agent(db, str(agent.id), prefer_user_id=current_user.id, current_user=current_user)
@@ -514,9 +516,10 @@ async def submit_draft(
         agent.latest_version.gaming_flags = summarize_flags(flags)
         # Defensive refresh - covers older drafts created before snapshot
         # backfill landed and guarantees the reviewer sees current state.
-        from services.agent_snapshot import build_yaml_snapshot
+        from services.agent_snapshot import build_lock_snapshot, build_yaml_snapshot
 
         agent.latest_version.yaml_snapshot = await build_yaml_snapshot(agent.latest_version, db)
+        agent.latest_version.lock_snapshot = await build_lock_snapshot(agent.latest_version, db, agent_name=agent.name)
 
     if await publish_auto_approves_for_entity(agent, current_user, db):
         agent.status = AgentStatus.approved

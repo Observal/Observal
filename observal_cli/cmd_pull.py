@@ -842,7 +842,10 @@ def register_pull(app: typer.Typer):
 
         # Fetch agent details to discover MCP env vars
         with _progress(output, "Fetching agent details..."):
-            agent_detail = client.get(f"/api/v1/agents/{resolved}")
+            endpoint = f"/api/v1/agents/{resolved}"
+            if version:
+                endpoint = f"{endpoint}?version={version}"
+            agent_detail = client.get(endpoint)
 
         env_values = _collect_mcp_env_vars(agent_detail, no_prompt=no_prompt, env_overrides=env_overrides or None)
         header_values = _collect_mcp_headers(
@@ -1158,10 +1161,11 @@ def register_pull(app: typer.Typer):
                 detail="; ".join(setup_failures),
             )
 
+        agent_version = version or agent_detail.get("version") or agent_detail.get("latest_version")
+
         # Record installation state only after files and setup commands succeed.
         if not dry_run:
             agent_uuid = agent_detail.get("id", resolved)
-            agent_version = agent_detail.get("version") or agent_detail.get("latest_version")
 
             from observal_cli.lockfile import upsert_agent
 
@@ -1225,7 +1229,7 @@ def register_pull(app: typer.Typer):
                         "id": str(agent_detail.get("id", resolved)),
                         "qualified_name": agent_detail.get("qualified_name")
                         or (f"{namespace}/{slug}" if namespace else slug),
-                        "version": agent_detail.get("version") or agent_detail.get("latest_version"),
+                        "version": agent_version,
                         "local_name": local_name,
                     },
                     "harness": harness,

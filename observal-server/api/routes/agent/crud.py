@@ -217,9 +217,10 @@ async def create_agent(
     # Flush pending AgentComponent + goal rows so the snapshot builder picks
     # them up via its own SELECTs (the relationship cache is empty).
     await db.flush()
-    from services.agent_snapshot import build_yaml_snapshot
+    from services.agent_snapshot import build_lock_snapshot, build_yaml_snapshot
 
     version.yaml_snapshot = await build_yaml_snapshot(version, db)
+    version.lock_snapshot = await build_lock_snapshot(version, db, agent_name=agent.name)
 
     try:
         await db.commit()
@@ -562,6 +563,7 @@ async def deleted_agents(
 @router.get("/{agent_id}", response_model=AgentResponse)
 async def get_agent(
     agent_id: str,
+    version: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(get_registry_user),
 ):
@@ -577,13 +579,32 @@ async def get_agent(
     perm = get_effective_agent_permission(agent, current_user)
     if perm == "none":
         raise HTTPException(status_code=403, detail="Insufficient permissions to view this agent")
-    name_map = await _resolve_component_names(agent.components, db)
-    identity_map = await _resolve_component_identities(agent.components, db)
-    status_map = await _resolve_component_statuses(agent.components, db)
+
+    target_version = None
+    if isinstance(version, str) and version:
+        from models.agent import AgentVersion
+
+        stmt = select(AgentVersion).where(
+            AgentVersion.agent_id == agent.id,
+            AgentVersion.version == version,
+        )
+        target_version = (await db.execute(stmt)).scalar_one_or_none()
+        if not target_version:
+            raise HTTPException(status_code=404, detail=f"Version '{version}' not found for agent '{agent.name}'")
+        if target_version.status != AgentStatus.approved and not (
+            current_user and (current_user.id == agent.created_by or current_user.role == UserRole.admin)
+        ):
+            raise HTTPException(status_code=404, detail=f"Version '{version}' not found or not approved")
+
+    effective_components = target_version.components if target_version is not None else agent.components
+    name_map = await _resolve_component_names(effective_components, db)
+    identity_map = await _resolve_component_identities(effective_components, db)
+    status_map = await _resolve_component_statuses(effective_components, db)
     user_row = (await db.execute(select(User.email, User.username).where(User.id == agent.created_by))).first()
     return _agent_to_response(
         agent,
         name_map,
+        target_version=target_version,
         created_by_email=user_row[0] if user_row and current_user else "",
         created_by_username=user_row[1] if user_row else None,
         user_permission=perm,
@@ -841,9 +862,10 @@ async def update_agent(
     )
     if snapshot_needs_refresh:
         await db.flush()
-        from services.agent_snapshot import build_yaml_snapshot
+        from services.agent_snapshot import build_lock_snapshot, build_yaml_snapshot
 
         agent.latest_version.yaml_snapshot = await build_yaml_snapshot(agent.latest_version, db)
+        agent.latest_version.lock_snapshot = await build_lock_snapshot(agent.latest_version, db, agent_name=agent.name)
 
     await db.commit()
     agent = await _load_agent(db, str(agent.id), prefer_user_id=current_user.id, current_user=current_user)

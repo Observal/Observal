@@ -19,12 +19,12 @@ from api.deps import (
     require_role,
 )
 from api.routes._component_archive import archived_install_warning
-from models.agent import AgentStatus
-from models.hook import HookListing
-from models.mcp import ListingStatus, McpListing
-from models.prompt import PromptListing
+from models.agent import AgentStatus, AgentVersion
+from models.hook import HookListing, HookVersion
+from models.mcp import ListingStatus, McpListing, McpVersion
+from models.prompt import PromptListing, PromptVersion
 from models.sandbox import SandboxListing, SandboxVersion
-from models.skill import SkillListing
+from models.skill import SkillListing, SkillVersion
 from models.user import User, UserRole
 from schemas.agent import (
     AgentInstallRequest,
@@ -33,6 +33,7 @@ from schemas.agent import (
     ValidationIssue,
     ValidationResult,
 )
+from services.agent_resolver import _VersionedListing
 from services.harness import generate_agent_config
 from services.registry_telemetry import emit_registry_event
 
@@ -217,36 +218,40 @@ async def install_agent(
             .all()
         )
         sandbox_listings_map = {row.id: row for row in sandbox_rows}
-        sandbox_components = {c.component_id: c for c in install_components if c.component_type == "sandbox"}
+    version_spec = [
+        ("mcp", mcp_listings_map, McpVersion, "MCP"),
+        ("skill", skill_listings_map, SkillVersion, "Skill"),
+        ("hook", hook_listings_map, HookVersion, "Hook"),
+        ("prompt", prompt_listings_map, PromptVersion, "Prompt"),
+        ("sandbox", sandbox_listings_map, SandboxVersion, "Sandbox"),
+    ]
 
-        class _VersionedSandboxListing:
-            def __init__(self, listing, version):
-                self._listing = listing
-                self._version = version
-
-            def __getattr__(self, name):
-                if name == "latest_version":
-                    return self._version
-                if hasattr(self._version, name):
-                    return getattr(self._version, name)
-                return getattr(self._listing, name)
-
-        for sid, listing in list(sandbox_listings_map.items()):
-            resolved_version = sandbox_components[sid].resolved_version
-            if resolved_version and resolved_version != "latest" and resolved_version != listing.version:
+    for comp_type, lmap, vmodel, label in version_spec:
+        comp_by_id = {c.component_id: c for c in install_components if c.component_type == comp_type}
+        for cid, listing in list(lmap.items()):
+            comp_obj = comp_by_id.get(cid)
+            if not comp_obj:
+                continue
+            resolved_version = getattr(comp_obj, "resolved_version", None)
+            if (
+                isinstance(resolved_version, str)
+                and resolved_version
+                and resolved_version != "latest"
+                and resolved_version != getattr(listing, "version", None)
+            ):
                 pinned = (
                     await db.execute(
-                        select(SandboxVersion).where(
-                            SandboxVersion.listing_id == sid,
-                            SandboxVersion.version == resolved_version,
+                        select(vmodel).where(
+                            vmodel.listing_id == cid,
+                            vmodel.version == resolved_version,
                         )
                     )
                 ).scalar_one_or_none()
                 if not pinned:
                     raise HTTPException(
-                        status_code=404, detail=f"Sandbox {listing.name} version {resolved_version!r} not found"
+                        status_code=404, detail=f"{label} {listing.name} version {resolved_version!r} not found"
                     )
-                sandbox_listings_map[sid] = _VersionedSandboxListing(listing, pinned)
+                lmap[cid] = _VersionedListing(listing, pinned)
 
     component_maps = (
         (mcp_comp_ids, mcp_listings_map),
@@ -392,6 +397,7 @@ async def get_agent_traces(
 @router.get("/{agent_id}/resolve")
 async def resolve_agent_components(
     agent_id: str,
+    version: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(get_registry_user),
 ):
@@ -409,7 +415,20 @@ async def resolve_agent_components(
         raise HTTPException(status_code=403, detail="Insufficient permissions to resolve this agent")
     from services.agent_resolver import resolve_agent
 
-    resolved = await resolve_agent(agent, db, current_user=current_user)
+    target_version = None
+    if isinstance(version, str) and version:
+        target_version = (
+            await db.execute(
+                select(AgentVersion).where(
+                    AgentVersion.agent_id == agent.id,
+                    AgentVersion.version == version,
+                )
+            )
+        ).scalar_one_or_none()
+        if not target_version:
+            raise HTTPException(status_code=404, detail=f"Version '{version}' not found for agent '{agent.name}'")
+
+    resolved = await resolve_agent(agent, db, current_user=current_user, target_version=target_version)
     from services.agent_builder import build_composition_summary
 
     return build_composition_summary(resolved)
@@ -418,6 +437,7 @@ async def resolve_agent_components(
 @router.get("/{agent_id}/manifest")
 async def get_agent_manifest(
     agent_id: str,
+    version: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(get_registry_user),
 ):
@@ -435,7 +455,20 @@ async def get_agent_manifest(
         raise HTTPException(status_code=403, detail="Insufficient permissions to view this agent's manifest")
     from services.agent_resolver import resolve_agent
 
-    resolved = await resolve_agent(agent, db, current_user=current_user)
+    target_version = None
+    if isinstance(version, str) and version:
+        target_version = (
+            await db.execute(
+                select(AgentVersion).where(
+                    AgentVersion.agent_id == agent.id,
+                    AgentVersion.version == version,
+                )
+            )
+        ).scalar_one_or_none()
+        if not target_version:
+            raise HTTPException(status_code=404, detail=f"Version '{version}' not found for agent '{agent.name}'")
+
+    resolved = await resolve_agent(agent, db, current_user=current_user, target_version=target_version)
     if not resolved.ok:
         raise HTTPException(
             status_code=422,

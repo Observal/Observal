@@ -264,6 +264,7 @@ def boundaries(monkeypatch):
     monkeypatch.setattr(resolver, "validate_component_ids", validate_components)
     monkeypatch.setattr(resolver, "resolve_component_versions", resolve_versions)
     monkeypatch.setattr(snapshot, "build_yaml_snapshot", build_snapshot)
+    monkeypatch.setattr(snapshot, "build_lock_snapshot", AsyncMock(return_value="lock_snapshot"))
     monkeypatch.setattr(registry_telemetry, "insert_audit_log", clickhouse_insert)
 
     return SimpleNamespace(
