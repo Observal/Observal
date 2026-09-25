@@ -230,7 +230,33 @@ async def test_list_schema_errors_use_the_ard_envelope(sessions, settings, param
         resp = await client.get("/api/v1/ard/agents", params=params)
     assert resp.status_code == 400
     assert set(resp.json()) == {"errorCode", "message"}
+    assert resp.json()["errorCode"] == "INVALID_ARGUMENT"
     assert "pageSize" in resp.json()["message"]
+
+
+def test_openapi_documents_400_envelope_not_422_for_ard_routes():
+    app = FastAPI()
+    app.include_router(ard.router)
+
+    @app.get("/api/v1/other")
+    async def other(limit: int = 10):
+        return {"limit": limit}
+
+    ard.document_ard_validation_errors(app)
+    paths = app.openapi()["paths"]
+
+    for path, method in [
+        ("/api/v1/ard/search", "post"),
+        ("/api/v1/ard/agents", "get"),
+        ("/api/v1/ard/explore", "post"),
+    ]:
+        responses = paths[path][method]["responses"]
+        assert "422" not in responses, path
+        assert responses["400"]["content"]["application/json"]["schema"] == {"$ref": "#/components/schemas/ArdError"}
+    assert "422" not in paths["/api/v1/ard/entries/{identifier}"]["get"]["responses"]
+    # Other routers keep FastAPI's default validation response.
+    assert "422" in paths["/api/v1/other"]["get"]["responses"]
+    assert app.openapi() is app.openapi()
 
 
 @pytest.mark.asyncio
