@@ -42,6 +42,7 @@ import type {
 	ComponentVersionsResponse,
 	ComponentVersionDetail,
 	VersionDiff,
+	AgentVersionOutdated,
 	BulkResult,
 	ComponentLeaderboardItem,
 	AuditLogEntry,
@@ -519,6 +520,8 @@ export const registry = {
 		post<unknown>(`/agents/${agentId}/versions`, body),
 	getVersionDiff: (agentId: string, v1: string, v2: string) =>
 		get<VersionDiff>(`/agents/${agentId}/versions/${v1}/diff/${v2}`),
+	getVersionOutdated: (agentId: string, version: string) =>
+		get<AgentVersionOutdated>(`/agents/${agentId}/versions/${version}/outdated`),
 
 	// Component versions
 	listComponentVersions: (

@@ -1,5 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 // SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+// SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
 
@@ -120,6 +121,8 @@ export function AgentEditForm({
   const [description, setDescription] = useState(initialDescription);
   const [modelName, setModelName] = useState(initialModelName);
   const [modelsByHarness, setModelsByIde] = useState<Record<string, string>>(initialModelsByIde);
+  // Releases carry every component pin forward unless the author opts in here.
+  const [refreshComponents, setRefreshComponents] = useState(false);
   const [activeTab, setActiveTab] = useState<RegistryType>("mcps");
   const [selectedComponents, setSelectedComponents] = useState<
     Record<string, RegistryItem[]>
@@ -323,7 +326,9 @@ export function AgentEditForm({
 
 
 
-  function buildVersionBody(version: string) {
+  // Only a confirmed release may refresh pins. Drafts always keep them, whatever
+  // was left ticked in a cancelled release dialog.
+  function buildVersionBody(version: string, refresh = false) {
     const components: { component_type: string; component_id: string }[] = [];
     for (const [type, items] of Object.entries(selectedComponents)) {
       const singularType = TYPE_MAP[type] ?? type;
@@ -347,6 +352,7 @@ export function AgentEditForm({
       yaml_snapshot: null,
       is_prerelease: false,
       success_criteria: normalizedCriteria,
+      refresh_components: refresh,
     };
   }
 
@@ -358,9 +364,10 @@ export function AgentEditForm({
     }
     setPublishing(true);
     try {
-      const body = buildVersionBody(selectedVersion);
+      const body = buildVersionBody(selectedVersion, refreshComponents);
       await createVersion.mutateAsync({ agentId, body });
       setShowVersionDialog(false);
+      setRefreshComponents(false);
       // Reset dirty state
       initialStateRef.current = {
         description,
@@ -609,11 +616,16 @@ export function AgentEditForm({
       {/* Version Bump Dialog */}
       <VersionBumpDialog
         open={showVersionDialog}
-        onOpenChange={setShowVersionDialog}
+        onOpenChange={(open) => {
+          setShowVersionDialog(open);
+          // Reopening the dialog starts from the safe default: keep every pin.
+          if (!open) setRefreshComponents(false);
+        }}
         currentVersion={currentVersion}
         suggestions={versionSuggestions}
         onConfirm={handleRelease}
         publishing={publishing}
+        refreshComponents={{ checked: refreshComponents, onCheckedChange: setRefreshComponents }}
       />
 
       {/* Discard Confirm Dialog */}

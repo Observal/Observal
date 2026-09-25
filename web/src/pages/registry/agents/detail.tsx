@@ -38,6 +38,7 @@ import {
   useWhoami,
   useAgentVersions,
   useAgentVersionDetail,
+  useAgentVersionOutdated,
   useInsightReports,
   useInsightSessionCount,
   useGenerateInsight,
@@ -49,8 +50,10 @@ import {
 import { useOptionalAuth } from "@/hooks/use-auth";
 import { hasMinRole } from "@/hooks/use-role-guard";
 import type {
+  AgentComponentLink,
   AgentComponentReference,
   AgentVersionSummary,
+  ComponentPinFreshness,
   FeedbackItem,
   InsightReportListItem,
   SuccessCriteria,
@@ -195,7 +198,7 @@ interface AgentDetail {
   model_name?: string;
   download_count?: number;
   created_by?: string;
-  component_links?: ComponentLink[];
+  component_links?: AgentComponentLink[];
   mcp_links?: ComponentLink[];
   supported_harnesses?: string[];
   required_capabilities?: string[];
@@ -245,6 +248,30 @@ function ArchivedComponentsBanner({ components }: { components: ComponentLink[] 
   );
 }
 
+/** Flags a pin that is behind its latest approved release, or has no lock at all. */
+function PinFreshnessBadge({ pin }: { pin?: ComponentPinFreshness }) {
+  if (!pin) return null;
+  if (!pin.locked) {
+    return (
+      <span
+        className="shrink-0 rounded bg-light-yellow px-1.5 py-0.5 text-[10px] text-dark-yellow"
+        title="Released before component pinning; installs use the latest approved version."
+      >
+        unlocked
+      </span>
+    );
+  }
+  if (!pin.outdated || !pin.latest_version) return null;
+  return (
+    <span
+      className="shrink-0 rounded bg-light-yellow px-1.5 py-0.5 text-[10px] text-dark-yellow"
+      title="Installs keep the pinned version until the author releases a new agent version."
+    >
+      v{pin.latest_version} available
+    </span>
+  );
+}
+
 function PromptSection({ prompt }: { prompt: string }) {
   const [expanded, setExpanded] = useState(false);
   const lineCount = prompt.split("\n").length;
@@ -286,8 +313,10 @@ function PromptSection({ prompt }: { prompt: string }) {
 
 function AgentVersionContents({
   components,
+  freshness,
 }: {
   components: ComponentLink[];
+  freshness?: Map<string, ComponentPinFreshness>;
 }) {
   const [activeTab, setActiveTab] = useState<ComponentGroupKey>("mcps");
   const groupedComponents = useMemo(() => groupComponents(components), [components]);
@@ -354,6 +383,7 @@ function AgentVersionContents({
                                   {component.resolved_version === "latest" ? "latest" : `v${component.resolved_version}`}
                                 </span>
                               )}
+                              <PinFreshnessBadge pin={componentId ? freshness?.get(componentId) : undefined} />
                             </div>
                             {component.status && component.status !== "archived" && <StatusBadge status={component.status} />}
                           </div>
@@ -659,6 +689,14 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
   const { data: versionDetail, isLoading: isVersionDetailLoading } = useAgentVersionDetail(id, selectedVersion);
   const effectiveVersionForDetail = selectedVersion ?? latestApprovedVersion ?? (agent as unknown as AgentDetail | undefined)?.version ?? null;
   const { data: effectiveVersionDetail } = useAgentVersionDetail(id, effectiveVersionForDetail);
+  // Freshness badges describe the rows on screen: the selected version's components,
+  // or by default `component_links`, which come from the agent's current version.
+  const pinnedRowsVersion = selectedVersion ?? (agent as unknown as AgentDetail | undefined)?.version ?? null;
+  const { data: pinReport } = useAgentVersionOutdated(id, pinnedRowsVersion);
+  const pinFreshness = useMemo(
+    () => new Map((pinReport?.components ?? []).map((pin) => [pin.id, pin])),
+    [pinReport],
+  );
 
   // Co-authors
   const [coAuthors, setCoAuthors] = useState<CoAuthor[]>([]);
@@ -683,7 +721,14 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
   const selectedVersionSummary = versions.find((v) => v.version === effectiveVersion);
   const vd = versionDetail ?? effectiveVersionDetail;
   const isVersionContentLoading = !!selectedVersion && !versionDetail && isVersionDetailLoading;
-  const baseComponents: ComponentLink[] = a?.component_links ?? a?.mcp_links ?? [];
+  // Agent component links name the pin `version_ref`; version details call it `resolved_version`.
+  const baseComponents: ComponentLink[] = a?.component_links
+    ? a.component_links.map(({ version_ref, status, ...component }) => ({
+        ...component,
+        resolved_version: version_ref,
+        status: status ?? undefined,
+      }))
+    : (a?.mcp_links ?? []);
   const versionComponents = selectedVersion ? normalizeVersionComponents(vd?.components) : undefined;
   const components: ComponentLink[] = selectedVersion ? (versionComponents ?? []) : baseComponents;
   const displayComponentCount = selectedVersion
@@ -1004,6 +1049,7 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
                     ) : (
                       <AgentVersionContents
                         components={components}
+                        freshness={pinFreshness}
                       />
                     )}
                   </div>
