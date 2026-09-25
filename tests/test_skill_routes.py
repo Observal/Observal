@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Observal Contributors
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 from __future__ import annotations
@@ -763,7 +764,11 @@ class TestInstallSkill:
             "harness": "pi",
             "config_snippet": {"skill": {"ok": True}},
             "warnings": ["Archived skill 'Review Skill' is deprecated and may be removed from future agent pulls."],
+            "version": "1.0.0",
+            "version_id": override.id,
+            "digest": response.digest,
         }
+        assert response.digest.startswith("sha256:")
         assert resolve.await_args_list == [
             call(SkillListing, "alice/review-skill", db, _user(), require_status=ListingStatus.approved),
             call(SkillListing, "alice/review-skill", db, _user()),
@@ -773,11 +778,12 @@ class TestInstallSkill:
         params = version_stmt.compile().params
         assert params["listing_id_1"] == LISTING_ID
         assert params["version_1"] == "1.0.0"
-        assert params["status_1"] == [ListingStatus.approved, ListingStatus.archived]
         download = db.add.call_args.args[0]
         assert isinstance(download, SkillDownload)
         assert (download.listing_id, download.user_id, download.harness) == (LISTING_ID, USER_ID, "pi")
-        assert listing.latest_version.download_count == 8
+        # The download is counted against the version that was installed.
+        assert override.download_count == 1
+        assert listing.latest_version.download_count == 7
         assert events == ["commit", "derive", "generate"]
         commit.assert_awaited_once_with(db, "skill")
         derive.assert_awaited_once_with(request)

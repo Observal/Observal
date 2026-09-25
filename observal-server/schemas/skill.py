@@ -166,3 +166,7 @@ class SkillInstallResponse(BaseModel):
     harness: str
     config_snippet: dict
     warnings: list[str] = []
+    # The exact component version that was installed and its content digest.
+    version: str | None = None
+    version_id: uuid.UUID | None = None
+    digest: str | None = None

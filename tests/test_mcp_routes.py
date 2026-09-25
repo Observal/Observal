@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Observal Contributors
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 from __future__ import annotations
@@ -1010,7 +1011,11 @@ class TestInstallMcp:
                 "Archived MCP 'Review MCP' is deprecated and may be removed from future agent pulls.",
                 "MCP 'Review MCP' requires local setup before use:\nCreate a local token",
             ],
+            "version": "1.2.3",
+            "version_id": listing.latest_version.id,
+            "digest": response.digest,
         }
+        assert response.digest.startswith("sha256:")
         assert resolve.await_args_list == [
             call(McpListing, "alice/review-mcp", db, _user(), require_status=ListingStatus.approved),
             call(McpListing, "alice/review-mcp", db, _user()),
