@@ -1,5 +1,6 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # API endpoints
@@ -40,6 +41,24 @@ All `{id}` parameters accept a UUID or a name.
 | `DELETE` | `/{type}/{id}` | Delete |
 | `GET` | `/{type}/{id}/metrics` | Metrics |
 | `POST` | `/agents/{id}/pull` | Pull agent (installs all components) |
+
+`POST /{type}/{id}/install` accepts `version` for agents, MCP servers, skills, and hooks. The response reports the `version` that was installed; component installs also return its `version_id` and content `digest`.
+
+### Agent versions and locks
+
+Each agent version pins exact component versions. Installs generate every component from its pinned version. Agent versions released before pinning can have unlocked components: those install at their latest approved release, are reported with `source: fallback-latest` in the install `lock`, and are refused by a `strict` install.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/agents/{id}/versions` | Version history |
+| `POST` | `/agents/{id}/versions` | Release a version for review. Components keep the current release's pins unless a component names a `version` or `refresh_components` is true |
+| `GET` | `/agents/{id}/versions/{version}/lock` | The version's lock: exact component versions, version ids, and digests. Frozen once approved |
+| `GET` | `/agents/{id}/versions/{version}/outdated` | For each pin, the latest approved release and whether the pin is behind |
+| `PUT` | `/agents/{id}` | Edits version-owned fields only while the latest version is a draft, pending, or rejected; otherwise `409` |
+
+A component reference's `version` must name an approved (or archived) release. Drafts may also pin a release that is not approved yet, but only a caller who may read it (its owner, co-authors, admins, and reviewers); to anyone else it does not exist, as on the component version routes.
+
+`POST /agents/{id}/install` also accepts `strict`. Its response includes `version` (the agent version installed) and `lock`: `status` (`locked`, `partial`, or `unlocked`), `digest`, `components` with each one's `source`, and `problems`. With `strict: true`, any problem is a `409` and nothing is generated.
 
 ### Scan
 

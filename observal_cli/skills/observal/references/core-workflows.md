@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Observal Contributors -->
+<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Core workflows
@@ -61,7 +62,7 @@ observal outdated --output json
 observal outdated --harness claude-code --no-report --output json
 ```
 
-For scan results, report detected harnesses, installed components, Agents, and unregistered items. For outdated results, inspect `items`, `summary`, and `report`. `--no-report` suppresses inbox reporting, not the Registry check.
+For scan results, report detected harnesses, installed components, Agents, and unregistered items. For outdated results, inspect `items`, `summary`, and `report`. `--no-report` suppresses inbox reporting, not the Registry check. An Agent's `upgrade_command` uses `observal agent pull --upgrade`, because a plain pull keeps the version locked in the project's `observal.lock`; run it only after the user agrees. An `unknown` item has no recorded version; its reinstall command records one.
 
 ## Diagnosis and telemetry setup
 

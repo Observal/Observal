@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Observal Contributors -->
+<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Discovery and installation
@@ -81,6 +82,7 @@ observal registry skill install NAMESPACE/SLUG --harness claude-code --scope pro
 observal registry skill install NAMESPACE/SLUG --harness kiro --scope user --version 1.2.0 --output json
 observal registry hook install NAMESPACE/SLUG --harness kiro --output json
 observal registry hook install NAMESPACE/SLUG --harness claude-code --platform darwin --dir . --output json
+observal registry hook install NAMESPACE/SLUG --harness claude-code --version 1.0.0 --dir . --output json
 ```
 
 Use raw output only when the user explicitly asks for a config snippet or raw response:

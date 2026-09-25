@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Observal Contributors -->
+<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Agent workflows
@@ -48,7 +49,9 @@ JSON pull requires `--no-prompt` and is appropriate only when no secret values a
 
 For credentials or tokens, omit `--no-prompt` and JSON output, then enter values through the interactive prompts. This keeps values out of process arguments. Treat generated harness configuration as sensitive because the harness may store those values.
 
-Inspect `files`, `warnings`, `setup_commands`, and lockfile results. Then verify installation:
+Pulls are pinned. The first pull in a project installs the latest approved version and records it in `observal.lock` in `--dir`; later pulls install that same version even after newer ones are approved. Only add `--upgrade` (latest approved) or `--version X` when the user asks to update or pick a version. Tell the user to commit `observal.lock` so teammates and CI install the same versions. For CI, add `--strict` (or set `OBSERVAL_STRICT=1`) so an install that does not match its lock fails instead of warning.
+
+Inspect `files`, `warnings`, `setup_commands`, `agent.version`, `agent.resolved_from`, `agent.latest_version`, and `lock` (`status`, `components`, `problems`). Report a newer `latest_version` as available rather than installing it. Then verify installation:
 
 ```bash
 observal scan --harness kiro --output json
@@ -105,7 +108,7 @@ observal agent publish --dir ./my-agent --team platform-tools --visibility publi
 
 ## Update in place
 
-Use only when the user wants to change the current listing without a reviewed version.
+Use only when the user wants to change the current listing without a reviewed version, and only while its latest version is a draft, pending, or rejected. An approved version is immutable; the update fails with a conflict that points to `agent release`. Use [Release a version](#release-a-version) instead.
 
 1. Read current state with `agent show`.
 2. Preserve required fields in `observal-agent.yaml`, including `model_config_json: {}` and `external_mcps: []`.
@@ -128,6 +131,15 @@ observal agent versions NAMESPACE/AGENT_SLUG --output json
 ```
 
 The YAML must include all required fields. Report the returned review status and version. A submitted release is not approved until review says so.
+
+A release pins every component to an exact version and keeps the pins of the current release, so components do not change unless asked. To see what is behind, and to move components forward:
+
+```bash
+observal agent outdated NAMESPACE/AGENT_SLUG --output json
+observal agent release NAMESPACE/AGENT_SLUG --bump minor --dir ./my-agent --refresh-components --output json
+```
+
+`--refresh-components` moves every component without a `version` in the YAML to its latest approved release. To pin one component to an exact release instead, set its `version` in the YAML, or add it with `observal agent add TYPE COMPONENT_UUID --version X.Y.Z --dir ./my-agent`. Only refresh when the user asks for newer component versions.
 
 ## Bulk create
 

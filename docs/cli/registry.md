@@ -1,5 +1,6 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # observal registry
@@ -249,7 +250,7 @@ observal registry mcp install <id-or-name> --harness <harness> [options]
 | Option | Short | Description |
 | --- | --- | --- |
 | `--harness` | `-i` | Target harness (required) |
-| `--version` | `-V` | Generate configuration for one version |
+| `--version` | `-V` | Generate configuration from that exact version instead of the latest |
 | `--env` | `-e` | Environment value as `KEY=VALUE`; repeatable |
 | `--header` | | Header value as `KEY=VALUE`; repeatable |
 | `--env-file` | | Read environment values from a file |
@@ -426,7 +427,7 @@ Scopes:
 - `user` (default): writes to `~/.<harness>/skills/<name>/` globally.
 - `project`: writes to `.agents/skills/<name>/` in the current directory, then symlinks into detected harness config directories.
 
-JSON output does not disable installation. It returns whether files were written and the installed path. Raw and no-write modes do not record the skill as installed. A failed file write or lockfile update returns a categorized failure instead of reporting success.
+JSON output does not disable installation. It returns whether files were written and the installed path. Raw and no-write modes do not record the skill as installed. An installed skill is recorded with its exact version, version id, and digest, with or without `--version`. A failed file write or lockfile update returns a categorized failure instead of reporting success.
 
 ```bash
 observal registry skill install my-skill --harness claude-code
@@ -539,7 +540,7 @@ observal registry hook show @guard --output json
 Install a hook for a specific harness. Writes script files and merges hook config into the harness's settings. Existing hooks are preserved during merge.
 
 ```bash
-observal registry hook install <id-or-name> --harness <harness> [--platform PLATFORM] [--raw] [--dir DIR]
+observal registry hook install <id-or-name> --harness <harness> [--platform PLATFORM] [--raw] [--dir DIR] [--version VERSION]
 ```
 
 | Option | Short | Description |
@@ -548,6 +549,7 @@ observal registry hook install <id-or-name> --harness <harness> [--platform PLAT
 | `--platform` | `-p` | Platform: `win32`, `darwin`, `linux` |
 | `--raw` | | Output raw JSON only (no file writes) |
 | `--dir` | `-d` | Project directory for file writes (default: cwd) |
+| `--version` | `-V` | Install one version instead of the latest |
 | `--output` | `-o` | Output the complete installation result as table or JSON |
 
 ```bash
@@ -558,7 +560,7 @@ observal registry hook install my-hook --harness claude-code --platform darwin
 observal registry hook install my-hook --harness claude-code --output json
 ```
 
-Hook installation validates every path before writing, refuses to replace malformed existing JSON, writes files atomically, and does not duplicate an existing event entry when repeated.
+Hook installation validates every path before writing, refuses to replace malformed existing JSON, writes files atomically, and does not duplicate an existing event entry when repeated. The lockfile records the installed version, its version id and digest, and any version you requested.
 
 ---
 
