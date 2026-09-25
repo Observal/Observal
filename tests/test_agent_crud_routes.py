@@ -815,7 +815,7 @@ async def test_update_rejects_duplicate_active_name(boundaries, monkeypatch):
 async def test_update_typed_components_refreshes_features_snapshot_and_response(boundaries, monkeypatch):
     old_mcp = _component()
     old_skill = _component("skill", SKILL_ID, order=1)
-    agent = _agent(components=[old_mcp, old_skill])
+    agent = _agent(components=[old_mcp, old_skill], status=AgentStatus.pending)
     load = AsyncMock(side_effect=[agent, agent])
     monkeypatch.setattr(crud, "_load_agent", load)
     boundaries.pins.update({("mcp", MCP_ID): "4.0.0", ("skill", SKILL_ID): "5.0.0"})
@@ -873,8 +873,45 @@ async def test_update_typed_components_refreshes_features_snapshot_and_response(
     assert response.version == "1.3.0"
 
 
-async def test_update_typed_components_reports_validation_errors(boundaries, monkeypatch):
+@pytest.mark.parametrize("status", [AgentStatus.approved, AgentStatus.archived])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"prompt": "Rewritten"},
+        {"version_bump_type": "minor"},
+        {"components": [{"component_type": "mcp", "component_id": MCP_ID}]},
+        {"success_criteria": None},
+    ],
+)
+async def test_update_refuses_to_edit_an_approved_version_in_place(boundaries, monkeypatch, status, payload):
+    agent = _agent(status=status)
+    monkeypatch.setattr(crud, "_load_agent", AsyncMock(return_value=agent))
+    db = _db()
+
+    with pytest.raises(HTTPException) as caught:
+        await crud.update_agent(str(AGENT_ID), AgentUpdateRequest(**payload), db=db, current_user=_user())
+
+    assert caught.value.status_code == 409
+    assert "observal agent release alice/review-agent" in caught.value.detail
+    assert agent.latest_version.version == "1.2.3"
+    assert agent.latest_version.prompt == "Review carefully"
+    db.execute.assert_not_awaited()
+    boundaries.attach.assert_not_awaited()
+
+
+async def test_update_still_edits_identity_fields_of_an_approved_agent(boundaries, monkeypatch):
     agent = _agent()
+    monkeypatch.setattr(crud, "_load_agent", AsyncMock(side_effect=[agent, agent]))
+    db = _db(_result(scalar=None))
+
+    await crud.update_agent(str(AGENT_ID), AgentUpdateRequest(category="security"), db=db, current_user=_user())
+
+    assert agent.category == "security"
+    db.commit.assert_awaited_once()
+
+
+async def test_update_typed_components_reports_validation_errors(boundaries, monkeypatch):
+    agent = _agent(status=AgentStatus.pending)
     monkeypatch.setattr(crud, "_load_agent", AsyncMock(return_value=agent))
     boundaries.validate_components.return_value = [
         SimpleNamespace(component_type="skill", component_id=SKILL_ID, reason="not approved")
@@ -896,7 +933,7 @@ async def test_update_legacy_mcp_links_only_replaces_mcp_components(boundaries, 
     old = _component()
     current = _component(resolved_version="9.0.0")
     boundaries.pins[("mcp", MCP_ID)] = "9.0.0"
-    agent = _agent(components=[old])
+    agent = _agent(components=[old], status=AgentStatus.pending)
     monkeypatch.setattr(crud, "_load_agent", AsyncMock(side_effect=[agent, agent]))
     db = _db(_result(scalar_rows=[old]), _result(scalar_rows=[current]))
 
@@ -948,7 +985,7 @@ async def test_update_requires_a_version_for_version_owned_fields(boundaries, mo
 
 
 async def test_update_rejects_unsafe_external_mcp(boundaries, monkeypatch):
-    monkeypatch.setattr(crud, "_load_agent", AsyncMock(return_value=_agent()))
+    monkeypatch.setattr(crud, "_load_agent", AsyncMock(return_value=_agent(status=AgentStatus.pending)))
     boundaries.validate_command.side_effect = ValueError("unsafe")
 
     with pytest.raises(HTTPException) as caught:
@@ -963,7 +1000,7 @@ async def test_update_rejects_unsafe_external_mcp(boundaries, monkeypatch):
 
 
 async def test_update_commit_failure_has_no_audit_or_response_reload(boundaries, monkeypatch):
-    agent = _agent()
+    agent = _agent(status=AgentStatus.pending)
     load = AsyncMock(return_value=agent)
     monkeypatch.setattr(crud, "_load_agent", load)
     db = _db()
