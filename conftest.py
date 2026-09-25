@@ -31,3 +31,23 @@ def _isolated_registry_lockfile(tmp_path, monkeypatch):
     lock_dir.mkdir(exist_ok=True)
     monkeypatch.setattr(lockfile, "LOCKFILE_PATH", lock_dir / "lockfile.json")
     monkeypatch.setattr(lockfile, "_LOCKFILE_LOCK", lock_dir / "lockfile.lock")
+
+
+@pytest.fixture(autouse=True)
+def _isolated_cli_config(tmp_path, monkeypatch):
+    """Keep every test away from the developer's real ~/.observal/config.json.
+
+    Tests that exercise login, ``config set`` or any save path rewrite the real
+    file, and ``server_url`` is the field that moves. A test leaving it pointing
+    somewhere else silently breaks the next CLI command and every lockfile
+    lookup keyed on the registry URL, with no indication that a test did it.
+    """
+    try:
+        from observal_cli import config
+    except ImportError:  # server-only environments do not ship the CLI
+        return
+
+    config_dir = tmp_path / "observal-config"
+    config_dir.mkdir(exist_ok=True)
+    monkeypatch.setattr(config, "CONFIG_DIR", config_dir)
+    monkeypatch.setattr(config, "CONFIG_FILE", config_dir / "config.json")
