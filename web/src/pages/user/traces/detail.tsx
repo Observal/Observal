@@ -2106,6 +2106,15 @@ export default function TraceDetailPage() {
 		() => session?.subagent_sessions ?? [],
 		[session],
 	);
+	const sessionTiming = useMemo(() => {
+		const timestampedEvents = events
+			.filter((event) => isRealTs(event.timestamp))
+			.sort((left, right) => new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime());
+		return {
+			first: timestampedEvents[0],
+			last: timestampedEvents.at(-1),
+		};
+	}, [events]);
 
 	const [expandedSet, setExpandedSet] = useState<Set<string>>(new Set());
 	const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
@@ -2213,40 +2222,30 @@ export default function TraceDetailPage() {
 									<span className="text-sm">{session.service_name}</span>
 								</div>
 							)}
-							{events.some((e) => isRealTs(e.timestamp)) && (
+							{sessionTiming.first && (
 								<div>
 									<span className="text-xs text-muted-foreground block mb-0.5">
 										First Event
 									</span>
 									<span className="text-sm tabular-nums">
-										{new Date(
-											events.find((e) => isRealTs(e.timestamp))!.timestamp,
-										).toLocaleString()}
+										{new Date(sessionTiming.first.timestamp).toLocaleString()}
 									</span>
 								</div>
 							)}
-							{events.length > 0 && (() => {
-								const firstReal = events.find((event) => isRealTs(event.timestamp));
-								const lastReal = [...events].reverse().find((event) => isRealTs(event.timestamp));
-								return (
-									<>
-										<div>
-											<span className="text-xs text-muted-foreground block mb-0.5">Duration</span>
-											<span className="text-sm tabular-nums">
-												{firstReal && lastReal && firstReal !== lastReal
-													? formatDuration(new Date(lastReal.timestamp).getTime() - new Date(firstReal.timestamp).getTime())
-													: "-"}
-											</span>
-										</div>
-										<div>
-											<span className="text-xs text-muted-foreground block mb-0.5">Last event</span>
-											<span className="text-sm tabular-nums">
-												{lastReal ? new Date(lastReal.timestamp).toLocaleString() : "-"}
-											</span>
-										</div>
-									</>
-								);
-							})()}
+							<div>
+								<span className="text-xs text-muted-foreground block mb-0.5">Duration</span>
+								<span className="text-sm tabular-nums">
+									{sessionTiming.first && sessionTiming.last && sessionTiming.first !== sessionTiming.last
+										? formatDuration(new Date(sessionTiming.last.timestamp).getTime() - new Date(sessionTiming.first.timestamp).getTime())
+										: "-"}
+								</span>
+							</div>
+							<div>
+								<span className="text-xs text-muted-foreground block mb-0.5">Last event</span>
+								<span className="text-sm tabular-nums">
+									{sessionTiming.last ? new Date(sessionTiming.last.timestamp).toLocaleString() : "-"}
+								</span>
+							</div>
 							<div>
 								<span className="text-xs text-muted-foreground block mb-0.5">
 									Turns

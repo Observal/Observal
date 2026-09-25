@@ -205,6 +205,8 @@ export default function UsersPage() {
             icon={Users}
             title="No users yet"
             description="Users will appear here once they sign up or are added by an admin."
+            actionLabel="Add user"
+            onAction={ssoOnly ? undefined : () => setShowCreate(true)}
           />
         ) : (
           <AdminPanel
