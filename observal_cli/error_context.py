@@ -71,6 +71,7 @@ OPERATION_LABELS = {
     "agent_install": "Generate agent installation",
     "agent_list": "List agents",
     "agent_my": "List owned agents",
+    "agent_outdated": "Check agent component pins",
     "agent_publish": "Publish agent",
     "agent_release": "Release agent version",
     "agent_show": "Show agent",

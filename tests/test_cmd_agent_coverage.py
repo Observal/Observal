@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Observal Contributors
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Focused coverage for the agent CLI command group."""
@@ -1376,3 +1377,129 @@ def test_agent_json_validation_uses_shared_error_boundary(arguments):
     assert result.exit_code == 7
     assert result.stdout == ""
     assert json.loads(result.stderr)["error"]["category"] == "validation"
+
+
+def test_agent_release_refresh_components_asks_the_server_to_move_pins(tmp_path, monkeypatch):
+    _write_agent_yaml(tmp_path)
+    monkeypatch.setattr(agent.client, "resolve_registry_reference", Mock(return_value="resolved"))
+    monkeypatch.setattr(
+        agent.client,
+        "get",
+        Mock(side_effect=[{"id": "agent-1"}, {"current": "1.2.3", "suggestions": {"patch": "1.2.4"}}]),
+    )
+    post = Mock(return_value={})
+    monkeypatch.setattr(agent.client, "post", post)
+
+    kept = _invoke("release", "alice/reviewer", "--bump", "patch", "--dir", str(tmp_path), "--output", "json")
+    assert kept.exit_code == 0, kept.output
+    assert post.call_args.args[1]["refresh_components"] is False
+
+    monkeypatch.setattr(
+        agent.client,
+        "get",
+        Mock(side_effect=[{"id": "agent-1"}, {"current": "1.2.4", "suggestions": {"patch": "1.2.5"}}]),
+    )
+    refreshed = _invoke(
+        "release", "alice/reviewer", "--bump", "patch", "--dir", str(tmp_path), "--refresh-components", "-o", "json"
+    )
+    assert refreshed.exit_code == 0, refreshed.output
+    assert post.call_args.args[1]["refresh_components"] is True
+
+
+def test_agent_add_records_an_exact_component_version(tmp_path):
+    _write_agent_yaml(tmp_path, components=[])
+    component = "33333333-3333-3333-3333-333333333333"
+
+    added = _invoke("add", "mcp", component, "--version", "1.2.0-beta.1", "--dir", str(tmp_path), "--output", "json")
+    invalid = _invoke("add", "skill", component, "--version", "latest", "--dir", str(tmp_path))
+
+    assert added.exit_code == 0, added.output
+    saved = yaml.safe_load((tmp_path / agent.YAML_FILE).read_text(encoding="utf-8"))
+    assert saved["components"] == [{"component_type": "mcp", "component_id": component, "version": "1.2.0-beta.1"}]
+    assert invalid.exit_code == 7
+
+
+def test_agent_build_checks_that_a_pinned_component_version_exists(tmp_path, monkeypatch):
+    _write_agent_yaml(tmp_path, components=[{"component_type": "skill", "component_id": "skill-1", "version": "2.0.0"}])
+    get = Mock(return_value={})
+    monkeypatch.setattr(agent.client, "get", get)
+    monkeypatch.setattr(agent.client, "add_publish_target", Mock())
+    monkeypatch.setattr(agent.client, "post", Mock(return_value={"issues": []}))
+
+    result = _invoke("build", "--dir", str(tmp_path), "--output", "json")
+
+    assert result.exit_code == 0, result.output
+    get.assert_called_once_with("/api/v1/skills/skill-1/versions/2.0.0")
+
+
+def test_agent_outdated_reports_pins_and_suggests_a_refreshed_release(monkeypatch):
+    monkeypatch.setattr(agent.client, "resolve_registry_reference", Mock(return_value="resolved"))
+    report = {
+        "qualified_name": "alice/reviewer",
+        "version": "1.2.3",
+        "components": [
+            {
+                "type": "mcp",
+                "qualified_name": "acme/github",
+                "pinned_version": "1.4.2",
+                "latest_version": "2.0.0",
+                "outdated": True,
+                "archived": False,
+                "locked": True,
+            },
+            {
+                "type": "skill",
+                "qualified_name": "acme/review",
+                "pinned_version": "1.0.0",
+                "latest_version": "1.0.0",
+                "outdated": False,
+                "archived": True,
+                "locked": True,
+            },
+        ],
+        "summary": {"total": 2, "outdated": 1, "unlocked": 0, "archived": 1},
+    }
+    get = Mock(side_effect=[{"version": "1.2.3"}, report])
+    monkeypatch.setattr(agent.client, "get", get)
+
+    table = _invoke("outdated", "alice/reviewer")
+
+    assert table.exit_code == 0, table.output
+    assert get.call_args_list == [
+        call("/api/v1/agents/resolved"),
+        call("/api/v1/agents/resolved/versions/1.2.3/outdated"),
+    ]
+    assert "acme/github" in table.output
+    assert "outdated" in table.output
+    assert "--refresh-components" in table.output
+
+    get.reset_mock(side_effect=True)
+    get.return_value = report
+    pinned = _invoke("outdated", "alice/reviewer", "--version", "1.2.3", "--output", "json")
+    assert pinned.exit_code == 0, pinned.output
+    assert json.loads(pinned.output) == report
+    get.assert_called_once_with("/api/v1/agents/resolved/versions/1.2.3/outdated")
+
+
+@pytest.mark.parametrize("version", ["1.2.0-beta.1", "1.2.0-rc.1"])
+def test_agent_outdated_looks_up_the_version_exactly_as_written(monkeypatch, version):
+    """PEP 440 would rewrite 1.2.0-beta.1 as 1.2.0b1, which names no agent version."""
+    monkeypatch.setattr(agent.client, "resolve_registry_reference", Mock(return_value="resolved"))
+    get = Mock(return_value={"components": []})
+    monkeypatch.setattr(agent.client, "get", get)
+
+    result = _invoke("outdated", "alice/reviewer", "--version", version, "--output", "json")
+
+    assert result.exit_code == 0, result.output
+    get.assert_called_once_with(f"/api/v1/agents/resolved/versions/{version}/outdated")
+
+
+def test_agent_outdated_rejects_a_version_that_is_not_exact(monkeypatch):
+    get = Mock()
+    monkeypatch.setattr(agent.client, "get", get)
+
+    result = _invoke("outdated", "alice/reviewer", "--version", "latest")
+
+    assert result.exit_code == 7
+    assert "Invalid agent version" in result.output
+    get.assert_not_called()

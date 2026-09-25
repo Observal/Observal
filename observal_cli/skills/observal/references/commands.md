@@ -1,5 +1,6 @@
 <!-- SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Observal CLI Command Reference
@@ -60,6 +61,7 @@ Every command available in the installed CLI. This block is generated from the T
 - `observal agent install`: Get install config for an agent.
 - `observal agent list`: List active agents (paginated).
 - `observal agent my`: List your own agents (all statuses).
+- `observal agent outdated`: Show which components an agent version pins behind their latest release.
 - `observal agent publish`: Publish the agent definition to the server.
 - `observal agent pull`: Fetch agent config and write harness files to disk.
 - `observal agent release`: Bump version and push a versioned release to the registry.
