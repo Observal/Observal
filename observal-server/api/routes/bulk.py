@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 
@@ -9,7 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_db, registry_identity, require_role
 from models.agent import Agent, AgentStatus, AgentVersion
-from models.agent_component import AgentComponent
 from models.user import User, UserRole
 from schemas.bulk import BulkAgentItem, BulkAgentRequest, BulkResult, BulkResultItem
 from services.inbox import sources as inbox
@@ -67,25 +67,15 @@ async def _create_single_agent(
 
     agent.latest_version_id = version.id
 
-    from services.agent_resolver import resolve_component_versions
+    from services.agent_lock import attach_pinned_components, lock_agent_version
 
-    component_versions = await resolve_component_versions(item.components, db)
-
-    # Attach components
-    for i, comp in enumerate(item.components):
-        db.add(
-            AgentComponent(
-                agent_version_id=version.id,
-                component_type=comp.get("component_type", "mcp"),
-                component_id=comp["component_id"],
-                component_name=comp.get("component_name", ""),
-                resolved_version=component_versions.get(
-                    (comp.get("component_type", "mcp"), comp["component_id"]), "latest"
-                ),
-                order_index=i,
-                config_override=comp.get("config_override"),
-            )
-        )
+    await attach_pinned_components(
+        db,
+        version.id,
+        [{**comp, "component_type": comp.get("component_type", "mcp")} for comp in item.components],
+        current_user=user,
+    )
+    await lock_agent_version(db, agent, version)
 
     # Every bulk-created version lands in the review queue as pending, so the
     # reviewers who own that queue are told — same as a one-at-a-time submit.

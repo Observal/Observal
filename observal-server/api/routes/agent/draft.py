@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Agent draft workflow routes: save, update, start/cancel edit, submit."""
@@ -171,41 +172,13 @@ async def save_draft(
 
     agent.latest_version_id = version.id
 
-    from services.agent_resolver import resolve_component_versions
+    from services.agent_lock import attach_pinned_components
 
-    version_refs = list(req.components) + [{"component_type": "mcp", "component_id": mid} for mid in req.mcp_server_ids]
-    component_versions = await resolve_component_versions(version_refs, db)
-
-    # Legacy: mcp_server_ids -> AgentComponent(type=mcp)
-    order = 0
-    if not req.components and req.mcp_server_ids:
-        for mid in req.mcp_server_ids:
-            db.add(
-                AgentComponent(
-                    agent_version_id=version.id,
-                    component_type="mcp",
-                    component_id=mid,
-                    component_name="",
-                    resolved_version=component_versions.get(("mcp", mid), "latest"),
-                    order_index=order,
-                )
-            )
-            order += 1
-
-    # New: components list with all types
-    for cref in req.components:
-        db.add(
-            AgentComponent(
-                agent_version_id=version.id,
-                component_type=cref.component_type,
-                component_id=cref.component_id,
-                component_name="",
-                resolved_version=component_versions.get((cref.component_type, cref.component_id), "latest"),
-                order_index=order,
-                config_override=cref.config_override,
-            )
-        )
-        order += 1
+    # Legacy mcp_server_ids only apply when typed components were not sent.
+    legacy_refs = (
+        [{"component_type": "mcp", "component_id": mid} for mid in req.mcp_server_ids] if not req.components else []
+    )
+    await attach_pinned_components(db, version.id, legacy_refs + list(req.components), current_user=current_user)
     # Auto-infer harness features for draft (use request data, not ORM relationship)
     all_crefs_draft = list(req.components) + [
         type("_Ref", (), {"component_type": "mcp", "component_id": mid})() for mid in req.mcp_server_ids
@@ -224,8 +197,10 @@ async def save_draft(
     version.inferred_supported_harnesses = compute_supported_harnesses(version.required_capabilities)
 
     await db.flush()
+    from services.agent_lock import lock_agent_version
     from services.agent_snapshot import build_yaml_snapshot
 
+    await lock_agent_version(db, agent, version)
     version.yaml_snapshot = await build_yaml_snapshot(version, db)
 
     await commit_or_name_conflict(db, "agent")
@@ -328,7 +303,8 @@ async def update_draft(
         version.external_mcps = [m.model_dump() for m in req.external_mcps]
 
     if req.components is not None:
-        from services.agent_resolver import resolve_component_versions, validate_component_ids
+        from services.agent_lock import attach_pinned_components
+        from services.agent_resolver import validate_component_ids
 
         errors = await validate_component_ids(
             [{"component_type": c.component_type, "component_id": c.component_id} for c in req.components],
@@ -347,7 +323,6 @@ async def update_draft(
                 ],
             )
 
-        component_versions = await resolve_component_versions(req.components, db)
         version_id = version.id
         old_comps = (
             (await db.execute(select(AgentComponent).where(AgentComponent.agent_version_id == version_id)))
@@ -356,18 +331,10 @@ async def update_draft(
         )
         for comp in old_comps:
             await db.delete(comp)
-        for i, cref in enumerate(req.components):
-            db.add(
-                AgentComponent(
-                    agent_version_id=version_id,
-                    component_type=cref.component_type,
-                    component_id=cref.component_id,
-                    component_name="",
-                    resolved_version=component_versions.get((cref.component_type, cref.component_id), "latest"),
-                    order_index=i,
-                    config_override=cref.config_override,
-                )
-            )
+        if old_comps:
+            await db.flush()
+        # Components already on this draft keep their pins unless a version is named.
+        await attach_pinned_components(db, version_id, req.components, previous=old_comps, current_user=current_user)
 
     # Re-infer harness features only when components or external_mcps changed
     if req.components is not None or req.external_mcps is not None:
@@ -407,10 +374,12 @@ async def update_draft(
         if val is not None:
             setattr(agent, field, val)
 
-    # Always rebuild the snapshot so reviewers see the latest state including
-    # per-harness model overrides, prompt edits, and component swaps.
+    # Always rebuild the lock and snapshot so reviewers see the latest state
+    # including per-harness model overrides, prompt edits, and component swaps.
+    from services.agent_lock import lock_agent_version
     from services.agent_snapshot import build_yaml_snapshot
 
+    await lock_agent_version(db, agent, version)
     version.yaml_snapshot = await build_yaml_snapshot(version, db)
 
     await db.commit()
