@@ -219,6 +219,12 @@ class AgentResponse(BaseModel):
     user_permission: str | None = None
     latest_approved_version: str | None = None
     latest_version: str | None = None
+    is_recommended: bool = False
+
+    @field_validator("is_recommended", mode="before")
+    @classmethod
+    def _coerce_recommended(cls, v: object) -> bool:
+        return bool(v) if v is not None else False
 
     model_config = {"from_attributes": True}
 
@@ -252,6 +258,13 @@ class AgentSummary(BaseModel):
     updated_at: datetime | None = None
     components_ready: bool = True
     blocking_components: list = []
+    is_recommended: bool = False
+
+    @field_validator("is_recommended", mode="before")
+    @classmethod
+    def _coerce_recommended(cls, v: object) -> bool:
+        return bool(v) if v is not None else False
+
     model_config = {"from_attributes": True}
 
 

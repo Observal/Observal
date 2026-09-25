@@ -32,6 +32,7 @@ export interface RegistryItem {
 	rejection_reason?: string;
 	created_at?: string;
 	updated_at?: string;
+	is_recommended?: boolean;
 	[key: string]: unknown;
 }
 

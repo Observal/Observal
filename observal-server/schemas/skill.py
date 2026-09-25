@@ -125,6 +125,7 @@ class SkillListingResponse(BaseModel):
     updated_at: datetime
     download_count: int = 0
     user_permission: str | None = None
+    is_recommended: bool = False
 
     @field_validator("user_permission", mode="before")
     @classmethod
@@ -151,6 +152,7 @@ class SkillListingSummary(BaseModel):
     status: ListingStatus
     rejection_reason: str | None = None
     updated_at: datetime | None = None
+    is_recommended: bool = False
     model_config = {"from_attributes": True}
 
 

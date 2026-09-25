@@ -152,6 +152,7 @@ class SandboxListingResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     user_permission: str | None = None
+    is_recommended: bool = False
 
     @field_validator("runtime_config", "resource_limits", mode="before")
     @classmethod
@@ -193,4 +194,5 @@ class SandboxListingSummary(BaseModel):
     status: ListingStatus
     rejection_reason: str | None = None
     updated_at: datetime | None = None
+    is_recommended: bool = False
     model_config = {"from_attributes": True}

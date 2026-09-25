@@ -930,6 +930,11 @@ export const admin = {
 			`/admin/migrate/jobs/${jobId}/artifacts/${name}/token`,
 			{},
 		),
+	setRecommended: (body: { entity_type: string; entity_id: string; recommended: boolean }) =>
+		patch<{ entity_type: string; entity_id: string; is_recommended: boolean }>(
+			"/admin/recommended",
+			body,
+		),
 };
 
 // ── Retention Types ───────────────────────────────────────────────
