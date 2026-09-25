@@ -24,6 +24,7 @@ OPERATION_LABELS = {
     "_install_impl": "Install MCP server",
     "_list_co_authors": "List co-authors",
     "_list_impl": "List MCP servers",
+    "_locked_version_detail": "Read locked agent version",
     "_mcp_spec": "Read MCP install requirements",
     "_owner": "Resolve bulk component owner",
     "_rate_delete": "Delete registry feedback",
