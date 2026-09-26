@@ -115,7 +115,9 @@ def _copy_untracked(repo: Path, worktree: Path, notes: list[str]) -> None:
 
 def create(cwd: Path) -> Workspace:
     """Create the child's workspace for a caller working in ``cwd``."""
-    root = Path(tempfile.mkdtemp(prefix="observal-delegate-"))
+    # Resolved: on macOS the temp dir is under /var, a symlink to /private/var, and the
+    # agent install rejects generated paths that resolve outside its target directory.
+    root = Path(tempfile.mkdtemp(prefix="observal-delegate-")).resolve()
     scratch = root / "scratch"
     scratch.mkdir()
     repo = repo_root(cwd)
@@ -141,12 +143,16 @@ def create(cwd: Path) -> Workspace:
             except WorkspaceError:
                 notes.append("Uncommitted changes could not be applied; the agent saw HEAD.")
         _copy_untracked(repo, worktree, notes)
+        start = _write_tree(worktree, scratch / "start.index")
     except WorkspaceError:
+        with contextlib.suppress(WorkspaceError):
+            _git(repo, "worktree", "remove", "--force", str(worktree))
         shutil.rmtree(root, ignore_errors=True)
+        with contextlib.suppress(WorkspaceError):
+            _git(repo, "worktree", "prune")
         raise
     # Keep the path relative to the checkout: a caller in a subdirectory works there.
     rel = cwd.resolve().relative_to(repo.resolve()) if cwd.resolve().is_relative_to(repo.resolve()) else Path()
-    start = _write_tree(worktree, scratch / "start.index")
     return Workspace(path=worktree / rel, scratch=scratch, repo=repo, start_tree=start, notes=notes, _root=root)
 
 

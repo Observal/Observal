@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 """Shared SSRF guard for all outbound HTTP and Git clone operations.
 
@@ -103,3 +104,29 @@ def is_private_url(url: str) -> bool:
         return any(_ip_is_private(r[4][0]) for r in results)
     except (socket.gaierror, OSError):
         return True  # DNS failure, fail closed
+
+
+def resolve_public_address(hostname: str) -> str | None:
+    """Resolve *hostname* once and return an address to connect to, or None if any address is private.
+
+    Connect to the returned address instead of resolving the name again, so DNS
+    rebinding cannot swap in a private address between the check and the
+    connection. DNS failures return None (fail closed).
+    """
+    host = (hostname or "").lower().strip("[]")
+    if not host or host in _BLOCKED_HOSTNAMES:
+        return None
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    else:
+        return None if _ip_is_private(host) else host
+    try:
+        results = socket.getaddrinfo(host, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    except (socket.gaierror, OSError):
+        return None
+    addresses = [r[4][0] for r in results]
+    if not addresses or any(_ip_is_private(a) for a in addresses):
+        return None
+    return addresses[0]

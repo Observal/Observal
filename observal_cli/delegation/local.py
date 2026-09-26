@@ -99,6 +99,31 @@ def _terminate(proc: subprocess.Popen) -> None:
             proc.kill()
 
 
+# Linux caps one argument at 128 KiB (MAX_ARG_STRLEN); Windows caps a whole command line
+# at 32,767 characters. Harnesses that read the task from stdin avoid both.
+MAX_ARG_BYTES = 120_000
+MAX_WINDOWS_COMMAND_CHARS = 30_000
+STDIN_HARNESSES = "Claude Code or Pi"
+
+
+def check_command_line(argv: list[str], binary: str, harness: str, *, prompt_in_argv: bool) -> None:
+    """Refuse a launch the OS would reject, or one that passes the task through cmd.exe."""
+    if sys.platform == "win32":
+        if prompt_in_argv and Path(binary).suffix.lower() in {".cmd", ".bat"}:
+            raise LocalRunError(
+                f"{harness} is installed as a batch file ({Path(binary).name}), so on Windows cmd.exe would parse "
+                f"the task text. Delegate to a harness that reads the task from stdin ({STDIN_HARNESSES})."
+            )
+        too_long = sum(len(arg) + 3 for arg in argv) > MAX_WINDOWS_COMMAND_CHARS
+    else:
+        too_long = max((len(arg.encode("utf-8")) for arg in argv), default=0) > MAX_ARG_BYTES
+    if too_long:
+        raise LocalRunError(
+            f"The task and the agent's instructions are too long for the {harness} command line. "
+            f"Shorten the task or delegate to a harness that reads it from stdin ({STDIN_HARNESSES})."
+        )
+
+
 def materialize(task: dict, ws: workspace.Workspace, *, harness: str, adapter) -> tuple[str, dict, str]:
     """Install the agent into the workspace. Returns (local name, mcp servers, instructions)."""
     from observal_cli.cmd_pull import rewrite_observal_interpreter, write_install_snippet
@@ -171,6 +196,7 @@ def run(
         binary = shutil.which(plan.argv[0])
         if binary is None:
             raise LocalRunError(f"{plan.argv[0]} is not on PATH; install {harness} or choose another harness.")
+        check_command_line(plan.argv, binary, harness, prompt_in_argv=plan.stdin is None)
 
         log_dir = tasks.task_dir(task["id"])
         stdout_path = log_dir / "stdout.log"

@@ -24,6 +24,7 @@ import re
 import time
 import uuid
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urlparse
 
 import httpx
 
@@ -65,6 +66,10 @@ def auth_headers(card: dict, identifier: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+# Plain http is acceptable for an agent on this machine, never for credentials sent elsewhere.
+LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
 class A2aClient:
     def __init__(
         self,
@@ -83,7 +88,14 @@ class A2aClient:
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if not self.legacy:
             headers["A2A-Version"] = version if version[:1].isdigit() else "1.0"
-        headers.update(auth_headers(card, identifier))
+        credentials = auth_headers(card, identifier)
+        endpoint = urlparse(self.url)
+        if credentials and endpoint.scheme != "https" and (endpoint.hostname or "").lower() not in LOOPBACK_HOSTS:
+            raise A2aError(
+                "The approved Agent Card uses plain http, so Observal will not send your token to it. "
+                "Ask the agent's owner to serve it over https."
+            )
+        headers.update(credentials)
         self._http = httpx.Client(timeout=REQUEST_TIMEOUT, headers=headers, transport=transport, follow_redirects=False)
 
     def close(self) -> None:

@@ -109,13 +109,43 @@ def test_card_url_defaults_to_well_known_path():
 def test_card_host_must_be_public_https_unless_allowed(monkeypatch):
     import services.ssrf_guard as guard
 
-    monkeypatch.setattr(guard, "is_private_url", lambda url: "internal" in url)
-    a2a.check_card_host("https://agents.acme.com/card.json", frozenset())
+    monkeypatch.setattr(guard, "resolve_public_address", lambda host: None if "internal" in host else "93.184.216.34")
+    assert a2a.check_card_host("https://agents.acme.com/card.json", frozenset()) == "93.184.216.34"
     with pytest.raises(a2a.AgentCardError):
         a2a.check_card_host("http://agents.acme.com/card.json", frozenset())
     with pytest.raises(a2a.AgentCardError):
         a2a.check_card_host("https://triage.internal/card.json", frozenset())
-    a2a.check_card_host("http://triage.internal/card.json", frozenset({"triage.internal"}))
+    assert a2a.check_card_host("http://triage.internal/card.json", frozenset({"triage.internal"})) is None
+
+
+def test_public_address_is_resolved_once_and_every_address_must_be_public(monkeypatch):
+    import services.ssrf_guard as guard
+
+    def addresses(*ips):
+        return lambda *_a, **_k: [(None, None, None, "", (ip, 443)) for ip in ips]
+
+    monkeypatch.setattr(guard.socket, "getaddrinfo", addresses("93.184.216.34", "93.184.216.35"))
+    assert guard.resolve_public_address("agents.acme.com") == "93.184.216.34"
+    monkeypatch.setattr(guard.socket, "getaddrinfo", addresses("93.184.216.34", "10.0.0.7"))
+    assert guard.resolve_public_address("agents.acme.com") is None
+    assert guard.resolve_public_address("169.254.169.254") is None
+    assert guard.resolve_public_address("93.184.216.34") == "93.184.216.34"
+
+
+@pytest.mark.asyncio
+async def test_fetch_connects_to_the_address_it_checked(monkeypatch):
+    import services.ssrf_guard as guard
+
+    monkeypatch.setattr(guard, "resolve_public_address", lambda host: "93.184.216.34")
+    seen: dict = {}
+
+    def ok(request):
+        seen.update(ip=request.url.host, host=request.headers["host"], sni=request.extensions.get("sni_hostname"))
+        return httpx.Response(200, json=V1_CARD)
+
+    card, url = await a2a.fetch_agent_card(CARD_URL, transport=httpx.MockTransport(ok))
+    assert card.name == "Incident Triage" and url == CARD_URL
+    assert seen == {"ip": "93.184.216.34", "host": "agents.acme.com", "sni": "agents.acme.com"}
 
 
 @pytest.mark.asyncio
@@ -347,6 +377,31 @@ async def test_someone_else_cannot_take_over_a_registered_card(sessions, setting
     async with _client(_app(sessions, stranger)) as client:
         resp = await client.post("/api/v1/ard/imports/a2a", json={"cardUrl": CARD_URL})
     assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_widening_the_audience_needs_a_new_review(sessions, settings, card_server):
+    owner, _stranger, reviewer = await _users(sessions)
+    async with _client(_app(sessions, owner)) as client:
+        urn = (await client.post("/api/v1/ard/imports/a2a", json={"cardUrl": CARD_URL})).json()["identifier"]
+    async with _client(_app(sessions, reviewer)) as client:
+        await client.post(f"/api/v1/ard/imports/{urn}/review", json={"action": "approve"})
+    async with _client(_app(sessions, owner)) as client:
+        widened = await client.post("/api/v1/ard/imports/a2a", json={"cardUrl": CARD_URL, "visibility": "public"})
+    assert widened.status_code == 200
+    assert widened.json()["obs:lifecycle"] == "pending"
+
+
+@pytest.mark.asyncio
+async def test_a_removed_card_can_be_registered_by_someone_else(sessions, settings, card_server):
+    owner, stranger, _reviewer = await _users(sessions)
+    async with _client(_app(sessions, owner)) as client:
+        urn = (await client.post("/api/v1/ard/imports/a2a", json={"cardUrl": CARD_URL})).json()["identifier"]
+        assert (await client.delete(f"/api/v1/ard/imports/{urn}")).status_code == 200
+    async with _client(_app(sessions, stranger)) as client:
+        resp = await client.post("/api/v1/ard/imports/a2a", json={"cardUrl": CARD_URL})
+        assert resp.status_code == 200 and resp.json()["obs:lifecycle"] == "pending"
+        assert [i["identifier"] for i in (await client.get("/api/v1/ard/imports")).json()["items"]] == [urn]
 
 
 @pytest.mark.asyncio

@@ -32,7 +32,12 @@ HAS_GIT = shutil.which("git") is not None
 @pytest.fixture(autouse=True)
 def _isolated(tmp_path, monkeypatch):
     monkeypatch.setattr(tasks, "STORE_DIR", tmp_path / "delegations")
-    for name in ("OBSERVAL_DELEGATION_DEPTH", "OBSERVAL_DELEGATION_CHAIN", "OBSERVAL_DELEGATION_MAX_DEPTH"):
+    for name in (
+        "OBSERVAL_DELEGATION_DEPTH",
+        "OBSERVAL_DELEGATION_CHAIN",
+        "OBSERVAL_DELEGATION_MAX_DEPTH",
+        "OBSERVAL_DELEGATION_TASK_ID",
+    ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(service, "SPAWN", None)
 
@@ -104,6 +109,24 @@ def test_workspace_mirrors_the_callers_tree_and_returns_only_the_childs_changes(
     # The patch applies cleanly to the caller's tree.
     subprocess.run(["git", "-C", str(repo), "apply", "-"], input=patch, text=True, check=True)
     assert (repo / "app.py").read_text() == "print('v3 from child')\n"
+
+
+@pytest.mark.skipif(not HAS_GIT, reason="git not installed")
+def test_workspace_paths_are_resolved_and_a_failure_leaves_no_worktree(tmp_path, monkeypatch):
+    repo = _repo(tmp_path)
+    ws = workspace.create(repo)
+    try:
+        assert ws.path == ws.path.resolve()
+    finally:
+        workspace.destroy(ws)
+
+    def broken(*_a, **_k):
+        raise workspace.WorkspaceError("git write-tree failed")
+
+    monkeypatch.setattr(workspace, "_write_tree", broken)
+    with pytest.raises(workspace.WorkspaceError):
+        workspace.create(repo)
+    assert "observal-delegate" not in _git(repo, "worktree", "list")
 
 
 def test_workspace_outside_git_is_an_empty_directory(tmp_path):
@@ -236,6 +259,18 @@ def test_local_run_with_no_answer_and_no_changes_fails_even_on_exit_zero(tmp_pat
     assert tasks.message_text(task["status"]["message"]) == "Authentication failed."
 
 
+def test_command_line_guard_refuses_what_the_os_would_mangle(monkeypatch):
+    too_long = "x" * (local.MAX_ARG_BYTES + 1)
+    with pytest.raises(local.LocalRunError, match="too long"):
+        local.check_command_line(["codex", too_long], "/usr/bin/codex", "codex", prompt_in_argv=True)
+    monkeypatch.setattr(local.sys, "platform", "win32")
+    with pytest.raises(local.LocalRunError, match="batch file"):
+        local.check_command_line(["codex", "task"], r"C:\npm\codex.cmd", "codex", prompt_in_argv=True)
+    local.check_command_line(["claude", "-p"], r"C:\npm\claude.cmd", "claude-code", prompt_in_argv=False)
+    with pytest.raises(local.LocalRunError, match="too long"):
+        local.check_command_line(["claude", "y" * 40_000], r"C:\claude.exe", "claude-code", prompt_in_argv=False)
+
+
 def test_mcp_servers_come_from_either_snippet_shape():
     ensure_loaded()
     claude = get_adapter("claude-code")
@@ -317,6 +352,19 @@ def test_start_records_the_delegation_and_runs_the_worker(tmp_path, monkeypatch)
     uses = capability_lock.read_all()
     assert [(u.kind, u.mode, u.identifier, u.harness) for u in uses] == [("agent", "delegated", AGENT_URN, "kiro")]
     assert uses[0].extra["task_id"] == task["id"]
+
+
+def test_a_delegated_agent_can_start_only_a_few_tasks(tmp_path, monkeypatch):
+    monkeypatch.setattr(service.client, "get", lambda *_a, **_k: _agent_entry())
+    monkeypatch.setattr(service, "headless_harnesses", lambda: ["claude-code"])
+    monkeypatch.setattr(service, "SPAWN", lambda _task_id: None)
+    parent = tasks.save(tasks.new_task(message="parent", observal={"target": AGENT_URN}))
+    monkeypatch.setenv("OBSERVAL_DELEGATION_TASK_ID", parent["id"])
+    for _ in range(service.MAX_CHILD_TASKS):
+        child = service.start(AGENT_URN, "sub-task", cwd=tmp_path)
+        assert tasks.meta(child)["parentTaskId"] == parent["id"]
+    with pytest.raises(service.DelegationError, match="at most"):
+        service.start(AGENT_URN, "one more", cwd=tmp_path)
 
 
 def test_dead_worker_is_reported_instead_of_hanging(monkeypatch, tmp_path):
@@ -446,6 +494,16 @@ def test_api_key_scheme_uses_its_header(monkeypatch):
     assert a2a_client.auth_headers({"securitySchemes": {}}, A2A_URN) == {}
 
 
+def test_credentials_are_never_sent_over_plain_http(monkeypatch):
+    monkeypatch.setenv("OBSERVAL_A2A_TOKEN", "tok")
+    card = {"securitySchemes": {"bearer": {"httpAuthSecurityScheme": {"scheme": "Bearer"}}}}
+    with pytest.raises(a2a_client.A2aError, match="plain http"):
+        a2a_client.A2aClient({"url": "http://agents.acme.com/a2a"}, card, A2A_URN)
+    a2a_client.A2aClient({"url": "http://localhost:9100/a2a"}, card, A2A_URN).close()
+    monkeypatch.delenv("OBSERVAL_A2A_TOKEN")
+    a2a_client.A2aClient({"url": "http://agents.acme.com/a2a"}, card, A2A_URN).close()
+
+
 def test_runner_rejects_a_remote_agent_that_lost_approval(monkeypatch):
     task = _a2a_task()
     monkeypatch.setattr(runner.client, "get", lambda *_a, **_k: {"obs:lifecycle": "rejected"})
@@ -563,7 +621,7 @@ def test_other_headless_commands(tmp_path, harness, binary, inlined):
     adapter = get_adapter(harness)
     plan = adapter.headless_command(_request(tmp_path))
     assert plan.argv[0] == binary == adapter.headless_binary
-    joined = "\n".join(plan.argv)
+    joined = "\n".join([*plan.argv, plan.stdin or ""])
     assert ("<agent-instructions>" in joined) is inlined
     assert "-- review src/auth" in joined
 
@@ -580,7 +638,8 @@ def test_pi_runs_the_session_it_was_given(tmp_path):
     adapter = get_adapter("pi")
     request = _request(tmp_path)
     plan = adapter.headless_command(request)
-    assert plan.argv[1:5] == ["-p", "--approve", "--session-id", request.session_id]
+    assert plan.argv == ["pi", "-p", "--approve", "--session-id", request.session_id]
+    assert "-- review src/auth" in plan.stdin  # the task never reaches the command line
     result = adapter.parse_headless_output(plan, "\x1b[1mpong\x1b[0m\n")
     assert result.text == "pong" and result.session_id == request.session_id
 

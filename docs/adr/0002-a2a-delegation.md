@@ -120,6 +120,8 @@ Checked before anything runs:
 - depth: a delegated agent may delegate again, up to
   `OBSERVAL_DELEGATION_MAX_DEPTH` levels (default 2), carried to children in
   `OBSERVAL_DELEGATION_DEPTH`;
+- breadth: a delegated agent runs headless with no permission prompt, so it
+  may start at most three tasks of its own (counted by `parentTaskId`);
 - cycles: an agent already in `OBSERVAL_DELEGATION_CHAIN`, or the caller
   itself, is refused.
 
@@ -154,4 +156,4 @@ agent through one A2A-shaped task model.
 - Streaming (`SendStreamingMessage`) and push notifications; the client polls.
 - Verifying signed Agent Cards.
 - Linking parent and child sessions server-side beyond the capability lock.
-- Headless support for Goose and Pi once verified against real installs.
+- Headless support for Goose once verified against real installs.

@@ -249,26 +249,30 @@ def parse_host_allowlist(value: str | None) -> frozenset[str]:
     return frozenset(h.strip().lower() for h in (value or "").split(",") if h.strip())
 
 
-def check_card_host(url: str, private_hosts: frozenset[str]) -> None:
+def check_card_host(url: str, private_hosts: frozenset[str]) -> str | None:
     """HTTPS to a public address, or a host the administrator allowed explicitly.
 
     Internal agents are normal (a team's triage agent on the intranet), so the
     SSRF guard is relaxed per host through ``discovery.a2a_private_hosts``
     rather than globally. Allowed hosts may also use plain http.
+
+    Returns the checked address to connect to, or None for an allowed host.
     """
-    from services.ssrf_guard import is_private_url
+    from services.ssrf_guard import resolve_public_address
 
     parsed = urlparse(url)
     host = (parsed.hostname or "").lower()
     if host in private_hosts:
-        return
+        return None
     if parsed.scheme != "https":
         raise AgentCardError("Agent Cards must be served over https.")
-    if is_private_url(url):
+    address = resolve_public_address(host)
+    if address is None:
         raise AgentCardError(
             "The card URL resolves to a private address. An administrator can allow the host "
             "in the discovery.a2a_private_hosts setting."
         )
+    return address
 
 
 async def fetch_agent_card(
@@ -279,14 +283,23 @@ async def fetch_agent_card(
 ) -> tuple[AgentCard, str]:
     """Fetch and parse a card. Returns the card and the URL it was fetched from.
 
-    Redirects are not followed: a redirect could leave the checked host.
+    Redirects are not followed: a redirect could leave the checked host. The
+    request goes to the address that passed the check, with the original Host
+    header and TLS server name, so DNS rebinding cannot reach a private address.
     """
     card_url = normalize_card_url(url)
-    check_card_host(card_url, private_hosts)
+    address = check_card_host(card_url, private_hosts)
+    request_url, headers, extensions = card_url, {"Accept": "application/json"}, {}
+    if address:
+        parsed = urlparse(card_url)
+        host = f"[{address}]" if ":" in address else address
+        request_url = urlunparse(parsed._replace(netloc=f"{host}:{parsed.port}" if parsed.port else host))
+        headers["Host"] = parsed.netloc
+        extensions["sni_hostname"] = parsed.hostname
     try:
         async with (
             httpx.AsyncClient(timeout=FETCH_TIMEOUT_SECONDS, follow_redirects=False, transport=transport) as client,
-            client.stream("GET", card_url, headers={"Accept": "application/json"}) as response,
+            client.stream("GET", request_url, headers=headers, extensions=extensions) as response,
         ):
             if response.status_code != 200:
                 raise AgentCardError(f"Fetching the Agent Card returned HTTP {response.status_code}.")
