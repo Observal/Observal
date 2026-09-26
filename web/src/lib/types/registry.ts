@@ -32,6 +32,7 @@ export interface RegistryItem {
 	rejection_reason?: string;
 	created_at?: string;
 	updated_at?: string;
+	is_recommended?: boolean;
 	[key: string]: unknown;
 }
 
@@ -420,6 +421,20 @@ export interface RecommendationsResponse {
 	personalized: boolean;
 	profile_sessions: number;
 	topics: string[];
+}
+
+// ── Admin Recommended ────────────────────────────────────────────────
+
+export interface SetRecommendedRequest {
+	entity_type: string;
+	entity_id: string;
+	recommended: boolean;
+}
+
+export interface SetRecommendedResponse {
+	entity_type: string;
+	entity_id: string;
+	is_recommended: boolean;
 }
 
 // ── Discovery (ARD) ─────────────────────────────────────────────────

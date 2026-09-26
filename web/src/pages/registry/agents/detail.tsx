@@ -23,6 +23,7 @@ import {
   Clock,
   Sparkles,
   AlertTriangle,
+  Award,
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
@@ -45,6 +46,7 @@ import {
   useArchiveAgent,
   useDeleteAgent,
   useUnarchiveAgent,
+  useSetRecommended,
 } from "@/hooks/use-api";
 import { useOptionalAuth } from "@/hooks/use-auth";
 import { hasMinRole } from "@/hooks/use-role-guard";
@@ -61,6 +63,7 @@ import { ShareLinkButton } from "@/components/registry/share-link-button";
 import { canonicalRouteParts, registryIdentity, registryItemPath, type QualifiedIdentity } from "@/lib/registry-name";
 import { VersionDropdown } from "@/components/registry/version-dropdown";
 import { StatusBadge } from "@/components/registry/status-badge";
+import { RecommendedBadge } from "@/components/registry/recommended-badge";
 import { HarnessBadges } from "@/components/registry/harness-badges";
 import { ReviewForm } from "@/components/registry/review-form";
 import {
@@ -200,6 +203,7 @@ interface AgentDetail {
   supported_harnesses?: string[];
   required_capabilities?: string[];
   inferred_supported_harnesses?: string[];
+  is_recommended?: boolean;
   [key: string]: unknown;
 }
 
@@ -382,6 +386,45 @@ function AgentVersionContents({
           </Tabs>
         )}
       </section>
+    </div>
+  );
+}
+
+function RecommendedToggle({
+  entityType,
+  entityId,
+  isRecommended,
+}: {
+  entityType: string;
+  entityId: string;
+  isRecommended: boolean;
+}) {
+  const mutation = useSetRecommended();
+  const next = !isRecommended;
+  return (
+    <div className="border border-border rounded-md p-4 space-y-2">
+      <h3 className="text-xs font-semibold font-display uppercase tracking-wider text-muted-foreground">
+        Admin curation
+      </h3>
+      <Button
+        variant="outline"
+        size="sm"
+        className={isRecommended
+          ? "h-8 gap-1.5 border-primary-accent/40 bg-primary-accent/10 text-primary-accent hover:bg-primary-accent/20"
+          : "h-8 gap-1.5"
+        }
+        disabled={mutation.isPending}
+        onClick={() =>
+          mutation.mutate({ entity_type: entityType, entity_id: entityId, recommended: next })
+        }
+      >
+        <Award className="h-3.5 w-3.5" />
+        {mutation.isPending
+          ? "Saving..."
+          : isRecommended
+            ? "Remove recommendation"
+            : "Mark as recommended"}
+      </Button>
     </div>
   );
 }
@@ -828,6 +871,7 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
                     handleClassName="text-sm text-muted-foreground"
                   />
                   {a.status && <StatusBadge status={a.status} />}
+                  {a.is_recommended && <RecommendedBadge />}
                   {showVisibilityControl && (
                     <PickerSelect
                       value={currentVisibility}
@@ -1197,6 +1241,14 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
                   </h3>
                   <p className="text-sm">{a.owner}</p>
                 </div>
+              )}
+
+              {isAdmin && (
+                <RecommendedToggle
+                  entityType="agent"
+                  entityId={id}
+                  isRecommended={!!a.is_recommended}
+                />
               )}
 
               {(a?.user_permission === "owner" || coAuthors.length > 0 || canManageLifecycle) && (

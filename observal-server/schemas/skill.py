@@ -125,6 +125,12 @@ class SkillListingResponse(BaseModel):
     updated_at: datetime
     download_count: int = 0
     user_permission: str | None = None
+    is_recommended: bool = False
+
+    @field_validator("is_recommended", mode="before")
+    @classmethod
+    def _coerce_recommended(cls, v: object) -> bool:
+        return bool(v) if v is not None else False
 
     @field_validator("user_permission", mode="before")
     @classmethod
@@ -151,6 +157,13 @@ class SkillListingSummary(BaseModel):
     status: ListingStatus
     rejection_reason: str | None = None
     updated_at: datetime | None = None
+    is_recommended: bool = False
+
+    @field_validator("is_recommended", mode="before")
+    @classmethod
+    def _coerce_recommended(cls, v: object) -> bool:
+        return bool(v) if v is not None else False
+
     model_config = {"from_attributes": True}
 
 

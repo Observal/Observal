@@ -21,6 +21,7 @@ import {
   registry,
   feedback,
   bulk,
+  admin,
 } from "@/lib/api";
 import type { LeaderboardWindow } from "@/lib/types";
 
@@ -249,6 +250,24 @@ export function useBulkCreateAgents() {
     },
     onError: (err: Error) => {
       toast.error(err.message || "Bulk create failed");
+    },
+  });
+}
+
+// ── Recommended ────────────────────────────────────────────────────
+
+export function useSetRecommended() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { entity_type: string; entity_id: string; recommended: boolean }) =>
+      admin.setRecommended(vars),
+    onSuccess: (_data, vars) => {
+      // Invalidate list and detail queries so the badge updates everywhere
+      qc.invalidateQueries({ queryKey: ["registry"] });
+      toast.success(vars.recommended ? "Marked as recommended" : "Recommendation removed");
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to update recommendation");
     },
   });
 }
