@@ -12,14 +12,20 @@ To install session telemetry hooks, use [`observal doctor patch`](doctor.md). MC
 ## Synopsis
 
 ```bash
-observal scan [--harness <harness>]
+observal scan [--harness <harness>] [--inventory] [--output table|json]
 ```
+
+Use `--inventory` for **local-only**, bounded harness evidence. It returns a versioned JSON document with `inventory` and `diagnostics`, or a table showing the harness, scope, component type, name, and privacy-safe source path. URLs are sanitized; token values, raw prompts, and command arguments are not printed. It never contacts Observal, writes a lockfile, or submits a component. Package-manager installations alone are not scanned or treated as configured capabilities.
+
+To find approved resources for a task, use [`observal discover`](discover.md). To submit something you found locally, **you** choose to run the corresponding `observal registry <type> submit --draft` command; inventory never starts that workflow.
 
 ## Options
 
 | Option | Description |
 | --- | --- |
 | `--harness <harness>` | Scope to one harness: `cursor`, `kiro`, `claude-code`, `codex`, `copilot`, `copilot-cli`, `opencode`, `antigravity`, `goose`, `pi` |
+| `--inventory` | Bounded, redacted **local-only** evidence; no Registry lookup. |
+| `--output table\|json` | Render a table or machine-readable JSON. |
 
 If you run `observal scan` with no flags, it auto-detects every installed harness and scans each in turn.
 
@@ -36,7 +42,7 @@ If you run `observal scan` with no flags, it auto-detects every installed harnes
 2. Lists every MCP server found and its direct command or URL.
 3. Reports installed session telemetry hooks.
 
-No files are written. No servers are contacted. No registration happens.
+No files are written and no registration happens. **Default table-mode scan may query the Registry when authenticated** to show unregistered names; use `--inventory` for a guaranteed local-only scan.
 
 ## Example
 

@@ -58,7 +58,8 @@ Only use keys accepted by `config set`. Authentication fields are managed by `au
 
 ```bash
 observal scan --output json
-observal scan --harness kiro --output json
+observal scan --inventory --output json  # local-only; no Registry request or submission
+observal scan --harness kiro --inventory --output json
 observal outdated --output json
 observal outdated --harness claude-code --no-report --output json
 ```
