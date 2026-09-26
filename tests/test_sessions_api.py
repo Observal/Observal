@@ -1027,3 +1027,42 @@ async def test_session_detail_labels_a_deleted_agent(monkeypatch):
 
     assert result["agent_id"] == str(AGENT_ID)
     assert result["agent_name"] == f"unknown agent ({str(AGENT_ID)[:8]})"
+
+
+@pytest.mark.asyncio
+async def test_session_list_resolves_a_non_canonical_agent_id(monkeypatch):
+    """A session can store a valid id in uppercase or without hyphens.
+
+    It queries correctly, but the row returns canonical, so keying results by
+    the returned id alone missed the original and labelled a live agent
+    unknown - worse than returning nothing.
+    """
+    stored = str(AGENT_ID).replace("-", "").upper()
+    rows = [
+        {
+            "session_id": "noncanonical",
+            "user_id": str(USER_ID),
+            "is_active": 0,
+            "agent_id": stored,
+            "agent_version": "1.0.0",
+            "harness": "kiro",
+        }
+    ]
+    user_db = _db(_result(rows=[(USER_ID, "Current User")]))
+    agent_db = _db(_result(rows=[(AGENT_ID, "Canonical Agent")]))
+    monkeypatch.setattr(sessions, "_list_sessions_query", AsyncMock(return_value=rows))
+    monkeypatch.setattr(sessions, "resolve_user_filter_values", AsyncMock(return_value=None))
+    monkeypatch.setattr(sessions, "async_session", _session_factory(user_db, agent_db))
+
+    result = await sessions.list_sessions(
+        status=None,
+        platform=None,
+        user=None,
+        days=None,
+        limit=50,
+        offset=0,
+        mine=False,
+        current_user=_user(),
+    )
+
+    assert result[0]["agent_name"] == "Canonical Agent"

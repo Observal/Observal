@@ -1004,11 +1004,20 @@ def _ts_kiro(parsed: dict) -> str | None:
         raw = parsed.get("timestamp")
         if not isinstance(raw, str) or not raw:
             return None
-        # Same conversion the trace parser uses, so both layers agree.
-        ts = raw.replace("T", " ").replace("Z", "")
-        if ts.endswith("+00:00"):
-            ts = ts[:-6]
-        return ts or None
+        # Parsed rather than string-trimmed: the value goes straight into a
+        # DateTime64 column, and an offset that is not UTC, or any other
+        # non-empty malformed string, would be sent verbatim and can reject the
+        # whole insert batch. Returning None lets ingestion fall back to a
+        # valid timestamp for that record instead.
+        try:
+            from datetime import UTC, datetime
+
+            parsed_ts = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed_ts.tzinfo is not None:
+            parsed_ts = parsed_ts.astimezone(UTC)
+        return parsed_ts.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
 
     data = parsed.get("data")
     if not isinstance(data, dict):
