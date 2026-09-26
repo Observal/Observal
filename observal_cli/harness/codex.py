@@ -200,8 +200,10 @@ class CodexAdapter(BaseAdapter):
             except (tomllib.TOMLDecodeError, UnicodeError):
                 scanner.diagnostic(DiagnosticCode.METADATA_MALFORMED, config_path, "malformed TOML discovery metadata")
             else:
-                mcp = data.get("mcp", {})
-                servers = mcp.get("servers", {}) if isinstance(mcp, dict) else {}
+                servers = data.get("mcp_servers")
+                if servers is None:
+                    mcp = data.get("mcp", {})
+                    servers = mcp.get("servers", {}) if isinstance(mcp, dict) else {}
                 scanner.add_mcps(
                     servers,
                     config_path,

@@ -51,7 +51,7 @@ def test_project_adapter_inventory_is_local_and_redacted(
         "opencode": json.dumps(
             {"mcp": {"example": {"command": ["npx", "-y", "example-mcp"], "env": {"API_KEY": secret}}}}
         ),
-        "toml": '[mcp.servers.example]\ncommand = "npx"\nargs = ["-y", "example-mcp"]\n',
+        "toml": '[mcp_servers.example]\ncommand = "npx"\nargs = ["-y", "example-mcp"]\n',
         "skill": "---\ndescription: PRIVATE_CREDENTIAL\n---\nBody PRIVATE_CREDENTIAL\n",
     }[format]
     _write(project / config, content)
@@ -93,6 +93,36 @@ def test_malformed_native_config_reports_diagnostic_without_leaking_content(
     assert any(item["code"] == "metadata_malformed" for item in output["diagnostics"])
     assert malformed not in json.dumps(output)
     assert str(tmp_path) not in json.dumps(output)
+
+
+@pytest.mark.parametrize("scope", ["home", "project"])
+def test_codex_mcp_servers_and_legacy_nested_config(tmp_path: Path, scope: str) -> None:
+    ensure_loaded()
+    base = tmp_path / scope
+    path = base / ".codex" / "config.toml"
+    _write(path, '[mcp_servers.current]\ncommand = "npx"\nargs = ["current"]\n')
+    adapter = get_adapter("codex")
+    result = adapter.discover_home(base) if scope == "home" else adapter.discover_project(base)
+    assert [item.component.name for item in result.evidence] == ["current"]
+
+    _write(path, '[mcp.servers.old]\ncommand = "npx"\nargs = ["old"]\n')
+    result = adapter.discover_home(base) if scope == "home" else adapter.discover_project(base)
+    assert [item.component.name for item in result.evidence] == ["old"]
+
+
+def test_antigravity_same_root_finishes_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from observal_cli.harness.antigravity import AntigravityAdapter
+
+    home = tmp_path / "home"
+    root = home / ".gemini"
+    _write(root / "mcp_config.json", "{bad JSON")
+    _write(root / "agents" / "helper" / "agent.json", json.dumps({"name": "helper"}))
+    monkeypatch.setattr("observal_cli.harness.antigravity.resolve_antigravity_config_dir", lambda _home: root)
+    monkeypatch.setattr(AntigravityAdapter, "_resolve_ag_dir", lambda _self, _home=None: root)
+
+    result = AntigravityAdapter().discover_home(home)
+    assert [item.component.name for item in result.evidence] == ["helper"]
+    assert [item.code.value for item in result.diagnostics] == ["metadata_malformed"]
 
 
 def test_agent_prompt_body_is_never_in_inventory_output(tmp_path: Path) -> None:

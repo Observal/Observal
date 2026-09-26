@@ -159,8 +159,11 @@ class AntigravityAdapter(BaseAdapter):
             home=home,
         )
         self._discover_antigravity_config(scanner, config_dir, "antigravity:global")
+        same_root = agent_dir.resolve(strict=False) == config_dir.resolve(strict=False)
+        if same_root:
+            self._discover_antigravity_agents(scanner, agent_dir / "agents", "antigravity:global")
         result = scanner.finish()
-        if agent_dir.resolve(strict=False) != config_dir.resolve(strict=False):
+        if not same_root:
             agent_scanner = RichAdapterScanner(
                 harness=self.harness_name,
                 scope=DiscoveryScope.USER,
@@ -171,11 +174,6 @@ class AntigravityAdapter(BaseAdapter):
             extra = agent_scanner.finish()
             result.evidence.extend(extra.evidence)
             result.diagnostics.extend(extra.diagnostics)
-        else:
-            # The scanner is finished only as a result container; its walker
-            # remains valid for this bounded, same-root agent directory.
-            self._discover_antigravity_agents(scanner, agent_dir / "agents", "antigravity:global")
-            result = scanner.finish()
         return result
 
     def discover_project(self, project_dir: Path) -> AdapterDiscoveryResult:

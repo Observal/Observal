@@ -48,6 +48,7 @@ class DiagnosticCode(StrEnum):
     ADAPTER_DEADLINE_EXCEEDED = "adapter_deadline_exceeded"
     APPROVED_ROOT_LIMIT_REACHED = "approved_root_limit_reached"
     COLLECTION_FILE_LIMIT_REACHED = "collection_file_limit_reached"
+    COLLECTION_ENTRY_LIMIT_REACHED = "collection_entry_limit_reached"
     EVIDENCE_LIMIT_REACHED = "evidence_limit_reached"
     DIAGNOSTIC_LIMIT_REACHED = "diagnostic_limit_reached"
 

@@ -32,6 +32,22 @@ def test_walk_is_deterministic_and_does_not_follow_directory_symlinks(tmp_path: 
     assert [path.parent.name for path in walker.files(root, name="SKILL.md")] == ["a", "z"]
 
 
+def test_unrelated_files_do_not_hide_matches_or_emit_symlink_diagnostics(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    for index in range(4):
+        (root / f"noise-{index}.txt").write_text("not metadata")
+    (root / "unrelated-link.txt").symlink_to(tmp_path / "outside")
+    (root / "SKILL.md").write_text("real skill")
+    walker = BoundedWalker(root, provider="test", limits=WalkLimits(max_files_per_root=1))
+
+    assert [path.name for path in walker.files(root, name="SKILL.md")] == ["SKILL.md"]
+    assert walker.read_text(root / "SKILL.md") == "real skill"
+    assert walker.diagnostics == []
+    assert walker.budget.files == 1
+    assert walker.budget.entries == 6
+
+
 def test_file_symlinks_must_resolve_inside_approved_root(tmp_path: Path) -> None:
     root = tmp_path / "root"
     root.mkdir()
@@ -92,6 +108,29 @@ def test_read_diagnostic_does_not_embed_absolute_exception_path(
     assert walker.diagnostics[0].source == "<external>/private.json"
 
 
+def test_invalid_utf8_is_malformed_not_permission_denied(tmp_path: Path) -> None:
+    path = tmp_path / "invalid.json"
+    path.write_bytes(b"{\xff}")
+    walker = BoundedWalker(tmp_path, provider="test")
+
+    assert walker.read_text(path) is None
+    assert _codes(walker) == [DiagnosticCode.METADATA_MALFORMED]
+    assert "UTF-8" in walker.diagnostics[0].message
+
+
+def test_explicit_utf8_read_preserves_non_ascii_metadata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "skill.md"
+    path.write_text("café", encoding="utf-8")
+    original_read_text = type(path).read_text
+
+    def read_with_non_utf8_locale(file: Path, *args, **kwargs):
+        assert kwargs.get("encoding") == "utf-8"
+        return original_read_text(file, *args, **kwargs)
+
+    monkeypatch.setattr(type(path), "read_text", read_with_non_utf8_locale)
+    assert BoundedWalker(tmp_path, provider="test").read_text(path) == "café"
+
+
 def test_depth_limit_stops_deep_metadata(tmp_path: Path) -> None:
     root = tmp_path / "root"
     deep = root
@@ -115,6 +154,42 @@ def test_aggregate_root_limit_emits_one_stable_diagnostic(tmp_path: Path) -> Non
     assert second.stopped and third.stopped
     diagnostics = second.diagnostics + third.diagnostics
     assert [item.code for item in diagnostics] == [DiagnosticCode.APPROVED_ROOT_LIMIT_REACHED]
+
+
+def test_local_limits_are_reported_for_each_affected_walker(tmp_path: Path) -> None:
+    budget = AggregateDiscoveryBudget()
+    diagnostics = []
+    for provider in ("cursor", "claude-code"):
+        root = tmp_path / provider
+        root.mkdir()
+        (root / "a.json").write_text("{}")
+        (root / "b.json").write_text("{}")
+        walker = BoundedWalker(root, provider=provider, budget=budget, limits=WalkLimits(max_files_per_root=1))
+        list(walker.files(root, suffix=".json"))
+        diagnostics.extend(walker.diagnostics)
+    assert [(item.provider, item.code) for item in diagnostics] == [
+        ("cursor", DiagnosticCode.ITEM_LIMIT_REACHED),
+        ("claude-code", DiagnosticCode.ITEM_LIMIT_REACHED),
+    ]
+    assert DiagnosticCode.ITEM_LIMIT_REACHED not in budget.emitted_limits
+
+
+def test_entry_limits_bound_unrelated_traversal_and_aggregate_usage(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    for index in range(4):
+        (root / f"noise-{index}.txt").write_text("unrelated")
+    walker = BoundedWalker(root, provider="test", limits=WalkLimits(max_entries_per_root=2))
+    assert list(walker.files(root, name="SKILL.md")) == []
+    assert _codes(walker) == [DiagnosticCode.ITEM_LIMIT_REACHED]
+
+    budget = AggregateDiscoveryBudget(max_entries=1)
+    first = BoundedWalker(root, provider="first", budget=budget)
+    second = BoundedWalker(root, provider="second", budget=budget)
+    list(first.files(root, name="SKILL.md"))
+    list(second.files(root, name="SKILL.md"))
+    assert [d.code for d in first.diagnostics + second.diagnostics] == [DiagnosticCode.COLLECTION_ENTRY_LIMIT_REACHED]
+    assert budget.entries == 1
 
 
 def test_aggregate_file_and_evidence_limits_emit_single_diagnostics(tmp_path: Path) -> None:

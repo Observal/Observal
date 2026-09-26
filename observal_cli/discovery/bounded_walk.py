@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class WalkLimits:
     max_files_per_root: int = 5_000
+    max_entries_per_root: int = 25_000
     max_file_bytes: int = 1024 * 1024
     max_depth: int = 8
     adapter_deadline_seconds: float = 10.0
@@ -34,15 +35,27 @@ class AggregateDiscoveryBudget:
 
     max_roots: int = 256
     max_files: int = 25_000
+    max_entries: int = 100_000
     max_evidence: int = 10_000
     max_diagnostics: int = 1_000
-    ordinary_diagnostic_limit: int = 996
+    ordinary_diagnostic_limit: int = 995
     roots: int = 0
     files: int = 0
+    entries: int = 0
     evidence: int = 0
     diagnostics: int = 0
     emitted_limits: set[DiagnosticCode] = field(default_factory=set)
 
+
+_AGGREGATE_LIMIT_CODES = frozenset(
+    {
+        DiagnosticCode.APPROVED_ROOT_LIMIT_REACHED,
+        DiagnosticCode.COLLECTION_FILE_LIMIT_REACHED,
+        DiagnosticCode.COLLECTION_ENTRY_LIMIT_REACHED,
+        DiagnosticCode.EVIDENCE_LIMIT_REACHED,
+        DiagnosticCode.DIAGNOSTIC_LIMIT_REACHED,
+    }
+)
 
 _ACTIVE_BUDGET: ContextVar[AggregateDiscoveryBudget | None] = ContextVar("discovery_budget", default=None)
 _ACTIVE_DEADLINE: ContextVar[float | None] = ContextVar("discovery_deadline", default=None)
@@ -82,8 +95,10 @@ class BoundedWalker:
         active_deadline = _ACTIVE_DEADLINE.get()
         self._deadline = min(local_deadline, active_deadline) if active_deadline is not None else local_deadline
         self._root_files = 0
+        self._root_entries = 0
         self._seen_files: set[Path] = set()
         self._diagnostics: list[DiscoveryDiagnostic] = []
+        self._emitted_local: set[DiagnosticCode] = set()
         self._stopped = False
         self._approve_root()
 
@@ -118,10 +133,11 @@ class BoundedWalker:
         severity: DiagnosticSeverity = DiagnosticSeverity.WARNING,
         limit: bool = False,
     ) -> None:
-        if limit and code in self.budget.emitted_limits:
-            return
         if limit:
-            self.budget.emitted_limits.add(code)
+            emitted = self.budget.emitted_limits if code in _AGGREGATE_LIMIT_CODES else self._emitted_local
+            if code in emitted:
+                return
+            emitted.add(code)
         elif self.budget.diagnostics >= self.budget.ordinary_diagnostic_limit:
             self.limit(DiagnosticCode.DIAGNOSTIC_LIMIT_REACHED, "discovery diagnostic limit reached")
             return
@@ -201,8 +217,11 @@ class BoundedWalker:
                     source=path,
                 )
                 return None
-            return resolved.read_text()
-        except (OSError, UnicodeError):
+            return resolved.read_text(encoding="utf-8")
+        except UnicodeError:
+            self.diagnostic(DiagnosticCode.METADATA_MALFORMED, "discovery metadata is not valid UTF-8", source=path)
+            return None
+        except OSError:
             self.diagnostic(DiagnosticCode.PERMISSION_DENIED, "unable to read discovery metadata", source=path)
             return None
 
@@ -242,6 +261,18 @@ class BoundedWalker:
                 continue
             directories: list[Path] = []
             for entry in entries:
+                if not self._deadline_ok():
+                    break
+                if self._root_entries >= self.limits.max_entries_per_root:
+                    self.limit(DiagnosticCode.ITEM_LIMIT_REACHED, "approved root entry limit reached", source=self.root)
+                    self.halt()
+                    break
+                if self.budget.entries >= self.budget.max_entries:
+                    self.limit(DiagnosticCode.COLLECTION_ENTRY_LIMIT_REACHED, "aggregate discovery entry limit reached")
+                    self.halt()
+                    break
+                self._root_entries += 1
+                self.budget.entries += 1
                 candidate = Path(entry.path)
                 try:
                     if entry.is_dir(follow_symlinks=False):
@@ -257,18 +288,18 @@ class BoundedWalker:
                         DiagnosticCode.PERMISSION_DENIED, "unable to inspect discovery path", source=candidate
                     )
                     continue
+                if name is not None and entry.name != name:
+                    continue
+                if suffix is not None and candidate.suffix != suffix:
+                    continue
                 resolved = self._inspect(candidate)
                 if resolved is None or not resolved.is_file():
                     if self._stopped:
                         break
                     continue
-                if name is not None and entry.name != name:
-                    continue
-                if suffix is not None and candidate.suffix != suffix:
-                    continue
                 yield candidate
                 if self._stopped:
                     break
             stack.extend((item, depth + 1) for item in reversed(directories))
-        if depth_limited:
+        if depth_limited and not self._stopped:
             self.limit(DiagnosticCode.RECURSION_LIMIT_REACHED, "discovery recursion limit reached", source=directory)

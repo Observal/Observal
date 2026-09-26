@@ -522,6 +522,7 @@ class ClaudeCodeAdapter(BaseAdapter):
         aggregate_limit_codes = {
             DiagnosticCode.APPROVED_ROOT_LIMIT_REACHED,
             DiagnosticCode.COLLECTION_FILE_LIMIT_REACHED,
+            DiagnosticCode.COLLECTION_ENTRY_LIMIT_REACHED,
             DiagnosticCode.EVIDENCE_LIMIT_REACHED,
         }
         for plugin_key in sorted(plugin_paths, key=str.casefold):

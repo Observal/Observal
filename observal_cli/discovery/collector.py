@@ -52,6 +52,7 @@ def collect_local_inventory(
                 limits = (
                     (budget.roots >= budget.max_roots, DiagnosticCode.APPROVED_ROOT_LIMIT_REACHED),
                     (budget.files >= budget.max_files, DiagnosticCode.COLLECTION_FILE_LIMIT_REACHED),
+                    (budget.entries >= budget.max_entries, DiagnosticCode.COLLECTION_ENTRY_LIMIT_REACHED),
                     (budget.evidence >= budget.max_evidence, DiagnosticCode.EVIDENCE_LIMIT_REACHED),
                 )
                 for reached, code in limits:
