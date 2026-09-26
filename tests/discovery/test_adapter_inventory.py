@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import json
 from typing import TYPE_CHECKING
+from unittest.mock import Mock
 
 import pytest
 
+from observal_cli.discovery.bounded_walk import AggregateDiscoveryBudget, discovery_budget
 from observal_cli.discovery.models import DiscoveryScope
 from observal_cli.discovery.serialize import inventory_to_dict
 from observal_cli.harness import ensure_loaded, get_adapter
@@ -149,6 +151,36 @@ def test_home_and_project_evidence_remain_separate(tmp_path: Path) -> None:
     output = inventory_to_dict(evidence, [], home=home, project_dir=project)
     assert [item["scope"] for item in output["inventory"]] == ["project", "user"]
     assert [item["source"] for item in output["inventory"]] == ["<project>/.cursor/mcp.json", "~/.cursor/mcp.json"]
+
+
+def test_claude_does_not_scan_plugin_after_aggregate_entries_exhausted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from observal_cli.harness.claude_code import ClaudeCodeAdapter
+
+    home = tmp_path / "home"
+    claude = home / ".claude"
+    plugin = tmp_path / "plugin"
+    plugin.mkdir()
+    _write(claude / "settings.json", json.dumps({"enabledPlugins": {"suite@market": True}}))
+    _write(
+        claude / "plugins" / "installed_plugins.json",
+        json.dumps(
+            {
+                "plugins": {"suite@market": [{"installPath": str(plugin)}]},
+            }
+        ),
+    )
+    (claude / "skills" / "empty").mkdir(parents=True)
+    discover_plugin = Mock(side_effect=AssertionError("aggregate entry limit should stop plugin scanning"))
+    monkeypatch.setattr(ClaudeCodeAdapter, "_discover_claude_plugin", discover_plugin)
+    budget = AggregateDiscoveryBudget(max_entries=1)
+
+    with discovery_budget(budget):
+        ClaudeCodeAdapter().discover_home(home)
+
+    assert budget.entries == 1
+    discover_plugin.assert_not_called()
 
 
 def test_claude_plugin_uses_only_approved_roots(tmp_path: Path) -> None:

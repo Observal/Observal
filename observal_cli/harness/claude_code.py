@@ -526,6 +526,14 @@ class ClaudeCodeAdapter(BaseAdapter):
             DiagnosticCode.EVIDENCE_LIMIT_REACHED,
         }
         for plugin_key in sorted(plugin_paths, key=str.casefold):
+            if (
+                budget.emitted_limits.intersection(aggregate_limit_codes)
+                or budget.roots >= budget.max_roots
+                or budget.files >= budget.max_files
+                or budget.entries >= budget.max_entries
+                or budget.evidence >= budget.max_evidence
+            ):
+                break
             plugin_result = self._discover_claude_plugin(
                 plugin_key,
                 plugin_paths[plugin_key],
@@ -535,8 +543,6 @@ class ClaudeCodeAdapter(BaseAdapter):
             )
             result.evidence.extend(plugin_result.evidence)
             result.diagnostics.extend(plugin_result.diagnostics)
-            if budget.emitted_limits.intersection(aggregate_limit_codes):
-                break
         result.evidence.sort(
             key=lambda item: (
                 item.display_path or "",

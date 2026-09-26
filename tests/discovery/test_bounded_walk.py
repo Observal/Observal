@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from typing import TYPE_CHECKING
 
 from observal_cli.discovery.adapter_support import RichAdapterScanner
@@ -189,7 +190,30 @@ def test_entry_limits_bound_unrelated_traversal_and_aggregate_usage(tmp_path: Pa
     list(first.files(root, name="SKILL.md"))
     list(second.files(root, name="SKILL.md"))
     assert [d.code for d in first.diagnostics + second.diagnostics] == [DiagnosticCode.COLLECTION_ENTRY_LIMIT_REACHED]
-    assert budget.entries == 1
+    assert budget.entries == 0  # An oversized directory is skipped, not partially selected in filesystem order.
+
+
+def test_enumeration_is_capped_before_sorting_a_large_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    enumerated = []
+
+    def fake_entries():
+        for index in range(100_000):
+            enumerated.append(index)
+            yield object()
+
+    monkeypatch.setattr(
+        "observal_cli.discovery.bounded_walk.os.scandir", lambda _directory: nullcontext(fake_entries())
+    )
+    walker = BoundedWalker(root, provider="test", limits=WalkLimits(max_entries_per_root=2))
+
+    assert list(walker.files(root, name="SKILL.md")) == []
+    assert enumerated == [0, 1, 2]
+    assert walker.budget.entries == 0
+    assert _codes(walker) == [DiagnosticCode.ITEM_LIMIT_REACHED]
 
 
 def test_aggregate_file_and_evidence_limits_emit_single_diagnostics(tmp_path: Path) -> None:

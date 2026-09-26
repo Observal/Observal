@@ -10,6 +10,7 @@ import time
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from itertools import islice
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -252,13 +253,29 @@ class BoundedWalker:
         depth_limited = False
         while stack and self._deadline_ok():
             current, depth = stack.pop()
+            remaining_root = max(0, self.limits.max_entries_per_root - self._root_entries)
+            remaining_total = max(0, self.budget.max_entries - self.budget.entries)
+            allowance = min(remaining_root, remaining_total)
             try:
-                entries = sorted(os.scandir(current), key=lambda entry: entry.name.casefold())
+                # A directory can contain more entries than the entire budget.
+                # Do not load or sort it all before enforcing the cap. If this
+                # directory cannot be scanned in full, skip it rather than
+                # choosing a filesystem-order-dependent subset.
+                with os.scandir(current) as listing:
+                    entries = list(islice(listing, allowance + 1))
             except OSError:
                 self.diagnostic(
                     DiagnosticCode.PERMISSION_DENIED, "unable to inspect discovery directory", source=current
                 )
                 continue
+            if len(entries) > allowance:
+                if remaining_total <= remaining_root:
+                    self.limit(DiagnosticCode.COLLECTION_ENTRY_LIMIT_REACHED, "aggregate discovery entry limit reached")
+                else:
+                    self.limit(DiagnosticCode.ITEM_LIMIT_REACHED, "approved root entry limit reached", source=self.root)
+                self.halt()
+                break
+            entries.sort(key=lambda entry: entry.name.casefold())
             directories: list[Path] = []
             for entry in entries:
                 if not self._deadline_ok():
