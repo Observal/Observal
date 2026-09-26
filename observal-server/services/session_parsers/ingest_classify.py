@@ -992,9 +992,24 @@ def _ts_claude_code(parsed: dict) -> str | None:
 def _ts_kiro(parsed: dict) -> str | None:
     """Return ClickHouse timestamp string from a Kiro JSONL line, or None.
 
-    Kiro embeds unix epoch *seconds* at ``data.meta.timestamp``.  Only Prompt
-    lines carry a timestamp; AssistantMessage and ToolResults inherit it.
+    The CLI embeds unix epoch *seconds* at ``data.meta.timestamp``. Only Prompt
+    lines carry one; AssistantMessage and ToolResults inherit it.
+
+    The IDE instead puts an ISO-8601 timestamp at the top level of every
+    record. Without reading it every IDE event was stamped with its upload
+    time, collapsing whole conversations into a few milliseconds and making
+    durations, ordering and response-time stats meaningless.
     """
+    if isinstance(parsed.get("payload"), dict):
+        raw = parsed.get("timestamp")
+        if not isinstance(raw, str) or not raw:
+            return None
+        # Same conversion the trace parser uses, so both layers agree.
+        ts = raw.replace("T", " ").replace("Z", "")
+        if ts.endswith("+00:00"):
+            ts = ts[:-6]
+        return ts or None
+
     data = parsed.get("data")
     if not isinstance(data, dict):
         return None

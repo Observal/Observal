@@ -59,17 +59,27 @@ def _run_hook(event: dict, *, harness: str, home: Path | None = None) -> None:
     hook_event = str(event.get("hook_event_name") or event.get("hookEventName") or event.get("event") or "")
     is_final = adapter.is_session_final(event)
     deferred = adapter.defer_session_delivery()
-    delivered = drain_session_source(
-        source,
-        config,
-        hook_event=hook_event,
-        final=False,
-        extra_fields=adapter.session_extra_fields(source, event, is_final, home=home),
-        extra_records=adapter.session_extra_records(source, event, is_final, home=home),
-        spool_only=deferred,
-        home=home,
-    )
+    # Scope is decided per source, not per hook. A harness whose hooks cannot
+    # be bound to an agent may have a private parent conversation whose child
+    # sub-execution is the agent's own session, so the children are always
+    # considered even when the parent is skipped.
+    delivered = True
+    if adapter.should_capture_session(source, home=home):
+        delivered = drain_session_source(
+            source,
+            config,
+            hook_event=hook_event,
+            final=False,
+            extra_fields=adapter.session_extra_fields(source, event, is_final, home=home),
+            extra_records=adapter.session_extra_records(source, event, is_final, home=home),
+            spool_only=deferred,
+            home=home,
+        )
+    else:
+        optic.trace("{} session {} is out of scope; not capturing", harness, source.session_id)
     for related in adapter.related_session_sources(source, home=home):
+        if not adapter.should_capture_session(related, home=home):
+            continue
         delivered = (
             drain_session_source(
                 related,
@@ -140,17 +150,20 @@ def _finalize_session(harness: str, session_id: str, cwd: str, home: Path | None
     if source is None or config is None or source.path is None:
         return
     event = {"session_id": session_id, "cwd": cwd, "hook_event_name": "Stop"}
-    _wait_until_stable(source.path)
-    drain_session_source(
-        source,
-        config,
-        hook_event="Stop",
-        final=True,
-        extra_fields=adapter.session_extra_fields(source, event, True, home=home),
-        recover_from_server=True,
-        home=home,
-    )
+    if adapter.should_capture_session(source, home=home):
+        _wait_until_stable(source.path)
+        drain_session_source(
+            source,
+            config,
+            hook_event="Stop",
+            final=True,
+            extra_fields=adapter.session_extra_fields(source, event, True, home=home),
+            recover_from_server=True,
+            home=home,
+        )
     for related in adapter.related_session_sources(source, home=home):
+        if not adapter.should_capture_session(related, home=home):
+            continue
         if related.path is not None:
             _wait_until_stable(related.path)
         drain_session_source(
@@ -192,15 +205,32 @@ def _recover_sessions(harness: str, exclude_session: str = "", home: Path | None
         if offset >= stat.st_size and (finalized or not recovery_final):
             continue
         event = {"session_id": source.session_id, "hook_event_name": "Stop"}
-        drain_session_source(
-            source,
-            config,
-            hook_event="CrashRecovery",
-            final=recovery_final,
-            extra_fields=adapter.session_extra_fields(source, event, recovery_final, home=home),
-            recover_from_server=True,
-            home=home,
-        )
+        # Scope is checked after the cheap cursor and age filters: deciding it
+        # reads the transcript, and this scan walks every session on disk.
+        if adapter.should_capture_session(source, home=home):
+            drain_session_source(
+                source,
+                config,
+                hook_event="CrashRecovery",
+                final=recovery_final,
+                extra_fields=adapter.session_extra_fields(source, event, recovery_final, home=home),
+                recover_from_server=True,
+                home=home,
+            )
+        # Children are recovered even when the parent is out of scope, which is
+        # the normal case for an IDE conversation that delegated to an agent.
+        for related in adapter.related_session_sources(source, home=home):
+            if not adapter.should_capture_session(related, home=home):
+                continue
+            drain_session_source(
+                related,
+                config,
+                hook_event="CrashRecovery",
+                final=recovery_final,
+                extra_fields=adapter.session_extra_fields(related, event, recovery_final, home=home),
+                recover_from_server=True,
+                home=home,
+            )
 
 
 def cli_main() -> None:

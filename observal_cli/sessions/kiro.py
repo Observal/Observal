@@ -105,13 +105,13 @@ def _read_kiro_session(session_jsonl: Path | None) -> dict | None:
     return session if isinstance(session, dict) else None
 
 
-def _iter_ide_payloads(transcript: Path) -> list[dict]:
-    """Return the payload objects of an IDE transcript, skipping unreadable lines.
+def _iter_ide_records(transcript: Path) -> list[dict]:
+    """Return the records of an IDE transcript, skipping unreadable lines.
 
     A transcript being appended to while it is read can end in a partial line,
     so malformed lines are skipped rather than failing the whole read.
     """
-    payloads: list[dict] = []
+    records: list[dict] = []
     try:
         with transcript.open(encoding="utf-8", errors="replace") as handle:
             for line in handle:
@@ -122,12 +122,16 @@ def _iter_ide_payloads(transcript: Path) -> list[dict]:
                     record = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                payload = record.get("payload") if isinstance(record, dict) else None
-                if isinstance(payload, dict):
-                    payloads.append(payload)
+                if isinstance(record, dict) and isinstance(record.get("payload"), dict):
+                    records.append(record)
     except OSError:
         return []
-    return payloads
+    return records
+
+
+def _iter_ide_payloads(transcript: Path) -> list[dict]:
+    """Return the payload objects of an IDE transcript."""
+    return [record["payload"] for record in _iter_ide_records(transcript)]
 
 
 def read_kiro_ide_agent_name(transcript: Path) -> str | None:
@@ -151,6 +155,83 @@ def read_kiro_ide_agent_name(transcript: Path) -> str | None:
         if isinstance(name, str) and name.strip():
             latest = name.strip()
     return latest
+
+
+def read_kiro_ide_session_agent(transcript: Path) -> str | None:
+    """Return the agent an IDE session was started as, or None for a plain chat.
+
+    Selecting an agent from the IDE's dropdown starts the whole conversation as
+    that agent, which is recorded two ways:
+
+    - ``session_start.agentType`` holds the agent name instead of "vibe"
+    - the agent profile's own hooks fire, and their ``hookId`` is prefixed with
+      the agent name rather than a path to a standalone hooks file
+
+    Both are checked because ``session_start`` is not always present - a
+    transcript can begin mid-session - while the hooks fire on every turn. A
+    "vibe" session is ordinary Kiro and returns None.
+    """
+    for record in _iter_ide_records(transcript):
+        payload = record["payload"]
+        ptype = payload.get("type")
+        if ptype == "session_start":
+            agent_type = payload.get("agentType")
+            if isinstance(agent_type, str) and agent_type.strip() and agent_type.strip() != "vibe":
+                return agent_type.strip()
+        elif ptype == "ContextualHookInvoked":
+            hook_id = payload.get("hookId")
+            # A path means a standalone hooks file, which is not agent-scoped.
+            if isinstance(hook_id, str) and hook_id and not hook_id.startswith("/"):
+                name = hook_id.split("#", 1)[0].strip()
+                if name:
+                    return name
+    return None
+
+
+def is_ide_subexecution(path: Path) -> bool:
+    """Return whether a path is an IDE sub-execution transcript."""
+    return path.parent.name == "sub-executions"
+
+
+def ide_subexecution_parent(path: Path) -> Path:
+    """Return the parent conversation transcript for a sub-execution."""
+    return path.parent.parent / "messages.jsonl"
+
+
+def read_kiro_ide_subexecution_origin(path: Path) -> tuple[str | None, str | None, str | None]:
+    """Return the (agent name, prompt, timestamp) a sub-execution started with.
+
+    A sub-execution transcript holds only the agent's own output; nothing in it
+    names the agent or records what it was asked. Both live in the parent
+    conversation's ``sub_agent_start``, keyed by ``subSessionId``, which is the
+    sub-execution's filename.
+
+    The timestamp is the moment the agent was asked, which is what a synthetic
+    prompt record must carry: without it the record inherits its upload time
+    and sorts after the reply it prompted, producing a negative duration.
+
+    Returns all-None for an orphan whose parent has no matching record, so
+    callers fail closed rather than capturing work they cannot attribute.
+    """
+    parent = ide_subexecution_parent(path)
+    if not parent.exists():
+        return None, None, None
+    target = path.stem
+    for record in _iter_ide_records(parent):
+        payload = record.get("payload")
+        if not isinstance(payload, dict) or payload.get("type") != "sub_agent_start":
+            continue
+        if str(payload.get("subSessionId") or "") != target:
+            continue
+        name = payload.get("subAgentName")
+        prompt = payload.get("prompt")
+        started_at = record.get("timestamp")
+        return (
+            name.strip() if isinstance(name, str) and name.strip() else None,
+            prompt if isinstance(prompt, str) else None,
+            started_at if isinstance(started_at, str) and started_at else None,
+        )
+    return None, None, None
 
 
 def read_kiro_agent_name(session_jsonl: Path | None) -> str | None:
