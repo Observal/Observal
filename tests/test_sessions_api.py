@@ -1066,3 +1066,46 @@ async def test_session_list_resolves_a_non_canonical_agent_id(monkeypatch):
     )
 
     assert result[0]["agent_name"] == "Canonical Agent"
+
+
+@pytest.mark.asyncio
+async def test_session_list_resolves_every_stored_form_of_one_agent(monkeypatch):
+    """Two sessions on one page can spell the same agent id differently.
+
+    Mapping each canonical id to a single stored form resolved one session and
+    left the other labelled unknown.
+    """
+    canonical = str(AGENT_ID)
+    shouty = canonical.replace("-", "").upper()
+    rows = [
+        {
+            "session_id": form,
+            "user_id": str(USER_ID),
+            "is_active": 0,
+            "agent_id": form,
+            "agent_version": "1.0.0",
+            "harness": "kiro",
+        }
+        for form in (canonical, shouty)
+    ]
+    user_db = _db(_result(rows=[(USER_ID, "Current User")]))
+    agent_db = _db(_result(rows=[(AGENT_ID, "Canonical Agent")]))
+    monkeypatch.setattr(sessions, "_list_sessions_query", AsyncMock(return_value=rows))
+    monkeypatch.setattr(sessions, "resolve_user_filter_values", AsyncMock(return_value=None))
+    monkeypatch.setattr(sessions, "async_session", _session_factory(user_db, agent_db))
+
+    result = await sessions.list_sessions(
+        status=None,
+        platform=None,
+        user=None,
+        days=None,
+        limit=50,
+        offset=0,
+        mine=False,
+        current_user=_user(),
+    )
+
+    assert {row["session_id"]: row["agent_name"] for row in result} == {
+        canonical: "Canonical Agent",
+        shouty: "Canonical Agent",
+    }

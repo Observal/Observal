@@ -179,22 +179,28 @@ async def list_sessions(
             # A session can store a valid but non-canonical id - uppercase, or
             # without hyphens. Those query correctly, but the row comes back
             # canonical, so keying results by str(row_id) alone would miss the
-            # original and label a live agent unknown.
-            canonical_to_stored: dict[str, str] = {}
+            # stored form and label a live agent unknown.
+            #
+            # Every stored form is kept, not just one: two sessions on the same
+            # page can spell the same agent differently, and mapping each
+            # canonical id to a single form would resolve one session and leave
+            # the other unresolved.
+            canonical_to_stored: dict[str, list[str]] = {}
             for aid in agent_ids_to_resolve:
                 try:
                     parsed = _uuid.UUID(aid)
                 except ValueError:
                     continue
                 agent_uuids.append(parsed)
-                canonical_to_stored[str(parsed)] = aid
+                canonical_to_stored.setdefault(str(parsed), []).append(aid)
                 queried_agent_ids.add(aid)
             if agent_uuids:
                 async with async_session() as db:
                     result = await db.execute(select(Agent.id, Agent.name).where(Agent.id.in_(agent_uuids)))
                     for a_id, a_name in result.all():
                         canonical = str(a_id)
-                        agent_id_to_name[canonical_to_stored.get(canonical, canonical)] = a_name
+                        for stored in canonical_to_stored.get(canonical, [canonical]):
+                            agent_id_to_name[stored] = a_name
                 agent_lookup_succeeded = True
         except Exception:
             optic.opt(exception=True).warning("Agent name resolution failed")
