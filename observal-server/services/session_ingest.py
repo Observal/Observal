@@ -175,8 +175,18 @@ _USAGE_EXTRACTORS: dict[str, _UsageFn] = {
 
 
 def _uuid_default(parsed: dict) -> tuple[str | None, str | None]:
-    """Claude Code / Kiro / Cursor: uuid, parentUuid."""
+    """Claude Code / Cursor: uuid, parentUuid."""
     return parsed.get("uuid"), parsed.get("parentUuid")
+
+
+def _uuid_kiro(parsed: dict) -> tuple[str | None, str | None]:
+    """Kiro: CLI records carry uuid/parentUuid, IDE records a flat ``id``."""
+    uuid = parsed.get("uuid")
+    if uuid:
+        return uuid, parsed.get("parentUuid")
+    if isinstance(parsed.get("payload"), dict):
+        return parsed.get("id"), None
+    return None, None
 
 
 def _uuid_pi(parsed: dict) -> tuple[str | None, str | None]:
@@ -201,7 +211,7 @@ _UuidFn = Callable[[dict], "tuple[str | None, str | None]"]
 
 _UUID_EXTRACTORS: dict[str, _UuidFn] = {
     "claude-code": _uuid_default,
-    "kiro": _uuid_default,
+    "kiro": _uuid_kiro,
     "cursor": _uuid_default,
     "goose": _uuid_goose,
     "opencode": _uuid_default,

@@ -140,6 +140,17 @@ class BaseAdapter:
         """Resolve a harness-specific session identity, or defer to shared resolution."""
         return None
 
+    def should_capture_session(self, source: SessionSource, home: Path | None = None) -> bool:
+        """Return whether a discovered session is in scope for telemetry.
+
+        Most harnesses bind their hooks to a pulled agent's own profile, so a
+        session that never used an Observal agent never fires a hook and never
+        reaches here. Harnesses whose hooks cannot be scoped that way must
+        decide per session, and should fail closed: capturing a user's
+        unrelated conversations is worse than missing an agent session.
+        """
+        return True
+
     def related_session_sources(self, source: SessionSource, home: Path | None = None) -> list[SessionSource]:
         """Return child sources when a harness stores them separately."""
         return []

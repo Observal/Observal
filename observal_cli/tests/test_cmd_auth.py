@@ -22,6 +22,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
+from observal_cli import config
 from observal_cli.main import app
 
 runner = CliRunner()
@@ -250,6 +251,20 @@ class TestAuthLogin:
 
 class TestAuthWhoami:
     """``observal auth whoami``."""
+
+    @pytest.fixture(autouse=True)
+    def _authenticated(self, monkeypatch):
+        """Supply credentials instead of borrowing the developer's own.
+
+        These previously passed only on a machine that happened to be logged
+        in, reading the real ~/.observal/config.json, and would fail anywhere
+        else.
+        """
+        monkeypatch.setattr(
+            config,
+            "load",
+            lambda: {"server_url": "http://server", "access_token": "test-token", "user_id": "user"},
+        )
 
     def test_whoami_outputs_email_and_role(self) -> None:
         """Default (table) output must contain the user's email and role."""

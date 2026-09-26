@@ -940,10 +940,81 @@ def _cleanup_kiro(dry_run: bool) -> bool:
             if not dry_run:
                 _atomic_write(agent_profile, json.dumps(agent_data, indent=2) + "\n")
 
+    # Standalone v1 hooks files (~/.kiro/hooks/observal.json and project copies)
+    if _cleanup_kiro_hook_files(dry_run):
+        changed = True
+
     if not changed:
         rprint("  [dim]No Observal artifacts found in Kiro agents[/dim]")
 
     return changed
+
+
+def _kiro_hook_dirs() -> set[Path]:
+    """Return every directory ``_patch_kiro`` may write a v1 hooks file into.
+
+    Cleanup has to cover exactly the same set. Patch writes one file per scope -
+    the user scope plus each locked agent's project - so cleaning only the user
+    scope leaves project hooks live and Kiro keeps running Observal commands
+    after an uninstall.
+    """
+    from observal_cli.lockfile import read_registry_lockfile
+
+    dirs: set[Path] = set()
+    user_config_dir = Path.home() / ".kiro"
+    if user_config_dir.is_dir():
+        dirs.add(user_config_dir)
+    try:
+        _, registry = read_registry_lockfile()
+        for agent in registry.get("harnesses", {}).get("kiro", {}).get("agents", []):
+            directory = agent.get("directory")
+            if directory:
+                dirs.add(Path(directory) / ".kiro")
+    except Exception as exc:
+        optic.debug("could not read lockfile for Kiro hook cleanup: {}", exc)
+    return dirs
+
+
+def _cleanup_kiro_hook_files(dry_run: bool) -> bool:
+    """Strip Observal entries from every standalone v1 Kiro hooks file."""
+    changed = False
+    for config_dir in sorted(_kiro_hook_dirs()):
+        if _cleanup_kiro_hook_file(config_dir / "hooks", dry_run):
+            changed = True
+    return changed
+
+
+def _cleanup_kiro_hook_file(hooks_dir: Path, dry_run: bool) -> bool:
+    """Strip Observal entries from one v1 hooks file."""
+    from observal_cli.harness_specs.kiro_hooks_spec import (
+        KIRO_V1_HOOK_FILENAME,
+        is_observal_v1_hook,
+    )
+
+    hooks_file = hooks_dir / KIRO_V1_HOOK_FILENAME
+    try:
+        data = json.loads(hooks_file.read_text())
+    except (json.JSONDecodeError, OSError):
+        return False
+    if not isinstance(data, dict):
+        return False
+
+    entries = data.get("hooks")
+    if not isinstance(entries, list):
+        return False
+    kept = [h for h in entries if not is_observal_v1_hook(h)]
+    if len(kept) == len(entries):
+        return False
+
+    verb = "Would clean" if dry_run else "Cleaned"
+    rprint(f"  {verb} {esc(hooks_file)}")
+    if not dry_run:
+        if kept:
+            data["hooks"] = kept
+            _atomic_write(hooks_file, json.dumps(data, indent=2) + "\n")
+        else:
+            hooks_file.unlink(missing_ok=True)
+    return True
 
 
 def _cleanup_pi(dry_run: bool) -> bool:
@@ -1283,40 +1354,81 @@ def _patch_kiro(dry_run: bool) -> bool:
     rprint("[cyan]Kiro - session push hooks[/cyan]")
     _, registry = read_registry_lockfile()
     agents = registry.get("harnesses", {}).get("kiro", {}).get("agents", [])
+    changed = False
+    hook_dirs: set[Path] = set()
+
     if not agents:
         rprint("  [dim]No locked Kiro agents[/dim]")
-        return False
-
-    ensure_loaded()
-    adapter = get_adapter("kiro")
-    changed = False
-    for entry in agents:
-        local_name = entry.get("local_name") or entry.get("slug") or entry.get("name")
-        agent_id = str(entry.get("id") or "")
-        if not local_name or not agent_id:
-            continue
-        if entry.get("scope") == "user":
-            profile = Path.home() / ".kiro" / "agents" / f"{local_name}.json"
-        else:
-            directory = entry.get("directory")
-            if not directory:
+    else:
+        ensure_loaded()
+        adapter = get_adapter("kiro")
+        for entry in agents:
+            local_name = entry.get("local_name") or entry.get("slug") or entry.get("name")
+            agent_id = str(entry.get("id") or "")
+            if not local_name or not agent_id:
                 continue
-            profile = Path(directory) / ".kiro" / "agents" / f"{local_name}.json"
-        if not profile.exists():
-            rprint(f"  [yellow]Missing locked profile: {esc(profile)}[/yellow]")
-            continue
-        current = _read_json_object(profile)
-        desired = adapter.rewrite_agent_profile(json.loads(json.dumps(current)), agent_id=agent_id)
-        if desired == current:
-            continue
-        changed = True
-        verb = "Would repair" if dry_run else "Repaired"
-        rprint(f"  {verb} {esc(profile)}")
-        if not dry_run:
-            _atomic_write(profile, json.dumps(desired, indent=2) + "\n")
+            if entry.get("scope") == "user":
+                profile = Path.home() / ".kiro" / "agents" / f"{local_name}.json"
+            else:
+                directory = entry.get("directory")
+                if not directory:
+                    continue
+                profile = Path(directory) / ".kiro" / "agents" / f"{local_name}.json"
+            if not profile.exists():
+                rprint(f"  [yellow]Missing locked profile: {esc(profile)}[/yellow]")
+                continue
+            current = _read_json_object(profile)
+            desired = adapter.rewrite_agent_profile(json.loads(json.dumps(current)), agent_id=agent_id)
+            if desired != current:
+                changed = True
+                verb = "Would repair" if dry_run else "Repaired"
+                rprint(f"  {verb} {esc(profile)}")
+                if not dry_run:
+                    _atomic_write(profile, json.dumps(desired, indent=2) + "\n")
+
+            # The standalone v1 hooks file is what Kiro IDE 1.0 and CLI 3.0
+            # actually read. One file per scope, shared by every agent there.
+            hook_dirs.add(profile.parent.parent)
+
+    # Kiro reads ~/.kiro/hooks/observal.json for *every* session, whichever agent
+    # is active, so the user-scope file has to exist even when the lockfile holds
+    # no usable Kiro agents - otherwise the harness emits no telemetry at all.
+    user_config_dir = Path.home() / ".kiro"
+    if user_config_dir.is_dir():
+        hook_dirs.add(user_config_dir)
+
+    for hook_dir in sorted(hook_dirs):
+        if _patch_kiro_hook_file(hook_dir, dry_run):
+            changed = True
+
     if not changed:
         rprint("  [dim]Already up to date[/dim]")
     return changed
+
+
+def _patch_kiro_hook_file(config_dir: Path, dry_run: bool) -> bool:
+    """Write/refresh <config_dir>/hooks/observal.json in the v1 schema."""
+    from observal_cli.harness_specs.kiro_hooks_spec import (
+        KIRO_V1_HOOK_FILENAME,
+        merge_kiro_hooks_file,
+    )
+
+    hooks_file = config_dir / "hooks" / KIRO_V1_HOOK_FILENAME
+    try:
+        current = json.loads(hooks_file.read_text())
+    except (json.JSONDecodeError, OSError):
+        current = None
+    if not isinstance(current, dict):
+        current = None
+    desired = merge_kiro_hooks_file(current)
+    if desired == current:
+        return False
+    verb = "Would write" if dry_run else "Wrote"
+    rprint(f"  {verb} {esc(hooks_file)}")
+    if not dry_run:
+        hooks_file.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write(hooks_file, json.dumps(desired, indent=2) + "\n")
+    return True
 
 
 def _patch_cursor(dry_run: bool) -> bool:

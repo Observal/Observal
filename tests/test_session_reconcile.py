@@ -110,6 +110,12 @@ def test_background_recovery_uses_adapter_sources_and_shared_drain(tmp_path: Pat
             assert home == tmp_path
             return sources
 
+        def should_capture_session(self, source, home=None):
+            return True
+
+        def related_session_sources(self, source, home=None):
+            return []
+
         def aged_recovery_final(self):
             return True
 

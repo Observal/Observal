@@ -28,7 +28,7 @@ from loguru import logger as optic
 from packaging.version import InvalidVersion, Version
 from rich import print as rprint
 
-from observal_cli import client, config
+from observal_cli import client
 from observal_cli.constants import VALID_HARNESSES
 from observal_cli.errors import ErrorCategory, fail
 from observal_cli.harness import ensure_loaded, get_adapter
@@ -437,28 +437,60 @@ def _write_file_checked(path: Path, content: str | dict, *, merge_mcp: bool = Fa
         )
 
 
-def _rewrite_kiro_hooks(content: dict, agent_id: str | None = None) -> dict:
-    """Rewrite Kiro hook commands to use the current Python interpreter.
+def _rewrite_kiro_agent_profile(content: dict, agent_id: str | None = None) -> dict:
+    """Prepare a Kiro agent profile for the hook format this machine can read.
 
-    The server generates commands with bare 'python3' which won't find
-    observal_cli when installed in a project-local virtual environment.
+    Telemetry hooks normally live in the standalone ``.kiro/hooks/observal.json``
+    file, which every Kiro surface reads. Kiro IDE 1.0 loads an agent carrying
+    inline ``hooks`` but never fires them, so Observal's inline hooks are
+    stripped here and only re-added on machines that are provably legacy Kiro
+    CLI 2.x with no IDE installed.
+
+    Empty CLI-only tool fields are also dropped. That is what actually keeps an
+    agent out of the IDE picker: ProfileLoader rejects any JSON profile carrying
+    ``allowedTools`` or ``toolsSettings`` without a ``permissions`` block.
+
+    Hook commands are also rewritten to the current Python interpreter: the
+    server generates bare ``python3``, which won't find ``observal_cli`` when it
+    is installed in a project-local virtual environment.
     """
-    hooks = content.get("hooks") or {}
-
+    from observal_cli.harness.kiro import strip_ide_hostile_fields, use_inline_hooks
     from observal_cli.harness_specs.kiro_hooks_spec import build_kiro_hooks
 
-    cfg = config.get_or_exit(require_auth=False)
-    hooks_url = f"{cfg['server_url'].rstrip('/')}/api/v1/telemetry/hooks"
-    desired_hooks = build_kiro_hooks(hooks_url, agent_id=agent_id or "")
+    strip_ide_hostile_fields(content)
 
-    # Replace only Observal hooks, preserve any user-added hooks
-    for event, desired_entries in desired_hooks.items():
-        existing = hooks.get(event, [])
-        cleaned = [h for h in existing if "observal_cli" not in h.get("command", "")]
-        hooks[event] = cleaned + desired_entries
+    hooks = content.get("hooks") or {}
 
-    content["hooks"] = hooks
+    # Drop Observal-owned inline entries; keep whatever the user added.
+    cleaned_hooks: dict = {}
+    for event, entries in hooks.items():
+        if not isinstance(entries, list):
+            cleaned_hooks[event] = entries
+            continue
+        # A truthy non-dict entry - a bare string, say - would raise on .get and
+        # abort the whole pull. Malformed user entries are left untouched.
+        kept = [h for h in entries if not (isinstance(h, dict) and "observal_cli" in str(h.get("command", "")))]
+        if kept:
+            cleaned_hooks[event] = kept
+
+    if use_inline_hooks():
+        for event, desired_entries in build_kiro_hooks(agent_id=agent_id or "").items():
+            cleaned_hooks[event] = cleaned_hooks.get(event, []) + desired_entries
+
+    if cleaned_hooks:
+        content["hooks"] = cleaned_hooks
+    else:
+        content.pop("hooks", None)
     return content
+
+
+def _rewrite_kiro_hooks(content: dict, agent_id: str | None = None) -> dict:
+    """Backwards-compatible alias for the inline-hook rewrite.
+
+    Retained so external callers keep working; new code should use
+    :func:`_rewrite_kiro_agent_profile`.
+    """
+    return _rewrite_kiro_agent_profile(content, agent_id=agent_id)
 
 
 def _rewrite_copilot_cli_hooks(content: dict, agent_id: str | None = None) -> dict:

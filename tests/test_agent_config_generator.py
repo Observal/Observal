@@ -356,16 +356,32 @@ class TestGenerateKiro:
         assert "Agent Specialization" in content["prompt"]
         assert content["tools"] == ["*"]
         assert content["includeMcpJson"] is True
-        assert "hooks" in content
+        # Kiro IDE 1.0 loads an agent carrying a "hooks" field but never fires
+        # those hooks, so telemetry lives in the standalone v1 file instead.
+        assert "hooks" not in content
+
+    def test_omits_cli_only_tool_fields(self):
+        """Kiro IDE 1.x ProfileLoader drops profiles carrying these.
+
+        Without a "permissions" block, "allowedTools" or "toolsSettings" make
+        ProfileLoader reject the profile (reasonCode "cli_only_agent") and the
+        agent never reaches the IDE agent picker. Both were always emitted empty
+        and were removed from the V3 agent schema.
+        """
+        agent = _make_agent()
+        cfg = generate_agent_config(agent, "kiro")
+        content = cfg["agent_profile"]["content"]
+        assert "allowedTools" not in content
+        assert "toolsSettings" not in content
 
     def test_hooks_contain_required_events(self):
         agent = _make_agent()
         cfg = generate_agent_config(agent, "kiro")
-        hooks = cfg["agent_profile"]["content"]["hooks"]
-        for event in ("userPromptSubmit", "stop"):
-            assert event in hooks
-        for event in ("agentSpawn", "preToolUse", "postToolUse"):
-            assert event not in hooks
+        hooks_cfg = cfg["hooks_config"]
+        assert hooks_cfg["path"] == "~/.kiro/hooks/observal.json"
+        assert hooks_cfg["content"]["version"] == "v1"
+        triggers = {h["trigger"] for h in hooks_cfg["content"]["hooks"]}
+        assert triggers == {"UserPromptSubmit", "Stop"}
 
     def test_no_steering_file_generated(self):
         agent = _make_agent(prompt="Do the thing")
@@ -579,14 +595,8 @@ class TestGenerateKiroWin32:
     """Fix checking: Windows Kiro configs must not contain Unix-only syntax."""
 
     def _all_hook_commands(self, cfg: dict) -> list[str]:
-        """Extract all hook command strings from a Kiro agent config."""
-        hooks = cfg["agent_profile"]["content"]["hooks"]
-        cmds = []
-        for _event, entries in hooks.items():
-            for entry in entries:
-                if "command" in entry:
-                    cmds.append(entry["command"])
-        return cmds
+        """Extract all hook command strings from a Kiro v1 hooks file."""
+        return [h["action"]["command"] for h in cfg["hooks_config"]["content"]["hooks"]]
 
     def test_win32_hooks_contain_no_unix_syntax(self):
         agent = _make_agent()
@@ -611,7 +621,9 @@ class TestGenerateKiroWin32:
         cmds = self._all_hook_commands(cfg)
         for cmd in cmds:
             assert "hooks.session_push --harness kiro" in cmd
-            assert f"OBSERVAL_AGENT_ID={agent.id}" in cmd
+            # One hooks file per scope serves every agent, so it carries no
+            # per-agent id; the CLI attributes from session metadata instead.
+            assert "OBSERVAL_AGENT_ID" not in cmd
             assert "OBSERVAL_AGENT_NAME" not in cmd
 
     def test_hooks_omit_model_flag(self):
@@ -625,11 +637,8 @@ class TestGenerateKiroWin32:
     def test_win32_has_session_push_events_only(self):
         agent = _make_agent()
         cfg = generate_agent_config(agent, "kiro", platform="win32")
-        hooks = cfg["agent_profile"]["content"]["hooks"]
-        for event in ("userPromptSubmit", "stop"):
-            assert event in hooks
-        for event in ("agentSpawn", "preToolUse", "postToolUse"):
-            assert event not in hooks
+        triggers = {h["trigger"] for h in cfg["hooks_config"]["content"]["hooks"]}
+        assert triggers == {"UserPromptSubmit", "Stop"}
 
     def test_win32_agent_profile_path_unchanged(self):
         agent = _make_agent()
@@ -661,10 +670,10 @@ class TestGenerateKiroPreservation:
     def test_unix_hooks_use_kiro_session_push(self):
         agent = _make_agent()
         cfg = generate_agent_config(agent, "kiro", platform="linux")
-        hooks = cfg["agent_profile"]["content"]["hooks"]
-        cmd = hooks["userPromptSubmit"][0]["command"]
+        hooks = cfg["hooks_config"]["content"]["hooks"]
+        cmd = next(h for h in hooks if h["trigger"] == "UserPromptSubmit")["action"]["command"]
         assert "python3 -m observal_cli.hooks.session_push --harness kiro" in cmd
-        assert f"OBSERVAL_AGENT_ID={agent.id}" in cmd
+        assert "OBSERVAL_AGENT_ID" not in cmd
         assert "OBSERVAL_AGENT_NAME" not in cmd
         assert "cat |" not in cmd
         assert "sed " not in cmd
@@ -687,7 +696,7 @@ class TestHookConfigGeneratorWin32:
         listing = MagicMock()
         listing.event = "UserPromptSubmit"
         cfg = generate_hook_telemetry_config(listing, "kiro", platform="win32")
-        cmd = cfg["hooks"]["userPromptSubmit"][0]["command"]
+        cmd = cfg["hooks"][0]["action"]["command"]
         for forbidden in UNIX_FORBIDDEN_IN_WIN32:
             assert forbidden not in cmd, f"Found Unix-only '{forbidden}' in win32 hook: {cmd}"
         assert "python " in cmd or "python -m" in cmd
@@ -698,7 +707,7 @@ class TestHookConfigGeneratorWin32:
         listing = MagicMock()
         listing.event = "Stop"
         cfg = generate_hook_telemetry_config(listing, "kiro", platform="win32")
-        cmd = cfg["hooks"]["stop"][0]["command"]
+        cmd = cfg["hooks"][0]["action"]["command"]
         for forbidden in UNIX_FORBIDDEN_IN_WIN32:
             assert forbidden not in cmd, f"Found Unix-only '{forbidden}' in win32 hook: {cmd}"
         assert "python " in cmd or "python -m" in cmd

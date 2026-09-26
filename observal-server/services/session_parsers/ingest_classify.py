@@ -150,14 +150,76 @@ def _tool_info_claude_code(parsed: dict) -> tuple[str | None, str | None]:
 # ---------------------------------------------------------------------------
 
 
-def _classify_kiro(parsed: dict) -> str | None:
-    """Classify one Kiro JSONL line.
+# Kiro IDE transcript payload types that carry no analysable content.
+_KIRO_IDE_META_TYPES = frozenset(
+    {
+        "session_start",
+        "session_event",
+        "session_metadata",
+        "turn_start",
+        "turn_end",
+        "usage_summary",
+        "sub_agent_start",
+        "sub_agent_complete",
+        "pending_interaction",
+        "interaction_resolved",
+        "ContextualHookInvoked",
+    }
+)
 
-    Kiro uses ``kind`` (not ``type``) with values:
+
+def _kiro_ide_payload(parsed: dict) -> dict | None:
+    """Return the IDE record's payload, or None when the line is CLI-shaped.
+
+    The IDE envelopes every record as ``{id, timestamp, payload}`` and puts the
+    discriminator on ``payload.type``; the CLI writes a flat record keyed by
+    ``kind``. Both arrive on the ``kiro`` harness, so the shape decides.
+    """
+    payload = parsed.get("payload")
+    if isinstance(payload, dict) and payload.get("type"):
+        return payload
+    return None
+
+
+def _classify_kiro_ide(payload: dict) -> str | None:
+    """Classify one Kiro IDE transcript payload."""
+    ptype = str_field(payload, "type")
+
+    if ptype == "user":
+        # Skip empty continuation prompts, matching the CLI classifier.
+        return "user_prompt" if str_field(payload, "content").strip() else None
+
+    if ptype == "assistant":
+        # Reasoning is the model's internal trace, not user-visible output.
+        return "thinking" if str_field(payload, "operationType") == "Reasoning" else "assistant_text"
+
+    if ptype == "tool_call":
+        return "tool_call"
+
+    if ptype == "tool_result":
+        return "tool_result"
+
+    if ptype in _KIRO_IDE_META_TYPES:
+        return "meta"
+
+    # Unknown IDE payload -- store as system so nothing is silently dropped.
+    return "system"
+
+
+def _classify_kiro(parsed: dict) -> str | None:
+    """Classify one Kiro JSONL line, in either the CLI or IDE layout.
+
+    CLI records use ``kind`` (not ``type``) with values:
       Prompt           -> user prompt
       AssistantMessage -> assistant text or tool call
       ToolResults      -> tool result
+
+    IDE records are enveloped and dispatch on ``payload.type`` instead.
     """
+    ide = _kiro_ide_payload(parsed)
+    if ide is not None:
+        return _classify_kiro_ide(ide)
+
     kind = str_field(parsed, "kind")
 
     if kind == "Prompt":
@@ -187,6 +249,11 @@ def _classify_kiro(parsed: dict) -> str | None:
 
 
 def _preview_kiro(parsed: dict, event_type: str) -> str:
+    ide = _kiro_ide_payload(parsed)
+    if ide is not None:
+        if ide.get("type") == "tool_call":
+            return f"[tool_use: {str_field(ide, 'toolName')}]"[:_PREVIEW_MAX]
+        return str_field(ide, "content")[:_PREVIEW_MAX]
     try:
         kind = parsed.get("kind", "")
         data = parsed.get("data", {}) if isinstance(parsed.get("data"), dict) else {}
@@ -230,6 +297,11 @@ def _preview_kiro(parsed: dict, event_type: str) -> str:
 
 
 def _tool_info_kiro(parsed: dict) -> tuple[str | None, str | None]:
+    ide = _kiro_ide_payload(parsed)
+    if ide is not None:
+        if ide.get("type") in ("tool_call", "tool_result"):
+            return ide.get("toolName"), ide.get("toolCallId")
+        return None, None
     kind = str_field(parsed, "kind")
     content = list_field(dict_field(parsed, "data"), "content")
     if kind == "AssistantMessage":
@@ -920,9 +992,33 @@ def _ts_claude_code(parsed: dict) -> str | None:
 def _ts_kiro(parsed: dict) -> str | None:
     """Return ClickHouse timestamp string from a Kiro JSONL line, or None.
 
-    Kiro embeds unix epoch *seconds* at ``data.meta.timestamp``.  Only Prompt
-    lines carry a timestamp; AssistantMessage and ToolResults inherit it.
+    The CLI embeds unix epoch *seconds* at ``data.meta.timestamp``. Only Prompt
+    lines carry one; AssistantMessage and ToolResults inherit it.
+
+    The IDE instead puts an ISO-8601 timestamp at the top level of every
+    record. Without reading it every IDE event was stamped with its upload
+    time, collapsing whole conversations into a few milliseconds and making
+    durations, ordering and response-time stats meaningless.
     """
+    if isinstance(parsed.get("payload"), dict):
+        raw = parsed.get("timestamp")
+        if not isinstance(raw, str) or not raw:
+            return None
+        # Parsed rather than string-trimmed: the value goes straight into a
+        # DateTime64 column, and an offset that is not UTC, or any other
+        # non-empty malformed string, would be sent verbatim and can reject the
+        # whole insert batch. Returning None lets ingestion fall back to a
+        # valid timestamp for that record instead.
+        try:
+            from datetime import UTC, datetime
+
+            parsed_ts = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        if parsed_ts.tzinfo is not None:
+            parsed_ts = parsed_ts.astimezone(UTC)
+        return parsed_ts.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+
     data = parsed.get("data")
     if not isinstance(data, dict):
         return None

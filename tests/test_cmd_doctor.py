@@ -283,16 +283,32 @@ class TestPatchFunctions:
         assert "hooks" in read_json(settings_path)
         assert _patch_claude_code(dry_run=False) is False
 
-    def test_patch_kiro_skips_without_locked_agents(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    def test_patch_kiro_writes_hooks_file_without_locked_agents(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """Kiro fires the user-scope v1 hooks file for every session.
+
+        It therefore has to be installed even when the lockfile holds no usable
+        Kiro agents; otherwise the harness produces no telemetry at all.
+        """
         from observal_cli import config
 
         monkeypatch.setattr(config, "load", lambda: {"server_url": "http://localhost:80"})
         write_json(tmp_path / ".kiro/agents/default.json", {})
 
-        assert _patch_kiro(dry_run=False) is False
+        assert _patch_kiro(dry_run=False) is True
+        # Unlocked agent profiles are still left strictly alone.
         assert read_json(tmp_path / ".kiro/agents/default.json") == {}
 
+        hooks = read_json(tmp_path / ".kiro/hooks/observal.json")
+        assert hooks["version"] == "v1"
+        assert [h["trigger"] for h in hooks["hooks"]] == ["UserPromptSubmit", "Stop"]
+        # No locked agent means no attribution to bake in; Kiro resolves the
+        # active agent from session metadata anyway.
+        assert all("OBSERVAL_AGENT_ID" not in h["action"]["command"] for h in hooks["hooks"])
+
+        assert _patch_kiro(dry_run=False) is False
+
     def test_patch_kiro_repairs_locked_agent_uuid_hooks(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        import observal_cli.harness.kiro as kiro_adapter
         from observal_cli import config, lockfile
 
         agent_id = "00000000-0000-0000-0000-000000000123"
@@ -301,6 +317,9 @@ class TestPatchFunctions:
             "load",
             lambda: {"server_url": "http://localhost:80", "access_token": "test-token"},
         )
+        # Pin the hook format: whether the developer running the suite happens to
+        # have Kiro IDE installed must not decide what this test asserts.
+        monkeypatch.setattr(kiro_adapter, "use_inline_hooks", lambda *_a, **_k: True)
         write_json(tmp_path / ".kiro/agents/test-agent.json", {"name": "test-agent", "hooks": {}})
         lockfile.upsert_agent(
             "kiro",
@@ -316,6 +335,30 @@ class TestPatchFunctions:
         commands = [entry["command"] for entries in profile["hooks"].values() for entry in entries]
         assert commands
         assert all(agent_id in command for command in commands)
+
+    def test_patch_kiro_converges_with_multiple_user_agents(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """Two user-scope agents share one hooks file; the second run is a no-op.
+
+        Regression: the file was rewritten once per locked agent with that
+        agent's OBSERVAL_AGENT_ID, so each agent clobbered the previous one and
+        patch reported a write on every run, forever.
+        """
+        from observal_cli import config, lockfile
+
+        monkeypatch.setattr(
+            config,
+            "load",
+            lambda: {"server_url": "http://localhost:80", "access_token": "test-token"},
+        )
+        for name, agent_id in (("agent-a", "id-a"), ("agent-b", "id-b")):
+            write_json(tmp_path / f".kiro/agents/{name}.json", {"name": name})
+            lockfile.upsert_agent("kiro", name=name, agent_id=agent_id, version="1.0.0", scope="user", local_name=name)
+
+        assert _patch_kiro(dry_run=False) is True
+        first = read_json(tmp_path / ".kiro/hooks/observal.json")
+
+        assert _patch_kiro(dry_run=False) is False
+        assert read_json(tmp_path / ".kiro/hooks/observal.json") == first
 
     def test_patch_cursor_writes_hooks_and_preserves_foreign_entries(self, tmp_path: Path):
         hooks_path = tmp_path / ".cursor/hooks.json"

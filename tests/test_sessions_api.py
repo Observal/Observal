@@ -943,3 +943,169 @@ async def test_session_query_validation_rejects_invalid_requests(monkeypatch, pa
     detail = response.json()["detail"]
     assert [(item["loc"], item["type"]) for item in detail] == [(location, error_type)]
     query.assert_not_awaited()
+
+
+# ── Agent ids that outlive their agent ─────────────────────────────
+#
+# A session keeps the agent id it was attributed to. The agent can later be
+# deleted, or the id can come from a lockfile pointing at a different registry,
+# leaving a row with an id and nothing to call it.
+
+
+def test_resolved_agent_name_returns_the_known_name():
+    assert sessions._resolved_agent_name("abc", {"abc": "reviewer"}, queried=True) == "reviewer"
+
+
+def test_resolved_agent_name_labels_an_agent_that_no_longer_exists():
+    """Naming the state beats rendering an id with a blank name."""
+    missing = "506fdb3f-d08a-4a60-8d75-7bee17233cd9"
+
+    assert sessions._resolved_agent_name(missing, {}, queried=True) == "unknown agent (506fdb3f)"
+
+
+def test_resolved_agent_name_stays_silent_when_the_id_was_never_queried():
+    """A malformed id or a failed lookup proves nothing about the agent."""
+    assert sessions._resolved_agent_name("not-a-uuid", {}, queried=False) is None
+
+
+@pytest.mark.asyncio
+async def test_session_list_labels_deleted_agents_but_not_unqueryable_ones(monkeypatch):
+    """One row's agent is genuinely gone; the other's id was never queryable."""
+    deleted_id = str(AGENT_ID)
+    rows = [
+        {
+            "session_id": "deleted-agent",
+            "user_id": str(USER_ID),
+            "is_active": 0,
+            "agent_id": deleted_id,
+            "agent_version": "1.0.0",
+            "harness": "kiro",
+        },
+        {
+            "session_id": "malformed-agent",
+            "user_id": str(USER_ID),
+            "is_active": 0,
+            "agent_id": "not-an-agent-uuid",
+            "agent_version": None,
+            "harness": "kiro",
+        },
+    ]
+    user_db = _db(_result(rows=[(USER_ID, "Current User")]))
+    agent_db = _db(_result())  # queried successfully, returned no agents
+    monkeypatch.setattr(sessions, "_list_sessions_query", AsyncMock(return_value=rows))
+    monkeypatch.setattr(sessions, "resolve_user_filter_values", AsyncMock(return_value=None))
+    monkeypatch.setattr(sessions, "async_session", _session_factory(user_db, agent_db))
+
+    result = await sessions.list_sessions(
+        status=None,
+        platform=None,
+        user=None,
+        days=None,
+        limit=50,
+        offset=0,
+        mine=False,
+        current_user=_user(),
+    )
+
+    by_id = {row["session_id"]: row for row in result}
+    assert by_id["deleted-agent"]["agent_name"] == f"unknown agent ({deleted_id[:8]})"
+    assert by_id["malformed-agent"]["agent_name"] is None
+
+
+@pytest.mark.asyncio
+async def test_session_detail_labels_a_deleted_agent(monkeypatch):
+    identity = {"project_id": "project-a", "user_id": str(USER_ID), "harness": "kiro"}
+    rows = [{"line_offset": 1, "harness": "kiro", "agent_id": str(AGENT_ID), "raw_line": "event"}]
+    query = AsyncMock(side_effect=[[identity], rows, []])
+    scalar = MagicMock()
+    scalar.scalar_one_or_none = MagicMock(return_value=None)
+    monkeypatch.setattr(sessions, "_ch_json", query)
+    monkeypatch.setattr("services.session_parsers.parse_raw_events", MagicMock(return_value=[]))
+    monkeypatch.setattr(sessions, "async_session", _session_factory(_db(scalar)))
+
+    result = await sessions.get_session("session", after_offset=None, current_user=_user())
+
+    assert result["agent_id"] == str(AGENT_ID)
+    assert result["agent_name"] == f"unknown agent ({str(AGENT_ID)[:8]})"
+
+
+@pytest.mark.asyncio
+async def test_session_list_resolves_a_non_canonical_agent_id(monkeypatch):
+    """A session can store a valid id in uppercase or without hyphens.
+
+    It queries correctly, but the row returns canonical, so keying results by
+    the returned id alone missed the original and labelled a live agent
+    unknown - worse than returning nothing.
+    """
+    stored = str(AGENT_ID).replace("-", "").upper()
+    rows = [
+        {
+            "session_id": "noncanonical",
+            "user_id": str(USER_ID),
+            "is_active": 0,
+            "agent_id": stored,
+            "agent_version": "1.0.0",
+            "harness": "kiro",
+        }
+    ]
+    user_db = _db(_result(rows=[(USER_ID, "Current User")]))
+    agent_db = _db(_result(rows=[(AGENT_ID, "Canonical Agent")]))
+    monkeypatch.setattr(sessions, "_list_sessions_query", AsyncMock(return_value=rows))
+    monkeypatch.setattr(sessions, "resolve_user_filter_values", AsyncMock(return_value=None))
+    monkeypatch.setattr(sessions, "async_session", _session_factory(user_db, agent_db))
+
+    result = await sessions.list_sessions(
+        status=None,
+        platform=None,
+        user=None,
+        days=None,
+        limit=50,
+        offset=0,
+        mine=False,
+        current_user=_user(),
+    )
+
+    assert result[0]["agent_name"] == "Canonical Agent"
+
+
+@pytest.mark.asyncio
+async def test_session_list_resolves_every_stored_form_of_one_agent(monkeypatch):
+    """Two sessions on one page can spell the same agent id differently.
+
+    Mapping each canonical id to a single stored form resolved one session and
+    left the other labelled unknown.
+    """
+    canonical = str(AGENT_ID)
+    shouty = canonical.replace("-", "").upper()
+    rows = [
+        {
+            "session_id": form,
+            "user_id": str(USER_ID),
+            "is_active": 0,
+            "agent_id": form,
+            "agent_version": "1.0.0",
+            "harness": "kiro",
+        }
+        for form in (canonical, shouty)
+    ]
+    user_db = _db(_result(rows=[(USER_ID, "Current User")]))
+    agent_db = _db(_result(rows=[(AGENT_ID, "Canonical Agent")]))
+    monkeypatch.setattr(sessions, "_list_sessions_query", AsyncMock(return_value=rows))
+    monkeypatch.setattr(sessions, "resolve_user_filter_values", AsyncMock(return_value=None))
+    monkeypatch.setattr(sessions, "async_session", _session_factory(user_db, agent_db))
+
+    result = await sessions.list_sessions(
+        status=None,
+        platform=None,
+        user=None,
+        days=None,
+        limit=50,
+        offset=0,
+        mine=False,
+        current_user=_user(),
+    )
+
+    assert {row["session_id"]: row["agent_name"] for row in result} == {
+        canonical: "Canonical Agent",
+        shouty: "Canonical Agent",
+    }

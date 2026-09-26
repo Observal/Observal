@@ -1348,7 +1348,22 @@ class TestMcpAuthHeadersInAgentPull:
             },
         ),
         ("cursor", {"version": 1, "hooks": {"preToolUse": [{"command": "python guard.py"}]}}),
-        ("kiro", {"hooks": {"preToolUse": [{"command": "python guard.py"}]}}),
+        (
+            # Kiro uses the standalone v1 hooks-file schema (IDE 1.0 / CLI 3.0);
+            # the legacy inline shape is hidden by the IDE.
+            "kiro",
+            {
+                "version": "v1",
+                "hooks": [
+                    {
+                        "name": "observal-pretooluse",
+                        "trigger": "PreToolUse",
+                        "action": {"type": "command", "command": "python guard.py"},
+                        "timeout": 10,
+                    }
+                ],
+            },
+        ),
         ("copilot", {"hooks": {"PreToolUse": [{"command": "python guard.py"}]}}),
         (
             "codex",

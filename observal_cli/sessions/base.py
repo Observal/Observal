@@ -938,6 +938,15 @@ def _resolve_agent(
         if lockfile_entry is None:
             lockfile_entry = _lookup_lockfile_agent_by_id(env_agent_id)
         if lockfile_entry:
+            from observal_cli.lockfile import agent_entry_is_registry_backed
+
+            if not agent_entry_is_registry_backed(lockfile_entry):
+                optic.warning(
+                    "OBSERVAL_AGENT_ID={} is not registry-backed (status={}); leaving unattributed",
+                    env_agent_id,
+                    lockfile_entry.get("registry_status"),
+                )
+                return None, None
             return lockfile_entry.get("id"), lockfile_entry.get("version")
         optic.warning("OBSERVAL_AGENT_ID={} not found in lockfile (harness={})", env_agent_id, harness)
         return None, None

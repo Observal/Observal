@@ -14,12 +14,36 @@ configure MCP servers, add hooks, expose skills, and collect Kiro session teleme
 Kiro agent profiles are JSON files. Project agents live in `.kiro/agents/`.
 User agents live in `~/.kiro/agents/`.
 
-When Observal installs a Kiro agent, it writes hook commands into that agent JSON.
-The default hooks run the shared `observal_cli.hooks.session_push --harness kiro`
-entry point for `userPromptSubmit` and `stop`.
+When Observal installs a Kiro agent, it writes telemetry hooks into a standalone
+hooks file — `~/.kiro/hooks/observal.json` (user scope) or
+`.kiro/hooks/observal.json` (project scope) — in the v1 schema, using the
+`UserPromptSubmit` and `Stop` triggers. Both hooks run the shared
+`observal_cli.hooks.session_push --harness kiro` entry point.
+
+The standalone file is the format Kiro IDE 1.0 and Kiro CLI 3.0 read. Observal
+deliberately does **not** write hooks inline into the agent JSON, because Kiro
+IDE 1.0 never fires inline hooks — an inline-hooked agent loads and runs in the
+IDE, it just reports no telemetry.
+
+Inline hooks do **not** hide an agent from the IDE agent picker. What does is
+`allowedTools` or `toolsSettings` without a `permissions` block: Kiro IDE 1.x
+`ProfileLoader` rejects such a profile outright (`reasonCode cli_only_agent`).
+Observal no longer emits either field and strips them on pull.
+
+### Legacy Kiro CLI 2.x
+
+Kiro CLI 2.x only understands inline agent hooks. When Observal detects a CLI
+2.x install *and no Kiro IDE on the machine*, it additionally writes the legacy
+inline `userPromptSubmit`/`stop` hooks into the agent JSON. Installing the IDE
+later and re-running `observal agent pull` (or `observal doctor patch --harness
+kiro`) removes them again.
+
+Detection can be overridden with `OBSERVAL_KIRO_CLI_VERSION` and
+`OBSERVAL_KIRO_IDE` (`1`/`0`).
 
 The hook reads Kiro session JSONL files from `~/.kiro/sessions/cli/`. It reads
-only new lines since the last push and sends them to Observal.
+only new lines since the last push and sends them to Observal. Note that this
+path is written by the Kiro CLI; IDE-only sessions are not yet collected.
 
 ---
 
@@ -28,8 +52,9 @@ only new lines since the last push and sends them to Observal.
 | Capability | Support |
 |---|---|
 | Agent profiles | Project and user scope |
-| Hook bridge | `userPromptSubmit` and `stop` by default |
-| Custom hooks | `agentSpawn`, `userPromptSubmit`, `preToolUse`, `postToolUse`, `stop` |
+| Hook bridge | `UserPromptSubmit` and `Stop` in `.kiro/hooks/observal.json` |
+| Custom hooks | `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `PostFileSave`, `PostFileCreate`, `PostFileDelete` |
+| Legacy CLI 2.x | Inline agent hooks, only when no Kiro IDE is installed |
 | MCP servers | `.kiro/settings/mcp.json` and `~/.kiro/settings/mcp.json` |
 | Agent prompt | Registry prompts are embedded in the generated Kiro agent profile |
 | Guidance files | Scanned from steering files and `AGENTS.md`, not overwritten |
@@ -104,7 +129,48 @@ Kiro MCP configs use the `mcpServers` key.
 
 ## Hook spec
 
-Observal writes the telemetry hooks inside each Kiro agent JSON:
+Observal writes the telemetry hooks to the standalone v1 hooks file —
+`~/.kiro/hooks/observal.json` (user scope) or `.kiro/hooks/observal.json`
+(project scope):
+
+```json
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "observal-session-push-userpromptsubmit",
+      "trigger": "UserPromptSubmit",
+      "action": {
+        "type": "command",
+        "command": "python -m observal_cli.hooks.session_push --harness kiro"
+      }
+    },
+    {
+      "name": "observal-session-push-stop",
+      "trigger": "Stop",
+      "action": {
+        "type": "command",
+        "command": "python -m observal_cli.hooks.session_push --harness kiro"
+      }
+    }
+  ]
+}
+```
+
+The command carries no `OBSERVAL_AGENT_ID`. One file per scope serves every
+agent, so an id baked into it would attribute every session to whichever agent
+was pulled last. Attribution comes from session metadata instead.
+
+On non-Windows platforms, generated server config may use `python3` instead of
+`python`. During `observal agent pull`, the CLI rewrites Observal hook commands to use
+the active Python interpreter.
+
+### Legacy CLI 2.x inline hooks
+
+Kiro CLI 2.x predates the standalone file and reads hooks only from the agent
+JSON. On a machine whose `kiro-cli` reports major version 2, Observal *also*
+writes inline `userPromptSubmit`/`stop` hooks into each agent profile, carrying
+`OBSERVAL_AGENT_ID` since an agent profile belongs to exactly one agent:
 
 ```json
 {
@@ -113,31 +179,35 @@ Observal writes the telemetry hooks inside each Kiro agent JSON:
       {
         "command": "OBSERVAL_AGENT_ID=<agent-uuid> python -m observal_cli.hooks.session_push --harness kiro"
       }
-    ],
-    "stop": [
-      {
-        "command": "OBSERVAL_AGENT_ID=<agent-uuid> python -m observal_cli.hooks.session_push --harness kiro"
-      }
     ]
   }
 }
 ```
 
-On non-Windows platforms, generated server config may use `python3` instead of
-`python`. During `observal agent pull`, the CLI rewrites Observal hook commands to use
-the active Python interpreter.
+Both formats are written on such machines. Having the IDE installed is not a
+reason to withhold the inline copy: the two surfaces coexist, and the IDE loads
+an agent carrying inline hooks and simply never fires them.
 
 ### Attribution
 
-Kiro does not expose a reliable active Observal agent in its session JSONL. The
-per-agent hook command is the source of truth.
+The hooks file is shared by every agent, so the hook command cannot identify
+one. Attribution is resolved from the session itself:
 
-1. `observal agent pull` writes the agent UUID into the Kiro hook command as
-   `OBSERVAL_AGENT_ID`.
-2. The shared session hook reads that UUID when Kiro fires `userPromptSubmit` or
-   `stop`.
-3. The CLI selects the active server URL under `registries` in `~/.observal/lockfile.json`, then looks up the UUID under that registry's `kiro` harness.
-4. The session payload is sent with the lockfile agent id and version.
+1. A session started as an agent — picked from the IDE's agent dropdown —
+   records that agent in `session_start.agentType`, and the agent's own profile
+   hooks fire with an agent-scoped `hookId`. Either names the agent.
+2. A session that delegates records `sub_agent_start` with `subAgentName`, and
+   the delegated agent's work is written to a separate sub-execution
+   transcript, captured as its own session.
+3. CLI sessions carry the active agent in the session metadata written beside
+   the transcript.
+4. The CLI selects the active server URL under `registries` in `~/.observal/lockfile.json`, then looks up that name under that registry's `kiro` harness.
+5. The session payload is sent with the lockfile agent id and version. A name
+   that the current registry cannot confirm is left unattributed rather than
+   guessed at.
+
+Legacy CLI 2.x inline hooks remain the exception: those carry
+`OBSERVAL_AGENT_ID` directly, and it is used when present.
 5. If the UUID is missing or no lockfile entry exists, the session is left
    unattributed instead of guessing from the current directory.
 
@@ -219,7 +289,12 @@ Run `pytest -q` from the project root.
 **Guidance files are scan-only.** Observal layers Kiro steering files and
 `AGENTS.md` as context, but does not overwrite them during pull.
 
-**Hooks are per agent.** Pulling a new agent includes telemetry hooks automatically, with `OBSERVAL_AGENT_ID` bound to that agent's UUID. Pull the agent again to replace an older Kiro-specific push command with the shared acknowledged exporter. `doctor patch` does not install generic Kiro attribution hooks.
+**Hooks are per scope, not per agent.** Pulling an agent refreshes the shared
+`observal.json` hooks file for that scope, which then serves every Kiro agent
+there — so the file exists even when no agent is locked. Pull the agent again
+to replace an older Kiro-specific push command with the shared acknowledged
+exporter. On legacy CLI 2.x, inline per-agent hooks carrying
+`OBSERVAL_AGENT_ID` are written in addition.
 
 **Default scope is user.** `observal agent pull <agent-name> --harness kiro`
 writes to `~/.kiro/agents/` unless `--scope project` is set.
