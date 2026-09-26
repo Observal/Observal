@@ -18,7 +18,8 @@ from observal_cli.harness import (
     ScanResult,
     register_adapter,
 )
-from observal_cli.harness.base import BaseAdapter
+from observal_cli.harness.base import BaseAdapter, inline_agent_prompt
+from observal_cli.harness.protocol import HeadlessPlan, HeadlessRequest
 from observal_cli.shared.utils import extract_mcp_servers, first_content_line, parse_frontmatter_field
 
 
@@ -32,6 +33,7 @@ class PiAdapter(BaseAdapter):
 
     home_markers = (".pi",)
     managed_agent_profiles = ("user:AGENTS.md",)
+    headless_binary = "pi"
     managed_skills = ("user:skills/{name}/SKILL.md",)
 
     @property
@@ -92,6 +94,16 @@ class PiAdapter(BaseAdapter):
         if (config_dir / "extensions" / "observal.ts").is_file() or is_npm_configured(config_dir):
             return "installed"
         return "missing"
+
+    def _headless_command(self, request: HeadlessRequest) -> HeadlessPlan:
+        # pi --help (0.87): -p/--print processes one prompt and exits;
+        # --session-id uses that exact session id, creating it; --approve trusts
+        # the project-local .pi files the install wrote. Pi has no flag to pick
+        # an agent profile, so its instructions are inlined into the prompt.
+        argv = ["pi", "-p", "--approve", "--session-id", request.session_id]
+        if request.model:
+            argv += ["--model", request.model]
+        return HeadlessPlan(argv=[*argv, "--", inline_agent_prompt(request)], session_id=request.session_id)
 
     # ── Private helpers ───────────────────────────────────────
 
