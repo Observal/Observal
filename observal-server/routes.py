@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 from fastapi import FastAPI
@@ -10,6 +11,7 @@ from api.routes.admin_sso import router as admin_sso_router
 from api.routes.agent import router as agent_router
 from api.routes.alert import router as alert_router
 from api.routes.ard import router as ard_router
+from api.routes.ard_imports import router as ard_imports_router
 from api.routes.artifacts import router as artifacts_router
 from api.routes.audit import router as audit_router
 from api.routes.audit_log import router as audit_log_router
@@ -86,6 +88,7 @@ REST_ROUTERS = (
     exec_dashboard_router,
     recommendations_router,
     ard_router,
+    ard_imports_router,
     artifacts_router,
 )
 

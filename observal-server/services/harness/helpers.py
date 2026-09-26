@@ -335,6 +335,23 @@ def _build_sandbox_mcp_entry(sandbox_listings: dict, harness: str) -> dict:
     }
 
 
+DELEGATION_MCP_NAME = "observal-agents"
+
+
+def _build_delegation_mcp_entry(agent, harness: str) -> dict:
+    """The observal-agents MCP server every pulled Agent gets (ADR 0002).
+
+    It lets the running agent find other approved agents and hand them a task.
+    ``python3 -m observal_cli`` is rewritten by ``observal agent pull`` to the
+    CLI's own interpreter, like the sandbox server.
+    """
+    args = ["-m", "observal_cli.delegation.mcp_server", "--harness", harness]
+    agent_id = getattr(agent, "id", None)
+    if agent_id:
+        args += ["--parent-id", str(agent_id)]
+    return {DELEGATION_MCP_NAME: {"command": "python3", "args": args, "env": {}}}
+
+
 def _build_mcp_configs(
     agent: Agent,
     harness: str,

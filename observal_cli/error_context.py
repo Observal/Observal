@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Observal Contributors
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Human error context for CLI API operations."""
@@ -137,6 +138,10 @@ OPERATION_LABELS = {
     "set_visibility": "Update teamspace visibility",
     "show_team": "Show teamspace",
     "skill_edit": "Edit skill",
+    "a2a_list": "List A2A agents",
+    "a2a_remove": "Remove A2A agent",
+    "a2a_review": "Review A2A agent",
+    "a2a_submit": "Register A2A agent",
     "skill_install": "Install skill",
     "skill_list": "List skills",
     "skill_my": "List owned skills",
@@ -152,6 +157,7 @@ OPERATION_LABELS = {
 }
 
 RESOURCE_LABELS = {
+    "cmd_a2a.py": "A2A agents",
     "cmd_agent.py": "agent registry",
     "cmd_api.py": "Observal API",
     "cmd_archive.py": "registry component",

@@ -166,6 +166,7 @@ def _try_lockfile_migration() -> None:
 
 # ── Register command groups ──────────────────────────────
 
+from observal_cli.cmd_a2a import a2a_app
 from observal_cli.cmd_agent import agent_app
 from observal_cli.cmd_api import register_api
 from observal_cli.cmd_archive import add_archive_commands
@@ -173,6 +174,7 @@ from observal_cli.cmd_auth import auth_app, register_config
 from observal_cli.cmd_bulk import bulk_app
 from observal_cli.cmd_co_authors import make_co_authors_typer
 from observal_cli.cmd_component import version_app
+from observal_cli.cmd_delegate import delegate_app
 from observal_cli.cmd_discover import discover_app
 from observal_cli.cmd_doctor import doctor_app
 from observal_cli.cmd_hook import hook_app
@@ -205,7 +207,7 @@ from observal_cli.cmd_transfer import add_transfer_owner_command
 registry_app = typer.Typer(
     name="registry",
     help=(
-        "Component registry (MCPs, skills, hooks, prompts, sandboxes)\n\n"
+        "Component registry (MCPs, skills, hooks, prompts, sandboxes, remote A2A agents)\n\n"
         "Examples:\n"
         "  observal registry mcp list\n"
         "  observal registry skill list\n"
@@ -223,6 +225,7 @@ registry_app.add_typer(models_app, name="models")
 registry_app.add_typer(version_app, name="version")
 registry_app.add_typer(recommend_app, name="recommend")
 registry_app.add_typer(bulk_app, name="bulk")
+registry_app.add_typer(a2a_app, name="a2a")
 
 # ── Co-authors and ownership sub-commands ─────────────────
 mcp_app.add_typer(make_co_authors_typer("mcps"), name="co-authors")
@@ -252,6 +255,7 @@ register_api(app)
 register_scan(app)
 register_outdated(app)
 app.add_typer(discover_app, name="discover")
+app.add_typer(delegate_app, name="delegate")
 
 
 # ── Agent pull (full-featured, lives under `observal agent pull`) ──

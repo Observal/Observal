@@ -65,6 +65,7 @@ Observal supports Claude Code, Cursor, Kiro, Pi, Copilot, Codex, OpenCode, and o
 - **Package components into reusable agents:** Bundle Skills, MCP servers, hooks, prompts, and sandboxes into one versioned unit.
 - **Run a governed registry:** Review submissions, approve internal agents, inspect version diffs, and give developers one trusted place to install from.
 - **Render across multiple Coding IDE/CLI:** Generate the correct config for each supported harness instead of maintaining separate setup instructions for every harness.
+- **Let agents use each other:** Every approved resource is discoverable over the open [ARD](https://github.com/ards-project/ard-spec) standard, and a running agent can hand part of its task to another approved agent, whether it lives in the registry or is a remote [A2A](https://a2a-protocol.org) service.
 - **Learn what works:** Use real adoption and session data to find which agents, tools, prompts, and workflows are helping teams.
 - **Replay sessions when needed:** Use traces as evidence for debugging, review, audits, and deeper analysis.
 
@@ -189,6 +190,50 @@ Real usage data flows back as reports: what's helping, what's getting in the way
 **Components library: MCPs, Skills, Hooks, Prompts, Sandboxes:**
 
 ![Component registry showing MCP servers](docs/img/component_registry.png)
+
+---
+
+## Discovery and Delegation (ARD + A2A)
+
+Installing an agent ahead of time only helps with the tasks you planned for. Observal also lets a running agent find what the organization already has, mid-task, and hand work to other agents.
+
+**ARD: one search across everything approved.** Observal implements [Agentic Resource Discovery](https://github.com/ards-project/ard-spec) (v0.91). Every approved agent, MCP server, skill, hook, prompt and sandbox is published as an ARD entry with a permanent `urn:air:` identifier, a public manifest at `/.well-known/ard.json`, and the spec's search API at `/api/v1/ard/search`. Results are ranked by relevance only; approval, visibility, harness support and whether the resource can be used right now are separate fields. The same visibility rules as the registry apply, so a team-private agent is only found by that team.
+
+**A2A: agents hand tasks to agents.** Observal speaks the [Agent2Agent protocol](https://a2a-protocol.org) (v1.0, with v0.3 compatibility). Every delegation is an A2A Task, whoever runs it:
+
+- **Registry agents** run headless in a harness that supports it (Claude Code, Kiro, Cursor, Codex, OpenCode, Copilot CLI, Antigravity, Pi) inside a throwaway git worktree of your repository. Their answer comes back as a result, and any file changes come back as a patch that is never applied for you.
+- **Remote A2A agents** (a service another team runs, built with any framework) are registered by their Agent Card URL, reviewed like any submission, and then called directly with the card the reviewer approved. Observal never proxies the traffic or stores their credentials.
+
+```mermaid
+flowchart LR
+    A["Agent in your harness"] -- "find_agents" --> R["Observal registry<br/>(ARD search)"]
+    A -- "delegate" --> T{"A2A Task"}
+    T -- "registry agent" --> H["Headless harness<br/>in a throwaway worktree"]
+    T -- "remote agent" --> S["A2A service<br/>(approved Agent Card)"]
+    H -- "answer + patch" --> A
+    S -- "artifacts" --> A
+```
+
+Every agent you pull gets an `observal-agents` MCP server with four tools, `find_agents`, `delegate`, `get_task` and `cancel_task`, so it can do this without being told how. Delegation is limited to approved agents, stops after two levels, lets a delegated agent start at most three tasks of its own, and refuses loops. Each delegation is recorded against the calling session, so traces show which agents a session relied on.
+
+**Discover shows registry agents that can take a task and remote A2A agents side by side:**
+
+![Discover page showing a delegable registry agent and a remote A2A agent](docs/img/discover-a2a.png)
+
+**Delegate from any terminal or script.** Here a remote A2A agent answers directly; a registry agent also hands back its file changes as a patch for you to review:
+
+![observal delegate find and run returning a remote A2A agent's answer](docs/img/delegate-cli.svg)
+
+```bash
+observal delegate find "review this branch for auth bugs"
+observal delegate run acme/security-reviewer "Review src/auth on this branch for token leaks"
+git apply ~/.observal/delegations/<task-id>/changes.patch     # only if you agree with it
+
+observal registry a2a submit https://agents.acme.com --visibility team --team platform
+observal registry a2a review urn:air:agents.acme.com:a2a:incident-triage --approve
+```
+
+Design decisions: [ADR 0001 (ARD)](docs/adr/0001-agentic-resource-discovery.md), [ADR 0002 (A2A delegation)](docs/adr/0002-a2a-delegation.md). API: [Discovery endpoints](docs/reference/api-endpoints.md#discovery-ard).
 
 ---
 

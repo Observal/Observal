@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Lock file management for Observal CLI.
@@ -14,7 +15,7 @@ The lock file is:
 
 from __future__ import annotations
 
-import fcntl
+import contextlib
 import hashlib
 import json
 from datetime import UTC, datetime
@@ -25,6 +26,14 @@ from urllib.parse import urlsplit, urlunsplit
 from loguru import logger as optic
 
 from observal_cli.config import CONFIG_DIR
+
+try:
+    import fcntl
+except ImportError:  # Windows has no fcntl; the lock uses msvcrt there
+    fcntl = None
+    import msvcrt
+else:
+    msvcrt = None
 
 LOCKFILE_PATH = CONFIG_DIR / "lockfile.json"
 _LOCKFILE_LOCK = CONFIG_DIR / "lockfile.lock"
@@ -102,16 +111,33 @@ def read_lockfile() -> dict:
     return data
 
 
+@contextlib.contextmanager
+def _exclusive_lock(path: Path):
+    """Hold an exclusive cross-process lock on ``path``: flock on POSIX, msvcrt on Windows."""
+    with open(path, "w") as handle:
+        if fcntl is not None:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+        else:
+            # Lock the first byte; LK_LOCK retries for about ten seconds, then raises OSError.
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+        try:
+            yield
+        finally:
+            if fcntl is not None:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+            else:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+
+
 def write_lockfile(data: dict) -> None:
     """Write the complete lockfile atomically with file locking."""
     data["updated_at"] = datetime.now(UTC).isoformat()
     data["lock_version"] = LOCK_VERSION
 
     LOCKFILE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    lock_fd = None
-    try:
-        lock_fd = open(_LOCKFILE_LOCK, "w")  # noqa: SIM115
-        fcntl.flock(lock_fd, fcntl.LOCK_EX)
+    with _exclusive_lock(_LOCKFILE_LOCK):
         tmp_path = LOCKFILE_PATH.with_suffix(".tmp")
         try:
             tmp_path.write_text(json.dumps(data, indent=2) + "\n")
@@ -119,10 +145,6 @@ def write_lockfile(data: dict) -> None:
         finally:
             if tmp_path.exists():
                 tmp_path.unlink(missing_ok=True)
-    finally:
-        if lock_fd:
-            fcntl.flock(lock_fd, fcntl.LOCK_UN)
-            lock_fd.close()
 
     optic.debug("lockfile written: {}", LOCKFILE_PATH)
 

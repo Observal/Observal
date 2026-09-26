@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Validate HARNESS_REGISTRY structural invariants.
@@ -104,16 +105,16 @@ def test_all_harnesses_have_features():
 # rather than derived.
 
 VERIFIED_RUNTIME_FACTS: dict[str, dict[str, str | bool]] = {
-    "cursor": {"mcp_install_mode": "file", "prompt_context_injection": False},
-    "kiro": {"mcp_install_mode": "file", "prompt_context_injection": True},
-    "claude-code": {"mcp_install_mode": "setup_command", "prompt_context_injection": True},
-    "codex": {"mcp_install_mode": "file", "prompt_context_injection": False},
-    "copilot": {"mcp_install_mode": "file", "prompt_context_injection": False},
-    "copilot-cli": {"mcp_install_mode": "file", "prompt_context_injection": False},
-    "opencode": {"mcp_install_mode": "file", "prompt_context_injection": False},
-    "antigravity": {"mcp_install_mode": "file", "prompt_context_injection": False},
-    "goose": {"mcp_install_mode": "user_only", "prompt_context_injection": False},
-    "pi": {"mcp_install_mode": "adapter", "prompt_context_injection": True},
+    "cursor": {"mcp_install_mode": "file", "prompt_context_injection": False, "headless_run": True},
+    "kiro": {"mcp_install_mode": "file", "prompt_context_injection": True, "headless_run": True},
+    "claude-code": {"mcp_install_mode": "setup_command", "prompt_context_injection": True, "headless_run": True},
+    "codex": {"mcp_install_mode": "file", "prompt_context_injection": False, "headless_run": True},
+    "copilot": {"mcp_install_mode": "file", "prompt_context_injection": False, "headless_run": False},
+    "copilot-cli": {"mcp_install_mode": "file", "prompt_context_injection": False, "headless_run": True},
+    "opencode": {"mcp_install_mode": "file", "prompt_context_injection": False, "headless_run": True},
+    "antigravity": {"mcp_install_mode": "file", "prompt_context_injection": False, "headless_run": True},
+    "goose": {"mcp_install_mode": "user_only", "prompt_context_injection": False, "headless_run": False},
+    "pi": {"mcp_install_mode": "adapter", "prompt_context_injection": True, "headless_run": True},
 }
 
 
@@ -130,7 +131,7 @@ def test_mcp_install_mode_is_in_vocabulary(harness):
 @pytest.mark.parametrize("harness", list(HARNESS_REGISTRY.keys()))
 def test_boolean_facts_are_booleans(harness):
     spec = HARNESS_REGISTRY[harness]
-    for key in ("dynamic_tools", "prompt_context_injection", "guidance_file_write"):
+    for key in ("dynamic_tools", "prompt_context_injection", "guidance_file_write", "headless_run"):
         assert isinstance(spec[key], bool), f"harness {harness!r}: {key} must be a bool"
 
 

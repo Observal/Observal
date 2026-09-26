@@ -1,5 +1,6 @@
 <!-- SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Observal CLI Command Reference
@@ -85,6 +86,16 @@ Every command available in the installed CLI. This block is generated from the T
 - `observal config set`: Set a validated user-managed CLI setting.
 - `observal config show`: Show effective CLI configuration without exposing credentials.
 
+**`observal delegate`**: Hand a task to another approved agent (registry or remote A2A)
+
+- `observal delegate cancel`: Stop a delegated task.
+- `observal delegate find`: Find approved agents (registry and remote A2A) that can take a task.
+- `observal delegate list`: List recent delegated tasks on this machine.
+- `observal delegate mcp`: Run the observal-agents MCP server on stdio.
+- `observal delegate reply`: Answer a remote agent that asked for more input.
+- `observal delegate run`: Delegate a task and wait for the result.
+- `observal delegate status`: Show a delegated task, optionally waiting for it to finish.
+
 **`observal discover`**: Find approved resources for a task and use them in this session
 
 - `observal discover inspect`: Show the complete entry for one resource.
@@ -127,8 +138,13 @@ Every command available in the installed CLI. This block is generated from the T
 - `observal ops top`: Show top MCP servers or agents by usage.
 - `observal ops traces`: List recent traces (sessions).
 
-**`observal registry`**: Component registry (MCPs, skills, hooks, prompts, sandboxes)
+**`observal registry`**: Component registry (MCPs, skills, hooks, prompts, sandboxes, remote A2A agents)
 
+- `observal registry a2a`: Remote A2A agents (register an Agent Card, review, remove)
+  - `observal registry a2a list`: List remote A2A agents you can see, including pending ones you own or review.
+  - `observal registry a2a remove`: Remove a registered agent from discovery (owner or admin).
+  - `observal registry a2a review`: Approve or reject a registered agent (reviewers and admins).
+  - `observal registry a2a submit`: Register (or refresh) a remote A2A agent for review.
 - `observal registry bulk`: Submit mixed Registry components from one JSON file.
   - `observal registry bulk submit`: Submit mixed MCP, skill, hook, prompt, and sandbox entries.
 - `observal registry hook`: Hook registry commands

@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # ADR 0001: Adopt Agentic Resource Discovery (ARD) as the discovery envelope
@@ -166,7 +167,8 @@ Emitted (canonical) types:
 | External, unknown | preserved exactly as published |
 
 An Observal Agent is an installable configuration, not a running service, so it
-is never emitted as `application/a2a-agent-card+json`.
+is never emitted as `application/a2a-agent-card+json`. (ADR 0002 adds remote A2A
+agents as imported entries of that type, and delegation to both kinds.)
 
 Accepted and normalised on input, with the original preserved in `raw_entry`:
 

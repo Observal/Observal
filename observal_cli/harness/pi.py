@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Pi harness adapter for scanning and hook detection."""
@@ -17,7 +18,8 @@ from observal_cli.harness import (
     ScanResult,
     register_adapter,
 )
-from observal_cli.harness.base import BaseAdapter
+from observal_cli.harness.base import BaseAdapter, inline_agent_prompt
+from observal_cli.harness.protocol import HeadlessPlan, HeadlessRequest
 from observal_cli.shared.utils import extract_mcp_servers, first_content_line, parse_frontmatter_field
 
 
@@ -31,6 +33,7 @@ class PiAdapter(BaseAdapter):
 
     home_markers = (".pi",)
     managed_agent_profiles = ("user:AGENTS.md",)
+    headless_binary = "pi"
     managed_skills = ("user:skills/{name}/SKILL.md",)
 
     @property
@@ -87,6 +90,17 @@ class PiAdapter(BaseAdapter):
     def detect_hooks(self, config_dir: Path) -> str:
         """Check for the user-global Observal TypeScript extension."""
         return "installed" if (config_dir / "extensions" / "observal.ts").is_file() else "missing"
+
+    def _headless_command(self, request: HeadlessRequest) -> HeadlessPlan:
+        # Verified against pi 0.87: -p/--print with no message argument reads the
+        # prompt from stdin and exits; --session-id uses that exact session id,
+        # creating it; --approve trusts the project-local .pi files the install
+        # wrote. Pi has no flag to pick an agent profile, so its instructions are
+        # inlined into the prompt.
+        argv = ["pi", "-p", "--approve", "--session-id", request.session_id]
+        if request.model:
+            argv += ["--model", request.model]
+        return HeadlessPlan(argv=argv, stdin=inline_agent_prompt(request), session_id=request.session_id)
 
     # ── Private helpers ───────────────────────────────────────
 

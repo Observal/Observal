@@ -1116,6 +1116,7 @@ const DISCOVERY_MEDIA_TYPES: Record<string, string> = {
 	sandbox: "application/vnd.observal.sandbox+json",
 	hook: "application/vnd.observal.hook+json",
 	agent: "application/vnd.observal.agent+json",
+	external: "application/a2a-agent-card+json",
 };
 
 export const discovery = {

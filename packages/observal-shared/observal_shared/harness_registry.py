@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Aryan Iyappan <aryaniyappan2006@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Canonical harness metadata shared by the CLI and server."""
@@ -11,7 +12,7 @@ from .harness_models import supported_model_ids
 
 # ── Runtime facts vocabulary ─────────────────────────────────
 #
-# Every harness carries four verified runtime facts that discovery and
+# Every harness carries five verified runtime facts that discovery and
 # activation gate on. A value is only set to a non-default when the behaviour
 # was checked against the harness's own documentation or adapter code; the
 # per-harness comment records the evidence. Unknown means the default.
@@ -29,6 +30,10 @@ from .harness_models import supported_model_ids
 # guidance_file_write     Observal may write an instruction file the harness
 #                         reads (AGENTS.md, rules, steering). Always False:
 #                         the bundled skill is the instruction channel.
+# headless_run            the harness CLI runs one prompt non-interactively
+#                         and exits, so a delegated agent can run as a child
+#                         process (observal_cli.delegation). The CLI adapter's
+#                         headless_command builds the argv.
 
 HARNESS_MCP_INSTALL_MODES: tuple[str, ...] = ("file", "setup_command", "adapter", "user_only")
 
@@ -37,6 +42,7 @@ HARNESS_RUNTIME_FACT_KEYS: tuple[str, ...] = (
     "dynamic_tools",
     "prompt_context_injection",
     "guidance_file_write",
+    "headless_run",
 )
 
 HARNESS_REGISTRY: dict[str, dict] = {
@@ -83,6 +89,8 @@ HARNESS_REGISTRY: dict[str, dict] = {
         "dynamic_tools": False,
         "prompt_context_injection": False,
         "guidance_file_write": False,
+        # `cursor-agent -p` prints and exits (cursor-agent --help: --print, --mode plan, --trust).
+        "headless_run": True,
     },
     "kiro": {
         "display_name": "Kiro",
@@ -127,6 +135,8 @@ HARNESS_REGISTRY: dict[str, dict] = {
         "dynamic_tools": False,
         "prompt_context_injection": True,
         "guidance_file_write": False,
+        # `kiro-cli chat --no-interactive --agent <name>` (kiro-cli chat --help).
+        "headless_run": True,
     },
     "claude-code": {
         "display_name": "Claude Code",
@@ -173,6 +183,8 @@ HARNESS_REGISTRY: dict[str, dict] = {
         "dynamic_tools": False,
         "prompt_context_injection": True,
         "guidance_file_write": False,
+        # `claude -p --agent <name>` (claude --help: --print, --agent, --permission-mode, --mcp-config).
+        "headless_run": True,
     },
     "codex": {
         "display_name": "Codex",
@@ -214,6 +226,8 @@ HARNESS_REGISTRY: dict[str, dict] = {
         "dynamic_tools": False,
         "prompt_context_injection": False,
         "guidance_file_write": False,
+        # `codex exec` runs one prompt (Codex CLI reference: exec, --sandbox, --cd, --output-last-message).
+        "headless_run": True,
     },
     "copilot": {
         "display_name": "Copilot",
@@ -254,6 +268,8 @@ HARNESS_REGISTRY: dict[str, dict] = {
         "dynamic_tools": False,
         "prompt_context_injection": False,
         "guidance_file_write": False,
+        # VS Code Copilot has no CLI entry point; Copilot CLI covers headless runs.
+        "headless_run": False,
     },
     "copilot-cli": {
         "display_name": "Copilot CLI",
@@ -294,6 +310,8 @@ HARNESS_REGISTRY: dict[str, dict] = {
         "dynamic_tools": False,
         "prompt_context_injection": False,
         "guidance_file_write": False,
+        # `copilot -p <prompt> --agent <name>` (GitHub Copilot CLI docs).
+        "headless_run": True,
     },
     "opencode": {
         "display_name": "OpenCode",
@@ -336,6 +354,8 @@ HARNESS_REGISTRY: dict[str, dict] = {
         "dynamic_tools": False,
         "prompt_context_injection": False,
         "guidance_file_write": False,
+        # `opencode run --agent <name> <message>` (opencode.ai/docs/cli).
+        "headless_run": True,
     },
     "antigravity": {
         "display_name": "Antigravity",
@@ -378,6 +398,8 @@ HARNESS_REGISTRY: dict[str, dict] = {
         "dynamic_tools": False,
         "prompt_context_injection": False,
         "guidance_file_write": False,
+        # `agy --print <prompt>` (agy --help: --print, --print-timeout, --sandbox).
+        "headless_run": True,
     },
     "goose": {
         "display_name": "Goose",
@@ -424,6 +446,8 @@ HARNESS_REGISTRY: dict[str, dict] = {
         "dynamic_tools": False,
         "prompt_context_injection": False,
         "guidance_file_write": False,
+        # Not verified: goose runs recipes headless, but agent profiles are not recipes.
+        "headless_run": False,
     },
     "pi": {
         "display_name": "Pi",
@@ -461,6 +485,9 @@ HARNESS_REGISTRY: dict[str, dict] = {
         "dynamic_tools": False,
         "prompt_context_injection": True,
         "guidance_file_write": False,
+        # Verified against pi 0.87: `pi -p --session-id <id> -- <prompt>` answers
+        # on stdout and exits.
+        "headless_run": True,
     },
 }
 

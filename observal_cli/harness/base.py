@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Base adapter with feature-flag gating from harness_Registry.
@@ -11,17 +12,60 @@ methods they support; the feature gate runs before the override.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
 from observal_cli.harness.protocol import (
     METHOD_FEATURE_MAP,
     BundledSkillPlan,
+    HeadlessPlan,
+    HeadlessRequest,
+    HeadlessResult,
     HookSpec,
     NotSupportedError,
     ScanResult,
     SessionSource,
 )
+
+ANSI_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+
+
+def inline_agent_prompt(request: HeadlessRequest) -> str:
+    """Prompt for harnesses that cannot select an agent profile by name."""
+    instructions = request.instructions.strip()
+    if not instructions:
+        return request.message
+    return (
+        f"You are acting as the agent `{request.agent_name}`. Follow its instructions.\n\n"
+        f"<agent-instructions>\n{instructions}\n</agent-instructions>\n\n"
+        f"<task>\n{request.message}\n</task>"
+    )
+
+
+def parse_json_result(plan: HeadlessPlan, stdout: str) -> HeadlessResult | None:
+    """Parse the single ``{"type": "result", ...}`` object Claude Code and Cursor print in json mode."""
+    import json
+
+    lines = [line for line in stdout.strip().splitlines() if line.strip()]
+    if not lines:
+        return None
+    try:
+        data = json.loads(lines[-1])
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict) or "result" not in data:
+        return None
+    text = str(data.get("result") or "").strip()
+    error = (text or "The delegated session reported an error.") if data.get("is_error") else None
+    return HeadlessResult(text=text, session_id=data.get("session_id") or plan.session_id, error=error)
+
+
+def _check_headless(harness_name: str) -> None:
+    from observal_shared.harness_registry import HARNESS_REGISTRY
+
+    if not HARNESS_REGISTRY.get(harness_name, {}).get("headless_run"):
+        raise NotSupportedError(harness_name, "headless_command")
 
 
 def _get_features(harness_name: str) -> set[str]:
@@ -51,6 +95,8 @@ class BaseAdapter:
     """
 
     home_markers: tuple[str, ...] = ()
+    # Executable that headless_command launches; delegation checks it is on PATH.
+    headless_binary: str | None = None
     managed_agent_profiles: tuple[str, ...] = ()
     managed_skills: tuple[str, ...] = ()
     managed_mcp_files: tuple[str, ...] = ()
@@ -227,6 +273,21 @@ class BaseAdapter:
 
     def requires_explicit_agent_id(self) -> bool:
         return False
+
+    def headless_command(self, request: HeadlessRequest) -> HeadlessPlan:
+        _check_headless(self.harness_name)
+        return self._headless_command(request)
+
+    def _headless_command(self, request: HeadlessRequest) -> HeadlessPlan:
+        raise NotSupportedError(self.harness_name, "headless_command")
+
+    def parse_headless_output(self, plan: HeadlessPlan, stdout: str) -> HeadlessResult:
+        """Plain-text harnesses: the answer is stdout, or the file the harness wrote it to."""
+        if plan.output_file is not None and plan.output_file.is_file():
+            text = plan.output_file.read_text(encoding="utf-8", errors="replace")
+        else:
+            text = ANSI_RE.sub("", stdout)
+        return HeadlessResult(text=text.strip(), session_id=plan.session_id)
 
     def get_observal_managed_files(self, lockfile_data: dict, project_dir: str | None = None) -> set[str]:
         """Return layer snapshot display paths managed by Observal for this harness."""

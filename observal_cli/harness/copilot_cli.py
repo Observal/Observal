@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """GitHub Copilot CLI harness adapter."""
@@ -21,6 +22,7 @@ from observal_cli.harness import (
     register_adapter,
 )
 from observal_cli.harness.base import BaseAdapter
+from observal_cli.harness.protocol import HeadlessPlan, HeadlessRequest
 from observal_cli.shared.utils import (
     _OBSERVAL_HOOK_MARKERS,
     first_content_line,
@@ -32,6 +34,7 @@ class CopilotCliAdapter(BaseAdapter):
     """Adapter for GitHub Copilot CLI."""
 
     home_markers = (".copilot",)
+    headless_binary = "copilot"
     managed_agent_profiles = ("project:.github/agents/{name}.agent.md",)
     managed_skills = ("project:.agents/skills/{name}/SKILL.md", "user:skills/{name}/SKILL.md")
 
@@ -310,6 +313,31 @@ class CopilotCliAdapter(BaseAdapter):
         from observal_cli.cmd_doctor import _cleanup_copilot_cli
 
         return _cleanup_copilot_cli(dry_run)
+
+    # ── Headless delegation ──────────────────────────────────
+
+    def _headless_command(self, request: HeadlessRequest) -> HeadlessPlan:
+        # GitHub Copilot CLI: --prompt runs one prompt, --agent selects the
+        # custom agent, --allow-tool/--deny-tool gate tools in programmatic mode.
+        # Its MCP config lives in the home directory, so the agent's servers are
+        # passed on the command line instead of written there.
+        argv = [
+            "copilot",
+            f"--prompt={request.message}",
+            "--agent",
+            request.agent_name,
+            "--allow-tool",
+            "write",
+            "--deny-tool",
+            "shell",
+        ]
+        if request.mcp_servers:
+            argv += ["--additional-mcp-config", json.dumps({"mcpServers": request.mcp_servers})]
+            for name in request.mcp_servers:
+                argv += ["--allow-tool", name]
+        if request.model:
+            argv += ["--model", request.model]
+        return HeadlessPlan(argv=argv)
 
 
 register_adapter(CopilotCliAdapter())

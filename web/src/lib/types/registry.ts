@@ -424,7 +424,8 @@ export interface RecommendationsResponse {
 
 // ── Discovery (ARD) ─────────────────────────────────────────────────
 
-export type DiscoveryKind = "agent" | "mcp" | "skill" | "hook" | "prompt" | "sandbox";
+/** `external` is a remote agent registered by its A2A Agent Card (ADR 0002). */
+export type DiscoveryKind = "agent" | "mcp" | "skill" | "hook" | "prompt" | "sandbox" | "external";
 
 export type DiscoveryApproval = "approved" | "pending" | "rejected" | "archived" | "draft";
 
@@ -432,6 +433,7 @@ export type DiscoveryAvailability =
 	| "now"
 	| "next-session"
 	| "explicit-install"
+	| "delegate"
 	| "not-approved"
 	| "archived"
 	| "unsupported-in-harness";
@@ -455,8 +457,12 @@ export interface DiscoverySearchResult {
 	"obs:supportedHarnesses"?: string[];
 	"obs:availability"?: DiscoveryAvailability;
 	"obs:activatable"?: boolean;
+	/** Can take a delegated task right now (approved agent with a headless harness, or remote A2A agent). */
+	"obs:delegable"?: boolean;
 	"obs:artifactDigest"?: string | null;
 	"obs:publisher"?: string;
+	/** Organization named on a remote A2A agent's card, as the card states it. */
+	"obs:provider"?: string;
 }
 
 export interface DiscoverySearchResponse {

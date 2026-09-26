@@ -1,10 +1,11 @@
 ---
 # SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
+<!-- SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com> -->
 # SPDX-License-Identifier: Apache-2.0
 name: observal-registry
 command: observal
-description: "Searches, recommends, bulk-submits, installs, edits, versions, archives, restores, transfers, and manages co-authors for Observal MCP servers, skills, hooks, prompts, and sandboxes. Use when the user wants to find components, publish one or many they control, install them into a harness, or manage their lifecycle."
-version: 2.4.0
+description: "Searches, recommends, bulk-submits, installs, edits, versions, archives, restores, transfers, and manages co-authors for Observal MCP servers, skills, hooks, prompts, sandboxes, and registered remote A2A agents. Use when the user wants to find components, publish one or many they control, install them into a harness, or manage their lifecycle."
+version: 2.5.0
 owner: observal
 ---
 
@@ -28,7 +29,7 @@ owner: observal
 | User intent | Read |
 | --- | --- |
 | Find, inspect, recommend, or install components | [Discovery and installation](references/discovery-and-installation.md) |
-| Submit one component or a mixed bulk file | [Component submission](references/component-submission.md) |
+| Submit one component or a mixed bulk file, or register a remote A2A agent | [Component submission](references/component-submission.md) |
 | Edit, version, archive, restore, transfer, or manage co-authors | [Registry lifecycle](references/registry-lifecycle.md) |
 
 Read only the selected reference, and read it completely before executing.
