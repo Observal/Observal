@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Observal Contributors
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Focused coverage for the CLI lockfile store."""
@@ -7,9 +8,11 @@ from __future__ import annotations
 
 import builtins
 import hashlib
+import importlib
 import json
 import os
 import stat
+import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
@@ -257,6 +260,7 @@ def test_v1_migration_noops_for_missing_or_current_files(isolated_lockfile):
     assert isolated_lockfile.path.read_bytes() == before
 
 
+@pytest.mark.skipif(lockfile.fcntl is None, reason="flock is POSIX-only")
 def test_write_is_atomic_locked_and_respects_restrictive_umask(isolated_lockfile, monkeypatch):
     data = {"registries": {}}
     operations: list[int] = []
@@ -286,6 +290,7 @@ def test_write_is_atomic_locked_and_respects_restrictive_umask(isolated_lockfile
     assert stat.S_IMODE(isolated_lockfile.lock_path.stat().st_mode) == 0o600
 
 
+@pytest.mark.skipif(lockfile.fcntl is None, reason="flock is POSIX-only")
 def test_failed_temporary_write_is_cleaned_and_releases_lock(isolated_lockfile, monkeypatch):
     isolated_lockfile.path.parent.mkdir(parents=True)
     isolated_lockfile.path.write_text("original\n", encoding="utf-8")
@@ -316,6 +321,43 @@ def test_failed_temporary_write_is_cleaned_and_releases_lock(isolated_lockfile, 
 
     lockfile.write_lockfile({"registries": {}})
     assert raw_lockfile(isolated_lockfile)["lock_version"] == 2
+
+
+class FakeMsvcrt:
+    LK_LOCK = 1
+    LK_UNLCK = 0
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[int, int]] = []
+
+    def locking(self, fd: int, mode: int, nbytes: int) -> None:
+        assert nbytes == 1
+        self.calls.append((mode, os.fstat(fd).st_size))
+
+
+def test_write_locks_with_msvcrt_where_fcntl_is_missing(isolated_lockfile, monkeypatch):
+    fake = FakeMsvcrt()
+    monkeypatch.setattr(lockfile, "fcntl", None)
+    monkeypatch.setattr(lockfile, "msvcrt", fake)
+
+    lockfile.write_lockfile({"registries": {}})
+
+    assert [mode for mode, _ in fake.calls] == [FakeMsvcrt.LK_LOCK, FakeMsvcrt.LK_UNLCK]
+    assert raw_lockfile(isolated_lockfile)["lock_version"] == 2
+
+
+def test_module_imports_without_fcntl(monkeypatch):
+    # Windows has no fcntl; importing the CLI must not fail there.
+    fake = FakeMsvcrt()
+    monkeypatch.setitem(sys.modules, "fcntl", None)
+    monkeypatch.setitem(sys.modules, "msvcrt", fake)
+    try:
+        reloaded = importlib.reload(lockfile)
+        assert reloaded.fcntl is None and reloaded.msvcrt is fake
+    finally:
+        monkeypatch.undo()
+        importlib.reload(lockfile)
+    assert lockfile.fcntl is not None or sys.platform == "win32"
 
 
 def test_failed_atomic_replace_keeps_original_and_removes_temporary(isolated_lockfile, monkeypatch):
@@ -365,6 +407,7 @@ def test_write_propagates_parent_and_lock_file_failures(isolated_lockfile, monke
     assert not isolated_lockfile.path.with_suffix(".tmp").exists()
 
 
+@pytest.mark.skipif(lockfile.fcntl is None, reason="flock is POSIX-only")
 def test_concurrent_writes_are_serialized_by_the_lock(isolated_lockfile, monkeypatch):
     first_inside_write = threading.Event()
     release_first = threading.Event()
