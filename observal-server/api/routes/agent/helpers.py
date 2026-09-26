@@ -99,6 +99,7 @@ def _agent_to_response(
     agent: Agent,
     name_map: dict[str, str] | None = None,
     *,
+    target_version: AgentVersion | None = None,
     created_by_email: str = "",
     created_by_username: str | None = None,
     user_permission: str | None = None,
@@ -108,8 +109,10 @@ def _agent_to_response(
     name_map = name_map or {}
     status_map = status_map or {}
     identity_map = identity_map or {}
+    version_components = target_version.components if target_version is not None else agent.components
+
     # Build mcp_links from components with component_type='mcp' (backwards compat)
-    mcp_components = [c for c in agent.components if c.component_type == "mcp"]
+    mcp_components = [c for c in version_components if c.component_type == "mcp"]
     mcp_links = [
         McpLinkResponse(
             mcp_listing_id=comp.component_id,
@@ -120,7 +123,7 @@ def _agent_to_response(
     ]
     # Build full component_links for all types
     component_links = []
-    for comp in agent.components:
+    for comp in version_components:
         component_id = str(comp.component_id)
         identity = identity_map.get(component_id)
         component_links.append(
@@ -155,9 +158,19 @@ def _agent_to_response(
         "visibility",
         "success_criteria",
     ):
-        agent_dict[field] = getattr(agent, field)
+        if target_version is not None and hasattr(target_version, field):
+            agent_dict[field] = getattr(target_version, field)
+        else:
+            agent_dict[field] = getattr(agent, field)
+    raw_lock_snapshot = (
+        getattr(target_version, "lock_snapshot", None)
+        if target_version is not None
+        else getattr(getattr(agent, "latest_version", None), "lock_snapshot", None)
+    )
+    agent_dict["lock_snapshot"] = raw_lock_snapshot if isinstance(raw_lock_snapshot, str) else None
     if not isinstance(agent_dict.get("models_by_harness"), dict):
         agent_dict["models_by_harness"] = {}
+
     if not isinstance(agent_dict.get("team_id"), uuid.UUID):
         agent_dict["team_id"] = None
     if agent_dict.get("visibility") not in ("public", "team"):

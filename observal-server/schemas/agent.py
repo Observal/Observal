@@ -82,6 +82,7 @@ class ComponentRef(BaseModel):
     component_type: ComponentType
     component_id: uuid.UUID
     config_override: dict | None = None
+    version: str | None = None
 
 
 class AgentCreateRequest(BaseModel):
@@ -219,6 +220,7 @@ class AgentResponse(BaseModel):
     user_permission: str | None = None
     latest_approved_version: str | None = None
     latest_version: str | None = None
+    lock_snapshot: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -301,7 +303,9 @@ class AgentVersionCreateRequest(BaseModel):
     supported_harnesses: list[str] = []
     components: list[ComponentRef] = []
     yaml_snapshot: str | None = None
+    lock_snapshot: str | None = None
     is_prerelease: bool = False
+
     save_as_draft: bool = False
     success_criteria: SuccessCriteria | None = None
 

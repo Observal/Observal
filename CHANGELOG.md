@@ -9,7 +9,11 @@
 
 # Changelog
 
-All notable changes to this project will be documented in this file.
+## [Unreleased]
+
+### Features
+
+- component version pinning and lock file support for reproducible agent installs ([#1705](https://github.com/Observal/Observal/pull/1705))
 
 ## [1.13.1] - 2026-09-05
 

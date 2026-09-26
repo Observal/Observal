@@ -13,12 +13,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import apply_publish_scope, apply_visibility_filter
-from models.agent import Agent
-from models.hook import HookListing
-from models.mcp import ListingStatus, McpListing
-from models.prompt import PromptListing
-from models.sandbox import SandboxListing
-from models.skill import SkillListing
+from models.agent import Agent, AgentVersion
+from models.hook import HookListing, HookVersion
+from models.mcp import ListingStatus, McpListing, McpVersion
+from models.prompt import PromptListing, PromptVersion
+from models.sandbox import SandboxListing, SandboxVersion
+from models.skill import SkillListing, SkillVersion
 from services.shared.utils import registry_item_slug
 
 ComponentType = Literal["mcp", "skill", "hook", "prompt", "sandbox"]
@@ -31,6 +31,53 @@ _LISTING_MODELS: dict[str, type] = {
     "prompt": PromptListing,
     "sandbox": SandboxListing,
 }
+
+_VERSION_MODELS: dict[str, type] = {
+    "mcp": McpVersion,
+    "skill": SkillVersion,
+    "hook": HookVersion,
+    "prompt": PromptVersion,
+    "sandbox": SandboxVersion,
+}
+
+
+class _VersionedListing:
+    """Proxy around a component listing that overrides version-dependent properties
+    with a specific pinned version while preserving listing-level identity attributes.
+    """
+
+    _listing_identity_attrs = {
+        "id",
+        "name",
+        "namespace",
+        "slug",
+        "category",
+        "owner",
+        "team_id",
+        "is_private",
+        "bundle_id",
+        "submitted_by",
+        "co_authors",
+        "created_at",
+        "updated_at",
+        "validation_results",
+        "versions",
+        "qualified_name",
+        "visibility",
+    }
+
+    def __init__(self, listing, version):
+        self._listing = listing
+        self._version = version
+
+    def __getattr__(self, name):
+        if name == "latest_version":
+            return self._version
+        if name in self._listing_identity_attrs:
+            return getattr(self._listing, name)
+        if hasattr(self._version, name):
+            return getattr(self._version, name)
+        return getattr(self._listing, name)
 
 
 class ResolvedComponent(BaseModel):
@@ -147,6 +194,7 @@ async def resolve_agent(
     *,
     require_approved: bool = True,
     current_user=None,
+    target_version: AgentVersion | None = None,
 ) -> ResolvedAgent:
     """Resolve all components for an agent.
 
@@ -161,9 +209,11 @@ async def resolve_agent(
     components: list[ResolvedComponent] = []
     errors: list[ResolutionError] = []
 
+    comps_list = list(target_version.components if target_version is not None else (agent.components or []))
+
     # Group components by type for batched lookups (max 5 queries total)
     by_type: dict[str, list] = {}
-    for comp in agent.components:
+    for comp in comps_list:
         model = _LISTING_MODELS.get(comp.component_type)
         if model is None:
             errors.append(
@@ -190,7 +240,7 @@ async def resolve_agent(
             found[listing.id] = listing
 
     # Process in original order to preserve deterministic output
-    for comp in agent.components:
+    for comp in comps_list:
         if comp.component_type not in _LISTING_MODELS:
             continue  # Already recorded as error above
 
@@ -205,12 +255,47 @@ async def resolve_agent(
             )
             continue
 
-        if require_approved and listing.status != ListingStatus.approved:
+        resolved_version = getattr(comp, "resolved_version", None)
+        effective_listing = listing
+
+        if (
+            isinstance(resolved_version, str)
+            and resolved_version
+            and resolved_version != "latest"
+            and resolved_version != getattr(listing, "version", None)
+        ):
+            vmodel = _VERSION_MODELS.get(comp.component_type)
+
+            pinned = None
+            if vmodel is not None:
+                pinned = (
+                    await db.execute(
+                        select(vmodel).where(
+                            vmodel.listing_id == comp.component_id,
+                            vmodel.version == resolved_version,
+                        )
+                    )
+                ).scalar_one_or_none()
+            if not pinned:
+                errors.append(
+                    ResolutionError(
+                        component_type=comp.component_type,
+                        component_id=comp.component_id,
+                        reason=f"{comp.component_type} '{listing.name}' version '{resolved_version}' not found",
+                    )
+                )
+                continue
+            effective_listing = _VersionedListing(listing, pinned)
+
+        effective_status = getattr(effective_listing, "status", None)
+        if require_approved and effective_status != ListingStatus.approved:
+            status_str = effective_status.value if hasattr(effective_status, "value") else str(effective_status)
+            ver_label = f" version '{resolved_version}'" if resolved_version and resolved_version != "latest" else ""
             errors.append(
                 ResolutionError(
                     component_type=comp.component_type,
                     component_id=comp.component_id,
-                    reason=f"{comp.component_type} '{listing.name}' is not approved (status: {listing.status.value})",
+                    reason=f"{comp.component_type} '{listing.name}'{ver_label} is not approved (status: {status_str})",
                 )
             )
             continue
@@ -219,27 +304,39 @@ async def resolve_agent(
             ResolvedComponent(
                 component_type=comp.component_type,
                 component_id=comp.component_id,
-                name=registry_item_slug(listing),
-                version=listing.version,
-                git_url=getattr(listing, "git_url", None),
-                git_ref=getattr(listing, "git_ref", None),
-                description=listing.description,
+                name=registry_item_slug(effective_listing),
+                version=getattr(effective_listing, "version", "latest"),
+                git_url=getattr(effective_listing, "git_url", None),
+                git_ref=getattr(effective_listing, "git_ref", None),
+                description=getattr(effective_listing, "description", "") or "",
                 order_index=comp.order_index,
                 config_override=comp.config_override,
-                listing_status=listing.status.value,
-                extra=_extract_extra(listing, comp.component_type),
+                listing_status=effective_status.value if hasattr(effective_status, "value") else str(effective_status),
+                extra=_extract_extra(effective_listing, comp.component_type),
             )
         )
 
-    raw_models_by_harness = getattr(agent, "models_by_harness", None)
+    if target_version is not None:
+        agent_version_str = target_version.version
+        agent_prompt_str = target_version.prompt or ""
+        agent_desc_str = target_version.description or ""
+        agent_model_str = target_version.model_name or ""
+        raw_models_by_harness = getattr(target_version, "models_by_harness", None)
+    else:
+        agent_version_str = agent.version
+        agent_prompt_str = agent.prompt or ""
+        agent_desc_str = agent.description or ""
+        agent_model_str = agent.model_name or ""
+        raw_models_by_harness = getattr(agent, "models_by_harness", None)
+
     models_by_harness = raw_models_by_harness if isinstance(raw_models_by_harness, dict) else {}
     return ResolvedAgent(
         agent_id=agent.id,
         agent_name=registry_item_slug(agent),
-        agent_version=agent.version,
-        agent_prompt=agent.prompt or "",
-        agent_description=agent.description or "",
-        model_name=agent.model_name or "",
+        agent_version=agent_version_str,
+        agent_prompt=agent_prompt_str,
+        agent_description=agent_desc_str,
+        model_name=agent_model_str,
         models_by_harness=models_by_harness,
         components=components,
         errors=errors,
@@ -247,21 +344,43 @@ async def resolve_agent(
 
 
 async def resolve_component_versions(components: list, db: AsyncSession) -> dict[tuple[str, uuid.UUID], str]:
-    """Resolve component refs to the current listing version string."""
+    """Resolve component refs to their pinned version string."""
     by_type: dict[str, list[uuid.UUID]] = {}
+    comp_requested_versions: dict[tuple[str, uuid.UUID], str] = {}
     for comp in components:
-        ctype = getattr(comp, "component_type", None) or comp.get("component_type")
-        cid = getattr(comp, "component_id", None) or comp.get("component_id")
+        ctype = getattr(comp, "component_type", None) or (
+            comp.get("component_type") if isinstance(comp, dict) else None
+        )
+        cid = getattr(comp, "component_id", None) or (comp.get("component_id") if isinstance(comp, dict) else None)
+        cver = getattr(comp, "version", None) or (comp.get("version") if isinstance(comp, dict) else None)
         if ctype in _LISTING_MODELS and cid is not None:
             cid = uuid.UUID(str(cid))
             by_type.setdefault(ctype, []).append(cid)
+            if cver and cver != "latest":
+                comp_requested_versions[(ctype, cid)] = str(cver)
 
     versions: dict[tuple[str, uuid.UUID], str] = {}
     for comp_type, ids in by_type.items():
         model = _LISTING_MODELS[comp_type]
+        vmodel = _VERSION_MODELS[comp_type]
         rows = (await db.execute(select(model).where(model.id.in_(ids)))).scalars().all()
         for listing in rows:
-            versions[(comp_type, listing.id)] = listing.version
+            req_ver = comp_requested_versions.get((comp_type, listing.id))
+            if req_ver:
+                if req_ver == listing.version:
+                    versions[(comp_type, listing.id)] = req_ver
+                else:
+                    exists = (
+                        await db.execute(
+                            select(vmodel.version).where(
+                                vmodel.listing_id == listing.id,
+                                vmodel.version == req_ver,
+                            )
+                        )
+                    ).scalar_one_or_none()
+                    versions[(comp_type, listing.id)] = exists if exists else listing.version
+            else:
+                versions[(comp_type, listing.id)] = listing.version
     return versions
 
 
@@ -276,14 +395,15 @@ async def validate_component_ids(
 ) -> list[ResolutionError]:
     """Validate a list of component references before attaching them to an agent.
 
-    Each dict should have 'component_type' and 'component_id' keys.
+    Each dict or ComponentRef should have 'component_type' and 'component_id' keys/attrs.
     Returns a list of errors (empty if all valid).
     """
     optic.debug("validating {} component references", len(components))
     errors = []
     for ref in components:
-        ctype = ref.get("component_type", "")
-        cid = ref.get("component_id")
+        ctype = ref.get("component_type", "") if isinstance(ref, dict) else getattr(ref, "component_type", "")
+        cid = ref.get("component_id") if isinstance(ref, dict) else getattr(ref, "component_id", None)
+        cver = ref.get("version") if isinstance(ref, dict) else getattr(ref, "version", None)
         if cid is None:
             errors.append(
                 ResolutionError(
@@ -322,7 +442,40 @@ async def validate_component_ids(
             )
             continue
 
-        if require_approved and listing.status != ListingStatus.approved:
+        if isinstance(cver, str) and cver and cver != "latest" and cver != getattr(listing, "version", None):
+            vmodel = _VERSION_MODELS.get(ctype)
+
+            ver_row = None
+            if vmodel is not None:
+                ver_row = (
+                    await db.execute(
+                        select(vmodel).where(
+                            vmodel.listing_id == cid,
+                            vmodel.version == cver,
+                        )
+                    )
+                ).scalar_one_or_none()
+            if ver_row is None:
+                errors.append(
+                    ResolutionError(
+                        component_type=ctype,
+                        component_id=cid,
+                        reason=f"{ctype} '{listing.name}' version '{cver}' not found",
+                    )
+                )
+                continue
+            if require_approved and getattr(ver_row, "status", None) != ListingStatus.approved:
+                status_val = getattr(ver_row, "status", None)
+                status_str = status_val.value if hasattr(status_val, "value") else str(status_val)
+                errors.append(
+                    ResolutionError(
+                        component_type=ctype,
+                        component_id=cid,
+                        reason=f"{ctype} '{listing.name}' version '{cver}' is not approved (status: {status_str})",
+                    )
+                )
+                continue
+        elif require_approved and listing.status != ListingStatus.approved:
             errors.append(
                 ResolutionError(
                     component_type=ctype,

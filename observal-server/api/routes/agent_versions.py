@@ -109,6 +109,7 @@ def _version_to_detail(ver: AgentVersion) -> dict:
             "models_by_harness": ver.models_by_harness or {},
             "external_mcps": ver.external_mcps,
             "yaml_snapshot": ver.yaml_snapshot,
+            "lock_snapshot": ver.lock_snapshot,
             "harness_configs": ver.harness_configs,
             "required_capabilities": ver.required_capabilities,
             "inferred_supported_harnesses": ver.inferred_supported_harnesses,
@@ -336,9 +337,10 @@ async def _create_agent_version(
     # Always build the snapshot from structured fields so caller-provided text
     # cannot drift from the version stored in the database.
     await db.flush()
-    from services.agent_snapshot import build_yaml_snapshot
+    from services.agent_snapshot import build_lock_snapshot, build_yaml_snapshot
 
     ver.yaml_snapshot = await build_yaml_snapshot(ver, db)
+    ver.lock_snapshot = await build_lock_snapshot(ver, db, agent_name=agent.name)
 
     # Pre-generate harness configs at release time (spec: no generation at request time)
     mcp_comp_ids = [c.component_id for c in req.components if c.component_type == "mcp"]

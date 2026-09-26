@@ -245,7 +245,9 @@ def boundaries(monkeypatch):
     monkeypatch.setattr(routes, "generate_agent_config", generate)
     monkeypatch.setattr(routes, "audit", legacy_audit)
     monkeypatch.setattr(snapshot, "build_yaml_snapshot", build_snapshot)
+    monkeypatch.setattr(snapshot, "build_lock_snapshot", AsyncMock(return_value="lock_snapshot"))
     monkeypatch.setattr(model_resolver, "resolve_model_for_harness", resolve_model)
+
     monkeypatch.setattr(routes.inbox, "on_publish", publish)
     monkeypatch.setattr(routes.inbox, "on_review_decided", review)
     monkeypatch.setattr(clickhouse, "insert_audit_log", clickhouse_insert)
