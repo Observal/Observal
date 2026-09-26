@@ -12,6 +12,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Features
+
+- add opt-in, local-only harness inventory to `observal scan`
+
 ## [1.13.1] - 2026-09-05
 
 ### Features
