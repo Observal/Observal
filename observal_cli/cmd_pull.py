@@ -467,7 +467,9 @@ def _rewrite_kiro_agent_profile(content: dict, agent_id: str | None = None) -> d
         if not isinstance(entries, list):
             cleaned_hooks[event] = entries
             continue
-        kept = [h for h in entries if "observal_cli" not in (h or {}).get("command", "")]
+        # A truthy non-dict entry - a bare string, say - would raise on .get and
+        # abort the whole pull. Malformed user entries are left untouched.
+        kept = [h for h in entries if not (isinstance(h, dict) and "observal_cli" in str(h.get("command", "")))]
         if kept:
             cleaned_hooks[event] = kept
 

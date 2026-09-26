@@ -950,14 +950,48 @@ def _cleanup_kiro(dry_run: bool) -> bool:
     return changed
 
 
+def _kiro_hook_dirs() -> set[Path]:
+    """Return every directory ``_patch_kiro`` may write a v1 hooks file into.
+
+    Cleanup has to cover exactly the same set. Patch writes one file per scope -
+    the user scope plus each locked agent's project - so cleaning only the user
+    scope leaves project hooks live and Kiro keeps running Observal commands
+    after an uninstall.
+    """
+    from observal_cli.lockfile import read_registry_lockfile
+
+    dirs: set[Path] = set()
+    user_config_dir = Path.home() / ".kiro"
+    if user_config_dir.is_dir():
+        dirs.add(user_config_dir)
+    try:
+        _, registry = read_registry_lockfile()
+        for agent in registry.get("harnesses", {}).get("kiro", {}).get("agents", []):
+            directory = agent.get("directory")
+            if directory:
+                dirs.add(Path(directory) / ".kiro")
+    except Exception as exc:
+        optic.debug("could not read lockfile for Kiro hook cleanup: {}", exc)
+    return dirs
+
+
 def _cleanup_kiro_hook_files(dry_run: bool) -> bool:
-    """Strip Observal entries from the standalone v1 Kiro hooks file."""
+    """Strip Observal entries from every standalone v1 Kiro hooks file."""
+    changed = False
+    for config_dir in sorted(_kiro_hook_dirs()):
+        if _cleanup_kiro_hook_file(config_dir / "hooks", dry_run):
+            changed = True
+    return changed
+
+
+def _cleanup_kiro_hook_file(hooks_dir: Path, dry_run: bool) -> bool:
+    """Strip Observal entries from one v1 hooks file."""
     from observal_cli.harness_specs.kiro_hooks_spec import (
         KIRO_V1_HOOK_FILENAME,
         is_observal_v1_hook,
     )
 
-    hooks_file = Path.home() / ".kiro" / "hooks" / KIRO_V1_HOOK_FILENAME
+    hooks_file = hooks_dir / KIRO_V1_HOOK_FILENAME
     try:
         data = json.loads(hooks_file.read_text())
     except (json.JSONDecodeError, OSError):
@@ -965,7 +999,9 @@ def _cleanup_kiro_hook_files(dry_run: bool) -> bool:
     if not isinstance(data, dict):
         return False
 
-    entries = data.get("hooks") or []
+    entries = data.get("hooks")
+    if not isinstance(entries, list):
+        return False
     kept = [h for h in entries if not is_observal_v1_hook(h)]
     if len(kept) == len(entries):
         return False

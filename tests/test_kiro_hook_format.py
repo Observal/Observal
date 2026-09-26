@@ -218,3 +218,93 @@ class TestStripIdeHostileFields:
 
         assert strip_ide_hostile_fields(content) == []
         assert content == {"name": "a", "tools": ["*"]}
+
+
+# ── Review follow-ups ─────────────────────────────────────────────
+
+
+def test_cleanup_removes_project_scope_hook_files(tmp_path, monkeypatch):
+    """Patch writes one file per scope, so cleanup has to cover them all.
+
+    Cleaning only the user scope left project hooks live, and Kiro kept running
+    Observal commands after an uninstall.
+    """
+    import json as _json
+
+    from observal_cli import cmd_doctor
+
+    project = tmp_path / "proj"
+    for base in (tmp_path / ".kiro", project / ".kiro"):
+        (base / "hooks").mkdir(parents=True)
+        (base / "hooks" / "observal.json").write_text(
+            _json.dumps(
+                {
+                    "version": "v1",
+                    "hooks": [
+                        {"name": "observal-session-push-stop", "action": {"command": "observal_cli.hooks"}},
+                        {"name": "mine", "action": {"command": "echo hi"}},
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+    monkeypatch.setattr(cmd_doctor.Path, "home", staticmethod(lambda: tmp_path))
+    monkeypatch.setattr(
+        "observal_cli.lockfile.read_registry_lockfile",
+        lambda: (None, {"harnesses": {"kiro": {"agents": [{"directory": str(project)}]}}}),
+    )
+
+    assert cmd_doctor._cleanup_kiro_hook_files(dry_run=False) is True
+
+    for base in (tmp_path / ".kiro", project / ".kiro"):
+        remaining = _json.loads((base / "hooks" / "observal.json").read_text())["hooks"]
+        assert [h["name"] for h in remaining] == ["mine"]
+
+
+def test_detect_hooks_does_not_report_installed_for_an_unreadable_file(tmp_path, monkeypatch):
+    """CLI 2.x with no IDE cannot read the standalone file.
+
+    Reporting "installed" on its presence alone showed a healthy status for a
+    surface that was in fact silent.
+    """
+    import json as _json
+
+    from observal_cli.harness import ensure_loaded, get_adapter
+
+    config_dir = tmp_path / ".kiro"
+    (config_dir / "hooks").mkdir(parents=True)
+    (config_dir / "hooks" / "observal.json").write_text(
+        _json.dumps(
+            {
+                "version": "v1",
+                "hooks": [
+                    {
+                        "name": "observal-session-push-stop",
+                        "trigger": "Stop",
+                        "action": {"type": "command", "command": "python -m observal_cli.hooks.session_push"},
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (config_dir / "agents").mkdir()
+    ensure_loaded()
+    monkeypatch.setattr("observal_cli.harness.kiro.use_inline_hooks", lambda home=None: True)
+    monkeypatch.setattr("observal_cli.harness.kiro.kiro_ide_installed", lambda home=None: False)
+
+    assert get_adapter("kiro").detect_hooks(config_dir) == "missing"
+
+    monkeypatch.setattr("observal_cli.harness.kiro.kiro_ide_installed", lambda home=None: True)
+
+    assert get_adapter("kiro").detect_hooks(config_dir) == "installed"
+
+
+def test_merge_ignores_a_non_list_hooks_value():
+    """Server content on pull, arbitrary JSON on disk in doctor."""
+    from observal_cli.harness_specs.kiro_hooks_spec import merge_kiro_hooks_file
+
+    merged = merge_kiro_hooks_file({"version": "v1", "hooks": {"userPromptSubmit": []}})
+
+    assert all(isinstance(h, dict) for h in merged["hooks"])
+    assert merged["hooks"] == merge_kiro_hooks_file({})["hooks"]

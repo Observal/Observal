@@ -474,8 +474,14 @@ class KiroAdapter(BaseAdapter):
         The standalone ``hooks/observal.json`` file covers every agent on IDE 1.0
         and CLI 3.0, so its presence alone means hooks are installed. Only when
         it is absent do we fall back to counting legacy inline agent hooks.
+
+        A machine on CLI 2.x with no IDE is the exception: nothing there can
+        read the standalone file, so reporting "installed" on its presence
+        alone would show a healthy status for a surface that is in fact silent.
+        Such a machine is judged on its inline hooks instead.
         """
-        if self._v1_hooks_installed(config_dir):
+        v1_readable = not use_inline_hooks() or kiro_ide_installed()
+        if v1_readable and self._v1_hooks_installed(config_dir):
             return "installed"
 
         agents_dir = config_dir / "agents"

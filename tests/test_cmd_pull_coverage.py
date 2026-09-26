@@ -1393,3 +1393,25 @@ def test_pull_rejects_irrelevant_model_refresh_before_http(
     assert "requires the interactive model picker" in result.output
     boundaries.resolve.assert_not_called()
     boundaries.get.assert_not_called()
+
+
+def test_inline_hook_rewrite_survives_a_malformed_entry():
+    """A truthy non-dict entry would raise on .get and abort the whole pull."""
+    from observal_cli.cmd_pull import _rewrite_kiro_agent_profile
+
+    cleaned = _rewrite_kiro_agent_profile(
+        {
+            "hooks": {
+                "userPromptSubmit": [
+                    "a bare string someone hand-edited in",
+                    {"command": "python -m observal_cli.hooks.session_push --harness kiro"},
+                    {"command": "echo mine"},
+                ]
+            }
+        }
+    )
+
+    assert cleaned["hooks"]["userPromptSubmit"][:2] == [
+        "a bare string someone hand-edited in",
+        {"command": "echo mine"},
+    ]
