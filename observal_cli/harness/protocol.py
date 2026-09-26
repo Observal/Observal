@@ -281,6 +281,10 @@ class HarnessAdapter(Protocol):
         """Discover recently modified local session sources."""
         ...
 
+    def should_capture_session(self, source: SessionSource, home: Path | None = None) -> bool:
+        """Return whether a discovered session is in scope for telemetry."""
+        ...
+
     def related_session_sources(self, source: SessionSource, home: Path | None = None) -> list[SessionSource]:
         """Return child/subagent sources associated with a resolved session."""
         ...

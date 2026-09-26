@@ -206,6 +206,156 @@ class KiroAdapter(BaseAdapter):
 
         return sources
 
+    def session_extra_records(
+        self,
+        source: SessionSource,
+        event: dict[str, Any],
+        final: bool,
+        home: Path | None = None,
+    ) -> tuple[str, ...]:
+        """Give a sub-execution the prompt its agent was started with.
+
+        A sub-execution transcript holds only the agent's replies; the
+        instruction it was given lives in the parent's ``sub_agent_start``.
+        Without it the session has no prompt at all, which is not merely a
+        readability problem: the sessions list requires ``prompt_count > 0``,
+        so the agent's work would be delivered and then never shown.
+
+        Shaped as an ordinary IDE ``user`` payload so the existing classifier
+        and parser need no special case to read it.
+        """
+        if source.path is None:
+            return ()
+
+        from observal_cli.sessions.kiro import is_ide_subexecution, read_kiro_ide_subexecution_origin
+
+        if not is_ide_subexecution(source.path):
+            return ()
+
+        # Only on the first delivery. Extra records are appended to the line
+        # stream and take a fresh offset each drain, and deduplication is keyed
+        # on offset - so re-emitting stacks duplicate prompts rather than
+        # replacing them, inflating prompt_count on every hook fire. Once the
+        # cursor has moved past the first delivery the prompt is already
+        # stored. A retry before the cursor advances reuses the same offset and
+        # deduplicates correctly.
+        from observal_cli.sessions.base import read_cursor_state
+
+        delivered_offset, delivered_lines, _finalized = read_cursor_state(source.checkpoint_key, home=home)
+        if delivered_offset or delivered_lines:
+            return ()
+
+        _name, prompt, started_at = read_kiro_ide_subexecution_origin(source.path)
+        if not prompt:
+            return ()
+        record: dict[str, Any] = {
+            "id": f"{source.session_id}-observal-prompt",
+            "payload": {"type": "user", "content": prompt, "_observalSubExecutionPrompt": True},
+        }
+        if started_at:
+            # The moment the agent was asked. Without it the record inherits its
+            # upload time, lands after the reply it prompted, and the session
+            # renders a negative duration.
+            record["timestamp"] = started_at
+        return (json.dumps(record),)
+
+    def should_capture_session(self, source: SessionSource, home: Path | None = None) -> bool:
+        """Return whether this source's content belongs to an Observal agent.
+
+        Kiro is the one harness whose hooks cannot be scoped to an agent: the
+        IDE ignores hooks declared inside an agent profile and only runs a
+        user-scope hooks file, so Observal's hooks fire on every conversation.
+        Scope is therefore decided per source, and fails closed.
+
+        An IDE session started as an agent - picked from the agent dropdown -
+        is captured in full. The whole conversation is that agent's work, it
+        has no sub-execution to fall back on, and the agent's own hooks fire,
+        so this is Kiro's own notion of an agent session rather than anything
+        inferred.
+
+        A plain "vibe" conversation is never captured. It belongs to the user,
+        and a chat that delegates one turn is still overwhelmingly the user's
+        own - capturing it would upload private conversation and attribute its
+        prompts, tokens and cost to the agent. The delegated agent's work is
+        written to a separate sub-execution transcript, which is captured
+        instead and stands alone as that agent's session.
+
+        The CLI is left alone. It declares its hooks inside an agent profile,
+        so a session only ever fires one when it was started against a pulled
+        agent - it is already scoped where it matters, and this decision is not
+        Observal's to second-guess there.
+        """
+        if source.path is None:
+            return False
+
+        from observal_cli.sessions.kiro import (
+            is_ide_subexecution,
+            is_ide_transcript,
+            read_kiro_ide_session_agent,
+            read_kiro_ide_subexecution_origin,
+        )
+
+        if is_ide_subexecution(source.path):
+            name, _prompt, _started = read_kiro_ide_subexecution_origin(source.path)
+            return self._is_registry_agent(name or "", source.cwd)
+
+        if is_ide_transcript(source.path):
+            return self._is_registry_agent(read_kiro_ide_session_agent(source.path) or "", source.cwd)
+
+        return True
+
+    def _is_registry_agent(self, name: str, cwd: str) -> bool:
+        """Return whether a name resolves to an agent this registry still has."""
+        if not name or name == "kiro_default":
+            return False
+        from observal_cli.lockfile import agent_entry_is_registry_backed, get_agent_by_name
+
+        try:
+            entry = get_agent_by_name(name, harness=self.harness_name, directory=cwd or None)
+        except Exception:
+            return False
+        return agent_entry_is_registry_backed(entry)
+
+    def related_session_sources(self, source: SessionSource, home: Path | None = None) -> list[SessionSource]:
+        """Return the IDE's sub-execution transcripts for a parent session.
+
+        When an IDE session delegates, the delegated agent's turns are not
+        written to the parent's messages.jsonl - only the sub_agent_start and
+        sub_agent_complete markers are. The actual assistant output lands in
+        sub-executions/<subExecutionId>.jsonl beside it, so a delegating
+        session's trace is missing the delegate's work until these are read.
+
+        The CLI has no equivalent. Its session directories do exist, but only
+        ever hold a tasks/ directory, and no CLI transcript on record contains
+        a delegation marker - kiro-cli does not delegate, so there is nothing
+        for it to write. The sub-executions/ probe simply never matches.
+        """
+        from observal_cli.sessions.kiro import is_ide_subexecution
+
+        if source.path is None or is_ide_subexecution(source.path):
+            return []
+        sub_dir = source.path.parent / "sub-executions"
+        if not sub_dir.is_dir():
+            return []
+        related: list[SessionSource] = []
+        for path in sorted(sub_dir.glob("*.jsonl")):
+            sub_execution_id = path.stem
+            related.append(
+                SessionSource(
+                    self.harness_name,
+                    sub_execution_id,
+                    path,
+                    cwd=source.cwd,
+                    cursor_key=f"{source.session_id}__sub__{sub_execution_id}",
+                    # Deliberately not parented. The IDE conversation that
+                    # spawned this is never captured, and the sessions list
+                    # only returns rows whose parent_session_id is empty, so a
+                    # child would point at a session that does not exist and be
+                    # filtered out forever. The agent's work stands alone.
+                )
+            )
+        return related
+
     def resolve_session_agent_identity(
         self,
         session_jsonl: Path | None,
@@ -213,9 +363,26 @@ class KiroAdapter(BaseAdapter):
     ) -> tuple[str | None, str | None] | None:
         """Resolve Kiro identity from session metadata, never the global hook environment."""
         from observal_cli.lockfile import agent_entry_is_registry_backed, get_agent_by_name
-        from observal_cli.sessions.kiro import read_kiro_agent_name
+        from observal_cli.sessions.kiro import (
+            is_ide_subexecution,
+            is_ide_transcript,
+            read_kiro_agent_name,
+            read_kiro_ide_session_agent,
+            read_kiro_ide_subexecution_origin,
+        )
 
-        agent_name = read_kiro_agent_name(session_jsonl)
+        if session_jsonl is not None and is_ide_subexecution(session_jsonl):
+            # A sub-execution holds only the agent's output; the agent it ran
+            # as is recorded in the parent conversation that started it.
+            agent_name, _prompt, _started = read_kiro_ide_subexecution_origin(session_jsonl)
+        else:
+            # A session started as an agent names it directly and has no
+            # sub_agent_start, so that is checked before the delegation record.
+            agent_name = None
+            if session_jsonl is not None and is_ide_transcript(session_jsonl):
+                agent_name = read_kiro_ide_session_agent(session_jsonl)
+            if not agent_name:
+                agent_name = read_kiro_agent_name(session_jsonl)
         if not agent_name or agent_name == "kiro_default":
             return None, None
         try:
