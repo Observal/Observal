@@ -30,8 +30,9 @@ from rich import print as rprint
 
 from observal_cli import client, config
 from observal_cli.constants import VALID_HARNESSES
-from observal_cli.errors import ErrorCategory, fail
+from observal_cli.errors import CliError, ErrorCategory, fail
 from observal_cli.harness import ensure_loaded, get_adapter
+from observal_cli.project_lock import PROJECT_LOCK_FILE
 from observal_cli.prompts import password_input, select_one
 from observal_cli.render import OutputMode, esc, output_json, spinner
 from observal_shared.harness_registry import get_scope_aware_harnesses
@@ -42,7 +43,12 @@ _HOOK_SCRIPT_NAMES = ("observal-hook.sh", "observal-stop-hook.sh")
 
 
 def _component_conflicts(harness: str, agent_name: str, components: list[dict]) -> list[str]:
-    """Return installed component version conflicts for the incoming agent."""
+    """Return installed component version conflicts for the incoming agent.
+
+    Two agents in the same harness that pin different versions of one component
+    write the same files, so the last pull wins. Components are matched by
+    registry id; entries recorded before ids were stored fall back to the name.
+    """
     from observal_cli.lockfile import read_registry_lockfile
 
     try:
@@ -59,27 +65,28 @@ def _component_conflicts(harness: str, agent_name: str, components: list[dict]) 
     harness_section = registry.get("harnesses", {}).get(harness, {})
     other_agents = harness_section.get("agents", [])
 
+    def key(component: dict) -> str:
+        return component.get("id") or component.get("name", "")
+
     existing: dict[str, list[tuple[str, str]]] = {}
     for other in other_agents:
         if other.get("name") == agent_name:
             continue
         for component in other.get("components", []):
-            component_name = component.get("name", "")
             component_version = component.get("version")
-            if component_name and component_version:
-                existing.setdefault(component_name, []).append((component_version, other.get("name", "?")))
+            if key(component) and component_version:
+                existing.setdefault(key(component), []).append((component_version, other.get("name", "?")))
 
     conflicts: list[str] = []
     for component in components:
-        component_name = component.get("name", "")
         component_version = component.get("version")
-        if not component_name or not component_version:
+        if not key(component) or not component_version:
             continue
-        for existing_version, existing_agent in existing.get(component_name, []):
+        for existing_version, existing_agent in existing.get(key(component), []):
             if existing_version != component_version:
                 conflicts.append(
-                    f"{component.get('type', 'component')} {component_name}: v{component_version} "
-                    f"(this agent) vs v{existing_version} (from {existing_agent})"
+                    f"{component.get('type', 'component')} {component.get('name') or key(component)}: "
+                    f"v{component_version} (this agent) vs v{existing_version} (from {existing_agent})"
                 )
     return conflicts
 
@@ -114,8 +121,52 @@ def _resolve_hook_paths(content: str) -> str:
     return content
 
 
+def _mcp_components(agent_detail: dict) -> list[tuple[str, str, str | None]]:
+    """(listing id, display name, pinned version) for each MCP an agent version uses."""
+    mcps: list[tuple[str, str, str | None]] = []
+    for link in agent_detail.get("mcp_links", []):
+        mcps.append((str(link["mcp_listing_id"]), link.get("mcp_name", ""), None))
+    for link in agent_detail.get("component_links", []):
+        if link.get("component_type") != "mcp":
+            continue
+        cid = str(link["component_id"])
+        pinned = link.get("version_ref") or link.get("resolved_version")
+        pinned = pinned if pinned and pinned != "latest" else None
+        known = next((index for index, (mid, _name, _version) in enumerate(mcps) if mid == cid), None)
+        if known is None:
+            mcps.append((cid, link.get("component_name", ""), pinned))
+        elif pinned:
+            mcps[known] = (cid, mcps[known][1], pinned)
+    return mcps
+
+
+def _mcp_spec(listing_id: str, version: str | None, cache: dict | None) -> dict:
+    """The MCP definition an install will use: the pinned version when there is one."""
+    cache_key = (listing_id, version)
+    if cache is not None and cache_key in cache:
+        return cache[cache_key]
+    spec = None
+    if version:
+        try:
+            spec = client.get(f"/api/v1/mcps/{listing_id}/versions/{version}")
+        except CliError as error:
+            # An unapproved pinned release is hidden from non-owners; its install
+            # still falls back to the listing, so read the listing too.
+            if error.category is not ErrorCategory.NOT_FOUND:
+                raise
+    if spec is None:
+        spec = client.get(f"/api/v1/mcps/{listing_id}")
+    if cache is not None:
+        cache[cache_key] = spec
+    return spec
+
+
 def _collect_mcp_env_vars(
-    agent_detail: dict, *, no_prompt: bool = False, env_overrides: dict[str, str] | None = None
+    agent_detail: dict,
+    *,
+    no_prompt: bool = False,
+    env_overrides: dict[str, str] | None = None,
+    spec_cache: dict | None = None,
 ) -> dict[str, dict[str, str]]:
     """Discover MCP env vars from agent components and prompt the user for values.
 
@@ -128,23 +179,13 @@ def _collect_mcp_env_vars(
     env_values: dict[str, dict[str, str]] = {}
     _overrides = env_overrides or {}
 
-    # Collect MCP component IDs from both mcp_links and component_links
-    mcp_ids: list[tuple[str, str]] = []  # (listing_id, display_name)
-    for link in agent_detail.get("mcp_links", []):
-        mcp_ids.append((str(link["mcp_listing_id"]), link.get("mcp_name", "")))
-    for link in agent_detail.get("component_links", []):
-        if link.get("component_type") == "mcp":
-            cid = str(link["component_id"])
-            # Avoid duplicates if already in mcp_links
-            if not any(mid == cid for mid, _ in mcp_ids):
-                mcp_ids.append((cid, link.get("component_name", "")))
-
+    mcp_ids = _mcp_components(agent_detail)
     if not mcp_ids:
         return env_values
 
-    # Fetch each MCP listing to get its environment_variables
-    for listing_id, display_name in mcp_ids:
-        listing = client.get(f"/api/v1/mcps/{listing_id}")
+    # Read each MCP's environment variables from the version the agent pins
+    for listing_id, display_name, pinned in mcp_ids:
+        listing = _mcp_spec(listing_id, pinned, spec_cache)
 
         ev_list = listing.get("environment_variables") or []
         if not ev_list:
@@ -192,7 +233,11 @@ def _collect_mcp_env_vars(
 
 
 def _collect_mcp_headers(
-    agent_detail: dict, *, no_prompt: bool = False, header_overrides: dict[str, str] | None = None
+    agent_detail: dict,
+    *,
+    no_prompt: bool = False,
+    header_overrides: dict[str, str] | None = None,
+    spec_cache: dict | None = None,
 ) -> dict[str, dict[str, str]]:
     """Discover MCP headers from agent components and prompt the user for values.
 
@@ -204,21 +249,12 @@ def _collect_mcp_headers(
     header_values: dict[str, dict[str, str]] = {}
     _overrides = header_overrides or {}
 
-    # Collect MCP component IDs from both mcp_links and component_links
-    mcp_ids: list[tuple[str, str]] = []
-    for link in agent_detail.get("mcp_links", []):
-        mcp_ids.append((str(link["mcp_listing_id"]), link.get("mcp_name", "")))
-    for link in agent_detail.get("component_links", []):
-        if link.get("component_type") == "mcp":
-            cid = str(link["component_id"])
-            if not any(mid == cid for mid, _ in mcp_ids):
-                mcp_ids.append((cid, link.get("component_name", "")))
-
+    mcp_ids = _mcp_components(agent_detail)
     if not mcp_ids:
         return header_values
 
-    for listing_id, display_name in mcp_ids:
-        listing = client.get(f"/api/v1/mcps/{listing_id}")
+    for listing_id, display_name, pinned in mcp_ids:
+        listing = _mcp_spec(listing_id, pinned, spec_cache)
 
         header_list = listing.get("headers") or []
         if not header_list:
@@ -376,7 +412,13 @@ def _write_file(path: Path, content: str | dict, *, merge_mcp: bool = False) -> 
     existed = path.exists()
 
     if isinstance(content, dict):
-        root_key = next(iter(content.keys())) if content else "mcpServers"
+        # The merged section is the first mapping (mcpServers, hooks, ...). Configs
+        # such as Cursor's hooks.json start with a scalar ("version": 1), which
+        # must not be mistaken for the section.
+        root_key = next(
+            (key for key, value in content.items() if isinstance(value, dict)),
+            next(iter(content), "mcpServers"),
+        )
         if path.suffix == ".toml":
             toml_str = _dict_to_toml(content)
             if existed and merge_mcp:
@@ -405,6 +447,9 @@ def _write_file(path: Path, content: str | dict, *, merge_mcp: bool = False) -> 
                 if not isinstance(section, dict) or not isinstance(incoming_servers, dict):
                     raise ValueError(f"cannot merge non-object JSON section {root_key}: {path}")
                 section.update(incoming_servers)
+                for key, value in content.items():
+                    if key != root_key and not isinstance(value, dict):
+                        existing[key] = value
                 _atomic_write_text(path, json.dumps(existing, indent=2) + "\n")
                 return "merged"
             _atomic_write_text(path, json.dumps(content, indent=2) + "\n")
@@ -530,6 +575,123 @@ def _resolve_path(raw_path: str, target_dir: Path, *, allow_home: bool = False) 
 
 # harnesses that support a project vs user install scope (derived from registry)
 _SCOPE_AWARE_HARNESSES = get_scope_aware_harnesses()
+
+
+_TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
+
+
+def _strict_mode(flag: bool | None) -> bool:
+    """--strict/--no-strict wins; otherwise OBSERVAL_STRICT decides (for CI)."""
+    import os
+
+    if flag is not None:
+        return flag
+    return os.environ.get("OBSERVAL_STRICT", "").strip().lower() in _TRUE_VALUES
+
+
+def _project_locked_agent(directory: Path, qualified_name: str, agent_id: str | None = None) -> dict | None:
+    from observal_cli import project_lock
+
+    try:
+        return project_lock.locked_agent(directory, qualified_name, agent_id)
+    except project_lock.ProjectLockError as error:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"{PROJECT_LOCK_FILE} in {directory} cannot be used.",
+            operation="Pull agent",
+            resource=str(directory / PROJECT_LOCK_FILE),
+            remediation="Fix or restore the file from version control, then retry.",
+            detail=repr(error),
+        )
+
+
+def _installed_agent(harness: str, agent_id: str, options: dict, directory: Path) -> dict | None:
+    from observal_cli.lockfile import installed_agent
+
+    try:
+        return installed_agent(harness, agent_id, scope=options.get("scope", "project"), directory=str(directory))
+    except (OSError, RuntimeError) as error:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            "Could not read the local installation lockfile.",
+            operation="Pull agent",
+            resource="Observal lockfile",
+            remediation="Repair or remove the malformed lockfile, then retry.",
+            detail=repr(error),
+        )
+
+
+def _locked_version_detail(
+    agent_ref: str, version: str, resolved_from: str, *, qualified_name: str, directory: Path
+) -> dict:
+    """Fetch the agent version a pull will install.
+
+    When that version came from a lock rather than from --version, a missing
+    version means the lock is stale (or was written against another server), so
+    say where it came from and how to move on instead of a bare "not found".
+    """
+    try:
+        return client.get(f"/api/v1/agents/{agent_ref}/versions/{version}")
+    except CliError as error:
+        if error.category is not ErrorCategory.NOT_FOUND or resolved_from not in ("project-lock", "installed"):
+            raise
+        source = (
+            str(directory / PROJECT_LOCK_FILE)
+            if resolved_from == "project-lock"
+            else "this machine's Observal lockfile"
+        )
+        fail(
+            ErrorCategory.NOT_FOUND,
+            f"{source} pins agent {qualified_name} to version {version}, which is not available on this server.",
+            operation="Pull agent",
+            resource=f"{qualified_name}@{version}",
+            remediation=(
+                "Pull with --upgrade to install the latest approved version, or --version to choose one; "
+                "either updates the lock."
+            ),
+            request_id=error.request_id,
+            http_status=error.http_status,
+        )
+
+
+def _target_version(
+    *, requested: str | None, upgrade: bool, project_locked: dict | None, installed: dict | None
+) -> tuple[str | None, str]:
+    """The agent version a pull installs, and why. None means the latest approved."""
+    if requested:
+        return requested, "requested"
+    if upgrade:
+        return None, "upgrade"
+    if project_locked and project_locked.get("version"):
+        return str(project_locked["version"]), "project-lock"
+    if installed and installed.get("version"):
+        return str(installed["version"]), "installed"
+    return None, "latest"
+
+
+def _installed_components(lock: dict, planned: list[dict]) -> list[dict]:
+    """Lockfile component entries from the server's install lock.
+
+    Falls back to the planned components when the server returned no lock.
+    """
+    names = {component["id"]: component.get("name", "") for component in planned}
+    entries = lock.get("components")
+    if not isinstance(entries, list):
+        return planned
+    return [
+        {
+            "type": entry.get("type", "unknown"),
+            "name": names.get(str(entry.get("id")), "") or entry.get("qualified_name", ""),
+            "id": str(entry.get("id", "")),
+            "version": entry.get("version"),
+            "version_id": entry.get("version_id"),
+            "digest": entry.get("digest"),
+            "qualified_name": entry.get("qualified_name"),
+            "source": entry.get("source"),
+        }
+        for entry in entries
+        if isinstance(entry, dict)
+    ]
 
 
 def _progress(output: OutputMode | str, message: str | None = None):
@@ -769,6 +931,19 @@ def register_pull(app: typer.Typer):
         version: str | None = typer.Option(
             None, "--version", "-V", help="Install a specific version (e.g. '1.2.0'). Defaults to latest."
         ),
+        upgrade: bool = typer.Option(
+            False,
+            "--upgrade",
+            help="Install the latest approved agent version instead of the one already locked here",
+        ),
+        strict: bool | None = typer.Option(
+            None,
+            "--strict/--no-strict",
+            help=(
+                "Refuse to install unless every component matches the agent version's lock. "
+                "Defaults to the OBSERVAL_STRICT environment variable."
+            ),
+        ),
         output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
     ):
         """Fetch agent config and write harness files to disk.
@@ -777,6 +952,17 @@ def register_pull(app: typer.Typer):
         then writes rules files, MCP configs, and agent files into the target
         directory.  Use --dry-run to preview without writing.
 
+        Pulls are pinned. The first pull installs the latest approved agent
+        version and records it in observal.lock in the project directory
+        (commit it) and in this machine's lockfile. Later pulls, by anyone in
+        that project, install the same agent version even after newer ones are
+        approved. Move it deliberately with --upgrade or --version.
+
+        Every component is installed at the exact version that agent version
+        pinned. Components without a lock (agents released before pinning) fall
+        back to their latest version with a warning; use --strict, or set
+        OBSERVAL_STRICT=1, to refuse instead. The flag wins over the variable.
+
         Use --env KEY=VALUE and --header Header-Name=value only for non-secret
         settings because command arguments are visible to other processes. For
         credentials, omit --no-prompt and enter values interactively. When
@@ -784,8 +970,8 @@ def register_pull(app: typer.Typer):
 
         Examples:
           observal agent pull my-agent --harness claude-code --no-prompt
-          observal agent pull my-agent --harness claude-code --version 1.2.0
-          observal agent pull my-agent --harness cursor --no-prompt --dry-run
+          observal agent pull my-agent --harness claude-code --no-prompt --upgrade
+          observal agent pull my-agent --harness cursor --version 1.2.0 --strict
         """
         if output == "json" and not no_prompt:
             fail(
@@ -796,6 +982,14 @@ def register_pull(app: typer.Typer):
                 remediation="Add --no-prompt only when no secret values are required; otherwise use interactive table mode.",
             )
         harness, scope, version = _validate_pull_inputs(harness, scope, version)
+        if upgrade and version:
+            fail(
+                ErrorCategory.VALIDATION,
+                "--upgrade and --version cannot be combined.",
+                operation="Pull agent",
+                resource="agent version",
+                remediation="Use --version to install one version, or --upgrade for the latest approved one.",
+            )
         env_overrides = _parse_assignments(env, "environment variable")
         header_overrides = _parse_assignments(header, "header")
         model_default, model_overrides = _parse_model_overrides(model or [])
@@ -840,14 +1034,10 @@ def register_pull(app: typer.Typer):
         ensure_loaded()
         adapter = get_adapter(harness)
 
-        # Fetch agent details to discover MCP env vars
+        strict = _strict_mode(strict)
+
         with _progress(output, "Fetching agent details..."):
             agent_detail = client.get(f"/api/v1/agents/{resolved}")
-
-        env_values = _collect_mcp_env_vars(agent_detail, no_prompt=no_prompt, env_overrides=env_overrides or None)
-        header_values = _collect_mcp_headers(
-            agent_detail, no_prompt=no_prompt, header_overrides=header_overrides or None
-        )
 
         if output != "json":
             rprint(f"\n[bold]Install options for [cyan]{esc(harness)}[/cyan]:[/bold]")
@@ -869,6 +1059,49 @@ def register_pull(app: typer.Typer):
         is_user_scope = options.get("scope") == "user"
         if is_user_scope and output != "json":
             rprint("  [dim]Files will be written to your home directory (user scope).[/dim]")
+
+        # Which agent version to install: an explicit --version, the latest with
+        # --upgrade, otherwise whatever this project (observal.lock) or this
+        # machine (lockfile.json) already installed. Only a first install, or a
+        # deliberate --upgrade, picks up a newly approved version.
+        qualified_name = agent_detail.get("qualified_name") or (
+            f"{agent_detail.get('namespace', '')}/{agent_detail.get('slug') or agent_detail.get('name', '')}"
+        )
+        agent_uuid = str(agent_detail.get("id", resolved))
+        locked_entry = None if is_user_scope else _project_locked_agent(target_dir, qualified_name, agent_uuid)
+        version, resolved_from = _target_version(
+            requested=version,
+            upgrade=upgrade,
+            project_locked=locked_entry,
+            installed=_installed_agent(harness, agent_uuid, options, target_dir),
+        )
+
+        # MCP env vars and headers come from the versions that will be installed
+        plan = agent_detail
+        if version:
+            with _progress(output, f"Fetching agent version {version}..."):
+                version_detail = _locked_version_detail(
+                    resolved, version, resolved_from, qualified_name=qualified_name, directory=target_dir
+                )
+            plan = {
+                "component_links": [
+                    {
+                        "component_type": component.get("component_type"),
+                        "component_id": component.get("component_id"),
+                        "component_name": component.get("name", ""),
+                        "version_ref": component.get("resolved_version"),
+                    }
+                    for component in version_detail.get("components", [])
+                ]
+            }
+
+        spec_cache: dict = {}
+        env_values = _collect_mcp_env_vars(
+            plan, no_prompt=no_prompt, env_overrides=env_overrides or None, spec_cache=spec_cache
+        )
+        header_values = _collect_mcp_headers(
+            plan, no_prompt=no_prompt, header_overrides=header_overrides or None, spec_cache=spec_cache
+        )
 
         from observal_cli.lockfile import local_registry_name
 
@@ -894,19 +1127,19 @@ def register_pull(app: typer.Typer):
             )
         options["local_name"] = local_name
 
-        lock_components = [
+        planned_components = [
             {
                 "type": link.get("component_type", "unknown"),
                 "name": link.get("component_name", ""),
                 "id": str(link.get("component_id", "")),
                 "version": link.get("version_ref"),
             }
-            for link in agent_detail.get("component_links", [])
+            for link in plan.get("component_links", [])
         ]
         conflict_warnings = _component_conflicts(
             harness,
             agent_name=agent_detail.get("name", resolved),
-            components=lock_components,
+            components=planned_components,
         )
 
         with _progress(output, f"Pulling {harness} config for agent {resolved[:8]}..."):
@@ -919,10 +1152,48 @@ def register_pull(app: typer.Typer):
             }
             if version:
                 install_body["version"] = version
+            if strict:
+                install_body["strict"] = True
             result = client.post_public(
                 f"/api/v1/agents/{resolved}/install",
                 install_body,
             )
+
+        if strict and not isinstance(result.get("lock"), dict):
+            # A server that predates component locks ignores the strict flag, so
+            # nothing was checked. Refuse before any file is written.
+            fail(
+                ErrorCategory.VERSION,
+                "This Observal server does not report component locks, so --strict cannot be enforced.",
+                operation="Pull agent",
+                resource="agent installation",
+                remediation="Upgrade the Observal server, or pull without --strict (or with OBSERVAL_STRICT unset).",
+            )
+
+        # Record what the server installed, not what the agent's latest version lists.
+        installed_version = result.get("version") or version or agent_detail.get("version")
+        lock = result.get("lock") or {}
+        lock_components = _installed_components(lock, planned_components)
+        lock_warnings: list[str] = []
+        if (
+            resolved_from == "project-lock"
+            and locked_entry.get("lock_digest")
+            and lock.get("digest")
+            and locked_entry["lock_digest"] != lock["digest"]
+        ):
+            mismatch = (
+                f"Agent {qualified_name} {installed_version} no longer matches the lock digest recorded in "
+                f"{PROJECT_LOCK_FILE}."
+            )
+            if strict:
+                fail(
+                    ErrorCategory.CONFLICT,
+                    mismatch,
+                    operation="Pull agent",
+                    resource=str(target_dir / PROJECT_LOCK_FILE),
+                    remediation="Ask the agent author or a reviewer to investigate before installing.",
+                )
+            lock_warnings.append(mismatch)
 
         snippet = result.get("config_snippet", {})
         if not snippet:
@@ -1127,7 +1398,9 @@ def register_pull(app: typer.Typer):
                 remediation="Check agent contents and harness support, then retry.",
             )
 
-        warnings_list = conflict_warnings + list(result.get("warnings") or []) + (snippet.get("_warnings") or [])
+        warnings_list = (
+            lock_warnings + conflict_warnings + list(result.get("warnings") or []) + (snippet.get("_warnings") or [])
+        )
 
         # Run required harness registration before recording the pull as installed.
         setup_results: list[dict] = []
@@ -1159,9 +1432,9 @@ def register_pull(app: typer.Typer):
             )
 
         # Record installation state only after files and setup commands succeed.
+        project_lock_path: Path | None = None
         if not dry_run:
-            agent_uuid = agent_detail.get("id", resolved)
-            agent_version = agent_detail.get("version") or agent_detail.get("latest_version")
+            agent_version = installed_version
 
             from observal_cli.lockfile import upsert_agent
 
@@ -1177,6 +1450,8 @@ def register_pull(app: typer.Typer):
                     namespace=agent_detail.get("namespace"),
                     slug=agent_detail.get("slug"),
                     local_name=local_name,
+                    lock_digest=lock.get("digest"),
+                    lock_status=lock.get("status"),
                 )
             except (OSError, RuntimeError) as error:
                 fail(
@@ -1187,6 +1462,30 @@ def register_pull(app: typer.Typer):
                     remediation="Repair the local lockfile and pull the agent again.",
                     detail=repr(error),
                 )
+
+            if not is_user_scope:
+                from observal_cli import project_lock
+
+                try:
+                    project_lock_path = project_lock.record_agent(
+                        target_dir,
+                        qualified_name,
+                        project_lock.agent_entry(
+                            agent_id=str(agent_uuid),
+                            version=installed_version,
+                            lock_digest=lock.get("digest"),
+                            components=lock_components,
+                        ),
+                    )
+                except (OSError, project_lock.ProjectLockError) as error:
+                    fail(
+                        ErrorCategory.UNAVAILABLE,
+                        f"Agent files were written, but {PROJECT_LOCK_FILE} could not be updated.",
+                        operation="Pull agent",
+                        resource=str(target_dir / PROJECT_LOCK_FILE),
+                        remediation="Check the file's permissions and contents, then pull again.",
+                        detail=repr(error),
+                    )
 
             try:
                 from observal_cli.layer import ensure_local_snapshot
@@ -1225,8 +1524,17 @@ def register_pull(app: typer.Typer):
                         "id": str(agent_detail.get("id", resolved)),
                         "qualified_name": agent_detail.get("qualified_name")
                         or (f"{namespace}/{slug}" if namespace else slug),
-                        "version": agent_detail.get("version") or agent_detail.get("latest_version"),
+                        "version": installed_version,
+                        "latest_version": agent_detail.get("version"),
+                        "resolved_from": resolved_from,
                         "local_name": local_name,
+                    },
+                    "project_lock": str(project_lock_path) if project_lock_path else None,
+                    "lock": {
+                        "status": lock.get("status"),
+                        "digest": lock.get("digest"),
+                        "components": lock_components,
+                        "problems": list(lock.get("problems") or []),
                     },
                     "harness": harness,
                     "scope": options.get("scope", "project"),
@@ -1249,6 +1557,42 @@ def register_pull(app: typer.Typer):
         for path, status in written:
             style = "dim" if dry_run else "green"
             rprint(f"  [{style}]{esc(status)}[/{style}]  {esc(path)}")
+        latest_version = agent_detail.get("version")
+        source_label = {
+            "requested": "requested with --version",
+            "upgrade": "latest approved, --upgrade",
+            "project-lock": f"locked in {PROJECT_LOCK_FILE}",
+            "installed": "already installed here",
+            "latest": "latest approved",
+        }[resolved_from]
+        rprint(
+            f"\n[bold]Agent[/bold] {esc(qualified_name)} [cyan]v{esc(installed_version or '?')}[/cyan] ({source_label})"
+        )
+        if project_lock_path:
+            rprint(
+                f"  [dim]Recorded in {esc(str(project_lock_path))}; commit it so everyone installs this version.[/dim]"
+            )
+        if (
+            latest_version
+            and installed_version
+            and latest_version != installed_version
+            and resolved_from
+            in (
+                "project-lock",
+                "installed",
+            )
+        ):
+            rprint(f"  [dim]v{esc(latest_version)} is available; pull with --upgrade to move to it.[/dim]")
+        if lock_components:
+            label = {"locked": "[green]locked[/green]", "partial": "[yellow]partially locked[/yellow]"}.get(
+                lock.get("status"), "[yellow]unlocked[/yellow]"
+            )
+            rprint(f"\n[bold]Components[/bold] ({label}, agent v{esc(installed_version or '?')}):")
+            for component in lock_components:
+                rprint(
+                    f"  [dim]{esc(component['type'])}[/dim] {esc(component.get('qualified_name') or component['name'])}"
+                    f" [cyan]v{esc(component.get('version') or '?')}[/cyan]"
+                )
         if warnings_list:
             rprint("")
             for warning in warnings_list:

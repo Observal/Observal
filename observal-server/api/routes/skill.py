@@ -335,29 +335,15 @@ async def install_skill(
     if listing.status == ListingStatus.archived:
         warnings.append(archived_install_warning("skill", listing.name))
 
-    # Resolve specific version if requested
-    version_override = None
-    if req.version:
-        from models.skill import SkillVersion
+    from services.agent_lock import content_digest, select_install_version
 
-        ver_stmt = select(SkillVersion).where(
-            SkillVersion.listing_id == listing.id,
-            SkillVersion.version == req.version,
-            SkillVersion.status.in_([ListingStatus.approved, listing.status]),
-        )
-        ver_result = await db.execute(ver_stmt)
-        version_override = ver_result.scalar_one_or_none()
-        if not version_override:
-            raise HTTPException(
-                status_code=404,
-                detail=f"Version {req.version!r} not found for this skill",
-            )
+    version_override = await select_install_version(db, "skill", listing, req.version)
+    installed = version_override if version_override is not None else getattr(listing, "latest_version", None)
 
     if current_user is not None:
         db.add(SkillDownload(listing_id=listing.id, user_id=current_user.id, harness=req.harness))
-        latest_version = getattr(listing, "latest_version", None)
-        if latest_version:
-            latest_version.download_count += 1
+        if installed is not None:
+            installed.download_count = (installed.download_count or 0) + 1
         await commit_or_name_conflict(db, "skill")
 
     from api.routes.config import derive_endpoints
@@ -372,7 +358,15 @@ async def install_skill(
         version_override=version_override,
         local_name=req.local_name,
     )
-    return SkillInstallResponse(listing_id=listing.id, harness=req.harness, config_snippet=config, warnings=warnings)
+    return SkillInstallResponse(
+        listing_id=listing.id,
+        harness=req.harness,
+        config_snippet=config,
+        warnings=warnings,
+        version=getattr(version_override or listing, "version", None),
+        version_id=getattr(installed, "id", None),
+        digest=content_digest("skill", installed) if installed is not None else None,
+    )
 
 
 @router.post("/draft", response_model=SkillListingResponse)

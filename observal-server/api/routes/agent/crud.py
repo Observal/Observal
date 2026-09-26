@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Agent CRUD routes: create, list, get, update, delete, archive, unarchive."""
@@ -53,6 +54,22 @@ from .helpers import (
     _validate_mcp_ids,
 )
 
+# Fields stored on the agent version rather than the agent identity.
+_VERSION_OWNED_FIELDS = (
+    "version",
+    "version_bump_type",
+    "description",
+    "prompt",
+    "model_name",
+    "model_config_json",
+    "models_by_harness",
+    "supported_harnesses",
+    "external_mcps",
+    "components",
+    "mcp_server_ids",
+)
+_EDITABLE_VERSION_STATUSES = frozenset({AgentStatus.draft, AgentStatus.pending, AgentStatus.rejected})
+
 
 @router.post("", response_model=AgentResponse)
 async def create_agent(
@@ -77,7 +94,7 @@ async def create_agent(
         req.mcp_server_ids = []
 
     # Validate legacy mcp_server_ids
-    mcp_listings = await _validate_mcp_ids(
+    await _validate_mcp_ids(
         req.mcp_server_ids,
         db,
         current_user=current_user,
@@ -161,39 +178,16 @@ async def create_agent(
 
     agent.latest_version_id = version.id
 
-    # Legacy: mcp_server_ids → AgentComponent(type=mcp)
-    order = 0
-    for mid, listing in zip(req.mcp_server_ids, mcp_listings, strict=False):
-        db.add(
-            AgentComponent(
-                agent_version_id=version.id,
-                component_type="mcp",
-                component_id=mid,
-                component_name="",
-                resolved_version=listing.version,
-                order_index=order,
-            )
-        )
-        order += 1
+    # Legacy mcp_server_ids come first, then typed components, each pinned to an
+    # exact release (an explicit version, or the latest approved one).
+    from services.agent_lock import attach_pinned_components
 
-    from services.agent_resolver import resolve_component_versions
-
-    component_versions = await resolve_component_versions(req.components, db)
-
-    # New: components list with all types
-    for cref in req.components:
-        db.add(
-            AgentComponent(
-                agent_version_id=version.id,
-                component_type=cref.component_type,
-                component_id=cref.component_id,
-                component_name="",
-                resolved_version=component_versions.get((cref.component_type, cref.component_id), "latest"),
-                order_index=order,
-                config_override=cref.config_override,
-            )
-        )
-        order += 1
+    await attach_pinned_components(
+        db,
+        version.id,
+        [{"component_type": "mcp", "component_id": mid} for mid in req.mcp_server_ids] + list(req.components),
+        current_user=current_user,
+    )
 
     # Auto-infer harness feature requirements from the request data
     # (avoid accessing agent.components which would trigger a lazy load)
@@ -217,8 +211,10 @@ async def create_agent(
     # Flush pending AgentComponent + goal rows so the snapshot builder picks
     # them up via its own SELECTs (the relationship cache is empty).
     await db.flush()
+    from services.agent_lock import lock_agent_version
     from services.agent_snapshot import build_yaml_snapshot
 
+    await lock_agent_version(db, agent, version)
     version.yaml_snapshot = await build_yaml_snapshot(version, db)
 
     try:
@@ -664,6 +660,22 @@ async def update_agent(
             detail="Teamspace cannot be changed here. Recreate the agent under the target teamspace.",
         )
 
+    # An approved version is a lock that installs and pins depend on. Its contents
+    # never change in place; edits become a new release that goes through review.
+    latest = agent.latest_version
+    edits_version = "success_criteria" in req.model_fields_set or any(
+        getattr(req, field) is not None for field in _VERSION_OWNED_FIELDS
+    )
+    if edits_version and latest is not None and latest.status not in _EDITABLE_VERSION_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Version {latest.version} is {latest.status.value} and cannot be edited in place. "
+                f"Release a new version instead: observal agent release {agent.namespace}/{agent.slug} --bump patch "
+                f"(POST /api/v1/agents/{agent.id}/versions)."
+            ),
+        )
+
     if req.version_bump_type and req.version is None:
         from services.versioning import bump_version
 
@@ -732,11 +744,10 @@ async def update_agent(
                     for e in errors
                 ],
             )
-        from services.agent_resolver import resolve_component_versions
+        from services.agent_lock import attach_pinned_components
 
-        component_versions = await resolve_component_versions(req.components, db)
-
-        # Remove ALL old components on the latest version
+        # Replace every component on the latest version. Components that were
+        # already attached keep their pins unless the request names a version.
         version_id = agent.latest_version.id
         old_comps = (
             (await db.execute(select(AgentComponent).where(AgentComponent.agent_version_id == version_id)))
@@ -747,30 +758,21 @@ async def update_agent(
             await db.delete(comp)
         if old_comps:
             await db.flush()
-        for i, cref in enumerate(req.components):
-            db.add(
-                AgentComponent(
-                    agent_version_id=version_id,
-                    component_type=cref.component_type,
-                    component_id=cref.component_id,
-                    component_name="",
-                    resolved_version=component_versions.get((cref.component_type, cref.component_id), "latest"),
-                    order_index=i,
-                    config_override=cref.config_override,
-                )
-            )
+        await attach_pinned_components(db, version_id, req.components, previous=old_comps, current_user=current_user)
     elif req.mcp_server_ids is not None:
         # Legacy: only update MCP components
         if not agent.latest_version:
             raise HTTPException(status_code=400, detail="Agent has no version to update components on")
 
-        mcp_listings = await _validate_mcp_ids(
+        await _validate_mcp_ids(
             req.mcp_server_ids,
             db,
             current_user=current_user,
             target_team_id=agent.team_id if agent.is_private else None,
             enforce_target=True,
         )
+        from services.agent_lock import attach_pinned_components
+
         version_id = agent.latest_version.id
         old_comps = (
             (
@@ -788,17 +790,13 @@ async def update_agent(
             await db.delete(comp)
         if old_comps:
             await db.flush()
-        for i, (mid, listing) in enumerate(zip(req.mcp_server_ids, mcp_listings, strict=False)):
-            db.add(
-                AgentComponent(
-                    agent_version_id=version_id,
-                    component_type="mcp",
-                    component_id=mid,
-                    component_name="",
-                    resolved_version=listing.version,
-                    order_index=i,
-                )
-            )
+        await attach_pinned_components(
+            db,
+            version_id,
+            [{"component_type": "mcp", "component_id": mid} for mid in req.mcp_server_ids],
+            previous=old_comps,
+            current_user=current_user,
+        )
 
     # Re-infer harness features only when components or external_mcps changed
     if req.components is not None or req.mcp_server_ids is not None or req.external_mcps is not None:
@@ -841,8 +839,10 @@ async def update_agent(
     )
     if snapshot_needs_refresh:
         await db.flush()
+        from services.agent_lock import lock_agent_version
         from services.agent_snapshot import build_yaml_snapshot
 
+        await lock_agent_version(db, agent, agent.latest_version)
         agent.latest_version.yaml_snapshot = await build_yaml_snapshot(agent.latest_version, db)
 
     await db.commit()

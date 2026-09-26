@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Aryan Iyappan <aryaniyappan2006@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Version-specific endpoints for agents.
@@ -15,6 +16,7 @@ All paths are relative to /api/v1/agents (no extra prefix).
 from __future__ import annotations
 
 import difflib
+import json
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -41,7 +43,7 @@ from schemas.agent import (  # noqa: TC001
     AgentVersionCreateRequest,
     AgentVersionReviewRequest,
 )
-from services.agent_resolver import resolve_component_versions, validate_component_ids
+from services.agent_resolver import validate_component_ids
 from services.harness import generate_agent_config
 from services.harness_capability_inference import compute_supported_harnesses, infer_required_features
 from services.inbox import sources as inbox
@@ -301,23 +303,20 @@ async def _create_agent_version(
     db.add(ver)
     await db.flush()
 
-    # Create AgentComponent records
-    from models.agent_component import AgentComponent
+    # Pin components. A release carries forward every pin from the agent's current
+    # release unless the component names a version or the author asked to refresh.
+    from services.agent_lock import attach_pinned_components
 
-    component_versions = await resolve_component_versions(req.components, db)
-    version_components: list[AgentComponent] = []
-    for order, cref in enumerate(req.components):
-        component = AgentComponent(
-            agent_version_id=ver.id,
-            component_type=cref.component_type,
-            component_id=cref.component_id,
-            component_name="",
-            resolved_version=component_versions.get((cref.component_type, cref.component_id), "latest"),
-            order_index=order,
-            config_override=cref.config_override,
-        )
-        db.add(component)
-        version_components.append(component)
+    current = agent.latest_version
+    version_components = await attach_pinned_components(
+        db,
+        ver.id,
+        req.components,
+        previous=list(current.components or []) if current is not None else [],
+        refresh=req.refresh_components,
+        require_approved=True,
+        current_user=current_user,
+    )
 
     # Infer harness features from components
     skill_comp_ids = [c.component_id for c in req.components if c.component_type == "skill"]
@@ -336,16 +335,25 @@ async def _create_agent_version(
     # Always build the snapshot from structured fields so caller-provided text
     # cannot drift from the version stored in the database.
     await db.flush()
+    from services.agent_lock import lock_agent_version
     from services.agent_snapshot import build_yaml_snapshot
 
+    await lock_agent_version(db, agent, ver)
     ver.yaml_snapshot = await build_yaml_snapshot(ver, db)
 
     # Pre-generate harness configs at release time (spec: no generation at request time)
     mcp_comp_ids = [c.component_id for c in req.components if c.component_type == "mcp"]
     mcp_listings_map: dict = {}
     if mcp_comp_ids:
+        from services.agent_lock import PinnedListing, pinned_versions
+
+        # These configs are stored and served as this release's, so generate them
+        # from the MCP releases it pins, not from each listing's latest release.
+        pinned = await pinned_versions(db, version_components)
         rows = (await db.execute(select(McpListing).where(McpListing.id.in_(mcp_comp_ids)))).scalars().all()
-        mcp_listings_map = {row.id: row for row in rows}
+        mcp_listings_map = {
+            row.id: PinnedListing(row, pinned[("mcp", row.id)]) if ("mcp", row.id) in pinned else row for row in rows
+        }
 
     # Pre-generate harness configs for supported_harnesses (the user-declared list).
     # inferred_supported_harnesses is a compatibility analysis result used for display/filtering,
@@ -447,6 +455,19 @@ async def _review_agent_version(
         )
 
     if req.action == "approve":
+        # Same gate as the review queue: the component releases this version pins
+        # must themselves be approved, and approval freezes the lock.
+        from services.agent_lock import lock_agent_version, pinned_component_blockers
+
+        blocking = await pinned_component_blockers(db, ver.components or [])
+        if blocking:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "message": "Cannot approve: some components are not approved yet",
+                    "blocking_components": blocking,
+                },
+            )
         ver.status = AgentStatus.approved
         ver.rejection_reason = None
         ver.reviewed_by = current_user.id
@@ -454,6 +475,7 @@ async def _review_agent_version(
         # Flush version status change first to avoid CircularDependencyError
         # between Agent.latest_version (ManyToOne) and Agent.versions (OneToMany)
         await db.flush()
+        await lock_agent_version(db, agent, ver)
         # Update latest_version_id if this version is newer than (or equal to) the current latest
         current_latest = agent.latest_version
         new_parsed = parse_semver(ver.version)
@@ -628,6 +650,61 @@ async def _get_version_diff(
     }
 
 
+async def _visible_agent_version(
+    agent_id: str, version: str, db: AsyncSession, current_user: User | None
+) -> tuple[Agent, AgentVersion]:
+    agent = await _load_agent(db, agent_id, current_user)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    perm = get_effective_agent_permission(agent, current_user)
+    if perm == "none":
+        raise HTTPException(status_code=403, detail="Insufficient permissions to view this agent")
+    version_filters = [AgentVersion.agent_id == agent.id, AgentVersion.version == version]
+    if not may_view_unapproved(perm, current_user):
+        version_filters.append(AgentVersion.status == AgentStatus.approved)
+    ver = (await db.execute(select(AgentVersion).where(*version_filters))).scalar_one_or_none()
+    if not ver:
+        raise HTTPException(status_code=404, detail="Version not found")
+    return agent, ver
+
+
+async def _get_agent_version_lock(agent_id: str, version: str, db: AsyncSession, current_user: User | None) -> dict:
+    """The lock for one agent version: the frozen snapshot once approved."""
+    optic.trace("agent_id={}, version={}", agent_id, version)
+    from services.agent_lock import build_lock_document
+
+    agent, ver = await _visible_agent_version(agent_id, version, db, current_user)
+    if ver.status == AgentStatus.approved and ver.lock_snapshot:
+        try:
+            return json.loads(ver.lock_snapshot)
+        except ValueError:
+            optic.warning("agent version {} has an unreadable lock snapshot; rebuilding", ver.id)
+    # Drafts, pending versions, and legacy approved versions without a stored lock
+    # get the lock their current pins describe. Reading never persists it.
+    return await build_lock_document(db, agent, ver)
+
+
+async def _get_agent_version_outdated(agent_id: str, version: str, db: AsyncSession, current_user: User | None) -> dict:
+    """For each pinned component, whether a newer approved release exists."""
+    optic.trace("agent_id={}, version={}", agent_id, version)
+    from services.agent_lock import pin_freshness
+
+    agent, ver = await _visible_agent_version(agent_id, version, db, current_user)
+    components = await pin_freshness(db, ver.components or [])
+    return {
+        "agent_id": str(agent.id),
+        "qualified_name": f"{agent.namespace}/{agent.slug}",
+        "version": ver.version,
+        "components": components,
+        "summary": {
+            "total": len(components),
+            "outdated": sum(item["outdated"] for item in components),
+            "unlocked": sum(not item["locked"] for item in components),
+            "archived": sum(item["archived"] for item in components),
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # Route handlers
 # ---------------------------------------------------------------------------
@@ -717,6 +794,28 @@ async def get_agent_harness_config(
         db=db,
         current_user=current_user,
     )
+
+
+@agent_version_router.get("/{agent_id}/versions/{version}/lock")
+async def get_agent_version_lock(
+    agent_id: str,
+    version: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_registry_user),
+):
+    optic.trace("agent_id={}, version={}", agent_id, version)
+    return await _get_agent_version_lock(agent_id=agent_id, version=version, db=db, current_user=current_user)
+
+
+@agent_version_router.get("/{agent_id}/versions/{version}/outdated")
+async def get_agent_version_outdated(
+    agent_id: str,
+    version: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_registry_user),
+):
+    optic.trace("agent_id={}, version={}", agent_id, version)
+    return await _get_agent_version_outdated(agent_id=agent_id, version=version, db=db, current_user=current_user)
 
 
 @agent_version_router.get("/{agent_id}/versions/{v1}/diff/{v2}")

@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Observal Contributors
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Human error context for CLI API operations."""
@@ -23,6 +24,8 @@ OPERATION_LABELS = {
     "_install_impl": "Install MCP server",
     "_list_co_authors": "List co-authors",
     "_list_impl": "List MCP servers",
+    "_locked_version_detail": "Read locked agent version",
+    "_mcp_spec": "Read MCP install requirements",
     "_owner": "Resolve bulk component owner",
     "_rate_delete": "Delete registry feedback",
     "_rate_impl": "Submit registry feedback",
@@ -69,6 +72,7 @@ OPERATION_LABELS = {
     "agent_install": "Generate agent installation",
     "agent_list": "List agents",
     "agent_my": "List owned agents",
+    "agent_outdated": "Check agent component pins",
     "agent_publish": "Publish agent",
     "agent_release": "Release agent version",
     "agent_show": "Show agent",

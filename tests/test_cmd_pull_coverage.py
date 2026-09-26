@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Focused boundary and behavior coverage for the agent pull command."""
@@ -22,6 +23,7 @@ import yaml
 from typer.testing import CliRunner
 
 import observal_cli.cmd_pull as cmd_pull
+from observal_cli import project_lock
 
 RUNNER = CliRunner()
 
@@ -420,6 +422,21 @@ def test_write_file_handles_toml_json_strings_and_empty_content(tmp_path: Path) 
     assert text_path.read_text() == "second"
 
 
+def test_write_file_merges_hooks_config_that_starts_with_a_scalar(tmp_path: Path) -> None:
+    # Cursor's hooks.json leads with "version": 1; pulling again must merge "hooks".
+    hooks_path = tmp_path / "hooks.json"
+    first = {"version": 1, "hooks": {"stop": [{"command": "observal"}]}}
+    hooks_path.write_text(json.dumps({"version": 1, "hooks": {"user": [{"command": "mine"}]}}))
+
+    assert cmd_pull._write_file(hooks_path, first, merge_mcp=True) == "merged"
+    assert cmd_pull._write_file(hooks_path, first, merge_mcp=True) == "merged"
+
+    assert json.loads(hooks_path.read_text()) == {
+        "version": 1,
+        "hooks": {"user": [{"command": "mine"}], "stop": [{"command": "observal"}]},
+    }
+
+
 def test_write_file_yaml_merges_or_preserves_existing_content(tmp_path: Path) -> None:
     path = tmp_path / "goose.yaml"
     path.write_text(yaml.safe_dump({"provider": "anthropic", "extensions": {"old": {"type": "stdio"}}}))
@@ -728,10 +745,20 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
         "headers": [{"name": "Authorization"}, {"name": "X-Unset", "required": False}],
     }
 
+    version_detail = {
+        "version": "1.4.0",
+        "components": [
+            {"component_type": "mcp", "component_id": "mcp-1", "name": "github", "resolved_version": "2.0.0"},
+            {"component_type": "skill", "component_id": "skill-1", "name": "review-skill", "resolved_version": "3.0.0"},
+        ],
+    }
+
     def get(path: str):
         if path == "/api/v1/agents/agent-uuid":
             return detail
-        if path == "/api/v1/mcps/mcp-1":
+        if path == "/api/v1/agents/agent-uuid/versions/1.4.0":
+            return version_detail
+        if path == "/api/v1/mcps/mcp-1/versions/2.0.0":
             return listing
         raise AssertionError(path)
 
@@ -786,7 +813,38 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
         ],
         "_warnings": ["snippet warning"],
     }
-    boundaries.post.return_value = {"config_snippet": snippet, "warnings": ["server warning"]}
+    lock = {
+        "lock_version": 1,
+        "status": "locked",
+        "digest": "sha256:" + "a" * 64,
+        "problems": [],
+        "components": [
+            {
+                "type": "mcp",
+                "id": "mcp-1",
+                "qualified_name": "acme/github",
+                "version": "2.0.0",
+                "version_id": "mcp-version-2",
+                "digest": "sha256:" + "b" * 64,
+                "source": "lock",
+            },
+            {
+                "type": "skill",
+                "id": "skill-1",
+                "qualified_name": "acme/review-skill",
+                "version": "3.0.0",
+                "version_id": "skill-version-3",
+                "digest": "sha256:" + "c" * 64,
+                "source": "lock",
+            },
+        ],
+    }
+    boundaries.post.return_value = {
+        "config_snippet": snippet,
+        "warnings": ["server warning"],
+        "version": "1.4.0",
+        "lock": lock,
+    }
 
     mcp_path = target / ".config" / "mcp.json"
     mcp_path.parent.mkdir(parents=True)
@@ -839,10 +897,11 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
 
     assert result.exit_code == 0, result.output
     boundaries.resolve.assert_called_once_with("agent", "acme/reviewer")
+    # The requested version's pins drive MCP prompts, and each MCP is read once.
     assert boundaries.get.call_args_list == [
         call("/api/v1/agents/agent-uuid"),
-        call("/api/v1/mcps/mcp-1"),
-        call("/api/v1/mcps/mcp-1"),
+        call("/api/v1/agents/agent-uuid/versions/1.4.0"),
+        call("/api/v1/mcps/mcp-1/versions/2.0.0"),
     ]
     boundaries.local_name.assert_called_once_with(
         "claude-code",
@@ -928,12 +987,32 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
         scope="project",
         directory=str(target.resolve()),
         components=[
-            {"type": "mcp", "name": "github", "id": "mcp-1", "version": "2.1.0"},
-            {"type": "skill", "name": "review-skill", "id": "skill-1", "version": "3.0.0"},
+            {
+                "type": "mcp",
+                "name": "github",
+                "id": "mcp-1",
+                "version": "2.0.0",
+                "version_id": "mcp-version-2",
+                "digest": "sha256:" + "b" * 64,
+                "qualified_name": "acme/github",
+                "source": "lock",
+            },
+            {
+                "type": "skill",
+                "name": "review-skill",
+                "id": "skill-1",
+                "version": "3.0.0",
+                "version_id": "skill-version-3",
+                "digest": "sha256:" + "c" * 64,
+                "qualified_name": "acme/review-skill",
+                "source": "lock",
+            },
         ],
         namespace="acme",
         slug="reviewer",
         local_name="local-reviewer",
+        lock_digest="sha256:" + "a" * 64,
+        lock_status="locked",
     )
     boundaries.snapshot.assert_called_once_with(project_dir=str(target.resolve()))
     boundaries.adapter.persist_active_agent.assert_called_once_with("agent-uuid", "reviewer", "1.4.0")
@@ -1364,3 +1443,385 @@ def test_pull_rejects_irrelevant_model_refresh_before_http(
     assert "requires the interactive model picker" in result.output
     boundaries.resolve.assert_not_called()
     boundaries.get.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("options", "environment", "strict"),
+    [
+        ((), {}, False),
+        (("--strict",), {}, True),
+        ((), {"OBSERVAL_STRICT": "1"}, True),
+        (("--no-strict",), {"OBSERVAL_STRICT": "true"}, False),
+    ],
+)
+def test_pull_strict_flag_wins_over_the_environment(
+    pull_app: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    options: tuple[str, ...],
+    environment: dict[str, str],
+    strict: bool,
+) -> None:
+    monkeypatch.delenv("OBSERVAL_STRICT", raising=False)
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+    boundaries.post.return_value = {
+        "config_snippet": {"agent_profile": {"path": "agent.md", "content": "agent\n"}},
+        "lock": {"status": "locked", "digest": None, "components": [], "problems": []},
+    }
+
+    result = _invoke(pull_app, tmp_path / "project", *options)
+
+    assert result.exit_code == 0, result.output
+    body = boundaries.post.call_args.args[1]
+    assert body.get("strict", False) is strict
+
+
+def test_strict_refuses_a_server_that_reports_no_lock(
+    pull_app: typer.Typer, boundaries: SimpleNamespace, tmp_path: Path
+):
+    """A server from before component locks ignores `strict`; nothing was checked."""
+    target = tmp_path / "project"
+
+    result = _invoke(pull_app, target, "--strict")
+
+    assert result.exit_code == 10
+    assert "does not report component locks" in result.output
+    assert not (target / "agent.md").exists()
+    assert not (target / "observal.lock").exists()
+
+
+def test_pull_json_reports_the_installed_version_and_lock(
+    pull_app: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+) -> None:
+    lock = {
+        "status": "partial",
+        "digest": "sha256:" + "d" * 64,
+        "problems": ["mcp 'legacy' is not locked"],
+        "components": [
+            {
+                "type": "mcp",
+                "id": "mcp-1",
+                "qualified_name": "acme/legacy",
+                "version": "2.0.0",
+                "source": "fallback-latest",
+            }
+        ],
+    }
+    boundaries.post.return_value = {
+        "config_snippet": {"agent_profile": {"path": "agent.md", "content": "agent\n"}},
+        "version": "1.0.0",
+        "lock": lock,
+    }
+
+    result = _invoke(pull_app, tmp_path / "project", "--output", "json")
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["agent"]["version"] == "1.0.0"
+    assert payload["lock"]["status"] == "partial"
+    assert payload["lock"]["problems"] == ["mcp 'legacy' is not locked"]
+    assert payload["lock"]["components"][0]["source"] == "fallback-latest"
+    assert boundaries.upsert.call_args.kwargs["version"] == "1.0.0"
+    assert boundaries.upsert.call_args.kwargs["lock_status"] == "partial"
+    boundaries.adapter.persist_active_agent.assert_called_once_with("agent-uuid", "reviewer", "1.0.0")
+
+
+def test_component_conflicts_match_components_by_registry_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    import observal_cli.lockfile as lockfile
+
+    registry = {
+        "harnesses": {
+            "cursor": {
+                "agents": [
+                    {
+                        "name": "older-agent",
+                        "components": [
+                            {"id": "same-id", "name": "Renamed MCP", "version": "1.0.0"},
+                            {"id": "other-id", "name": "shared", "version": "1.0.0"},
+                        ],
+                    }
+                ]
+            }
+        }
+    }
+    monkeypatch.setattr(lockfile, "read_registry_lockfile", MagicMock(return_value=({}, registry)))
+
+    conflicts = cmd_pull._component_conflicts(
+        "cursor",
+        "incoming",
+        [{"type": "mcp", "id": "same-id", "name": "github", "version": "2.0.0"}],
+    )
+
+    assert conflicts == ["mcp github: v2.0.0 (this agent) vs v1.0.0 (from older-agent)"]
+
+
+def test_mcp_spec_reads_the_pinned_version_and_falls_back_to_the_listing(monkeypatch: pytest.MonkeyPatch) -> None:
+    from observal_cli.errors import CliError, ErrorCategory
+
+    def get(path: str):
+        if path == "/api/v1/mcps/mcp-1/versions/1.0.0":
+            return {"environment_variables": [{"name": "PINNED"}]}
+        if path == "/api/v1/mcps/mcp-2/versions/1.0.0":
+            raise CliError(ErrorCategory.NOT_FOUND, "Version not found", operation="read", resource=path)
+        return {"environment_variables": [{"name": "LATEST"}]}
+
+    fetch = MagicMock(side_effect=get)
+    monkeypatch.setattr(cmd_pull.client, "get", fetch)
+    cache: dict = {}
+
+    pinned = cmd_pull._mcp_spec("mcp-1", "1.0.0", cache)
+    fallback = cmd_pull._mcp_spec("mcp-2", "1.0.0", cache)
+    cached = cmd_pull._mcp_spec("mcp-1", "1.0.0", cache)
+
+    assert pinned == cached == {"environment_variables": [{"name": "PINNED"}]}
+    assert fallback == {"environment_variables": [{"name": "LATEST"}]}
+    assert [c.args[0] for c in fetch.call_args_list] == [
+        "/api/v1/mcps/mcp-1/versions/1.0.0",
+        "/api/v1/mcps/mcp-2/versions/1.0.0",
+        "/api/v1/mcps/mcp-2",
+    ]
+
+
+# ── Pinned pulls: observal.lock, the local lockfile, --upgrade, --version ─────
+# A plain pull keeps the locked agent version. The project lock (committed)
+# wins over this machine's lockfile, which wins over the latest approved
+# version. --version and --upgrade are the only ways to move.
+
+LOCK_DIGEST = "sha256:" + "a" * 64
+
+
+def _install_result(version: str, *, digest: str = LOCK_DIGEST) -> dict:
+    return {
+        "config_snippet": {"agent_profile": {"path": "agent.md", "content": "agent\n"}},
+        "version": version,
+        "lock": {
+            "status": "locked",
+            "digest": digest,
+            "problems": [],
+            "components": [
+                {
+                    "type": "mcp",
+                    "id": "mcp-1",
+                    "qualified_name": "acme/github",
+                    "version": "1.0.0" if version == "1.0.0" else "2.0.0",
+                    "digest": "sha256:" + "b" * 64,
+                    "source": "lock",
+                }
+            ],
+        },
+    }
+
+
+@pytest.fixture
+def registry(boundaries: SimpleNamespace) -> SimpleNamespace:
+    """The latest approved agent version is 1.1.0; 1.0.0 is also approved."""
+
+    def get(path: str):
+        if path == "/api/v1/agents/agent-uuid":
+            return _agent_detail(version="1.1.0", qualified_name="acme/reviewer")
+        if path.startswith("/api/v1/agents/agent-uuid/versions/"):
+            return {"version": path.rsplit("/", 1)[1], "components": []}
+        raise AssertionError(path)
+
+    boundaries.get.side_effect = get
+
+    def post(_path: str, body: dict):
+        return _install_result(body.get("version") or "1.1.0")
+
+    boundaries.post.side_effect = post
+    return boundaries
+
+
+def _lock(directory: Path, version: str, digest: str = LOCK_DIGEST) -> None:
+    project_lock.record_agent(
+        directory,
+        "acme/reviewer",
+        project_lock.agent_entry(agent_id="agent-uuid", version=version, lock_digest=digest, components=[]),
+    )
+
+
+def _sent_version(boundaries: SimpleNamespace) -> str | None:
+    return boundaries.post.call_args.args[1].get("version")
+
+
+def test_first_pull_installs_latest_and_writes_the_project_lock(pull_app, registry, tmp_path):
+    target = tmp_path / "project"
+
+    result = _invoke(pull_app, target)
+
+    assert result.exit_code == 0, result.output
+    assert _sent_version(registry) is None
+    locked = json.loads((target / "observal.lock").read_text())
+    assert locked["lock_version"] == 1
+    assert locked["agents"]["acme/reviewer"]["version"] == "1.1.0"
+    assert locked["agents"]["acme/reviewer"]["lock_digest"] == LOCK_DIGEST
+    assert locked["agents"]["acme/reviewer"]["components"] == [
+        {"type": "mcp", "qualified_name": "acme/github", "version": "2.0.0", "digest": "sha256:" + "b" * 64}
+    ]
+    assert "latest approved" in result.output
+
+
+def test_plain_pull_keeps_the_version_in_the_project_lock(pull_app, registry, tmp_path):
+    target = tmp_path / "project"
+    _lock(target, "1.0.0")
+
+    result = _invoke(pull_app, target, "--output", "json")
+
+    assert result.exit_code == 0, result.output
+    assert _sent_version(registry) == "1.0.0"
+    payload = json.loads(result.output)
+    assert payload["agent"]["version"] == "1.0.0"
+    assert payload["agent"]["latest_version"] == "1.1.0"
+    assert payload["agent"]["resolved_from"] == "project-lock"
+    assert json.loads((target / "observal.lock").read_text())["agents"]["acme/reviewer"]["version"] == "1.0.0"
+
+
+def test_upgrade_moves_to_the_latest_version_and_rewrites_the_lock(pull_app, registry, tmp_path):
+    target = tmp_path / "project"
+    _lock(target, "1.0.0")
+
+    result = _invoke(pull_app, target, "--upgrade")
+
+    assert result.exit_code == 0, result.output
+    assert _sent_version(registry) is None
+    assert json.loads((target / "observal.lock").read_text())["agents"]["acme/reviewer"]["version"] == "1.1.0"
+
+
+def test_version_moves_the_lock_to_exactly_that_version(pull_app, registry, tmp_path):
+    target = tmp_path / "project"
+    _lock(target, "1.1.0")
+
+    result = _invoke(pull_app, target, "--version", "1.0.0")
+
+    assert result.exit_code == 0, result.output
+    assert _sent_version(registry) == "1.0.0"
+    assert json.loads((target / "observal.lock").read_text())["agents"]["acme/reviewer"]["version"] == "1.0.0"
+
+
+def test_without_a_project_lock_the_installed_version_is_kept(pull_app, registry, tmp_path, monkeypatch):
+    import observal_cli.lockfile as lockfile
+
+    target = tmp_path / "project"
+    installed = MagicMock(return_value={"id": "agent-uuid", "version": "1.0.0"})
+    monkeypatch.setattr(lockfile, "installed_agent", installed)
+
+    result = _invoke(pull_app, target, "--output", "json")
+
+    assert result.exit_code == 0, result.output
+    assert _sent_version(registry) == "1.0.0"
+    assert json.loads(result.output)["agent"]["resolved_from"] == "installed"
+    installed.assert_called_once_with("claude-code", "agent-uuid", scope="project", directory=str(target.resolve()))
+
+
+def test_upgrade_and_version_cannot_be_combined(pull_app, registry, tmp_path):
+    result = _invoke(pull_app, tmp_path / "project", "--upgrade", "--version", "1.0.0")
+
+    assert result.exit_code == 7
+    registry.post.assert_not_called()
+
+
+def test_user_scope_and_dry_run_leave_the_project_lock_alone(pull_app, registry, tmp_path):
+    locked = tmp_path / "locked"
+    _lock(locked, "1.0.0")
+    fresh = tmp_path / "fresh"
+
+    user_scope = _invoke(pull_app, locked, "--scope", "user")
+    dry_run = _invoke(pull_app, fresh, "--dry-run")
+
+    assert user_scope.exit_code == 0, user_scope.output
+    assert dry_run.exit_code == 0, dry_run.output
+    # User-scope installs are not tied to a project: latest, and the lock is untouched.
+    assert registry.post.call_args_list[0].args[1].get("version") is None
+    assert json.loads((locked / "observal.lock").read_text())["agents"]["acme/reviewer"]["version"] == "1.0.0"
+    assert not (fresh / "observal.lock").exists()
+
+
+def test_a_changed_lock_digest_warns_and_strict_refuses_before_writing(pull_app, registry, tmp_path):
+    target = tmp_path / "project"
+    _lock(target, "1.0.0", digest="sha256:" + "f" * 64)
+
+    warned = _invoke(pull_app, target)
+    # A warned install records the digest it installed; the change shows in the lock's diff.
+    recorded = json.loads((target / "observal.lock").read_text())["agents"]["acme/reviewer"]["lock_digest"]
+    (target / "agent.md").unlink()
+    _lock(target, "1.0.0", digest="sha256:" + "f" * 64)
+    refused = _invoke(pull_app, target, "--strict")
+
+    assert warned.exit_code == 0, warned.output
+    assert "no longer matches the lock digest" in warned.output
+    assert recorded == LOCK_DIGEST
+    assert refused.exit_code == 6
+    assert not (target / "agent.md").exists()
+
+
+def test_a_stale_locked_version_says_where_it_came_from_and_how_to_move(pull_app, registry, tmp_path):
+    from observal_cli.errors import CliError, ErrorCategory
+
+    target = tmp_path / "project"
+    _lock(target, "9.9.9")
+    detail = registry.get.side_effect
+
+    def get(path: str):
+        if path.endswith("/versions/9.9.9"):
+            raise CliError(category=ErrorCategory.NOT_FOUND, message="Version not found", operation="Pull agent")
+        return detail(path)
+
+    registry.get.side_effect = get
+
+    result = _invoke(pull_app, target)
+    with pytest.raises(CliError) as error:
+        cmd_pull._locked_version_detail(
+            "agent-uuid", "9.9.9", "project-lock", qualified_name="acme/reviewer", directory=target
+        )
+
+    assert result.exit_code == 5
+    assert "pins agent acme/reviewer to version 9.9.9" in " ".join(result.output.split())
+    assert "--upgrade" in error.value.remediation
+    registry.post.assert_not_called()
+
+
+def test_a_renamed_agent_keeps_the_version_its_old_name_locked(pull_app, registry, tmp_path):
+    target = tmp_path / "project"
+    project_lock.record_agent(
+        target,
+        "old-team/reviewer",
+        project_lock.agent_entry(agent_id="agent-uuid", version="1.0.0", lock_digest=LOCK_DIGEST, components=[]),
+    )
+
+    result = _invoke(pull_app, target)
+
+    assert result.exit_code == 0, result.output
+    assert _sent_version(registry) == "1.0.0"
+    agents = json.loads((target / "observal.lock").read_text())["agents"]
+    assert list(agents) == ["acme/reviewer"]
+    assert agents["acme/reviewer"]["version"] == "1.0.0"
+
+
+def test_a_malformed_project_lock_fails_clearly(pull_app, registry, tmp_path):
+    target = tmp_path / "project"
+    target.mkdir()
+    (target / "observal.lock").write_text("{not json")
+
+    result = _invoke(pull_app, target)
+
+    assert result.exit_code == 7
+    assert "observal.lock" in result.output
+    registry.post.assert_not_called()
+
+
+def test_project_lock_is_sorted_and_versioned(tmp_path):
+    project_lock.record_agent(tmp_path, "zeta/agent", {"id": "z", "version": "1.0.0"})
+    project_lock.record_agent(tmp_path, "alpha/agent", {"id": "a", "version": "2.0.0"})
+
+    data = json.loads((tmp_path / "observal.lock").read_text())
+
+    assert list(data["agents"]) == ["alpha/agent", "zeta/agent"]
+    assert project_lock.locked_agent(tmp_path, "alpha/agent")["version"] == "2.0.0"
+    assert project_lock.locked_agent(tmp_path, "missing/agent") is None
+    (tmp_path / "observal.lock").write_text(json.dumps({"lock_version": 99, "agents": {}}))
+    with pytest.raises(project_lock.ProjectLockError, match="unsupported lock_version"):
+        project_lock.read(tmp_path)

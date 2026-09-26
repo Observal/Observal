@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Focused contracts and failure coverage for the review routes."""
@@ -25,6 +26,15 @@ from models.user import UserRole
 from schemas.mcp import ReviewActionRequest
 from services.security_events import EventType, Severity
 from services.teamspace import ReviewScope
+
+
+@pytest.fixture(autouse=True)
+def _lock_service_stub(monkeypatch):
+    """These routes run on a mocked session; the lock service has its own tests."""
+    import services.agent_lock as agent_lock
+
+    monkeypatch.setattr(agent_lock, "lock_agent_version", AsyncMock(return_value={}))
+
 
 NOW = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
 ACTOR_ID = uuid.UUID(int=1)
@@ -435,69 +445,74 @@ async def test_find_listing_returns_unique_uuid_hit_and_propagates_database_fail
 
 
 @pytest.mark.asyncio
-async def test_component_readiness_groups_supported_types_and_returns_exact_blockers():
-    db = _db()
-    approved_id = uuid.UUID(int=20)
-    pending_id = uuid.UUID(int=21)
-    rejected_id = uuid.UUID(int=22)
-    missing_id = uuid.UUID(int=23)
-    components = [
-        _component_ref("mcp", approved_id),
-        _component_ref("mcp", pending_id),
-        _component_ref("skill", rejected_id),
-        _component_ref("skill", missing_id),
-        _component_ref("unknown", uuid.UUID(int=24)),
-    ]
-    db.execute.side_effect = [
-        _result(
-            rows=[
-                SimpleNamespace(id=approved_id, name="ready", status=ListingStatus.approved),
-                SimpleNamespace(id=pending_id, name="waiting", status=ListingStatus.pending),
-            ]
-        ),
-        _result(rows=[SimpleNamespace(id=rejected_id, name="changes", status=ListingStatus.rejected)]),
-    ]
+async def test_component_readiness_reads_the_pinned_release_not_the_latest():
+    from sqlalchemy import select
 
-    ready, blockers = await review._check_agent_components_ready(components, db)
+    from models.mcp import McpVersion
+    from tests import discovery_support as ds
 
-    assert ready is False
+    engine = ds.make_engine()
+    maker = await ds.create_schema(engine)
+    async with maker() as db:
+        owner = await ds.user(db)
+        # Pinned to an approved release whose listing has since gained a pending one.
+        ready = await ds.mcp(db, owner, name="Ready")
+        ready_pin = (await db.execute(select(McpVersion).where(McpVersion.listing_id == ready.id))).scalar_one()
+        pending_release = McpVersion(
+            id=uuid.uuid4(),
+            listing_id=ready.id,
+            version="2.0.0",
+            description="next",
+            status=ListingStatus.pending,
+            released_by=owner.id,
+            released_at=ds.NOW,
+        )
+        db.add(pending_release)
+        await db.flush()
+        ready.latest_version_id = pending_release.id
+        # Pinned to a pending release of a listing whose latest release is approved.
+        waiting = await ds.skill(db, owner, name="Waiting", version="1.0.0", status=ListingStatus.pending)
+        waiting_pin = (await db.execute(select(SkillVersion).where(SkillVersion.listing_id == waiting.id))).scalar_one()
+        await ds.add_skill_version(db, waiting, owner, version="1.1.0", status=ListingStatus.approved)
+        components = [
+            SimpleNamespace(
+                component_type="mcp",
+                component_id=ready.id,
+                component_name="",
+                resolved_version="1.4.2",
+                resolved_version_id=ready_pin.id,
+            ),
+            SimpleNamespace(
+                component_type="skill",
+                component_id=waiting.id,
+                component_name="",
+                resolved_version="1.0.0",
+                resolved_version_id=waiting_pin.id,
+            ),
+            _component_ref("unknown", uuid.UUID(int=24)),
+            _component_ref("hook", uuid.UUID(int=23)),
+        ]
+
+        ready_flag, blockers = await review._check_agent_components_ready(components, db)
+
+    await engine.dispose()
+    assert ready_flag is False
     assert blockers == [
         {
-            "component_type": "mcp",
-            "component_id": str(pending_id),
-            "name": "waiting",
-            "status": "pending",
-        },
-        {
             "component_type": "skill",
-            "component_id": str(rejected_id),
-            "name": "changes",
-            "status": "rejected",
-        },
+            "component_id": str(waiting.id),
+            "name": "Waiting",
+            "version": "1.0.0",
+            "status": "pending",
+        }
     ]
-    assert db.execute.await_count == 2
-    for awaited, table, ids in zip(
-        db.execute.await_args_list,
-        ("mcp_listings", "skill_listings"),
-        ({approved_id, pending_id}, {rejected_id, missing_id}),
-        strict=True,
-    ):
-        statement = awaited.args[0]
-        assert f"FROM {table}" in _sql(statement)
-        assert _bound_values(statement) == ids
 
 
 @pytest.mark.asyncio
-async def test_component_readiness_empty_and_approved_paths():
+async def test_component_readiness_empty_path_skips_the_database():
     db = _db()
     assert await review._check_agent_components_ready([], db) == (True, [])
     db.execute.assert_not_awaited()
-
-    component_id = uuid.UUID(int=25)
-    db.execute.return_value = _result(
-        rows=[SimpleNamespace(id=component_id, name="ready", status=ListingStatus.approved)]
-    )
-    assert await review._check_agent_components_ready([_component_ref("prompt", component_id)], db) == (True, [])
 
 
 @pytest.mark.asyncio

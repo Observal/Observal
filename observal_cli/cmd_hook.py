@@ -487,6 +487,9 @@ def hook_install(
     platform: str = typer.Option("", "--platform", "-p", help="Platform (win32, darwin, linux)"),
     raw: bool = typer.Option(False, "--raw", help="Output raw JSON only (no file writes)"),
     directory: str | None = typer.Option(None, "--dir", "-d", help="Project directory for file writes"),
+    version: str | None = typer.Option(
+        None, "--version", "-V", help="Install a specific version (e.g. '1.2.0'). Defaults to latest."
+    ),
     output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Install a hook for a specific harness.
@@ -498,7 +501,7 @@ def hook_install(
     \b
     Examples:
       observal registry hook install my-hook --harness claude-code
-      observal registry hook install @guard --harness kiro --dir ./project
+      observal registry hook install @guard --harness kiro --dir ./project --version 1.2.0
       observal registry hook install my-hook --harness cursor --raw
     """
     if raw and output == "json":
@@ -525,6 +528,18 @@ def hook_install(
             resource="platform",
             remediation="Choose win32, darwin, or linux.",
         )
+    if version:
+        try:
+            Version(version)
+        except InvalidVersion as error:
+            fail(
+                ErrorCategory.VALIDATION,
+                "The requested hook version is invalid.",
+                operation="Install hook",
+                resource=version,
+                remediation="Provide a valid version and retry.",
+                detail=repr(error),
+            )
     machine_output = raw or output == "json"
     resolved = client.resolve_registry_reference("hook", hook_id)
     listing = client.get(f"/api/v1/hooks/{resolved}")
@@ -541,10 +556,10 @@ def hook_install(
     )
     install_context = nullcontext() if machine_output else spinner(f"Generating {harness} config...")
     with install_context:
-        result = client.post_public(
-            f"/api/v1/hooks/{resolved}/install",
-            {"harness": harness, "platform": platform, "local_name": local_name},
-        )
+        install_body = {"harness": harness, "platform": platform, "local_name": local_name}
+        if version:
+            install_body["version"] = version
+        result = client.post_public(f"/api/v1/hooks/{resolved}/install", install_body)
 
     config_snippet = result.get("config_snippet", {})
     files = result.get("files", [])
@@ -674,8 +689,11 @@ def hook_install(
             component_type="hook",
             name=listing.get("name", resolved),
             component_id=str(listing.get("id", resolved)),
-            version=listing.get("version"),
+            version=result.get("version") or listing.get("version"),
             scope="project",
+            version_id=str(result["version_id"]) if result.get("version_id") else None,
+            digest=result.get("digest"),
+            requested_version=version,
             directory=str(project_root),
             namespace=listing.get("namespace"),
             slug=listing.get("slug"),

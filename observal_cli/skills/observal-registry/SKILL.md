@@ -1,10 +1,11 @@
 ---
 # SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
+<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
 # SPDX-License-Identifier: Apache-2.0
 name: observal-registry
 command: observal
 description: "Searches, recommends, bulk-submits, installs, edits, versions, archives, restores, transfers, and manages co-authors for Observal MCP servers, skills, hooks, prompts, and sandboxes. Use when the user wants to find components, publish one or many they control, install them into a harness, or manage their lifecycle."
-version: 2.4.0
+version: 2.5.0
 owner: observal
 ---
 
