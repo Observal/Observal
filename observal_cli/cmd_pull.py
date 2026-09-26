@@ -732,6 +732,230 @@ def _collect_install_options(
     return opts
 
 
+def rewrite_observal_interpreter(value):
+    """Point server-emitted ``python3 -m observal_cli.<module>`` launchers at this CLI's interpreter.
+
+    Handles MCP entries (``command`` + ``args``) and argv lists such as
+    ``claude mcp add`` setup commands. A bare ``python3`` rarely has
+    ``observal_cli`` importable when the CLI was installed with uv or pipx.
+    """
+    if isinstance(value, dict):
+        out = {key: rewrite_observal_interpreter(item) for key, item in value.items()}
+        args = out.get("args")
+        if (
+            out.get("command") in ("python3", "python")
+            and isinstance(args, list)
+            and len(args) >= 2
+            and args[0] == "-m"
+            and str(args[1]).startswith("observal_cli.")
+        ):
+            out["command"] = sys.executable
+        return out
+    if isinstance(value, list):
+        items = [rewrite_observal_interpreter(item) for item in value]
+        for index in range(len(items) - 2):
+            if (
+                items[index] in ("python3", "python")
+                and items[index + 1] == "-m"
+                and isinstance(items[index + 2], str)
+                and items[index + 2].startswith("observal_cli.")
+            ):
+                items[index] = sys.executable
+        return items
+    return value
+
+
+def write_install_snippet(
+    snippet: dict,
+    *,
+    harness: str,
+    adapter,
+    target_dir: Path,
+    agent_id: str,
+    is_user_scope: bool,
+    dry_run: bool = False,
+    quiet: bool = False,
+) -> tuple[list[tuple[str, str]], list[str]]:
+    """Write every file an agent install snippet carries under *target_dir*.
+
+    Shared by ``observal agent pull`` and delegation, which materializes an
+    agent into a throwaway worktree. Returns ``(written, failed_skills)``;
+    setup commands and install tracking stay with the caller.
+    """
+    written: list[tuple[str, str]] = []  # (path, status)
+
+    # ── mcp_config with path key (Cursor/VSCode/Gemini) ─
+    mcp_cfg = snippet.get("mcp_config")
+    if mcp_cfg and isinstance(mcp_cfg, dict) and "path" in mcp_cfg:
+        p = _resolve_path(mcp_cfg["path"], target_dir, allow_home=is_user_scope)
+        if dry_run:
+            written.append((str(p), "would write"))
+        else:
+            status = _write_file_checked(p, mcp_cfg["content"], merge_mcp=True)
+            written.append((str(p), status))
+
+    # ── hooks_config (Cursor/VSCode/Copilot/OpenCode/Gemini) ─
+    hooks_cfg = snippet.get("hooks_config")
+    if hooks_cfg and isinstance(hooks_cfg, dict) and "path" in hooks_cfg:
+        p = _resolve_path(hooks_cfg["path"], target_dir, allow_home=is_user_scope)
+        content = hooks_cfg["content"]
+        if isinstance(content, str):
+            content = _resolve_hook_paths(content)
+        elif isinstance(content, dict):
+            # Resolve hook paths inside JSON content (command fields)
+            raw = json.dumps(content)
+            raw = _resolve_hook_paths(raw)
+            import re
+
+            raw = re.sub(
+                r"(?<!/)python3? -m observal_cli\.",
+                f"{sys.executable} -m observal_cli.",
+                raw,
+            )
+            content = json.loads(raw)
+            content = adapter.rewrite_hooks(content, agent_id=agent_id)
+        if dry_run:
+            written.append((str(p), "would write"))
+        else:
+            status = _write_file_checked(p, content, merge_mcp=hooks_cfg.get("merge", False))
+            written.append((str(p), status))
+
+    # ── agent_profile (Kiro, Cursor) ────────────────────────
+    agent_profile = snippet.get("agent_profile")
+    if agent_profile:
+        # Rewrite hook commands to use the current Python interpreter
+        # so they work regardless of which directory Kiro is launched from.
+        if isinstance(agent_profile.get("content"), dict):
+            agent_profile["content"] = adapter.rewrite_agent_profile(agent_profile["content"], agent_id=agent_id)
+        elif isinstance(agent_profile.get("content"), str):
+            agent_profile["content"] = _resolve_hook_paths(agent_profile["content"])
+        agent_profile_allow_home = adapter.allow_home_agent_profile(is_user_scope)
+        p = _resolve_path(agent_profile["path"], target_dir, allow_home=agent_profile_allow_home)
+        if dry_run:
+            written.append((str(p), "would write"))
+        else:
+            status = _write_file_checked(p, agent_profile["content"])
+            written.append((str(p), status))
+
+    # ── steering_file (Kiro) ───────────────────────────
+    steering_file = snippet.get("steering_file")
+    if steering_file:
+        p = _resolve_path(steering_file["path"], target_dir, allow_home=is_user_scope)
+        if dry_run:
+            written.append((str(p), "would write"))
+        else:
+            status = _write_file_checked(p, steering_file["content"])
+            written.append((str(p), status))
+
+    # ── hook_files (script files from hook components) ─────
+    hook_files = snippet.get("hook_files") or []
+    for hf in hook_files:
+        p = _resolve_path(hf["path"], target_dir, allow_home=is_user_scope)
+        if dry_run:
+            written.append((str(p), "would write"))
+        else:
+            existed = p.exists()
+            _write_file_checked(p, hf["content"])
+            if hf.get("executable"):
+                import os
+
+                try:
+                    os.chmod(p, 0o755)
+                except OSError as error:
+                    fail(
+                        ErrorCategory.UNAVAILABLE,
+                        f"Could not mark generated hook executable: {p}.",
+                        operation="Pull agent",
+                        resource=str(p),
+                        remediation="Check file ownership and permissions.",
+                        detail=repr(error),
+                    )
+            written.append((str(p), "updated" if existed else "created"))
+
+    # ── prompt_files (native Copilot .github/prompts/*.prompt.md) ─
+    for pf in snippet.get("prompt_files") or []:
+        p = _resolve_path(pf["path"], target_dir, allow_home=is_user_scope)
+        if dry_run:
+            written.append((str(p), "would write"))
+        else:
+            existed = p.exists()
+            _write_file_checked(p, pf["content"])
+            written.append((str(p), "updated" if existed else "created"))
+
+    # ── Direct skill files ─────────────────────────
+    for sf in snippet.get("skills") or []:
+        p = _resolve_path(sf["path"], target_dir, allow_home=is_user_scope)
+        if dry_run:
+            written.append((str(p), "would write"))
+        else:
+            status = _write_file_checked(p, sf["content"])
+            written.append((str(p), status))
+
+    # ── Skills ────────────────────────────────────
+    # Two install modes:
+    #   1. git_url present → clone full skill directory from git
+    #   2. skill_md_content present (registry_direct) → write SKILL.md + optional script
+    from observal_cli.cmd_skill import _sanitize_name, install_skill_from_git, install_skill_registry_direct
+
+    skill_components = snippet.get("skill_components") or []
+    failed_skills: list[str] = []
+    scope_str = "user" if is_user_scope else "project"
+    for sc in skill_components:
+        sc_name = _sanitize_name(sc.get("name", "skill"))
+        git_url = sc.get("git_url")
+        skill_dest = None
+        if sc.get("path"):
+            skill_dest = _resolve_path(sc["path"], target_dir, allow_home=is_user_scope).parent
+
+        if dry_run:
+            mode = "would clone" if git_url else "would write"
+            written.append((str(skill_dest) if skill_dest else f"<skill:{sc_name}>", mode))
+            continue
+
+        if git_url:
+            with redirect_stdout(StringIO()) if quiet else nullcontext():
+                result_path = install_skill_from_git(
+                    name=sc.get("name", "skill"),
+                    git_url=git_url,
+                    skill_path=sc.get("skill_path", "/"),
+                    git_ref=sc.get("git_ref", "main"),
+                    harness=harness,
+                    scope=scope_str,
+                    skill_md_content=sc.get("skill_md_content"),
+                    cwd=target_dir,
+                    dest=skill_dest,
+                )
+            if result_path:
+                written.append((str(result_path), "cloned"))
+            else:
+                failed_skills.append(sc_name)
+                if not quiet:
+                    rprint(
+                        f"[red]\u2717 Failed to install skill '{esc(sc_name)}'.[/red] Clone from {esc(git_url)} failed."
+                    )
+        else:
+            # Registry direct: SKILL.md content + optional script
+            with redirect_stdout(StringIO()) if quiet else nullcontext():
+                result_path = install_skill_registry_direct(
+                    name=sc.get("name", "skill"),
+                    skill_md_content=sc.get("skill_md_content"),
+                    script_content=sc.get("script_content"),
+                    script_filename=sc.get("script_filename"),
+                    harness=harness,
+                    scope=scope_str,
+                    cwd=target_dir,
+                    dest=skill_dest,
+                )
+            if result_path:
+                written.append((str(result_path), "installed"))
+            else:
+                failed_skills.append(sc_name)
+                if not quiet:
+                    rprint(f"[red]\u2717 Failed to install skill '{esc(sc_name)}'.[/red] No content available.")
+
+    return written, failed_skills
+
+
 def register_pull(app: typer.Typer):
     @app.command("pull")
     def pull(
@@ -934,179 +1158,17 @@ def register_pull(app: typer.Typer):
                 remediation="Check server compatibility and the agent's harness support.",
             )
 
-        written: list[tuple[str, str]] = []  # (path, status)
-
-        # ── mcp_config with path key (Cursor/VSCode/Gemini) ─
-        mcp_cfg = snippet.get("mcp_config")
-        if mcp_cfg and isinstance(mcp_cfg, dict) and "path" in mcp_cfg:
-            p = _resolve_path(mcp_cfg["path"], target_dir, allow_home=is_user_scope)
-            if dry_run:
-                written.append((str(p), "would write"))
-            else:
-                status = _write_file_checked(p, mcp_cfg["content"], merge_mcp=True)
-                written.append((str(p), status))
-
-        # ── hooks_config (Cursor/VSCode/Copilot/OpenCode/Gemini) ─
-        hooks_cfg = snippet.get("hooks_config")
-        if hooks_cfg and isinstance(hooks_cfg, dict) and "path" in hooks_cfg:
-            p = _resolve_path(hooks_cfg["path"], target_dir, allow_home=is_user_scope)
-            content = hooks_cfg["content"]
-            if isinstance(content, str):
-                content = _resolve_hook_paths(content)
-            elif isinstance(content, dict):
-                # Resolve hook paths inside JSON content (command fields)
-                raw = json.dumps(content)
-                raw = _resolve_hook_paths(raw)
-                import re
-
-                raw = re.sub(
-                    r"(?<!/)python3? -m observal_cli\.",
-                    f"{sys.executable} -m observal_cli.",
-                    raw,
-                )
-                content = json.loads(raw)
-                content = adapter.rewrite_hooks(content, agent_id=str(agent_detail.get("id", resolved)))
-            if dry_run:
-                written.append((str(p), "would write"))
-            else:
-                status = _write_file_checked(p, content, merge_mcp=hooks_cfg.get("merge", False))
-                written.append((str(p), status))
-
-        # ── agent_profile (Kiro, Cursor) ────────────────────────
-        agent_profile = snippet.get("agent_profile")
-        if agent_profile:
-            # Rewrite hook commands to use the current Python interpreter
-            # so they work regardless of which directory Kiro is launched from.
-            if isinstance(agent_profile.get("content"), dict):
-                agent_profile["content"] = adapter.rewrite_agent_profile(
-                    agent_profile["content"], agent_id=str(agent_detail.get("id", resolved))
-                )
-            elif isinstance(agent_profile.get("content"), str):
-                agent_profile["content"] = _resolve_hook_paths(agent_profile["content"])
-            agent_profile_allow_home = adapter.allow_home_agent_profile(is_user_scope)
-            p = _resolve_path(agent_profile["path"], target_dir, allow_home=agent_profile_allow_home)
-            if dry_run:
-                written.append((str(p), "would write"))
-            else:
-                status = _write_file_checked(p, agent_profile["content"])
-                written.append((str(p), status))
-
-        # ── steering_file (Kiro) ───────────────────────────
-        steering_file = snippet.get("steering_file")
-        if steering_file:
-            p = _resolve_path(steering_file["path"], target_dir, allow_home=is_user_scope)
-            if dry_run:
-                written.append((str(p), "would write"))
-            else:
-                status = _write_file_checked(p, steering_file["content"])
-                written.append((str(p), status))
-
-        # ── hook_files (script files from hook components) ─────
-        hook_files = snippet.get("hook_files") or []
-        for hf in hook_files:
-            p = _resolve_path(hf["path"], target_dir, allow_home=is_user_scope)
-            if dry_run:
-                written.append((str(p), "would write"))
-            else:
-                existed = p.exists()
-                _write_file_checked(p, hf["content"])
-                if hf.get("executable"):
-                    import os
-
-                    try:
-                        os.chmod(p, 0o755)
-                    except OSError as error:
-                        fail(
-                            ErrorCategory.UNAVAILABLE,
-                            f"Could not mark generated hook executable: {p}.",
-                            operation="Pull agent",
-                            resource=str(p),
-                            remediation="Check file ownership and permissions.",
-                            detail=repr(error),
-                        )
-                written.append((str(p), "updated" if existed else "created"))
-
-        # ── prompt_files (native Copilot .github/prompts/*.prompt.md) ─
-        for pf in snippet.get("prompt_files") or []:
-            p = _resolve_path(pf["path"], target_dir, allow_home=is_user_scope)
-            if dry_run:
-                written.append((str(p), "would write"))
-            else:
-                existed = p.exists()
-                _write_file_checked(p, pf["content"])
-                written.append((str(p), "updated" if existed else "created"))
-
-        # ── Direct skill files ─────────────────────────
-        for sf in snippet.get("skills") or []:
-            p = _resolve_path(sf["path"], target_dir, allow_home=is_user_scope)
-            if dry_run:
-                written.append((str(p), "would write"))
-            else:
-                status = _write_file_checked(p, sf["content"])
-                written.append((str(p), status))
-
-        # ── Skills ────────────────────────────────────
-        # Two install modes:
-        #   1. git_url present → clone full skill directory from git
-        #   2. skill_md_content present (registry_direct) → write SKILL.md + optional script
-        from observal_cli.cmd_skill import _sanitize_name, install_skill_from_git, install_skill_registry_direct
-
-        skill_components = snippet.get("skill_components") or []
-        failed_skills: list[str] = []
-        scope_str = "user" if is_user_scope else "project"
-        for sc in skill_components:
-            sc_name = _sanitize_name(sc.get("name", "skill"))
-            git_url = sc.get("git_url")
-            skill_dest = None
-            if sc.get("path"):
-                skill_dest = _resolve_path(sc["path"], target_dir, allow_home=is_user_scope).parent
-
-            if dry_run:
-                mode = "would clone" if git_url else "would write"
-                written.append((str(skill_dest) if skill_dest else f"<skill:{sc_name}>", mode))
-                continue
-
-            if git_url:
-                with redirect_stdout(StringIO()) if output == "json" else nullcontext():
-                    result_path = install_skill_from_git(
-                        name=sc.get("name", "skill"),
-                        git_url=git_url,
-                        skill_path=sc.get("skill_path", "/"),
-                        git_ref=sc.get("git_ref", "main"),
-                        harness=harness,
-                        scope=scope_str,
-                        skill_md_content=sc.get("skill_md_content"),
-                        cwd=target_dir,
-                        dest=skill_dest,
-                    )
-                if result_path:
-                    written.append((str(result_path), "cloned"))
-                else:
-                    failed_skills.append(sc_name)
-                    if output != "json":
-                        rprint(
-                            f"[red]\u2717 Failed to install skill '{esc(sc_name)}'.[/red] "
-                            f"Clone from {esc(git_url)} failed."
-                        )
-            else:
-                # Registry direct: SKILL.md content + optional script
-                with redirect_stdout(StringIO()) if output == "json" else nullcontext():
-                    result_path = install_skill_registry_direct(
-                        name=sc.get("name", "skill"),
-                        skill_md_content=sc.get("skill_md_content"),
-                        script_content=sc.get("script_content"),
-                        script_filename=sc.get("script_filename"),
-                        harness=harness,
-                        scope=scope_str,
-                        cwd=target_dir,
-                        dest=skill_dest,
-                    )
-                if result_path:
-                    written.append((str(result_path), "installed"))
-                else:
-                    failed_skills.append(sc_name)
-                    if output != "json":
-                        rprint(f"[red]\u2717 Failed to install skill '{esc(sc_name)}'.[/red] No content available.")
+        snippet = rewrite_observal_interpreter(snippet)
+        written, failed_skills = write_install_snippet(
+            snippet,
+            harness=harness,
+            adapter=adapter,
+            target_dir=target_dir,
+            agent_id=str(agent_detail.get("id", resolved)),
+            is_user_scope=is_user_scope,
+            dry_run=dry_run,
+            quiet=output == "json",
+        )
 
         if failed_skills:
             fail(

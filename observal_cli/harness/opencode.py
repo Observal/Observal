@@ -25,6 +25,7 @@ from observal_cli.harness import (
     register_adapter,
 )
 from observal_cli.harness.base import BaseAdapter
+from observal_cli.harness.protocol import HeadlessPlan, HeadlessRequest
 
 _JSONC_COMMENT_RE = re.compile(
     r'("(?:[^"\\]|\\.)*")|//[^\n]*|/\*.*?\*/',
@@ -47,6 +48,7 @@ class OpenCodeAdapter(BaseAdapter):
     """Adapter for OpenCode."""
 
     home_markers = (".config/opencode",)
+    headless_binary = "opencode"
     managed_agent_profiles = ("user:agents/{name}.md", "project:.opencode/agents/{name}.md")
     managed_skills = ("user:skills/{name}/SKILL.md", "project:.opencode/skills/{name}/SKILL.md")
 
@@ -324,6 +326,15 @@ class OpenCodeAdapter(BaseAdapter):
         from observal_cli.cmd_doctor import _cleanup_opencode
 
         return _cleanup_opencode(dry_run)
+
+    # ── Headless delegation ──────────────────────────────────
+
+    def _headless_command(self, request: HeadlessRequest) -> HeadlessPlan:
+        # opencode.ai/docs/cli: `opencode run --agent <name> [message..]`.
+        argv = ["opencode", "run", "--agent", request.agent_name]
+        if request.model:
+            argv += ["--model", request.model]
+        return HeadlessPlan(argv=[*argv, "--", request.message])
 
 
 register_adapter(OpenCodeAdapter())

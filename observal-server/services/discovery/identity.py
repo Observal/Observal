@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """ARD identity: identifiers, media types and the compatibility inputs we normalise.
@@ -27,6 +28,8 @@ MEDIA_TYPE_SANDBOX = "application/vnd.observal.sandbox+json"
 MEDIA_TYPE_HOOK = "application/vnd.observal.hook+json"
 MEDIA_TYPE_AGENT = "application/vnd.observal.agent+json"
 MEDIA_TYPE_REGISTRY = "application/ai-registry+json"
+# A remote agent reachable over the Agent2Agent protocol; the artifact is its Agent Card.
+MEDIA_TYPE_A2A = "application/a2a-agent-card+json"
 
 KIND_MEDIA_TYPES: dict[DiscoveryKind, str] = {
     DiscoveryKind.skill: MEDIA_TYPE_SKILL,
@@ -47,6 +50,8 @@ _MEDIA_TYPE_ALIASES: dict[str, str] = {
     "application/mcp-server-card": MEDIA_TYPE_MCP,
     "application/ai-skill": MEDIA_TYPE_SKILL,
     "application/ai-skill+markdown": MEDIA_TYPE_SKILL,
+    "application/a2a-agent-card": MEDIA_TYPE_A2A,
+    "application/agent-card+json": MEDIA_TYPE_A2A,
 }
 
 

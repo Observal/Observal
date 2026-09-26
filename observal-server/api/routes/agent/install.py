@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Agent install, download stats, traces, resolve, manifest, and validate routes."""
@@ -293,6 +294,7 @@ async def install_agent(
     )
     install_options["_resolved_model"] = resolved_model
     install_options["_model_warnings"] = model_warnings
+    install_options["_delegation"] = _ds.get_sync_bool("discovery.delegation_enabled", True)
 
     snippet = generate_agent_config(
         install_agent_obj,

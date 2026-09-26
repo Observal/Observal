@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Antigravity CLI harness adapter."""
@@ -20,7 +21,8 @@ from observal_cli.harness import (
     SessionSource,
     register_adapter,
 )
-from observal_cli.harness.base import BaseAdapter
+from observal_cli.harness.base import BaseAdapter, inline_agent_prompt
+from observal_cli.harness.protocol import HeadlessPlan, HeadlessRequest
 from observal_cli.shared.utils import (
     extract_mcp_servers,
     first_content_line,
@@ -33,6 +35,7 @@ class AntigravityAdapter(BaseAdapter):
     """Adapter for Antigravity CLI."""
 
     home_markers = (".gemini/antigravity-cli", ".gemini/config")
+    headless_binary = "agy"
     managed_agent_profiles = ()
 
     @property
@@ -287,6 +290,16 @@ class AntigravityAdapter(BaseAdapter):
         from observal_cli.cmd_doctor import _patch_antigravity
 
         return _patch_antigravity(dry_run)
+
+    # ── Headless delegation ──────────────────────────────────
+
+    def _headless_command(self, request: HeadlessRequest) -> HeadlessPlan:
+        # agy --help: --print <prompt>, --print-timeout, --sandbox. No agent
+        # flag, so the agent's instructions are inlined into the prompt.
+        argv = ["agy", f"--print={inline_agent_prompt(request)}", "--print-timeout", "30m", "--sandbox"]
+        if request.model:
+            argv += ["--model", request.model]
+        return HeadlessPlan(argv=argv)
 
 
 register_adapter(AntigravityAdapter())

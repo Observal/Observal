@@ -1,5 +1,6 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # API endpoints
@@ -67,9 +68,9 @@ ARD envelope `{"errorCode": "INVALID_ARGUMENT", "message": "..."}`. See
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/.well-known/ard.json` | Manifest of the registry entry plus public approved resources |
+| `GET` | `/.well-known/ard.json` | Manifest of the registry entry plus this deployment's public approved resources (not imported remote agents) |
 | `GET` | `/.well-known/ai-catalog.json` | Predecessor path, same document |
-| `POST` | `/api/v1/ard/search` | ARD Search. `score` is relevance only; `obs:approval`, `obs:availability`, `obs:supportedHarnesses` carry the rest |
+| `POST` | `/api/v1/ard/search` | ARD Search. `score` is relevance only; `obs:approval`, `obs:availability`, `obs:supportedHarnesses`, `obs:delegable` carry the rest; remote A2A results add `obs:provider` from the card |
 | `GET` | `/api/v1/ard/agents` | ARD List: deterministic browse with `filter`, `orderBy`, `pageSize`, `pageToken` |
 | `POST` | `/api/v1/ard/explore` | ARD Explore: `501` until facets ship |
 | `GET` | `/api/v1/ard/entries/{identifier}` | One complete entry by `urn:air:` identifier (Observal-specific) |
@@ -78,6 +79,26 @@ ARD envelope `{"errorCode": "INVALID_ARGUMENT", "message": "..."}`. See
 Search request body follows the spec: `{"query": {"text": "...", "filter": {...}}, "federation": "none", "pageSize": 5}`.
 Supported filter terms: `type`, `tags`, `capabilities`, `publisher`, `version`,
 `obs:kind`, `obs:supportedHarnesses`, `obs:lifecycle`, `obs:activatable`.
+
+### Remote A2A agents
+
+Remote agents are registered by Agent Card URL and reviewed before anyone can
+delegate to them. They then appear in search as `type:
+application/a2a-agent-card+json` with the reviewed card pinned in the entry
+(`obs:agentCard`, `obs:a2aInterface`). Clients call the agent directly; the
+server does not proxy A2A traffic. See [ADR 0002](../adr/0002-a2a-delegation.md).
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/v1/ard/imports` | Remote agents the caller can see, including their own and (reviewers) pending ones |
+| `POST` | `/api/v1/ard/imports/a2a` | Register or refresh a card: `{"cardUrl": "...", "visibility": "private\|team\|public", "teamId": "..."}`. `201` new, `200` refresh; a changed card returns to `pending` |
+| `POST` | `/api/v1/ard/imports/{identifier}/review` | Reviewers: `{"action": "approve\|reject", "reason": "..."}` (reason required to reject) |
+| `DELETE` | `/api/v1/ard/imports/{identifier}` | Owner or admin: remove from discovery |
+
+Cards must be served over https from a public address. Internal hosts are
+allowed individually with the `discovery.a2a_private_hosts` setting. The
+`discovery.delegation_enabled` setting (default on) adds the `observal-agents`
+MCP server to every pulled Agent.
 
 ## Telemetry
 
