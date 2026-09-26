@@ -98,6 +98,41 @@ KIRO_TOOL_CALL = json.dumps(
         },
     }
 )
+# Kiro IDE transcripts envelope every record as {id, timestamp, payload} and
+# dispatch on payload.type, unlike the CLI's flat "kind" records above.
+KIRO_IDE_PROMPT = json.dumps(
+    {
+        "id": "ide-prompt-1",
+        "timestamp": "2026-09-26T00:00:00.000Z",
+        "payload": {"type": "user", "content": "pull the agent called test"},
+    }
+)
+KIRO_IDE_TOOL_CALL = json.dumps(
+    {
+        "id": "ide-call-1",
+        "timestamp": "2026-09-26T00:00:01.000Z",
+        "payload": {
+            "type": "tool_call",
+            "toolCallId": "toolu_ide_1",
+            "toolName": "executeBash",
+            "args": {"command": "observal agent list"},
+        },
+    }
+)
+KIRO_IDE_REASONING = json.dumps(
+    {
+        "id": "ide-reason-1",
+        "timestamp": "2026-09-26T00:00:02.000Z",
+        "payload": {"type": "assistant", "content": "thinking...", "operationType": "Reasoning"},
+    }
+)
+KIRO_IDE_TURN_START = json.dumps(
+    {
+        "id": "ide-turn-1",
+        "timestamp": "2026-09-26T00:00:03.000Z",
+        "payload": {"type": "turn_start", "executionId": "exec-1"},
+    }
+)
 CURSOR_TOOL_CALL = json.dumps(
     {
         "role": "assistant",
@@ -173,6 +208,31 @@ GOOSE_TOOL_CALL = json.dumps(
                 "tool_id": "kiro-tool",
                 "timestamp": "2026-01-01 00:00:00.000",
             },
+        ),
+        (
+            "kiro",
+            KIRO_IDE_PROMPT,
+            {"event_type": "user_prompt", "uuid": "ide-prompt-1"},
+        ),
+        (
+            "kiro",
+            KIRO_IDE_TOOL_CALL,
+            {
+                "event_type": "tool_call",
+                "tool_name": "executeBash",
+                "tool_id": "toolu_ide_1",
+                "uuid": "ide-call-1",
+            },
+        ),
+        (
+            "kiro",
+            KIRO_IDE_REASONING,
+            {"event_type": "thinking"},
+        ),
+        (
+            "kiro",
+            KIRO_IDE_TURN_START,
+            {"event_type": "meta"},
         ),
         (
             "cursor",

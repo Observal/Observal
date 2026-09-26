@@ -6,6 +6,10 @@
 from __future__ import annotations
 
 import json
+import os
+import re
+import shutil
+import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -27,6 +31,98 @@ from observal_cli.shared.utils import (
     first_content_line,
     parse_frontmatter_field,
 )
+
+_KIRO_VERSION_RE = re.compile(r"(\d+)\.(\d+)")
+
+# Places the Kiro IDE (not the CLI) installs itself, per platform.
+_KIRO_IDE_APP_PATHS = (
+    "/Applications/Kiro.app",
+    "~/Applications/Kiro.app",
+    "~/Library/Application Support/Kiro",
+    "~/.config/Kiro",
+    "~/AppData/Roaming/Kiro",
+    "~/AppData/Local/Programs/kiro",
+)
+
+
+def kiro_cli_major(home: Path | None = None) -> int | None:
+    """Return the installed Kiro CLI major version, or None when undetectable."""
+    override = os.environ.get("OBSERVAL_KIRO_CLI_VERSION", "").strip()
+    if override:
+        match = _KIRO_VERSION_RE.search(override)
+        return int(match.group(1)) if match else None
+    exe = shutil.which("kiro-cli") or shutil.which("kiro")
+    if not exe:
+        return None
+    try:
+        proc = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    match = _KIRO_VERSION_RE.search(f"{proc.stdout} {proc.stderr}")
+    return int(match.group(1)) if match else None
+
+
+def kiro_ide_installed(home: Path | None = None) -> bool:
+    """Return True when a Kiro IDE install is present on this machine.
+
+    ``OBSERVAL_KIRO_IDE`` (``1``/``0``) overrides detection for headless setups
+    and tests.
+    """
+    override = os.environ.get("OBSERVAL_KIRO_IDE", "").strip()
+    if override:
+        return override not in ("0", "false", "no")
+    home = home or Path.home()
+    for raw in _KIRO_IDE_APP_PATHS:
+        path = Path(raw.replace("~", str(home), 1)) if raw.startswith("~") else Path(raw)
+        if path.exists():
+            return True
+    return False
+
+
+# Fields Kiro IDE 1.x treats as "CLI-only". ProfileLoader drops any JSON agent
+# profile that carries one of these without also setting "permissions", logging
+# reasonCode "cli_only_agent" - the agent then never appears in the IDE picker.
+# Both were removed from the V3 agent schema; "permissions" replaces them.
+_IDE_HOSTILE_FIELDS = ("allowedTools", "toolsSettings")
+
+
+def strip_ide_hostile_fields(content: dict) -> list[str]:
+    """Drop empty CLI-only tool fields so Kiro IDE will load the profile.
+
+    Only *empty* values are removed: they are inert placeholders that Observal
+    itself emitted, so dropping them cannot change behaviour on any surface. A
+    non-empty value is real user configuration and is left alone (the profile
+    then needs a ``permissions`` block to be IDE-visible).
+
+    Returns the names of the fields that were removed.
+    """
+    if content.get("permissions") is not None:
+        return []
+    removed = []
+    for field in _IDE_HOSTILE_FIELDS:
+        if field in content and not content[field]:
+            del content[field]
+            removed.append(field)
+    return removed
+
+
+def use_inline_hooks(home: Path | None = None) -> bool:
+    """Return True when this machine still needs CLI 2.x inline agent hooks.
+
+    Inline hooks are the only format a Kiro CLI 2.x understands. The standalone
+    ``.kiro/hooks/*.json`` file replaced them in IDE 1.0 and CLI 3.0, so this
+    turns on the legacy format purely by CLI version.
+
+    Having the IDE installed is deliberately *not* a reason to withhold them.
+    The IDE and the CLI are separate surfaces that can coexist, and a machine
+    with IDE 1.x alongside CLI 2.x needs both formats at once: the standalone
+    file for the IDE, inline hooks for the CLI. Gating on the IDE meant such
+    machines got neither usable format on the CLI side and silently stopped
+    reporting CLI sessions. Inline hooks cost the IDE nothing - it loads an
+    agent carrying them and simply never fires them.
+    """
+    major = kiro_cli_major(home)
+    return major is not None and major < 3
 
 
 class KiroAdapter(BaseAdapter):
@@ -62,26 +158,52 @@ class KiroAdapter(BaseAdapter):
         home: Path | None = None,
         since_hours: int = 168,
     ) -> list[SessionSource]:
-        from observal_cli.sessions.kiro import find_sessions_dir, read_kiro_session_cwd
+        """Return recent transcripts from both the CLI and IDE layouts."""
+        from observal_cli.sessions.kiro import (
+            find_sessions_dir,
+            read_kiro_session_cwd,
+            sessions_root,
+        )
 
         cutoff = time.time() - since_hours * 3600
-        root = find_sessions_dir(home)
-        if not root.is_dir():
-            return []
         sources: list[SessionSource] = []
-        for path in sorted(root.glob("*.jsonl")):
+
+        def add(session_id: str, path: Path) -> None:
             try:
-                if path.stat().st_mtime >= cutoff:
-                    sources.append(
-                        SessionSource(
-                            self.harness_name,
-                            path.stem,
-                            path,
-                            cwd=read_kiro_session_cwd(path),
-                        )
-                    )
+                if path.stat().st_mtime < cutoff:
+                    return
+            except OSError:
+                return
+            sources.append(
+                SessionSource(
+                    self.harness_name,
+                    session_id,
+                    path,
+                    cwd=read_kiro_session_cwd(path),
+                )
+            )
+
+        cli_root = find_sessions_dir(home)
+        if cli_root.is_dir():
+            for path in sorted(cli_root.glob("*.jsonl")):
+                add(path.stem, path)
+
+        # IDE layout: <sessions>/<workspaceHash>/<session_id>/messages.jsonl
+        root = sessions_root(home)
+        try:
+            buckets = sorted(d for d in root.iterdir() if d.is_dir() and d.name != "cli")
+        except OSError:
+            buckets = []
+        for bucket in buckets:
+            try:
+                session_dirs = sorted(d for d in bucket.iterdir() if d.is_dir())
             except OSError:
                 continue
+            for session_dir in session_dirs:
+                transcript = session_dir / "messages.jsonl"
+                if transcript.exists():
+                    add(session_dir.name, transcript)
+
         return sources
 
     def resolve_session_agent_identity(
@@ -180,6 +302,15 @@ class KiroAdapter(BaseAdapter):
         return build_kiro_hooks(agent_id=agent_id or "")
 
     def detect_hooks(self, config_dir: Path) -> str:
+        """Report hook health across both the v1 hooks file and legacy inline hooks.
+
+        The standalone ``hooks/observal.json`` file covers every agent on IDE 1.0
+        and CLI 3.0, so its presence alone means hooks are installed. Only when
+        it is absent do we fall back to counting legacy inline agent hooks.
+        """
+        if self._v1_hooks_installed(config_dir):
+            return "installed"
+
         agents_dir = config_dir / "agents"
         if not agents_dir.is_dir():
             return "missing"
@@ -204,6 +335,22 @@ class KiroAdapter(BaseAdapter):
         if hooked == len(agent_profiles):
             return "installed"
         return "partial" if hooked > 0 else "missing"
+
+    @staticmethod
+    def _v1_hooks_installed(config_dir: Path) -> bool:
+        from observal_cli.harness_specs.kiro_hooks_spec import (
+            KIRO_V1_HOOK_FILENAME,
+            is_observal_v1_hook,
+        )
+
+        hooks_file = config_dir / "hooks" / KIRO_V1_HOOK_FILENAME
+        try:
+            data = json.loads(hooks_file.read_text())
+        except (json.JSONDecodeError, OSError):
+            return False
+        if not isinstance(data, dict):
+            return False
+        return any(is_observal_v1_hook(h) for h in data.get("hooks") or [])
 
     # ── Private scanning helpers ──────────────────────────────────
 
@@ -330,9 +477,20 @@ class KiroAdapter(BaseAdapter):
         return ScanResult(mcps=deduped, skills=skills, hooks=hooks, agents=agents)
 
     def rewrite_agent_profile(self, content: dict, agent_id: str) -> dict:
-        from observal_cli.cmd_pull import _rewrite_kiro_hooks
+        from observal_cli.cmd_pull import _rewrite_kiro_agent_profile
 
-        return _rewrite_kiro_hooks(content, agent_id=agent_id)
+        return _rewrite_kiro_agent_profile(content, agent_id=agent_id)
+
+    def rewrite_hooks(self, content: dict, agent_id: str) -> dict:
+        """Refresh the standalone v1 hooks file.
+
+        ``agent_id`` is accepted for protocol compatibility and deliberately
+        unused: one hooks file serves every Kiro agent in the scope, and Kiro
+        attribution comes from session metadata, not the hook environment.
+        """
+        from observal_cli.harness_specs.kiro_hooks_spec import merge_kiro_hooks_file
+
+        return merge_kiro_hooks_file(content)
 
     def patch_hooks(self, dry_run: bool) -> bool:
         from observal_cli.cmd_doctor import _patch_kiro

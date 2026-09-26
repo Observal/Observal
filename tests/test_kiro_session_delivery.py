@@ -272,3 +272,194 @@ def test_kiro_hook_spec_uses_shared_engine_with_uuid_attribution():
     assert "OBSERVAL_AGENT_ID=agent-uuid" in command or 'set "OBSERVAL_AGENT_ID=agent-uuid"' in command
     assert "observal_cli.hooks.session_push --harness kiro" in command
     assert hooks["stop"][0]["command"] == command
+
+
+# ── Kiro IDE transcript layout ────────────────────────────────────
+#
+# The IDE stores sessions as
+# ``~/.kiro/sessions/<workspaceHash>/<session_id>/messages.jsonl`` with a
+# sibling ``session.json``, enveloping each record as ``{id, timestamp,
+# payload}``. Nothing about that matches the CLI layout, so these pin the
+# discovery and metadata paths that make IDE sessions deliverable at all.
+
+
+def make_ide_session(
+    home: Path,
+    session_id: str = "sess_ide-1",
+    workspace: str = "/work/project",
+    bucket: str = "a1b2c3d4",
+    credits: tuple[float, ...] = (0.25, 0.75),
+    sub_agents: tuple[str, ...] = (),
+) -> Path:
+    session_dir = home / ".kiro" / "sessions" / bucket / session_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+    records = [
+        {"id": "r1", "payload": {"type": "session_start", "agentType": "vibe"}},
+        {"id": "r2", "payload": {"type": "user", "content": "hello"}},
+        {"id": "r3", "payload": {"type": "assistant", "content": "hi", "operationType": "Say"}},
+    ]
+    for index, name in enumerate(sub_agents):
+        records.append(
+            {
+                "id": f"sub{index}",
+                "payload": {"type": "sub_agent_start", "subAgentName": name, "prompt": "go"},
+            }
+        )
+    for value in credits:
+        records.append(
+            {
+                "id": f"u{value}",
+                "payload": {
+                    "type": "usage_summary",
+                    "promptTurnSummaries": [{"unit": "credit", "usage": value}],
+                },
+            }
+        )
+    transcript = session_dir / "messages.jsonl"
+    transcript.write_text("".join(json.dumps(r) + "\n" for r in records))
+    (session_dir / "session.json").write_text(json.dumps({"id": session_id, "workspacePaths": [workspace]}))
+    return transcript
+
+
+def test_kiro_finds_ide_transcript_across_workspace_buckets(tmp_path: Path):
+    """The workspace hash is not derivable from the session id, so buckets are scanned."""
+    from observal_cli.sessions.kiro import find_kiro_jsonl
+
+    make_ide_session(tmp_path, session_id="sess_a", bucket="bucket-one")
+    expected = make_ide_session(tmp_path, session_id="sess_b", bucket="bucket-two")
+
+    assert find_kiro_jsonl("sess_b", home=tmp_path) == expected
+    assert find_kiro_jsonl("sess_missing", home=tmp_path) is None
+
+
+def test_kiro_prefers_cli_layout_when_both_exist(tmp_path: Path):
+    cli = make_session(tmp_path, session_id="dup")
+    make_ide_session(tmp_path, session_id="dup")
+
+    from observal_cli.sessions.kiro import find_kiro_jsonl
+
+    assert find_kiro_jsonl("dup", home=tmp_path) == cli
+
+
+def test_kiro_ide_cwd_comes_from_workspace_paths(tmp_path: Path):
+    """The IDE records ``workspacePaths``; there is no ``cwd`` key to read."""
+    from observal_cli.sessions.kiro import read_kiro_session_cwd
+
+    transcript = make_ide_session(tmp_path, workspace="/work/project")
+
+    assert read_kiro_session_cwd(transcript) == "/work/project"
+
+
+def test_kiro_ide_credits_sum_usage_summaries(tmp_path: Path):
+    """IDE credits live on per-turn ``usage_summary`` payloads, not the companion file."""
+    from observal_cli.sessions.kiro import read_kiro_credits
+
+    make_ide_session(tmp_path, session_id="sess_credits", credits=(0.25, 0.75))
+
+    assert read_kiro_credits("sess_credits", home=tmp_path) == 1.0
+
+
+def test_kiro_ide_credits_absent_before_first_turn_completes(tmp_path: Path):
+    from observal_cli.sessions.kiro import read_kiro_credits
+
+    make_ide_session(tmp_path, session_id="sess_new", credits=())
+
+    assert read_kiro_credits("sess_new", home=tmp_path) is None
+
+
+def test_kiro_resolves_ide_session_source_from_hook_event(tmp_path: Path):
+    """End of the chain: a hook event for an IDE session must yield a source."""
+    make_ide_session(tmp_path, session_id="sess_hooked", workspace="/work/ide")
+
+    ensure_loaded()
+    source = get_adapter("kiro").resolve_session_source({"session_id": "sess_hooked"}, home=tmp_path)
+
+    assert source is not None
+    assert source.session_id == "sess_hooked"
+    assert source.path.name == "messages.jsonl"
+    assert source.cwd == "/work/ide"
+
+
+def test_kiro_discovers_both_layouts_for_reconcile(tmp_path: Path):
+    make_session(tmp_path, session_id="cli-one")
+    make_ide_session(tmp_path, session_id="sess_ide-one")
+
+    ensure_loaded()
+    found = {s.session_id for s in get_adapter("kiro").discover_session_sources(home=tmp_path)}
+
+    assert found == {"cli-one", "sess_ide-one"}
+
+
+def test_kiro_ide_partial_line_does_not_break_credit_read(tmp_path: Path):
+    """A transcript being appended to can end mid-line; that must not raise."""
+    from observal_cli.sessions.kiro import read_kiro_credits
+
+    transcript = make_ide_session(tmp_path, session_id="sess_partial", credits=(0.5,))
+    with transcript.open("a") as handle:
+        handle.write('{"id":"trunc","payl')
+
+    assert read_kiro_credits("sess_partial", home=tmp_path) == 0.5
+
+
+# ── Kiro IDE agent attribution ────────────────────────────────────
+#
+# An IDE session always runs as Kiro itself. A registry agent only participates
+# when Kiro delegates a turn to it, recorded as a ``sub_agent_start`` payload;
+# nothing else on disk names an agent.
+
+
+def test_kiro_ide_attributes_session_to_delegated_agent(tmp_path: Path):
+    from observal_cli.sessions.kiro import read_kiro_agent_name
+
+    transcript = make_ide_session(tmp_path, sub_agents=("pikachu-dude-agent",))
+
+    assert read_kiro_agent_name(transcript) == "pikachu-dude-agent"
+
+
+def test_kiro_ide_uses_most_recent_delegation(tmp_path: Path):
+    """Attribution is session-level, so the latest delegation wins."""
+    from observal_cli.sessions.kiro import read_kiro_agent_name
+
+    transcript = make_ide_session(tmp_path, sub_agents=("first-agent", "second-agent", "third-agent"))
+
+    assert read_kiro_agent_name(transcript) == "third-agent"
+
+
+def test_kiro_ide_without_delegation_stays_unattributed(tmp_path: Path):
+    """A bare Kiro conversation belongs to no registry agent."""
+    from observal_cli.sessions.kiro import read_kiro_agent_name
+
+    transcript = make_ide_session(tmp_path, sub_agents=())
+
+    assert read_kiro_agent_name(transcript) is None
+
+
+def test_kiro_ide_identity_resolves_through_lockfile(tmp_path: Path, monkeypatch):
+    """The delegated name must resolve to a registry id, like the CLI path does."""
+    import observal_cli.lockfile as lockfile
+
+    monkeypatch.setattr(
+        lockfile,
+        "get_agent_by_name",
+        lambda name, harness, directory=None: (
+            {"id": "agent-uuid", "version": "2.0.0"} if name == "pikachu-dude-agent" else None
+        ),
+    )
+    transcript = make_ide_session(tmp_path, sub_agents=("pikachu-dude-agent",), workspace="/work/ide")
+    ensure_loaded()
+
+    assert get_adapter("kiro").resolve_session_agent_identity(transcript, "/work/ide") == (
+        "agent-uuid",
+        "2.0.0",
+    )
+
+
+def test_kiro_ide_unknown_agent_is_left_unattributed(tmp_path: Path, monkeypatch):
+    """An agent that was never pulled has no local id; do not invent one."""
+    import observal_cli.lockfile as lockfile
+
+    monkeypatch.setattr(lockfile, "get_agent_by_name", lambda name, harness, directory=None: None)
+    transcript = make_ide_session(tmp_path, sub_agents=("never-pulled-agent",))
+    ensure_loaded()
+
+    assert get_adapter("kiro").resolve_session_agent_identity(transcript, "/work") == (None, None)
