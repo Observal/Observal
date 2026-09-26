@@ -14,12 +14,36 @@ configure MCP servers, add hooks, expose skills, and collect Kiro session teleme
 Kiro agent profiles are JSON files. Project agents live in `.kiro/agents/`.
 User agents live in `~/.kiro/agents/`.
 
-When Observal installs a Kiro agent, it writes hook commands into that agent JSON.
-The default hooks run the shared `observal_cli.hooks.session_push --harness kiro`
-entry point for `userPromptSubmit` and `stop`.
+When Observal installs a Kiro agent, it writes telemetry hooks into a standalone
+hooks file — `~/.kiro/hooks/observal.json` (user scope) or
+`.kiro/hooks/observal.json` (project scope) — in the v1 schema, using the
+`UserPromptSubmit` and `Stop` triggers. Both hooks run the shared
+`observal_cli.hooks.session_push --harness kiro` entry point.
+
+The standalone file is the format Kiro IDE 1.0 and Kiro CLI 3.0 read. Observal
+deliberately does **not** write hooks inline into the agent JSON, because Kiro
+IDE 1.0 never fires inline hooks — an inline-hooked agent loads and runs in the
+IDE, it just reports no telemetry.
+
+Inline hooks do **not** hide an agent from the IDE agent picker. What does is
+`allowedTools` or `toolsSettings` without a `permissions` block: Kiro IDE 1.x
+`ProfileLoader` rejects such a profile outright (`reasonCode cli_only_agent`).
+Observal no longer emits either field and strips them on pull.
+
+### Legacy Kiro CLI 2.x
+
+Kiro CLI 2.x only understands inline agent hooks. When Observal detects a CLI
+2.x install *and no Kiro IDE on the machine*, it additionally writes the legacy
+inline `userPromptSubmit`/`stop` hooks into the agent JSON. Installing the IDE
+later and re-running `observal agent pull` (or `observal doctor patch --harness
+kiro`) removes them again.
+
+Detection can be overridden with `OBSERVAL_KIRO_CLI_VERSION` and
+`OBSERVAL_KIRO_IDE` (`1`/`0`).
 
 The hook reads Kiro session JSONL files from `~/.kiro/sessions/cli/`. It reads
-only new lines since the last push and sends them to Observal.
+only new lines since the last push and sends them to Observal. Note that this
+path is written by the Kiro CLI; IDE-only sessions are not yet collected.
 
 ---
 
@@ -28,8 +52,9 @@ only new lines since the last push and sends them to Observal.
 | Capability | Support |
 |---|---|
 | Agent profiles | Project and user scope |
-| Hook bridge | `userPromptSubmit` and `stop` by default |
-| Custom hooks | `agentSpawn`, `userPromptSubmit`, `preToolUse`, `postToolUse`, `stop` |
+| Hook bridge | `UserPromptSubmit` and `Stop` in `.kiro/hooks/observal.json` |
+| Custom hooks | `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `Stop`, `PostFileSave`, `PostFileCreate`, `PostFileDelete` |
+| Legacy CLI 2.x | Inline agent hooks, only when no Kiro IDE is installed |
 | MCP servers | `.kiro/settings/mcp.json` and `~/.kiro/settings/mcp.json` |
 | Agent prompt | Registry prompts are embedded in the generated Kiro agent profile |
 | Guidance files | Scanned from steering files and `AGENTS.md`, not overwritten |

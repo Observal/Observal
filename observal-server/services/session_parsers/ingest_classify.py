@@ -150,14 +150,76 @@ def _tool_info_claude_code(parsed: dict) -> tuple[str | None, str | None]:
 # ---------------------------------------------------------------------------
 
 
-def _classify_kiro(parsed: dict) -> str | None:
-    """Classify one Kiro JSONL line.
+# Kiro IDE transcript payload types that carry no analysable content.
+_KIRO_IDE_META_TYPES = frozenset(
+    {
+        "session_start",
+        "session_event",
+        "session_metadata",
+        "turn_start",
+        "turn_end",
+        "usage_summary",
+        "sub_agent_start",
+        "sub_agent_complete",
+        "pending_interaction",
+        "interaction_resolved",
+        "ContextualHookInvoked",
+    }
+)
 
-    Kiro uses ``kind`` (not ``type``) with values:
+
+def _kiro_ide_payload(parsed: dict) -> dict | None:
+    """Return the IDE record's payload, or None when the line is CLI-shaped.
+
+    The IDE envelopes every record as ``{id, timestamp, payload}`` and puts the
+    discriminator on ``payload.type``; the CLI writes a flat record keyed by
+    ``kind``. Both arrive on the ``kiro`` harness, so the shape decides.
+    """
+    payload = parsed.get("payload")
+    if isinstance(payload, dict) and payload.get("type"):
+        return payload
+    return None
+
+
+def _classify_kiro_ide(payload: dict) -> str | None:
+    """Classify one Kiro IDE transcript payload."""
+    ptype = str_field(payload, "type")
+
+    if ptype == "user":
+        # Skip empty continuation prompts, matching the CLI classifier.
+        return "user_prompt" if str_field(payload, "content").strip() else None
+
+    if ptype == "assistant":
+        # Reasoning is the model's internal trace, not user-visible output.
+        return "thinking" if str_field(payload, "operationType") == "Reasoning" else "assistant_text"
+
+    if ptype == "tool_call":
+        return "tool_call"
+
+    if ptype == "tool_result":
+        return "tool_result"
+
+    if ptype in _KIRO_IDE_META_TYPES:
+        return "meta"
+
+    # Unknown IDE payload -- store as system so nothing is silently dropped.
+    return "system"
+
+
+def _classify_kiro(parsed: dict) -> str | None:
+    """Classify one Kiro JSONL line, in either the CLI or IDE layout.
+
+    CLI records use ``kind`` (not ``type``) with values:
       Prompt           -> user prompt
       AssistantMessage -> assistant text or tool call
       ToolResults      -> tool result
+
+    IDE records are enveloped and dispatch on ``payload.type`` instead.
     """
+    ide = _kiro_ide_payload(parsed)
+    if ide is not None:
+        return _classify_kiro_ide(ide)
+
     kind = str_field(parsed, "kind")
 
     if kind == "Prompt":
@@ -187,6 +249,11 @@ def _classify_kiro(parsed: dict) -> str | None:
 
 
 def _preview_kiro(parsed: dict, event_type: str) -> str:
+    ide = _kiro_ide_payload(parsed)
+    if ide is not None:
+        if ide.get("type") == "tool_call":
+            return f"[tool_use: {str_field(ide, 'toolName')}]"[:_PREVIEW_MAX]
+        return str_field(ide, "content")[:_PREVIEW_MAX]
     try:
         kind = parsed.get("kind", "")
         data = parsed.get("data", {}) if isinstance(parsed.get("data"), dict) else {}
@@ -230,6 +297,11 @@ def _preview_kiro(parsed: dict, event_type: str) -> str:
 
 
 def _tool_info_kiro(parsed: dict) -> tuple[str | None, str | None]:
+    ide = _kiro_ide_payload(parsed)
+    if ide is not None:
+        if ide.get("type") in ("tool_call", "tool_result"):
+            return ide.get("toolName"), ide.get("toolCallId")
+        return None, None
     kind = str_field(parsed, "kind")
     content = list_field(dict_field(parsed, "data"), "content")
     if kind == "AssistantMessage":
