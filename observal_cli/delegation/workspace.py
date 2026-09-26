@@ -71,7 +71,9 @@ class Workspace:
     path: Path
     scratch: Path
     repo: Path | None
+    start_tree: str | None = None
     base_tree: str | None = None
+    setup_paths: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     _root: Path | None = None
 
@@ -144,13 +146,23 @@ def create(cwd: Path) -> Workspace:
         raise
     # Keep the path relative to the checkout: a caller in a subdirectory works there.
     rel = cwd.resolve().relative_to(repo.resolve()) if cwd.resolve().is_relative_to(repo.resolve()) else Path()
-    return Workspace(path=worktree / rel, scratch=scratch, repo=repo, notes=notes, _root=root)
+    start = _write_tree(worktree, scratch / "start.index")
+    return Workspace(path=worktree / rel, scratch=scratch, repo=repo, start_tree=start, notes=notes, _root=root)
 
 
 def mark_baseline(ws: Workspace) -> None:
-    """Record the tree after the agent's own config was written, so it never shows up in the patch."""
-    if ws.is_git:
-        ws.base_tree = _write_tree(ws.path, ws.scratch / "base.index")
+    """Record the tree after the agent's own config was written, so it never shows up in the patch.
+
+    Harnesses also rewrite their config when they start (OpenCode adds a
+    ``$schema`` key to ``opencode.json``), so every path the install created or
+    changed is left out of the patch, not just its initial content.
+    """
+    if not ws.is_git:
+        return
+    ws.base_tree = _write_tree(ws.path, ws.scratch / "base.index")
+    if ws.start_tree and ws.start_tree != ws.base_tree:
+        names = _git(ws.path, "diff-tree", "-r", "--name-only", "-z", ws.start_tree, ws.base_tree)
+        ws.setup_paths = [p.decode("utf-8", errors="surrogateescape") for p in names.split(b"\0") if p]
 
 
 def changes(ws: Workspace) -> str:
@@ -160,7 +172,8 @@ def changes(ws: Workspace) -> str:
     after = _write_tree(ws.path, ws.scratch / "after.index")
     if after == ws.base_tree:
         return ""
-    return _git(ws.path, "diff-tree", "-p", "--binary", "--no-color", ws.base_tree, after).decode(
+    pathspec = [":(top)", *(f":(top,exclude,literal){p}" for p in ws.setup_paths)] if ws.setup_paths else []
+    return _git(ws.path, "diff-tree", "-p", "--binary", "--no-color", ws.base_tree, after, "--", *pathspec).decode(
         "utf-8", errors="replace"
     )
 

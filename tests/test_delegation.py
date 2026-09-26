@@ -175,6 +175,28 @@ def test_local_run_returns_answer_and_patch_without_touching_the_caller(tmp_path
 
 
 @pytest.mark.skipif(not HAS_GIT, reason="git not installed")
+def test_harness_rewriting_its_own_config_stays_out_of_the_patch(tmp_path, monkeypatch):
+    # OpenCode adds "$schema" to the opencode.json the install wrote when it starts.
+    repo = _repo(tmp_path)
+    script = textwrap.dedent(
+        """
+        open("AGENT.md", "a").write("rewritten by the harness\\n")
+        open("app.py", "w").write("print('fixed')\\n")
+        print("done")
+        """
+    )
+    monkeypatch.setattr(local, "get_adapter", lambda _h: FakeAdapter(script))
+    monkeypatch.setattr(local, "materialize", _fake_materialize)
+    task = local.run(_local_task(repo), save=tasks.save, should_cancel=lambda: False)
+
+    assert task["status"]["state"] == tasks.STATE_COMPLETED, task["status"]
+    patch = tasks.message_text(task["artifacts"][1])
+    assert "app.py" in patch and "AGENT.md" not in patch
+    applied = subprocess.run(["git", "-C", str(repo), "apply", "--check", "-"], input=patch.encode(), check=False)
+    assert applied.returncode == 0
+
+
+@pytest.mark.skipif(not HAS_GIT, reason="git not installed")
 def test_local_run_can_be_canceled(tmp_path, monkeypatch):
     repo = _repo(tmp_path)
     monkeypatch.setattr(local, "get_adapter", lambda _h: FakeAdapter("import time; time.sleep(60)"))
