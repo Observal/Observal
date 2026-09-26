@@ -46,6 +46,8 @@ observal_cli/          Python CLI (Typer)
   harness/             CLI-side harness adapters (protocol.py, base.py, 10 adapters)
   harness_specs/       Hook specs (8: claude_code, kiro, codex, copilot, copilot_cli, opencode, antigravity, goose)
   skills/              Bundled skills installed on login (observal, observal-admin, etc.)
+  delegation/          Agent-to-agent delegation: A2A tasks, worktree isolation, headless runs,
+                       A2A client, observal-agents MCP server (docs/adr/0002-a2a-delegation.md)
 
 observal-server/       FastAPI server
   api/routes/          REST endpoints (agent/, admin/ are sub-packages)
@@ -80,6 +82,8 @@ The codebase follows a strict adapter pattern for harness-specific logic. This i
 **No if/elif chains for harness logic.** If you need harness-specific behavior, it goes in the adapter. The orchestrators (`cmd_scan.py`, `agent_builder.py`, `cmd_doctor.py`) call adapters via the registry, never with conditionals.
 
 **Capability gating.** Each adapter method maps to a capability via `METHOD_FEATURE_MAP` in `observal_cli/harness/protocol.py`. The registry entry's `capabilities` set (`hooks`, `mcp_servers`, `skills`, `prompts`) decides what is allowed; `BaseAdapter` raises `NotSupportedError` when the capability is absent. This means stubs are safe: they exist but can't be called for unsupported operations.
+
+**Headless runs are a verified fact.** The registry's `headless_run` runtime fact says a harness CLI can run one prompt non-interactively; the CLI adapter's `headless_command` builds the argv and `parse_headless_output` reads the answer. Delegation uses only harnesses with the fact set.
 
 **Session parsers are separate from adapters.** They live in `services/session_parsers/` (server-side) and handle converting raw JSONL into normalized trace events. All nine harnesses resolve a parser; Copilot reuses the Copilot CLI parser.
 
@@ -134,6 +138,7 @@ Vite 6 SPA with TanStack Router, not Next.js. `web/AGENTS.md` is the authoritati
 observal
 ├── api                      # authenticated JSON escape hatch for /api/v1 endpoints
 ├── discover                 # search, inspect, use approved resources for the current task
+├── delegate                 # find, run, status, reply, list, cancel, mcp: hand a task to another agent
 ├── scan                     # read-only discovery of what's installed
 ├── outdated                 # installed components with newer versions available
 ├── reconcile                # backfill sessions missed by automatic delivery
@@ -148,7 +153,8 @@ observal
 │   ├── models               #   inspect registry-backed harness model data
 │   ├── version              #   component version commands
 │   ├── recommend            #   components recommended from your own sessions
-│   └── bulk                 #   mixed component submission from one JSON file
+│   ├── bulk                 #   mixed component submission from one JSON file
+│   └── a2a                  #   submit, list, review, remove remote A2A agents
 ├── agent                    # create, bulk-create, list, my, show, install, archive,
 │                            # unarchive, delete, init, add, build, publish, release,
 │                            # versions, transfer-owner, co-authors
@@ -173,7 +179,7 @@ observal
 
 REST at `/api/v1/`. GraphQL at `/api/v1/graphql` (read-only telemetry layer with subscriptions).
 
-Key route files: `auth.py`, `mcp.py`, `skill.py`, `hook.py`, `prompt.py`, `sandbox.py`, `review.py`, `feedback.py`, `dashboard.py`, `insights.py`, `reconcile.py`, `ingest.py`, `telemetry.py`, `alert.py`, `config.py`, `sessions.py`, `device_auth.py`, `jwks.py`, `component_source.py`, `component_versions.py`, `agent_versions.py`, `bulk.py`, `support.py`, `preview.py`, `audit.py`, `registry_models.py`.
+Key route files: `ard.py`, `ard_imports.py` (remote A2A agents), `auth.py`, `mcp.py`, `skill.py`, `hook.py`, `prompt.py`, `sandbox.py`, `review.py`, `feedback.py`, `dashboard.py`, `insights.py`, `reconcile.py`, `ingest.py`, `telemetry.py`, `alert.py`, `config.py`, `sessions.py`, `device_auth.py`, `jwks.py`, `component_source.py`, `component_versions.py`, `agent_versions.py`, `bulk.py`, `support.py`, `preview.py`, `audit.py`, `registry_models.py`.
 
 Sub-packages: `agent/` (crud, install, draft), `admin/` (enterprise_settings, users, org, retention).
 

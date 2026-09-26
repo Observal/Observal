@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Observal Contributors -->
+<!-- SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Component submission
@@ -12,6 +13,7 @@
 - Hook
 - Prompt
 - Sandbox
+- Remote A2A agent
 - Drafts and review status
 
 Submit only content the user owns or is authorized to publish. Use `--team TEAM_HANDLE --visibility team` for private teamspace ownership, or `--visibility public` for reviewable public content.
@@ -90,6 +92,20 @@ observal registry sandbox submit --from-file sandbox.json --output json
 ```
 
 Treat runtime, image, network policy, limits, entrypoint, and harness support as security-relevant fields. Do not weaken them silently.
+
+## Remote A2A agent
+
+A running service that publishes an A2A Agent Card (another team's agent, a deployed triage or data agent) is registered by URL, not submitted as a component. Registered agents are reviewed like components; once approved, agents can find them with discovery and hand them tasks.
+
+```bash
+observal registry a2a submit https://agents.acme.com --visibility private --output json          # /.well-known/agent-card.json
+observal registry a2a submit https://agents.acme.com/a2a/card.json --visibility team --team platform --output json
+observal registry a2a list --output json
+observal registry a2a review urn:air:agents.acme.com:a2a:incident-triage --approve --output json   # reviewers only
+observal registry a2a remove urn:air:agents.acme.com:a2a:incident-triage --yes --output json
+```
+
+The server fetches the card over https (internal hosts only when an administrator allowed them), and the reviewed card is pinned. Resubmitting a card whose content changed sends it back to review. Credentials are never stored in Observal.
 
 ## Drafts and review status
 

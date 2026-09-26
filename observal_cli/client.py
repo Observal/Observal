@@ -92,7 +92,8 @@ def _safe_detail(response: httpx.Response) -> str | None:
         data = response.json()
     except (ValueError, UnicodeDecodeError):
         return None
-    detail = data.get("detail") if isinstance(data, dict) else None
+    # FastAPI errors use ``detail``; ARD routes use ``{"errorCode", "message"}``.
+    detail = (data.get("detail") or data.get("message")) if isinstance(data, dict) else None
     return detail.strip()[:500] if isinstance(detail, str) and detail.strip() else None
 
 

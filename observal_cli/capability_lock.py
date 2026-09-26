@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """The capability lock: a local record of which registry resources were used, and when.
@@ -39,7 +40,8 @@ MAX_LINE_BYTES = 8 * 1024
 
 MODE_CONTEXT = "context"  # content loaded into the current session
 MODE_NEXT_SESSION = "next-session"  # harness config written, effective after restart
-MODES = (MODE_CONTEXT, MODE_NEXT_SESSION)
+MODE_DELEGATED = "delegated"  # the session handed a task to this agent (observal_cli.delegation)
+MODES = (MODE_CONTEXT, MODE_NEXT_SESSION, MODE_DELEGATED)
 
 
 @dataclass(slots=True)

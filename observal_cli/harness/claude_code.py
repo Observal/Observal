@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Claude Code harness adapter."""
@@ -20,7 +21,8 @@ from observal_cli.harness import (
     SessionSource,
     register_adapter,
 )
-from observal_cli.harness.base import BaseAdapter
+from observal_cli.harness.base import BaseAdapter, parse_json_result
+from observal_cli.harness.protocol import HeadlessPlan, HeadlessRequest, HeadlessResult
 from observal_cli.shared.utils import (
     _OBSERVAL_HOOK_MARKERS,
     extract_body,
@@ -34,6 +36,7 @@ class ClaudeCodeAdapter(BaseAdapter):
     """Adapter for Claude Code (Anthropic)."""
 
     home_markers = (".claude",)
+    headless_binary = "claude"
     managed_agent_profiles = ("user:agents/{name}.md", "project:.claude/agents/{name}.md")
     managed_skills = ("user:skills/{name}/SKILL.md",)
 
@@ -403,6 +406,40 @@ class ClaudeCodeAdapter(BaseAdapter):
         from observal_cli.cmd_doctor import _cleanup_claude_code
 
         return _cleanup_claude_code(dry_run)
+
+    # ── Headless delegation ──────────────────────────────────
+
+    def _headless_command(self, request: HeadlessRequest) -> HeadlessPlan:
+        # claude --help: -p/--print, --agent, --permission-mode, --mcp-config,
+        # --strict-mcp-config, --session-id. The prompt goes on stdin so a task
+        # that starts with "-" is never read as a flag. Edits are accepted (they
+        # land in the throwaway worktree); anything else that asks is denied in
+        # print mode, except the agent's own reviewed MCP servers.
+        mcp_path = request.scratch_dir / "mcp.json"
+        mcp_path.write_text(json.dumps({"mcpServers": request.mcp_servers}, indent=2), encoding="utf-8")
+        argv = [
+            "claude",
+            "-p",
+            "--agent",
+            request.agent_name,
+            "--output-format",
+            "json",
+            "--permission-mode",
+            "acceptEdits",
+            "--session-id",
+            request.session_id,
+            "--mcp-config",
+            str(mcp_path),
+            "--strict-mcp-config",
+        ]
+        if request.mcp_servers:
+            argv += ["--allowedTools", ",".join(f"mcp__{name}" for name in request.mcp_servers)]
+        if request.model:
+            argv += ["--model", request.model]
+        return HeadlessPlan(argv=argv, stdin=request.message, session_id=request.session_id)
+
+    def parse_headless_output(self, plan: HeadlessPlan, stdout: str) -> HeadlessResult:
+        return parse_json_result(plan, stdout) or super().parse_headless_output(plan, stdout)
 
 
 register_adapter(ClaudeCodeAdapter())

@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Kiro harness adapter."""
@@ -21,6 +22,7 @@ from observal_cli.harness import (
     register_adapter,
 )
 from observal_cli.harness.base import BaseAdapter
+from observal_cli.harness.protocol import HeadlessPlan, HeadlessRequest
 from observal_cli.shared.utils import (
     _OBSERVAL_HOOK_MARKERS,
     extract_mcp_servers,
@@ -33,6 +35,7 @@ class KiroAdapter(BaseAdapter):
     """Adapter for Kiro (AWS)."""
 
     home_markers = (".kiro",)
+    headless_binary = "kiro-cli"
     managed_agent_profiles = ("user:agents/{name}.json", "project:.kiro/agents/{name}.json")
     managed_skills = ("user:skills/{name}/SKILL.md",)
 
@@ -346,6 +349,27 @@ class KiroAdapter(BaseAdapter):
 
     def requires_explicit_agent_id(self) -> bool:
         return True
+
+    # ── Headless delegation ──────────────────────────────────
+
+    def _headless_command(self, request: HeadlessRequest) -> HeadlessPlan:
+        # kiro-cli chat --help: --no-interactive, --agent, --trust-tools, --wrap.
+        # Only file tools and the agent's own MCP servers are trusted; shell
+        # commands are refused because nobody is there to approve them.
+        trusted = ["fs_read", "fs_write", *(f"@{name}" for name in request.mcp_servers)]
+        argv = [
+            "kiro-cli",
+            "chat",
+            "--no-interactive",
+            "--agent",
+            request.agent_name,
+            "--wrap",
+            "never",
+            f"--trust-tools={','.join(trusted)}",
+        ]
+        if request.model:
+            argv += ["--model", request.model]
+        return HeadlessPlan(argv=[*argv, "--", request.message])
 
 
 register_adapter(KiroAdapter())

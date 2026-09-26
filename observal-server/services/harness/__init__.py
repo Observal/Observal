@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Harness adapter protocol, context, and registry."""
@@ -187,6 +188,7 @@ def generate_agent_config(
     """
     ensure_loaded()
     from services.harness.helpers import (
+        _build_delegation_mcp_entry,
         _build_hook_configs,
         _build_mcp_configs,
         _build_rules_content,
@@ -211,6 +213,9 @@ def generate_agent_config(
         sandbox_mcp = _build_sandbox_mcp_entry(sandbox_listings, harness)
         if sandbox_mcp:
             mcp_configs.update(sandbox_mcp)
+
+    if options.get("_delegation"):
+        mcp_configs.update(_build_delegation_mcp_entry(agent, harness))
 
     # Harnesses with first-class prompt files keep the agent body to a name list.
     emit_prompt_files = adapter.emits_prompt_files()

@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Session JSONL ingest endpoint."""
@@ -23,8 +24,9 @@ MAX_SESSION_TOTAL_LINES = 10_000_000
 
 
 MAX_CAPABILITIES_PER_PUSH = 200
-_CAPABILITY_KINDS = {"agent", "mcp", "skill", "hook", "prompt", "sandbox"}
-_CAPABILITY_MODES = {"context", "next-session"}
+_CAPABILITY_KINDS = {"agent", "mcp", "skill", "hook", "prompt", "sandbox", "external"}
+# delegated: the session handed a task to this agent (ADR 0002)
+_CAPABILITY_MODES = {"context", "next-session", "delegated"}
 _CAPABILITY_CONFIDENCE = {"exact", "window", "loose"}
 
 

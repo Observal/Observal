@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """harness adapter protocol definition.
@@ -150,6 +151,42 @@ class SessionSource:
     def checkpoint_key(self) -> str:
         """Return the local checkpoint key for this source."""
         return self.cursor_key or self.session_id
+
+
+@dataclass(frozen=True)
+class HeadlessRequest:
+    """One delegated task for a harness to run non-interactively (ADR 0002).
+
+    The agent has already been materialized into ``workdir`` with project
+    scope, so harnesses that select agents by name find it there. Harnesses
+    without an agent flag get ``instructions`` inlined into the prompt.
+    """
+
+    agent_name: str
+    instructions: str
+    message: str
+    workdir: Path
+    scratch_dir: Path
+    session_id: str
+    mcp_servers: dict = field(default_factory=dict)
+    model: str | None = None
+
+
+@dataclass(frozen=True)
+class HeadlessPlan:
+    """How to launch the child process, and where its answer will be."""
+
+    argv: list[str]
+    stdin: str | None = None
+    output_file: Path | None = None
+    session_id: str | None = None
+
+
+@dataclass(frozen=True)
+class HeadlessResult:
+    text: str
+    session_id: str | None = None
+    error: str | None = None
 
 
 class NotSupportedError(Exception):
@@ -355,6 +392,19 @@ class HarnessAdapter(Protocol):
 
     def requires_explicit_agent_id(self) -> bool:
         """Return whether sessions must not fall back to name or cwd attribution."""
+        ...
+
+    def headless_command(self, request: HeadlessRequest) -> HeadlessPlan:
+        """Build the argv that runs a materialized agent on one task and exits.
+
+        Raises:
+            NotSupportedError: If the harness has no verified headless mode
+                (``headless_run`` runtime fact).
+        """
+        ...
+
+    def parse_headless_output(self, plan: HeadlessPlan, stdout: str) -> HeadlessResult:
+        """Extract the child's final answer (and session id, when known) from its output."""
         ...
 
     def get_observal_managed_files(self, lockfile_data: dict, project_dir: str | None = None) -> set[str]:

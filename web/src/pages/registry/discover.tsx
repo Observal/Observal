@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+// SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
 import { useEffect, useMemo, useState } from "react";
@@ -11,6 +12,7 @@ import {
   Copy,
   GitBranch,
   MessageSquareText,
+  Network,
   PlugZap,
   Search,
   type LucideIcon,
@@ -44,6 +46,7 @@ const KIND_META: Record<DiscoveryKind, { label: string; icon: LucideIcon; color:
   hook: { label: "Hook", icon: GitBranch, color: "text-component-hook" },
   prompt: { label: "Prompt", icon: MessageSquareText, color: "text-component-prompt" },
   sandbox: { label: "Sandbox", icon: Box, color: "text-component-sandbox" },
+  external: { label: "A2A agent", icon: Network, color: "text-primary" },
 };
 
 const KIND_OPTIONS: { value: DiscoveryKind | "all"; label: string }[] = [
@@ -54,6 +57,7 @@ const KIND_OPTIONS: { value: DiscoveryKind | "all"; label: string }[] = [
   { value: "hook", label: "Hooks" },
   { value: "prompt", label: "Prompts" },
   { value: "sandbox", label: "Sandboxes" },
+  { value: "external", label: "Remote A2A agents" },
 ];
 
 const AVAILABILITY_META: Record<
@@ -70,6 +74,11 @@ const AVAILABILITY_META: Record<
     label: "Explicit install",
     variant: "secondary",
     hint: "Hooks change lifecycle behaviour and are never activated implicitly.",
+  },
+  delegate: {
+    label: "Delegate now",
+    variant: "default",
+    hint: "Remote A2A agent: agents hand it tasks directly. Nothing is installed.",
   },
   "not-approved": { label: "Not approved", variant: "destructive", hint: "Only approved resources load automatically." },
   archived: { label: "Archived", variant: "outline", hint: "Retired; still installable with a warning." },
@@ -130,8 +139,13 @@ function ResultCard({ result, harness }: { result: DiscoverySearchResult; harnes
   const availability = result["obs:availability"] ?? "next-session";
   const availabilityMeta = AVAILABILITY_META[availability];
   const identity = nativeIdentity(result);
-  const detailPath = identity ? registryItemPath(identity, kind, "") : null;
-  const useCommand = `observal discover use ${result.identifier}${harness ? ` --harness ${harness}` : ""}`;
+  const detailPath = identity && kind !== "external" ? registryItemPath(identity, kind, "") : null;
+  const delegable = !!result["obs:delegable"];
+  // Remote agents are only ever delegated to; registry agents can be pulled or delegated to.
+  const command =
+    kind === "external"
+      ? `observal delegate run ${result.identifier} "<task>"`
+      : `observal discover use ${result.identifier}${harness ? ` --harness ${harness}` : ""}`;
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border bg-card p-4">
@@ -149,6 +163,11 @@ function ResultCard({ result, harness }: { result: DiscoverySearchResult; harnes
             <span className="text-xs text-muted-foreground">{meta.label}</span>
             {result.version && <span className="text-xs text-muted-foreground">v{result.version}</span>}
             {identity && <span className="truncate text-xs text-muted-foreground">{identity.qualified_name}</span>}
+            {kind === "external" && (result["obs:provider"] ?? result["obs:publisher"]) && (
+              <span className="truncate text-xs text-muted-foreground">
+                {result["obs:provider"] ?? result["obs:publisher"]}
+              </span>
+            )}
           </div>
           {result.description && <p className="text-sm text-muted-foreground">{result.description}</p>}
         </div>
@@ -165,6 +184,14 @@ function ResultCard({ result, harness }: { result: DiscoverySearchResult; harnes
         <Badge variant="outline" className="capitalize">
           {result["obs:approval"] ?? "unknown"}
         </Badge>
+        {delegable && kind === "agent" && (
+          <Badge
+            variant="secondary"
+            title="Running agents can hand this agent a task through the observal-agents MCP server."
+          >
+            Delegable
+          </Badge>
+        )}
         {result["obs:visibility"] && result["obs:visibility"] !== "public" && (
           <Badge variant="outline" className="capitalize">
             {result["obs:visibility"]}
@@ -185,7 +212,7 @@ function ResultCard({ result, harness }: { result: DiscoverySearchResult; harnes
         </p>
       )}
 
-      <CopyCommand command={useCommand} />
+      <CopyCommand command={command} />
     </div>
   );
 }
@@ -278,7 +305,7 @@ export default function DiscoverPage() {
       {!active && (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Search every approved agent, MCP server, skill, hook, prompt and sandbox at once. Results are ranked by
+            Search every approved agent, remote A2A agent, MCP server, skill, hook, prompt and sandbox at once. Results are ranked by
             relevance; whether something is approved and whether it can be used right now are shown separately.
           </p>
           <div className="flex flex-wrap gap-2">

@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Dynamic settings service: DB-backed runtime configuration with Redis cache.
@@ -392,6 +393,13 @@ DEFAULTS: dict[str, str] = {
     # permanent identifier; it is pinned automatically the first time a real
     # deployment.public_url is seen and changing it renames every identifier.
     "discovery.publisher_domain": "",
+    # Delegation (ADR 0002). When on, every pulled Agent gets the observal-agents
+    # MCP server so it can find and hand tasks to other approved agents.
+    "discovery.delegation_enabled": "true",
+    # Comma-separated hosts whose Agent Cards may be fetched even though they
+    # resolve to private addresses (internal A2A agents). Plain http is allowed
+    # for these hosts only.
+    "discovery.a2a_private_hosts": "",
     # Misc
     "misc.harness_allowlist": "",
     "misc.default_harness": "",
@@ -523,7 +531,7 @@ SECTIONS: list[dict[str, Any]] = [
     {
         "id": "discovery",
         "title": "Discovery",
-        "description": "Agentic Resource Discovery identifiers. The publisher domain is pinned from the public URL on first use; changing it renames every published identifier.",
+        "description": "Agentic Resource Discovery identifiers and agent delegation. The publisher domain is pinned from the public URL on first use; changing it renames every published identifier.",
         "icon": "search",
         "keys": [k for k in DEFAULTS if k.startswith("discovery.")],
     },

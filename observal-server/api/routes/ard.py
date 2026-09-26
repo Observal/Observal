@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Agentic Resource Discovery endpoints.
@@ -37,7 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import services.dynamic_settings as ds
 from api.deps import get_db, get_registry_user, optional_current_user
 from api.ratelimit import limiter
-from models.discovery_entry import DiscoveryEntry, DiscoveryLifecycle
+from models.discovery_entry import DiscoveryEntry, DiscoveryLifecycle, DiscoverySourceKind
 from models.user import User
 from schemas.ard import ArdError, ArdExploreRequest, ArdSearchRequest
 from services.discovery.identity import normalize_media_type, normalize_urn
@@ -168,9 +169,12 @@ async def _manifest_response(db: AsyncSession) -> JSONResponse:
     ctx = await _context()
     entries: list[DiscoveryEntry] = []
     if await _public_search_enabled():
+        # The manifest describes this publisher's own resources; imported remote
+        # agents keep their own publisher and are found through search instead.
         stmt = (
             select(DiscoveryEntry)
             .where(visible_entries_predicate(None, lifecycles=(DiscoveryLifecycle.approved,)))
+            .where(DiscoveryEntry.source_kind == DiscoverySourceKind.local)
             .order_by(DiscoveryEntry.display_name, DiscoveryEntry.ard_identifier)
             .limit(MANIFEST_LIMIT)
         )

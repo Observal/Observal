@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Shape discovery entries into the JSON the ARD endpoints return."""
@@ -7,8 +8,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from models.discovery_entry import DiscoveryEntry, DiscoveryKind, DiscoveryLifecycle
-from services.discovery.identity import MEDIA_TYPE_REGISTRY, build_registry_urn, identity_uri
+from models.discovery_entry import DiscoveryEntry, DiscoveryKind, DiscoveryLifecycle, DiscoverySourceKind
+from observal_shared.harness_registry import get_harnesses_with_fact
+from services.discovery.identity import MEDIA_TYPE_A2A, MEDIA_TYPE_REGISTRY, build_registry_urn, identity_uri
 
 if TYPE_CHECKING:
     from services.discovery.search import Ranked
@@ -19,6 +21,7 @@ RESULT_DESCRIPTION_LIMIT = 280
 AVAILABILITY_NOW = "now"  # text resource, loads into the current session
 AVAILABILITY_NEXT_SESSION = "next-session"  # config write, takes effect after restart
 AVAILABILITY_EXPLICIT = "explicit-install"  # hooks: never activated implicitly
+AVAILABILITY_DELEGATE = "delegate"  # remote A2A agent: callable now, nothing installed
 AVAILABILITY_NOT_APPROVED = "not-approved"
 AVAILABILITY_ARCHIVED = "archived"
 AVAILABILITY_UNSUPPORTED = "unsupported-in-harness"
@@ -26,11 +29,17 @@ AVAILABILITY_UNSUPPORTED = "unsupported-in-harness"
 _NOW_KINDS = {DiscoveryKind.skill, DiscoveryKind.prompt}
 
 
+def is_a2a(entry: DiscoveryEntry) -> bool:
+    return entry.source_kind == DiscoverySourceKind.imported and entry.media_type == MEDIA_TYPE_A2A
+
+
 def availability(entry: DiscoveryEntry, harness: str | None = None) -> str:
     if entry.lifecycle_status == DiscoveryLifecycle.archived:
         return AVAILABILITY_ARCHIVED
     if entry.lifecycle_status != DiscoveryLifecycle.approved:
         return AVAILABILITY_NOT_APPROVED
+    if is_a2a(entry):
+        return AVAILABILITY_DELEGATE
     if harness and entry.supported_harnesses and harness not in entry.supported_harnesses:
         return AVAILABILITY_UNSUPPORTED
     if entry.kind == DiscoveryKind.hook:
@@ -38,6 +47,24 @@ def availability(entry: DiscoveryEntry, harness: str | None = None) -> str:
     if entry.kind in _NOW_KINDS:
         return AVAILABILITY_NOW
     return AVAILABILITY_NEXT_SESSION
+
+
+def delegable(entry: DiscoveryEntry) -> bool:
+    """Whether a running agent may hand this entry a task (ADR 0002).
+
+    Approved remote A2A agents always qualify. An approved Observal Agent
+    qualifies when at least one harness it supports can run headless; an agent
+    that lists no harnesses is treated as supporting all of them.
+    """
+    if entry.lifecycle_status != DiscoveryLifecycle.approved or entry.tombstoned_at is not None:
+        return False
+    if is_a2a(entry):
+        return bool((entry.raw_entry or {}).get("obs:a2aInterface"))
+    if entry.kind != DiscoveryKind.agent:
+        return False
+    headless = set(get_harnesses_with_fact("headless_run", True))
+    supported = set(entry.supported_harnesses or [])
+    return bool(headless & supported) if supported else bool(headless)
 
 
 def _truncate(text: str | None, limit: int) -> str:
@@ -52,7 +79,7 @@ def search_result_item(ranked: Ranked, *, source: str, harness: str | None = Non
     needs to choose without a second request, and keep ``score`` relevance-only.
     """
     entry = ranked.entry
-    return {
+    item = {
         "identifier": entry.ard_identifier,
         "displayName": entry.display_name,
         "type": entry.media_type,
@@ -70,9 +97,14 @@ def search_result_item(ranked: Ranked, *, source: str, harness: str | None = Non
         "obs:supportedHarnesses": list(entry.supported_harnesses or []),
         "obs:availability": availability(entry, harness),
         "obs:activatable": bool(entry.activatable),
+        "obs:delegable": delegable(entry),
         "obs:artifactDigest": entry.artifact_digest,
         "obs:publisher": entry.publisher_domain,
     }
+    # The organization named on a remote agent's card, as the card states it.
+    if is_a2a(entry) and (provider := (entry.raw_entry or {}).get("obs:provider")):
+        item["obs:provider"] = provider
+    return item
 
 
 def entry_document(entry: DiscoveryEntry) -> dict[str, Any]:
