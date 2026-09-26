@@ -82,6 +82,56 @@ def test_local_inventory_never_contacts_server_or_writes_and_redacts_secrets(mon
     assert "registry_status" not in output and "registration_status" not in output
 
 
+def test_real_cli_inventory_bypasses_write_capable_startup_even_with_debug(monkeypatch, tmp_path):
+    from observal_cli import main, skill_installer
+
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    home.mkdir()
+    config = project / ".cursor" / "mcp.json"
+    config.parent.mkdir(parents=True)
+    config.write_text(json.dumps({"mcpServers": {"local": {"command": "npx", "args": ["-y", "pkg"]}}}))
+    monkeypatch.chdir(project)
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: home))
+    forbidden = Mock(side_effect=AssertionError("inventory invoked a write-capable startup task"))
+    monkeypatch.setattr(main, "_migrate_legacy_mcp_configs", forbidden)
+    monkeypatch.setattr(main, "_try_lockfile_migration", forbidden)
+    monkeypatch.setattr(skill_installer, "sync_observal_skills", forbidden)
+    monkeypatch.setattr(httpx.Client, "request", forbidden)
+    monkeypatch.setattr(client, "get", forbidden)
+
+    result = CliRunner().invoke(main.app, ["--debug", "scan", "--inventory", "--harness", "cursor", "--output", "json"])
+
+    assert result.exit_code == 0, result.exception
+    payload = json.loads(result.stdout)
+    assert payload["inventory_schema_version"] == 1
+    assert [item["name"] for item in payload["inventory"]] == ["local"]
+    forbidden.assert_not_called()
+    assert not (home / ".observal" / "logs" / "cli.log").exists()
+
+
+def test_real_cli_default_scan_retains_startup_tasks(monkeypatch, tmp_path):
+    from observal_cli import main
+
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    home.mkdir()
+    project.mkdir()
+    monkeypatch.chdir(project)
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: home))
+    migrate = Mock()
+    lockfile_migrate = Mock()
+    monkeypatch.setattr(main, "_migrate_legacy_mcp_configs", migrate)
+    monkeypatch.setattr(main, "_try_lockfile_migration", lockfile_migrate)
+
+    result = CliRunner().invoke(main.app, ["scan", "--harness", "cursor", "--output", "json"])
+
+    assert result.exit_code == 0, result.exception
+    assert "inventory_schema_version" not in json.loads(result.stdout)
+    migrate.assert_called_once_with()
+    lockfile_migrate.assert_called_once_with()
+
+
 def test_inventory_omits_all_query_values_and_rejects_untrusted_versions(monkeypatch, tmp_path):
     config = tmp_path / "project" / ".cursor" / "mcp.json"
     config.parent.mkdir(parents=True)

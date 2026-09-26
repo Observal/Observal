@@ -54,6 +54,7 @@ _HARNESS_HOME_DIRS: dict[str, str] = {
 def register_scan(app: typer.Typer):
     @app.command(name="scan")
     def scan(
+        ctx: typer.Context,
         harness: str | None = typer.Option(None, "--harness", "-i", help="Filter to a specific harness"),
         output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
         inventory: bool = typer.Option(False, "--inventory", help="Inspect bounded local harness evidence only"),
@@ -75,6 +76,24 @@ def register_scan(app: typer.Typer):
             observal scan --harness kiro
             observal scan --inventory --output json
         """
+        startup = ctx.meta.get("observal.scan.startup")
+        if not inventory and startup is not None:
+            # Keep ordinary scan's existing startup behavior; only the opt-in
+            # inventory bypasses write-capable migrations and skill syncing.
+            import logging
+
+            from observal_cli.main import _migrate_legacy_mcp_configs, _try_lockfile_migration
+            from observal_cli.optic import setup_optic
+
+            debug, verbose = startup
+            setup_optic(debug=debug, verbose=verbose)
+            if debug:
+                logging.basicConfig(level=logging.DEBUG, format="%(levelname)s %(name)s: %(message)s")
+            elif verbose:
+                logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+            _migrate_legacy_mcp_configs()
+            _try_lockfile_migration()
+
         ensure_loaded()
         optic.trace("harness={}", harness)
 
