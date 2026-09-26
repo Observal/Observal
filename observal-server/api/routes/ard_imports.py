@@ -164,9 +164,18 @@ async def import_a2a_agent(
     ).scalar_one_or_none()
 
     if existing is not None:
-        if existing.owner_user_id != current_user.id and not _is_admin(current_user):
+        if existing.tombstoned_at is not None and existing.owner_user_id != current_user.id:
+            # Its owner removed it, so whoever registers the URL next owns it (and it is reviewed again).
+            existing.owner_user_id = current_user.id
+        elif existing.owner_user_id != current_user.id and not _is_admin(current_user):
             return _error(409, "ALREADY_EXISTS", "This Agent Card is already registered by someone else.")
-        unchanged = existing.artifact_digest == card.digest and existing.tombstoned_at is None
+        # A reviewer approved this card for this audience; a new card or a new audience needs a new review.
+        unchanged = (
+            existing.artifact_digest == card.digest
+            and existing.tombstoned_at is None
+            and existing.visibility == visibility
+            and existing.team_id == team_id
+        )
         lifecycle = existing.lifecycle_status if unchanged else DiscoveryLifecycle.pending
         existing.visibility = visibility
         existing.team_id = team_id

@@ -39,6 +39,8 @@ DEFAULT_MAX_DEPTH = 2
 MAX_WAIT_SECONDS = 30 * 60
 WAIT_POLL_SECONDS = 0.5
 MAX_MESSAGE_CHARS = 100_000
+# A delegated agent runs headless with no permission prompt, so its fan-out is capped.
+MAX_CHILD_TASKS = 3
 
 # Tests replace this to run the worker inline instead of detaching a process.
 SPAWN: Callable[[str], int | None] | None = None
@@ -257,6 +259,11 @@ def start(
     depth = current_depth()
     if depth >= max_depth():
         raise DelegationError(f"Delegation depth limit reached ({max_depth()}). Do this part of the task yourself.")
+    parent_task = os.environ.get("OBSERVAL_DELEGATION_TASK_ID") or None
+    if parent_task and tasks.count_children(parent_task) >= MAX_CHILD_TASKS:
+        raise DelegationError(
+            f"A delegated agent can start at most {MAX_CHILD_TASKS} tasks of its own. Do the rest of this task yourself."
+        )
 
     entry = _entry_for(target)
     if entry.get("obs:lifecycle") != "approved":
@@ -282,6 +289,7 @@ def start(
         "nativeRef": entry.get("obs:nativeRef"),
         "parentHarness": parent_harness,
         "parentAgentId": parent_agent_id,
+        "parentTaskId": parent_task,
         "depth": depth,
         "chain": chain,
         "cwd": str(Path(cwd or Path.cwd()).resolve()),

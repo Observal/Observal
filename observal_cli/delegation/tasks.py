@@ -191,6 +191,14 @@ def list_tasks(limit: int = 50) -> list[dict]:
     return out
 
 
+def count_children(parent_id: str) -> int:
+    """How many tasks a delegated task started itself (children record it as ``parentTaskId``)."""
+    root = store_dir()
+    if not root.is_dir():
+        return 0
+    return sum(1 for path in root.glob("*.json") if meta(load(path.stem) or {}).get("parentTaskId") == parent_id)
+
+
 def request_cancel(task_id: str) -> None:
     task_dir(task_id).joinpath("cancel").touch()
 

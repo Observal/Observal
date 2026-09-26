@@ -214,7 +214,7 @@ flowchart LR
     S -- "artifacts" --> A
 ```
 
-Every agent you pull gets an `observal-agents` MCP server with four tools, `find_agents`, `delegate`, `get_task` and `cancel_task`, so it can do this without being told how. Delegation is limited to approved agents, stops after two levels, and refuses loops. Each delegation is recorded against the calling session, so traces show which agents a session relied on.
+Every agent you pull gets an `observal-agents` MCP server with four tools, `find_agents`, `delegate`, `get_task` and `cancel_task`, so it can do this without being told how. Delegation is limited to approved agents, stops after two levels, lets a delegated agent start at most three tasks of its own, and refuses loops. Each delegation is recorded against the calling session, so traces show which agents a session relied on.
 
 **Discover shows registry agents that can take a task and remote A2A agents side by side:**
 
