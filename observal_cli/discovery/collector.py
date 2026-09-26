@@ -47,10 +47,20 @@ def collect_local_inventory(
                 found = discover(root)
                 result.evidence.extend(found.evidence)
                 result.diagnostics.extend(found.diagnostics)
-                if (
-                    budget.roots >= budget.max_roots
-                    or budget.files >= budget.max_files
-                    or budget.evidence >= budget.max_evidence
-                ):
-                    return result
+                limits = (
+                    (budget.roots >= budget.max_roots, DiagnosticCode.APPROVED_ROOT_LIMIT_REACHED),
+                    (budget.files >= budget.max_files, DiagnosticCode.COLLECTION_FILE_LIMIT_REACHED),
+                    (budget.evidence >= budget.max_evidence, DiagnosticCode.EVIDENCE_LIMIT_REACHED),
+                )
+                for reached, code in limits:
+                    if reached:
+                        if code not in budget.emitted_limits and budget.diagnostics < budget.max_diagnostics:
+                            budget.emitted_limits.add(code)
+                            budget.diagnostics += 1
+                            result.diagnostics.append(
+                                make_diagnostic(
+                                    code, DiagnosticSeverity.WARNING, "harness", "local inventory limit reached"
+                                )
+                            )
+                        return result
     return result

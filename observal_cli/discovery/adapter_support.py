@@ -179,11 +179,11 @@ class RichAdapterScanner:
                     path,
                     f"MCP server {name!r} has malformed launch metadata",
                 )
-            elif normalized.reason == "unsupported_transport":
+            elif not normalized.complete:
                 self.diagnostic(
                     DiagnosticCode.UNSUPPORTED_LAUNCH,
                     path,
-                    f"MCP server {name!r} uses an unsupported transport",
+                    f"MCP server {name!r} has an unsupported or incomplete launch",
                 )
             self.add_component(component, path, launch=normalized.launch if normalized.complete else None)
 
