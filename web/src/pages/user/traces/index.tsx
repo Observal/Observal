@@ -76,6 +76,18 @@ const DOCS_QUICKSTART_URL =
  */
 const INGEST_FRESH_WINDOW_MS = 5 * 60_000;
 
+const TABLE_COLUMN_WIDTHS: Record<string, string> = {
+	session_id: "w-[26%]",
+	user_name: "w-[12%]",
+	status: "w-[10%]",
+	source: "w-[11%]",
+	agent_name: "w-[13%]",
+	model: "w-[11%]",
+	activity: "w-[8%]",
+	tokens: "w-[10%]",
+	first_event_time: "w-[9%]",
+};
+
 function truncateQuery(q: string, max = 50): string {
 	return q.length > max ? `${q.slice(0, max)}…` : q;
 }
@@ -327,9 +339,7 @@ function sessionLabel(row: Session): string {
 }
 
 function sessionSubLabel(row: Session): string {
-	return row.user_name
-		? `${row.session_id} · ${row.user_name}`
-		: row.session_id;
+	return row.session_id;
 }
 
 function tokenTotal(row: Session): number {
@@ -372,21 +382,16 @@ function TraceStatus({ row }: { row: Session }) {
 
 function TraceSource({ row }: { row: Session }) {
 	return (
-		<div className="min-w-0">
-			<span className="block truncate text-2xs font-medium text-foreground">
-				{derivePlatform(row)}
-			</span>
-			<span className="mt-0.5 block truncate text-3xs text-muted-foreground">
-				{row.service_name || "—"}
-			</span>
-		</div>
+		<span className="block max-w-[140px] truncate text-2xs font-medium text-foreground">
+			{derivePlatform(row)}
+		</span>
 	);
 }
 
 function TraceActivity({ row }: { row: Session }) {
 	const tools = row.tool_result_count ?? 0;
 	return (
-		<span className="whitespace-nowrap text-2xs tabular-nums text-muted-foreground">
+		<span className="whitespace-nowrap text-2xs font-medium text-foreground">
 			{tools} tools
 		</span>
 	);
@@ -568,6 +573,15 @@ export default function TracesPage() {
 				cell: ({ row }) => <TraceTitle row={row.original} />,
 			},
 			{
+				accessorKey: "user_name",
+				header: "User",
+				cell: ({ row }) => (
+					<span className="block max-w-[140px] truncate text-2xs font-medium text-foreground">
+						{row.original.user_name || "—"}
+					</span>
+				),
+			},
+			{
 				// A live session used to be signalled only by a green bar down the
 				// left edge — no icon, no label, so it did not survive a
 				// colour-vision difference or a monochrome override. StatusBadge
@@ -587,7 +601,7 @@ export default function TracesPage() {
 				accessorKey: "agent_name",
 				header: "Agent",
 				cell: ({ row }) => (
-					<span className="block max-w-[180px] truncate font-mono text-2xs text-muted-foreground">
+					<span className="block max-w-[180px] truncate text-2xs font-medium text-foreground">
 						{row.original.agent_name || "—"}
 					</span>
 				),
@@ -597,7 +611,7 @@ export default function TracesPage() {
 				accessorFn: (row) => shortModel(row.model),
 				header: "Model",
 				cell: ({ row }) => (
-					<span className="block max-w-[160px] truncate text-2xs text-muted-foreground">
+					<span className="block max-w-[160px] truncate text-2xs font-medium text-foreground">
 						{shortModel(row.original.model) || "—"}
 					</span>
 				),
@@ -619,7 +633,7 @@ export default function TracesPage() {
 				header: "Started",
 				cell: ({ row }) => (
 					<span
-						className="whitespace-nowrap font-mono text-2xs tabular-nums text-muted-foreground"
+						className="whitespace-nowrap text-2xs font-medium text-foreground"
 						title={absTime(row.original.first_event_time)}
 					>
 						{relTime(row.original.first_event_time)}
@@ -938,7 +952,7 @@ export default function TracesPage() {
 										<>
 
 											<div className="hidden overflow-x-auto min-[1020px]:block">
-												<Table className="min-w-[1020px] border-collapse">
+												<Table className="w-full min-w-[1120px] table-fixed border-collapse">
 													<TableHeader className="bg-surface-raised [&_tr]:border-b-0">
 														{table.getHeaderGroups().map((hg) => (
 															<TableRow
@@ -950,7 +964,10 @@ export default function TracesPage() {
 																	return (
 																		<TableHead
 																			key={header.id}
-																			className="h-10 select-none px-4 text-left"
+																			className={cn(
+													"h-10 select-none px-4 text-left",
+													TABLE_COLUMN_WIDTHS[header.column.id],
+												)}
 																			// Sorting was bound to onClick on the <th>,
 																			// so it could not be reached by keyboard at
 																			// all. A real button gets focus, Enter and
