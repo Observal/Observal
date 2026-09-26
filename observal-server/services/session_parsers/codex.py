@@ -15,7 +15,16 @@ from __future__ import annotations
 
 import json
 
-from .base import basic_event, dict_field, list_field, load_line, pick_timestamp, str_field
+from .base import (
+    basic_event,
+    dict_field,
+    list_field,
+    load_line,
+    pick_timestamp,
+    str_field,
+    token_count,
+    uncached_input_tokens,
+)
 
 
 def parse_rows(rows: list[dict]) -> list[dict]:
@@ -105,15 +114,17 @@ def _handle_event_msg(parsed: dict, ts: str, harness: str, events: list[dict]) -
         rate_limits = payload.get("rate_limits", {})
         if isinstance(rate_limits, dict):
             model = rate_limits.get("model", "")
+        # Codex input_tokens includes cached_input_tokens (OpenAI convention).
+        cached = token_count(usage, "cached_input_tokens")
         events.append(
             {
                 "timestamp": ts,
                 "event_name": "hook_token_usage",
                 "body": "token_count",
                 "attributes": {
-                    "input_tokens": str(usage.get("input_tokens", 0)),
+                    "input_tokens": str(uncached_input_tokens(token_count(usage, "input_tokens"), cached)),
                     "output_tokens": str(usage.get("output_tokens", 0)),
-                    "cache_read_tokens": str(usage.get("cached_input_tokens", 0)),
+                    "cache_read_tokens": str(cached),
                     "model": model,
                 },
                 "service_name": harness,

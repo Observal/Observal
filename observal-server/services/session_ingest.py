@@ -31,6 +31,7 @@ from services.clickhouse import (
     refresh_session_summary,
 )
 from services.secrets_redactor import redact_secrets
+from services.session_parsers.base import token_count, uncached_input_tokens
 from services.session_parsers.ingest_classify import extract_timestamp, get_classifier, get_extra_rows
 
 # ---------------------------------------------------------------------------
@@ -85,23 +86,24 @@ def _usage_goose(parsed: dict) -> dict:
     if not isinstance(inference, dict):
         inference = {}
 
-    def count(key: str) -> int:
-        try:
-            return int(usage.get(key) or 0)
-        except (TypeError, ValueError):
-            return 0
-
+    cache_read = token_count(usage, "cacheReadTokens")
+    cache_write = token_count(usage, "cacheWriteTokens")
     return {
-        "input_tokens": count("inputTokens"),
-        "output_tokens": count("outputTokens"),
-        "cache_read_tokens": count("cacheReadTokens"),
-        "cache_write_tokens": count("cacheWriteTokens"),
+        # Goose counts cache reads and writes inside inputTokens.
+        "input_tokens": uncached_input_tokens(token_count(usage, "inputTokens"), cache_read, cache_write),
+        "output_tokens": token_count(usage, "outputTokens"),
+        "cache_read_tokens": cache_read,
+        "cache_write_tokens": cache_write,
         "model": str(inference.get("resolvedModel") or inference.get("requestedModel") or ""),
     }
 
 
 def _usage_codex(parsed: dict) -> dict:
-    """Codex: event_msg/token_count has payload.info.total_token_usage."""
+    """Codex: event_msg/token_count has payload.info.last_token_usage.
+
+    Codex follows the OpenAI convention where input_tokens includes
+    cached_input_tokens, so the cached part is subtracted.
+    """
     payload = parsed.get("payload", {})
     if not isinstance(payload, dict):
         return {"input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0, "cache_write_tokens": 0, "model": ""}
@@ -109,10 +111,11 @@ def _usage_codex(parsed: dict) -> dict:
     if not isinstance(info, dict):
         info = {}
     usage = info.get("last_token_usage") or info.get("total_token_usage") or {}
+    cached = int(usage.get("cached_input_tokens") or 0)
     return {
-        "input_tokens": int(usage.get("input_tokens") or 0),
+        "input_tokens": uncached_input_tokens(int(usage.get("input_tokens") or 0), cached),
         "output_tokens": int(usage.get("output_tokens") or 0),
-        "cache_read_tokens": int(usage.get("cached_input_tokens") or 0),
+        "cache_read_tokens": cached,
         "cache_write_tokens": 0,
         "model": "",
     }
@@ -129,28 +132,29 @@ def _usage_copilot_cli(parsed: dict) -> dict:
     # Try flat format first (Copilot CLI v1.0.59+)
     data = parsed.get("data", {})
     if isinstance(data, dict) and (data.get("outputTokens") or data.get("inputTokens")):
-        return {
-            "input_tokens": int(data.get("inputTokens") or 0),
-            "output_tokens": int(data.get("outputTokens") or 0),
-            "cache_read_tokens": int(data.get("cacheReadTokens") or 0),
-            "cache_write_tokens": int(data.get("cacheWriteTokens") or 0),
-            "model": str(data.get("model") or ""),
-        }
+        return _copilot_usage(data)
 
     # Try envelope format (older/SDK)
     event = parsed.get("event", {})
     if isinstance(event, dict):
         edata = event.get("data", {})
         if isinstance(edata, dict) and (edata.get("outputTokens") or edata.get("inputTokens")):
-            return {
-                "input_tokens": int(edata.get("inputTokens") or 0),
-                "output_tokens": int(edata.get("outputTokens") or 0),
-                "cache_read_tokens": int(edata.get("cacheReadTokens") or 0),
-                "cache_write_tokens": int(edata.get("cacheWriteTokens") or 0),
-                "model": str(edata.get("model") or ""),
-            }
+            return _copilot_usage(edata)
 
     return {"input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0, "cache_write_tokens": 0, "model": ""}
+
+
+def _copilot_usage(data: dict) -> dict:
+    """Copilot usage counts cache reads and writes inside inputTokens."""
+    cache_read = int(data.get("cacheReadTokens") or 0)
+    cache_write = int(data.get("cacheWriteTokens") or 0)
+    return {
+        "input_tokens": uncached_input_tokens(int(data.get("inputTokens") or 0), cache_read, cache_write),
+        "output_tokens": int(data.get("outputTokens") or 0),
+        "cache_read_tokens": cache_read,
+        "cache_write_tokens": cache_write,
+        "model": str(data.get("model") or ""),
+    }
 
 
 _UsageFn = Callable[[dict], dict]

@@ -48,6 +48,26 @@ def dict_field(parsed: dict, key: str) -> dict:
     return value if isinstance(value, dict) else {}
 
 
+def token_count(usage: dict, key: str) -> int:
+    """Return a token count from a usage dict, or 0 when it is missing or not numeric."""
+    try:
+        return int(usage.get(key) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def uncached_input_tokens(input_tokens: int, *cache_tokens: int) -> int:
+    """Return *input_tokens* with the given cache read/write counts removed.
+
+    Observal stores ``input_tokens`` excluding cache reads and writes, as
+    Anthropic reports them. Harnesses that report OpenAI-style usage (Codex,
+    Copilot CLI, Goose) count cached tokens inside ``input_tokens`` and also
+    report them separately, so they must be subtracted to avoid counting them
+    twice. Clamped at zero because the counts come from untrusted transcripts.
+    """
+    return max(input_tokens - sum(cache_tokens), 0)
+
+
 def list_field(parsed: dict, key: str) -> list:
     """Return a content field as a list, or [] when it is any other type.
 
