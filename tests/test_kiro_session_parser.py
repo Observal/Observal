@@ -210,3 +210,33 @@ def test_cli_records_are_unaffected_by_the_ide_branch():
 
     assert [e["event_name"] for e in events] == ["hook_userpromptsubmit", "hook_posttooluse"]
     assert events[1]["attributes"]["tool_response"] == "out"
+
+
+# ── Ingest timestamps ─────────────────────────────────────────────
+
+
+def test_ide_timestamps_are_normalised_to_utc():
+    """The value goes straight into a DateTime64 column.
+
+    A non-UTC offset sent verbatim can reject the whole insert batch, and an
+    unparseable value must fall back rather than poison the batch.
+    """
+    from services.session_parsers.ingest_classify import extract_timestamp
+
+    def ts(raw):
+        return extract_timestamp("kiro", {"payload": {"type": "user"}, "timestamp": raw})
+
+    assert ts("2026-09-25T18:59:14.327Z") == "2026-09-25 18:59:14.327"
+    assert ts("2026-09-25T18:59:14.327+00:00") == "2026-09-25 18:59:14.327"
+    assert ts("2026-09-25T18:59:14.327+05:30") == "2026-09-25 13:29:14.327"
+    assert ts("2026-09-25T18:59:14.327") == "2026-09-25 18:59:14.327"
+    assert ts("not-a-timestamp") is None
+    assert ts("") is None
+
+
+def test_cli_timestamp_extraction_is_unchanged():
+    from services.session_parsers.ingest_classify import extract_timestamp
+
+    parsed = {"kind": "Prompt", "data": {"meta": {"timestamp": 1758825554}}}
+
+    assert extract_timestamp("kiro", parsed) == "2025-09-25 18:39:14.000"
