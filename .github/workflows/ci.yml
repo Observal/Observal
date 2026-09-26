@@ -186,6 +186,14 @@ jobs:
             pytest ../tests/ -q -n auto \
               ${{ matrix.python-version == '3.13' && '--cov=../observal_cli --cov=. --cov-report=xml' || '' }}
 
+      - name: Run supplemental CLI scan tests
+        if: needs.changes.outputs.python == 'true'
+        run: |
+          cd observal-server
+          uv run \
+            --python ${{ matrix.python-version }} \
+            pytest ../observal_cli/tests/test_cmd_scan.py -q
+
       - name: Upload coverage to Codecov
         if: needs.changes.outputs.python == 'true' && matrix.python-version == '3.13'
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v6

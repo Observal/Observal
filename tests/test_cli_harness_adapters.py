@@ -21,6 +21,7 @@ from observal_cli.harness import (
     get_adapter,
     get_all_adapters,
 )
+from observal_cli.harness.base import BaseAdapter
 from observal_shared.harness_registry import HARNESS_REGISTRY
 
 
@@ -51,12 +52,22 @@ class TestAdapterRegistry:
         with pytest.raises(KeyError, match="No adapter registered"):
             get_adapter("nonexistent-ide")
 
+    def test_all_adapters_implement_bounded_rich_discovery(self):
+        for name, adapter in get_all_adapters().items():
+            adapter_type = type(adapter)
+            assert adapter_type.discover_home is not BaseAdapter.discover_home, f"{name} uses legacy home discovery"
+            assert adapter_type.discover_project is not BaseAdapter.discover_project, (
+                f"{name} uses legacy project discovery"
+            )
+
     def test_all_adapters_have_required_methods(self):
         required_methods = [
             "scan_home",
             "is_installed",
             "plan_bundled_skill_install",
             "scan_project",
+            "discover_home",
+            "discover_project",
             "get_hook_spec",
             "generate_hook_config",
             "detect_hooks",
@@ -681,7 +692,7 @@ class TestOpenCodeAdapter:
         ]
         assert [(hook.name, hook.source) for hook in result.hooks] == [("project-plugin", "opencode:project")]
 
-    def test_scan_json_deduplicates_with_global_scope_precedence(self, tmp_path, monkeypatch):
+    def test_scan_json_preserves_name_based_global_scope_precedence(self, tmp_path, monkeypatch):
         from typer.testing import CliRunner
 
         from observal_cli.main import app
@@ -713,7 +724,7 @@ class TestOpenCodeAdapter:
                     "url": None,
                     "description": "OpenCode MCP: shared",
                     "source": "opencode:global",
-                }
+                },
             ],
             "skills": [],
             "hooks": [],

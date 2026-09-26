@@ -4,6 +4,7 @@
 # SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 VishnuM049 <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """MCP server CLI commands."""
@@ -25,6 +26,7 @@ from rich.table import Table
 
 from observal_cli import client, config
 from observal_cli.analyzer import analyze_local
+from observal_cli.component_drafts import DraftPayloadError, create_mcp_draft
 from observal_cli.constants import VALID_HARNESSES, VALID_MCP_CATEGORIES
 from observal_cli.errors import ErrorCategory, fail, load_json_object
 from observal_cli.prompts import fuzzy_select, select_one, text_input
@@ -42,6 +44,20 @@ from observal_cli.render import (
     spinner,
     status_badge,
 )
+
+
+def _create_mcp_draft_or_fail(payload: dict) -> dict:
+    try:
+        return create_mcp_draft(payload)
+    except DraftPayloadError as error:
+        fail(
+            ErrorCategory.VALIDATION,
+            str(error),
+            operation="Save MCP draft",
+            resource="MCP draft payload",
+            remediation="Correct the draft fields and retry.",
+        )
+
 
 mcp_app = typer.Typer(
     help=(
@@ -617,7 +633,7 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False,
             submit_payload["git_url"] = git_url
         if git_analysis.get("setup_instructions"):
             submit_payload["setup_instructions"] = git_analysis["setup_instructions"]
-        if git_analysis.get("docker_image") and not parsed.get("docker_image"):
+        if git_analysis.get("docker_image") and not parsed.get("docker_image") and not parsed.get("url"):
             submit_payload["docker_image"] = git_analysis["docker_image"]
         if parsed.get("command"):
             submit_payload["command"] = parsed["command"]
@@ -626,7 +642,11 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False,
         if parsed.get("url"):
             submit_payload["url"] = parsed["url"]
         if parsed.get("headers"):
-            submit_payload["headers"] = parsed["headers"]
+            submit_payload["headers"] = [
+                {key: header[key] for key in ("name", "description", "required") if key in header}
+                for header in parsed["headers"]
+                if isinstance(header, dict)
+            ]
         if parsed.get("auto_approve"):
             submit_payload["auto_approve"] = parsed["auto_approve"]
         if parsed.get("transport"):
@@ -647,10 +667,13 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False,
             }
 
         client.add_publish_target(submit_payload, team, visibility)
-        endpoint = "/api/v1/mcps/draft" if draft else "/api/v1/mcps/submit"
         label = "Saving draft..." if draft else "Submitting..."
         with spinner(label):
-            result = client.post(endpoint, submit_payload)
+            result = (
+                _create_mcp_draft_or_fail(submit_payload)
+                if draft
+                else client.post("/api/v1/mcps/submit", submit_payload)
+            )
         msg = "Draft saved!" if draft else "Submitted!"
         rprint(f"\n[green]{msg}[/green] ID: [bold]{result['id']}[/bold]")
         rprint(f"  Install: [cyan]observal registry mcp install {client.canonical_name(result)}[/cyan]")
@@ -955,10 +978,11 @@ def _submit_impl(git_url, name, category, yes, direct_config=False, draft=False,
         }
 
     client.add_publish_target(submit_payload, team, visibility)
-    endpoint = "/api/v1/mcps/draft" if draft else "/api/v1/mcps/submit"
     label = "Saving draft..." if draft else "Submitting..."
     with spinner(label):
-        result = client.post(endpoint, submit_payload)
+        result = (
+            _create_mcp_draft_or_fail(submit_payload) if draft else client.post("/api/v1/mcps/submit", submit_payload)
+        )
     msg = "Draft saved!" if draft else "Submitted!"
     rprint(f"\n[green]{msg}[/green] ID: [bold]{result['id']}[/bold]")
     rprint(f"  Install: [cyan]observal registry mcp install {client.canonical_name(result)}[/cyan]")

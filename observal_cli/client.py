@@ -3,12 +3,15 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 VishnuM049 <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
 import time
 import uuid
 from contextvars import ContextVar
+from dataclasses import dataclass
+from enum import StrEnum
 from urllib.parse import quote, urlparse, urlunparse
 
 import httpx
@@ -32,6 +35,17 @@ _OPTIONAL_AUTH = ContextVar("observal_optional_auth", default=False)
 _PUBLIC_POST = ContextVar("observal_public_post", default=False)
 
 
+class OptionalLookupStatus(StrEnum):
+    FOUND = "found"
+    NOT_FOUND = "not_found"
+
+
+@dataclass(frozen=True)
+class OptionalLookupResult:
+    status: OptionalLookupStatus
+    data: object | None = None
+
+
 def _get_cli_version() -> str:
     """Get current CLI version string for request headers."""
     try:
@@ -45,7 +59,17 @@ def _get_cli_version() -> str:
 def _client() -> tuple[str, dict]:
     auth_required = not _OPTIONAL_AUTH.get()
     cfg = config.get_or_exit() if auth_required else config.get_or_exit(require_auth=False)
-    base_url = cfg["server_url"].rstrip("/")
+    try:
+        base_url = config.validate_server_url(cfg["server_url"])
+    except ValueError as error:
+        fail(
+            ErrorCategory.VALIDATION,
+            "The configured server URL is unsafe or invalid.",
+            operation="Connect to Observal",
+            resource="server_url",
+            remediation="Use HTTPS, or HTTP only for a loopback address such as http://localhost:8000.",
+            detail=str(error),
+        )
     headers = {"X-Observal-CLI-Version": _get_cli_version()}
     if token := cfg.get("access_token"):
         headers["Authorization"] = f"Bearer {token}"
@@ -233,8 +257,12 @@ def _try_refresh_token() -> bool:
     """
     cfg = config.load()
     refresh_token = cfg.get("refresh_token")
-    server_url = cfg.get("server_url", "").rstrip("/")
+    server_url = cfg.get("server_url", "")
     if not refresh_token or not server_url:
+        return False
+    try:
+        server_url = config.validate_server_url(server_url)
+    except ValueError:
         return False
 
     try:
@@ -242,6 +270,7 @@ def _try_refresh_token() -> bool:
             f"{server_url}/api/v1/auth/token/refresh",
             json={"refresh_token": refresh_token},
             timeout=10,
+            trust_env=False,
         )
         if r.status_code != 200:
             return False
@@ -268,18 +297,20 @@ def _request_with_retry(
     *,
     params: dict | None = None,
     json: object | None = None,
+    timeout: float | None = None,
+    deadline: float | None = None,
 ) -> httpx.Response:
     """Execute HTTP with transient retries for GET requests only.
 
-    On 401, attempts a token refresh and retries once. Mutations are never
-    retried after a transient response because their server state may be
-    unknown.
+    On 401, refresh the access token and retry once. Other transient responses
+    are retried only for GET requests.
     """
     optic.trace("method={}, url={}", method, url)
-    timeout = config.get_timeout()
+    configured_timeout = config.get_timeout()
+    request_timeout = min(configured_timeout, timeout) if timeout is not None else configured_timeout
     func = getattr(httpx, method)
 
-    kwargs: dict = {"headers": headers, "timeout": timeout}
+    kwargs: dict = {"headers": headers, "timeout": request_timeout, "trust_env": False}
     if params is not None:
         kwargs["params"] = params
     if json is not None:
@@ -290,6 +321,11 @@ def _request_with_retry(
     t0 = time.monotonic()
 
     for attempt in range(_MAX_RETRIES):
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise httpx.ReadTimeout("request deadline exceeded")
+            kwargs["timeout"] = min(request_timeout, remaining)
         r = func(url, **kwargs)
 
         # Auto-refresh on 401
@@ -309,6 +345,8 @@ def _request_with_retry(
         # Honor Retry-After header if present
         retry_after = r.headers.get("Retry-After")
         delay = float(retry_after) if retry_after else 0.5 * (2**attempt)
+        if deadline is not None and time.monotonic() + delay >= deadline:
+            raise httpx.ReadTimeout("request deadline exceeded")
         logger.debug(f"Retrying {method.upper()} {safe_url} (attempt {attempt + 1}, delay {delay:.1f}s)")
         optic.debug("retrying {} {} (attempt {}, delay {:.1f}s)", method.upper(), safe_url, attempt + 1, delay)
         time.sleep(delay)
@@ -401,6 +439,8 @@ def _request(
     params: dict | None = None,
     json_data: object | None = None,
     auth_required: bool = True,
+    timeout: float | None = None,
+    deadline: float | None = None,
 ) -> httpx.Response:
     optional_auth_token = _OPTIONAL_AUTH.set(not auth_required)
     try:
@@ -412,6 +452,10 @@ def _request(
         request_kwargs["params"] = params
     if json_data is not None:
         request_kwargs["json"] = json_data
+    if timeout is not None:
+        request_kwargs["timeout"] = timeout
+    if deadline is not None:
+        request_kwargs["deadline"] = deadline
     try:
         return _request_with_retry(method, f"{base}{path}", headers, **request_kwargs)
     except httpx.HTTPStatusError as error:
@@ -483,6 +527,8 @@ def get(
     *,
     operation: str | None = None,
     resource: str | None = None,
+    timeout: float | None = None,
+    deadline: float | None = None,
 ) -> dict:
     optic.trace("path={}, params={}", path, params)
     operation, resource = _error_context(
@@ -498,8 +544,50 @@ def get(
         resource=resource,
         params=params,
         auth_required=False,
+        timeout=timeout,
+        deadline=deadline,
     )
     return _json_response(response, operation=operation, resource=resource)
+
+
+def get_optional(
+    path: str,
+    params: dict | None = None,
+    *,
+    operation: str | None = None,
+    resource: str | None = None,
+    timeout: float | None = None,
+    deadline: float | None = None,
+) -> OptionalLookupResult:
+    """GET authenticated JSON while treating only HTTP 404 as optional absence."""
+
+    optic.trace("path={}, params={}", path, params)
+    operation, resource = _error_context(
+        operation,
+        resource,
+        default_operation=f"Fetch optional {path}",
+        default_resource=path,
+    )
+    base, headers = _client()
+    request_kwargs = {"params": params} if params is not None else {}
+    if timeout is not None:
+        request_kwargs["timeout"] = timeout
+    if deadline is not None:
+        request_kwargs["deadline"] = deadline
+    try:
+        response = _request_with_retry("get", f"{base}{path}", headers, **request_kwargs)
+    except httpx.HTTPStatusError as error:
+        if error.response.status_code == 404:
+            return OptionalLookupResult(OptionalLookupStatus.NOT_FOUND)
+        _handle_error(error, path, operation=operation, resource=resource)
+    except (httpx.ReadTimeout, httpx.ConnectTimeout) as error:
+        _handle_timeout(path, operation=operation, resource=resource, detail=repr(error))
+    except httpx.ConnectError as error:
+        _handle_connect(operation=operation, resource=resource, detail=repr(error))
+    return OptionalLookupResult(
+        OptionalLookupStatus.FOUND,
+        _json_response(response, operation=operation, resource=resource),
+    )
 
 
 def get_text(
@@ -672,6 +760,7 @@ def get_registered_agents_only() -> bool:
             f"{server_url}/api/v1/admin/registered-agents-only",
             headers={"Authorization": f"Bearer {token}"},
             timeout=5,
+            trust_env=False,
         )
         if r.status_code == 200:
             return r.json().get("registered_agents_only", False)
@@ -695,6 +784,7 @@ def get_registered_agent_names() -> set[str]:
             f"{server_url}/api/v1/agents",
             headers={"Authorization": f"Bearer {token}"},
             timeout=5,
+            trust_env=False,
         )
         if r.status_code == 200:
             return {item.get("name", "") for item in r.json() if item.get("name")}
@@ -718,6 +808,7 @@ def get_registered_mcp_names() -> set[str]:
             f"{server_url}/api/v1/mcp",
             headers={"Authorization": f"Bearer {token}"},
             timeout=5,
+            trust_env=False,
         )
         if r.status_code == 200:
             return {item.get("name", "") for item in r.json() if item.get("name")}

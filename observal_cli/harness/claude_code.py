@@ -7,9 +7,13 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
+from observal_cli.discovery.adapter_support import RichAdapterScanner
+from observal_cli.discovery.models import AdapterDiscoveryResult, DiagnosticCode, DiscoveryScope
+from observal_cli.discovery.redact import redact_text
 from observal_cli.harness import (
     DiscoveredAgent,
     DiscoveredHook,
@@ -28,6 +32,9 @@ from observal_cli.shared.utils import (
     first_content_line,
     parse_frontmatter_field,
 )
+
+if TYPE_CHECKING:
+    from observal_cli.discovery.bounded_walk import AggregateDiscoveryBudget
 
 
 class ClaudeCodeAdapter(BaseAdapter):
@@ -157,6 +164,35 @@ class ClaudeCodeAdapter(BaseAdapter):
             return ScanResult(mcps=mcps)
         except (json.JSONDecodeError, OSError):
             return ScanResult()
+
+    def discover_home(self, home: Path | None = None) -> AdapterDiscoveryResult:
+        home = home or Path.home()
+        return self._discover_claude_home(home / ".claude", home)
+
+    def discover_project(self, project_dir: Path) -> AdapterDiscoveryResult:
+        scanner = RichAdapterScanner(
+            harness=self.harness_name,
+            scope=DiscoveryScope.PROJECT,
+            root=project_dir,
+            project_dir=project_dir,
+        )
+        scanner.add_mcp_config(
+            project_dir / ".mcp.json",
+            source="claude-code:project",
+            description_prefix="Claude Code project MCP",
+        )
+        settings_path = project_dir / ".claude" / "settings.json"
+        settings = scanner.read_json(settings_path)
+        if settings is not None:
+            scanner.add_hooks_mapping(
+                settings_path,
+                settings.get("hooks", {}),
+                name_prefix="claude-code:project",
+                source="claude-code:project",
+            )
+        scanner.add_skills(project_dir / ".claude" / "skills", source="claude:skills", prefix="Skill")
+        scanner.add_markdown_agents(project_dir / ".claude" / "agents", source_prefix="Agent")
+        return scanner.finish()
 
     def get_hook_spec(self) -> HookSpec:
         return HookSpec(
@@ -382,6 +418,216 @@ class ClaudeCodeAdapter(BaseAdapter):
                     pass
 
         return ScanResult(mcps=mcps, skills=skills, hooks=hooks, agents=agents)
+
+    def _discover_claude_home(self, claude_dir: Path, home: Path) -> AdapterDiscoveryResult:
+        scanner = RichAdapterScanner(
+            harness=self.harness_name,
+            scope=DiscoveryScope.USER,
+            root=claude_dir,
+            home=home,
+        )
+        budget = scanner.walker.budget
+        deadline = scanner.walker.deadline
+        settings_path = claude_dir / "settings.json"
+        settings = scanner.read_json(settings_path)
+        active_plugins: set[str] = set()
+        if settings is not None:
+            scanner.add_mcps(
+                settings.get("mcpServers", {}),
+                settings_path,
+                source="claude-code:global",
+                description_prefix="Claude Code global MCP",
+            )
+            scanner.add_hooks_mapping(
+                settings_path,
+                settings.get("hooks", {}),
+                name_prefix="claude-code",
+                source="claude-code:global",
+            )
+            enabled = settings.get("enabledPlugins", {})
+            if isinstance(enabled, Mapping):
+                active_plugins = {str(name) for name, value in enabled.items() if value is True}
+            else:
+                scanner.diagnostic(
+                    DiagnosticCode.METADATA_MALFORMED,
+                    settings_path,
+                    "Claude enabledPlugins must be an object",
+                )
+
+        # User skills and agents are independent of settings.json.
+        scanner.add_skills(claude_dir / "skills", source="claude:skills", prefix="Skill")
+        scanner.add_markdown_agents(claude_dir / "agents", source_prefix="Agent")
+
+        plugin_paths: dict[str, Path] = {}
+        installed_path = claude_dir / "plugins" / "installed_plugins.json"
+        installed = scanner.read_json(installed_path) if active_plugins else None
+        if installed is not None:
+            plugins = installed.get("plugins", {})
+            if not isinstance(plugins, Mapping):
+                scanner.diagnostic(
+                    DiagnosticCode.METADATA_MALFORMED,
+                    installed_path,
+                    "Claude installed plugin registry must contain an object",
+                )
+            else:
+                for plugin_key in sorted(active_plugins, key=str.casefold):
+                    entries = plugins.get(plugin_key)
+                    if entries is None:
+                        continue
+                    if not isinstance(entries, list) or not entries or not isinstance(entries[0], Mapping):
+                        scanner.diagnostic(
+                            DiagnosticCode.METADATA_MALFORMED,
+                            installed_path,
+                            "Claude installed plugin entry must be a non-empty array of objects",
+                        )
+                        continue
+                    install_path = entries[0].get("installPath")
+                    if not isinstance(install_path, str) or not install_path.strip():
+                        scanner.diagnostic(
+                            DiagnosticCode.METADATA_MALFORMED,
+                            installed_path,
+                            "Claude installed plugin entry is missing installPath",
+                        )
+                        continue
+                    candidate = Path(install_path).expanduser()
+                    try:
+                        resolved = candidate.resolve(strict=True)
+                    except (OSError, RuntimeError):
+                        scanner.diagnostic(
+                            DiagnosticCode.PERMISSION_DENIED,
+                            installed_path,
+                            "Claude plugin install root is missing or unreadable",
+                        )
+                        continue
+                    if not resolved.is_dir():
+                        scanner.diagnostic(
+                            DiagnosticCode.METADATA_MALFORMED,
+                            installed_path,
+                            "Claude plugin install root is not a directory",
+                        )
+                        continue
+                    plugin_paths[plugin_key] = resolved
+
+        for plugin_key in sorted(active_plugins, key=str.casefold):
+            if plugin_key not in plugin_paths:
+                cached = self._cached_plugin_root(claude_dir, plugin_key, scanner)
+                if cached is not None:
+                    plugin_paths[plugin_key] = cached
+
+        result = scanner.finish()
+        aggregate_limit_codes = {
+            DiagnosticCode.APPROVED_ROOT_LIMIT_REACHED,
+            DiagnosticCode.COLLECTION_FILE_LIMIT_REACHED,
+            DiagnosticCode.EVIDENCE_LIMIT_REACHED,
+        }
+        for plugin_key in sorted(plugin_paths, key=str.casefold):
+            plugin_result = self._discover_claude_plugin(
+                plugin_key,
+                plugin_paths[plugin_key],
+                home=home,
+                budget=budget,
+                deadline=deadline,
+            )
+            result.evidence.extend(plugin_result.evidence)
+            result.diagnostics.extend(plugin_result.diagnostics)
+            if budget.emitted_limits.intersection(aggregate_limit_codes):
+                break
+        result.evidence.sort(
+            key=lambda item: (
+                item.display_path or "",
+                str(getattr(item.component, "name", "")).casefold(),
+                type(item.component).__name__,
+            )
+        )
+        result.diagnostics.sort(key=lambda item: (item.source or "", item.code.value, item.message))
+        return result
+
+    def _cached_plugin_root(
+        self,
+        claude_dir: Path,
+        plugin_key: str,
+        scanner: RichAdapterScanner,
+    ) -> Path | None:
+        name, separator, marketplace = plugin_key.partition("@")
+        market_dir = (
+            claude_dir / "plugins" / "cache" / marketplace / name
+            if separator
+            else claude_dir / "plugins" / "cache" / name / name
+        )
+        if not market_dir.is_dir():
+            return None
+        try:
+            versions = [path for path in market_dir.iterdir() if path.is_dir() and not path.is_symlink()]
+            versions.sort(key=lambda path: (-path.stat().st_mtime, path.name.casefold()))
+        except OSError:
+            scanner.diagnostic(
+                DiagnosticCode.PERMISSION_DENIED,
+                market_dir,
+                "unable to inspect Claude plugin cache metadata",
+            )
+            return None
+        if len(versions) > scanner.walker.limits.max_files_per_root:
+            scanner.diagnostic(
+                DiagnosticCode.ITEM_LIMIT_REACHED,
+                market_dir,
+                "Claude plugin cache version limit reached",
+            )
+            versions = versions[: scanner.walker.limits.max_files_per_root]
+        return versions[0].resolve(strict=False) if versions else None
+
+    def _discover_claude_plugin(
+        self,
+        plugin_key: str,
+        plugin_dir: Path,
+        *,
+        home: Path,
+        budget: AggregateDiscoveryBudget,
+        deadline: float,
+    ) -> AdapterDiscoveryResult:
+        scanner = RichAdapterScanner(
+            harness=self.harness_name,
+            scope=DiscoveryScope.USER,
+            root=plugin_dir,
+            home=home,
+            budget=budget,
+            deadline=deadline,
+        )
+        plugin_name = redact_text(plugin_key.split("@", 1)[0])
+        description = f"Plugin: {plugin_name}"
+        metadata_path = plugin_dir / ".claude-plugin" / "plugin.json"
+        metadata = scanner.read_json(metadata_path)
+        if metadata is not None and isinstance(metadata.get("description"), str):
+            description = redact_text(metadata["description"])
+        scanner.add_mcp_config(
+            plugin_dir / ".mcp.json",
+            source=f"plugin:{plugin_name}",
+            description_prefix="Plugin MCP",
+            description=description,
+        )
+        for skill_path in scanner.walker.files(plugin_dir, name="SKILL.md"):
+            content = scanner.walker.read_text(skill_path)
+            if content is None:
+                continue
+            skill_name = redact_text(skill_path.parent.name)
+            skill_description = parse_frontmatter_field(content, "description") or first_content_line(content)
+            scanner.add_component(
+                DiscoveredSkill(
+                    name=f"{plugin_name}/{skill_name}",
+                    description=redact_text(skill_description or f"Skill from {plugin_name}"),
+                    source=f"plugin:{plugin_name}",
+                ),
+                skill_path,
+            )
+        for hooks_path in scanner.walker.files(plugin_dir, name="hooks.json"):
+            hooks_data = scanner.read_json(hooks_path)
+            if hooks_data is not None:
+                scanner.add_hooks_mapping(
+                    hooks_path,
+                    hooks_data.get("hooks", {}),
+                    name_prefix=plugin_name,
+                    source=f"plugin:{plugin_name}",
+                )
+        return scanner.finish()
 
     def saved_model(self, agent_detail: dict | None) -> str | None:
         saved = super().saved_model(agent_detail)

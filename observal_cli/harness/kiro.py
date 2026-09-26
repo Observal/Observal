@@ -7,9 +7,13 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from observal_cli.discovery.adapter_support import RichAdapterScanner
+from observal_cli.discovery.models import AdapterDiscoveryResult, DiagnosticCode, DiscoveryScope
+from observal_cli.discovery.redact import redact_text, redact_value
 from observal_cli.harness import (
     DiscoveredAgent,
     DiscoveredHook,
@@ -155,6 +159,17 @@ class KiroAdapter(BaseAdapter):
             return ScanResult(mcps=mcps)
         except (json.JSONDecodeError, OSError):
             return ScanResult()
+
+    def discover_home(self, home: Path | None = None) -> AdapterDiscoveryResult:
+        home = home or Path.home()
+        return self._discover_kiro_root(home / ".kiro", DiscoveryScope.USER, home=home)
+
+    def discover_project(self, project_dir: Path) -> AdapterDiscoveryResult:
+        return self._discover_kiro_root(
+            project_dir / ".kiro",
+            DiscoveryScope.PROJECT,
+            project_dir=project_dir,
+        )
 
     def get_hook_spec(self) -> HookSpec:
         return HookSpec(
@@ -328,6 +343,108 @@ class KiroAdapter(BaseAdapter):
                 seen.add(m.name)
 
         return ScanResult(mcps=deduped, skills=skills, hooks=hooks, agents=agents)
+
+    def _discover_kiro_root(
+        self,
+        root: Path,
+        scope: DiscoveryScope,
+        *,
+        home: Path | None = None,
+        project_dir: Path | None = None,
+    ) -> AdapterDiscoveryResult:
+        scanner = RichAdapterScanner(
+            harness=self.harness_name,
+            scope=scope,
+            root=root,
+            home=home,
+            project_dir=project_dir,
+        )
+        scope_label = "global" if scope is DiscoveryScope.USER else "project"
+        base_source = f"kiro:{scope_label}"
+        scanner.add_mcp_config(
+            root / "settings" / "mcp.json",
+            source=base_source,
+            description_prefix=f"Kiro {scope_label} MCP",
+        )
+
+        for agent_path in scanner.walker.files(root / "agents", suffix=".json"):
+            if agent_path.stem == "kiro_default":
+                continue
+            data = scanner.read_json(agent_path)
+            if data is None:
+                continue
+            name = redact_text(str(data.get("name") or agent_path.stem))
+            description = redact_text(str(data.get("description") or f"Kiro agent: {name}"))
+            model = redact_text(str(data.get("model") or ""))
+            prompt = redact_text(str(data.get("prompt") or ""))
+            scanner.add_component(
+                DiscoveredAgent(
+                    name=name,
+                    description=description,
+                    model_name=model,
+                    prompt=prompt,
+                    source_file=str(agent_path),
+                ),
+                agent_path,
+            )
+            agent_source = f"kiro:agent:{name}"
+            agent_mcps = data.get("mcpServers", {})
+            scanner.add_mcps(
+                agent_mcps,
+                agent_path,
+                source=agent_source,
+                description_prefix=f"From Kiro agent: {name}",
+            )
+            scanner.add_hooks_mapping(
+                agent_path,
+                data.get("hooks", {}),
+                name_prefix=f"kiro:{name}",
+                source=agent_source,
+            )
+
+        scanner.add_skills(root / "skills", source="kiro:skills", prefix="Kiro skill")
+
+        for hook_path in scanner.walker.files(root / "hooks", suffix=".json"):
+            data = scanner.read_json(hook_path)
+            if data is None:
+                continue
+            if "hooks" in data:
+                scanner.add_hooks_mapping(
+                    hook_path,
+                    data["hooks"],
+                    name_prefix=f"kiro:{hook_path.stem}",
+                    source=base_source,
+                )
+                continue
+            event = data.get("event") or data.get("eventName") or data.get("trigger")
+            if not isinstance(event, str) or not event.strip():
+                scanner.diagnostic(
+                    DiagnosticCode.METADATA_MALFORMED,
+                    hook_path,
+                    "standalone Kiro hook is missing an event",
+                )
+                continue
+            handler = data.get("handler", data)
+            if not isinstance(handler, Mapping):
+                scanner.diagnostic(
+                    DiagnosticCode.METADATA_MALFORMED,
+                    hook_path,
+                    "standalone Kiro hook handler must be an object",
+                )
+                continue
+            safe_handler = redact_value(handler)
+            scanner.add_component(
+                DiscoveredHook(
+                    name=redact_text(str(data.get("name") or hook_path.stem)),
+                    event=redact_text(event),
+                    handler_type=redact_text(str(data.get("type") or "command")),
+                    handler_config=safe_handler if isinstance(safe_handler, dict) else {},
+                    description=redact_text(str(data.get("description") or f"Kiro hook: {event}")),
+                    source=base_source,
+                ),
+                hook_path,
+            )
+        return scanner.finish()
 
     def rewrite_agent_profile(self, content: dict, agent_id: str) -> dict:
         from observal_cli.cmd_pull import _rewrite_kiro_hooks

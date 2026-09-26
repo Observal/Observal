@@ -6,13 +6,14 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 VishnuM049 <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from models.agent import AgentStatus
 from schemas.constants import AGENT_NAME_REGEX, Visibility, make_name_validator
@@ -111,14 +112,12 @@ class AgentCreateRequest(BaseModel):
             raise ValueError(f"Invalid version '{v}'. Must be semver format: x.y.z (e.g. 1.0.0)")
         return v
 
-    @field_validator("prompt", mode="after")
-    @classmethod
-    def _require_prompt_or_prompt_component(cls, v: str, info) -> str:
-        components = (info.data or {}).get("components", [])
-        has_prompt_component = any(c.component_type == "prompt" for c in components)
-        if not v and not has_prompt_component:
+    @model_validator(mode="after")
+    def _require_prompt_or_prompt_component(self):
+        has_prompt_component = any(component.component_type == "prompt" for component in self.components)
+        if not self.prompt and not has_prompt_component:
             raise ValueError("A system prompt is required. Either set a custom prompt or add a Prompt component.")
-        return v
+        return self
 
 
 class AgentUpdateRequest(BaseModel):
@@ -287,6 +286,7 @@ class AgentInstallResponse(BaseModel):
     agent_id: uuid.UUID
     harness: str
     config_snippet: dict
+    installed_components: list[dict] = []
     warnings: list[str] = []
 
 

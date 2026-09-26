@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 VishnuM049 <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Tests for canonical harness config generation."""
@@ -10,6 +11,7 @@
 from __future__ import annotations
 
 import uuid
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -21,6 +23,7 @@ from services.harness.helpers import (
     _inject_agent_id,
     _model_name_to_frontmatter,
     _sanitize_name,
+    installed_component_version,
 )
 
 # ── Helpers ───────────────────────────────────────────────────────
@@ -50,6 +53,14 @@ def _make_agent(
     agent.components = components or []
     agent.external_mcps = external_mcps or []
     return agent
+
+
+@pytest.mark.parametrize(
+    ("resolved_version", "expected"),
+    [(None, "2.3.4"), ("latest", "2.3.4"), ("1.5.0", "1.5.0")],
+)
+def test_installed_component_metadata_uses_concrete_versions(resolved_version, expected) -> None:
+    assert installed_component_version(resolved_version, SimpleNamespace(version="2.3.4")) == expected
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -529,6 +540,7 @@ class TestMcpListingClaudeCodeAdapter:
         listing.name = "my-mcp"
         listing.id = comp_id
         listing.url = None
+        listing.transport = "stdio"
         listing.command = "npx"
         listing.args = ["-y", "my-mcp"]
         listing.framework = None

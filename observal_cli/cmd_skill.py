@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 VishnuM049 <vishnu.muthiah04@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Skill registry CLI commands."""
@@ -23,6 +24,7 @@ from rich import print as rprint
 from rich.table import Table
 
 from observal_cli import client, config
+from observal_cli.component_drafts import DraftPayloadError, create_skill_draft
 from observal_cli.constants import HARNESS_CAPABILITIES, VALID_HARNESSES, VALID_SKILL_TASK_TYPES
 from observal_cli.errors import ErrorCategory, fail
 from observal_cli.prompts import select_one, text_input
@@ -39,6 +41,20 @@ from observal_cli.render import (
     status_badge,
 )
 from observal_cli.shared.utils import sanitize_name as _sanitize_name
+
+
+def _create_skill_draft_or_fail(payload: dict) -> dict:
+    try:
+        return create_skill_draft(payload)
+    except DraftPayloadError as error:
+        fail(
+            ErrorCategory.VALIDATION,
+            str(error),
+            operation="Save skill draft",
+            resource="skill draft payload",
+            remediation="Correct the draft fields and retry.",
+        )
+
 
 skill_app = typer.Typer(
     help=(
@@ -349,11 +365,10 @@ def skill_submit(
             payload["script_filename"] = script_filename
 
     client.add_publish_target(payload, team, visibility)
-    endpoint = "/api/v1/skills/draft" if draft else "/api/v1/skills/submit"
     label = "draft" if draft else "skill"
     submit_context = nullcontext() if output == "json" else spinner(f"Saving {label}...")
     with submit_context:
-        result = client.post(endpoint, payload)
+        result = _create_skill_draft_or_fail(payload) if draft else client.post("/api/v1/skills/submit", payload)
     if output == "json":
         output_json(result)
         return

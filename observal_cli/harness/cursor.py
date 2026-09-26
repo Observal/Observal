@@ -9,6 +9,8 @@ import json
 import time
 from pathlib import Path
 
+from observal_cli.discovery.adapter_support import RichAdapterScanner
+from observal_cli.discovery.models import AdapterDiscoveryResult, DiscoveryScope
 from observal_cli.harness import (
     DiscoveredMcp,
     HookSpec,
@@ -179,6 +181,44 @@ class CursorAdapter(BaseAdapter):
             return ScanResult(mcps=mcps)
         except (json.JSONDecodeError, OSError):
             return ScanResult()
+
+    def discover_home(self, home: Path | None = None) -> AdapterDiscoveryResult:
+        home = home or Path.home()
+        return self._discover_cursor_root(home / ".cursor", DiscoveryScope.USER, home=home)
+
+    def discover_project(self, project_dir: Path) -> AdapterDiscoveryResult:
+        return self._discover_cursor_root(
+            project_dir / ".cursor",
+            DiscoveryScope.PROJECT,
+            project_dir=project_dir,
+        )
+
+    def _discover_cursor_root(
+        self,
+        root: Path,
+        scope: DiscoveryScope,
+        *,
+        home: Path | None = None,
+        project_dir: Path | None = None,
+    ) -> AdapterDiscoveryResult:
+        scanner = RichAdapterScanner(
+            harness=self.harness_name,
+            scope=scope,
+            root=root,
+            home=home,
+            project_dir=project_dir,
+        )
+        source = "cursor:global" if scope is DiscoveryScope.USER else "cursor:project"
+        scanner.add_mcp_config(root / "mcp.json", source=source, description_prefix="Cursor MCP")
+        scanner.add_markdown_agents(root / "agents", source_prefix="Cursor agent")
+        scanner.add_skills(root / "skills", source="cursor:skills", prefix="Cursor skill")
+        hooks_file = root / "hooks.json"
+        hooks_data = scanner.read_json(hooks_file)
+        if hooks_data is not None:
+            scanner.add_hooks_mapping(
+                hooks_file, hooks_data.get("hooks", hooks_data), name_prefix="cursor", source=source
+            )
+        return scanner.finish()
 
     def get_hook_spec(self) -> HookSpec:
         return HookSpec(
