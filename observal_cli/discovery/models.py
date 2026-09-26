@@ -17,28 +17,17 @@ from observal_cli.harness import DiscoveredAgent, DiscoveredHook, DiscoveredMcp,
 DiscoveredComponent: TypeAlias = DiscoveredMcp | DiscoveredSkill | DiscoveredHook | DiscoveredAgent
 
 
-class ProviderKind(StrEnum):
-    HARNESS = "harness"
-
-
 class DiscoveryScope(StrEnum):
     USER = "user"
     PROJECT = "project"
 
 
-class PackageEcosystem(StrEnum):
-    NPM = "npm"
-    PYPI = "pypi"
-
-
 class LaunchKind(StrEnum):
     NPM = "npm"
     UV = "uv"
-    PIPX = "pipx"
     NODE = "node"
     PYTHON_MODULE = "python_module"
     URL = "url"
-    EXECUTABLE = "executable"
 
 
 class DiagnosticSeverity(StrEnum):
@@ -82,7 +71,6 @@ class SanitizedLaunch:
 @dataclass(frozen=True)
 class DiscoveryEvidence:
     component: DiscoveredComponent | None
-    provider: ProviderKind
     scope: DiscoveryScope
     harness: str | None = None
     source_path: Path | None = None

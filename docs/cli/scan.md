@@ -15,7 +15,7 @@ To install session telemetry hooks, use [`observal doctor patch`](doctor.md). MC
 observal scan [--harness <harness>] [--inventory] [--output table|json]
 ```
 
-Use `--inventory` for **local-only**, bounded harness evidence. It returns a versioned JSON document with `inventory` and `diagnostics`, or a table showing the harness, scope, component type, name, and privacy-safe source path. URLs are sanitized; token values, raw prompts, and command arguments are not printed. It never contacts Observal, writes a lockfile, or submits a component. Package-manager installations alone are not scanned or treated as configured capabilities.
+Use `--inventory` for **local-only**, bounded harness evidence. It returns a versioned JSON document with `inventory` and `diagnostics`, or a table showing the harness, scope, component type, name, and privacy-safe source path. URLs have userinfo, fragments, and **all query parameters** removed; suspicious credentials in the URL path make a launch incomplete. Token values, raw prompts, and command arguments are not printed. Unrecognized or unsafe launches have `launch: null` and a diagnostic, not a guessed Registry identity. An empty inventory succeeds with an empty list. It never contacts Observal, writes a lockfile, or submits a component. Package-manager installations alone are not scanned or treated as configured capabilities. Component names and source filenames are user-supplied, so review the output before sharing it externally.
 
 To find approved resources for a task, use [`observal discover`](discover.md). To submit something you found locally, **you** choose to run the corresponding `observal registry <type> submit --draft` command; inventory never starts that workflow.
 
@@ -88,9 +88,8 @@ observal doctor patch --all-harnesses --dry-run
 
 | Code | Meaning |
 | --- | --- |
-| 0 | At least one harness config found |
-| 1 | Server unreachable / auth failed |
-| 3 | No harness configs found |
+| 0 | Inventory completed (even when empty); default scan found a harness config |
+| 1 | Unknown harness; default scan found no harness configs |
 
 ## Related
 

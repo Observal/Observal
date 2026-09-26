@@ -65,6 +65,13 @@ def privacy_safe_path(
     return f"<external>/{resolved.name}"
 
 
+def _safe_source(path: str | os.PathLike[str] | None, *, home: Path, project_dir: Path) -> str | None:
+    from observal_cli.discovery.redact import redact_text
+
+    display = privacy_safe_path(path, home=home, project_dir=project_dir)
+    return redact_text(display) if display is not None else None
+
+
 def evidence_to_dict(evidence: DiscoveryEvidence, *, home: Path, project_dir: Path) -> dict:
     from observal_cli.discovery.redact import redact_text, sanitize_url
 
@@ -87,7 +94,7 @@ def evidence_to_dict(evidence: DiscoveryEvidence, *, home: Path, project_dir: Pa
             "package": launch.package,
             "version": launch.version,
             "transport": launch.transport,
-            "url": sanitize_url(launch.url) if launch.url else None,
+            "url": sanitize_url(launch.url, remove_all_query=True) if launch.url else None,
             "environment_names": list(launch.environment_names),
             "header_names": list(launch.header_names),
         }
@@ -96,7 +103,7 @@ def evidence_to_dict(evidence: DiscoveryEvidence, *, home: Path, project_dir: Pa
         "name": redact_text(str(getattr(component, "name", ""))),
         "harness": evidence.harness,
         "scope": evidence.scope.value,
-        "source": privacy_safe_path(evidence.source_path or evidence.display_path, home=home, project_dir=project_dir),
+        "source": _safe_source(evidence.source_path or evidence.display_path, home=home, project_dir=project_dir),
         "launch": safe_launch,
     }
 
@@ -115,7 +122,7 @@ def inventory_to_dict(
             "code": item.code.value,
             "severity": item.severity.value,
             "provider": item.provider,
-            "source": privacy_safe_path(item.source, home=home, project_dir=project_dir),
+            "source": _safe_source(item.source, home=home, project_dir=project_dir),
             "message": sanitize_diagnostic_message(item.message),
         }
         for item in diagnostics

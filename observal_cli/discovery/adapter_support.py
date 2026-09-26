@@ -16,12 +16,11 @@ from observal_cli.discovery.models import (
     DiscoveredComponent,
     DiscoveryEvidence,
     DiscoveryScope,
-    ProviderKind,
 )
 from observal_cli.discovery.normalize import normalize_mcp_definition
 from observal_cli.discovery.redact import redact_arguments, redact_text, redact_value, sanitize_url
 from observal_cli.discovery.serialize import privacy_safe_path
-from observal_cli.harness import DiscoveredAgent, DiscoveredHook, DiscoveredMcp, DiscoveredSkill, ScanResult
+from observal_cli.harness import DiscoveredAgent, DiscoveredHook, DiscoveredMcp, DiscoveredSkill
 from observal_cli.shared.utils import extract_body, extract_mcp_servers, first_content_line, parse_frontmatter_field
 
 if TYPE_CHECKING:
@@ -93,7 +92,6 @@ class RichAdapterScanner:
         self.result.evidence.append(
             DiscoveryEvidence(
                 component=component,
-                provider=ProviderKind.HARNESS,
                 scope=self.scope,
                 harness=self.harness,
                 source_path=path,
@@ -277,19 +275,3 @@ class RichAdapterScanner:
         )
         self.result.diagnostics.sort(key=lambda item: (item.source or "", item.code.value, item.message))
         return self.result
-
-
-def project_legacy(result: AdapterDiscoveryResult) -> ScanResult:
-    """Project rich evidence back to the unchanged legacy result contract."""
-    projected = ScanResult()
-    for item in result.evidence:
-        component = item.component
-        if isinstance(component, DiscoveredMcp):
-            projected.mcps.append(component)
-        elif isinstance(component, DiscoveredSkill):
-            projected.skills.append(component)
-        elif isinstance(component, DiscoveredHook):
-            projected.hooks.append(component)
-        elif isinstance(component, DiscoveredAgent):
-            projected.agents.append(component)
-    return projected

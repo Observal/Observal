@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -14,6 +15,7 @@ import typer
 from typer.testing import CliRunner
 
 from observal_cli import client, cmd_scan, lockfile
+from observal_cli import config as obs_config
 from observal_cli.discovery.bounded_walk import AggregateDiscoveryBudget
 from observal_cli.discovery.collector import collect_local_inventory
 from observal_cli.discovery.serialize import inventory_to_dict
@@ -56,9 +58,15 @@ def test_local_inventory_never_contacts_server_or_writes_and_redacts_secrets(mon
     for target, name in (
         (httpx, "get"),
         (httpx, "post"),
+        (httpx, "request"),
+        (httpx.Client, "request"),
         (client, "get"),
         (client, "post"),
+        (obs_config, "load"),
+        (lockfile, "read_lockfile"),
         (lockfile, "write_lockfile"),
+        (subprocess, "run"),
+        (subprocess, "Popen"),
     ):
         monkeypatch.setattr(target, name, forbidden)
     _, _, output, payload = _run(monkeypatch, tmp_path)
@@ -72,6 +80,50 @@ def test_local_inventory_never_contacts_server_or_writes_and_redacts_secrets(mon
     assert payload["inventory"][0]["launch"]["url"] == "https://example.test/mcp"
     assert payload["inventory"][0]["launch"]["header_names"] == ["Authorization"]
     assert "registry_status" not in output and "registration_status" not in output
+
+
+def test_inventory_omits_all_query_values_and_rejects_untrusted_versions(monkeypatch, tmp_path):
+    config = tmp_path / "project" / ".cursor" / "mcp.json"
+    config.parent.mkdir(parents=True)
+    config.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "remote": {"url": "https://example.test/mcp?mode=PRIVATE_CREDENTIAL"},
+                    "package": {"command": "npx", "args": ["pkg@v1?mode=PRIVATE_CREDENTIAL"]},
+                    "safe-version": {"command": "npx", "args": ["pkg@1.2.3"]},
+                }
+            }
+        )
+    )
+    _, _, output, payload = _run(monkeypatch, tmp_path)
+    items = {item["name"]: item for item in payload["inventory"]}
+    assert "PRIVATE_CREDENTIAL" not in output
+    assert items["remote"]["launch"]["url"] == "https://example.test/mcp"
+    assert items["package"]["launch"] is None
+    assert items["safe-version"]["launch"]["version"] == "1.2.3"
+    assert any(item["code"] == "unsupported_launch" for item in payload["diagnostics"])
+
+
+def test_secret_in_url_path_is_not_exposed(monkeypatch, tmp_path):
+    token = "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890abcd"
+    config = tmp_path / "project" / ".cursor" / "mcp.json"
+    config.parent.mkdir(parents=True)
+    config.write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "prefixed": {"url": f"https://example.test/mcp/{token}"},
+                    "short": {"url": "https://example.test/token/short-secret"},
+                }
+            }
+        )
+    )
+    _, _, output, payload = _run(monkeypatch, tmp_path)
+    assert token not in output
+    assert "short-secret" not in output
+    assert all(item["launch"] is None for item in payload["inventory"])
+    assert [item["code"] for item in payload["diagnostics"]].count("unsupported_launch") == 2
 
 
 def test_malformed_header_name_cannot_be_exposed_as_launch_metadata(monkeypatch, tmp_path):
@@ -138,6 +190,18 @@ def test_unsupported_launch_is_incomplete_not_a_publishable_identity(monkeypatch
 def test_empty_inventory_is_successful_local_json(monkeypatch, tmp_path):
     _, _, _, payload = _run(monkeypatch, tmp_path)
     assert payload == {"inventory_schema_version": 1, "inventory": [], "diagnostics": []}
+
+
+def test_inventory_does_not_echo_credentials_in_source_paths(monkeypatch, tmp_path):
+    token = "ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890abcd"
+    skill = tmp_path / "project" / ".cursor" / "skills" / token / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("This is a skill")
+    _, _, output, payload = _run(monkeypatch, tmp_path)
+    assert len(payload["inventory"]) == 1
+    assert token not in output
+    assert "<secret>" in payload["inventory"][0]["source"]
+    assert payload["inventory"][0]["name"] == "<secret>"
 
 
 def test_inventory_bounds_oversized_files_and_symlink_escapes(monkeypatch, tmp_path):

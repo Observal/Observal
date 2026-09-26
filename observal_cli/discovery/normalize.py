@@ -9,19 +9,15 @@ import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from packaging.requirements import InvalidRequirement, Requirement
 
 from observal_cli.constants import VALID_MCP_TRANSPORTS
-from observal_cli.discovery.models import (
-    LaunchKind,
-    PackageEcosystem,
-    SanitizedLaunch,
-)
+from observal_cli.discovery.models import LaunchKind, SanitizedLaunch
 from observal_cli.discovery.redact import is_secret_value, redact_arguments, sanitize_url
 
 _NPM_NAME_RE = re.compile(r"^(?:@[a-z0-9][a-z0-9._-]*/)?[a-z0-9][a-z0-9._-]*$", re.IGNORECASE)
+_PACKAGE_VERSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 _PYTHON_MODULE_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$")
 _PEP503_SEPARATORS_RE = re.compile(r"[-_.]+")
 _SHELL_WRAPPERS = {"sh", "bash", "zsh", "cmd", "cmd.exe", "powershell", "pwsh"}
@@ -36,8 +32,6 @@ _HEADER_NAME_RE = re.compile(r"^[A-Za-z0-9-]+$")
 @dataclass(frozen=True)
 class LaunchNormalizationResult:
     launch: SanitizedLaunch | None
-    correlation_identity: str | None
-    launch_fingerprint: str | None
     complete: bool
     reason: str | None = None
 
@@ -59,16 +53,6 @@ def canonicalize_python_package_name(name: str) -> str:
     return _PEP503_SEPARATORS_RE.sub("-", name).lower()
 
 
-def package_correlation_identity(ecosystem: PackageEcosystem | str, package_name: str) -> str:
-    ecosystem_value = ecosystem.value if isinstance(ecosystem, PackageEcosystem) else ecosystem
-    normalized = (
-        package_name.lower()
-        if ecosystem_value == PackageEcosystem.NPM
-        else canonicalize_python_package_name(package_name)
-    )
-    return f"{ecosystem_value}:{normalized}"
-
-
 def split_npm_package_spec(requirement: str) -> tuple[str, str | None] | None:
     """Split an npm package requirement into package and version/tag."""
 
@@ -87,7 +71,9 @@ def split_npm_package_spec(requirement: str) -> tuple[str, str | None] | None:
     elif "@" in value:
         value, version = value.rsplit("@", 1)
 
-    if not _NPM_NAME_RE.fullmatch(value) or version == "" or (version is not None and is_secret_value(version)):
+    if not _NPM_NAME_RE.fullmatch(value) or (
+        version is not None and (not _PACKAGE_VERSION_RE.fullmatch(version) or is_secret_value(version))
+    ):
         return None
     return value.lower(), version
 
@@ -106,7 +92,12 @@ def _split_python_requirement(requirement: str) -> tuple[str, str | None, str | 
     # uv commonly accepts ``name@version`` in addition to PEP 508 syntax.
     if "@" in value and " @ " not in value:
         base, version = value.rsplit("@", 1)
-        if base and version and not is_secret_value(version) and not any(marker in base for marker in "/\\:"):
+        if (
+            base
+            and _PACKAGE_VERSION_RE.fullmatch(version)
+            and not is_secret_value(version)
+            and not any(marker in base for marker in "/\\:")
+        ):
             try:
                 parsed_base = Requirement(base)
             except InvalidRequirement:
@@ -135,65 +126,21 @@ def _split_python_requirement(requirement: str) -> tuple[str, str | None, str | 
     return package, canonical_requirement, version_metadata
 
 
-def normalize_url_identity(url: str) -> tuple[str, str] | None:
-    """Return sanitized launch URL and query-free correlation identity."""
-
-    sanitized = sanitize_url(url)
-    identity_url = sanitize_url(url, remove_all_query=True)
-    if sanitized is None or identity_url is None:
-        return None
-    return sanitized, f"url:{identity_url}"
-
-
-def canonical_launch_document(launch: SanitizedLaunch) -> dict[str, Any]:
-    """Build the only document accepted as launch fingerprint input."""
-
-    kind = launch.kind.value if isinstance(launch.kind, LaunchKind) else str(launch.kind)
-    document: dict[str, Any] = {"kind": kind}
+def _result(launch: SanitizedLaunch, *, safe: bool = True) -> LaunchNormalizationResult:
+    """Keep only launches whose structured fields can be safely summarized."""
     for key in ("package", "module", "script", "binary", "requirement", "version", "transport"):
         value = getattr(launch, key)
-        if value is not None:
-            if is_secret_value(value):
-                raise ValueError(f"launch {key} is not safely canonicalizable")
-            document[key] = value
-    if launch.url is not None:
-        safe_url = sanitize_url(launch.url)
-        if safe_url is None:
-            raise ValueError("launch URL is not safely canonicalizable")
-        document["url"] = safe_url
-    if launch.arguments:
-        safe_arguments, arguments_safe = redact_arguments(launch.arguments)
-        if not arguments_safe:
-            raise ValueError("launch arguments are not safely canonicalizable")
-        document["arguments"] = list(safe_arguments)
-    if launch.environment_names:
-        document["environment_names"] = sorted(set(launch.environment_names))
-    if launch.header_names:
-        document["header_names"] = sorted(set(launch.header_names), key=str.casefold)
-    return document
-
-
-def _result(
-    launch: SanitizedLaunch, correlation_identity: str | None, *, safe: bool = True
-) -> LaunchNormalizationResult:
-    if safe:
-        try:
-            canonical_launch_document(launch)
-        except ValueError:
+        if value is not None and is_secret_value(value):
             safe = False
-    return LaunchNormalizationResult(
-        launch=launch,
-        correlation_identity=correlation_identity,
-        launch_fingerprint=None,
-        complete=safe,
-        reason=None if safe else "unsafe_or_unclassified_arguments",
-    )
+    if launch.url is not None and sanitize_url(launch.url, remove_all_query=True) is None:
+        safe = False
+    if launch.arguments and not redact_arguments(launch.arguments)[1]:
+        safe = False
+    return LaunchNormalizationResult(launch, safe, None if safe else "unsafe_or_unclassified_arguments")
 
 
-def _incomplete(
-    reason: str, launch: SanitizedLaunch | None = None, identity: str | None = None
-) -> LaunchNormalizationResult:
-    return LaunchNormalizationResult(launch, identity, None, False, reason)
+def _incomplete(reason: str) -> LaunchNormalizationResult:
+    return LaunchNormalizationResult(None, False, reason)
 
 
 def _named_metadata(value: object, *, separator: str) -> tuple[tuple[str, ...], bool]:
@@ -322,7 +269,7 @@ def _normalize_npm(
         header_names=header_names,
         transport=transport,
     )
-    return _result(launch, package_correlation_identity(PackageEcosystem.NPM, package), safe=arguments_safe)
+    return _result(launch, safe=arguments_safe)
 
 
 def _normalize_uv(
@@ -352,7 +299,7 @@ def _normalize_uv(
         header_names=header_names,
         transport=transport,
     )
-    return _result(launch, package_correlation_identity(PackageEcosystem.PYPI, package), safe=arguments_safe)
+    return _result(launch, safe=arguments_safe)
 
 
 def _resolve_script(script: str, source_root: Path | None, working_dir: Path | None) -> str | None:
@@ -370,29 +317,13 @@ def _resolve_script(script: str, source_root: Path | None, working_dir: Path | N
     return relative.as_posix()
 
 
-def _pipx_package(known: Mapping[str, object], executable: str) -> tuple[str, str | None] | None:
-    value = known.get(executable)
-    if value is None:
-        return None
-    if isinstance(value, str):
-        return canonicalize_python_package_name(value), None
-    if isinstance(value, Mapping):
-        name = value.get("package") or value.get("name")
-        version = value.get("version")
-        if isinstance(name, str):
-            return canonicalize_python_package_name(name), str(version) if version is not None else None
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)) and value:
-        return canonicalize_python_package_name(str(value[0])), str(value[1]) if len(value) > 1 else None
-    return None
-
-
 def normalize_mcp_definition(
     config: Mapping[str, object],
     *,
     source_root: Path | None = None,
     working_dir: Path | None = None,
 ) -> LaunchNormalizationResult:
-    """Normalize a structured MCP definition shared by discovery and installs."""
+    """Parse a structured MCP definition for local inventory display only."""
 
     command_value = config.get("command")
     raw_arguments = config.get("args", [])
@@ -425,13 +356,7 @@ def normalize_mcp_definition(
         working_dir=working_dir,
     )
     if not metadata.complete:
-        return LaunchNormalizationResult(
-            launch=normalized.launch,
-            correlation_identity=normalized.correlation_identity,
-            launch_fingerprint=None,
-            complete=False,
-            reason=metadata.reason,
-        )
+        return LaunchNormalizationResult(launch=normalized.launch, complete=False, reason=metadata.reason)
     return normalized
 
 
@@ -444,7 +369,6 @@ def normalize_launch(
     headers: Mapping[str, object] | Sequence[str] | None = None,
     transport: str | None = None,
     selected_binary: str | None = None,
-    known_pipx_executables: Mapping[str, object] | None = None,
     source_root: Path | None = None,
     working_dir: Path | None = None,
 ) -> LaunchNormalizationResult:
@@ -454,10 +378,9 @@ def normalize_launch(
     header_names = _header_names(headers)
 
     if url is not None:
-        normalized_url = normalize_url_identity(url)
-        if normalized_url is None:
+        sanitized_url = sanitize_url(url, remove_all_query=True)
+        if sanitized_url is None:
             return _incomplete("unsupported_url")
-        sanitized_url, identity = normalized_url
         launch = SanitizedLaunch(
             kind=LaunchKind.URL,
             url=sanitized_url,
@@ -465,7 +388,7 @@ def normalize_launch(
             header_names=header_names,
             transport=transport,
         )
-        return _result(launch, identity)
+        return _result(launch)
 
     if not command:
         return _incomplete("command_or_url_required")
@@ -499,7 +422,7 @@ def normalize_launch(
             header_names=header_names,
             transport=transport,
         )
-        return _result(launch, f"python:{module.casefold()}", safe=arguments_safe)
+        return _result(launch, safe=arguments_safe)
     if executable in {"node", "node.exe"}:
         values = list(arguments)
         if not values:
@@ -517,22 +440,6 @@ def normalize_launch(
             header_names=header_names,
             transport=transport,
         )
-        return _result(launch, f"node:{script}", safe=arguments_safe)
-
-    pipx = _pipx_package(known_pipx_executables or {}, executable)
-    if pipx is not None:
-        package, version = pipx
-        safe_arguments, arguments_safe = redact_arguments(arguments)
-        launch = SanitizedLaunch(
-            kind=LaunchKind.PIPX,
-            package=package,
-            binary=executable,
-            version=version,
-            arguments=safe_arguments,
-            environment_names=environment_names,
-            header_names=header_names,
-            transport=transport,
-        )
-        return _result(launch, package_correlation_identity(PackageEcosystem.PYPI, package), safe=arguments_safe)
+        return _result(launch, safe=arguments_safe)
 
     return _incomplete("unknown_executable")

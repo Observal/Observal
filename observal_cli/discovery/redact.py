@@ -14,7 +14,7 @@ import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, unquote, urlencode, urlsplit, urlunsplit
 
 from observal_cli.discovery.models import DiagnosticCode, DiagnosticSeverity, DiscoveryDiagnostic
 from observal_cli.discovery.serialize import privacy_safe_path
@@ -113,6 +113,14 @@ def sanitize_url(url: str, *, remove_all_query: bool = False) -> str | None:
             host = f"{host}:{port}"
 
         path = parts.path or "/"
+        segments = [unquote(segment) for segment in path.split("/")]
+        # Credentials also turn up in URL paths, not just userinfo/query.
+        # Fail closed rather than display a partly redacted endpoint.
+        if any(
+            is_secret_value(segment) or (index > 0 and is_secret_name(segments[index - 1]) and segment)
+            for index, segment in enumerate(segments)
+        ):
+            return None
         if path != "/":
             path = path.rstrip("/") or "/"
 
