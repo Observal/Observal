@@ -423,6 +423,20 @@ export interface RecommendationsResponse {
 	topics: string[];
 }
 
+// ── Admin Recommended ────────────────────────────────────────────────
+
+export interface SetRecommendedRequest {
+	entity_type: string;
+	entity_id: string;
+	recommended: boolean;
+}
+
+export interface SetRecommendedResponse {
+	entity_type: string;
+	entity_id: string;
+	is_recommended: boolean;
+}
+
 // ── Discovery (ARD) ─────────────────────────────────────────────────
 
 export type DiscoveryKind = "agent" | "mcp" | "skill" | "hook" | "prompt" | "sandbox";

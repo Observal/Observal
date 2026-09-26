@@ -85,6 +85,8 @@ import type {
 	TeamRole,
 	TeamUpdateBody,
 	RecommendationsResponse,
+	SetRecommendedRequest,
+	SetRecommendedResponse,
 	DiscoverySearchFilter,
 	DiscoverySearchResponse,
 	InboxItem,
@@ -930,11 +932,8 @@ export const admin = {
 			`/admin/migrate/jobs/${jobId}/artifacts/${name}/token`,
 			{},
 		),
-	setRecommended: (body: { entity_type: string; entity_id: string; recommended: boolean }) =>
-		patch<{ entity_type: string; entity_id: string; is_recommended: boolean }>(
-			"/admin/recommended",
-			body,
-		),
+	setRecommended: (body: SetRecommendedRequest) =>
+		patch<SetRecommendedResponse>("/admin/recommended", body),
 };
 
 // ── Retention Types ───────────────────────────────────────────────
