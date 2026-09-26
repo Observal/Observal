@@ -22,31 +22,39 @@ import json
 import subprocess
 import sys
 
-# Minimal JSON-RPC stdio MCP implementation (no dependencies beyond stdlib)
+from loguru import logger as optic
+
+# Minimal JSON-RPC stdio MCP implementation (no dependencies beyond stdlib + loguru).
+# Stdio transport framing: one JSON-RPC message per line, no headers.
+
+# Initialization-based protocol revisions this server speaks, newest first.
+SUPPORTED_PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 
 
 def _read_message() -> dict | None:
-    """Read a JSON-RPC message from stdin (Content-Length framing)."""
-    headers = {}
+    """Read one newline-delimited JSON-RPC message from stdin. Returns None at EOF."""
     while True:
         line = sys.stdin.buffer.readline()
-        if not line or line == b"\r\n" or line == b"\n":
-            break
-        if b":" in line:
-            key, value = line.decode().split(":", 1)
-            headers[key.strip().lower()] = value.strip()
-    content_length = int(headers.get("content-length", 0))
-    if content_length == 0:
-        return None
-    body = sys.stdin.buffer.read(content_length)
-    return json.loads(body)
+        if not line:
+            return None
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError as e:
+            optic.warning("sandbox mcp: unparseable line: {}", e)
+            _send_message(_make_error(None, -32700, "Parse error"))
+            continue
+        if isinstance(msg, dict):
+            return msg
+        optic.warning("sandbox mcp: non-object message: {}", type(msg).__name__)
+        _send_message(_make_error(None, -32600, "Invalid Request"))
 
 
 def _send_message(msg: dict) -> None:
-    """Send a JSON-RPC message to stdout."""
-    body = json.dumps(msg).encode()
-    sys.stdout.buffer.write(f"Content-Length: {len(body)}\r\n\r\n".encode())
-    sys.stdout.buffer.write(body)
+    """Write one JSON-RPC message to stdout as a single line."""
+    sys.stdout.buffer.write(json.dumps(msg).encode() + b"\n")
     sys.stdout.buffer.flush()
 
 
@@ -100,22 +108,26 @@ def main():
         if msg is None:
             break
 
-        method = msg.get("method", "")
-        req_id = msg.get("id")
+        # Notifications carry no id and get no reply; the server never sends requests, so skip stray responses too
+        if "id" not in msg or "method" not in msg:
+            continue
+
+        method = msg["method"]
+        req_id = msg["id"]
 
         if method == "initialize":
+            requested = (msg.get("params") or {}).get("protocolVersion")
+            version = requested if requested in SUPPORTED_PROTOCOL_VERSIONS else SUPPORTED_PROTOCOL_VERSIONS[0]
             _send_message(
                 _make_response(
                     req_id,
                     {
-                        "protocolVersion": "2024-11-05",
+                        "protocolVersion": version,
                         "capabilities": {"tools": {}},
                         "serverInfo": {"name": "observal-sandbox", "version": "1.0.0"},
                     },
                 )
             )
-        elif method == "notifications/initialized":
-            pass  # no response needed
         elif method == "tools/list":
             _send_message(_make_response(req_id, {"tools": tools}))
         elif method == "tools/call":
@@ -221,7 +233,7 @@ def main():
                         },
                     )
                 )
-        elif req_id is not None:
+        else:
             _send_message(_make_error(req_id, -32601, f"Method not found: {method}"))
 
 
