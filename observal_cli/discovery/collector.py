@@ -32,14 +32,16 @@ def collect_local_inventory(
     deadline = time.monotonic() + deadline_seconds
     for name in sorted(adapters):
         if time.monotonic() >= deadline:
-            result.diagnostics.append(
-                make_diagnostic(
-                    DiagnosticCode.ADAPTER_DEADLINE_EXCEEDED,
-                    DiagnosticSeverity.WARNING,
-                    "harness",
-                    "total local inventory deadline exceeded",
+            if budget.diagnostics < budget.max_diagnostics:
+                budget.diagnostics += 1
+                result.diagnostics.append(
+                    make_diagnostic(
+                        DiagnosticCode.ADAPTER_DEADLINE_EXCEEDED,
+                        DiagnosticSeverity.WARNING,
+                        "harness",
+                        "total local inventory deadline exceeded",
+                    )
                 )
-            )
             break
         adapter = adapters[name]
         with discovery_budget(budget, deadline=min(deadline, time.monotonic() + 10)):
