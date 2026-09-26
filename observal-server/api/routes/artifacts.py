@@ -55,7 +55,9 @@ async def get_artifact(
         return _error(404, "NOT_FOUND", "Unknown artifact kind")
     if discovery_kind not in NATIVE_MODELS:
         return _error(404, "NOT_FOUND", "Artifacts are only served for native resources")
-    if current_user is None and not await ds.get_bool(PUBLIC_SEARCH_SETTING, False):
+    # A public listing can still require authentication when anonymous browsing is off.
+    public_registry_enabled = await ds.get_bool(PUBLIC_SEARCH_SETTING, False)
+    if current_user is None and not public_registry_enabled:
         return _error(404, "NOT_FOUND", "Artifact not found")
 
     # The entry is the visibility gate: no entry the caller may see, no artifact.
@@ -107,6 +109,11 @@ async def get_artifact(
             "Digest": artifact.digest_header,
             "X-Artifact-Digest": artifact.digest,
             "X-Observal-Identifier": entry.ard_identifier,
-            "Cache-Control": _IMMUTABLE if approved and entry.visibility.value == "public" else _PRIVATE,
+            # Only anonymous, publicly readable artifacts may be cached by shared proxies.
+            "Cache-Control": (
+                _IMMUTABLE
+                if current_user is None and public_registry_enabled and approved and entry.visibility.value == "public"
+                else _PRIVATE
+            ),
         },
     )

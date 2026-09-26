@@ -342,6 +342,20 @@ async def test_list_is_deterministic_and_filterable(sessions, settings):
 
 
 @pytest.mark.asyncio
+async def test_list_display_name_treats_like_wildcards_as_literals(sessions, settings):
+    owner, _, _ = await _seed(sessions)
+    async with sessions() as db:
+        await fx.skill(db, owner, name="Score_100%")
+        await reproject_all(db, ctx=fx.CTX)
+    async with _client(_app(sessions, owner)) as client:
+        for name in ("%", "_"):
+            resp = await client.get("/api/v1/ard/agents", params={"filter": f"displayName = '{name}'"})
+            assert resp.status_code == 200
+            assert [item["displayName"] for item in resp.json()["items"]] == ["Score_100%"]
+            assert resp.json()["total"] == 1
+
+
+@pytest.mark.asyncio
 async def test_list_anonymous_closed(sessions, settings):
     await _seed(sessions)
     async with _client(_app(sessions, None)) as client:
@@ -412,8 +426,40 @@ async def test_artifact_serves_bytes_with_digest(sessions, settings):
     assert resp.headers["content-type"].startswith("text/markdown")
     assert resp.headers["Digest"].startswith("sha-256=")
     assert resp.headers["X-Artifact-Digest"].startswith("sha256:")
-    assert resp.headers["Cache-Control"].startswith("public")
+    assert resp.headers["Cache-Control"] == "private, no-store"
     assert "Look for auth bugs" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_artifact_is_publicly_cacheable_only_when_public_registry_is_enabled(sessions, settings):
+    owner, _, skill = await _seed(sessions)
+    path = f"/api/v1/artifacts/skill/{skill.id}/1.2.0"
+    async with sessions() as db:
+        from sqlalchemy import select
+
+        from models.discovery_entry import DiscoveryEntry
+
+        private_entry = (
+            await db.execute(select(DiscoveryEntry).where(DiscoveryEntry.display_name == "Secret Skill"))
+        ).scalar_one()
+    private_path = f"/api/v1/artifacts/skill/{private_entry.local_entity_id}/{private_entry.version}"
+    async with _client(_app(sessions, owner)) as client:
+        private_response = await client.get(path)
+        assert private_response.status_code == 200
+        assert private_response.headers["Cache-Control"] == "private, no-store"
+
+        settings["public"] = True
+        signed_in_response = await client.get(path)
+        assert signed_in_response.status_code == 200
+        assert signed_in_response.headers["Cache-Control"] == "private, no-store"
+        private_listing_response = await client.get(private_path)
+        assert private_listing_response.status_code == 200
+        assert private_listing_response.headers["Cache-Control"] == "private, no-store"
+
+    async with _client(_app(sessions, None)) as client:
+        anonymous_response = await client.get(path)
+        assert anonymous_response.status_code == 200
+        assert anonymous_response.headers["Cache-Control"].startswith("public")
 
 
 @pytest.mark.asyncio
@@ -427,7 +473,9 @@ async def test_artifact_hides_unapproved_versions_from_non_owners(sessions, sett
         assert (await client.get(f"/api/v1/artifacts/skill/{skill.id}/1.3.0")).status_code == 404
         assert (await client.get(f"/api/v1/artifacts/skill/{skill.id}/1.2.0")).status_code == 200
     async with _client(_app(sessions, owner)) as client:
-        assert (await client.get(f"/api/v1/artifacts/skill/{skill.id}/1.3.0")).status_code == 200
+        pending = await client.get(f"/api/v1/artifacts/skill/{skill.id}/1.3.0")
+        assert pending.status_code == 200
+        assert pending.headers["Cache-Control"] == "private, no-store"
 
 
 @pytest.mark.asyncio

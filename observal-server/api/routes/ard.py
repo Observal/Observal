@@ -38,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import services.dynamic_settings as ds
 from api.deps import get_db, get_registry_user, optional_current_user
 from api.ratelimit import limiter
+from api.sanitize import escape_like
 from models.discovery_entry import DiscoveryEntry, DiscoveryLifecycle, DiscoverySourceKind
 from models.user import User
 from schemas.ard import ArdError, ArdExploreRequest, ArdSearchRequest
@@ -358,7 +359,12 @@ def _apply_list_filter(stmt, expression: str | None):
             stmt = stmt.where(DiscoveryEntry.publisher_domain.in_([v.lower() for v in raw_values]))
         elif field == "displayname":
             stmt = stmt.where(
-                or_(*[func.lower(DiscoveryEntry.display_name).like(f"%{value.lower()}%") for value in raw_values])
+                or_(
+                    *[
+                        func.lower(DiscoveryEntry.display_name).like(f"%{escape_like(value.lower())}%", escape="\\")
+                        for value in raw_values
+                    ]
+                )
             )
         elif field in ("obs:kind", "kind"):
             stmt = stmt.where(DiscoveryEntry.kind.in_(raw_values))
