@@ -2196,3 +2196,25 @@ def test_project_lock_is_sorted_and_versioned(tmp_path):
     (tmp_path / "observal.lock").write_text(json.dumps({"lock_version": 99, "agents": {}}))
     with pytest.raises(project_lock.ProjectLockError, match="unsupported lock_version"):
         project_lock.read(tmp_path)
+
+
+def test_inline_hook_rewrite_survives_a_malformed_entry():
+    """A truthy non-dict entry would raise on .get and abort the whole pull."""
+    from observal_cli.cmd_pull import _rewrite_kiro_agent_profile
+
+    cleaned = _rewrite_kiro_agent_profile(
+        {
+            "hooks": {
+                "userPromptSubmit": [
+                    "a bare string someone hand-edited in",
+                    {"command": "python -m observal_cli.hooks.session_push --harness kiro"},
+                    {"command": "echo mine"},
+                ]
+            }
+        }
+    )
+
+    assert cleaned["hooks"]["userPromptSubmit"][:2] == [
+        "a bare string someone hand-edited in",
+        {"command": "echo mine"},
+    ]

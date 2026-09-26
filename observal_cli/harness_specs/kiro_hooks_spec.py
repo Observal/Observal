@@ -132,7 +132,13 @@ def merge_kiro_hooks_file(existing: dict | None) -> dict:
     desired = build_kiro_hooks_file()
     if not isinstance(existing, dict):
         return desired
-    preserved = [h for h in existing.get("hooks") or [] if not is_observal_v1_hook(h)]
+    # "hooks" comes from server content on pull and from arbitrary JSON on disk
+    # in doctor. A dict would iterate as keys and a scalar would raise, either
+    # way corrupting or aborting the merge, so anything not a list is ignored.
+    raw_hooks = existing.get("hooks")
+    if not isinstance(raw_hooks, list):
+        raw_hooks = []
+    preserved = [h for h in raw_hooks if not is_observal_v1_hook(h)]
     merged = dict(existing)
     merged["version"] = existing.get("version") or "v1"
     merged["hooks"] = preserved + desired["hooks"]
