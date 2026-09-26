@@ -50,7 +50,7 @@ active-agent state. Its harness then runs one prompt non-interactively.
   the shared harness registry. The CLI adapter's `headless_command` builds the
   argv; harnesses without an agent flag get the agent's instructions inlined.
   Verified today: Claude Code, Kiro CLI, Cursor CLI, Codex, OpenCode, Copilot
-  CLI, Antigravity. Not yet: Goose, Pi, VS Code Copilot.
+  CLI, Antigravity, Pi. Not yet: Goose, VS Code Copilot.
 - The child may edit files; those edits never reach the caller's tree. The
   difference between the tree after the agent's config was written and the tree
   it left is returned as a `changes.patch` artifact. The caller decides whether

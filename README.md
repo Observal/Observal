@@ -201,7 +201,7 @@ Installing an agent ahead of time only helps with the tasks you planned for. Obs
 
 **A2A: agents hand tasks to agents.** Observal speaks the [Agent2Agent protocol](https://a2a-protocol.org) (v1.0, with v0.3 compatibility). Every delegation is an A2A Task, whoever runs it:
 
-- **Registry agents** run headless in a harness that supports it (Claude Code, Kiro, Cursor, Codex, OpenCode, Copilot CLI, Antigravity) inside a throwaway git worktree of your repository. Their answer comes back as a result, and any file changes come back as a patch that is never applied for you.
+- **Registry agents** run headless in a harness that supports it (Claude Code, Kiro, Cursor, Codex, OpenCode, Copilot CLI, Antigravity, Pi) inside a throwaway git worktree of your repository. Their answer comes back as a result, and any file changes come back as a patch that is never applied for you.
 - **Remote A2A agents** (a service another team runs, built with any framework) are registered by their Agent Card URL, reviewed like any submission, and then called directly with the card the reviewer approved. Observal never proxies the traffic or stores their credentials.
 
 ```mermaid

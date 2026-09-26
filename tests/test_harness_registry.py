@@ -114,7 +114,7 @@ VERIFIED_RUNTIME_FACTS: dict[str, dict[str, str | bool]] = {
     "opencode": {"mcp_install_mode": "file", "prompt_context_injection": False, "headless_run": True},
     "antigravity": {"mcp_install_mode": "file", "prompt_context_injection": False, "headless_run": True},
     "goose": {"mcp_install_mode": "user_only", "prompt_context_injection": False, "headless_run": False},
-    "pi": {"mcp_install_mode": "adapter", "prompt_context_injection": True, "headless_run": False},
+    "pi": {"mcp_install_mode": "adapter", "prompt_context_injection": True, "headless_run": True},
 }
 
 

@@ -485,8 +485,9 @@ HARNESS_REGISTRY: dict[str, dict] = {
         "dynamic_tools": False,
         "prompt_context_injection": True,
         "guidance_file_write": False,
-        # Not verified against a Pi install yet.
-        "headless_run": False,
+        # Verified against pi 0.87: `pi -p --session-id <id> -- <prompt>` answers
+        # on stdout and exits.
+        "headless_run": True,
     },
 }
 

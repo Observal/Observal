@@ -555,6 +555,7 @@ def test_claude_code_headless_command_and_output(tmp_path):
         ("opencode", "opencode", False),
         ("antigravity", "agy", True),
         ("copilot-cli", "copilot", False),
+        ("pi", "pi", True),
     ],
 )
 def test_other_headless_commands(tmp_path, harness, binary, inlined):
@@ -567,11 +568,21 @@ def test_other_headless_commands(tmp_path, harness, binary, inlined):
     assert "-- review src/auth" in joined
 
 
-@pytest.mark.parametrize("harness", ["goose", "pi", "copilot"])
+@pytest.mark.parametrize("harness", ["goose", "copilot"])
 def test_harnesses_without_verified_headless_mode_refuse(tmp_path, harness):
     ensure_loaded()
     with pytest.raises(NotSupportedError):
         get_adapter(harness).headless_command(_request(tmp_path))
+
+
+def test_pi_runs_the_session_it_was_given(tmp_path):
+    ensure_loaded()
+    adapter = get_adapter("pi")
+    request = _request(tmp_path)
+    plan = adapter.headless_command(request)
+    assert plan.argv[1:5] == ["-p", "--approve", "--session-id", request.session_id]
+    result = adapter.parse_headless_output(plan, "\x1b[1mpong\x1b[0m\n")
+    assert result.text == "pong" and result.session_id == request.session_id
 
 
 def test_codex_answer_is_read_from_its_output_file(tmp_path):

@@ -410,7 +410,7 @@ async def test_native_agents_are_delegable_when_a_supported_harness_runs_headles
     assert agent_entry.lifecycle_status == DiscoveryLifecycle.approved
     agent_entry.supported_harnesses = ["claude-code"]
     assert delegable(agent_entry) is True
-    agent_entry.supported_harnesses = ["goose", "pi"]  # neither has a verified headless mode
+    agent_entry.supported_harnesses = ["goose", "copilot"]  # neither has a verified headless mode
     assert delegable(agent_entry) is False
     assert delegable(by_kind[DiscoveryKind.skill]) is False
 
