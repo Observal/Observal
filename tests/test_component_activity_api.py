@@ -55,7 +55,7 @@ def api(monkeypatch):
     app = FastAPI()
     app.include_router(route.router)
     state = {"user": _user(user_id=OWNER_ID), "listing": _listing(), "version_found": True}
-    db = SimpleNamespace(scalar=AsyncMock(side_effect=lambda *_a, **_k: VERSION_ID if state["version_found"] else None))
+    db = SimpleNamespace(scalar=AsyncMock(side_effect=lambda *_a, **_k: "1.2.3" if state["version_found"] else None))
     app.dependency_overrides[get_db] = lambda: db
     app.dependency_overrides[get_current_user] = lambda: state["user"]
     resolve = AsyncMock(side_effect=lambda *_a, **_k: state["listing"])
@@ -126,6 +126,7 @@ def test_version_must_belong_to_listing_and_is_forwarded(api):
     api.state["version_found"] = True
     assert api.client.get(url, params={"component_version_id": str(VERSION_ID)}).status_code == 200
     assert api.summary.await_args.args[3] == str(VERSION_ID)
+    assert api.summary.await_args.kwargs["component_version"] == "1.2.3"
 
 
 @pytest.mark.parametrize("kind", ["skill", "hook"])
@@ -151,20 +152,44 @@ def test_unknown_type_and_period_and_limit_bounds(api):
 
 
 def test_cursor_round_trip_pins_window_end_and_rejects_tampering(api):
-    end = datetime(2026, 1, 15, tzinfo=UTC)
-    row = {"last_event_time": "2026-01-10 00:00:00.000", "user_id": "u", "harness": "claude-code", "session_id": "s"}
-    cursor = queries.encode_cursor(row, end)
-    pinned, key = queries.decode_cursor(cursor)
-    assert pinned == end and key == ["2026-01-10 00:00:00.000", "u", "claude-code", "s"]
+    end = datetime.now(UTC).replace(microsecond=0)
+    scope = (route.DEFAULT_PROJECT_ID, str(OWNER_ID), "mcp", str(LISTING_ID), "", "7")
+    row = {"user_id": "u", "harness": "claude-code", "session_id": "s"}
+    cursor = queries.encode_cursor(row, end, scope=scope)
+    pinned, key = queries.decode_cursor(cursor, scope=scope)
+    assert pinned == end and key == ["u", "claude-code", "s"]
     response = api.client.get(
         f"/api/v1/components/mcp/{LISTING_ID}/activity/sessions", params={"cursor": cursor, "period_days": 7}
     )
     assert response.status_code == 200
     kwargs, args = api.sessions.await_args.kwargs, api.sessions.await_args.args
     assert kwargs["cursor"] == key and args[4] == (end - timedelta(days=7), end)
-    for bad in ("", "e30", queries.encode_cursor(row, end)[:-3] + "AAA"):
+    assert kwargs["cursor_scope"] == scope
+    for bad in ("", "e30", cursor[:-3] + "AAA"):
         with pytest.raises(ValueError):
-            queries.decode_cursor(bad)
+            queries.decode_cursor(bad, scope=scope)
+    for altered in (
+        ("other-project", *scope[1:]),
+        (scope[0], str(uuid.uuid4()), *scope[2:]),
+        (*scope[:3], str(uuid.uuid4()), *scope[4:]),
+        (*scope[:4], str(uuid.uuid4()), scope[5]),
+        (*scope[:5], "90"),
+    ):
+        with pytest.raises(ValueError):
+            queries.decode_cursor(cursor, scope=altered)
+    for old_end in (datetime(2021, 1, 1, tzinfo=UTC), datetime(1, 1, 1, tzinfo=UTC)):
+        expired = queries.encode_cursor(row, old_end, scope=scope)
+        with pytest.raises(ValueError):
+            queries.decode_cursor(expired, scope=scope)
+        assert (
+            api.client.get(
+                f"/api/v1/components/mcp/{LISTING_ID}/activity/sessions", params={"cursor": expired, "period_days": 7}
+            ).status_code
+            == 422
+        )
+    future = queries.encode_cursor(row, end + timedelta(days=1), scope=scope)
+    with pytest.raises(ValueError):
+        queries.decode_cursor(future, scope=scope)
 
 
 def test_coverage_distinguishes_no_observed_calls_from_attribution_not_possible():
@@ -202,7 +227,10 @@ async def test_activity_sql_binds_scoped_key_current_version_and_component(monke
     monkeypatch.setattr(queries, "presence_coverage", AsyncMock(return_value={}))
     period = (datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 1, 2, tzinfo=UTC))
     await queries.activity_summary("proj", "mcp", str(LISTING_ID), None, period)
-    await queries.activity_sessions("proj", "mcp", str(LISTING_ID), None, period, limit=5, cursor=None)
+    scope = ("proj", "u", "mcp", str(LISTING_ID), "", "14")
+    await queries.activity_sessions(
+        "proj", "mcp", str(LISTING_ID), None, period, limit=5, cursor=None, cursor_scope=scope
+    )
     for sql, params in captured:
         assert "'proj'" not in sql and str(LISTING_ID) not in sql  # parameterized only
         assert params["param_project_id"] == "proj"
@@ -222,9 +250,36 @@ async def test_activity_sql_binds_scoped_key_current_version_and_component(monke
     assert "empty(raw_line)" in page_sql
     assert "raw_line," not in page_sql and "raw_line AS" not in page_sql and page_params["param_limit"] == 6
     assert "s.user_id" in page_sql and "'source_too_large'" in page_sql
+    assert "countIf(source_state = 'source_unavailable')" in summary_sql
+    assert "ORDER BY user_id, harness, session_id" in page_sql
+    assert "toDateTime64({after_time" not in page_sql
     assert any("session_capabilities FINAL" in sql for sql, _ in captured)
     with pytest.raises(ValueError):
-        await queries.activity_sessions("proj", "mcp", str(LISTING_ID), None, period, limit=101, cursor=None)
+        await queries.activity_sessions(
+            "proj", "mcp", str(LISTING_ID), None, period, limit=101, cursor=None, cursor_scope=scope
+        )
+
+
+@pytest.mark.asyncio
+async def test_version_scoped_activation_filters_verified_version_label(monkeypatch):
+    captured = []
+
+    async def fake_rows(sql, params):
+        captured.append((sql, params))
+        return [] if "GROUP BY harness ORDER BY" in sql else [{}]
+
+    monkeypatch.setattr(queries, "_rows", fake_rows)
+    monkeypatch.setattr(queries, "presence_coverage", AsyncMock(return_value={}))
+    period = (datetime.now(UTC) - timedelta(days=1), datetime.now(UTC))
+    with pytest.raises(ValueError, match="verified version label"):
+        await queries.activity_summary("p", "mcp", str(LISTING_ID), str(VERSION_ID), period)
+    summary = await queries.activity_summary(
+        "p", "mcp", str(LISTING_ID), str(VERSION_ID), period, component_version="1.2.3"
+    )
+    assert summary["activation_actions"]["scope"] == "component_version"
+    activation_sql, params = next((sql, params) for sql, params in captured if "session_capabilities" in sql)
+    assert "version = {component_version:String}" in activation_sql
+    assert params["param_component_version"] == "1.2.3"
 
 
 @pytest.mark.asyncio
@@ -236,6 +291,7 @@ async def test_session_page_hides_non_complete_counts_and_emits_cursor_only_when
             "session_id": f"s{i}",
             "last_event_time": f"2026-01-01 00:00:0{i}.000",
             "projection_state": state,
+            "source_state": "available",
             "calls": 2,
             "successes": 1,
             "errors": 1,
@@ -245,12 +301,72 @@ async def test_session_page_hides_non_complete_counts_and_emits_cursor_only_when
         for i, state in enumerate(["complete", "pending", "complete"])
     ]
     monkeypatch.setattr(queries, "_rows", AsyncMock(return_value=rows))
-    period = (datetime(2026, 1, 1, tzinfo=UTC), datetime(2026, 1, 2, tzinfo=UTC))
-    sessions, cursor = await queries.activity_sessions("p", "mcp", str(LISTING_ID), None, period, limit=2, cursor=None)
+    end = datetime.now(UTC)
+    period = (end - timedelta(days=14), end)
+    scope = ("p", "u", "mcp", str(LISTING_ID), "", "14")
+    sessions, cursor = await queries.activity_sessions(
+        "p", "mcp", str(LISTING_ID), None, period, limit=2, cursor=None, cursor_scope=scope
+    )
     assert [s["session_id"] for s in sessions] == ["s0", "s1"]
     assert sessions[0]["observed_calls"] == 2 and sessions[0]["source_references"][0]["source_block_key"] == "id:a"
     assert sessions[1]["observed_calls"] == 0 and sessions[1]["source_references"] == []
-    assert queries.decode_cursor(cursor)[1] == ["2026-01-01 00:00:01.000", "u", "claude-code", "s1"]
+    assert queries.decode_cursor(cursor, scope=scope)[1] == ["u", "claude-code", "s1"]
+
+
+@pytest.mark.asyncio
+async def test_presence_coverage_counts_in_clickhouse_without_materializing_cohort(monkeypatch):
+    from services.layer_components import queries as presence_queries
+
+    sqls = []
+
+    async def fake_rows(sql, _params):
+        sqls.append(sql)
+        if "uniqExact(user_id)" in sql:
+            return [{"present_sessions": 1_000_000, "present_users": 200_000}]
+        return [{"eligible_sessions": 1_000_002}]
+
+    monkeypatch.setattr(presence_queries, "_rows", fake_rows)
+    monkeypatch.setattr(
+        presence_queries, "presence_cohort", AsyncMock(side_effect=AssertionError("cohort must not be materialized"))
+    )
+    period = (datetime.now(UTC) - timedelta(days=1), datetime.now(UTC))
+    result = await presence_queries.presence_coverage("project", "mcp", str(LISTING_ID), None, period)
+    assert (result["present_sessions"], result["present_users"]) == (1_000_000, 200_000)
+    assert len(sqls) == 2 and "FROM (" in sqls[1]
+
+
+@pytest.mark.asyncio
+async def test_page_key_does_not_repeat_session_whose_last_event_time_advances(monkeypatch):
+    scope = ("p", "owner", "mcp", str(LISTING_ID), "", "1")
+    period = (datetime.now(UTC) - timedelta(days=1), datetime.now(UTC))
+    records = [
+        {
+            "user_id": "u",
+            "harness": "claude-code",
+            "session_id": sid,
+            "last_event_time": "2026-01-01 00:00:00.000",
+            "projection_state": "pending",
+            "source_state": "available",
+        }
+        for sid in ("s0", "s1", "s2")
+    ]
+
+    async def fake_rows(sql, params):
+        assert "ORDER BY user_id, harness, session_id" in sql
+        after = params.get("param_after_session", "")
+        return [row for row in records if row["session_id"] > after][: params["param_limit"]]
+
+    monkeypatch.setattr(queries, "_rows", fake_rows)
+    first, cursor = await queries.activity_sessions(
+        "p", "mcp", str(LISTING_ID), None, period, limit=1, cursor=None, cursor_scope=scope
+    )
+    assert [item["session_id"] for item in first] == ["s0"]
+    records[0]["last_event_time"] = "2026-01-02 00:00:00.000"
+    _, key = queries.decode_cursor(cursor, scope=scope)
+    second, _ = await queries.activity_sessions(
+        "p", "mcp", str(LISTING_ID), None, period, limit=1, cursor=key, cursor_scope=scope
+    )
+    assert [item["session_id"] for item in second] == ["s1"]
 
 
 def test_source_availability_reasons_are_distinct_and_never_no_observed_calls():

@@ -66,7 +66,13 @@ def _ts(value: datetime) -> str:
 
 
 async def _insert(table: str, rows: list[dict]) -> None:
-    assert table in {"session_events", "session_stats_agg", "component_activity_publications", "component_activity"}
+    assert table in {
+        "session_events",
+        "session_stats_agg",
+        "session_capabilities",
+        "component_activity_publications",
+        "component_activity",
+    }
     response = await clickhouse._query(
         f"INSERT INTO {table} FORMAT JSONEachRow", data="\n".join(json.dumps(row) for row in rows)
     )
@@ -135,6 +141,24 @@ async def test_fixture_counts_match_projection_and_coverage_isolates_projects_an
     )
     projected = await projector.project_session_activity(project, owner, "claude-code", session)
     assert projected["status"] == "complete" and projected["attributed_count"] == 6
+    await _insert(
+        "session_capabilities",
+        [
+            {
+                "project_id": project,
+                "user_id": owner,
+                "harness": "claude-code",
+                "session_id": session,
+                "kind": "mcp",
+                "component_id": first_id,
+                "version": version,
+                "mode": mode,
+                "identifier": f"version-{version}",
+                "used_at": _ts(when),
+            }
+            for version, mode in (("1.0.0", "context"), ("2.0.0", "next-session"))
+        ],
+    )
     assert (await projector.project_session_activity(other_project, owner, "claude-code", session))[
         "status"
     ] == "complete"
@@ -147,6 +171,19 @@ async def test_fixture_counts_match_projection_and_coverage_isolates_projects_an
     assert (summary["observed_sessions"], summary["observed_calls"]) == (1, 4)
     assert summary["result_states"] == {"success": 0, "error": 1, "unknown": 3}
     assert summary["harness_distribution"] == {"claude-code": 3}
+    assert summary["activation_actions"]["scope"] == "component"
+    assert summary["activation_actions"]["next_session_sessions"] == 1
+    version_summary = await queries.activity_summary(
+        project,
+        "mcp",
+        first_id,
+        "22222222-2222-4222-8222-222222222222",
+        period,
+        component_version="1.0.0",
+    )
+    assert version_summary["activation_actions"]["scope"] == "component_version"
+    assert version_summary["activation_actions"]["context_sessions"] == 1
+    assert version_summary["activation_actions"]["next_session_sessions"] == 0
     projection = coverage.projection
     assert (
         projection.supported_present_sessions,
@@ -166,19 +203,22 @@ async def test_fixture_counts_match_projection_and_coverage_isolates_projects_an
     assert (second["observed_calls"], second["result_states"]["unknown"]) == (2, 2)
     other = await queries.activity_summary(other_project, "mcp", first_id, None, period)
     assert (other["present_sessions"], other["observed_calls"]) == (1, 4)  # no cross-project merge
-    unknown_version = await queries.activity_summary(project, "mcp", first_id, str(uuid.uuid4()), period)
+    unknown_version = await queries.activity_summary(
+        project, "mcp", first_id, str(uuid.uuid4()), period, component_version="9.9.9"
+    )
     assert unknown_version["present_sessions"] == 0
     assert unknown_version["coverage"].attribution_state == "attribution_not_possible"
 
+    scope = (project, "fixture-owner", "mcp", first_id, "", "1")
     seen, cursor = [], None
     for _ in range(4):
         page, next_cursor = await queries.activity_sessions(
-            project, "mcp", first_id, None, period, limit=2, cursor=cursor
+            project, "mcp", first_id, None, period, limit=2, cursor=cursor, cursor_scope=scope
         )
         seen.extend(page)
         if next_cursor is None:
             break
-        pinned, cursor = queries.decode_cursor(next_cursor)
+        pinned, cursor = queries.decode_cursor(next_cursor, scope=scope)
         period = (pinned - timedelta(days=1), pinned)
     assert sorted((s["user_id"], s["session_id"]) for s in seen) == [
         (owner, "failed-session"),
@@ -187,6 +227,7 @@ async def test_fixture_counts_match_projection_and_coverage_isolates_projects_an
     ]
     by_session = {s["session_id"]: s for s in seen}
     assert by_session["fixture-session"]["projection_state"] == "complete"
+    assert by_session["fixture-session"]["source_state"] == "available"
     assert [
         (r["source_line_offset"], r["source_block_key"]) for r in by_session["fixture-session"]["source_references"]
     ] == [(5, "id:toolu_fixture_second"), (8, "id:toolu_fixture_error"), (10, "id:c-a"), (10, "id:c-c")]
@@ -245,11 +286,17 @@ async def test_latency_on_synthetic_isolated_dataset(capsys):
                 }
             )
     await _insert("session_stats_agg", stats)
+    # One published session has a source row whose raw line is no longer
+    # available (e.g. TTL); 2,999 others have no canonical source rows.
+    await _insert("session_events", [_source(project, owner, "synthetic-00000", 0, "")])
     await _insert("component_activity_publications", markers)
     await _insert("component_activity", activity)
     period = _period()
     summary = await queries.activity_summary(project, "mcp", component, None, period)
     assert summary["present_sessions"] == count and summary["observed_sessions"] == count // 2
+    assert summary["coverage"].projection.source_missing_sessions == count - 1
+    assert summary["coverage"].projection.source_unavailable_sessions == 1
+    assert summary["coverage"].projection.projection_complete_sessions == count
 
     def timed(runs: list[float], started: float) -> None:
         runs.append((time.perf_counter() - started) * 1000)
@@ -260,7 +307,16 @@ async def test_latency_on_synthetic_isolated_dataset(capsys):
         await queries.activity_summary(project, "mcp", component, None, period)
         timed(summary_ms, started)
         started = time.perf_counter()
-        page, _cursor = await queries.activity_sessions(project, "mcp", component, None, period, limit=100, cursor=None)
+        page, _cursor = await queries.activity_sessions(
+            project,
+            "mcp",
+            component,
+            None,
+            period,
+            limit=100,
+            cursor=None,
+            cursor_scope=(project, owner, "mcp", component, "", "1"),
+        )
         timed(page_ms, started)
         assert len(page) == 100
     with capsys.disabled():

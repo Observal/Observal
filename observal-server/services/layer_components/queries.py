@@ -190,10 +190,18 @@ async def presence_coverage(
     )
     rows = await _rows(sql, params)
     coverage = rows[0] if rows else {}
-    present = await presence_cohort(project_id, component_type, component_id, component_version_id, period)
+    # Count in ClickHouse rather than transferring every matching session to
+    # Python; a 90-day window can contain an unbounded number of sessions.
+    cohort = await _rows(
+        "SELECT count() AS present_sessions, uniqExact(user_id) AS present_users FROM ("
+        + PRESENCE_COHORT_SQL
+        + ") FORMAT JSON",
+        params,
+    )
+    counts = cohort[0] if cohort else {}
     return {
         **{key: int(value) for key, value in coverage.items()},
-        "present_sessions": len(present),
-        "present_users": len({row["user_id"] for row in present}),
+        "present_sessions": int(counts.get("present_sessions") or 0),
+        "present_users": int(counts.get("present_users") or 0),
         "current_extractor_version": CURRENT_EXTRACTOR_VERSION,
     }

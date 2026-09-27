@@ -49,7 +49,7 @@ def _unsupported(component_type: str) -> JSONResponse:
 
 async def _authorize(
     component_type: str, identifier: str, version_id: UUID | None, db: AsyncSession, user: User
-) -> tuple[object, ComponentRef]:
+) -> tuple[object, ComponentRef, str | None]:
     """Resolve and authorize before any ClickHouse work."""
     if component_type not in _SUPPORTED:
         raise HTTPException(status_code=422, detail="Unknown component type")
@@ -59,18 +59,20 @@ async def _authorize(
         raise HTTPException(status_code=404, detail="Component not found")
     if get_effective_component_permission(listing, user) != "owner":
         raise HTTPException(status_code=403, detail="Only owners, co-authors and admins can view component activity")
+    version_label = None
     if version_id is not None:
-        found = await db.scalar(
-            select(version_model.id).where(version_model.id == version_id, version_model.listing_id == listing.id)
+        version_label = await db.scalar(
+            select(version_model.version).where(version_model.id == version_id, version_model.listing_id == listing.id)
         )
-        if found is None:
+        if version_label is None:
             raise HTTPException(status_code=404, detail="Component version not found for this listing")
-    return listing, ComponentRef(
+    ref = ComponentRef(
         type=component_type,
         id=str(listing.id),
         qualified_name=f"{listing.namespace}/{listing.slug}",
         component_version_id=str(version_id) if version_id else None,
     )
+    return listing, ref, version_label
 
 
 def _period(days: int) -> tuple[datetime, datetime]:
@@ -93,11 +95,16 @@ async def component_activity_summary(
 ):
     if component_type in _NOT_YET_SUPPORTED:
         return _unsupported(component_type)
-    listing, ref = await _authorize(component_type, identifier, component_version_id, db, current_user)
+    listing, ref, version_label = await _authorize(component_type, identifier, component_version_id, db, current_user)
     start, end = _period(period_days)
     optic.debug("component activity summary: type={}, listing={}, days={}", component_type, listing.id, period_days)
     summary = await queries.activity_summary(
-        DEFAULT_PROJECT_ID, component_type, str(listing.id), ref.component_version_id, (start, end)
+        DEFAULT_PROJECT_ID,
+        component_type,
+        str(listing.id),
+        ref.component_version_id,
+        (start, end),
+        component_version=version_label,
     )
     return ActivitySummaryResponse(
         component=ref,
@@ -125,16 +132,25 @@ async def component_activity_sessions(
 ):
     if component_type in _NOT_YET_SUPPORTED:
         return _unsupported(component_type)
+    # Authorize first, including the version's listing membership. A cursor is
+    # signed and scoped to this user, listing, version and period.
+    listing, ref, _ = await _authorize(component_type, identifier, component_version_id, db, current_user)
+    scope = (
+        DEFAULT_PROJECT_ID,
+        str(current_user.id),
+        component_type,
+        str(listing.id),
+        ref.component_version_id or "",
+        str(period_days),
+    )
     key = None
     period = _period(period_days)
     if cursor is not None:
         try:
-            period_end, key = queries.decode_cursor(cursor)
+            period_end, key = queries.decode_cursor(cursor, scope=scope)
         except ValueError as error:
             raise HTTPException(status_code=422, detail="Invalid cursor") from error
-        # The window end is pinned by the first page so later pages stay stable.
         period = (period_end - timedelta(days=period_days), period_end)
-    listing, ref = await _authorize(component_type, identifier, component_version_id, db, current_user)
     optic.debug("component activity sessions: type={}, listing={}, limit={}", component_type, listing.id, limit)
     sessions, next_cursor = await queries.activity_sessions(
         DEFAULT_PROJECT_ID,
@@ -144,5 +160,6 @@ async def component_activity_sessions(
         period,
         limit=limit,
         cursor=key,
+        cursor_scope=scope,
     )
     return ActivitySessionsResponse(component=ref, period_days=period_days, sessions=sessions, next_cursor=next_cursor)

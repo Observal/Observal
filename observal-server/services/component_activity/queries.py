@@ -14,10 +14,13 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import hashlib
+import hmac
 import json
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 
 import services.clickhouse.client as clickhouse
+from config import settings
 from observal_shared.harness_registry import HARNESS_REGISTRY
 from services.component_activity.coverage import build_coverage
 from services.component_activity.projector import MAX_SOURCE_BYTES, MAX_SOURCE_RECORDS, publication_version
@@ -73,6 +76,7 @@ _COMPONENT_ACTIVITY = (
 _SOURCE_STATES = (
     """SELECT user_id, harness, session_id, count() AS records,
            countIf(empty(raw_line) OR raw_line_truncated = 1) AS unavailable_records,
+           countIf(empty(line_hash)) AS invalid_hash_records,
            max(line_offset) AS max_offset, sum(content_length) AS bytes
     FROM session_events FINAL
     WHERE project_id = {project_id:String} AND is_source_record = 1
@@ -87,6 +91,12 @@ _SESSIONS = (
     """SELECT c.user_id AS user_id, c.harness AS harness, c.session_id AS session_id,
            c.last_event_time AS last_event_time,
            has({supported:Array(String)}, c.harness) AS supported,
+           multiIf(NOT has({supported:Array(String)}, c.harness), 'unsupported',
+                   s.records = 0, 'source_missing',
+                   s.records > {max_source_records:UInt32} OR s.bytes > {max_source_bytes:UInt64}, 'source_too_large',
+                   s.unavailable_records > 0, 'source_unavailable',
+                   s.max_offset + 1 != s.records OR s.invalid_hash_records > 0, 'source_incomplete',
+                   'available') AS source_state,
            multiIf(NOT has({supported:Array(String)}, c.harness), 'unsupported',
                    p.generation > 0, 'complete',
                    m.failed_markers > 0, 'failed',
@@ -125,10 +135,10 @@ _SUMMARY = (
            countIf(projection_state = 'pending') AS projection_pending_sessions,
            countIf(projection_state = 'failed') AS projection_failed_sessions,
            countIf(projection_state = 'stale') AS projection_stale_sessions,
-           countIf(projection_state = 'source_missing') AS source_missing_sessions,
-           countIf(projection_state = 'source_unavailable') AS source_unavailable_sessions,
-           countIf(projection_state = 'source_incomplete') AS source_incomplete_sessions,
-           countIf(projection_state = 'source_too_large') AS source_too_large_sessions,
+           countIf(source_state = 'source_missing') AS source_missing_sessions,
+           countIf(source_state = 'source_unavailable') AS source_unavailable_sessions,
+           countIf(source_state = 'source_incomplete') AS source_incomplete_sessions,
+           countIf(source_state = 'source_too_large') AS source_too_large_sessions,
            sumIf(candidate_count, projection_state = 'complete') AS candidate_calls,
            sumIf(attributed_count, projection_state = 'complete') AS attributed_calls,
            sumIf(collision_count, projection_state = 'complete') AS collision_calls,
@@ -157,6 +167,7 @@ _ACTIVATIONS = (
     FROM session_capabilities FINAL
     WHERE project_id = {project_id:String} AND kind = {component_type:String}
       AND component_id = {component_id:String}
+      AND ({component_version_id:String} = '' OR version = {component_version:String})
       AND (user_id, harness, session_id) IN (SELECT user_id, harness, session_id FROM ("""
     + PRESENCE_COHORT_SQL
     + """)) FORMAT JSON"""
@@ -179,8 +190,10 @@ def _activity_params(
     component_id: str,
     component_version_id: str | None,
     period: tuple[datetime, datetime],
+    component_version: str | None = None,
 ) -> dict:
     return presence_params(project_id, component_type, component_id, component_version_id, period) | {
+        "param_component_version": component_version or "",
         "param_projection_version": publication_version(),
         "param_supported": _clickhouse_array(supported_harnesses()),
         "param_max_refs": MAX_REFERENCES_PER_SESSION,
@@ -201,9 +214,13 @@ async def activity_summary(
     component_id: str,
     component_version_id: str | None,
     period: tuple[datetime, datetime],
+    *,
+    component_version: str | None = None,
 ) -> dict:
     """Exact cohort summary plus the shared coverage block."""
-    params = _activity_params(project_id, component_type, component_id, component_version_id, period)
+    if component_version_id and not component_version:
+        raise ValueError("A version-scoped summary requires a verified version label")
+    params = _activity_params(project_id, component_type, component_id, component_version_id, period, component_version)
     presence, aggregate_rows, harnesses, activation_rows = await asyncio.gather(
         presence_coverage(project_id, component_type, component_id, component_version_id, period),
         _rows(_SUMMARY, params),
@@ -227,41 +244,49 @@ async def activity_summary(
         "activation_actions": {
             "context_sessions": int(activations.get("context_sessions") or 0),
             "next_session_sessions": int(activations.get("next_session_sessions") or 0),
+            "scope": "component_version" if component_version_id else "component",
         },
         "coverage": coverage,
     }
 
 
-def encode_cursor(row: dict, period_end: datetime) -> str:
-    """Opaque keyset cursor that also pins the page window's end for stability."""
-    key = [
-        period_end.isoformat(),
-        str(row["last_event_time"]),
-        row["user_id"],
-        row["harness"],
-        row["session_id"],
-    ]
-    return base64.urlsafe_b64encode(json.dumps(key, separators=(",", ":")).encode()).decode().rstrip("=")
+CursorScope = tuple[str, str, str, str, str, str]  # project, requester, type, listing, version, period_days
 
 
-def decode_cursor(cursor: str) -> tuple[datetime, list[str]]:
-    """Return (pinned period end, four-part keyset) or raise ValueError."""
-    if len(cursor) > 2048:
-        raise ValueError("cursor too long")
+def encode_cursor(row: dict, period_end: datetime, *, scope: CursorScope) -> str:
+    """Sign a pinned window and immutable scoped session key (not a transcript ID)."""
+    payload = json.dumps(
+        [period_end.astimezone(UTC).isoformat(), *scope, row["user_id"], row["harness"], row["session_id"]],
+        separators=(",", ":"),
+    ).encode()
+    signature = hmac.new(settings.SECRET_KEY.encode(), payload, hashlib.sha256).hexdigest().encode()
+    return base64.urlsafe_b64encode(payload + b"." + signature).decode().rstrip("=")
+
+
+def decode_cursor(cursor: str, *, scope: CursorScope) -> tuple[datetime, list[str]]:
+    """Verify scope and bounded window; return (pinned end, immutable key)."""
+    if not cursor or len(cursor) > 2048:
+        raise ValueError("malformed cursor")
     try:
-        key = json.loads(base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)))
+        raw = base64.b64decode(cursor + "=" * (-len(cursor) % 4), altchars=b"-_", validate=True)
+        payload, signature = raw.rsplit(b".", 1)
+        expected = hmac.new(settings.SECRET_KEY.encode(), payload, hashlib.sha256).hexdigest().encode()
+        if not hmac.compare_digest(signature, expected):
+            raise ValueError("invalid cursor signature")
+        key = json.loads(payload)
+        if not isinstance(key, list) or len(key) != 10 or not all(isinstance(part, str) for part in key):
+            raise ValueError("invalid cursor key")
+        if tuple(key[1:7]) != scope or not all(key[7:]):
+            raise ValueError("cursor scope mismatch")
+        period_end = datetime.fromisoformat(key[0])
+        if period_end.tzinfo is None or period_end.utcoffset() != timedelta(0):
+            raise ValueError("invalid cursor time")
+        now = datetime.now(UTC)
+        if not now - timedelta(days=90, minutes=5) <= period_end <= now + timedelta(minutes=5):
+            raise ValueError("cursor window out of range")
+        return period_end, key[7:]
     except (binascii.Error, ValueError, UnicodeDecodeError) as error:
         raise ValueError("malformed cursor") from error
-    if not isinstance(key, list) or len(key) != 5 or not all(isinstance(part, str) and part for part in key):
-        raise ValueError("malformed cursor")
-    try:
-        period_end = datetime.fromisoformat(key[0])
-        datetime.fromisoformat(key[1])
-    except ValueError as error:
-        raise ValueError("malformed cursor") from error
-    if period_end.tzinfo is None:
-        raise ValueError("malformed cursor")
-    return period_end, key[1:]
 
 
 async def activity_sessions(
@@ -273,29 +298,27 @@ async def activity_sessions(
     *,
     limit: int,
     cursor: list[str] | None,
+    cursor_scope: CursorScope,
 ) -> tuple[list[dict], str | None]:
-    """One stable keyset page ordered by (last_event_time, user_id, harness, session_id)."""
+    """Page by immutable scoped session identity; changing last_event_time cannot repeat a row.
+
+    The cohort remains a live view: newly arriving sessions can join the pinned
+    window. This is keyset pagination, not a point-in-time database snapshot.
+    """
     if not 1 <= limit <= 100:
         raise ValueError("limit out of bounds")
+    if cursor_scope[0] != project_id:
+        raise ValueError("cursor project mismatch")
     params = _activity_params(project_id, component_type, component_id, component_version_id, period)
     params["param_limit"] = limit + 1
     where = ""
     if cursor is not None:
-        where = (
-            "WHERE (last_event_time, user_id, harness, session_id) > "
-            "(toDateTime64({after_time:String}, 3, 'UTC'), {after_user:String}, "
-            "{after_harness:String}, {after_session:String})"
-        )
-        params.update(
-            param_after_time=cursor[0],
-            param_after_user=cursor[1],
-            param_after_harness=cursor[2],
-            param_after_session=cursor[3],
-        )
+        where = "WHERE (user_id, harness, session_id) > ({after_user:String}, {after_harness:String}, {after_session:String})"
+        params.update(param_after_user=cursor[0], param_after_harness=cursor[1], param_after_session=cursor[2])
     sql = (
         "SELECT * FROM ("
         + _SESSIONS
-        + f") {where} ORDER BY last_event_time, user_id, harness, session_id LIMIT {{limit:UInt16}} FORMAT JSON"
+        + f") {where} ORDER BY user_id, harness, session_id LIMIT {{limit:UInt16}} FORMAT JSON"
     )
     rows = await _rows(sql, params)
     page, more = rows[:limit], len(rows) > limit
@@ -311,6 +334,7 @@ async def activity_sessions(
                 "session_id": row["session_id"],
                 "last_event_time": str(row["last_event_time"]),
                 "projection_state": row["projection_state"],
+                "source_state": row["source_state"],
                 "observed_calls": calls,
                 "result_states": {
                     "success": int(row.get("successes") or 0) if complete else 0,
@@ -324,4 +348,4 @@ async def activity_sessions(
                 "source_references_truncated": calls > len(refs),
             }
         )
-    return sessions, (encode_cursor(page[-1], period[1]) if more and page else None)
+    return sessions, (encode_cursor(page[-1], period[1], scope=cursor_scope) if more and page else None)

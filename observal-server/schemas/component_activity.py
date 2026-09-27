@@ -113,10 +113,11 @@ class ResultStateCounts(BaseModel):
 
 
 class ActivationActions(BaseModel):
-    """Session-linked install/load actions. Never usage."""
+    """Session-linked install/load actions, scoped to the selected component/version. Never usage."""
 
     context_sessions: int = 0
     next_session_sessions: int = 0
+    scope: Literal["component", "component_version"] = "component"
     note: str = "activation/configuration actions only; never counted as observed use"
 
 
@@ -149,12 +150,18 @@ class SourceReference(BaseModel):
     result_state: str
 
 
+SourceAvailabilityState = Literal[
+    "available", "source_missing", "source_unavailable", "source_incomplete", "source_too_large", "unsupported"
+]
+
+
 class ActivitySession(BaseModel):
     user_id: str
     harness: str
     session_id: str
     last_event_time: str
     projection_state: SessionProjectionState
+    source_state: SourceAvailabilityState
     observed_calls: int
     result_states: ResultStateCounts
     source_references: list[SourceReference]
@@ -167,6 +174,10 @@ class ActivitySessionsResponse(BaseModel):
     time_basis: str = TIME_BASIS
     sessions: list[ActivitySession]
     next_cursor: str | None = None
+    pagination_note: str = (
+        "Ordered by immutable (user_id, harness, session_id); the window end is pinned, "
+        "but newly arriving sessions can join the cohort. Not a point-in-time snapshot."
+    )
 
 
 class UnsupportedComponentType(BaseModel):
