@@ -101,6 +101,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- add user-scoped, versioned component presence and MCP activity projections with owner-authorized summary, session, and coverage APIs
 - add bounded, resumable ClickHouse telemetry migration exports
 - auto-install the bundled Pi telemetry extension during login and report stale npm or local installs (#1602)
 - migrate Pi telemetry extensions installed before version tracking, keeping a `.bak` copy (#1602)
