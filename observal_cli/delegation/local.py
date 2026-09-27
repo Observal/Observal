@@ -183,6 +183,8 @@ def run(
     ws: workspace.Workspace | None = None
     try:
         ws = workspace.create(Path(m["cwd"]))
+        tasks.record_workspace(task, ws.path.parent, ws.repo)
+        save(task)
         name, servers, instructions = materialize(task, ws, harness=harness, adapter=adapter)
         workspace.mark_baseline(ws)
         request = HeadlessRequest(
@@ -204,7 +206,6 @@ def run(
         stdout_path = log_dir / "stdout.log"
         stderr_path = log_dir / "stderr.log"
         m["workspace"] = "git-worktree" if ws.is_git else "empty"
-        tasks.record_workspace(task, ws.path.parent)
         tasks.record_child_session(task, plan.session_id)
         tasks.set_status(task, tasks.STATE_WORKING, f"Running {m.get('agentName', name)} in {harness}.")
         save(task)

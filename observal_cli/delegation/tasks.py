@@ -212,9 +212,12 @@ def _indexed_task(kind: str, key: str) -> dict:
     return meta(load(task_id) or {})
 
 
-def record_workspace(task: dict, root: Path) -> None:
-    """Remember which task ran in the workspace ``root``, for session attribution."""
-    meta(task)["workspaceRoot"] = str(root)
+def record_workspace(task: dict, root: Path, repo: Path | None) -> None:
+    """Remember the workspace a task runs in: for session attribution, and for cleanup if its worker dies."""
+    m = meta(task)
+    m["workspaceRoot"] = str(root)
+    if repo is not None:
+        m["workspaceRepo"] = str(repo)
     _write_index("workspaces", root.name, task["id"])
 
 

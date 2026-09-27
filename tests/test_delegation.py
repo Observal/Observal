@@ -399,6 +399,26 @@ def test_dead_worker_is_reported_instead_of_hanging(monkeypatch, tmp_path):
     assert service.get(task["id"])["status"]["state"] == tasks.STATE_FAILED
 
 
+@pytest.mark.skipif(not HAS_GIT or sys.platform == "win32", reason="needs git and POSIX process groups")
+def test_a_dead_workers_child_and_worktree_are_cleaned_up(tmp_path):
+    repo = _repo(tmp_path)
+    ws = workspace.create(repo)
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], cwd=ws.path, start_new_session=True)
+    task = tasks.new_task(message="x", observal={"target": AGENT_URN, "childPid": child.pid})
+    tasks.record_workspace(task, ws.path.parent, ws.repo)
+    tasks.save(task)
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    tasks.task_dir(task["id"]).joinpath("worker.pid").write_text(str(dead.pid))
+
+    service._reap_abandoned()  # what the next delegation does before it starts
+
+    assert tasks.load(task["id"])["status"]["state"] == tasks.STATE_FAILED
+    assert child.wait(timeout=10) != 0
+    assert not ws.path.parent.exists()
+    assert str(ws.path.parent) not in _git(repo, "worktree", "list")
+
+
 # ── Remote A2A ───────────────────────────────────────────────────────────
 
 

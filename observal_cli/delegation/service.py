@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Find agents to delegate to, start a delegation, and follow it.
@@ -21,8 +22,10 @@ from __future__ import annotations
 import contextlib
 import os
 import shutil
+import signal
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -317,6 +320,7 @@ def start(
             digest=entry.get("obs:artifactDigest"),
             extra={"task_id": task["id"], "child_harness": observal.get("harness")},
         )
+    _reap_abandoned()
     _launch(task)
     return wait(task["id"], wait_seconds)
 
@@ -337,6 +341,46 @@ def reply(task_id: str, message: str, *, wait_seconds: float = 0) -> dict:
     return wait(task_id, wait_seconds)
 
 
+def _ran_in(pid: int, root: str) -> bool:
+    """Whether ``pid`` is still the child that ran in ``root``, not a process that reused its id."""
+    if not Path("/proc/self/cwd").exists():
+        return True  # no /proc (macOS, Windows): trust the liveness check
+    try:
+        return os.readlink(f"/proc/{pid}/cwd").startswith(root)
+    except OSError:
+        return False
+
+
+def _reap(task: dict) -> None:
+    """Stop the child a dead worker left running and remove its workspace."""
+    m = tasks.meta(task)
+    root = m.get("workspaceRoot")
+    pid = m.pop("childPid", None)
+    if root and pid and _pid_alive(pid) and _ran_in(int(pid), root):
+        with contextlib.suppress(OSError):
+            if sys.platform == "win32":
+                subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True, check=False)
+            else:
+                os.killpg(int(pid), signal.SIGKILL)  # the child leads its own process group
+    if root and Path(root).exists():
+        from observal_cli.delegation import workspace
+
+        repo = m.get("workspaceRepo")
+        workspace.remove(Path(root), Path(repo) if repo else None)
+
+
+def _reap_abandoned() -> None:
+    """Settle tasks whose worker died while nobody was watching, so leftovers do not pile up."""
+    index = tasks.store_dir() / "workspaces"
+    if not index.is_dir():
+        return
+    # ponytail: one stat per past workspace; prune the index if it ever grows large enough to matter.
+    for entry in index.iterdir():
+        if (Path(tempfile.gettempdir()) / entry.name).exists():
+            with contextlib.suppress(DelegationError, OSError, ValueError):
+                get(entry.read_text(encoding="utf-8").strip())
+
+
 def get(task_id: str) -> dict:
     task = tasks.load(task_id)
     if task is None:
@@ -346,6 +390,7 @@ def get(task_id: str) -> dict:
     if not tasks.is_final(task) and pid and not _pid_alive(pid):
         task = tasks.load(task_id) or task
         if not tasks.is_final(task):
+            _reap(task)
             tasks.set_status(task, tasks.STATE_FAILED, "The delegation worker stopped unexpectedly.")
             tasks.save(task)
     return task

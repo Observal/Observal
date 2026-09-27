@@ -187,12 +187,17 @@ def changes(ws: Workspace) -> str:
 
 
 def destroy(ws: Workspace) -> None:
-    if ws.repo is not None and ws._root is not None:
+    if ws._root is not None:
+        remove(ws._root, ws.repo)
+
+
+def remove(root: Path, repo: Path | None) -> None:
+    """Remove a workspace by its root, also after the worker that created it died."""
+    if repo is not None:
         try:
-            _git(ws.repo, "worktree", "remove", "--force", str(ws._root / "worktree"))
+            _git(repo, "worktree", "remove", "--force", str(root / "worktree"))
         except WorkspaceError:
             optic.debug("delegation worktree removal failed; pruning")
             with contextlib.suppress(WorkspaceError):
-                _git(ws.repo, "worktree", "prune")
-    if ws._root is not None:
-        shutil.rmtree(ws._root, ignore_errors=True)
+                _git(repo, "worktree", "prune")
+    shutil.rmtree(root, ignore_errors=True)
