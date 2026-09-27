@@ -1114,8 +1114,10 @@ def _install_impl(
     fetch_context = nullcontext() if machine_output else spinner("Fetching server details...")
     with fetch_context:
         listing = client.get(f"/api/v1/mcps/{resolved}")
-    env_var_list = _install_input_definitions(listing, "environment_variables", "environment_variable")
-    header_list = _install_input_definitions(listing, "headers", "header")
+        # Required inputs come from the version that will be installed, not the latest listing.
+        spec = client.get(f"/api/v1/mcps/{resolved}/versions/{version}") if version else listing
+    env_var_list = _install_input_definitions(spec, "environment_variables", "environment_variable")
+    header_list = _install_input_definitions(spec, "headers", "header")
 
     # Build env overrides from --env flags and --env-file
     _env_from_flags: dict[str, str] = dict(env_overrides) if env_overrides else {}

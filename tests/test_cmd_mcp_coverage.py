@@ -1210,6 +1210,39 @@ def test_install_json_missing_required_values_returns_needs_input_without_mutati
     post.assert_not_called()
 
 
+def test_install_json_reads_required_values_from_requested_version(monkeypatch):
+    listing = _registry_item(environment_variables=[])
+    pinned = {"version": "1.0.0", "environment_variables": [{"name": "OLD_KEY", "required": True}]}
+    get = Mock(side_effect=lambda path, *args, **kwargs: pinned if path.endswith("/versions/1.0.0") else listing)
+    monkeypatch.setattr(mcp.client, "resolve_registry_reference", Mock(return_value="resolved"))
+    monkeypatch.setattr(mcp.client, "get", get)
+    post = Mock()
+    monkeypatch.setattr(mcp.client, "post", post)
+
+    result = runner.invoke(
+        app,
+        [
+            "registry",
+            "mcp",
+            "install",
+            "alice/search",
+            "--harness",
+            "cursor",
+            "--version",
+            "1.0.0",
+            "--no-prompt",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 7
+    assert json.loads(result.stderr)["error"]["result"]["inputs"] == [
+        {"kind": "environment_variable", "name": "OLD_KEY"}
+    ]
+    post.assert_not_called()
+
+
 def test_install_json_accepts_all_required_values_without_echoing_them(monkeypatch):
     listing = _registry_item(
         environment_variables=[{"name": "API_KEY", "required": True}],
