@@ -49,6 +49,19 @@ _LATEST = """SELECT project_id, user_id, layer_hash, max(extraction_generation) 
            ) GROUP BY project_id, user_id, layer_hash"""
 
 
+# A later conflicting upload marks the *current* snapshot row as conflicted.
+# If re-extraction failed afterwards, an earlier complete mapping must not keep
+# producing presence: the current snapshot identity is part of validity.
+_CONFLICTED_SNAPSHOTS = """SELECT user_id, hash FROM layer_snapshots FINAL
+           WHERE project_id = {project_id:String}
+             AND hash IN (SELECT layer_hash FROM layer_components
+                          WHERE project_id = {project_id:String} AND component_type = {component_type:String}
+                            AND component_id = {component_id:String})
+             AND JSONExtractString(content, 'identity_status') = 'identity_conflict'"""
+
+SNAPSHOT_CONFLICT_EXPR = "JSONExtractString(content, 'identity_status') = 'identity_conflict'"
+
+
 async def _rows(sql: str, params: dict) -> list[dict]:
     response = await clickhouse._query(sql, params)
     response.raise_for_status()
@@ -81,6 +94,9 @@ async def presence_cohort(
           AND c.component_type = {component_type:String} AND c.component_id = {component_id:String}
           AND ({component_version_id:String} = '' OR c.component_version_id = {component_version_id:String})
           AND c.identity_status = 'resolved' AND c.verification_status = 'verified'
+          AND (c.user_id, c.layer_hash) NOT IN ("""
+        + _CONFLICTED_SNAPSHOTS
+        + """)
     ) AS present
       ON s.project_id = present.project_id AND s.user_id = present.user_id AND s.layer_hash = present.layer_hash
     WHERE s.project_id = {project_id:String} AND s.layer_hash != ''
@@ -117,15 +133,18 @@ async def presence_coverage(
                 AND attempts.failed_attempts > 0) AS mapping_failed_sessions,
         countIf(startsWith(s.layer_hash, 'v2_') AND p.has_mapping = 0
                 AND attempts.older_complete > 0) AS stale_extractor_sessions,
-        countIf(p.conflict = 1) AS identity_conflict_sessions,
-        countIf(p.has_mapping = 1 AND p.conflict = 0) AS mapping_complete_sessions,
+        countIf(p.conflict = 1 OR snap.snapshot_conflict = 1) AS identity_conflict_sessions,
+        countIf(p.has_mapping = 1 AND p.conflict = 0 AND snap.snapshot_conflict = 0) AS mapping_complete_sessions,
         countIf(d.unresolved > 0) AS unresolved_identity_sessions,
         countIf(d.ambiguous > 0) AS ambiguous_identity_sessions,
         countIf(d.unverified > 0) AS unverified_presence_sessions,
         countIf(d.drifted > 0) AS drifted_presence_sessions,
-        countIf(d.verified > 0) AS verified_presence_sessions
+        countIf(d.verified > 0 AND snap.snapshot_conflict = 0) AS verified_presence_sessions
     FROM session_stats_agg AS s FINAL
-    LEFT JOIN (SELECT project_id, user_id, hash AS layer_hash, 1 AS has_snapshot
+    LEFT JOIN (SELECT project_id, user_id, hash AS layer_hash, 1 AS has_snapshot,
+                      toUInt8("""
+        + SNAPSHOT_CONFLICT_EXPR
+        + """) AS snapshot_conflict
                FROM layer_snapshots FINAL WHERE project_id = {project_id:String}) AS snap
       ON s.project_id = snap.project_id AND s.user_id = snap.user_id AND s.layer_hash = snap.layer_hash
     LEFT JOIN (SELECT project_id, user_id, layer_hash, generation, conflict, 1 AS has_mapping

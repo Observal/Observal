@@ -113,7 +113,7 @@ async def maintain_clickhouse(ctx: dict):
         try:
             await _query(f"OPTIMIZE TABLE {table}")
         except Exception as e:
-            optic.warning("ClickHouse OPTIMIZE {} failed: {}", table, e)
+            optic.warning("ClickHouse OPTIMIZE {} failed: {}", table, type(e).__name__)
 
     # Check part health: warn before things get critical
     try:
@@ -132,7 +132,7 @@ async def maintain_clickhouse(ctx: dict):
                         parts,
                     )
     except Exception as e:
-        optic.debug("Part health check failed: {}", e)
+        optic.debug("Part health check failed: {}", type(e).__name__)
 
 
 async def reproject_discovery_entries(ctx: dict):
@@ -173,8 +173,11 @@ async def _layer_snapshot_page(after: list[str] | None, batch_size: int) -> list
     if after is not None:
         where = "WHERE (project_id, user_id, hash) > ({after_project:String}, {after_user:String}, {after_hash:String})"
         params.update(param_after_project=after[0], param_after_user=after[1], param_after_hash=after[2])
+    from services.layer_components.queries import SNAPSHOT_CONFLICT_EXPR
+
     return await _layer_rows(
-        f"SELECT project_id, user_id, hash FROM layer_snapshots FINAL {where} "
+        f"SELECT project_id, user_id, hash, toUInt8({SNAPSHOT_CONFLICT_EXPR}) AS conflict "
+        f"FROM layer_snapshots FINAL {where} "
         "ORDER BY project_id, user_id, hash LIMIT {limit:UInt16} FORMAT JSON",
         params,
     )
@@ -270,12 +273,18 @@ async def backfill_layer_components(
             next_cursor = None
             break
         keys = [(row["project_id"], row["user_id"], row["hash"]) for row in page]
+        snapshot_conflicts = {
+            (row["project_id"], row["user_id"], row["hash"]): bool(int(row.get("conflict") or 0)) for row in page
+        }
         publications = await _layer_publications(keys)
         unresolved = await _unresolved_layer_keys(publications) if reresolve_unresolved else set()
         for key in keys:
             counts["scanned"] += 1
             previous = publications.get(key)
-            if previous and (not reresolve_unresolved or key not in unresolved):
+            # A publication is current only if it reflects the snapshot's current
+            # conflict state; otherwise the extractor must republish (fail closed).
+            stale_conflict = bool(previous) and bool(int(previous.get("conflict") or 0)) != snapshot_conflicts[key]
+            if previous and not stale_conflict and (not reresolve_unresolved or key not in unresolved):
                 counts["skipped"] += 1
                 continue
             try:

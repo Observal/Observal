@@ -12,6 +12,7 @@ from collections import defaultdict
 from dataclasses import asdict, dataclass
 
 SUPPORTED_TYPES = frozenset({"mcp", "skill", "hook"})
+_VERIFICATION_KEY = ("harness", "component_id", "alias", "scope", "parent_agent_id")
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,16 @@ def normalize_snapshot(pinned_versions: object, drift: object) -> list[Occurrenc
     globally_drifted = drift.get("is_canonical") is False
     verifications = drift.get("mcp_verifications")
     verifications = verifications if isinstance(verifications, list) else []
+    # Index once (first record wins) so normalization stays linear in input size.
+    verification_index: dict[tuple, object] = {}
+    for item in verifications:
+        if isinstance(item, dict):
+            try:
+                key = tuple(item.get(field) for field in _VERIFICATION_KEY)
+                status = item.get("status")
+                verification_index.setdefault(key, status if isinstance(status, str) else None)
+            except TypeError:
+                continue
     records: list[dict[str, str]] = []
 
     def append(
@@ -56,31 +67,14 @@ def normalize_snapshot(pinned_versions: object, drift: object) -> list[Occurrenc
         raw_id = _text(pin.get("id"))
         item_scope = _text(pin.get("scope")) or scope
         verification = "unverified"
-        if kind == "mcp":
-            for item in verifications:
-                if not isinstance(item, dict):
-                    continue
-                if all(
-                    item.get(key) == value
-                    for key, value in (
-                        ("harness", harness),
-                        ("component_id", raw_id),
-                        ("alias", alias),
-                        ("scope", item_scope),
-                        ("parent_agent_id", parent_id),
-                    )
-                ):
-                    status = item.get("status")
-                    verification = (
-                        "verified"
-                        if is_v2 and not globally_drifted and raw_id and alias and status == "verified"
-                        else (
-                            "drifted"
-                            if status in {"drifted", "missing"} or drift.get("is_canonical") is False
-                            else "unverified"
-                        )
-                    )
-                    break
+        key = (harness, raw_id, alias, item_scope, parent_id)
+        if kind == "mcp" and key in verification_index:
+            status = verification_index[key]
+            verification = (
+                "verified"
+                if is_v2 and not globally_drifted and raw_id and alias and status == "verified"
+                else ("drifted" if status in {"drifted", "missing"} or globally_drifted else "unverified")
+            )
         records.append(
             {
                 "component_type": kind,

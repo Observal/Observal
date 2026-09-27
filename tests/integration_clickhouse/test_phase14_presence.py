@@ -18,7 +18,7 @@ import json
 import os
 import time
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
@@ -550,3 +550,24 @@ async def test_genuine_standalone_install_fixture_extracts_exact_scoped_cohort()
     assert {(row["user_id"], row["session_id"]) for row in cohort} == {("owner", "tracked-standalone")}
     assert await presence_cohort(project, "mcp", listing["id"], OTHER_VERSION, period) == []
     assert await presence_cohort(project + "-other", "mcp", listing["id"], str(version_id), period) == []
+
+    # A later conflicting upload invalidates the earlier complete mapping even
+    # before (or without) a successful re-extraction.
+    _insert(
+        "layer_snapshots",
+        [
+            {
+                "project_id": project,
+                "user_id": "owner",
+                "hash": layer_hash,
+                "harness": "claude-code",
+                "file_count": 1,
+                "total_size": 0,
+                "content": json.dumps({"identity_status": "identity_conflict"}),
+                "uploaded_at": (datetime.now(UTC) + timedelta(seconds=5)).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
+            }
+        ],
+    )
+    assert await presence_cohort(project, "mcp", listing["id"], str(version_id), period) == []
+    coverage = await presence_coverage(project, "mcp", listing["id"], str(version_id), period)
+    assert coverage["identity_conflict_sessions"] >= 1 and coverage["present_sessions"] == 0

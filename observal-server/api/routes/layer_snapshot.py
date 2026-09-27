@@ -14,7 +14,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from loguru import logger as optic
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,6 +36,8 @@ class LayerFile(BaseModel):
 
 _MAX_FILES_PER_SNAPSHOT = 200
 _MAX_TOTAL_SIZE = 5 * 1024 * 1024  # 5MB
+# One verification per possible MCP pin: 128 agents x 128 components + 512 standalone.
+_MAX_MCP_VERIFICATIONS = 128 * 128 + 512
 
 
 class ComponentPin(BaseModel):
@@ -80,6 +82,29 @@ class LayerSnapshotRequest(BaseModel):
     lockfile_hash: str = Field("", max_length=64)
     pinned_versions: PinnedVersions = Field(default_factory=PinnedVersions)
     drift: dict = Field(default_factory=dict)
+
+    @field_validator("drift")
+    @classmethod
+    def bound_drift(cls, value: dict) -> dict:
+        """Bound the drift fields the extractor reads; the rest is opaque, stored metadata."""
+        verifications = value.get("mcp_verifications")
+        if verifications is not None:
+            if not isinstance(verifications, list) or len(verifications) > _MAX_MCP_VERIFICATIONS:
+                raise ValueError("drift.mcp_verifications must be a bounded list")
+            for item in verifications:
+                if not isinstance(item, dict) or len(item) > 16:
+                    raise ValueError("drift.mcp_verifications entries must be small objects")
+                for field_value in item.values():
+                    if not (field_value is None or isinstance(field_value, bool)) and (
+                        not isinstance(field_value, str) or len(field_value) > 300
+                    ):
+                        raise ValueError("drift.mcp_verifications values must be short strings")
+        drifted = value.get("drifted_files")
+        if drifted is not None and (
+            not isinstance(drifted, list) or len(drifted) > _MAX_MCP_VERIFICATIONS + 4 * _MAX_FILES_PER_SNAPSHOT
+        ):
+            raise ValueError("drift.drifted_files must be a bounded list")
+        return value
 
 
 class LayerSnapshotResponse(BaseModel):
@@ -231,7 +256,8 @@ async def upload_layer_snapshot(
         result.raise_for_status()
         existing = result.json().get("data", [])
     except Exception as error:
-        optic.warning("failed to check existing snapshot: {}", error)
+        # HTTP client errors can embed credential-bearing ClickHouse URLs.
+        optic.warning("failed to check existing snapshot: {}", type(error).__name__)
         # An unverified retry could overwrite a persisted conflict marker.
         # The client can retry after the scoped existence check recovers.
         raise HTTPException(status_code=503, detail="Layer snapshot identity check unavailable") from error
@@ -506,7 +532,7 @@ async def pin_baseline(
             },
         )
     except Exception as e:
-        optic.error("failed to pin baseline: {}", e)
+        optic.error("failed to pin baseline: {}", type(e).__name__)
         raise HTTPException(status_code=500, detail="Failed to pin baseline")
 
     return BaselinePinResponse(

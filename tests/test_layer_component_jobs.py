@@ -21,8 +21,10 @@ async def test_snapshot_page_reads_only_keys_with_bounded_parameterized_keyset(m
     monkeypatch.setattr(maintenance, "_layer_rows", rows)
     await maintenance._layer_snapshot_page(["project", "user", "hash"], 64)
     sql, params = rows.await_args.args
-    assert "SELECT project_id, user_id, hash FROM layer_snapshots FINAL" in sql
-    assert "content" not in sql and "LIMIT {limit:UInt16}" in sql
+    assert "SELECT project_id, user_id, hash, toUInt8(" in sql and "FROM layer_snapshots FINAL" in sql
+    assert "identity_conflict" in sql
+    # Only a server-side conflict flag is derived from content; content itself is never selected.
+    assert ", content" not in sql and "LIMIT {limit:UInt16}" in sql
     assert "{after_project:String}" in sql and "ORDER BY project_id, user_id, hash" in sql
     assert params == {
         "param_after_project": "project",
@@ -171,3 +173,22 @@ def test_worker_cron_and_init_invocation_after_migrations():
     script = (Path(__file__).resolve().parents[1] / "docker/entrypoint.sh").read_text()
     assert script.index("python -m alembic upgrade head") < script.index("python -m services.clickhouse.migrations")
     assert script.index("python -m services.clickhouse.migrations") < script.index("python -m jobs.maintenance")
+
+
+@pytest.mark.asyncio
+async def test_backfill_republishes_when_snapshot_conflict_postdates_complete_publication(monkeypatch):
+    rows = [
+        _snapshot("p", "conflicted-later", "hash") | {"conflict": 1},
+        _snapshot("p", "consistent", "hash") | {"conflict": 0},
+    ]
+    page = AsyncMock(return_value=rows)
+    clean = {"generation": 7, "conflict": 0}
+    publication = AsyncMock(return_value={("p", "conflicted-later", "hash"): clean, ("p", "consistent", "hash"): clean})
+    ensure = AsyncMock(return_value={"status": "complete"})
+    monkeypatch.setattr(maintenance, "_layer_snapshot_page", page)
+    monkeypatch.setattr(maintenance, "_layer_publications", publication)
+    monkeypatch.setattr("services.layer_components.extractor.ensure_layer_components", ensure)
+    result = await maintenance.backfill_layer_components({}, batch_size=4)
+    # A stale non-conflicted publication is not skipped; the consistent one is.
+    ensure.assert_awaited_once_with("p", "conflicted-later", "hash", force=False)
+    assert (result["complete"], result["skipped"]) == (1, 1)

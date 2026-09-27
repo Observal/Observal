@@ -853,3 +853,36 @@ def test_router_exposes_only_the_current_snapshot_contract():
         (frozenset({"GET"}), "/api/v1/layer-snapshots/{hash_a}/diff/{hash_b}"),
         (frozenset({"POST"}), "/api/v1/layer-snapshots/baseline"),
     }
+
+
+@pytest.mark.asyncio
+async def test_identity_check_failure_never_logs_credential_bearing_error_text(boundaries):
+    from loguru import logger
+
+    messages: list[str] = []
+    sink = logger.add(lambda message: messages.append(str(message)), level="WARNING")
+    boundaries.query.side_effect = RuntimeError("GET http://ch:8123/?password=fixture-secret failed")
+    payload = layer_snapshot.LayerSnapshotRequest(
+        hash=HASH_A,
+        harnesses={"cursor": [layer_snapshot.LayerFile(path="user:mcp.json", hash="sha256-a", size=3)]},
+    )
+    try:
+        with pytest.raises(HTTPException):
+            await _UPLOAD(payload, SimpleNamespace(), _user(), AsyncMock())
+    finally:
+        logger.remove(sink)
+    assert messages and not any("fixture-secret" in message for message in messages)
+
+
+def test_drift_verifications_are_bounded_before_extraction():
+    ok = {"mcp_verifications": [{"harness": "claude-code", "alias": "a", "status": "verified"}], "extra": {"any": 1}}
+    assert layer_snapshot.LayerSnapshotRequest(hash=HASH_A, drift=ok).drift == ok  # stored representation unchanged
+    too_many = {"mcp_verifications": [{}] * (layer_snapshot._MAX_MCP_VERIFICATIONS + 1)}
+    for drift in (
+        too_many,
+        {"mcp_verifications": "verified"},
+        {"mcp_verifications": [{"alias": "x" * 301}]},
+        {"mcp_verifications": [{"alias": ["nested"]}]},
+    ):
+        with pytest.raises(ValueError):
+            layer_snapshot.LayerSnapshotRequest(hash=HASH_A, drift=drift)

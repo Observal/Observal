@@ -500,3 +500,37 @@ async def test_extractor_conflict_change_forces_rebuild_without_explicit_force(m
         "identity_conflict": True,
     }
     assert marker.await_args.kwargs["conflict"] is True
+
+
+def test_verification_lookup_is_indexed_first_match_and_tolerates_malformed_records():
+    from services.layer_components.normalizer import normalize_snapshot
+
+    component = "11111111-1111-4111-8111-111111111111"
+    pins = {
+        "schema_version": 2,
+        "agents": [],
+        "standalone": [
+            {
+                "type": "mcp",
+                "id": component,
+                "name": "p",
+                "version": "1",
+                "harness": "h",
+                "scope": "project",
+                "local_name": "p",
+            }
+        ],
+    }
+    key = {"harness": "h", "component_id": component, "alias": "p", "scope": "project", "parent_agent_id": ""}
+    drift = {
+        "is_canonical": True,
+        "mcp_verifications": [
+            "malformed",
+            {**key, "status": ["unhashable"]},
+            {**key, "status": "verified"},  # later duplicate cannot override the first record
+            {"harness": ["unhashable"]},
+        ],
+    }
+    assert normalize_snapshot(pins, drift)[0].verification_status == "unverified"
+    drift["mcp_verifications"] = [{**key, "status": "verified"}, {**key, "status": "drifted"}]
+    assert normalize_snapshot(pins, drift)[0].verification_status == "verified"
