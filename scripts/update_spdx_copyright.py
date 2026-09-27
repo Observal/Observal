@@ -21,6 +21,8 @@ from pathlib import Path
 
 SKIP_DIRS = {"LICENSES", ".reuse", "node_modules", ".git", ".venv", "__pycache__", "vendor"}
 SKIP_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".ico", ".woff", ".woff2", ".ttf", ".eot", ".map", ".lock"}
+# JSON has no comments, so a header would break the file; REUSE.toml covers these instead.
+SKIP_EXTS |= {".json", ".jsonl"}
 
 
 def git_identity() -> tuple[str, str]:
@@ -177,6 +179,8 @@ def main():
     created = []
 
     for path in files:
+        if comment_prefix(path) is None:
+            continue  # nothing to add, so nothing to report
         try:
             raw = path.read_bytes()
         except Exception:
