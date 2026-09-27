@@ -110,27 +110,27 @@ async def test_live_derived_fixture_through_canonical_ingest(ingest_insert):
             lines=selected,
             start_offset=start,
         )
-    rows = {r["line_offset"]: r for call in inserted.call_args_list for r in call.args[0] if r["is_source_record"]}
+    all_rows = [r for call in inserted.call_args_list for r in call.args[0]]
+    assert len(all_rows) == len(SOURCE_INDICES)  # Claude Code adds no synthetic ingest rows here.
+    assert all(r["is_source_record"] == 1 and r["rendered"] == 1 for r in all_rows)
+    rows = {r["line_offset"]: r for r in all_rows}
     assert set(rows) == set(SOURCE_INDICES)
-    assert all(r["rendered"] == 1 for r in rows.values())
-    assert [rows[i]["event_type"] for i in SOURCE_INDICES] == [
-        "thinking",
-        "assistant_text",
-        "tool_call",
-        "tool_result",
-        "tool_call",
-        "tool_call",
-        "tool_result",
-        "tool_result",
-        "tool_call",
-        "tool_result",
-    ]
-    for index in (23, 33, 34, 38):
-        assert rows[index]["tool_name"] == _block(json.loads(rows[index]["raw_line"]))["name"]
-        assert rows[index]["tool_id"] == _block(json.loads(rows[index]["raw_line"]))["id"]
-    assert len({rows[i]["tool_id"] for i in (33, 34)}) == 2
-    assert all(rows[i]["tool_name"] is None for i in (21, 22, 24, 35, 36, 39))
+    assert {index: (row["event_type"], row["tool_name"], row["tool_id"]) for index, row in rows.items()} == {
+        21: ("thinking", None, None),
+        22: ("assistant_text", None, None),
+        23: ("tool_call", "ToolSearch", "toolu_fixture_search"),
+        24: ("tool_result", None, None),
+        33: ("tool_call", "mcp__component-insights-phase0-phase0-probe__ping", "toolu_fixture_first"),
+        34: ("tool_call", "mcp__super-phase0-probe__ping", "toolu_fixture_second"),
+        35: ("tool_result", None, None),
+        36: ("tool_result", None, None),
+        38: ("tool_call", "mcp__super-phase0-probe__fail", "toolu_fixture_error"),
+        39: ("tool_result", None, None),
+    }
+    assert [rows[i]["raw_line"] for i in SOURCE_INDICES] == source
     assert json.loads(rows[33]["raw_line"])["message"]["id"] == json.loads(rows[34]["raw_line"])["message"]["id"]
+    assert json.loads(rows[22]["raw_line"])["message"]["id"] == json.loads(rows[23]["raw_line"])["message"]["id"]
+    assert json.loads(rows[22]["raw_line"])["message"]["id"] != json.loads(rows[33]["raw_line"])["message"]["id"]
     assert _block(json.loads(rows[39]["raw_line"]))["is_error"] is True
 
 
@@ -163,13 +163,36 @@ async def test_constructed_multiblock_input_keeps_all_blocks_in_source_row(inges
         lines=[json.dumps(multi), json.dumps(text_first)],
     )
     rows = [r for call in ingest_insert.call_args_list for r in call.args[0] if r["is_source_record"]]
-    assert [(row["event_type"], row["tool_name"], row["tool_id"]) for row in rows] == [
-        ("tool_call", "mcp__fixture__1", "constructed-1"),
-        ("assistant_text", "mcp__fixture__1", "constructed-1"),
+    assert [
+        (row["is_source_record"], row["rendered"], row["event_type"], row["tool_name"], row["tool_id"]) for row in rows
+    ] == [
+        (1, 1, "tool_call", "mcp__fixture__1", "constructed-1"),
+        (1, 1, "assistant_text", "mcp__fixture__1", "constructed-1"),
     ]
+    assert [json.loads(row["raw_line"]) for row in rows] == [multi, text_first]
     assert len(json.loads(rows[0]["raw_line"])["message"]["content"]) == 2
     assert json.loads(rows[0]["raw_line"])["message"]["content"][1]["id"] == "constructed-2"
     assert json.loads(rows[1]["raw_line"])["message"]["content"][1]["id"] == "constructed-1"
+
+
+def test_fixture_bundled_aliases_and_mcp_tool_result_contract():
+    registry = json.loads((FIXTURE / "registry_components.json").read_text())["components"]
+    listings = {
+        comp["id"]: SimpleNamespace(slug=comp["slug"], namespace=comp["qualified_name"].split("/")[0])
+        for comp in registry
+    }
+    assert _local_registry_names(listings) == {comp["id"]: comp["installed_alias"] for comp in registry}
+    rows = dict(zip(SOURCE_INDICES, _records(), strict=True))
+    for call_idx, result_idx, alias, tool in (
+        (33, 35, "component-insights-phase0-phase0-probe", "ping"),
+        (34, 36, "super-phase0-probe", "ping"),
+        (38, 39, "super-phase0-probe", "fail"),
+    ):
+        call, result = _block(rows[call_idx]), _block(rows[result_idx])
+        assert call["name"] == f"mcp__{alias}__{tool}"
+        assert result["tool_use_id"] == call["id"]
+    assert all("is_error" not in _block(rows[i]) for i in (35, 36))
+    assert _block(rows[39])["is_error"] is True  # Error is on the result block, not the call or source row.
 
 
 def test_bundled_alias_disambiguation_and_collisions():
@@ -180,8 +203,12 @@ def test_bundled_alias_disambiguation_and_collisions():
         c: SimpleNamespace(slug="probe", namespace="else"),
     }
     assert _local_registry_names(listings) == {a: "team-a-probe", b: "team-a-probe-2", c: "else-probe"}
-    assert "team-a-probe-2".startswith("team-a-probe")  # Prefix matching must not identify a listing.
-    assert len({"project:mcp__alias__ping", "user:mcp__alias__ping"}) == 2  # Scope is part of identity.
+    longer = "mcp__team-a-probe-2__ping"
+    assert longer.startswith("mcp__team-a-probe")  # Naive alias prefix matching selects the wrong listing.
+    assert not longer.startswith("mcp__team-a-probe__")  # Exact alias plus separator is needed.
+    scoped = {("claude-code", "project", "alias"): a, ("claude-code", "user", "alias"): b}
+    assert len(scoped) == 2 and scoped[("claude-code", "project", "alias")] != scoped[("claude-code", "user", "alias")]
+    assert len({alias for _, _, alias in scoped}) == 1  # Bare alias cannot establish registry identity.
     listing = SimpleNamespace(
         slug="probe",
         namespace="team.a",
@@ -195,6 +222,20 @@ def test_bundled_alias_disambiguation_and_collisions():
         auto_approve=[],
     )
     assert _build_mcp_context(listing, local_name="local name").name == "local-name"
+    assert _build_mcp_context(listing, local_name=None).name == "probe"  # Standalone code path, not an install.
+    assert _build_mcp_context(listing, local_name="").name == "probe"
+
+    # _local_registry_names resolves dot/hyphen collisions, but other punctuation can
+    # collide only after _build_mcp_context sanitizes the generated config key.
+    unsafe = {
+        a: SimpleNamespace(slug="probe", namespace="team a"),
+        b: SimpleNamespace(slug="probe", namespace="team-a"),
+    }
+    unsafe_names = _local_registry_names(unsafe)
+    assert unsafe_names[a] != unsafe_names[b]
+    assert {_build_mcp_context(listing, local_name=unsafe_names[listing_id]).name for listing_id in unsafe} == {
+        "team-a-probe"
+    }
 
 
 def test_current_mcp_drift_flag_does_not_verify_edited_or_removed_entry():
