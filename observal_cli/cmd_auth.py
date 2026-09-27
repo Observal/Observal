@@ -158,6 +158,10 @@ def _save_login(server_url: str, data: dict) -> dict:
     endpoints = _fetch_endpoints(server_url)
     if endpoints:
         cfg_data["web_url"] = endpoints.get("web", "")
+    previous = config.load_persisted()
+    if previous.get("server_url") != server_url or str(previous.get("user_id", "")) != str(cfg_data["user_id"]):
+        # The hooks token belongs to the previous login; hooks prefer it, so every upload would be refused.
+        config.remove("api_key")
     config.save(cfg_data)
     return user
 

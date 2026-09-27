@@ -962,48 +962,95 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
-  function postJsonWithTimeout(
+  // A rejected token is refreshed once, as the CLI's session hooks do (observal_cli/sessions/base.py);
+  // otherwise an expired hooks token or access token would leave every batch in the outbox.
+  async function postJsonWithTimeout(
     config: ObservalConfig,
     urlPath: string,
     body: string,
     timeoutMs = TIMEOUT_MS * 2,
   ): Promise<any | null> {
+    const token = config.access_token;
+    let response = await postJson(config.server_url, urlPath, body, timeoutMs, token);
+    // Another request may already have refreshed the token while this one was in flight.
+    if (response?.status === 401 && (config.access_token !== token || (await refreshOnce(config)))) {
+      response = await postJson(config.server_url, urlPath, body, timeoutMs, config.access_token);
+    }
+    return response && response.status >= 200 && response.status < 300 ? response.body : null;
+  }
+
+  // Refresh tokens are single-use, so concurrent requests share one refresh.
+  let refreshing: Promise<boolean> | null = null;
+  function refreshOnce(config: ObservalConfig): Promise<boolean> {
+    refreshing ??= refreshAccessToken(config).finally(() => {
+      refreshing = null;
+    });
+    return refreshing;
+  }
+
+  async function refreshAccessToken(config: ObservalConfig): Promise<boolean> {
+    try {
+      const saved = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
+      // Never store a token from one server in a config that now points at another.
+      if (!saved.refresh_token || saved.server_url !== config.server_url) return false;
+      const response = await postJson(
+        config.server_url,
+        "/api/v1/auth/token/refresh",
+        JSON.stringify({ refresh_token: saved.refresh_token }),
+        TIMEOUT_MS,
+      );
+      const accessToken = response?.status === 200 ? response.body?.access_token : undefined;
+      if (typeof accessToken !== "string" || !accessToken) return false;
+      const current = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
+      // The server just rejected the hooks token: keep it and every later batch would be refused too.
+      if (current.api_key && current.api_key === config.access_token) delete current.api_key;
+      current.access_token = accessToken;
+      if (response.body.refresh_token) current.refresh_token = response.body.refresh_token;
+      const temporary = `${CONFIG_PATH}.${process.pid}.${Date.now()}.tmp`;
+      fs.writeFileSync(temporary, JSON.stringify(current, null, 2), { mode: 0o600 });
+      fs.renameSync(temporary, CONFIG_PATH);
+      config.access_token = accessToken;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function postJson(
+    serverUrl: string,
+    urlPath: string,
+    body: string,
+    timeoutMs: number,
+    token?: string,
+  ): Promise<{ status: number; body: any } | null> {
     return new Promise((resolve) => {
       try {
-        const url = new URL(urlPath, config.server_url);
+        const url = new URL(urlPath, serverUrl);
         const mod = url.protocol === "https:" ? https : http;
         const timer = setTimeout(() => {
           req.destroy();
           resolve(null);
         }, timeoutMs);
 
-        const req = mod.request(
-          url,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${config.access_token}`,
-              "Content-Length": String(Buffer.byteLength(body)),
-            },
-          },
-          (res) => {
-            clearTimeout(timer);
-            const chunks: Buffer[] = [];
-            res.on("data", (c) => chunks.push(c));
-            res.on("end", () => {
-              if (res.statusCode! >= 200 && res.statusCode! < 300) {
-                try {
-                  resolve(JSON.parse(Buffer.concat(chunks).toString("utf-8")));
-                } catch {
-                  resolve(null);
-                }
-              } else {
-                resolve(null);
-              }
-            });
-          },
-        );
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+          "Content-Length": String(Buffer.byteLength(body)),
+        };
+        if (token) headers.Authorization = `Bearer ${token}`;
+        const req = mod.request(url, { method: "POST", headers }, (res) => {
+          clearTimeout(timer);
+          const chunks: Buffer[] = [];
+          res.on("data", (c) => chunks.push(c));
+          res.on("end", () => {
+            let parsed: any = null;
+            try {
+              parsed = JSON.parse(Buffer.concat(chunks).toString("utf-8"));
+            } catch {
+              parsed = null;
+            }
+            resolve({ status: res.statusCode ?? 0, body: parsed });
+          });
+        });
 
         req.on("error", () => {
           clearTimeout(timer);
