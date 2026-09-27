@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Agent-to-agent delegation on the CLI side: tasks, isolation, headless runs, A2A client, MCP server."""
@@ -195,6 +196,30 @@ def test_local_run_returns_answer_and_patch_without_touching_the_caller(tmp_path
     m = tasks.meta(task)
     assert Path(m["patchPath"]).is_file() and m["childSessionId"] == "child-1"
     assert (repo / "app.py").read_text() == "print('v1')\n"
+
+
+@pytest.mark.skipif(not HAS_GIT, reason="git not installed")
+def test_child_sessions_stay_attributed_after_the_workspace_is_gone(tmp_path, monkeypatch):
+    from observal_cli.sessions.base import _resolve_agent
+
+    repo = _repo(tmp_path)
+    monkeypatch.setattr(local, "get_adapter", lambda _h: FakeAdapter("import os; print(os.getcwd())"))
+    monkeypatch.setattr(local, "materialize", _fake_materialize)
+    monkeypatch.delenv("OBSERVAL_AGENT_ID", raising=False)
+    task = _local_task(repo)
+    tasks.meta(task)["version"] = "1.2.0"
+    task = local.run(tasks.save(task), save=tasks.save, should_cancel=lambda: False)
+
+    # Deliveries after cleanup: no hook env, no lockfile entry, the workspace is gone.
+    child_cwd = tasks.message_text(task["artifacts"][0]).strip()
+    assert not Path(child_cwd).exists()
+    expected = (AGENT_ID, "1.2.0")
+    assert _resolve_agent(child_cwd, [], None, harness="claude-code") == expected  # hook: cwd
+    assert _resolve_agent(str(Path(child_cwd) / "src"), [], None, harness="kiro") == expected
+    assert _resolve_agent("", [], None, session_ids=("child-1", None)) == expected  # reconcile: id only
+    assert _resolve_agent("", [], None, session_ids=("sub-7", "child-1")) == expected  # the child's subagent
+    assert tasks.delegated_agent(session_ids=("other", "../child-1")) is None
+    assert tasks.delegated_agent(str(tmp_path / "observal-delegate-lookalike" / "worktree")) is None
 
 
 @pytest.mark.skipif(not HAS_GIT, reason="git not installed")

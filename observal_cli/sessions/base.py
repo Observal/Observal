@@ -694,7 +694,9 @@ def build_payload(
     Defaults harness telemetry to ``claude-code``; callers override ``payload["harness"]``
     for other harnesses.
     """
-    agent_id, agent_version = _resolve_agent(cwd, lines, session_jsonl, harness=harness)
+    agent_id, agent_version = _resolve_agent(
+        cwd, lines, session_jsonl, harness=harness, session_ids=(session_id, parent_session_id)
+    )
     layer_hash = _get_cached_layer_hash(session_id, cwd)
     payload: dict = {
         "session_id": session_id,
@@ -911,11 +913,17 @@ def _resolve_agent(
     lines: list[str],
     session_jsonl: Path | None,
     harness: str = "claude-code",
+    session_ids: tuple[str | None, ...] = (),
 ) -> tuple[str | None, str | None]:
-    """Resolve agent identity through the harness adapter, environment, and lockfile."""
+    """Resolve agent identity: delegated child first, then harness adapter, environment, and lockfile."""
     import os
 
+    from observal_cli.delegation.tasks import delegated_agent
     from observal_cli.harness import ensure_loaded, get_adapter
+
+    delegated = delegated_agent(cwd, session_ids)
+    if delegated:
+        return delegated
 
     ensure_loaded()
     adapter = get_adapter(harness)

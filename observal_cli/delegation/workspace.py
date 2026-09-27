@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """A throwaway copy of the caller's working tree for a delegated agent.
@@ -27,6 +28,7 @@ from pathlib import Path
 from loguru import logger as optic
 
 MAX_UNTRACKED_BYTES = 50 * 1024 * 1024
+ROOT_PREFIX = "observal-delegate-"
 GIT_TIMEOUT = 120
 
 
@@ -117,7 +119,7 @@ def create(cwd: Path) -> Workspace:
     """Create the child's workspace for a caller working in ``cwd``."""
     # Resolved: on macOS the temp dir is under /var, a symlink to /private/var, and the
     # agent install rejects generated paths that resolve outside its target directory.
-    root = Path(tempfile.mkdtemp(prefix="observal-delegate-")).resolve()
+    root = Path(tempfile.mkdtemp(prefix=ROOT_PREFIX)).resolve()
     scratch = root / "scratch"
     scratch.mkdir()
     repo = repo_root(cwd)

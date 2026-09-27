@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # ADR 0002: Agent-to-agent delegation over ARD and A2A
@@ -139,7 +140,11 @@ A delegation appends a capability-lock line in the caller's context
 harness). Session upload already attaches those lines to the caller's session,
 so traces show which agents a session delegated to. The child's own session is
 ingested by its harness hooks as usual; Claude Code children run with a known
-`--session-id` recorded on the task. No OTLP, no new ingestion path.
+`--session-id` recorded on the task. The task store indexes the child's session
+id and workspace, and session upload checks that index first, so the child's
+session is attributed to the delegated agent and version even when it is
+delivered after the workspace is gone (`observal reconcile`, recovery after a
+crash). The user's lockfile is never touched. No OTLP, no new ingestion path.
 
 ## Amendment to ADR 0001, Decision 7
 

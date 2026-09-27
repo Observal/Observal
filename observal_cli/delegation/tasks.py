@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """A2A task shapes and the local task store.
@@ -18,8 +19,10 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import uuid
 from datetime import UTC, datetime
+from pathlib import PurePath
 from typing import TYPE_CHECKING, Any
 
 from observal_cli import lockfile as _lockfile
@@ -56,6 +59,8 @@ _LEGACY_STATES = {
 }
 
 MAX_ARTIFACT_TEXT = 200_000
+# Session ids and workspace names become index file names; anything else is ignored.
+_INDEX_KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 
 
 def normalize_state(value: Any) -> str:
@@ -189,6 +194,66 @@ def list_tasks(limit: int = 50) -> list[dict]:
         if task:
             out.append(task)
     return out
+
+
+def _write_index(kind: str, key: str, task_id: str) -> None:
+    path = store_dir() / kind / key
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(task_id, encoding="utf-8")
+
+
+def _indexed_task(kind: str, key: str) -> dict:
+    if not _INDEX_KEY.fullmatch(key):
+        return {}
+    try:
+        task_id = (store_dir() / kind / key).read_text(encoding="utf-8").strip()
+    except OSError:
+        return {}
+    return meta(load(task_id) or {})
+
+
+def record_workspace(task: dict, root: Path) -> None:
+    """Remember which task ran in the workspace ``root``, for session attribution."""
+    meta(task)["workspaceRoot"] = str(root)
+    _write_index("workspaces", root.name, task["id"])
+
+
+def record_child_session(task: dict, session_id: str | None) -> None:
+    """Remember the child's session id, for session attribution."""
+    if session_id and _INDEX_KEY.fullmatch(session_id):
+        meta(task)["childSessionId"] = session_id
+        _write_index("sessions", session_id, task["id"])
+
+
+def delegated_agent(cwd: str = "", session_ids: tuple[str | None, ...] = ()) -> tuple[str, str | None] | None:
+    """``(agent_id, version)`` of the delegated agent a session belongs to, if any.
+
+    Matches the session (or its parent, for a child's own subagents) by id, or
+    its working directory by the workspace it ran in. Hook deliveries usually
+    know the cwd; ``observal reconcile`` often knows only the session id. The
+    indexes live in the task store, which outlives the workspace, so late
+    deliveries and recovery after a crash stay attributed, and the user's
+    lockfile is never touched.
+    """
+    for session_id in filter(None, session_ids):
+        m = _indexed_task("sessions", session_id)
+        if m.get("agentId") and m.get("childSessionId") == session_id:
+            return str(m["agentId"]), m.get("version")
+    if not cwd:
+        return None
+    from observal_cli.delegation.workspace import ROOT_PREFIX
+
+    parts = PurePath(cwd).parts
+    index = next((i for i, part in enumerate(parts) if part.startswith(ROOT_PREFIX)), None)
+    if index is None:
+        return None
+    m = _indexed_task("workspaces", parts[index])
+    recorded = m.get("workspaceRoot")
+    root = str(PurePath(*parts[: index + 1]))
+    # realpath resolves symlinked temp dirs (macOS /var) even after the workspace is gone.
+    if not recorded or os.path.normcase(os.path.realpath(recorded)) != os.path.normcase(os.path.realpath(root)):
+        return None
+    return (str(m["agentId"]), m.get("version")) if m.get("agentId") else None
 
 
 def count_children(parent_id: str) -> int:

@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Run a registry Agent headless on one task.
@@ -160,7 +161,8 @@ def materialize(task: dict, ws: workspace.Workspace, *, harness: str, adapter) -
     if failed:
         ws.notes.append(f"Skills that could not be installed for the delegated agent: {', '.join(failed)}.")
     m["agentName"] = detail.get("name") or name
-    m["version"] = detail.get("version") or m.get("version")
+    # The version the install resolved, so the child's sessions carry what actually ran.
+    m["version"] = result.get("version") or m.get("version") or detail.get("version")
     return name, mcp_servers_from_snippet(snippet, adapter), str(detail.get("prompt") or "")
 
 
@@ -201,7 +203,9 @@ def run(
         log_dir = tasks.task_dir(task["id"])
         stdout_path = log_dir / "stdout.log"
         stderr_path = log_dir / "stderr.log"
-        m.update({"workspace": "git-worktree" if ws.is_git else "empty", "childSessionId": plan.session_id})
+        m["workspace"] = "git-worktree" if ws.is_git else "empty"
+        tasks.record_workspace(task, ws.path.parent)
+        tasks.record_child_session(task, plan.session_id)
         tasks.set_status(task, tasks.STATE_WORKING, f"Running {m.get('agentName', name)} in {harness}.")
         save(task)
 
@@ -250,8 +254,7 @@ def run(
             return tasks.set_status(task, tasks.STATE_FAILED, f"Timed out after {int(timeout)} seconds.")
 
         result = adapter.parse_headless_output(plan, stdout)
-        if result.session_id:
-            m["childSessionId"] = result.session_id
+        tasks.record_child_session(task, result.session_id)
         patch = workspace.changes(ws)
         artifacts: list[dict] = []
         if result.text:
