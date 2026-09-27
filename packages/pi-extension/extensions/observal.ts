@@ -412,7 +412,12 @@ export default function (pi: ExtensionAPI) {
         access_token: accessToken,
         user_id: data.user_id || undefined,
       };
-      if (data.active_agent?.id) {
+      // A delegated child (ADR 0002) runs as the agent it was delegated to, whatever agent Pi has selected.
+      const delegatedAgent = process.env.OBSERVAL_DELEGATION_TASK_ID ? process.env.OBSERVAL_AGENT_ID : undefined;
+      if (delegatedAgent) {
+        config.agent_id = delegatedAgent;
+        if (process.env.OBSERVAL_AGENT_VERSION) config.agent_version = process.env.OBSERVAL_AGENT_VERSION;
+      } else if (data.active_agent?.id) {
         const binding = resolvePiAgentBinding(String(data.active_agent.id), data.active_agent.name, data.active_agent.version);
         config.agent_id = binding.id;
         if (binding.version) config.agent_version = binding.version;
