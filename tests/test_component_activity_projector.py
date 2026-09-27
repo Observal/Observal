@@ -281,3 +281,49 @@ async def test_two_verified_source_line_hashes_split_only_with_scoped_mapping(mo
     assert result["status"] == "complete" and result["attributed_count"] == 2
     assert [row["layer_hash"] for row in writes[:2]] == [_HASH_A, _HASH_B]
     assert [row["component_id"] for row in writes[:2]] == [_HASH_A, _HASH_B]
+
+
+def test_tool_remainder_containing_double_underscore_is_an_unresolvable_split():
+    # An unregistered server "super-probe__shadow" is indistinguishable from
+    # registry alias "super-probe" with tool "shadow__ping": never attribute.
+    call = SourceInvocation(0, "id:x", "mcp__super-probe__shadow__ping", "x", _TIME, "unknown")
+    result = match_invocations([call], {_HASH_A: [_CANDIDATE]}, {0: _HASH_A})
+    assert result.rows == () and result.collision_count == 1
+    alias_with_separator = _CANDIDATE | {"local_name": "super-probe__shadow"}
+    exact = match_invocations([call], {_HASH_A: [alias_with_separator]}, {0: _HASH_A})
+    assert len(exact.rows) == 1  # the full remainder "ping" is unambiguous for that alias
+
+
+@pytest.mark.asyncio
+async def test_oversized_source_is_declined_before_raw_lines_are_loaded(monkeypatch):
+    queries = []
+
+    async def fake_query(sql, params=None, *, data=None):
+        queries.append(sql)
+        return [{"records": 10, "bytes": projector._MAX_SOURCE_BYTES + 1}]
+
+    monkeypatch.setattr(projector, "_query", fake_query)
+    result = await projector.project_session_activity("p", "u", "claude-code", "s")
+    assert result["status"] == "source_too_large"
+    assert len(queries) == 1 and "sum(length(raw_line))" in queries[0]
+    assert "SELECT line_offset" not in queries[0]
+
+
+@pytest.mark.asyncio
+async def test_current_snapshot_conflict_invalidates_an_earlier_complete_mapping(monkeypatch):
+    responses = {
+        "layer_component_extractions": [{"extraction_generation": 8, "conflict": 0}],
+        "layer_snapshots": [{"conflict": 1}],
+    }
+
+    async def fake_query(sql, params=None, *, data=None):
+        for table, rows in responses.items():
+            if f"FROM {table}" in sql:
+                assert params["param_user_id"] == "u" and params["param_project_id"] == "p"
+                return rows
+        raise AssertionError("candidates must not be loaded for a conflicted snapshot")
+
+    monkeypatch.setattr(projector, "_query", fake_query)
+    assert await projector._mapping("p", "u", _HASH_A, "claude-code") == ("identity_conflict", 8, [])
+    responses["layer_snapshots"] = []
+    assert (await projector._mapping("p", "u", _HASH_A, "claude-code"))[0] == "pending_mapping"

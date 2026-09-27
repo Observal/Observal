@@ -68,7 +68,7 @@ async def _query(sql: str, params: dict | None = None) -> list[dict]:
 
 
 async def _insert(table: str, rows: list[dict]) -> None:
-    assert table in {"session_events", "layer_components", "layer_component_extractions"}
+    assert table in {"session_events", "layer_components", "layer_component_extractions", "layer_snapshots"}
     response = await clickhouse._query(
         f"INSERT INTO {table} FORMAT JSONEachRow", data="\n".join(json.dumps(row) for row in rows)
     )
@@ -104,7 +104,29 @@ def _record(blocks: list[dict]) -> dict:
     return {"type": "assistant", "timestamp": "2026-01-01T00:00:00Z", "message": {"content": blocks}}
 
 
+async def _snapshot(project: str, user: str, *, layer_hash: str = _HASH, conflict: bool = False) -> None:
+    """A mapping is valid only while the current scoped snapshot is non-conflicted."""
+    content = {"pinned_versions": {"schema_version": 2, "agents": [], "standalone": []}}
+    if conflict:
+        content["identity_status"] = "identity_conflict"
+    uploaded = datetime.now(UTC) + (timedelta(seconds=5) if conflict else timedelta())
+    await _insert(
+        "layer_snapshots",
+        [
+            {
+                "project_id": project,
+                "user_id": user,
+                "hash": layer_hash,
+                "harness": "claude-code",
+                "content": json.dumps(content),
+                "uploaded_at": uploaded.strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
+            }
+        ],
+    )
+
+
 async def _mapping(project: str, user: str, aliases: list[tuple[str, str, str]], *, layer_hash: str = _HASH) -> int:
+    await _snapshot(project, user, layer_hash=layer_hash)
     generation = await next_projection_generation()
     if aliases:
         await _insert(
@@ -307,3 +329,21 @@ async def test_late_mapping_retry_zero_call_and_version_bump_are_not_unknown_zer
     assert revised["publication_version"] == 258
     assert len((await _publication(project, user, empty, 258))[1]) == 1
     assert (await projector.project_session_activity(project, user, "pi", empty))["status"] == "unsupported"
+
+
+@pytest.mark.asyncio
+async def test_later_snapshot_conflict_invalidates_earlier_complete_mapping():
+    project, user, session = "phase25-" + uuid.uuid4().hex, "fixture-owner", "conflict-after-complete"
+    await _insert("session_events", [_source(project, user, session, 0, _record([_call(_ALIAS_A, "c")]))])
+    await _mapping(project, user, [(_ALIAS_A, str(uuid.uuid4()), "verified")])
+    first = await projector.project_session_activity(project, user, "claude-code", session)
+    assert first["status"] == "complete" and first["attributed_count"] == 1
+    # A later conflicting upload is stored, but its re-extraction never ran.
+    await _snapshot(project, user, conflict=True)
+    replay = await projector.project_session_activity(project, user, "claude-code", session)
+    assert replay["status"] == "identity_conflict" and replay["generation"] > first["generation"]
+    assert (replay["attributed_count"], replay["candidate_count"], replay["unmatched_count"]) == (0, 1, 1)
+    published, markers = await _publication(project, user, session, projector.publication_version())
+    # The earlier positive row is no longer in the latest complete generation.
+    assert published["generation"] == replay["generation"] and published["rows"] == []
+    assert [marker["status"] for marker in markers] == ["complete", "complete"]

@@ -35,7 +35,8 @@ def match_invocations(
 
     *All* published MCP occurrences participate in collision detection: another
     unverified occurrence of the same alias cannot make one verified occurrence
-    unambiguous. No registry-wide name lookup or prefix-only alias match exists.
+    unambiguous. No registry-wide name lookup or prefix-only alias match exists,
+    and a tool remainder containing ``__`` is an unresolvable split (collision).
     """
     rows: list[dict] = []
     collisions = 0
@@ -55,7 +56,10 @@ def match_invocations(
             and call.tool_name.startswith(f"mcp__{candidate['local_name']}__")
             and len(call.tool_name) > len(f"mcp__{candidate['local_name']}__")
         ]
-        if len(matches) > 1:
+        # ``mcp__<server>__<tool>`` cannot be split uniquely when the remainder
+        # itself contains ``__``: an unregistered server ``a__b`` would look
+        # like registry alias ``a`` with tool ``b__x``. Decline, never guess.
+        if len(matches) > 1 or any("__" in call.tool_name[len(f"mcp__{c['local_name']}__") :] for c in matches):
             collisions += 1
             continue
         if (

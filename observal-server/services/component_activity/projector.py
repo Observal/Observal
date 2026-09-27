@@ -13,6 +13,7 @@ from loguru import logger as optic
 
 import services.clickhouse.client as clickhouse
 from services.layer_components import CURRENT_EXTRACTOR_VERSION
+from services.layer_components.queries import SNAPSHOT_CONFLICT_EXPR
 from services.projection_generation import next_projection_generation
 from services.session_parsers.invocations import extract_invocations
 
@@ -21,6 +22,7 @@ from .matcher import MatchResult, match_invocations
 PROJECTION_VERSION = 1
 MATCHER_VERSION = 1
 _MAX_SOURCE_RECORDS = 50_000
+_MAX_SOURCE_BYTES = 64 * 1024 * 1024
 
 
 def publication_version() -> int:
@@ -49,7 +51,24 @@ def _params(project_id: str, user_id: str, harness: str, session_id: str) -> dic
     }
 
 
-async def _source_rows(params: dict) -> list[dict]:
+async def _source_rows(params: dict) -> list[dict] | None:
+    """Load canonical source rows, or None when they exceed the projection budget.
+
+    A cheap aggregate preflight bounds both record count and stored bytes so an
+    oversized (but valid) session never materializes gigabytes in the worker.
+    """
+    shape = await _query(
+        """SELECT count() AS records, sum(length(raw_line)) AS bytes
+        FROM session_events FINAL
+        WHERE project_id = {project_id:String} AND user_id = {user_id:String}
+          AND harness = {harness:String} AND session_id = {session_id:String}
+          AND is_source_record = 1 FORMAT JSON""",
+        params,
+    )
+    if shape and (
+        int(shape[0].get("records") or 0) > _MAX_SOURCE_RECORDS or int(shape[0].get("bytes") or 0) > _MAX_SOURCE_BYTES
+    ):
+        return None
     return await _query(
         """SELECT line_offset, line_hash, source_sha256, layer_hash, timestamp, raw_line, raw_line_truncated,
                   is_source_record
@@ -102,6 +121,21 @@ async def _mapping(project_id: str, user_id: str, layer_hash: str, harness: str)
         return "pending_mapping", 0, []
     generation = int(published[0]["extraction_generation"])
     if int(published[0]["conflict"]):
+        return "identity_conflict", generation, []
+    # The current snapshot identity is part of mapping validity: a later
+    # conflicting upload must invalidate an earlier complete extraction even
+    # when its re-extraction failed.
+    snapshot = await _query(
+        """SELECT toUInt8("""
+        + SNAPSHOT_CONFLICT_EXPR
+        + """) AS conflict FROM layer_snapshots FINAL
+        WHERE project_id = {project_id:String} AND user_id = {user_id:String}
+          AND hash = {layer_hash:String} LIMIT 1 FORMAT JSON""",
+        params,
+    )
+    if not snapshot:
+        return "pending_mapping", 0, []
+    if int(snapshot[0]["conflict"]):
         return "identity_conflict", generation, []
     params["param_generation"] = generation
     candidates = await _query(
@@ -198,6 +232,8 @@ async def _inputs_unchanged(
     harness: str,
 ) -> bool:
     current_rows = await _source_rows(params)
+    if current_rows is None:
+        return False
     if _source_revision(current_rows) != revision or _source_facts(current_rows) != _source_facts(source_rows):
         return False
     for layer_hash, pinned_generation in generations.items():
@@ -229,6 +265,28 @@ async def _marker(params: dict, version: int, generation: int, status: str, revi
     )
 
 
+async def _publish_unattributable(
+    params: dict, version: int, revision: str, unattributed: dict, layer_hash: str
+) -> dict:
+    counts = {"attributed_count": 0, "collision_count": 0, **unattributed}
+    generation = await next_projection_generation()
+    try:
+        await _marker(params, version, generation, "complete", revision, counts)
+    except Exception:
+        try:
+            await _marker(params, version, generation, "failed", revision, counts)
+        except Exception as marker_error:
+            optic.warning("failed to publish activity failure: {}", type(marker_error).__name__)
+        raise
+    return {
+        "status": "identity_conflict",
+        "generation": generation,
+        "publication_version": version,
+        "layer_hash": layer_hash,
+        **counts,
+    }
+
+
 async def project_session_activity(
     project_id: str, user_id: str, harness: str, session_id: str, *, force: bool = False
 ) -> dict:
@@ -251,6 +309,9 @@ async def project_session_activity(
     except KeyError:
         return {"status": "unsupported", "publication_version": version}
     source = await _source_rows(params)
+    if source is None:
+        # Explicitly non-projectable coverage, not pending: retrying cannot help.
+        return {"status": "source_too_large", "publication_version": version}
     revision = _source_revision(source)
     if revision is None:
         return {"status": "pending_source", "publication_version": version}
@@ -276,6 +337,11 @@ async def project_session_activity(
     generations: dict[str, int] = {}
     for layer_hash in sorted(set(hashes)):
         status, generation, candidates = await _mapping(project_id, user_id, layer_hash, harness)
+        if status == "identity_conflict":
+            # Supersede any earlier positive publication: a conflicted identity
+            # cannot keep showing attributed calls. Every candidate stays an
+            # explicit unmatched count ("attribution not possible"), never zero use.
+            return await _publish_unattributable(params, version, revision, unattributed, layer_hash)
         if status != "complete":
             return {
                 "status": status,

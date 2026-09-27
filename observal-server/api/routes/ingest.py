@@ -254,7 +254,9 @@ async def ingest_session(
         try:
             from jobs.activity import enqueue_activity_projection
 
-            await enqueue_activity_projection(project_id, user_id, req.harness, req.session_id)
+            await enqueue_activity_projection(
+                project_id, user_id, req.harness, req.session_id, source_digest=integrity.server_hash or ""
+            )
         except Exception as error:
             optic.warning("session activity enqueue failed: {}", type(error).__name__)
 

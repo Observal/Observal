@@ -21,8 +21,17 @@ async def test_final_enqueue_is_scoped_and_redis_failure_cannot_fail_ingest(monk
     pool = SimpleNamespace(enqueue_job=AsyncMock(return_value=object()))
     get_pool = AsyncMock(return_value=pool)
     monkeypatch.setattr("services.redis._get_arq_pool", get_pool)
-    assert await activity.enqueue_activity_projection("p", "u", "claude-code", "s")
-    pool.enqueue_job.assert_awaited_once_with("project_component_activity", "p", "u", "claude-code", "s")
+    assert await activity.enqueue_activity_projection("p", "u", "claude-code", "s", source_digest="rev-1")
+    chain = activity._chain_id("p", "u", "claude-code", "s", "rev-1")
+    pool.enqueue_job.assert_awaited_once_with(
+        "project_component_activity", "p", "u", "claude-code", "s", chain=chain, _job_id=f"activity:{chain}:0"
+    )
+    # Same scoped source -> same job id (arq coalesces); a repaired source -> a new chain.
+    await activity.enqueue_activity_projection("p", "u", "claude-code", "s", source_digest="rev-1")
+    assert pool.enqueue_job.await_args_list[1].kwargs["_job_id"] == f"activity:{chain}:0"
+    await activity.enqueue_activity_projection("p", "u", "claude-code", "s", source_digest="rev-2")
+    assert pool.enqueue_job.await_args_list[2].kwargs["_job_id"] != f"activity:{chain}:0"
+    assert activity._chain_id("p", "other", "claude-code", "s", "rev-1") != chain
     get_pool.side_effect = ConnectionError("queue unreachable")
     assert not await activity.enqueue_activity_projection("p", "u", "claude-code", "s")
 
@@ -32,14 +41,24 @@ async def test_pending_mapping_and_source_retry_are_bounded_not_complete(monkeyp
     projector = AsyncMock(return_value={"status": "pending_mapping"})
     redis = SimpleNamespace(enqueue_job=AsyncMock(return_value=object()))
     monkeypatch.setattr(activity, "project_session_activity", projector)
-    pending = await activity.project_component_activity({"redis": redis}, "p", "u", "claude-code", "s")
+    pending = await activity.project_component_activity({"redis": redis}, "p", "u", "claude-code", "s", chain="chain-a")
     assert pending == {"status": "pending_mapping", "retry_scheduled": True}
     redis.enqueue_job.assert_awaited_once_with(
-        "project_component_activity", "p", "u", "claude-code", "s", retry_count=1, _defer_by=timedelta(seconds=30)
+        "project_component_activity",
+        "p",
+        "u",
+        "claude-code",
+        "s",
+        retry_count=1,
+        chain="chain-a",
+        _job_id="activity:chain-a:1",
+        _defer_by=timedelta(seconds=30),
     )
     projector.return_value = {"status": "pending_source"}
     await activity.project_component_activity({"redis": redis}, "p", "u", "claude-code", "s", retry_count=2)
     assert redis.enqueue_job.await_args.kwargs["retry_count"] == 3
+    # A backfill-started chain still gets deterministic per-retry identities.
+    assert redis.enqueue_job.await_args.kwargs["_job_id"].endswith(":3")
     assert redis.enqueue_job.await_args.kwargs["_defer_by"] == timedelta(seconds=120)
     before = redis.enqueue_job.await_count
     result = await activity.project_component_activity(
@@ -74,7 +93,9 @@ async def test_source_page_filters_scoped_canonical_rows_with_bounded_cursor(mon
     rows = await activity._source_session_page(["project", "owner", "claude-code", "earlier"], 4, "project")
     assert rows == [_session("project", "owner", "claude-code", "last")]
     sql, params = query.await_args.args
-    assert "session_events FINAL" in sql and "is_source_record = 1" in sql
+    # DISTINCT sorting-key identities are exact without the costly FINAL merge.
+    assert "session_events WHERE" in sql and "FINAL" not in sql and "is_source_record = 1" in sql
+    assert "ingested_at" not in sql  # no recency window requested
     assert "raw_line" not in sql and "LIMIT {limit:UInt16}" in sql
     assert "(project_id, user_id, harness, session_id) >" in sql
     assert "{project_id:String}" in sql and "'owner'" not in sql
@@ -112,17 +133,23 @@ async def test_backfill_pages_project_and_session_keys_rechecks_completed_and_re
         "skipped": 1,
         "pending": 0,
         "unsupported": 1,
+        "unprojectable": 0,
         "failed": 0,
         "next_cursor": ["project", "other", "pi", "a"],
     }
     redis.enqueue_job.assert_awaited_once_with(
-        "backfill_component_activity", project_id="project", after=first["next_cursor"], batch_size=2, max_batches=1
+        "backfill_component_activity",
+        project_id="project",
+        after=first["next_cursor"],
+        batch_size=2,
+        max_batches=1,
+        since_days=activity._DEFAULT_REPAIR_DAYS,
     )
     second = await activity.backfill_component_activity(
         {"redis": redis}, project_id="project", after=first["next_cursor"], batch_size=2
     )
     assert second["next_cursor"] is None and second["complete"] == 1
-    assert page.await_args_list[1].args == (first["next_cursor"], 2, "project")
+    assert page.await_args_list[1].args == (first["next_cursor"], 2, "project", activity._DEFAULT_REPAIR_DAYS)
     assert redis.enqueue_job.await_count == 1
     assert projector.await_args_list[2].args[1:] == ("project", "other", "claude-code", "b")
 
@@ -189,7 +216,7 @@ async def test_final_ingest_enqueues_only_integrity_checked_source_and_never_fai
     if should_enqueue:
         from observal_shared.migration.constants import DEFAULT_PROJECT_ID
 
-        enqueue.assert_awaited_once_with(DEFAULT_PROJECT_ID, "owner", "claude-code", "s")
+        enqueue.assert_awaited_once_with(DEFAULT_PROJECT_ID, "owner", "claude-code", "s", source_digest="digest")
 
 
 def test_activity_jobs_are_registered_and_backfill_has_daily_safety_net():
@@ -198,3 +225,23 @@ def test_activity_jobs_are_registered_and_backfill_has_daily_safety_net():
     assert activity.project_component_activity in WorkerSettings.functions
     assert activity.backfill_component_activity in WorkerSettings.functions
     assert any(job.coroutine is activity.backfill_component_activity for job in WorkerSettings.cron_jobs)
+
+
+@pytest.mark.asyncio
+async def test_recency_window_and_unprojectable_statuses(monkeypatch):
+    response = SimpleNamespace(raise_for_status=lambda: None, json=lambda: {"data": []})
+    query = AsyncMock(return_value=response)
+    monkeypatch.setattr(activity.clickhouse, "_query", query)
+    await activity._source_session_page(None, 4, None, 7)
+    sql, params = query.await_args.args
+    assert "ingested_at >= now64(3) - toIntervalDay({since_days:UInt16})" in sql and params["param_since_days"] == 7
+
+    page = AsyncMock(return_value=[_session("p", "u", "claude-code", str(i)) for i in range(3)])
+    statuses = [{"status": s} for s in ("source_too_large", "identity_conflict", "pending_mapping")]
+    monkeypatch.setattr(activity, "_source_session_page", page)
+    monkeypatch.setattr(activity, "project_component_activity", AsyncMock(side_effect=statuses))
+    result = await activity.backfill_component_activity({}, batch_size=4, since_days=None)
+    assert (result["unprojectable"], result["pending"]) == (2, 1)
+    assert page.await_args.args[3] is None
+    with pytest.raises(ValueError):
+        await activity.backfill_component_activity({}, since_days=0)
