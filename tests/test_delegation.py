@@ -297,7 +297,8 @@ def test_local_run_with_no_answer_and_no_changes_fails_even_on_exit_zero(tmp_pat
 
 def test_command_line_guard_refuses_what_the_os_would_mangle(monkeypatch):
     too_long = "x" * (local.MAX_ARG_BYTES + 1)
-    with pytest.raises(local.LocalRunError, match="too long"):
+    # The advice names the harnesses whose adapters pass the task on stdin.
+    with pytest.raises(local.LocalRunError, match=r"too long.*\(Claude Code or Pi\)"):
         local.check_command_line(["codex", too_long], "/usr/bin/codex", "codex", prompt_in_argv=True)
     monkeypatch.setattr(local.sys, "platform", "win32")
     with pytest.raises(local.LocalRunError, match="batch file"):
@@ -464,6 +465,18 @@ def test_a_child_that_cannot_be_verified_keeps_its_workspace_until_it_exits(tmp_
     child.wait()
     service._reap(task)
     assert not ws.root.exists()
+
+
+def test_the_wait_budget_counts_from_when_the_call_began(monkeypatch):
+    task = tasks.save(tasks.new_task(message="x", observal={"target": AGENT_URN}))
+    monkeypatch.setattr(service, "_worker_pid", lambda _id: None)
+
+    def no_sleep(_s):
+        raise AssertionError("waited past the caller's budget")
+
+    monkeypatch.setattr(service.time, "sleep", no_sleep)
+    # A lookup and launch that took 20 s used up a 10 s budget.
+    assert service.wait(task["id"], 10, since=service.time.monotonic() - 20)["id"] == task["id"]
 
 
 def test_a_worker_that_cannot_start_fails_the_task(monkeypatch):
@@ -762,6 +775,7 @@ def test_claude_code_headless_command_and_output(tmp_path):
     plan = adapter.headless_command(_request(tmp_path))
     assert plan.argv[:4] == ["claude", "-p", "--agent", "security-reviewer"]
     assert plan.stdin == "-- review src/auth"  # never on argv, so it cannot be read as a flag
+    assert adapter.headless_task_on_stdin
     assert "--strict-mcp-config" in plan.argv and "mcp__github" in plan.argv
     assert json.loads((tmp_path / "mcp.json").read_text()) == {"mcpServers": {"github": {"command": "gh-mcp"}}}
     result = adapter.parse_headless_output(
@@ -790,6 +804,7 @@ def test_other_headless_commands(tmp_path, monkeypatch, harness, binary, inlined
     _pi_trust(monkeypatch, tmp_path / "home", {str(tmp_path): True})
     plan = adapter.headless_command(_request(tmp_path, source_dir=tmp_path))
     assert plan.argv[0] == binary == adapter.headless_binary
+    assert (plan.stdin is not None) is adapter.headless_task_on_stdin
     joined = "\n".join([*plan.argv, plan.stdin or ""])
     assert ("<agent-instructions>" in joined) is inlined
     assert "-- review src/auth" in joined
@@ -856,3 +871,15 @@ def test_rewrite_observal_interpreter_handles_entries_and_argv():
     assert out["mcp_config"]["observal-agents"]["command"] == sys.executable
     assert out["mcp_setup_commands"][0][5] == sys.executable
     assert out["other"]["command"] == "python3"
+
+
+def test_delegate_list_shows_ids_that_status_accepts(monkeypatch):
+    from typer.testing import CliRunner
+
+    from observal_cli.main import app
+
+    task = tasks.save(tasks.new_task(message="x", observal={"target": AGENT_URN, "targetName": "writer"}))
+    monkeypatch.setenv("COLUMNS", "200")
+    out = CliRunner().invoke(app, ["delegate", "list"])
+    assert out.exit_code == 0, out.output
+    assert task["id"] in out.output

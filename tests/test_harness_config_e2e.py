@@ -350,6 +350,8 @@ class TestGenerateOpenCodeConfig:
         cfg = generate_agent_config(agent, "opencode")
         assert "mcp" in cfg["mcp_config"]["content"]
         assert "my-server" in cfg["mcp_config"]["content"]["mcp"]
+        # OpenCode rewrites a project config without "$schema" whenever it starts.
+        assert cfg["mcp_config"]["content"]["$schema"] == "https://opencode.ai/config.json"
 
     def test_opencode_entries_have_type_local(self):
         ext = [{"name": "my-server", "command": "npx", "args": ["-y", "my-server"]}]

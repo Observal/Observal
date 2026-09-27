@@ -37,6 +37,7 @@ class PiAdapter(BaseAdapter):
     home_markers = (".pi",)
     managed_agent_profiles = ("user:AGENTS.md",)
     headless_binary = "pi"
+    headless_task_on_stdin = True
     managed_skills = ("user:skills/{name}/SKILL.md",)
 
     @property

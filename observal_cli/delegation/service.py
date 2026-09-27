@@ -373,12 +373,12 @@ def start(
         optic.warning("capability lock not updated for delegation task={}: {}", task["id"], exc)
     _reap_abandoned()
     _launch(task)
-    # The caller's budget covers the lookup and launch too (MCP clients time the whole tool call).
-    return wait(task["id"], max(0.0, wait_seconds - (time.monotonic() - started)))
+    return wait(task["id"], wait_seconds, since=started)
 
 
 def reply(task_id: str, message: str, *, wait_seconds: float = 0) -> dict:
     """Answer a remote task that asked for more input, and resume it."""
+    started = time.monotonic()
     task = get(task_id)
     state = (task.get("status") or {}).get("state")
     if tasks.meta(task).get("kind") != "a2a" or state not in tasks.INTERRUPTED_STATES:
@@ -390,7 +390,7 @@ def reply(task_id: str, message: str, *, wait_seconds: float = 0) -> dict:
     task.setdefault("history", []).append(tasks.text_message("ROLE_USER", message, task_id=task_id))
     tasks.set_status(task, tasks.STATE_SUBMITTED)
     _launch(task)
-    return wait(task_id, wait_seconds)
+    return wait(task_id, wait_seconds, since=started)
 
 
 def _ran_in(pid: int, root: str) -> bool:
@@ -480,8 +480,14 @@ def get(task_id: str) -> dict:
     return task
 
 
-def wait(task_id: str, seconds: float) -> dict:
-    deadline = time.monotonic() + max(0.0, min(float(seconds or 0), MAX_WAIT_SECONDS))
+def wait(task_id: str, seconds: float, *, since: float | None = None) -> dict:
+    """Wait for the task to settle, at most ``seconds`` counted from ``since`` (default: now).
+
+    Starting the clock when the call began keeps lookup and launch inside the caller's budget:
+    MCP clients time the whole tool call.
+    """
+    start = time.monotonic() if since is None else since
+    deadline = start + max(0.0, min(float(seconds or 0), MAX_WAIT_SECONDS))
     task = get(task_id)
     while not tasks.is_final(task) and time.monotonic() < deadline:
         time.sleep(WAIT_POLL_SECONDS)

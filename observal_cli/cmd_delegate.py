@@ -192,15 +192,13 @@ def delegate_list(
         rprint("[dim]No delegated tasks yet.[/dim]")
         return
     table = Table(title="Delegated tasks", padding=(0, 1))
-    table.add_column("Task", style="dim")
+    table.add_column("Task", style="dim", no_wrap=True)  # the full id: status, reply and cancel take it
     table.add_column("Agent", style="bold")
     table.add_column("State")
     table.add_column("Started")
     for task in items:
         m = tasks.meta(task)
-        table.add_row(
-            task["id"][:8], esc(m.get("targetName") or m.get("target")), _state(task), esc(m.get("createdAt"))
-        )
+        table.add_row(task["id"], esc(m.get("targetName") or m.get("target")), _state(task), esc(m.get("createdAt")))
     console.print(table)
 
 

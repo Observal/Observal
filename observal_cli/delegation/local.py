@@ -109,7 +109,15 @@ def _terminate(proc: subprocess.Popen) -> None:
 # at 32,767 characters. Harnesses that read the task from stdin avoid both.
 MAX_ARG_BYTES = 120_000
 MAX_WINDOWS_COMMAND_CHARS = 30_000
-STDIN_HARNESSES = "Claude Code or Pi"
+
+
+def _stdin_harnesses() -> str:
+    from observal_cli.harness import ensure_loaded, get_all_adapters
+    from observal_shared.harness_registry import HARNESS_REGISTRY
+
+    ensure_loaded()
+    names = [HARNESS_REGISTRY[n]["display_name"] for n, a in get_all_adapters().items() if a.headless_task_on_stdin]
+    return " or ".join(names)
 
 
 def check_command_line(argv: list[str], binary: str, harness: str, *, prompt_in_argv: bool) -> None:
@@ -118,7 +126,7 @@ def check_command_line(argv: list[str], binary: str, harness: str, *, prompt_in_
         if prompt_in_argv and Path(binary).suffix.lower() in {".cmd", ".bat"}:
             raise LocalRunError(
                 f"{harness} is installed as a batch file ({Path(binary).name}), so on Windows cmd.exe would parse "
-                f"the task text. Delegate to a harness that reads the task from stdin ({STDIN_HARNESSES})."
+                f"the task text. Delegate to a harness that reads the task from stdin ({_stdin_harnesses()})."
             )
         too_long = sum(len(arg) + 3 for arg in argv) > MAX_WINDOWS_COMMAND_CHARS
     else:
@@ -126,7 +134,7 @@ def check_command_line(argv: list[str], binary: str, harness: str, *, prompt_in_
     if too_long:
         raise LocalRunError(
             f"The task and the agent's instructions are too long for the {harness} command line. "
-            f"Shorten the task or delegate to a harness that reads it from stdin ({STDIN_HARNESSES})."
+            f"Shorten the task or delegate to a harness that reads it from stdin ({_stdin_harnesses()})."
         )
 
 

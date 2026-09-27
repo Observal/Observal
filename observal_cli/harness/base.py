@@ -97,6 +97,8 @@ class BaseAdapter:
     home_markers: tuple[str, ...] = ()
     # Executable that headless_command launches; delegation checks it is on PATH.
     headless_binary: str | None = None
+    # headless_command passes the task on stdin, so its length and cmd.exe quoting never matter.
+    headless_task_on_stdin = False
     managed_agent_profiles: tuple[str, ...] = ()
     managed_skills: tuple[str, ...] = ()
     managed_mcp_files: tuple[str, ...] = ()
