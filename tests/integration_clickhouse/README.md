@@ -1,0 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 Naraen Rammoorthi -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
+# Phase 0 ClickHouse publication proofs
+
+Run `make test-ch` against the existing **local, already-migrated sample** database (`http://127.0.0.1:8123/observal` by default). Set `OBSERVAL_CH_TEST_URL` to another *local* `.../observal` endpoint and, if needed, `OBSERVAL_CH_TEST_USER` / `OBSERVAL_CH_TEST_PASSWORD`; the suite rejects remote hosts or another database name. Default `make test` excludes this directory, and a direct pytest invocation without `OBSERVAL_CH_TEST_URL` skips it. The suite checks that all migrations currently on disk were already applied and that baseline tables plus sample source rows exist; it **does not** run migrations. It creates and writes only the reserved `phase0_ci_` tables from `tests/fixtures/component_insights/clickhouse/projection_tables.sql`. Test runs use unique generated project keys. There is no `DROP`, `TRUNCATE`, `ALTER`, or write to pre-existing application tables, and test tables/rows are intentionally left for owner-approved cleanup later. Passing here proves publication queries against a pinned test-only DDL prototype, **not** that future production migrations have been applied or match that prototype; Phases 1–2 must compare and re-test their shipped schemas.
