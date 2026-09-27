@@ -1,7 +1,8 @@
 -- SPDX-FileCopyrightText: 2026 Naraen Rammoorthi
 -- SPDX-License-Identifier: Apache-2.0
--- Phase 0 pinned prototype. {prefix} is replaced only with the hardcoded phase0_ci_ test prefix.
--- Phase 1/2 migration authors must compare production DDL with this contract and re-run these proofs.
+-- Phase 0 pinned logical DDL contract. {prefix} is replaced only with phase0_ci_ in local tests.
+-- Phase 1/2 migration authors must compare production 006_/007_ DDL with this contract
+-- and re-run these proofs. Test-only execution does not validate a migration runner.
 CREATE TABLE IF NOT EXISTS {prefix}layer_components (
     project_id String, user_id String, layer_hash String, hash_schema_version UInt8,
     extractor_version UInt16, extraction_generation UInt64, occurrence_key String,

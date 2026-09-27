@@ -249,6 +249,34 @@ def test_current_mcp_drift_flag_does_not_verify_edited_or_removed_entry():
         assert layer._compute_drift(pinned, {"claude-code": files}) == {"is_canonical": True, "drifted_files": []}
 
 
+def test_shared_mcp_settings_edit_and_missing_entry_still_report_canonical(monkeypatch, tmp_path):
+    # This is a constructed shared-settings file, not a captured harness config.
+    settings = tmp_path / "settings.local.json"
+    settings.write_text(json.dumps({"mcpServers": {"fixture": {"command": "inert-v1"}}}))
+    monkeypatch.setattr(layer, "_discover_files", lambda *_args: [(settings, "project:.claude/settings.local.json")])
+    monkeypatch.setattr(layer, "_load_hash_cache", lambda: {})
+    monkeypatch.setattr(layer, "_save_hash_cache", lambda _cache: None)
+    monkeypatch.setattr(layer, "_get_observal_managed_files", lambda *_args: set())
+    initial = layer.build_layer_manifest("claude-code", str(tmp_path))
+    settings.write_text(json.dumps({"mcpServers": {"fixture": {"command": "inert-edited"}}}))
+    edited = layer.build_layer_manifest("claude-code", str(tmp_path))
+    assert initial[0]["hash"] != edited[0]["hash"]  # A tracked file edit changes the manifest.
+    pinned = {
+        "harnesses": {
+            "claude-code": {
+                "agents": [{"components": [{"name": "fixture", "type": "mcp", "integrity": initial[0]["hash"]}]}]
+            }
+        }
+    }
+    assert layer._compute_drift(pinned, {"claude-code": edited}) == {"is_canonical": True, "drifted_files": []}
+    assert layer._compute_drift(pinned, {"claude-code": []}) == {"is_canonical": True, "drifted_files": []}
+    assert all(
+        ".claude.json" not in patterns
+        for configs in layer.HARNESS_LAYER_CONFIGS["claude-code"].values()
+        for _base, patterns in configs
+    )
+
+
 def test_cached_first_session_layer_hash_hides_mid_session_change(monkeypatch):
     values = iter(("old-file-hash", "new-file-hash"))
     calls = []
@@ -270,6 +298,30 @@ def test_cached_first_session_layer_hash_hides_mid_session_change(monkeypatch):
         session_base._evict_layer_hash_cache(sid)
 
 
+def test_session_cache_hides_real_file_change_until_eviction(monkeypatch, tmp_path):
+    config = tmp_path / "fixture-config.json"
+    config.write_text("initial")
+    monkeypatch.setattr(
+        layer,
+        "build_layer_manifest",
+        lambda *_args, **_kwargs: [
+            {"path": "project:fixture-config.json", "hash": hashlib.sha256(config.read_bytes()).hexdigest()}
+        ],
+    )
+    monkeypatch.setattr(layer, "_detect_active_harnesses", lambda: ["claude-code"])
+    sid = "fixture-in-session-change"
+    session_base._evict_layer_hash_cache(sid)
+    try:
+        before = session_base._get_cached_layer_hash(sid, str(tmp_path))
+        config.write_text("modified-mid-session")
+        assert layer.compute_layer_hash(project_dir=str(tmp_path)) != before
+        assert session_base._get_cached_layer_hash(sid, str(tmp_path)) == before
+        session_base._evict_layer_hash_cache(sid)
+        assert session_base._get_cached_layer_hash(sid, str(tmp_path)) != before
+    finally:
+        session_base._evict_layer_hash_cache(sid)
+
+
 def test_current_python_file_hash_collides_for_distinct_registry_pins(monkeypatch):
     file = {"path": "project:fixture.txt", "hash": "sha256-" + "a" * 64, "content": "fixture"}
     monkeypatch.setattr(layer, "build_layer_manifest", lambda *a, **kw: [file])
@@ -278,7 +330,9 @@ def test_current_python_file_hash_collides_for_distinct_registry_pins(monkeypatc
     baseline = json.loads((FIXTURE / "lockfile.json").read_text())["registries"]["https://fixture.invalid"]
     for name, version, listing_id in (
         ("one", "1.0.0", "11111111-1111-4111-8111-111111111111"),
-        ("two", "2.0.0", "99999999-9999-4999-8999-999999999999"),
+        ("one", "1.0.0", "99999999-9999-4999-8999-999999999999"),  # ID alone
+        ("one", "2.0.0", "11111111-1111-4111-8111-111111111111"),  # version alone
+        ("two", "1.0.0", "11111111-1111-4111-8111-111111111111"),  # alias alone
     ):
         registry = json.loads(json.dumps(baseline))
         registry["harnesses"]["claude-code"]["agents"][0]["components"][0].update(
@@ -287,7 +341,11 @@ def test_current_python_file_hash_collides_for_distinct_registry_pins(monkeypatc
         monkeypatch.setattr(lockfile, "read_registry_lockfile", lambda r=registry: ({}, r))
         monkeypatch.setattr(lockfile, "compute_lockfile_hash", lambda: "fixture-hash")
         variants.append((layer.compute_layer_hash("claude-code"), layer.build_upload_payload("claude-code")))
-    assert variants[0][0] == variants[1][0] == variants[0][1]["hash"] == variants[1][1]["hash"]
-    assert variants[0][1]["pinned_versions"] != variants[1][1]["pinned_versions"]
+    assert {hash_value for hash_value, _payload in variants} == {variants[0][0]}
+    assert {payload["hash"] for _hash, payload in variants} == {variants[0][0]}
+    assert variants[0][1]["pinned_versions"] == variants[1][1]["pinned_versions"]  # ID dropped.
+    assert variants[0][1]["pinned_versions"] != variants[2][1]["pinned_versions"]  # Version survives.
+    assert variants[0][1]["pinned_versions"] == variants[3][1]["pinned_versions"]  # Alias dropped.
     assert all("id" not in p["pinned_versions"]["agents"][0]["components"][0] for _, p in variants)
     assert all("local_name" not in p["pinned_versions"]["agents"][0]["components"][0] for _, p in variants)
+    # Phase 1: flip these current-behaviour assertions for v2 hashes; do not xfail them today.

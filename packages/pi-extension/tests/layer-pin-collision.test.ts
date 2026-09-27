@@ -37,7 +37,7 @@ assert(address && typeof address === "object");
 const url = `http://127.0.0.1:${address.port}`;
 fs.writeFileSync(path.join(observalDir, "config.json"), JSON.stringify({ server_url: url, access_token: "fixture-token" }));
 const lockPath = path.join(observalDir, "lockfile.json");
-const agent = { id: "00000000-0000-4000-8000-000000000001", name: "fixture", version: "1.0.0", components: [
+const agent = { id: "00000000-0000-4000-8000-000000000001", name: "fixture", version: "1.0.0", fixture_extra: "spread-unchanged", components: [
   { type: "mcp", name: "probe", id: "11111111-1111-4111-8111-111111111111", version: "1.0.0", local_name: "first" },
 ] };
 function writePins() {
@@ -57,23 +57,37 @@ async function snapshotNumber(count: number) {
   return snapshots[count - 1];
 }
 const first = await snapshotNumber(1);
-agent.components[0].id = "22222222-2222-4222-8222-222222222222";
-agent.components[0].version = "2.0.0";
-agent.components[0].local_name = "second";
-writePins();
-// Current file-only hash prevents a second upload; wait for and remove only our test cache.
+// Current file-only hash prevents uploads for pin changes; remove only our test cache
+// to inspect each otherwise-suppressed payload separately.
 const cache = path.join(observalDir, "layer_snapshot.json");
-const cacheDeadline = Date.now() + 3000;
-while (!fs.existsSync(cache) && Date.now() < cacheDeadline) await new Promise((resolve) => setTimeout(resolve, 10));
-assert(fs.existsSync(cache));
-fs.unlinkSync(cache);
-const second = await snapshotNumber(2);
-assert.equal(first.hash, second.hash);
+async function forceNextSnapshot(count: number) {
+  writePins();
+  const deadline = Date.now() + 3000;
+  while (!fs.existsSync(cache) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert(fs.existsSync(cache));
+  fs.unlinkSync(cache);
+  return snapshotNumber(count);
+}
+agent.components[0].id = "22222222-2222-4222-8222-222222222222";
+const idOnly = await forceNextSnapshot(2);
+agent.components[0].id = "11111111-1111-4111-8111-111111111111";
+agent.components[0].version = "2.0.0";
+const versionOnly = await forceNextSnapshot(3);
+agent.components[0].version = "1.0.0";
+agent.components[0].local_name = "second";
+const aliasOnly = await forceNextSnapshot(4);
+for (const changed of [idOnly, versionOnly, aliasOnly]) {
+  assert.equal(first.hash, changed.hash);
+  assert.deepEqual(first.harnesses, changed.harnesses);
+  assert.notDeepEqual(first.pinned_versions, changed.pinned_versions);
+}
 assert.equal(first.hash.length, 16);
-assert.deepEqual(first.harnesses, second.harnesses);
-assert.notDeepEqual(first.pinned_versions, second.pinned_versions);
 assert.equal(first.pinned_versions.agents[0].components[0].id, "11111111-1111-4111-8111-111111111111");
-assert.equal(second.pinned_versions.agents[0].components[0].local_name, "second");
+assert.equal(idOnly.pinned_versions.agents[0].components[0].id, "22222222-2222-4222-8222-222222222222");
+assert.equal(versionOnly.pinned_versions.agents[0].components[0].version, "2.0.0");
+assert.equal(aliasOnly.pinned_versions.agents[0].components[0].local_name, "second");
+assert.equal(aliasOnly.pinned_versions.agents[0].fixture_extra, "spread-unchanged"); // Pi spreads whole entries; Python projects fields.
+// Phase 1: flip collision assertions for v2 hashes and replace the spread with the shared pinned-versions schema.
 server.close();
 fs.rmSync(home, { recursive: true, force: true });
 console.log("Pi layer pin collision current behaviour verified");

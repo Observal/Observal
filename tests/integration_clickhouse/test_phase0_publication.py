@@ -18,6 +18,7 @@ import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier, Event
 from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
@@ -133,13 +134,33 @@ def _published_layer(project: str, user: str, layer_hash: str, version: int = 1)
     return _rows(sql)
 
 
+def _published_membership(project: str, user: str, layer_hash: str) -> list[dict]:
+    # A synthetic cohort row keeps the owner's existing session_stats_agg untouched.
+    key = f"c.project_id = '{project}' AND c.user_id = '{user}' AND c.layer_hash = '{layer_hash}'"
+    marker_key = f"project_id = '{project}' AND user_id = '{user}' AND layer_hash = '{layer_hash}'"
+    return _rows(f"""SELECT s.session_id FROM
+      (SELECT '{project}' AS project_id, '{user}' AS user_id, '{layer_hash}' AS layer_hash, 'fixture-session' AS session_id) AS s
+      INNER JOIN {PREFIX}layer_components AS c FINAL
+        ON c.project_id = s.project_id AND c.user_id = s.user_id AND c.layer_hash = s.layer_hash
+      WHERE {key} AND c.component_id = 'fixture-component' AND c.extractor_version = 1
+        AND c.extraction_generation = (
+          SELECT max(extraction_generation) FROM (
+            SELECT extraction_generation FROM {PREFIX}layer_component_extractions
+            WHERE {marker_key} AND extractor_version = 1 GROUP BY extraction_generation
+            HAVING countIf(status = 'complete') > 0 AND countIf(status = 'failed') = 0
+          )
+        )""")
+
+
 def test_layer_published_generations_failed_retry_late_markers_and_zero_rows():
     project, owner, other = "phase0-" + uuid.uuid4().hex, "owner", "other"
     layer_hash = "v2-fixture"
     _insert(PREFIX + "layer_components", [_layer(project, owner, layer_hash, 1)])
     assert _published_layer(project, owner, layer_hash) == []  # Unpublished rows are invisible.
+    assert _published_membership(project, owner, layer_hash) == []  # Even with a cohort row and FINAL.
     _insert(PREFIX + "layer_component_extractions", [_marker(project, owner, layer_hash, 1, "complete")])
     assert len(_published_layer(project, owner, layer_hash)) == 1
+    assert [r["session_id"] for r in _published_membership(project, owner, layer_hash)] == ["fixture-session"]
     _insert(PREFIX + "layer_component_extractions", [_marker(project, owner, layer_hash, 2, "failed")])
     assert len(_published_layer(project, owner, layer_hash)) == 1  # Failure does not erase success.
     _insert(PREFIX + "layer_components", [_layer(project, owner, layer_hash, 3, "new")])
@@ -154,6 +175,7 @@ def test_layer_published_generations_failed_retry_late_markers_and_zero_rows():
     assert _published_layer(project, other, layer_hash) == []  # Same hash, different user.
     _insert(PREFIX + "layer_component_extractions", [_marker(project, owner, layer_hash, 4, "complete")])
     assert _published_layer(project, owner, layer_hash) == []  # Published, complete zero-row layer.
+    assert _published_membership(project, owner, layer_hash) == []
     assert (
         _rows(
             f"SELECT count() AS n FROM {PREFIX}layer_component_extractions WHERE project_id = '{project}' AND extraction_generation = 4"
@@ -225,23 +247,38 @@ def test_activity_redelivery_replay_zero_and_failure_do_not_leave_stale_positive
     # Matcher/source-revision rebuild removes a former positive, without mutating old rows.
     _insert(PREFIX + "component_activity_publications", [_activity_marker(project, owner, session, 3, "complete")])
     assert _published_activity(project, owner, session) == []
+    assert (
+        _rows(
+            f"SELECT count() AS n FROM {PREFIX}component_activity_publications WHERE project_id = '{project}' AND projection_generation = 3"
+        )[0]["n"]
+        == 1
+    )  # Completed zero-call session, not unprocessed.
     assert _published_activity(project, "other-user", session) == []
     assert _published_activity(project, owner, session, version=2) == []
 
 
 def test_concurrent_late_marker_and_atomic_insert_visibility():
     project, owner, layer_hash = "phase0-" + uuid.uuid4().hex, "owner", "v2-concurrency"
-    # Simulate two independent workers with already allocated, ordered generations.
-    _insert(PREFIX + "layer_components", [_layer(project, owner, layer_hash, 2, "newer")])
+    # Two workers start together, but the lower generation deliberately publishes last.
+    # Generations are assumed to have been allocated uniquely and monotonically before work starts.
+    start, newer_published = Barrier(2), Event()
+
+    def publish_old():
+        start.wait(timeout=30)
+        _insert(PREFIX + "layer_components", [_layer(project, owner, layer_hash, 1, "older")])
+        assert newer_published.wait(timeout=30)
+        _insert(PREFIX + "layer_component_extractions", [_marker(project, owner, layer_hash, 1, "complete")])
+
+    def publish_new():
+        start.wait(timeout=30)
+        _insert(PREFIX + "layer_components", [_layer(project, owner, layer_hash, 2, "newer")])
+        _insert(PREFIX + "layer_component_extractions", [_marker(project, owner, layer_hash, 2, "complete")])
+        newer_published.set()
+
     with ThreadPoolExecutor(max_workers=2) as pool:
-        future_new = pool.submit(
-            _insert, PREFIX + "layer_component_extractions", [_marker(project, owner, layer_hash, 2, "complete")]
-        )
-        future_new.result()
-        future_old = pool.submit(
-            _insert, PREFIX + "layer_component_extractions", [_marker(project, owner, layer_hash, 1, "complete")]
-        )
-        future_old.result()
+        old, new = pool.submit(publish_old), pool.submit(publish_new)
+        old.result(timeout=60)
+        new.result(timeout=60)
     assert [r["occurrence_key"] for r in _published_layer(project, owner, layer_hash)] == ["newer"]
     batch = [_layer(project, owner, layer_hash, 3, f"batch-{i:03d}") for i in range(100)]
     assert len(_published_layer(project, owner, layer_hash)) == 1
@@ -252,3 +289,36 @@ def test_concurrent_late_marker_and_atomic_insert_visibility():
     _insert(PREFIX + "layer_component_extractions", [_marker(project, owner, layer_hash, 3, "complete")])
     assert len(_published_layer(project, owner, layer_hash)) == 100
     assert len({r["occurrence_key"] for r in _published_layer(project, owner, layer_hash)}) == 100
+
+
+def test_activity_concurrent_late_publication_and_multibatch_invisibility():
+    project, owner, session = "phase0-" + uuid.uuid4().hex, "owner", "fixture-session"
+    start, newer_published = Barrier(2), Event()
+
+    def publish_old():
+        start.wait(timeout=30)
+        _insert(PREFIX + "component_activity", [_activity(project, owner, session, 1, offset=1)])
+        assert newer_published.wait(timeout=30)
+        _insert(PREFIX + "component_activity_publications", [_activity_marker(project, owner, session, 1, "complete")])
+
+    def publish_new():
+        start.wait(timeout=30)
+        _insert(PREFIX + "component_activity", [_activity(project, owner, session, 2, offset=2)])
+        _insert(PREFIX + "component_activity_publications", [_activity_marker(project, owner, session, 2, "complete")])
+        newer_published.set()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        old, new = pool.submit(publish_old), pool.submit(publish_new)
+        old.result(timeout=60)
+        new.result(timeout=60)
+    assert [r["source_line_offset"] for r in _published_activity(project, owner, session)] == [2]
+    _insert(PREFIX + "component_activity_publications", [_activity_marker(project, owner, session, 3, "failed")])
+    assert [r["source_line_offset"] for r in _published_activity(project, owner, session)] == [2]
+    batch = [_activity(project, owner, session, 4, offset=i + 100) for i in range(100)]
+    _insert(PREFIX + "component_activity", batch[:50])
+    assert [r["source_line_offset"] for r in _published_activity(project, owner, session)] == [2]
+    _insert(PREFIX + "component_activity", batch[50:])
+    assert [r["source_line_offset"] for r in _published_activity(project, owner, session)] == [2]
+    _insert(PREFIX + "component_activity_publications", [_activity_marker(project, owner, session, 4, "complete")])
+    assert len(_published_activity(project, owner, session)) == 100
+    assert len({r["source_line_offset"] for r in _published_activity(project, owner, session)}) == 100
