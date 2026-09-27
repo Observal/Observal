@@ -1,8 +1,16 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
+import os
 import sys
+import tempfile
 from pathlib import Path
+
+# Run every test against a throwaway home. CLI modules resolve ~/.observal and the
+# harness config directories when they are imported, so a test that forgets to
+# patch one must still never write the developer's real config, lockfile, or
+# harness settings. Set before anything imports observal_cli.
+os.environ["HOME"] = os.environ["USERPROFILE"] = tempfile.mkdtemp(prefix="observal-test-home-")
 
 # Add server source to path so `from config import settings` works
 ROOT = Path(__file__).resolve().parent.parent

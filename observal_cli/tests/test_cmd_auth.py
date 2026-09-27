@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com>
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """E2E tests for the ``observal auth`` CLI commands.
@@ -250,6 +251,12 @@ class TestAuthLogin:
 
 class TestAuthWhoami:
     """``observal auth whoami``."""
+
+    @pytest.fixture(autouse=True)
+    def _logged_in(self):
+        cfg = {"server_url": "http://localhost:8000", "access_token": "tok"}
+        with patch("observal_cli.cmd_auth.config.get_or_exit", return_value=cfg):
+            yield
 
     def test_whoami_outputs_email_and_role(self) -> None:
         """Default (table) output must contain the user's email and role."""
