@@ -142,9 +142,12 @@ def _file(
 
 
 @pytest.fixture(autouse=True)
-def _disable_rate_limits():
+def _disable_rate_limits(monkeypatch):
     enabled = limiter.enabled
     limiter.enabled = False
+    # These route tests mock ClickHouse; the separate projection tests exercise
+    # the real indexer rather than re-entering these mocked query boundaries.
+    monkeypatch.setattr(layer_snapshot, "_ensure_layer_components", AsyncMock())
     yield
     limiter.enabled = enabled
 

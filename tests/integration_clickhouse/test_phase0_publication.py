@@ -70,8 +70,8 @@ def _existing_migrated_sample_and_test_tables():
         pytest.skip("opt-in ClickHouse suite")
     assert _rows("SELECT currentDatabase() AS db")[0]["db"] == "observal"
     versions = {r["version"] for r in _rows("SELECT version FROM clickhouse_schema_migrations")}
-    expected = {p.stem for p in MIGRATIONS_DIR.glob("*.sql")}
-    assert expected <= versions  # Check the owner's already-applied migration ledger; do not rerun it.
+    expected = {p.stem for p in MIGRATIONS_DIR.glob("*.sql") if p.stem < "006_"}
+    assert expected <= versions  # Phase 0 sample is NOT a target for new production migrations.
     assert int(_rows("SELECT count() AS n FROM session_events")[0]["n"]) > 0  # existing sample, read-only
     tables = {r["name"] for r in _rows("SELECT name FROM system.tables WHERE database = 'observal'")}
     assert tables >= BASELINE_TABLES

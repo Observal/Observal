@@ -123,9 +123,10 @@ async def _ensure_layer_components(project_id: str, user_id: str, layer_hash: st
 
         await ensure_layer_components(project_id, user_id, layer_hash)
     except ImportError as error:
-        optic.debug("layer component extractor unavailable: {}", error)
+        optic.debug("layer component extractor unavailable: {}", type(error).__name__)
     except Exception as error:
-        optic.warning("layer component extraction failed for hash={}: {}", layer_hash, error)
+        # HTTP client exceptions may include credential-bearing URLs in str(error).
+        optic.warning("layer component extraction failed for hash={}: {}", layer_hash, type(error).__name__)
 
 
 @router.post("", response_model=LayerSnapshotResponse)
