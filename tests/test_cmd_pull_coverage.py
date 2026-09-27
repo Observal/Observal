@@ -1463,6 +1463,42 @@ def test_pull_json_lockfile_failure_reports_tracking_state(
     boundaries.adapter.persist_active_agent.assert_not_called()
 
 
+def test_pull_json_project_lock_failure_reports_tracking_state(
+    pull_app_boundary: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "project"
+    monkeypatch.setattr(project_lock, "record_agent", MagicMock(side_effect=OSError("private project lock detail")))
+
+    result = RUNNER.invoke(
+        pull_app_boundary,
+        [
+            "agent",
+            "pull",
+            "acme/reviewer",
+            "--harness",
+            "claude-code",
+            "--dir",
+            str(target),
+            "--no-prompt",
+            "--output",
+            "json",
+        ],
+    )
+
+    assert result.exit_code == 9
+    assert result.stdout == ""
+    partial = json.loads(result.stderr)["error"]["result"]
+    assert partial["stage"] == "update_project_lock"
+    assert partial["installation_tracked"] is True
+    assert partial["active_agent_persisted"] is False
+    assert partial["partial"] is True
+    assert "private project lock detail" not in result.stderr
+    boundaries.adapter.persist_active_agent.assert_not_called()
+
+
 @pytest.mark.parametrize(
     ("snippet", "message", "metadata_written"),
     [

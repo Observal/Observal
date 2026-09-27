@@ -1643,6 +1643,13 @@ def register_pull(app: typer.Typer):
                         resource=str(target_dir / PROJECT_LOCK_FILE),
                         remediation="Check the file's permissions and contents, then pull again.",
                         detail=repr(error),
+                        result=_pull_failure_result(
+                            written,
+                            "update_project_lock",
+                            setup_results=setup_results,
+                            installation_tracked=True,
+                            active_agent_persisted=False,
+                        ),
                     )
 
             try:
