@@ -68,25 +68,29 @@ async def _rows(sql: str, params: dict) -> list[dict]:
     return response.json().get("data", [])
 
 
-async def presence_cohort(
+def presence_params(
     project_id: str,
     component_type: str,
     component_id: str,
     component_version_id: str | None,
     period: tuple[datetime, datetime],
-) -> list[dict]:
-    """Return distinct eligible sessions from verified v2, current mappings."""
-    params = _params(project_id, period) | _identity_params(component_type, component_id, component_version_id)
-    sql = (
-        """SELECT DISTINCT s.user_id, s.harness, s.session_id, s.layer_hash,
-                           s.last_event_time
+) -> dict:
+    """Bound ClickHouse parameters shared by every presence-cohort consumer."""
+    return _params(project_id, period) | _identity_params(component_type, component_id, component_version_id)
+
+
+# Distinct eligible sessions from verified v2, current, non-conflicted mappings.
+# Reused as a subquery by the component-activity API so both share one cohort.
+PRESENCE_COHORT_SQL = (
+    """SELECT DISTINCT s.user_id AS user_id, s.harness AS harness, s.session_id AS session_id,
+                       s.layer_hash AS layer_hash, s.last_event_time AS last_event_time
     FROM session_stats_agg AS s FINAL
     INNER JOIN (
         SELECT DISTINCT c.project_id, c.user_id, c.layer_hash
         FROM layer_components AS c FINAL
         INNER JOIN ("""
-        + _LATEST
-        + """) AS published
+    + _LATEST
+    + """) AS published
           ON c.project_id = published.project_id AND c.user_id = published.user_id
          AND c.layer_hash = published.layer_hash AND c.extraction_generation = published.generation
         WHERE c.project_id = {project_id:String} AND c.extractor_version = {extractor_version:UInt16}
@@ -95,15 +99,26 @@ async def presence_cohort(
           AND ({component_version_id:String} = '' OR c.component_version_id = {component_version_id:String})
           AND c.identity_status = 'resolved' AND c.verification_status = 'verified'
           AND (c.user_id, c.layer_hash) NOT IN ("""
-        + _CONFLICTED_SNAPSHOTS
-        + """)
+    + _CONFLICTED_SNAPSHOTS
+    + """)
     ) AS present
       ON s.project_id = present.project_id AND s.user_id = present.user_id AND s.layer_hash = present.layer_hash
     WHERE s.project_id = {project_id:String} AND s.layer_hash != ''
       AND s.last_event_time >= toDateTime64({start:String}, 3, 'UTC')
-      AND s.last_event_time < toDateTime64({end:String}, 3, 'UTC')
-    ORDER BY s.last_event_time, s.user_id, s.harness, s.session_id FORMAT JSON"""
-    )
+      AND s.last_event_time < toDateTime64({end:String}, 3, 'UTC')"""
+)
+
+
+async def presence_cohort(
+    project_id: str,
+    component_type: str,
+    component_id: str,
+    component_version_id: str | None,
+    period: tuple[datetime, datetime],
+) -> list[dict]:
+    """Return distinct eligible sessions from verified v2, current mappings."""
+    params = presence_params(project_id, component_type, component_id, component_version_id, period)
+    sql = PRESENCE_COHORT_SQL + "\n    ORDER BY last_event_time, user_id, harness, session_id FORMAT JSON"
     return await _rows(sql, params)
 
 

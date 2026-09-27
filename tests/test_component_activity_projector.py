@@ -300,12 +300,12 @@ async def test_oversized_source_is_declined_before_raw_lines_are_loaded(monkeypa
 
     async def fake_query(sql, params=None, *, data=None):
         queries.append(sql)
-        return [{"records": 10, "bytes": projector._MAX_SOURCE_BYTES + 1}]
+        return [{"records": 10, "bytes": projector.MAX_SOURCE_BYTES + 1}]
 
     monkeypatch.setattr(projector, "_query", fake_query)
     result = await projector.project_session_activity("p", "u", "claude-code", "s")
     assert result["status"] == "source_too_large"
-    assert len(queries) == 1 and "sum(length(raw_line))" in queries[0]
+    assert len(queries) == 1 and "sum(content_length)" in queries[0]
     assert "SELECT line_offset" not in queries[0]
 
 

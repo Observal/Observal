@@ -21,8 +21,8 @@ from .matcher import MatchResult, match_invocations
 
 PROJECTION_VERSION = 1
 MATCHER_VERSION = 1
-_MAX_SOURCE_RECORDS = 50_000
-_MAX_SOURCE_BYTES = 64 * 1024 * 1024
+MAX_SOURCE_RECORDS = 50_000
+MAX_SOURCE_BYTES = 64 * 1024 * 1024
 
 
 def publication_version() -> int:
@@ -58,7 +58,7 @@ async def _source_rows(params: dict) -> list[dict] | None:
     oversized (but valid) session never materializes gigabytes in the worker.
     """
     shape = await _query(
-        """SELECT count() AS records, sum(length(raw_line)) AS bytes
+        """SELECT count() AS records, sum(content_length) AS bytes
         FROM session_events FINAL
         WHERE project_id = {project_id:String} AND user_id = {user_id:String}
           AND harness = {harness:String} AND session_id = {session_id:String}
@@ -66,7 +66,7 @@ async def _source_rows(params: dict) -> list[dict] | None:
         params,
     )
     if shape and (
-        int(shape[0].get("records") or 0) > _MAX_SOURCE_RECORDS or int(shape[0].get("bytes") or 0) > _MAX_SOURCE_BYTES
+        int(shape[0].get("records") or 0) > MAX_SOURCE_RECORDS or int(shape[0].get("bytes") or 0) > MAX_SOURCE_BYTES
     ):
         return None
     return await _query(
@@ -83,7 +83,7 @@ async def _source_rows(params: dict) -> list[dict] | None:
 
 def _source_revision(rows: list[dict]) -> str | None:
     """SHA-256 of sorted canonical (line_offset, line_hash) pairs, not raw text."""
-    if not rows or len(rows) > _MAX_SOURCE_RECORDS:
+    if not rows or len(rows) > MAX_SOURCE_RECORDS:
         return None
     offsets = [row.get("line_offset") for row in rows]
     if offsets != list(range(len(rows))) or any(
