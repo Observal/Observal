@@ -495,3 +495,54 @@ def test_legacy_malformed_pins_are_unknown_and_v1_upload_marker_is_stale(monkeyp
     assert [component["local_name"] for component in pins["agents"][0]["components"]] == ["", "", ""]
     # Inline prompts and sandbox proxy records have no genuine per-component runtime alias.
     assert layer.layer_hash_v2({}, pins).startswith("v2_")
+
+
+def test_mcp_fingerprint_keeps_endpoint_port_but_never_credentials():
+    base = {"type": "http", "url": "http://localhost:8080/mcp"}
+    fingerprint = layer.mcp_entry_fingerprint(base)
+    assert layer.mcp_entry_fingerprint({**base, "url": "http://localhost:9090/mcp"}) != fingerprint
+    # Userinfo, query and fragment can carry secrets and never enter the fingerprint.
+    assert (
+        layer.mcp_entry_fingerprint({**base, "url": "http://user:secret@localhost:8080/mcp?token=x#f"}) == fingerprint
+    )
+    ipv6 = layer.mcp_entry_fingerprint({**base, "url": "http://[::1]:8080/mcp"})
+    assert ipv6 != layer.mcp_entry_fingerprint({**base, "url": "http://[::1]:8081/mcp"})
+    with pytest.raises(ValueError):
+        layer.mcp_entry_fingerprint({**base, "url": "http://localhost:99999/mcp"})
+
+
+def test_concurrent_standalone_upserts_keep_every_entry(monkeypatch, tmp_path):
+    import threading
+
+    monkeypatch.setattr(lockfile, "LOCKFILE_PATH", tmp_path / "lockfile.json")
+    monkeypatch.setattr(lockfile, "_LOCKFILE_LOCK", tmp_path / "lockfile.lock")
+    monkeypatch.setattr(lockfile, "current_registry_url", lambda: "https://fixture.invalid")
+    monkeypatch.setattr(lockfile, "_record_capability_use", lambda **_kwargs: None)
+    barrier = threading.Barrier(2, timeout=1)
+    original_read = lockfile.read_registry_lockfile
+
+    def slow_read(**kwargs):
+        result = original_read(**kwargs)
+        try:
+            barrier.wait()  # Both writers would read the same stale document without the lock.
+        except threading.BrokenBarrierError:
+            pass
+        return result
+
+    # Threads stand in for separate processes: each takes flock through its own descriptor.
+    monkeypatch.setattr(lockfile, "read_registry_lockfile", slow_read)
+
+    def install(component_id: str) -> None:
+        lockfile.upsert_standalone(
+            "claude-code", component_type="mcp", name=component_id, component_id=component_id, version="1"
+        )
+
+    threads = [threading.Thread(target=install, args=(value,)) for value in (FIRST, SECOND)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(10)
+    entries = lockfile.read_lockfile()["registries"]["https://fixture.invalid"]["harnesses"]["claude-code"][
+        "standalone"
+    ]
+    assert {entry["id"] for entry in entries} == {FIRST, SECOND}

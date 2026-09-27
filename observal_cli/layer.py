@@ -875,7 +875,15 @@ def mcp_entry_fingerprint(entry: dict) -> str:
 
     url = entry.get("url")
     parsed = urlsplit(url) if isinstance(url, str) else None
-    safe_url = urlunsplit((parsed.scheme, parsed.hostname or "", parsed.path, "", "")) if parsed else ""
+    safe_url = ""
+    if parsed:
+        # Keep the endpoint authority (host *and* port) but drop userinfo, query
+        # and fragment, which can carry credentials. A port-only change is drift.
+        host = parsed.hostname or ""
+        authority = f"[{host}]" if ":" in host else host
+        if parsed.port is not None:  # raises ValueError for an invalid port -> unverified
+            authority = f"{authority}:{parsed.port}"
+        safe_url = urlunsplit((parsed.scheme, authority, parsed.path, "", ""))
     structure = [entry.get("command", ""), entry.get("args", []), safe_url, entry.get("type", "")]
     return (
         "sha256-"
