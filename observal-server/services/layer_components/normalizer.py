@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import unicodedata
 from collections import defaultdict
 from dataclasses import asdict, dataclass
 
@@ -31,7 +32,7 @@ class Occurrence:
 
 
 def _text(value: object) -> str:
-    return value if isinstance(value, str) else ""
+    return unicodedata.normalize("NFC", value) if isinstance(value, str) else ""
 
 
 def normalize_snapshot(pinned_versions: object, drift: object) -> list[Occurrence]:
@@ -133,17 +134,32 @@ def normalize_snapshot(pinned_versions: object, drift: object) -> list[Occurrenc
         ):
             record["verification_status"] = "unverified"
 
-    # Duplicate identical occurrences need distinct keys; sorting and assigning
-    # ordinals by immutable content keeps keys stable even if lockfile order changes.
-    counters: dict[str, int] = defaultdict(int)
+    # The published identity is derived from immutable pin fields, not from the
+    # verification result: a re-resolution must preserve the occurrence key.
+    # Equal pin tuples retain distinct zero-based ordinals regardless of order.
+    key_fields = (
+        "source",
+        "component_type",
+        "raw_listing_id",
+        "raw_version",
+        "harness",
+        "scope",
+        "local_name",
+        "parent_agent_id",
+        "parent_agent_version",
+        "qualified_name",
+        "raw_name",
+    )
+    counters: dict[tuple[str, ...], int] = defaultdict(int)
     occurrences: list[Occurrence] = []
-    for record in sorted(records, key=lambda row: json.dumps(row, sort_keys=True, ensure_ascii=False)):
+    for record in sorted(records, key=lambda row: tuple(row[field] for field in key_fields)):
+        identity = tuple(record[field] for field in key_fields)
+        ordinal = counters[identity]
+        counters[identity] += 1
         digest = hashlib.sha256(
-            json.dumps(record, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
+            json.dumps([*identity, ordinal], ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         ).hexdigest()
-        index = counters[digest]
-        counters[digest] += 1
-        occurrences.append(Occurrence(occurrence_key=f"{digest[:32]}-{index:04d}", **record))
+        occurrences.append(Occurrence(occurrence_key=digest, **record))
     return occurrences
 
 

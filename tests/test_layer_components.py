@@ -5,7 +5,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import re
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -117,6 +120,55 @@ def test_normalizer_stable_duplicate_keys_v1_and_drift_fail_closed():
     assert normalize_snapshot({"agents": {"not": "a list"}, "standalone": [False]}, {}) == []
 
 
+def test_normalizer_occurrence_key_is_full_canonical_pin_digest_not_verification():
+    pins = _pins()
+    pins["agents"][0]["components"].append(dict(pins["agents"][0]["components"][0]))
+    rows = normalize_snapshot(pins, _drift())
+    bundled = [row for row in rows if row.source == "agent"]
+    assert len(bundled) == 2
+    for ordinal, row in enumerate(bundled):
+        fields = [
+            row.source,
+            row.component_type,
+            row.raw_listing_id,
+            row.raw_version,
+            row.harness,
+            row.scope,
+            row.local_name,
+            row.parent_agent_id,
+            row.parent_agent_version,
+            row.qualified_name,
+            row.raw_name,
+            ordinal,
+        ]
+        expected = hashlib.sha256(json.dumps(fields, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+        assert re.fullmatch(r"[0-9a-f]{64}", row.occurrence_key)
+        assert row.occurrence_key == expected
+    assert [row.occurrence_key for row in rows] == [
+        row.occurrence_key for row in normalize_snapshot(pins, {"is_canonical": False})
+    ]
+    assert [row.occurrence_key for row in rows] == [
+        row.occurrence_key for row in normalize_snapshot({**pins, "schema_version": 1}, _drift())
+    ]
+    pins["agents"][0]["components"][0]["name"] = "Cafe\u0301"
+    decomposed = normalize_snapshot(pins, _drift())
+    pins["agents"][0]["components"][0]["name"] = "Caf\u00e9"
+    assert [row.occurrence_key for row in decomposed] == [
+        row.occurrence_key for row in normalize_snapshot(pins, _drift())
+    ]
+
+
+def test_normalizer_malformed_optional_fields_do_not_create_false_verified_presence():
+    pins = _pins()
+    pins["agents"].extend([False, None, {"components": "not an array"}])
+    pins["standalone"].extend([None, {"type": "sandbox", "id": A}, {"type": "skill", "name": "unknown"}])
+    pins["agents"][0]["components"].append({"type": "mcp", "id": [A], "name": 4, "local_name": False})
+    rows = normalize_snapshot(pins, {"is_canonical": None, "mcp_verifications": [None, False]})
+    assert len(rows) == 4
+    assert all(row.verification_status != "verified" for row in rows)
+    assert rows == normalize_snapshot(pins, {"is_canonical": None, "mcp_verifications": [None, False]})
+
+
 def test_normalizer_mixed_verified_and_unverified_mcp_preserves_specific_evidence():
     drift = _drift()
     drift["is_canonical"] = None  # CLI saw one remote MCP it cannot verify.
@@ -151,11 +203,15 @@ class _Rows:
 
 
 class _FakeDB:
-    def __init__(self, *, listings=None, parent=None, components=None, versions=None):
+    def __init__(
+        self, *, listings=None, parent=None, components=None, versions=None, skill_listings=None, skill_versions=None
+    ):
         self.listings = listings or []
         self.parent = parent or []
         self.components = components or []
         self.versions = versions or []
+        self.skill_listings = skill_listings or []
+        self.skill_versions = skill_versions or []
         self.calls = []
 
     async def execute(self, statement):
@@ -169,6 +225,10 @@ class _FakeDB:
             return _Rows(self.components)
         if "FROM mcp_versions" in sql:
             return _Rows(self.versions)
+        if "FROM skill_listings" in sql:
+            return _Rows(self.skill_listings)
+        if "FROM skill_versions" in sql:
+            return _Rows(self.skill_versions)
         return _Rows([])
 
 
@@ -225,7 +285,75 @@ async def test_resolver_direct_deleted_parent_name_ambiguity_and_independent_ver
     assert no_version[0].component_id == A and no_version[0].component_version_id == ""
     deleted_parent = replace(parent_match, parent_agent_id="55555555-5555-4555-8555-555555555555")
     assert (await resolver.resolve_occurrences(db, [deleted_parent]))[0].identity_status == "unresolved"
-    assert CURRENT_EXTRACTOR_VERSION == 1
+    assert CURRENT_EXTRACTOR_VERSION == 2  # Key-contract change rebuilds v1 projections.
+
+
+@pytest.mark.asyncio
+async def test_resolver_correct_type_uuid_unique_name_semver_and_unknown_versions():
+    direct = normalize_snapshot(_pins(), _drift())[0]
+    missing_id = "55555555-5555-4555-8555-555555555555"
+    cases = [
+        replace(direct, raw_listing_id=B, parent_agent_id="", qualified_name=""),  # valid but wrong type
+        replace(direct, component_type="skill", raw_listing_id=B, parent_agent_id="", qualified_name=""),
+        replace(direct, raw_listing_id=missing_id, parent_agent_id=""),  # deleted, no name fallback
+        replace(direct, raw_listing_id="", parent_agent_id="", qualified_name="alice/probe"),
+        replace(direct, raw_listing_id="", parent_agent_id="", qualified_name="missing/probe"),
+        replace(direct, raw_listing_id=A, raw_version="9.9.9"),
+    ]
+    db = _FakeDB(
+        listings=[_row(id=UUID(A), name="probe", namespace="alice", slug="probe")],
+        skill_listings=[_row(id=UUID(B), name="probe", namespace="bob", slug="probe")],
+        versions=[_row(id=UUID(VERSION), listing_id=UUID(A), version="1.0.0")],
+        skill_versions=[_row(id=UUID(PARENT), listing_id=UUID(B), version="1.0.0")],
+    )
+    results = await resolver.resolve_occurrences(db, cases)
+    assert [(item.identity_status, item.component_id, item.component_version_id) for item in results] == [
+        ("unresolved", "", ""),
+        ("resolved", B, PARENT),
+        ("unresolved", "", ""),
+        ("resolved", A, VERSION),
+        ("unresolved", "", ""),
+        ("resolved", A, ""),
+    ]
+    assert sum("FROM mcp_listings" in statement for statement in db.calls) == 1
+    assert sum("FROM skill_listings" in statement for statement in db.calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_resolver_ambiguous_name_and_parent_component_match_are_not_guessed():
+    original = normalize_snapshot(_pins(), _drift())[0]
+    missing_pin = replace(original, raw_listing_id="", parent_agent_id="", qualified_name="")
+    parent_pin = replace(original, raw_listing_id="", qualified_name="")
+    db = _FakeDB(
+        listings=[
+            _row(id=UUID(A), name="probe", namespace="alice", slug="probe"),
+            _row(id=UUID(B), name="probe", namespace="bob", slug="probe"),
+        ],
+        versions=[
+            _row(id=UUID(VERSION), listing_id=UUID(A), version="1.0.0"),
+            _row(id=UUID(PARENT), listing_id=UUID(B), version="1.0.0"),
+        ],
+        parent=[_row(id=UUID(VERSION), agent_id=UUID(PARENT), version="2.0")],
+        components=[
+            _row(
+                agent_version_id=UUID(VERSION),
+                component_type="mcp",
+                component_id=UUID(A),
+                component_name="probe",
+                resolved_version="1.0.0",
+            ),
+            _row(
+                agent_version_id=UUID(VERSION),
+                component_type="mcp",
+                component_id=UUID(B),
+                component_name="probe",
+                resolved_version="1.0.0",
+            ),
+        ],
+    )
+    results = await resolver.resolve_occurrences(db, [missing_pin, parent_pin])
+    assert [item.identity_status for item in results] == ["ambiguous", "ambiguous"]
+    assert all(not item.component_id for item in results)
 
 
 @pytest.mark.asyncio
@@ -323,3 +451,52 @@ async def test_extractor_zero_occurrences_publishes_complete(monkeypatch):
     result = await extractor.ensure_layer_components("project", "user", "v2_" + "a" * 60)
     assert result["status"] == "complete" and result["occurrences"] == 0
     assert events == ["complete"]
+
+
+@pytest.mark.asyncio
+async def test_extractor_complete_marker_failure_emits_failed_marker_without_claiming_publication(monkeypatch):
+    pin = normalize_snapshot(_pins(), _drift())[0]
+    db = SimpleNamespace()
+
+    class Session:
+        async def __aenter__(self):
+            return db
+
+        async def __aexit__(self, *_):
+            return False
+
+    monkeypatch.setattr(extractor, "async_session", Session)
+    monkeypatch.setattr(
+        extractor, "_snapshot", AsyncMock(return_value=({"pinned_versions": _pins(), "drift": _drift()}, False))
+    )
+    monkeypatch.setattr(extractor, "_latest_complete", AsyncMock(return_value=None))
+    monkeypatch.setattr(extractor, "next_projection_generation", AsyncMock(return_value=37))
+    monkeypatch.setattr(
+        extractor, "resolve_occurrences", AsyncMock(return_value=[ResolvedOccurrence(pin, A, VERSION, "resolved")])
+    )
+    monkeypatch.setattr(extractor, "_query", AsyncMock(return_value=[]))
+    marker = AsyncMock(side_effect=[RuntimeError("marker unavailable"), None])
+    monkeypatch.setattr(extractor, "_marker", marker)
+    with pytest.raises(RuntimeError, match="marker unavailable"):
+        await extractor.ensure_layer_components("project", "owner", "v2_" + "a" * 60)
+    assert [call.kwargs["status"] for call in marker.await_args_list] == ["complete", "failed"]
+    assert {call.kwargs["count"] for call in marker.await_args_list} == {1}
+    assert [call.args[3] for call in marker.await_args_list] == [37, 37]
+
+
+@pytest.mark.asyncio
+async def test_extractor_conflict_change_forces_rebuild_without_explicit_force(monkeypatch):
+    monkeypatch.setattr(extractor, "_snapshot", AsyncMock(return_value=({"pinned_versions": {}, "drift": {}}, True)))
+    monkeypatch.setattr(extractor, "_latest_complete", AsyncMock(return_value={"identity_conflict": 0}))
+    monkeypatch.setattr(extractor, "next_projection_generation", AsyncMock(return_value=38))
+    marker = AsyncMock()
+    monkeypatch.setattr(extractor, "_marker", marker)
+    rebuilt = await extractor.ensure_layer_components("project", "owner", "v2_" + "a" * 60)
+    assert rebuilt == {
+        "status": "complete",
+        "occurrences": 0,
+        "diagnostics": 0,
+        "generation": 38,
+        "identity_conflict": True,
+    }
+    assert marker.await_args.kwargs["conflict"] is True

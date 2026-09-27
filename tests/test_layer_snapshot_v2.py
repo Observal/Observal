@@ -13,6 +13,7 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
+from api.ratelimit import limiter
 from api.routes import layer_snapshot
 from observal_cli.layer import layer_hash_v2 as cli_layer_hash_v2
 from services.clickhouse import insert as ch_insert
@@ -23,6 +24,15 @@ from tests.test_layer_snapshot_routes import _UPLOAD, ClickHouseResponse, _app, 
 FIRST = "11111111-1111-4111-8111-111111111111"
 SECOND = "22222222-2222-4222-8222-222222222222"
 FILE_HASH = "sha256-" + "a" * 64
+
+
+@pytest.fixture(autouse=True)
+def _disable_rate_limits():
+    # The route unit tests mock ClickHouse and do not require a live Redis stack.
+    enabled = limiter.enabled
+    limiter.enabled = False
+    yield
+    limiter.enabled = enabled
 
 
 def _payload(pin_id: str = FIRST) -> dict:
@@ -116,6 +126,36 @@ async def test_v2_upload_verifies_hash_before_redaction_and_indexes_both_paths(m
     insert.assert_awaited_once()
     assert index.await_count == 2
     index.assert_awaited_with("default", str(_user().id), payload["hash"])
+
+
+@pytest.mark.asyncio
+async def test_upload_retries_and_conflicts_repair_same_user_even_when_indexing_fails(monkeypatch):
+    from services.layer_components import extractor
+
+    query = AsyncMock(return_value=ClickHouseResponse())
+    insert = AsyncMock()
+    repair = AsyncMock(side_effect=RuntimeError("index failed"))
+    monkeypatch.setattr("services.clickhouse.client._query", query)
+    monkeypatch.setattr("services.clickhouse.insert.insert_layer_snapshot", insert)
+    monkeypatch.setattr("services.secrets_redactor.redact_secrets", lambda content: "[redacted]")
+    monkeypatch.setattr(extractor, "ensure_layer_components", repair)
+    payload = _payload()
+    request = layer_snapshot.LayerSnapshotRequest.model_validate(payload)
+    user = _user(user_id=UUID(SECOND))
+    first = await _UPLOAD(request, SimpleNamespace(), user, AsyncMock())
+    assert first.stored and insert.await_count == 1
+    original = insert.await_args.args[0]["content"]
+    query.return_value = ClickHouseResponse([{"content": original}])
+    again = await _UPLOAD(request, SimpleNamespace(), user, AsyncMock())
+    assert not again.stored and insert.await_count == 1
+    different = layer_snapshot.LayerSnapshotRequest.model_validate(payload)
+    different.pinned_versions.agents[0].components[0].version = "2.0.0"
+    conflicting = await _UPLOAD(different, SimpleNamespace(), user, AsyncMock())
+    assert conflicting.stored and insert.await_count == 2
+    assert json.loads(insert.await_args.args[0]["content"])["identity_status"] == "identity_conflict"
+    assert query.await_count == 3 and repair.await_count == 3
+    assert all(call.args == ("default", str(user.id), payload["hash"]) for call in repair.await_args_list)
+    assert all(call.args[1]["param_user_id"] == str(user.id) for call in query.await_args_list)
 
 
 @pytest.mark.asyncio

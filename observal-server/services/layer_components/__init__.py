@@ -3,4 +3,4 @@
 
 """User-scoped, published layer component projection."""
 
-CURRENT_EXTRACTOR_VERSION = 1
+CURRENT_EXTRACTOR_VERSION = 2
