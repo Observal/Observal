@@ -13,6 +13,7 @@ from arq.cron import cron
 from arq.worker import func
 from loguru import logger as optic
 
+from jobs.activity import backfill_component_activity, project_component_activity
 from jobs.catalog import batch_generate_insights, generate_insight_report, refresh_user_profiles
 from jobs.maintenance import (
     backfill_layer_components,
@@ -67,6 +68,8 @@ class WorkerSettings:
         submit_usage_ping,
         reproject_discovery_entries,
         backfill_layer_components,
+        project_component_activity,
+        backfill_component_activity,
     ]
     cron_jobs = [
         cron(sync_component_sources, hour={0, 6, 12, 18}),  # Every 6 hours
@@ -84,6 +87,7 @@ class WorkerSettings:
         # Safety net under the per-change reprojection hook.
         cron(reproject_discovery_entries, hour={1, 7, 13, 19}, minute={5}, timeout=600, unique=True),
         cron(backfill_layer_components, hour={2}, minute={20}, timeout=600, unique=True),
+        cron(backfill_component_activity, hour={2}, minute={40}, timeout=600, unique=True),
     ]
     on_startup = startup
     on_shutdown = shutdown
