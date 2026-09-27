@@ -1541,6 +1541,32 @@ def register_pull(app: typer.Typer):
             lock_warnings.append(mismatch)
 
         snippet = result.get("config_snippet", {})
+        # Selected-version aliases come from the generator after final sanitization.
+        # Old servers have no proof of per-component aliases, so keep their
+        # legacy lock entries unverified rather than deriving keys from slugs.
+        if isinstance(result.get("component_pins"), list):
+            lock_components = [
+                {
+                    "type": pin.get("type", ""),
+                    "name": pin.get("name", ""),
+                    "id": str(pin.get("id", "")),
+                    "version": pin.get("version"),
+                    "scope": options.get("scope", "project"),
+                    "local_name": pin.get("local_name", ""),
+                    "qualified_name": pin.get("qualified_name", ""),
+                }
+                for pin in result["component_pins"]
+                if isinstance(pin, dict)
+            ]
+            aliases = [pin["local_name"] for pin in lock_components if pin["type"] == "mcp" and pin["local_name"]]
+            if len(aliases) != len(set(aliases)):
+                fail(
+                    ErrorCategory.CONFLICT,
+                    "MCP aliases collide after generation.",
+                    operation="Pull agent",
+                    resource="harness MCP aliases",
+                    remediation="Rename the conflicting component and retry.",
+                )
         if not snippet:
             fail(
                 ErrorCategory.UNAVAILABLE,
@@ -1596,27 +1622,41 @@ def register_pull(app: typer.Typer):
         setup_failures: list[str] = []
         setup_cmds = snippet.get("mcp_setup_commands") or []
         if setup_cmds and not dry_run:
+            try:
+                target_dir.mkdir(parents=True, exist_ok=True)
+            except OSError as error:
+                fail(
+                    ErrorCategory.UNAVAILABLE,
+                    "Could not prepare target directory for MCP setup.",
+                    operation="Pull agent",
+                    resource=str(target_dir),
+                    remediation="Check directory permissions.",
+                    detail=repr(error),
+                )
             for command in setup_cmds:
+                # Never expose command arguments: MCP setup may carry secrets.
+                shown_command = command[:4] if isinstance(command, list) else []
                 if not _valid_setup_command(command):
                     setup_results.append({"command": [], "status": "failed", "return_code": None})
                     setup_failures.append("invalid setup command")
                     continue
                 try:
-                    process = subprocess.run(command, capture_output=True, text=True, timeout=60)
+                    setup_command = adapter.prepare_mcp_setup_command(command, options.get("scope", "project"))
+                    process = subprocess.run(setup_command, cwd=target_dir, capture_output=True, text=True, timeout=60)
                 except FileNotFoundError:
-                    setup_results.append({"command": command, "status": "failed", "return_code": None})
+                    setup_results.append({"command": shown_command, "status": "failed", "return_code": None})
                     setup_failures.append(f"{command[0]} not found")
                     continue
                 except subprocess.TimeoutExpired:
-                    setup_results.append({"command": command, "status": "failed", "return_code": None})
+                    setup_results.append({"command": shown_command, "status": "failed", "return_code": None})
                     setup_failures.append(f"{command[0]} timed out")
                     continue
                 except OSError:
-                    setup_results.append({"command": command, "status": "failed", "return_code": None})
+                    setup_results.append({"command": shown_command, "status": "failed", "return_code": None})
                     setup_failures.append(f"{command[0]} could not start")
                     continue
                 status = "completed" if process.returncode == 0 else "failed"
-                setup_results.append({"command": command, "status": status, "return_code": process.returncode})
+                setup_results.append({"command": shown_command, "status": status, "return_code": process.returncode})
                 if process.returncode != 0:
                     setup_failures.append(f"{command[0]} exited with code {process.returncode}")
         elif setup_cmds:
@@ -1625,7 +1665,7 @@ def register_pull(app: typer.Typer):
                     setup_results.append({"command": [], "status": "failed", "return_code": None})
                     setup_failures.append("invalid setup command")
                 else:
-                    setup_results.append({"command": command, "status": "would_run", "return_code": None})
+                    setup_results.append({"command": command[:4], "status": "would_run", "return_code": None})
 
         if setup_failures:
             fail(
@@ -1648,6 +1688,18 @@ def register_pull(app: typer.Typer):
         project_lock_path: Path | None = None
         if not dry_run:
             agent_version = installed_version
+            from observal_cli.layer import verify_installed_mcp
+
+            for component in lock_components:
+                if component.get("type") != "mcp" or not component.get("local_name"):
+                    continue
+                status, fingerprint = verify_installed_mcp(
+                    harness, options.get("scope", "project"), str(target_dir), component["local_name"]
+                )
+                if status == "verified" and fingerprint:
+                    component["mcp_integrity"] = fingerprint
+                elif status in {"missing", "drifted"}:
+                    warnings_list.append("Installed MCP entry could not be verified; attribution will be unavailable.")
 
             from observal_cli.lockfile import upsert_agent
 
