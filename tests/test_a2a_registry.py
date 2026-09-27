@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Remote A2A agents in discovery: card parsing, registration, review, search and delegation flags."""
@@ -18,6 +19,7 @@ from api.deps import get_current_user, get_db
 from api.ratelimit import limiter
 from api.routes import ard, ard_imports
 from models.discovery_entry import DiscoveryEntry, DiscoveryKind, DiscoveryLifecycle
+from models.team import TeamMembership, TeamRole
 from models.user import UserRole
 from services.discovery import a2a
 from services.discovery.projection import reproject_all
@@ -305,7 +307,10 @@ async def test_register_review_and_search(sessions, settings, card_server, monke
 
     # Only reviewers may review.
     async with _client(_app(sessions, reviewer)) as client:
-        resp = await client.post(f"/api/v1/ard/imports/{urn}/review", json={"action": "approve"})
+        blind = await client.post(f"/api/v1/ard/imports/{urn}/review", json={"action": "approve"})
+        assert blind.status_code == 400  # approving needs the digest of the card that was reviewed
+        approve = {"action": "approve", "digest": entry["obs:artifactDigest"]}
+        resp = await client.post(f"/api/v1/ard/imports/{urn}/review", json=approve)
     assert resp.status_code == 200, resp.text
     assert resp.json()["obs:lifecycle"] == "approved"
     assert resp.json()["obs:delegable"] is True
@@ -351,22 +356,50 @@ async def test_plain_user_cannot_review(sessions, settings, card_server):
 
 
 @pytest.mark.asyncio
+async def test_a_private_card_is_reviewed_by_admins_not_global_reviewers(sessions, settings, card_server):
+    owner, _stranger, reviewer = await _users(sessions)
+    async with sessions() as db:
+        admin = await fx.user(db, role=UserRole.admin)
+        await db.commit()
+    async with _client(_app(sessions, owner)) as client:
+        entry = (await client.post("/api/v1/ard/imports/a2a", json={"cardUrl": CARD_URL})).json()
+    urn, approve = entry["identifier"], {"action": "approve", "digest": entry["obs:artifactDigest"]}
+    async with _client(_app(sessions, reviewer)) as client:
+        # Same answer as for a card that does not exist: a private card's existence is not confirmed.
+        assert (await client.post(f"/api/v1/ard/imports/{urn}/review", json=approve)).status_code == 404
+    async with _client(_app(sessions, admin)) as client:
+        assert (await client.post(f"/api/v1/ard/imports/{urn}/review", json=approve)).status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_changed_card_goes_back_to_review_and_unchanged_stays_approved(sessions, settings, card_server):
     owner, _stranger, reviewer = await _users(sessions)
+    public = {"cardUrl": CARD_URL, "visibility": "public"}
     async with _client(_app(sessions, owner)) as client:
-        urn = (await client.post("/api/v1/ard/imports/a2a", json={"cardUrl": CARD_URL})).json()["identifier"]
+        reviewed = (await client.post("/api/v1/ard/imports/a2a", json=public)).json()
+    urn = reviewed["identifier"]
     async with _client(_app(sessions, reviewer)) as client:
-        await client.post(f"/api/v1/ard/imports/{urn}/review", json={"action": "approve"})
+        await client.post(
+            f"/api/v1/ard/imports/{urn}/review", json={"action": "approve", "digest": reviewed["obs:artifactDigest"]}
+        )
 
     async with _client(_app(sessions, owner)) as client:
-        same = await client.post("/api/v1/ard/imports/a2a", json={"cardUrl": CARD_URL})
+        same = await client.post("/api/v1/ard/imports/a2a", json=public)
     assert same.status_code == 200 and same.json()["obs:lifecycle"] == "approved"
 
     card_server[CARD_URL] = {**V1_CARD, "supportedInterfaces": [{"url": "https://evil.example.net/a2a"}]}
     async with _client(_app(sessions, owner)) as client:
-        changed = await client.post("/api/v1/ard/imports/a2a", json={"cardUrl": CARD_URL})
+        changed = await client.post("/api/v1/ard/imports/a2a", json=public)
     assert changed.json()["obs:lifecycle"] == "pending"
     assert changed.json()["obs:delegable"] is False
+
+    # Approving with the digest of the card the reviewer saw does not approve the new one unseen.
+    stale = {"action": "approve", "digest": reviewed["obs:artifactDigest"]}
+    async with _client(_app(sessions, reviewer)) as client:
+        resp = await client.post(f"/api/v1/ard/imports/{urn}/review", json=stale)
+        assert resp.status_code == 409
+        current = {"action": "approve", "digest": changed.json()["obs:artifactDigest"]}
+        assert (await client.post(f"/api/v1/ard/imports/{urn}/review", json=current)).status_code == 200
 
 
 @pytest.mark.asyncio
@@ -381,11 +414,16 @@ async def test_someone_else_cannot_take_over_a_registered_card(sessions, setting
 
 @pytest.mark.asyncio
 async def test_widening_the_audience_needs_a_new_review(sessions, settings, card_server):
-    owner, _stranger, reviewer = await _users(sessions)
+    owner, _stranger, _reviewer = await _users(sessions)
+    async with sessions() as db:
+        admin = await fx.user(db, role=UserRole.admin)
+        await db.commit()
     async with _client(_app(sessions, owner)) as client:
-        urn = (await client.post("/api/v1/ard/imports/a2a", json={"cardUrl": CARD_URL})).json()["identifier"]
-    async with _client(_app(sessions, reviewer)) as client:
-        await client.post(f"/api/v1/ard/imports/{urn}/review", json={"action": "approve"})
+        entry = (await client.post("/api/v1/ard/imports/a2a", json={"cardUrl": CARD_URL})).json()
+    urn = entry["identifier"]
+    async with _client(_app(sessions, admin)) as client:
+        approve = {"action": "approve", "digest": entry["obs:artifactDigest"]}
+        assert (await client.post(f"/api/v1/ard/imports/{urn}/review", json=approve)).status_code == 200
     async with _client(_app(sessions, owner)) as client:
         widened = await client.post("/api/v1/ard/imports/a2a", json={"cardUrl": CARD_URL, "visibility": "public"})
     assert widened.status_code == 200
@@ -408,7 +446,8 @@ async def test_a_removed_card_can_be_registered_by_someone_else(sessions, settin
 async def test_rejection_needs_reason_and_removal_is_owner_only(sessions, settings, card_server):
     owner, stranger, reviewer = await _users(sessions)
     async with _client(_app(sessions, owner)) as client:
-        urn = (await client.post("/api/v1/ard/imports/a2a", json={"cardUrl": CARD_URL})).json()["identifier"]
+        public = {"cardUrl": CARD_URL, "visibility": "public"}
+        urn = (await client.post("/api/v1/ard/imports/a2a", json=public)).json()["identifier"]
     async with _client(_app(sessions, reviewer)) as client:
         assert (await client.post(f"/api/v1/ard/imports/{urn}/review", json={"action": "reject"})).status_code == 400
         resp = await client.post(
@@ -436,6 +475,43 @@ async def test_team_visibility_requires_membership(sessions, settings, card_serv
     async with _client(_app(sessions, owner)) as client:
         resp = await client.post("/api/v1/ard/imports/a2a", json=body)
     assert resp.status_code == 201 and resp.json()["obs:visibility"] == "team"
+
+
+@pytest.mark.asyncio
+async def test_team_reviewers_find_and_review_their_teams_pending_agent(sessions, settings, card_server):
+    owner, _stranger, _reviewer = await _users(sessions)
+    async with sessions() as db:
+        team = await fx.team_with_member(db, owner)
+        team_reviewer = await fx.user(db)  # global role: plain user
+        db.add(TeamMembership(team_id=team.id, user_id=team_reviewer.id, role=TeamRole.reviewer))
+        await db.commit()
+    body = {"cardUrl": CARD_URL, "visibility": "team", "teamId": str(team.id)}
+    async with _client(_app(sessions, owner)) as client:
+        urn = (await client.post("/api/v1/ard/imports/a2a", json=body)).json()["identifier"]
+    async with _client(_app(sessions, team_reviewer)) as client:
+        listed = (await client.get("/api/v1/ard/imports")).json()["items"]
+        assert [i["identifier"] for i in listed] == [urn]
+        digest = (await client.get(f"/api/v1/ard/entries/{urn}")).json()["obs:artifactDigest"]
+        approve = {"action": "approve", "digest": digest}
+        resp = await client.post(f"/api/v1/ard/imports/{urn}/review", json=approve)
+    assert resp.status_code == 200 and resp.json()["obs:lifecycle"] == "approved"
+
+
+@pytest.mark.asyncio
+async def test_the_review_list_shows_only_what_the_caller_may_review(sessions, settings, card_server):
+    owner, _stranger, reviewer = await _users(sessions)
+    async with sessions() as db:
+        team = await fx.team_with_member(db, owner)
+        db.add(TeamMembership(team_id=team.id, user_id=reviewer.id, role=TeamRole.member))
+        await db.commit()
+    body = {"cardUrl": CARD_URL, "visibility": "team", "teamId": str(team.id)}
+    async with _client(_app(sessions, owner)) as client:
+        entry = (await client.post("/api/v1/ard/imports/a2a", json=body)).json()
+    # A global reviewer who is a plain member of the team may not review its private agents.
+    async with _client(_app(sessions, reviewer)) as client:
+        assert (await client.get("/api/v1/ard/imports")).json()["items"] == []
+        approve = {"action": "approve", "digest": entry["obs:artifactDigest"]}
+        assert (await client.post(f"/api/v1/ard/imports/{entry['identifier']}/review", json=approve)).status_code == 404
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Remote Agent2Agent (A2A) agents in the discovery index.
@@ -18,6 +19,7 @@ are normalised to one list of interfaces. See ``docs/adr/0002-a2a-delegation.md`
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
@@ -288,7 +290,8 @@ async def fetch_agent_card(
     header and TLS server name, so DNS rebinding cannot reach a private address.
     """
     card_url = normalize_card_url(url)
-    address = check_card_host(card_url, private_hosts)
+    # getaddrinfo blocks; keep it off the event loop.
+    address = await asyncio.to_thread(check_card_host, card_url, private_hosts)
     request_url, headers, extensions = card_url, {"Accept": "application/json"}, {}
     if address:
         parsed = urlparse(card_url)
@@ -298,6 +301,7 @@ async def fetch_agent_card(
         extensions["sni_hostname"] = parsed.hostname
     try:
         async with (
+            asyncio.timeout(FETCH_TIMEOUT_SECONDS * 2),  # the httpx timeout is per read; bound the whole download
             httpx.AsyncClient(timeout=FETCH_TIMEOUT_SECONDS, follow_redirects=False, transport=transport) as client,
             client.stream("GET", request_url, headers=headers, extensions=extensions) as response,
         ):
@@ -308,7 +312,7 @@ async def fetch_agent_card(
                 body.extend(chunk)
                 if len(body) > MAX_CARD_BYTES:
                     raise AgentCardError("The Agent Card is larger than 256 KiB.")
-    except httpx.HTTPError:
+    except (httpx.HTTPError, TimeoutError):
         optic.debug("a2a card fetch failed host={}", urlparse(card_url).hostname)
         raise AgentCardError("The Agent Card could not be fetched.") from None
     try:

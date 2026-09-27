@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Who may see which discovery entries.
@@ -10,9 +11,10 @@ Reproduces the registry's rules (ADR 0001, Decision 6) as a SQL predicate:
    team members, everything to admins and super-admins.
 2. Lifecycle — approved entries to everyone who passes (1); pending, rejected
    and draft entries only to the owner or a co-author (the owner fallback that
-   install already honours); reviewers additionally see pending entries, which
-   is their queue, but not other people's drafts or rejections; archived
-   entries only when asked for explicitly.
+   install already honours); whoever may review a pending entry
+   (``services.teamspace.can_review``) sees it too, which is their queue, but
+   not other people's drafts or rejections; archived entries only when asked
+   for explicitly.
 
 Anonymous callers see public approved entries, and only when the deployment
 has switched public search on.
@@ -25,8 +27,9 @@ from typing import TYPE_CHECKING, Any
 from sqlalchemy import and_, or_, select, true
 
 from models.discovery_entry import DiscoveryEntry, DiscoveryLifecycle, DiscoveryVisibility
-from models.team import TeamMembership
+from models.team import Team, TeamMembership
 from models.user import UserRole
+from services.teamspace import REVIEWING_TEAM_ROLES, TEAM_REVIEW_UNLOCKED
 
 if TYPE_CHECKING:
     import uuid
@@ -69,6 +72,27 @@ def privacy_predicate(user: Any | None):
     return or_(public, own, team)
 
 
+def _review_queue(user: Any):
+    """Pending entries the caller may review: the SQL form of services.teamspace.can_review."""
+    reviews_team = (
+        select(TeamMembership.id)
+        .join(Team, Team.id == TeamMembership.team_id)
+        .where(
+            TeamMembership.team_id == DiscoveryEntry.team_id,
+            TeamMembership.user_id == user.id,
+            TeamMembership.role.in_(REVIEWING_TEAM_ROLES),
+            TEAM_REVIEW_UNLOCKED,
+        )
+        .correlate(DiscoveryEntry)
+    )
+    public = DiscoveryEntry.visibility == DiscoveryVisibility.public
+    public_scope = true() if _is_reviewer(user) else reviews_team.where(Team.is_private.is_(False)).exists()
+    return and_(
+        DiscoveryEntry.lifecycle_status == DiscoveryLifecycle.pending,
+        or_(and_(public, public_scope), and_(~public, reviews_team.exists())),
+    )
+
+
 def lifecycle_predicate(user: Any | None, lifecycles: tuple[DiscoveryLifecycle, ...] = DEFAULT_LIFECYCLES):
     """Which lifecycle states the caller may see among the requested ones."""
     wanted = set(lifecycles)
@@ -82,15 +106,13 @@ def lifecycle_predicate(user: Any | None, lifecycles: tuple[DiscoveryLifecycle, 
         in_unapproved = DiscoveryEntry.lifecycle_status.in_(list(unapproved_wanted))
         owner = DiscoveryEntry.owner_user_id == user.id
         co_author = DiscoveryEntry.co_author_ids.like(f"%{user.id}%")
+        own = and_(in_unapproved, or_(owner, co_author))
         if _is_admin(user):
             clauses.append(in_unapproved)
-        elif _is_reviewer(user):
-            # A reviewer's mandate is the queue: pending items, plus their own work.
-            own = and_(in_unapproved, or_(owner, co_author))
-            queue = DiscoveryEntry.lifecycle_status == DiscoveryLifecycle.pending
-            clauses.append(or_(own, queue) if DiscoveryLifecycle.pending in wanted else own)
+        elif DiscoveryLifecycle.pending in wanted:
+            clauses.append(or_(own, _review_queue(user)))  # their own work, plus what they may review
         else:
-            clauses.append(and_(in_unapproved, or_(owner, co_author)))
+            clauses.append(own)
     if not clauses:
         # Nothing the caller is allowed to see in the requested states.
         return DiscoveryEntry.id.is_(None)

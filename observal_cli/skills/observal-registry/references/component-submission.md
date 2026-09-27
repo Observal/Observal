@@ -1,5 +1,6 @@
 <!-- SPDX-FileCopyrightText: 2026 Observal Contributors -->
 <!-- SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Component submission
@@ -101,7 +102,8 @@ A running service that publishes an A2A Agent Card (another team's agent, a depl
 observal registry a2a submit https://agents.acme.com --visibility private --output json          # /.well-known/agent-card.json
 observal registry a2a submit https://agents.acme.com/a2a/card.json --visibility team --team platform --output json
 observal registry a2a list --output json
-observal registry a2a review urn:air:agents.acme.com:a2a:incident-triage --approve --output json   # reviewers only
+observal discover inspect urn:air:agents.acme.com:a2a:incident-triage --output json                 # read the card and its obs:artifactDigest
+observal registry a2a review urn:air:agents.acme.com:a2a:incident-triage --approve --digest sha256:... --output json   # reviewers only
 observal registry a2a remove urn:air:agents.acme.com:a2a:incident-triage --yes --output json
 ```
 

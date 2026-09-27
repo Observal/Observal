@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """observal registry a2a: register remote A2A agents so agents can discover and delegate to them."""
@@ -20,7 +21,7 @@ a2a_app = typer.Typer(
         "Examples:\n"
         "  observal registry a2a submit https://agents.acme.com/triage --visibility team --team platform\n"
         "  observal registry a2a list --output json\n"
-        "  observal registry a2a review urn:air:agents.acme.com:a2a:triage --approve"
+        "  observal registry a2a review urn:air:agents.acme.com:a2a:triage --approve --digest sha256:9f2c..."
     ),
     no_args_is_help=True,
 )
@@ -38,6 +39,7 @@ def _print_entry(entry: dict) -> None:
     rprint(f"  [dim]Status[/dim]     {esc(entry.get('obs:lifecycle'))}")
     rprint(f"  [dim]Visibility[/dim] {esc(entry.get('obs:visibility'))}")
     rprint(f"  [dim]Endpoint[/dim]   {esc(iface.get('url') or '-')} {esc(iface.get('protocolBinding') or '')}")
+    rprint(f"  [dim]Digest[/dim]     {esc(entry.get('obs:artifactDigest') or '-')}")
     skills = [c.removeprefix("a2a-skill:") for c in entry.get("capabilities") or [] if c.startswith("a2a-skill:")]
     if skills:
         rprint(f"  [dim]Skills[/dim]     {esc(', '.join(skills))}")
@@ -124,12 +126,19 @@ def a2a_review(
     approve: bool = typer.Option(False, "--approve", help="Approve the agent"),
     reject: bool = typer.Option(False, "--reject", help="Reject the agent"),
     reason: str | None = typer.Option(None, "--reason", help="Reason (required to reject)"),
+    digest: str | None = typer.Option(
+        None, "--digest", help="Digest of the card you reviewed (from discover inspect); required to approve"
+    ),
     output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Approve or reject a registered agent (reviewers and admins).
 
+    Inspect the card first (observal discover inspect <identifier>) and pass
+    its digest to approve, so an owner refreshing the card in between cannot
+    get a card you never saw approved.
+
     Examples:
-      observal registry a2a review urn:air:agents.acme.com:a2a:triage --approve
+      observal registry a2a review urn:air:agents.acme.com:a2a:triage --approve --digest sha256:9f2c...
       observal registry a2a review urn:air:agents.acme.com:a2a:triage --reject --reason "No auth on endpoint"
     """
     if approve == reject:
@@ -139,7 +148,15 @@ def a2a_review(
             operation="Review A2A agent",
             resource=identifier,
         )
-    body = {"action": "approve" if approve else "reject", "reason": reason}
+    if approve and not digest:
+        fail(
+            ErrorCategory.VALIDATION,
+            "Approving needs --digest with the digest of the card you reviewed.",
+            operation="Review A2A agent",
+            resource=identifier,
+            remediation=f"Run observal discover inspect {identifier} and pass its Digest.",
+        )
+    body = {"action": "approve" if approve else "reject", "reason": reason, "digest": digest}
     entry = client.post(f"{_BASE}/{identifier}/review", body, operation="Review A2A agent", resource=identifier)
     if output == "json":
         output_json(entry)

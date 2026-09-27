@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Register remote A2A agents in the discovery index (ADR 0002).
@@ -16,6 +17,7 @@ visibility then work through the ordinary ARD endpoints.
 
 import uuid
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Request
@@ -26,7 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import services.dynamic_settings as ds
-from api.deps import ROLE_HIERARCHY, get_current_user, get_db, require_role
+from api.deps import ROLE_HIERARCHY, get_current_user, get_db
 from api.ratelimit import limiter
 from models.discovery_entry import DiscoveryEntry, DiscoveryLifecycle, DiscoverySourceKind, DiscoveryVisibility
 from models.team import TeamMembership
@@ -42,6 +44,7 @@ from services.discovery.a2a import (
 from services.discovery.identity import MEDIA_TYPE_A2A, normalize_urn
 from services.discovery.projection import resolve_context
 from services.discovery.visibility import visible_entries_predicate
+from services.teamspace import can_review, review_scope
 
 router = APIRouter(prefix="/api/v1/ard/imports", tags=["ard"])
 
@@ -67,6 +70,9 @@ class A2aReviewRequest(BaseModel):
 
     action: Literal["approve", "reject"]
     reason: str | None = Field(default=None, max_length=2000)
+    # The obs:artifactDigest the reviewer looked at, required to approve: the decision only applies to
+    # that card, so an owner who refreshes it in between gets it back to review instead of approved unseen.
+    digest: str | None = Field(default=None, max_length=80)
 
 
 def _error(status: int, code: str, message: str) -> JSONResponse:
@@ -83,13 +89,15 @@ def _summary(entry: DiscoveryEntry) -> dict:
     return document
 
 
-async def _imported(db: AsyncSession, identifier: str) -> DiscoveryEntry | None:
+async def _imported(db: AsyncSession, identifier: str, *, for_update: bool = False) -> DiscoveryEntry | None:
     stmt = select(DiscoveryEntry).where(
         DiscoveryEntry.ard_identifier == normalize_urn(identifier),
         DiscoveryEntry.source_kind == DiscoverySourceKind.imported,
         DiscoveryEntry.media_type == MEDIA_TYPE_A2A,
         DiscoveryEntry.tombstoned_at.is_(None),
     )
+    if for_update:  # a review decision and an owner's refresh must not interleave
+        stmt = stmt.with_for_update()
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
@@ -123,6 +131,7 @@ async def list_imports(
             "obs:lifecycle": e.lifecycle_status.value,
             "obs:visibility": e.visibility.value,
             "obs:delegable": bool((e.raw_entry or {}).get("obs:delegable")),
+            "obs:artifactDigest": e.artifact_digest,
         }
         for e in (await db.execute(stmt)).scalars().all()
     ]
@@ -214,12 +223,34 @@ async def review_a2a_agent(
     identifier: str,
     body: A2aReviewRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.reviewer)),
+    current_user: User = Depends(get_current_user),
 ) -> JSONResponse:
-    """Approve or reject a registered agent. Approval pins the card as reviewed."""
-    entry = await _imported(db, identifier)
+    """Approve or reject a registered agent. Approval pins the card as reviewed.
+
+    Authorized like every other review (see api/routes/review.py): a team-visible
+    agent by its team's owners and reviewers, a public one by global reviewers,
+    a private one by admins. An agent outside the caller's scope answers 404
+    when it is private, so its existence is not confirmed.
+    """
+    scope = await review_scope(db, current_user)
+    if scope.is_empty:
+        return _error(403, "PERMISSION_DENIED", "Insufficient permissions")
+    entry = await _imported(db, identifier, for_update=True)
     if entry is None:
         return _error(404, "NOT_FOUND", "Entry not found")
+    subject = SimpleNamespace(is_private=entry.visibility != DiscoveryVisibility.public, team_id=entry.team_id)
+    if not can_review(subject, scope):
+        if subject.is_private:
+            return _error(404, "NOT_FOUND", "Entry not found")
+        return _error(403, "PERMISSION_DENIED", "Public item is outside your review scope")
+    if body.action == "approve" and not body.digest:
+        return _error(400, "INVALID_ARGUMENT", "Approval needs the digest of the card you reviewed.")
+    if body.digest and body.digest != entry.artifact_digest:
+        return _error(
+            409,
+            "FAILED_PRECONDITION",
+            "The Agent Card changed since you looked at it. Inspect it again and review the current card.",
+        )
     if body.action == "reject" and not (body.reason or "").strip():
         return _error(400, "INVALID_ARGUMENT", "A rejection needs a reason.")
     card = pinned_card(entry)

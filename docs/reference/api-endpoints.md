@@ -111,7 +111,7 @@ server does not proxy A2A traffic. See [ADR 0002](../adr/0002-a2a-delegation.md)
 | --- | --- | --- |
 | `GET` | `/api/v1/ard/imports` | Remote agents the caller can see, including their own and (reviewers) pending ones |
 | `POST` | `/api/v1/ard/imports/a2a` | Register or refresh a card: `{"cardUrl": "...", "visibility": "private\|team\|public", "teamId": "..."}`. `201` new, `200` refresh; a changed card returns to `pending` |
-| `POST` | `/api/v1/ard/imports/{identifier}/review` | Reviewers: `{"action": "approve\|reject", "reason": "..."}` (reason required to reject) |
+| `POST` | `/api/v1/ard/imports/{identifier}/review` | Reviewers in scope (team owners and reviewers for team agents, global reviewers for public, admins for private): `{"action": "approve\|reject", "reason": "...", "digest": "sha256:..."}` (`digest` of the reviewed card required to approve, 409 when the card changed since; reason required to reject) |
 | `DELETE` | `/api/v1/ard/imports/{identifier}` | Owner or admin: remove from discovery |
 
 Cards must be served over https from a public address. Internal hosts are
