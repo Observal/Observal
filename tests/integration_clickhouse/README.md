@@ -7,7 +7,7 @@ Run `make test-ch` against the existing **local, already-migrated sample** datab
 
 ## Phase 1.4–1.5 isolated proof
 
-Use a **dedicated isolated** local ClickHouse instance/database named `observal_phase14_ci` with production migrations through 006 applied by `python -m services.clickhouse.migrations`. Never point this proof at the existing `observal` sample. With an isolated PostgreSQL database migrated to Alembic `028_projection_generation`, run:
+Use a **dedicated isolated** local ClickHouse instance/database named `observal_phase14_ci` with production migrations through 006 applied by `python -m services.clickhouse.migrations`. Never point this proof at the existing `observal` sample. With an isolated PostgreSQL database migrated to Alembic `029_projection_generation`, run:
 
 ```bash
 cd observal-server

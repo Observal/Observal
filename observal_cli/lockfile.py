@@ -166,7 +166,6 @@ def read_lockfile() -> dict:
     return data
 
 
-
 def write_lockfile(data: dict) -> None:
     """Write the complete lockfile atomically with file locking."""
     data["updated_at"] = datetime.now(UTC).isoformat()
