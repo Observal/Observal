@@ -461,7 +461,7 @@ def test_every_leaf_command_exposes_json_machine_output():
             leaves.append(command)
 
     walk(root)
-    assert len(leaves) == 192
+    assert len(leaves) == 196
     for command in leaves:
         output = next((parameter for parameter in command.params if parameter.name == "output"), None)
         assert output is not None, command.name
