@@ -18,3 +18,16 @@ uv run --with pytest --with pytest-asyncio --with pyyaml --with typer --with ric
 ```
 
 The test rejects any URL targeting the sample database and reads `006_layer_components` in the isolated migration ledger. It inserts only synthetic uniquely keyed projection/session rows there. The separate PostgreSQL proof ran the target `028_` Alembic upgrade after stamping 027 in the isolated database. A full empty-database Alembic upgrade remains blocked by the pre-existing `003_skill_registry_direct` migration (`DuplicateColumnError` after `Base.metadata.create_all`), so that is **not** claimed green.
+
+## Phase 2.2 isolated production migration proof
+
+The `007_component_activity.sql` migration is compared byte-for-byte after SQL splitting to the last two pinned Phase 0 DDL statements by `tests/test_clickhouse_migrations.py`. To prove that the **real migration runner** creates those production tables, opt in with the separate `observal_phase22_ci` database on the isolated proof ClickHouse instance (never the existing sample):
+
+```bash
+cd observal-server
+OBSERVAL_CH_PHASE22_URL=http://127.0.0.1:18123/observal_phase22_ci \
+CLICKHOUSE_URL=clickhouse://proof:proof@127.0.0.1:18123/observal_phase22_ci \
+uv run --with pytest --with pytest-asyncio pytest ../tests/integration_clickhouse/test_phase22_migration.py -q
+```
+
+The test hard-rejects the sample database/port, runs all pending migrations in that dedicated database, checks the migration ledger, table engines, complete safe-field sets and generation keys, inserts a complete zero-call marker with zero activity rows, and reruns the runner to prove idempotence. It does not delete its proof tables/database/container. Use test-only credentials, not production credentials.
