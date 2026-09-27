@@ -56,8 +56,11 @@ def local_agent_name(slug: str) -> str:
 def child_environment(task: dict, *, harness: str) -> dict[str, str]:
     """The child inherits the caller's environment plus its place in the delegation chain."""
     m = tasks.meta(task)
-    chain = [*m.get("chain", []), m.get("target", "")]
+    # Both spellings of the child go on the chain, so a loop back to it is caught whichever way it is named.
+    chain = [*m.get("chain", []), m.get("target", ""), str(m.get("agentId") or "")]
     env = dict(os.environ)
+    for inherited in ("OBSERVAL_AGENT_ID", "OBSERVAL_AGENT_VERSION"):  # the caller's own, when it is a child
+        env.pop(inherited, None)
     env.update(
         {
             "OBSERVAL_DELEGATION_DEPTH": str(int(m.get("depth", 0)) + 1),
@@ -68,6 +71,8 @@ def child_environment(task: dict, *, harness: str) -> dict[str, str]:
     )
     if m.get("agentId"):
         env["OBSERVAL_AGENT_ID"] = str(m["agentId"])
+    if m.get("version"):
+        env["OBSERVAL_AGENT_VERSION"] = str(m["version"])  # read by harness extensions that attribute sessions
     return env
 
 
@@ -183,7 +188,7 @@ def run(
     ws: workspace.Workspace | None = None
     try:
         ws = workspace.create(Path(m["cwd"]))
-        tasks.record_workspace(task, ws.path.parent, ws.repo)
+        tasks.record_workspace(task, ws.root)
         save(task)
         name, servers, instructions = materialize(task, ws, harness=harness, adapter=adapter)
         workspace.mark_baseline(ws)
@@ -195,6 +200,7 @@ def run(
             scratch_dir=ws.scratch,
             session_id=str(uuid.uuid4()),
             mcp_servers=servers,
+            source_dir=Path(m["cwd"]),
         )
         plan = adapter.headless_command(request)
         binary = shutil.which(plan.argv[0])

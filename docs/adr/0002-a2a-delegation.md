@@ -39,11 +39,12 @@ Artifacts for results). Observal's own bookkeeping lives under
 caller, and the local runner can be exposed over the A2A wire later without
 changing its data model.
 
-## Decision 2: Registry Agents run headless in a throwaway worktree
+## Decision 2: Registry Agents run headless in a throwaway copy of the repository
 
-A delegated registry Agent is installed with project scope into a detached
-`git worktree` of the caller's repository (HEAD plus the caller's uncommitted
-and untracked, non-ignored files), using the same server install call and file
+A delegated registry Agent is installed with project scope into a shared clone
+(`git clone --shared`, detached at HEAD, remote removed) of the caller's
+repository, plus the caller's uncommitted and untracked, non-ignored files,
+using the same server install call and file
 writer as `observal agent pull`, minus setup commands, lockfile and
 active-agent state. Its harness then runs one prompt non-interactively.
 
@@ -56,11 +57,30 @@ active-agent state. Its harness then runs one prompt non-interactively.
   difference between the tree after the agent's config was written and the tree
   it left is returned as a `changes.patch` artifact. The caller decides whether
   to `git apply` it. Trees are recorded through a private index file: no
-  commits, refs, hooks or signing.
+  commits, refs, hooks or signing. The clone borrows the caller's objects but
+  has its own refs, config, hooks and stash, so git commands a child with a
+  shell runs (branch, stash, commit, push) stay in the copy. This is not a
+  sandbox: a harness with shell access can still reach any path the user can.
 - Shell access is refused where the harness can refuse it (Claude Code print
   mode denies unapproved tools; Kiro trusts only file tools and the agent's own
   MCP servers; Copilot CLI denies `shell`; Cursor and Antigravity run
   sandboxed). The agent's own reviewed MCP servers are allowed.
+- Pi loads project-local `.pi` files only for a trusted project, and trusting
+  also runs the project's extensions. A Pi child is started with `--approve`
+  only when Pi already trusts the caller's repository (its `trust.json`, or
+  `defaultProjectTrust: always`); otherwise the delegation fails and says so.
+- Workspaces live under `~/.observal/delegations/ws/`, not the shared temp
+  directory, because harnesses read instruction and skill files from parent
+  directories.
+- A worker that dies leaves nothing behind for long: the next status check or
+  delegation stops its child (on Linux only after confirming the process still
+  runs in that workspace, so a reused pid is never killed) and removes the
+  workspace. Where the child cannot be proven to be ours, it is left to finish
+  and its workspace is removed by a later sweep.
+- The depth, cycle and breadth guards read the chain from the environment the
+  delegation sets, or, when a harness starts MCP servers with only an
+  allowlisted environment (Codex), from the task whose workspace the server
+  runs in.
 - Outside a git repository the child gets an empty scratch directory.
 
 Rejected alternative: install the agent at user scope and remove it after. It
@@ -76,7 +96,12 @@ A remote agent is registered by its Agent Card URL
 governed record.
 
 - It starts `pending` and needs a reviewer (`.../{identifier}/review`), exactly
-  like a native submission. Visibility is private, team, or public.
+  like a native submission, authorized the same way: a team-visible agent by
+  its team's owners and reviewers, a public one by global reviewers, a private
+  one by admins; team owners and reviewers also see their team's pending
+  agents in discovery so they can inspect them. Visibility is private, team,
+  or public. Approving requires the `obs:artifactDigest` the reviewer
+  inspected; the decision is refused (409) when the card changed in between.
 - The reviewed card is pinned in the entry (`obs:agentCard`,
   `obs:a2aInterface`). Clients call the pinned endpoint, never a card fetched at
   call time. Re-registering a card whose content changed sends it back to
@@ -98,8 +123,11 @@ governed record.
 The CLI calls a remote agent directly. The server never relays A2A traffic
 (consistent with "remote URLs remain direct" in AGENTS.md). Observal never
 stores agent credentials: the client reads a token from
-`OBSERVAL_A2A_TOKEN_<NAME>` or `OBSERVAL_A2A_TOKEN` and sends it as the card's
-security scheme asks.
+`OBSERVAL_A2A_TOKEN_<HOST>`, named after the host of the endpoint it is sent to
+(`agents.acme.com` reads `OBSERVAL_A2A_TOKEN_AGENTS_ACME_COM`; `-` becomes
+`__` so two hosts never share a name), and sends it as the card's security
+scheme asks. There is no catch-all variable: a token only ever reaches the host
+it is named for.
 
 ## Decision 5: How agents reach delegation
 
@@ -108,6 +136,11 @@ server (`python -m observal_cli.delegation.mcp_server`) with four tools:
 `find_agents`, `delegate`, `get_task`, `cancel_task`. MCP is the one
 integration point every harness has, so this needs no per-harness work. The
 `discovery.delegation_enabled` setting (default on) controls the injection.
+The entry carries no agent id, because one `observal-agents` entry is shared by
+every agent pulled into the same project or user config. The server takes the
+calling agent from `OBSERVAL_AGENT_ID`, which a delegated child always has.
+`delegate` waits at most 50 seconds, below common MCP tool timeouts (Codex:
+60 s), and returns a `task_id` that `get_task` follows.
 People and scripts use `observal delegate find|run|status|reply|list|cancel`.
 
 The harness's own tool-permission prompt for `delegate` is the consent point
@@ -123,8 +156,8 @@ Checked before anything runs:
   `OBSERVAL_DELEGATION_DEPTH`;
 - breadth: a delegated agent runs headless with no permission prompt, so it
   may start at most three tasks of its own (counted by `parentTaskId`);
-- cycles: an agent already in `OBSERVAL_DELEGATION_CHAIN`, or the caller
-  itself, is refused.
+- cycles: an agent already in `OBSERVAL_DELEGATION_CHAIN` (by identifier and
+  by agent id), or the caller itself, is refused.
 
 ## Decision 7: Delegability is its own field
 

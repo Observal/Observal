@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Call a remote A2A agent over the JSON-RPC binding.
@@ -12,9 +13,10 @@ header) and falls back to the v0.3 method names (``message/send`` ...) for
 cards that declare a 0.x protocol version.
 
 Credentials are never stored by Observal. When the card declares security
-schemes, the token is read from ``OBSERVAL_A2A_TOKEN_<NAME>`` (the agent's
-identifier name, upper-cased, non-alphanumerics as ``_``) or the catch-all
-``OBSERVAL_A2A_TOKEN``, and sent as the scheme asks.
+schemes, the token is read from ``OBSERVAL_A2A_TOKEN_<HOST>``, named after the
+host of the endpoint it is sent to (``agents.acme.com`` reads
+``OBSERVAL_A2A_TOKEN_AGENTS_ACME_COM``), and sent as the scheme asks. A token
+therefore only ever reaches the host it is named for; there is no catch-all.
 """
 
 from __future__ import annotations
@@ -42,18 +44,29 @@ class A2aError(RuntimeError):
     """A failure whose message is safe to show the calling agent."""
 
 
-def token_env_names(identifier: str) -> list[str]:
-    name = identifier.rsplit(":", 1)[-1]
-    specific = "OBSERVAL_A2A_TOKEN_" + re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_").upper()
-    return [specific, "OBSERVAL_A2A_TOKEN"]
+_HOST_RE = re.compile(r"[a-z0-9]([a-z0-9.-]*[a-z0-9])?")
 
 
-def auth_headers(card: dict, identifier: str) -> dict[str, str]:
+def token_env_name(url: str) -> str | None:
+    """The variable holding the token for the endpoint ``url``, named after its host.
+
+    ``.`` becomes ``_`` and ``-`` becomes ``__``, so two hosts never share a name
+    (``agents-acme.com`` is ``AGENTS__ACME_COM``, ``agents.acme.com`` is
+    ``AGENTS_ACME_COM``). Hosts with any other character get no token.
+    """
+    host = (urlparse(url).hostname or "").lower()
+    if not _HOST_RE.fullmatch(host) or ".." in host:
+        return None
+    return "OBSERVAL_A2A_TOKEN_" + host.replace("-", "__").replace(".", "_").upper()
+
+
+def auth_headers(card: dict, url: str) -> dict[str, str]:
     """Headers for the first security scheme the card declares that we can satisfy from the environment."""
     schemes = card.get("securitySchemes") if isinstance(card.get("securitySchemes"), dict) else {}
     if not schemes:
         return {}
-    token = next((os.environ[n] for n in token_env_names(identifier) if os.environ.get(n)), None)
+    name = token_env_name(url)
+    token = os.environ.get(name) if name else None
     if not token:
         return {}
     for scheme in schemes.values():
@@ -75,7 +88,6 @@ class A2aClient:
         self,
         interface: dict,
         card: dict,
-        identifier: str,
         *,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
@@ -88,7 +100,7 @@ class A2aClient:
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if not self.legacy:
             headers["A2A-Version"] = version if version[:1].isdigit() else "1.0"
-        credentials = auth_headers(card, identifier)
+        credentials = auth_headers(card, self.url)
         endpoint = urlparse(self.url)
         if credentials and endpoint.scheme != "https" and (endpoint.hostname or "").lower() not in LOOPBACK_HOSTS:
             raise A2aError(
@@ -101,16 +113,16 @@ class A2aClient:
     def close(self) -> None:
         self._http.close()
 
-    def _call(self, method: str, params: dict) -> Any:
+    def _call(self, method: str, params: dict, *, timeout: float = REQUEST_TIMEOUT) -> Any:
         payload = {"jsonrpc": "2.0", "id": str(uuid.uuid4()), "method": method, "params": params}
         try:
-            response = self._http.post(self.url, json=payload)
+            response = self._http.post(self.url, json=payload, timeout=timeout)
         except httpx.HTTPError:
             raise A2aError("The remote agent could not be reached.") from None
         if response.status_code in (401, 403):
             raise A2aError(
                 f"The remote agent refused the credentials (HTTP {response.status_code}). "
-                "Set OBSERVAL_A2A_TOKEN or the agent-specific token variable."
+                f"Set {token_env_name(self.url) or 'a token variable'} to a valid token for it."
             )
         try:
             body = response.json()
@@ -163,7 +175,8 @@ class A2aClient:
         params: dict[str, Any] = {"id": task_id}
         if self.tenant and not self.legacy:
             params["tenant"] = self.tenant
-        return normalize_result(self._call("tasks/cancel" if self.legacy else "CancelTask", params))
+        # Short: a cancel runs inside an MCP tool call, which clients time out (Codex: 60 s).
+        return normalize_result(self._call("tasks/cancel" if self.legacy else "CancelTask", params, timeout=10.0))
 
 
 def _normalize_parts(parts: Any) -> list[dict]:
@@ -227,6 +240,34 @@ def _merge(task: dict, remote: dict) -> None:
         task["artifacts"] = remote["artifacts"]
 
 
+def _cancel_remote(remote_client: A2aClient, task: dict) -> dict:
+    """Cancel on the remote side too; the status says when the remote agent did not confirm."""
+    text = "Canceled by the caller."
+    remote_id = tasks.meta(task).get("remoteTaskId")
+    if remote_id:
+        try:
+            _merge(task, remote_client.cancel(remote_id))
+        except A2aError as exc:
+            text = f"Canceled by the caller, but the remote agent did not confirm: {exc}"
+    return tasks.set_status(task, tasks.STATE_CANCELED, text)
+
+
+def cancel(task: dict, *, entry: dict, transport: httpx.BaseTransport | None = None) -> dict:
+    """Cancel a remote task that is waiting for input; no worker is running for it."""
+    try:
+        remote_client = A2aClient(
+            entry.get("obs:a2aInterface") or {}, entry.get("obs:agentCard") or {}, transport=transport
+        )
+    except A2aError as exc:
+        return tasks.set_status(
+            task, tasks.STATE_CANCELED, f"Canceled by the caller, but the remote agent was not told: {exc}"
+        )
+    try:
+        return _cancel_remote(remote_client, task)
+    finally:
+        remote_client.close()
+
+
 def run(
     task: dict,
     *,
@@ -242,31 +283,30 @@ def run(
     interface = entry.get("obs:a2aInterface") or {}
     card = entry.get("obs:agentCard") or {}
     try:
-        remote_client = A2aClient(interface, card, m["target"], transport=transport)
+        remote_client = A2aClient(interface, card, transport=transport)
     except A2aError as exc:
         return tasks.set_status(task, tasks.STATE_FAILED, str(exc))
     try:
+        if should_cancel():  # canceled before anything reached the remote agent
+            return tasks.set_status(task, tasks.STATE_CANCELED, "Canceled by the caller.")
         text = reply if reply is not None else tasks.message_text((task.get("history") or [{}])[0])
         remote = remote_client.send(text, task_id=m.get("remoteTaskId"), context_id=m.get("remoteContextId"))
         _merge(task, remote)
         m["remoteUrl"] = remote_client.url
-        save(task)
+        if not tasks.is_final(task):  # a settled state is saved once, by the worker, after this returns
+            save(task)
         deadline = time.monotonic() + timeout
         while not tasks.is_final(task):
             if should_cancel():
-                if m.get("remoteTaskId"):
-                    try:
-                        _merge(task, remote_client.cancel(m["remoteTaskId"]))
-                    except A2aError:
-                        pass
-                return tasks.set_status(task, tasks.STATE_CANCELED, "Canceled by the caller.")
+                return _cancel_remote(remote_client, task)
             if time.monotonic() > deadline:
                 return tasks.set_status(task, tasks.STATE_FAILED, f"Timed out after {int(timeout)} seconds.")
             if not m.get("remoteTaskId"):
                 return tasks.set_status(task, tasks.STATE_FAILED, "The remote agent returned no task to follow.")
             time.sleep(POLL_SECONDS)
             _merge(task, remote_client.get(m["remoteTaskId"]))
-            save(task)
+            if not tasks.is_final(task):
+                save(task)
         return task
     except A2aError as exc:
         return tasks.set_status(task, tasks.STATE_FAILED, str(exc))

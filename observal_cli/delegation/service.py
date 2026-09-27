@@ -25,13 +25,15 @@ import shutil
 import signal
 import subprocess
 import sys
-import tempfile
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from loguru import logger as optic
+
 from observal_cli import capability_lock, client
 from observal_cli.delegation import tasks
+from observal_cli.errors import CliError
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -60,11 +62,43 @@ class DelegationError(Exception):
 # ── Chain ────────────────────────────────────────────────────────────────
 
 
-def current_depth() -> int:
+def _workspace_delegation() -> dict | None:
+    """The delegated task this process runs inside, found from its working directory.
+
+    The delegation passes its place in the chain to the child in environment
+    variables, but some harnesses start MCP servers with only an allowlisted
+    environment (Codex). The workspace is the fallback, so the depth, cycle and
+    breadth guards hold whatever the harness forwards.
+    """
     try:
-        return max(0, int(os.environ.get("OBSERVAL_DELEGATION_DEPTH", "0")))
+        return tasks.delegation_at(str(Path.cwd()))
+    except OSError:
+        return None
+
+
+def current_depth() -> int:
+    if "OBSERVAL_DELEGATION_DEPTH" not in os.environ:
+        m = _workspace_delegation()
+        return int(m.get("depth", 0)) + 1 if m else 0
+    try:
+        return max(0, int(os.environ["OBSERVAL_DELEGATION_DEPTH"]))
     except ValueError:
         return 0
+
+
+def parent_task_id() -> str | None:
+    if os.environ.get("OBSERVAL_DELEGATION_TASK_ID"):
+        return os.environ["OBSERVAL_DELEGATION_TASK_ID"]
+    m = _workspace_delegation()
+    return m.get("taskId") if m else None
+
+
+def parent_agent_id() -> str | None:
+    """The agent this process runs as when it is a delegated child."""
+    if os.environ.get("OBSERVAL_AGENT_ID"):
+        return os.environ["OBSERVAL_AGENT_ID"]
+    m = _workspace_delegation()
+    return str(m["agentId"]) if m and m.get("agentId") else None
 
 
 def max_depth() -> int:
@@ -75,7 +109,12 @@ def max_depth() -> int:
 
 
 def current_chain() -> list[str]:
-    return [c for c in os.environ.get("OBSERVAL_DELEGATION_CHAIN", "").split(",") if c]
+    if "OBSERVAL_DELEGATION_CHAIN" not in os.environ:
+        m = _workspace_delegation()
+        if not m:
+            return []
+        return [c for c in [*m.get("chain", []), m.get("target"), m.get("agentId")] if c]
+    return [c for c in os.environ["OBSERVAL_DELEGATION_CHAIN"].split(",") if c]
 
 
 # ── Find ─────────────────────────────────────────────────────────────────
@@ -168,10 +207,10 @@ def choose_harness(supported: list[str], preferred: str | None) -> str:
         if harness in available and (not supported or harness in supported):
             return harness
     if not available:
-        raise DelegationError(
-            "No harness on this machine can run an agent headless. Install one of: Claude Code, Kiro CLI, "
-            "Cursor CLI, Codex, OpenCode, Copilot CLI or Antigravity."
-        )
+        from observal_shared.harness_registry import HARNESS_REGISTRY, get_harnesses_with_fact
+
+        names = ", ".join(HARNESS_REGISTRY[h]["display_name"] for h in get_harnesses_with_fact("headless_run"))
+        raise DelegationError(f"No harness on this machine can run an agent headless. Install one of: {names}.")
     raise DelegationError(
         f"The agent supports {', '.join(supported)}, but only {', '.join(available)} can run headless here."
     )
@@ -234,10 +273,19 @@ def _worker_pid(task_id: str) -> int | None:
 
 def _launch(task: dict) -> None:
     tasks.clear_cancel(task["id"])
+    # A previous worker's pid (a reply resumes a task) must not make the new, not yet started
+    # worker look dead to a concurrent get().
+    with contextlib.suppress(FileNotFoundError):
+        (tasks.store_dir() / task["id"] / "worker.pid").unlink()
     tasks.save(task)
-    pid = _spawn(task["id"])
+    try:
+        pid = _spawn(task["id"])
+    except OSError as exc:
+        tasks.save(tasks.set_status(task, tasks.STATE_FAILED, "The delegation worker could not be started."))
+        raise DelegationError(f"The delegation worker could not be started: {exc}") from None
     if pid:
-        # A side file, not the task: the worker owns the task file once it starts.
+        # A side file, not the task: the worker owns the task file once it starts. The worker
+        # also writes it first thing, in case this process dies before getting here.
         tasks.task_dir(task["id"]).joinpath("worker.pid").write_text(str(pid), encoding="utf-8")
 
 
@@ -254,6 +302,7 @@ def start(
     cwd: str | Path | None = None,
     wait_seconds: float = 0,
 ) -> dict:
+    started = time.monotonic()
     message = (message or "").strip()
     if not message:
         raise DelegationError("A delegation needs a message describing the task.")
@@ -262,7 +311,7 @@ def start(
     depth = current_depth()
     if depth >= max_depth():
         raise DelegationError(f"Delegation depth limit reached ({max_depth()}). Do this part of the task yourself.")
-    parent_task = os.environ.get("OBSERVAL_DELEGATION_TASK_ID") or None
+    parent_task = parent_task_id()
     if parent_task and tasks.count_children(parent_task) >= MAX_CHILD_TASKS:
         raise DelegationError(
             f"A delegated agent can start at most {MAX_CHILD_TASKS} tasks of its own. Do the rest of this task yourself."
@@ -306,7 +355,7 @@ def start(
         observal["remoteUrl"] = (entry.get("obs:a2aInterface") or {}).get("url")
 
     task = tasks.new_task(message=message, observal=observal)
-    with contextlib.suppress(OSError, ValueError):
+    try:
         capability_lock.record(
             kind="external" if kind == "a2a" else "agent",
             mode=capability_lock.MODE_DELEGATED,
@@ -320,9 +369,12 @@ def start(
             digest=entry.get("obs:artifactDigest"),
             extra={"task_id": task["id"], "child_harness": observal.get("harness")},
         )
+    except (OSError, ValueError) as exc:  # evidence only; the delegation itself still runs
+        optic.warning("capability lock not updated for delegation task={}: {}", task["id"], exc)
     _reap_abandoned()
     _launch(task)
-    return wait(task["id"], wait_seconds)
+    # The caller's budget covers the lookup and launch too (MCP clients time the whole tool call).
+    return wait(task["id"], max(0.0, wait_seconds - (time.monotonic() - started)))
 
 
 def reply(task_id: str, message: str, *, wait_seconds: float = 0) -> dict:
@@ -344,7 +396,9 @@ def reply(task_id: str, message: str, *, wait_seconds: float = 0) -> dict:
 def _ran_in(pid: int, root: str) -> bool:
     """Whether ``pid`` is still the child that ran in ``root``, not a process that reused its id."""
     if not Path("/proc/self/cwd").exists():
-        return True  # no /proc (macOS, Windows): trust the liveness check
+        # ponytail: without /proc (macOS, Windows) identity cannot be proven, so the orphaned child is
+        # left to finish on its own; record and compare the process start time if that ever matters.
+        return False
     try:
         return os.readlink(f"/proc/{pid}/cwd").startswith(root)
     except OSError:
@@ -352,42 +406,72 @@ def _ran_in(pid: int, root: str) -> bool:
 
 
 def _reap(task: dict) -> None:
-    """Stop the child a dead worker left running and remove its workspace."""
+    """Stop the child a dead worker left running and remove its workspace.
+
+    A child that is still running and cannot be proven to be ours (no /proc) is
+    left alone with its workspace; a later sweep removes the workspace once it exits.
+    """
     m = tasks.meta(task)
     root = m.get("workspaceRoot")
-    pid = m.pop("childPid", None)
-    if root and pid and _pid_alive(pid) and _ran_in(int(pid), root):
+    pid = m.get("childPid")
+    alive = bool(root and pid and _pid_alive(pid))
+    if alive and _ran_in(int(pid), root):
         with contextlib.suppress(OSError):
-            if sys.platform == "win32":
-                subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)], capture_output=True, check=False)
-            else:
-                os.killpg(int(pid), signal.SIGKILL)  # the child leads its own process group
+            os.killpg(int(pid), signal.SIGKILL)  # the child leads its own process group
+        alive = False
+    if alive:
+        return
+    m.pop("childPid", None)
     if root and Path(root).exists():
         from observal_cli.delegation import workspace
 
-        repo = m.get("workspaceRepo")
-        workspace.remove(Path(root), Path(repo) if repo else None)
+        workspace.remove(Path(root))
 
 
 def _reap_abandoned() -> None:
-    """Settle tasks whose worker died while nobody was watching, so leftovers do not pile up."""
-    index = tasks.store_dir() / "workspaces"
-    if not index.is_dir():
+    """Settle tasks whose worker died while nobody was watching, so leftovers do not pile up.
+
+    A live task's workspace exists too; only settled tasks are cleaned up.
+    """
+    from observal_cli.delegation import workspace
+
+    parent = workspace.workspaces_dir()
+    if not parent.is_dir():
         return
-    # ponytail: one stat per past workspace; prune the index if it ever grows large enough to matter.
-    for entry in index.iterdir():
-        if (Path(tempfile.gettempdir()) / entry.name).exists():
-            with contextlib.suppress(DelegationError, OSError, ValueError):
-                get(entry.read_text(encoding="utf-8").strip())
+    for root in parent.iterdir():
+        try:
+            task_id = (tasks.store_dir() / "workspaces" / root.name).read_text(encoding="utf-8").strip()
+            task = get(task_id)  # settles a task whose worker died
+            state = (task.get("status") or {}).get("state")
+            if state in tasks.TERMINAL_STATES:
+                _reap(task)
+                tasks.save(task)
+        except (DelegationError, OSError, ValueError) as exc:
+            optic.warning("could not settle abandoned delegation workspace {}: {}", root.name, exc)
+
+
+WORKER_START_SECONDS = 60
+
+
+def _age_seconds(task: dict) -> float:
+    from datetime import UTC, datetime
+
+    stamp = str((task.get("status") or {}).get("timestamp") or "")
+    try:
+        return (datetime.now(UTC) - datetime.fromisoformat(stamp.replace("Z", "+00:00"))).total_seconds()
+    except ValueError:
+        return 0.0
 
 
 def get(task_id: str) -> dict:
     task = tasks.load(task_id)
     if task is None:
         raise DelegationError(f"No delegated task with id {task_id}.")
-    # A worker that died without writing a final state would leave the task stuck.
-    pid = _worker_pid(task_id)
-    if not tasks.is_final(task) and pid and not _pid_alive(pid):
+    # A worker that died without writing a final state would leave the task stuck. So would one
+    # that never started: the worker writes its pid first thing.
+    pid = _worker_pid(task["id"])
+    never_started = pid is None and _age_seconds(task) > WORKER_START_SECONDS
+    if not tasks.is_final(task) and ((pid and not _pid_alive(pid)) or never_started):
         task = tasks.load(task_id) or task
         if not tasks.is_final(task):
             _reap(task)
@@ -407,10 +491,29 @@ def wait(task_id: str, seconds: float) -> dict:
 
 def cancel(task_id: str) -> dict:
     task = get(task_id)
+    m = tasks.meta(task)
+    if m.get("kind") == "a2a" and (task.get("status") or {}).get("state") in tasks.INTERRUPTED_STATES:
+        # Waiting for input: no worker is running, so tell the remote agent from here.
+        from observal_cli.delegation import a2a_client
+
+        try:
+            entry = client.get(
+                f"/api/v1/ard/entries/{m['target']}", operation="Cancel delegated task", resource=m["target"]
+            )
+        except CliError as exc:
+            entry, reason = None, exc.message
+        else:
+            reason = "it is no longer approved"
+        if entry is None or entry.get("obs:lifecycle") != "approved":
+            # Never send credentials to an agent that lost approval; the local task still ends.
+            text = f"Canceled by the caller, but the remote agent was not told: {reason}"
+            return tasks.save(tasks.set_status(task, tasks.STATE_CANCELED, text))
+        return tasks.save(a2a_client.cancel(task, entry=entry))
     if tasks.is_final(task):
         return task
-    tasks.request_cancel(task_id)
-    if not _pid_alive(_worker_pid(task_id)):
+    tasks.request_cancel(task["id"])
+    pid = _worker_pid(task["id"])
+    if pid and not _pid_alive(pid):  # no pid yet: the worker is starting and checks the marker first
         tasks.set_status(task, tasks.STATE_CANCELED, "Canceled by the caller.")
         tasks.save(task)
         return task

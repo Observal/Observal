@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """observal-agents: the MCP server that lets a pulled agent use other agents.
@@ -25,13 +26,16 @@ import json
 import sys
 from typing import Any, TextIO
 
+from loguru import logger as optic
+
 from observal_cli.delegation import service
 from observal_cli.errors import CliError, _boundary_active
 
 SERVER_NAME = "observal-agents"
 SUPPORTED_PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
-DEFAULT_WAIT_SECONDS = 120
-MAX_WAIT_SECONDS = 600
+# Below common MCP client tool timeouts (Codex: 60 s); the task keeps running and get_task follows it.
+DEFAULT_WAIT_SECONDS = 45
+MAX_WAIT_SECONDS = 50
 
 TOOLS: list[dict] = [
     {
@@ -168,7 +172,8 @@ class Server:
         except CliError as exc:
             return _tool_error(exc.message + (f" {exc.remediation}" if exc.remediation else ""))
         except Exception as exc:  # never let one bad call take the server down
-            return _tool_error(f"{name} failed: {type(exc).__name__}")
+            optic.exception("observal-agents tool {} failed", name)
+            return _tool_error(f"{name} failed: {type(exc).__name__}. Details are in the Observal log.")
 
     def _run_tool(self, name: str, args: dict) -> str:
         wait = _bounded(args.get("wait_seconds"), DEFAULT_WAIT_SECONDS if name == "delegate" else 0)
@@ -229,11 +234,14 @@ def main(argv: list[str] | None = None) -> int:
     import os
 
     harness = args.harness or os.environ.get("OBSERVAL_HARNESS") or None
+    # One observal-agents entry is shared by every agent in a project or user config, so the parent
+    # is not baked into it: a delegated child runs as its own agent (OBSERVAL_AGENT_ID, or its workspace).
+    parent_id = args.parent_id or service.parent_agent_id()
     protocol_out = sys.stdout
     sys.stdout = sys.stderr  # stray prints must never reach the protocol stream
     _boundary_active.set(True)  # CLI errors become tool errors, not terminal output
     try:
-        Server(harness=harness, parent_id=args.parent_id, out=protocol_out).serve(sys.stdin)
+        Server(harness=harness, parent_id=parent_id, out=protocol_out).serve(sys.stdin)
     except KeyboardInterrupt:
         pass
     return 0

@@ -209,14 +209,14 @@ Installing an agent ahead of time only helps with the tasks you planned for. Obs
 
 **A2A: agents hand tasks to agents.** Observal speaks the [Agent2Agent protocol](https://a2a-protocol.org) (v1.0, with v0.3 compatibility). Every delegation is an A2A Task, whoever runs it:
 
-- **Registry agents** run headless in a harness that supports it (Claude Code, Kiro, Cursor, Codex, OpenCode, Copilot CLI, Antigravity, Pi) inside a throwaway git worktree of your repository. Their answer comes back as a result, and any file changes come back as a patch that is never applied for you.
+- **Registry agents** run headless in a harness that supports it (Claude Code, Kiro, Cursor, Codex, OpenCode, Copilot CLI, Antigravity, Pi) inside a throwaway copy of your repository. Their answer comes back as a result, and any file changes come back as a patch that is never applied for you.
 - **Remote A2A agents** (a service another team runs, built with any framework) are registered by their Agent Card URL, reviewed like any submission, and then called directly with the card the reviewer approved. Observal never proxies the traffic or stores their credentials.
 
 ```mermaid
 flowchart LR
     A["Agent in your harness"] -- "find_agents" --> R["Observal registry<br/>(ARD search)"]
     A -- "delegate" --> T{"A2A Task"}
-    T -- "registry agent" --> H["Headless harness<br/>in a throwaway worktree"]
+    T -- "registry agent" --> H["Headless harness<br/>in a throwaway copy"]
     T -- "remote agent" --> S["A2A service<br/>(approved Agent Card)"]
     H -- "answer + patch" --> A
     S -- "artifacts" --> A
@@ -238,7 +238,8 @@ observal delegate run acme/security-reviewer "Review src/auth on this branch for
 git apply ~/.observal/delegations/<task-id>/changes.patch     # only if you agree with it
 
 observal registry a2a submit https://agents.acme.com --visibility team --team platform
-observal registry a2a review urn:air:agents.acme.com:a2a:incident-triage --approve
+observal discover inspect urn:air:agents.acme.com:a2a:incident-triage     # shows the card's Digest
+observal registry a2a review urn:air:agents.acme.com:a2a:incident-triage --approve --digest sha256:...
 ```
 
 Design decisions: [ADR 0001 (ARD)](docs/adr/0001-agentic-resource-discovery.md), [ADR 0002 (A2A delegation)](docs/adr/0002-a2a-delegation.md). API: [Discovery endpoints](docs/reference/api-endpoints.md#discovery-ard).

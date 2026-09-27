@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Detached worker that drives one delegated task to a settled state.
@@ -12,6 +13,7 @@ completed, failed, canceled, or waiting for input.
 from __future__ import annotations
 
 import contextlib
+import os
 import sys
 
 from loguru import logger as optic
@@ -29,6 +31,14 @@ def run_task(task_id: str) -> dict | None:
 
     def should_cancel() -> bool:
         return tasks.cancel_requested(task_id)
+
+    # Another process may have settled the task (canceled, or failed as a dead worker) before this
+    # worker started; never overwrite that or act on it.
+    if tasks.is_final(task):
+        return task
+    if should_cancel():
+        tasks.clear_cancel(task_id)
+        return tasks.save(tasks.set_status(task, tasks.STATE_CANCELED, "Canceled by the caller."))
 
     try:
         if m.get("kind") == "a2a":
@@ -62,6 +72,8 @@ def main(argv: list[str] | None = None) -> int:
         print("usage: python -m observal_cli.delegation.runner <task-id>", file=sys.stderr)
         return 2
     _boundary_active.set(True)  # errors become task states, not terminal output
+    with contextlib.suppress(OSError, ValueError):  # so a starting worker is never mistaken for a missing one
+        tasks.task_dir(args[0]).joinpath("worker.pid").write_text(str(os.getpid()), encoding="utf-8")
     return 0 if run_task(args[0]) is not None else 1
 
 

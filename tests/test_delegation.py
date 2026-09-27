@@ -85,9 +85,14 @@ def test_workspace_mirrors_the_callers_tree_and_returns_only_the_childs_changes(
     (repo / "notes.md").write_text("untracked notes\n")
     (repo / "secret.env").write_text("TOKEN=x\n")
 
+    _git(repo, "config", "diff.noprefix", "true")  # user diff config must not break the snapshot
     ws = workspace.create(repo)
     try:
         assert (ws.path / "app.py").read_text() == "print('v2 uncommitted')\n"
+        # Git commands the child runs stay in the copy: no remote, and its refs are its own.
+        assert _git(ws.path, "remote") == ""
+        _git(ws.path, "branch", "child-branch")
+        assert "child-branch" not in _git(repo, "branch")
         assert (ws.path / "notes.md").exists()
         assert not (ws.path / "secret.env").exists()  # ignored files stay behind
         (ws.path / ".claude" / "agents").mkdir(parents=True)
@@ -97,12 +102,14 @@ def test_workspace_mirrors_the_callers_tree_and_returns_only_the_childs_changes(
 
         (ws.path / "app.py").write_text("print('v3 from child')\n")
         (ws.path / "new_test.py").write_text("def test_x():\n    pass\n")
+        (ws.path / "AGENT_CONFIG.json").write_text('{"edited": true}')
         patch = workspace.changes(ws)
     finally:
         workspace.destroy(ws)
 
     assert "v3 from child" in patch and "new_test.py" in patch
     assert "AGENT_CONFIG.json" not in patch
+    assert any("AGENT_CONFIG.json" in note for note in ws.notes)  # dropped edits are reported
     # The caller's own tree is untouched and the worktree is gone.
     assert (repo / "app.py").read_text() == "print('v2 uncommitted')\n"
     assert not (repo / "new_test.py").exists()
@@ -203,10 +210,14 @@ def test_child_sessions_stay_attributed_after_the_workspace_is_gone(tmp_path, mo
     from observal_cli.sessions.base import _resolve_agent
 
     repo = _repo(tmp_path)
+    (repo / "pkg").mkdir()
+    (repo / "pkg" / "mod.py").write_text("x = 1\n")
+    _git(repo, "add", "-A")
+    _git(repo, "-c", "commit.gpgsign=false", "commit", "-q", "-m", "pkg")
     monkeypatch.setattr(local, "get_adapter", lambda _h: FakeAdapter("import os; print(os.getcwd())"))
     monkeypatch.setattr(local, "materialize", _fake_materialize)
     monkeypatch.delenv("OBSERVAL_AGENT_ID", raising=False)
-    task = _local_task(repo)
+    task = _local_task(repo / "pkg")  # a caller in a subdirectory works in the same subdirectory
     tasks.meta(task)["version"] = "1.2.0"
     task = local.run(tasks.save(task), save=tasks.save, should_cancel=lambda: False)
 
@@ -405,7 +416,7 @@ def test_a_dead_workers_child_and_worktree_are_cleaned_up(tmp_path):
     ws = workspace.create(repo)
     child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], cwd=ws.path, start_new_session=True)
     task = tasks.new_task(message="x", observal={"target": AGENT_URN, "childPid": child.pid})
-    tasks.record_workspace(task, ws.path.parent, ws.repo)
+    tasks.record_workspace(task, ws.root)
     tasks.save(task)
     dead = subprocess.Popen([sys.executable, "-c", "pass"])
     dead.wait()
@@ -415,8 +426,55 @@ def test_a_dead_workers_child_and_worktree_are_cleaned_up(tmp_path):
 
     assert tasks.load(task["id"])["status"]["state"] == tasks.STATE_FAILED
     assert child.wait(timeout=10) != 0
-    assert not ws.path.parent.exists()
-    assert str(ws.path.parent) not in _git(repo, "worktree", "list")
+    assert not ws.root.exists()
+
+
+@pytest.mark.skipif(not HAS_GIT, reason="git not installed")
+def test_guards_hold_when_the_harness_drops_the_environment(tmp_path, monkeypatch):
+    # Codex starts MCP servers with an allowlisted environment; the workspace still says where we are.
+    ws = workspace.create(_repo(tmp_path))
+    try:
+        task = tasks.new_task(
+            message="x", observal={"target": AGENT_URN, "agentId": AGENT_ID, "depth": 1, "chain": ["urn:first"]}
+        )
+        tasks.record_workspace(task, ws.root)
+        tasks.save(task)
+        for name in ("OBSERVAL_DELEGATION_DEPTH", "OBSERVAL_DELEGATION_CHAIN", "OBSERVAL_DELEGATION_TASK_ID"):
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.delenv("OBSERVAL_AGENT_ID", raising=False)
+        monkeypatch.chdir(ws.path)
+        assert service.current_depth() == 2
+        assert service.current_chain() == ["urn:first", AGENT_URN, AGENT_ID]
+        assert service.parent_task_id() == task["id"]
+        assert service.parent_agent_id() == AGENT_ID
+    finally:
+        workspace.destroy(ws)
+
+
+@pytest.mark.skipif(not HAS_GIT or sys.platform == "win32", reason="needs git and POSIX processes")
+def test_a_child_that_cannot_be_verified_keeps_its_workspace_until_it_exits(tmp_path, monkeypatch):
+    ws = workspace.create(_repo(tmp_path))
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], cwd=ws.path, start_new_session=True)
+    task = tasks.new_task(message="x", observal={"target": AGENT_URN, "childPid": child.pid})
+    tasks.record_workspace(task, ws.root)
+    monkeypatch.setattr(service, "_ran_in", lambda *_a: False)  # as on macOS and Windows
+    service._reap(task)
+    assert ws.root.exists() and child.poll() is None  # neither killed nor pulled out from under it
+    child.kill()
+    child.wait()
+    service._reap(task)
+    assert not ws.root.exists()
+
+
+def test_a_worker_that_cannot_start_fails_the_task(monkeypatch):
+    def broken(_task_id):
+        raise OSError("no python")
+
+    monkeypatch.setattr(service, "SPAWN", broken)
+    task = tasks.new_task(message="x", observal={"target": AGENT_URN})
+    with pytest.raises(service.DelegationError, match="could not be started"):
+        service._launch(task)
+    assert tasks.load(task["id"])["status"]["state"] == tasks.STATE_FAILED
 
 
 # ── Remote A2A ───────────────────────────────────────────────────────────
@@ -439,7 +497,7 @@ def _a2a_task() -> dict:
 
 def test_a2a_v1_send_then_poll_until_completed(monkeypatch):
     monkeypatch.setattr(a2a_client, "POLL_SECONDS", 0)
-    monkeypatch.setenv("OBSERVAL_A2A_TOKEN_INCIDENT_TRIAGE", "tok")
+    monkeypatch.setenv("OBSERVAL_A2A_TOKEN_AGENTS_ACME_COM", "tok")
     seen: list[dict] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -502,6 +560,60 @@ def test_a2a_v03_agent_uses_legacy_methods_and_can_ask_for_input():
     assert "Which region?" in service.summarize(task)
 
 
+def test_cancelling_a_task_that_waits_for_input_tells_the_remote_agent(monkeypatch):
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        seen.append(body["method"])
+        task = {"id": "r-9", "status": {"state": "TASK_STATE_CANCELED"}}
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "result": {"task": task}})
+
+    task = _a2a_task()
+    tasks.meta(task)["remoteTaskId"] = "r-9"
+    tasks.set_status(task, tasks.STATE_INPUT_REQUIRED, "Which region?")
+    tasks.save(task)
+    real_cancel = a2a_client.cancel
+    monkeypatch.setattr(service.client, "get", lambda *_a, **_k: {**_a2a_entry(), "obs:lifecycle": "approved"})
+    monkeypatch.setattr(
+        a2a_client, "cancel", lambda t, *, entry: real_cancel(t, entry=entry, transport=httpx.MockTransport(handler))
+    )
+    canceled = service.cancel(task["id"])
+    assert seen == ["CancelTask"]
+    assert canceled["status"]["state"] == tasks.STATE_CANCELED
+    assert tasks.load(task["id"])["status"]["state"] == tasks.STATE_CANCELED
+
+    # An agent that lost approval is never contacted (no credentials sent); the task still ends.
+    seen.clear()
+    tasks.save(tasks.set_status(tasks.load(task["id"]), tasks.STATE_INPUT_REQUIRED, "Which region?"))
+    monkeypatch.setattr(service.client, "get", lambda *_a, **_k: {**_a2a_entry(), "obs:lifecycle": "rejected"})
+    ended = service.cancel(task["id"])
+    assert seen == [] and ended["status"]["state"] == tasks.STATE_CANCELED
+    assert "not told" in tasks.message_text(ended["status"]["message"])
+
+    # A remote agent that does not confirm is reported, not hidden.
+    def refusing(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": body["id"], "error": {"message": "no such task"}})
+
+    again = tasks.set_status(tasks.load(task["id"]), tasks.STATE_INPUT_REQUIRED, "Which region?")
+    result = real_cancel(again, entry=_a2a_entry(), transport=httpx.MockTransport(refusing))
+    assert "did not confirm" in tasks.message_text(result["status"]["message"])
+
+
+def test_a_worker_never_acts_on_a_task_that_is_already_settled(monkeypatch):
+    calls: list[str] = []
+    monkeypatch.setattr(local, "run", lambda *_a, **_k: calls.append("run"))
+    done = tasks.save(
+        tasks.set_status(tasks.new_task(message="x", observal={"target": AGENT_URN}), tasks.STATE_CANCELED)
+    )
+    assert runner.run_task(done["id"])["status"]["state"] == tasks.STATE_CANCELED
+    pending = tasks.save(tasks.new_task(message="x", observal={"target": AGENT_URN}))
+    tasks.request_cancel(pending["id"])  # canceled while the worker was starting
+    assert runner.run_task(pending["id"])["status"]["state"] == tasks.STATE_CANCELED
+    assert calls == []
+
+
 def test_a2a_direct_message_answer_and_errors():
     def message_handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
@@ -533,20 +645,31 @@ def test_a2a_direct_message_answer_and_errors():
 
 
 def test_api_key_scheme_uses_its_header(monkeypatch):
-    monkeypatch.setenv("OBSERVAL_A2A_TOKEN", "k")
+    monkeypatch.setenv("OBSERVAL_A2A_TOKEN_AGENTS_ACME_COM", "k")
     card = {"securitySchemes": {"key": {"apiKeySecurityScheme": {"location": "header", "name": "X-Agent-Key"}}}}
-    assert a2a_client.auth_headers(card, A2A_URN) == {"X-Agent-Key": "k"}
-    assert a2a_client.auth_headers({"securitySchemes": {}}, A2A_URN) == {}
+    assert a2a_client.auth_headers(card, "https://agents.acme.com/a2a") == {"X-Agent-Key": "k"}
+    assert a2a_client.auth_headers({"securitySchemes": {}}, "https://agents.acme.com/a2a") == {}
+
+
+def test_a_token_only_reaches_the_host_it_is_named_for(monkeypatch):
+    monkeypatch.setenv("OBSERVAL_A2A_TOKEN_AGENTS_ACME_COM", "acme-secret")
+    monkeypatch.setenv("OBSERVAL_A2A_TOKEN", "catch-all")  # no longer read
+    card = {"securitySchemes": {"bearer": {"httpAuthSecurityScheme": {"scheme": "Bearer"}}}}
+    assert a2a_client.auth_headers(card, "https://agents.acme.com/a2a") == {"Authorization": "Bearer acme-secret"}
+    assert a2a_client.auth_headers(card, "https://evil.example/a2a") == {}
+    assert a2a_client.auth_headers(card, "https://agents.acme.com.evil.example/a2a") == {}
+    assert a2a_client.auth_headers(card, "https://agents-acme.com/a2a") == {}  # "-" and "." never collide
 
 
 def test_credentials_are_never_sent_over_plain_http(monkeypatch):
-    monkeypatch.setenv("OBSERVAL_A2A_TOKEN", "tok")
     card = {"securitySchemes": {"bearer": {"httpAuthSecurityScheme": {"scheme": "Bearer"}}}}
+    monkeypatch.setenv("OBSERVAL_A2A_TOKEN_AGENTS_ACME_COM", "tok")
+    monkeypatch.setenv("OBSERVAL_A2A_TOKEN_LOCALHOST", "tok")
     with pytest.raises(a2a_client.A2aError, match="plain http"):
-        a2a_client.A2aClient({"url": "http://agents.acme.com/a2a"}, card, A2A_URN)
-    a2a_client.A2aClient({"url": "http://localhost:9100/a2a"}, card, A2A_URN).close()
-    monkeypatch.delenv("OBSERVAL_A2A_TOKEN")
-    a2a_client.A2aClient({"url": "http://agents.acme.com/a2a"}, card, A2A_URN).close()
+        a2a_client.A2aClient({"url": "http://agents.acme.com/a2a"}, card)
+    a2a_client.A2aClient({"url": "http://localhost:9100/a2a"}, card).close()
+    monkeypatch.delenv("OBSERVAL_A2A_TOKEN_AGENTS_ACME_COM")
+    a2a_client.A2aClient({"url": "http://agents.acme.com/a2a"}, card).close()
 
 
 def test_runner_rejects_a_remote_agent_that_lost_approval(monkeypatch):
@@ -661,10 +784,11 @@ def test_claude_code_headless_command_and_output(tmp_path):
         ("pi", "pi", True),
     ],
 )
-def test_other_headless_commands(tmp_path, harness, binary, inlined):
+def test_other_headless_commands(tmp_path, monkeypatch, harness, binary, inlined):
     ensure_loaded()
     adapter = get_adapter(harness)
-    plan = adapter.headless_command(_request(tmp_path))
+    _pi_trust(monkeypatch, tmp_path / "home", {str(tmp_path): True})
+    plan = adapter.headless_command(_request(tmp_path, source_dir=tmp_path))
     assert plan.argv[0] == binary == adapter.headless_binary
     joined = "\n".join([*plan.argv, plan.stdin or ""])
     assert ("<agent-instructions>" in joined) is inlined
@@ -678,10 +802,35 @@ def test_harnesses_without_verified_headless_mode_refuse(tmp_path, harness):
         get_adapter(harness).headless_command(_request(tmp_path))
 
 
-def test_pi_runs_the_session_it_was_given(tmp_path):
+def _pi_trust(monkeypatch, home: Path, decisions: dict) -> None:
+    monkeypatch.setenv("HOME", str(home))
+    (home / ".pi" / "agent").mkdir(parents=True, exist_ok=True)
+    (home / ".pi" / "agent" / "trust.json").write_text(json.dumps(decisions))
+
+
+def test_pi_runs_only_where_pi_already_trusts_the_repository(tmp_path, monkeypatch):
+    from observal_cli.errors import CliError
+
     ensure_loaded()
     adapter = get_adapter("pi")
-    request = _request(tmp_path)
+    repo = tmp_path / "code" / "repo"
+    repo.mkdir(parents=True)
+    _pi_trust(monkeypatch, tmp_path / "home", {})
+    with pytest.raises(CliError) as raised:
+        adapter.headless_command(_request(tmp_path, source_dir=repo))
+    assert "does not trust" in raised.value.message
+    _pi_trust(monkeypatch, tmp_path / "home", {str(tmp_path / "code"): True, str(repo): False})
+    with pytest.raises(CliError):  # the nearest decision wins
+        adapter.headless_command(_request(tmp_path, source_dir=repo))
+    _pi_trust(monkeypatch, tmp_path / "home", {str(tmp_path / "code"): True})
+    assert "--approve" in adapter.headless_command(_request(tmp_path, source_dir=repo)).argv
+
+
+def test_pi_runs_the_session_it_was_given(tmp_path, monkeypatch):
+    ensure_loaded()
+    adapter = get_adapter("pi")
+    _pi_trust(monkeypatch, tmp_path / "home", {str(tmp_path): True})
+    request = _request(tmp_path, source_dir=tmp_path)
     plan = adapter.headless_command(request)
     assert plan.argv == ["pi", "-p", "--approve", "--session-id", request.session_id]
     assert "-- review src/auth" in plan.stdin  # the task never reaches the command line

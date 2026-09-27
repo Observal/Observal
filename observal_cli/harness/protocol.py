@@ -170,6 +170,8 @@ class HeadlessRequest:
     session_id: str
     mcp_servers: dict = field(default_factory=dict)
     model: str | None = None
+    # The caller's own directory, for harnesses that gate project files on a trust decision made there.
+    source_dir: Path | None = None
 
 
 @dataclass(frozen=True)

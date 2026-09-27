@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """observal discover, the capability lock, session attribution and agent init --from-capabilities."""
@@ -155,6 +156,19 @@ def test_inspect_rejects_non_urn():
     result = _invoke("inspect", "acme/security-review")
     assert result.exit_code == 7
     assert "Not an Observal resource identifier" in result.output
+
+
+def test_remote_a2a_agents_are_inspected_and_pointed_at_delegate(monkeypatch):
+    a2a = "urn:air:agents.acme.com:a2a:incident-triage"
+    entry = _entry(identifier=a2a, **{"obs:kind": "external", "obs:protocol": "a2a"})  # as GET /ard/entries returns it
+    monkeypatch.setattr(discover.client, "get", Mock(return_value=entry))
+    result = _invoke("inspect", a2a)
+    assert result.exit_code == 0, result.output
+    assert f"observal delegate run {a2a}" in result.output
+
+    result = _invoke("use", a2a, "--output", "json")
+    assert result.exit_code == 7
+    assert "delegate run" in result.output
 
 
 # ── use ──────────────────────────────────────────────────────────────────

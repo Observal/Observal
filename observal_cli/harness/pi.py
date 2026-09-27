@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn>
 # SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 # SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Pi harness adapter for scanning and hook detection."""
@@ -11,6 +12,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from observal_cli.errors import ErrorCategory, fail
 from observal_cli.harness import (
     BundledSkillPlan,
     DiscoveredMcp,
@@ -102,6 +104,18 @@ class PiAdapter(BaseAdapter):
         # creating it; --approve trusts the project-local .pi files the install
         # wrote. Pi has no flag to pick an agent profile, so its instructions are
         # inlined into the prompt.
+        #
+        # --approve also runs the project's own .pi extensions and package installs,
+        # and the workspace is a copy of the caller's repository, so it is passed only
+        # when Pi already trusts that repository.
+        if request.source_dir is None or not _pi_trusts(request.source_dir):
+            fail(
+                ErrorCategory.PERMISSION,
+                f"Pi does not trust {request.source_dir or 'this repository'}, and a delegated Pi agent would run "
+                "its project extensions. Open the repository in pi and run /trust, or delegate with another harness.",
+                operation="Delegate to agent",
+                resource="pi project trust",
+            )
         argv = ["pi", "-p", "--approve", "--session-id", request.session_id]
         if request.model:
             argv += ["--model", request.model]
@@ -172,3 +186,31 @@ class PiAdapter(BaseAdapter):
 
 
 register_adapter(PiAdapter())
+
+
+def _pi_trusts(path: Path) -> bool:
+    """Whether Pi already trusts ``path``, resolved as Pi does it.
+
+    The nearest saved decision in trust.json on the path or a parent wins; only
+    without one does ``defaultProjectTrust: "always"`` apply.
+    """
+    import os
+
+    from observal_cli.pi_extension import pi_agent_dir
+
+    env_dir = os.environ.get("PI_CODING_AGENT_DIR")
+    agent_dir = Path(env_dir).expanduser() if env_dir else pi_agent_dir()
+    try:
+        trust = json.loads((agent_dir / "trust.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        trust = {}
+    resolved = path.resolve()
+    for candidate in (resolved, *resolved.parents):
+        decision = trust.get(str(candidate)) if isinstance(trust, dict) else None
+        if isinstance(decision, bool):
+            return decision
+    try:
+        settings = json.loads((agent_dir / "settings.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(settings, dict) and settings.get("defaultProjectTrust") == "always"

@@ -547,23 +547,14 @@ async def test_native_agents_are_delegable_when_a_supported_harness_runs_headles
 
 
 def test_delegation_mcp_entry_shape():
-    from types import SimpleNamespace
-
     from services.harness import helpers
 
-    agent = SimpleNamespace(id="11111111-2222-3333-4444-555555555555")
-    entry = helpers._build_delegation_mcp_entry(agent, "kiro")
+    # No agent id: the one observal-agents entry is shared by every agent in a project or user config.
+    entry = helpers._build_delegation_mcp_entry("kiro")
     assert entry == {
         "observal-agents": {
             "command": "python3",
-            "args": [
-                "-m",
-                "observal_cli.delegation.mcp_server",
-                "--harness",
-                "kiro",
-                "--parent-id",
-                "11111111-2222-3333-4444-555555555555",
-            ],
+            "args": ["-m", "observal_cli.delegation.mcp_server", "--harness", "kiro"],
             "env": {},
         }
     }

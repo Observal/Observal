@@ -4,10 +4,12 @@
 
 """A throwaway copy of the caller's working tree for a delegated agent.
 
-The child runs in a detached ``git worktree`` of the caller's repository at
-HEAD, with the caller's uncommitted changes and untracked (not ignored) files
-laid on top, so it sees exactly what the caller sees. Whatever the child edits
-stays there. When it finishes, the difference between the tree it started
+The child runs in a shared clone (``git clone --shared``) of the caller's
+repository, detached at the caller's HEAD, with the caller's uncommitted
+changes and untracked (not ignored) files laid on top, so it sees exactly what
+the caller sees. The clone borrows the caller's objects but has its own refs,
+config, hooks and stash, and no remote, so git commands the child runs stay in
+the copy. Whatever the child edits stays there. When it finishes, the difference between the tree it started
 from and the tree it left is returned as a patch; the caller decides whether
 to ``git apply`` it. Nothing is committed and no ref is created: trees are
 recorded through a private index file, so signing and hooks never run.
@@ -29,6 +31,15 @@ from loguru import logger as optic
 
 MAX_UNTRACKED_BYTES = 50 * 1024 * 1024
 ROOT_PREFIX = "observal-delegate-"
+
+
+def workspaces_dir() -> Path:
+    """Where workspaces live while a child runs: inside the user's own delegation store."""
+    from observal_cli.delegation import tasks
+
+    return tasks.store_dir() / "ws"
+
+
 GIT_TIMEOUT = 120
 
 
@@ -83,6 +94,11 @@ class Workspace:
     def is_git(self) -> bool:
         return self.repo is not None
 
+    @property
+    def root(self) -> Path | None:
+        """The temporary directory holding the whole workspace (``path`` may be a subdirectory of it)."""
+        return self._root
+
 
 def _write_tree(worktree: Path, index_file: Path) -> str:
     env = {"GIT_INDEX_FILE": str(index_file)}
@@ -117,9 +133,12 @@ def _copy_untracked(repo: Path, worktree: Path, notes: list[str]) -> None:
 
 def create(cwd: Path) -> Workspace:
     """Create the child's workspace for a caller working in ``cwd``."""
-    # Resolved: on macOS the temp dir is under /var, a symlink to /private/var, and the
-    # agent install rejects generated paths that resolve outside its target directory.
-    root = Path(tempfile.mkdtemp(prefix=ROOT_PREFIX)).resolve()
+    # Under the user's own store, not the shared temp dir: harnesses read instruction and skill
+    # files from parent directories (CLAUDE.md, .agents/skills), which another local user could
+    # plant in /tmp. Resolved because the agent install rejects paths that resolve elsewhere.
+    parent = workspaces_dir()
+    parent.mkdir(parents=True, exist_ok=True)
+    root = Path(tempfile.mkdtemp(prefix=ROOT_PREFIX, dir=parent)).resolve()
     scratch = root / "scratch"
     scratch.mkdir()
     repo = repo_root(cwd)
@@ -137,8 +156,25 @@ def create(cwd: Path) -> Workspace:
     worktree = root / "worktree"
     notes: list[str] = []
     try:
-        _git(repo, "worktree", "add", "--detach", "--quiet", str(worktree), "HEAD")
-        patch = _git(repo, "diff", "--binary", "HEAD")
+        head = _git(repo, "rev-parse", "HEAD").decode().strip()
+        # --origin: clone.defaultRemoteName in the user's config must not rename the remote removed next.
+        _git(repo, "clone", "--shared", "--no-checkout", "--quiet", "--origin", "origin", str(repo), str(worktree))
+        _git(worktree, "remote", "remove", "origin")
+        _git(worktree, "checkout", "--detach", "--quiet", head)
+        # Plumbing-stable output: user config (noprefix, color, external diff, textconv) must not
+        # produce a patch that `git apply` rejects.
+        patch = _git(
+            repo,
+            "diff",
+            "--binary",
+            "--no-color",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--submodule=short",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
+            "HEAD",
+        )
         if patch.strip():
             try:
                 _git(worktree, "apply", "--binary", "--whitespace=nowarn", input_bytes=patch)
@@ -147,11 +183,7 @@ def create(cwd: Path) -> Workspace:
         _copy_untracked(repo, worktree, notes)
         start = _write_tree(worktree, scratch / "start.index")
     except WorkspaceError:
-        with contextlib.suppress(WorkspaceError):
-            _git(repo, "worktree", "remove", "--force", str(worktree))
         shutil.rmtree(root, ignore_errors=True)
-        with contextlib.suppress(WorkspaceError):
-            _git(repo, "worktree", "prune")
         raise
     # Keep the path relative to the checkout: a caller in a subdirectory works there.
     rel = cwd.resolve().relative_to(repo.resolve()) if cwd.resolve().is_relative_to(repo.resolve()) else Path()
@@ -181,6 +213,23 @@ def changes(ws: Workspace) -> str:
     if after == ws.base_tree:
         return ""
     pathspec = [":(top)", *(f":(top,exclude,literal){p}" for p in ws.setup_paths)] if ws.setup_paths else []
+    if ws.setup_paths:
+        touched = _git(
+            ws.path,
+            "diff-tree",
+            "-r",
+            "--name-only",
+            "-z",
+            ws.base_tree,
+            after,
+            "--",
+            *(f":(top,literal){p}" for p in ws.setup_paths),
+        )
+        dropped = [p.decode("utf-8", errors="surrogateescape") for p in touched.split(b"\0") if p]
+        if dropped:
+            ws.notes.append(
+                "Changes to files the agent install also wrote are not in the patch: " + ", ".join(dropped) + "."
+            )
     return _git(ws.path, "diff-tree", "-p", "--binary", "--no-color", ws.base_tree, after, "--", *pathspec).decode(
         "utf-8", errors="replace"
     )
@@ -188,16 +237,11 @@ def changes(ws: Workspace) -> str:
 
 def destroy(ws: Workspace) -> None:
     if ws._root is not None:
-        remove(ws._root, ws.repo)
+        remove(ws._root)
 
 
-def remove(root: Path, repo: Path | None) -> None:
-    """Remove a workspace by its root, also after the worker that created it died."""
-    if repo is not None:
-        try:
-            _git(repo, "worktree", "remove", "--force", str(root / "worktree"))
-        except WorkspaceError:
-            optic.debug("delegation worktree removal failed; pruning")
-            with contextlib.suppress(WorkspaceError):
-                _git(repo, "worktree", "prune")
+def remove(root: Path) -> None:
+    """Remove a workspace by its root. The clone is self-contained, so nothing in the caller's repo refers to it."""
     shutil.rmtree(root, ignore_errors=True)
+    if root.exists():  # a file still open (Windows) or not ours; the next delegation retries
+        optic.warning("delegation workspace {} could not be fully removed", root)

@@ -209,15 +209,13 @@ def _indexed_task(kind: str, key: str) -> dict:
         task_id = (store_dir() / kind / key).read_text(encoding="utf-8").strip()
     except OSError:
         return {}
-    return meta(load(task_id) or {})
+    task = load(task_id) or {}
+    return {**meta(task), "taskId": task.get("id")} if task else {}
 
 
-def record_workspace(task: dict, root: Path, repo: Path | None) -> None:
+def record_workspace(task: dict, root: Path) -> None:
     """Remember the workspace a task runs in: for session attribution, and for cleanup if its worker dies."""
-    m = meta(task)
-    m["workspaceRoot"] = str(root)
-    if repo is not None:
-        m["workspaceRepo"] = str(repo)
+    meta(task)["workspaceRoot"] = str(root)
     _write_index("workspaces", root.name, task["id"])
 
 
@@ -242,8 +240,12 @@ def delegated_agent(cwd: str = "", session_ids: tuple[str | None, ...] = ()) -> 
         m = _indexed_task("sessions", session_id)
         if m.get("agentId") and m.get("childSessionId") == session_id:
             return str(m["agentId"]), m.get("version")
-    if not cwd:
-        return None
+    m = delegation_at(cwd) if cwd else None
+    return (str(m["agentId"]), m.get("version")) if m and m.get("agentId") else None
+
+
+def delegation_at(cwd: str) -> dict | None:
+    """``metadata.observal`` (plus ``taskId``) of the delegated task whose workspace contains ``cwd``."""
     from observal_cli.delegation.workspace import ROOT_PREFIX
 
     parts = PurePath(cwd).parts
@@ -253,10 +255,10 @@ def delegated_agent(cwd: str = "", session_ids: tuple[str | None, ...] = ()) -> 
     m = _indexed_task("workspaces", parts[index])
     recorded = m.get("workspaceRoot")
     root = str(PurePath(*parts[: index + 1]))
-    # realpath resolves symlinked temp dirs (macOS /var) even after the workspace is gone.
+    # realpath resolves symlinked directories (macOS /var) even after the workspace is gone.
     if not recorded or os.path.normcase(os.path.realpath(recorded)) != os.path.normcase(os.path.realpath(root)):
         return None
-    return (str(m["agentId"]), m.get("version")) if m.get("agentId") else None
+    return m
 
 
 def count_children(parent_id: str) -> int:

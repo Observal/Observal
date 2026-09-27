@@ -1,5 +1,6 @@
 <!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Discovery
@@ -83,7 +84,7 @@ observal delegate cancel <task-id> --output json
 - A registry Agent works in a throwaway copy of the repository. Its file changes come back as a `changes.patch` artifact and `metadata.observal.patchPath`; they are never applied for you. Review the patch, tell the user what it changes, and `git apply` it only when it is right.
 - The response is an A2A Task. `status.state` is `TASK_STATE_COMPLETED`, `TASK_STATE_FAILED`, `TASK_STATE_CANCELED`, `TASK_STATE_REJECTED`, `TASK_STATE_INPUT_REQUIRED` (answer with `reply`), or still `TASK_STATE_WORKING` (poll with `status --wait`).
 - Delegation is refused past two levels, past three tasks started by one delegated agent, for an agent already in the chain, and for unapproved agents. Do not work around a refusal; do that part yourself.
-- Remote agents that need credentials read them from `OBSERVAL_A2A_TOKEN_<NAME>` or `OBSERVAL_A2A_TOKEN`. Never put a token in the message.
+- Remote agents that need credentials read them from `OBSERVAL_A2A_TOKEN_<HOST>`, named after the agent's endpoint host (`agents.acme.com` is `OBSERVAL_A2A_TOKEN_AGENTS_ACME_COM`). Never put a token in the message.
 
 ## Save a working session as an Agent
 

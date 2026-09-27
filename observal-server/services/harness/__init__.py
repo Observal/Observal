@@ -215,7 +215,7 @@ def generate_agent_config(
             mcp_configs.update(sandbox_mcp)
 
     if options.get("_delegation"):
-        mcp_configs.update(_build_delegation_mcp_entry(agent, harness))
+        mcp_configs.update(_build_delegation_mcp_entry(harness))
 
     # Harnesses with first-class prompt files keep the agent body to a name list.
     emit_prompt_files = adapter.emits_prompt_files()

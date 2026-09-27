@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """observal discover: find approved registry resources for a task and use them now.
@@ -136,12 +137,12 @@ def _resolve_harness(harness: str | None, operation: str) -> str | None:
 
 
 def _parse_urn(identifier: str, operation: str) -> tuple[str, str, str]:
-    """Return (urn, kind, entity_id) for an Observal-issued identifier."""
+    """Return (urn, kind, entity_id) for an Observal-issued identifier, or a registered remote A2A agent."""
     urn = identifier.strip()
     if urn.startswith("urn:ai:"):
         urn = "urn:air:" + urn[len("urn:ai:") :]
     parts = urn.split(":")
-    if len(parts) != 5 or parts[0] != "urn" or parts[1] != "air" or parts[3] not in KINDS:
+    if len(parts) != 5 or parts[0] != "urn" or parts[1] != "air" or parts[3] not in (*KINDS, "a2a"):
         fail(
             ErrorCategory.VALIDATION,
             f"Not an Observal resource identifier: {identifier}.",
@@ -170,6 +171,10 @@ def _search(text: str, *, kind: str | None, harness: str | None, limit: int, una
 
 
 def _use_hint(item: dict) -> str:
+    # A remote A2A agent is called, never installed. Search results say so in obs:availability; a full
+    # entry (discover inspect) only carries obs:protocol.
+    if item.get("obs:availability") == "delegate" or item.get("obs:protocol") == "a2a":
+        return f"observal delegate run {item.get('identifier', '')} '<complete task brief>'"
     return f"observal discover use {item.get('identifier', '')}"
 
 
@@ -325,7 +330,7 @@ def discover_inspect(
         for q in queries:
             rprint(f"    • {esc(q)}")
     rprint()
-    rprint(f"[dim]Use: [cyan]observal discover use {esc(urn)}[/cyan][/dim]")
+    rprint(f"[dim]Use: [cyan]{esc(_use_hint(entry))}[/cyan][/dim]")
 
 
 # ── use ──────────────────────────────────────────────────────────────────
@@ -354,6 +359,14 @@ def discover_use(
     """
     operation = "Use discoverable resource"
     urn, kind, entity_id = _parse_urn(identifier, operation)
+    if kind == "a2a":
+        fail(
+            ErrorCategory.VALIDATION,
+            f"A remote A2A agent is not installed or loaded; hand it a task with "
+            f"observal delegate run {urn} '<complete task brief>'.",
+            operation=operation,
+            resource=urn,
+        )
     harness_value = _resolve_harness(harness, operation)
 
     fetch = nullcontext() if output == "json" else spinner("Fetching entry...")

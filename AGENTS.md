@@ -46,7 +46,7 @@ observal_cli/          Python CLI (Typer)
   harness/             CLI-side harness adapters (protocol.py, base.py, 10 adapters)
   harness_specs/       Hook specs (8: claude_code, kiro, codex, copilot, copilot_cli, opencode, antigravity, goose)
   skills/              Bundled skills installed on login (observal, observal-admin, etc.)
-  delegation/          Agent-to-agent delegation: A2A tasks, worktree isolation, headless runs,
+  delegation/          Agent-to-agent delegation: A2A tasks, workspace isolation, headless runs,
                        A2A client, observal-agents MCP server (docs/adr/0002-a2a-delegation.md)
 
 observal-server/       FastAPI server
