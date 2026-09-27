@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import uuid
 from datetime import UTC, datetime
 from urllib.parse import urlencode, urlparse
@@ -23,6 +24,7 @@ from urllib.request import Request, urlopen
 import pytest
 
 import services.clickhouse.client as clickhouse
+from jobs.maintenance import backfill_layer_components
 from services.layer_components.extractor import ensure_layer_components
 from services.layer_components.queries import presence_cohort, presence_coverage
 
@@ -254,3 +256,47 @@ async def test_legacy_conflicts_unverified_and_zero_row_publications_are_unknown
     assert coverage["identity_conflict_sessions"] == 1
     assert coverage["mapping_complete_sessions"] == 2  # legacy diagnostics + empty v2 layer
     assert coverage["present_sessions"] == 0
+
+
+@pytest.mark.asyncio
+async def test_isolated_backfill_is_scoped_and_resumable_with_zero_row_publications():
+    parsed = urlparse(os.environ.get("DATABASE_URL", ""))
+    if parsed.hostname != "127.0.0.1" or parsed.port != 15432 or parsed.path != "/observal_phase14_ci":
+        pytest.skip("requires isolated proof PostgreSQL at localhost:15432")
+    prefix = f"zz-phase16-{time.time_ns():020d}-"
+    project = prefix + uuid.uuid4().hex
+    layer_hash = "v2_" + uuid.uuid4().hex + uuid.uuid4().hex[:28]
+    _insert(
+        "layer_snapshots",
+        [
+            {
+                "project_id": project,
+                "user_id": user,
+                "hash": layer_hash,
+                "harness": "claude-code",
+                "file_count": 0,
+                "total_size": 0,
+                "content": json.dumps(
+                    {
+                        "pinned_versions": {"schema_version": 2, "agents": [], "standalone": []},
+                        "drift": {"is_canonical": True},
+                    }
+                ),
+            }
+            for user in ("owner", "other")
+        ],
+    )
+    cursor = [prefix, "", ""]
+    first = await backfill_layer_components({}, after=cursor, batch_size=8, max_batches=1)
+    assert first["scanned"] == 2 and first["complete"] == 2 and first["failed"] == 0
+    assert first["next_cursor"] is None
+    second = await backfill_layer_components({}, after=cursor, batch_size=8, max_batches=1)
+    assert second["scanned"] == 2 and second["skipped"] == 2 and second["complete"] == 0
+    rows = _rows(
+        f"SELECT user_id, status, occurrence_count FROM layer_component_extractions "
+        f"WHERE project_id = '{project}' ORDER BY user_id"
+    )
+    assert [(row["user_id"], row["status"], row["occurrence_count"]) for row in rows] == [
+        ("other", "complete", 0),
+        ("owner", "complete", 0),
+    ]
