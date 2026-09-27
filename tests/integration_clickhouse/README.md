@@ -31,3 +31,18 @@ uv run --with pytest --with pytest-asyncio pytest ../tests/integration_clickhous
 ```
 
 The test hard-rejects the sample database/port, runs all pending migrations in that dedicated database, checks the migration ledger, table engines, complete safe-field sets and generation keys, inserts a complete zero-call marker with zero activity rows, and reruns the runner to prove idempotence. It does not delete its proof tables/database/container. Use test-only credentials, not production credentials.
+
+## Phase 2.5 isolated activity replay proof
+
+The fixture-derived real parallel records and explicitly constructed single-record multi-block case are projected against the already-migrated **isolated** `observal_phase22_ci` ClickHouse database. Activity generations are allocated from the separately isolated PostgreSQL `028` sequence. This suite never runs migrations, never touches the sample, and retains all uniquely keyed synthetic rows after testing:
+
+```bash
+cd observal-server
+PYTHONPATH=.:../packages/observal-shared \
+OBSERVAL_CH_PHASE25_URL=http://127.0.0.1:18123/observal_phase22_ci \
+CLICKHOUSE_URL=clickhouse://proof:proof@127.0.0.1:18123/observal_phase22_ci \
+DATABASE_URL=postgresql+asyncpg://proof:proof@127.0.0.1:15432/observal_phase14_ci \
+uv run --with pytest --with pytest-asyncio pytest ../tests/integration_clickhouse/test_phase25_activity.py -q
+```
+
+The source checkout path for the shared harness registry is explicit: the server's installed `observal_shared` may be older than the new extractor registration. The test requires the exact isolated host, port and database names, including for PostgreSQL, and skips unless opted in.
