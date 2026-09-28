@@ -20,7 +20,8 @@ from services.session_parsers.invocations import extract_invocations
 from .matcher import MatchResult, match_invocations
 
 PROJECTION_VERSION = 1
-MATCHER_VERSION = 1
+# Result-link ordering changed: old publications must be replayed before reuse.
+MATCHER_VERSION = 2
 MAX_SOURCE_RECORDS = 50_000
 MAX_SOURCE_BYTES = 64 * 1024 * 1024
 
