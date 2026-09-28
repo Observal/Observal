@@ -540,7 +540,7 @@ async def get_report(
     await _authorize_report(report, db, current_user)
 
     response = InsightReportResponse.model_validate(report)
-    if report.subject_type == "component":
+    if response.subject_type == "component":
         response.narrative = _safe_component_narrative(report)
     return response
 
