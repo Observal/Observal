@@ -152,7 +152,7 @@ export interface ComponentInsightMetrics {
 }
 
 export interface ComponentInsightFinding {
-	kind: "workflow" | "friction" | "opportunity" | "inferred_use";
+	kind: "workflow" | "friction";
 	insight: string;
 	confidence: "low" | "medium";
 	evidence_refs: string[];
