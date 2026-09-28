@@ -44,6 +44,14 @@ class PiAdapter(BaseAdapter):
     def harness_name(self) -> str:
         return "pi"
 
+    def redact_layer_content(self, display_path: str) -> bool:
+        """MCP and settings JSON can hold inline credentials; retain only their hashes."""
+        return (
+            display_path == "user:settings.json"
+            or display_path.endswith("/mcp.json")
+            or display_path in {"user:mcp.json", "project:.pi/mcp.json"}
+        )
+
     def plan_bundled_skill_install(
         self,
         skill_name: str,

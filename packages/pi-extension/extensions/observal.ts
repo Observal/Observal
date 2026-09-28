@@ -493,7 +493,10 @@ export default function (pi: ExtensionAPI) {
             size: content.length,
             source: "user",
           };
-          if (includeContent) entry.content = content.toString("utf-8");
+          // MCP/settings JSON may contain inline credentials. Keep the hash of
+          // the original bytes for v2 identity but never upload their contents.
+          const sensitiveConfig = rel === "settings.json" || rel === "mcp.json" || rel.endsWith("/mcp.json");
+          if (includeContent) entry.content = sensitiveConfig ? "" : content.toString("utf-8");
           manifest.push(entry);
         } catch {
           continue;
