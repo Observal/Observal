@@ -137,7 +137,8 @@ export default function ComponentDetailPage({
   const updateVisibility = useUpdateRegistryVisibility();
   const canEdit = isAuthenticated && (item?.user_permission === "owner");
   const showInsights = type === "mcps" && canEdit;
-  const { data: componentReports, isLoading: reportsLoading, isError: reportsError } = useComponentInsightReports("mcp", id, showInsights);
+  const { data: reportPages, isLoading: reportsLoading, isError: reportsError, hasNextPage, fetchNextPage, isFetchingNextPage } = useComponentInsightReports("mcp", id, showInsights);
+  const componentReports = reportPages?.pages.flat() ?? [];
   const generateComponentInsight = useGenerateComponentInsight();
   const owningTeam = item?.team_id ? teams.find((team) => team.id === String(item.team_id)) : undefined;
   const personalTeam = teams.find((team) => team.is_personal && team.visibility === "private");
@@ -190,6 +191,7 @@ export default function ComponentDetailPage({
   const versionsForDropdown = versions.filter((v) => v.status === "approved") as unknown as import("@/lib/types").AgentVersionSummary[];
   const latestApprovedVersion = versions.find((v) => v.status === "approved")?.version;
   const effectiveVersion = selectedVersion ?? latestApprovedVersion ?? (item?.version as string | undefined);
+  const selectedInsightVersion = selectedVersion ? versions.find((version) => version.version === selectedVersion) : undefined;
   // Overlay version-specific description when a version is selected
   const effectiveItem: RegistryItem | undefined = item
     ? versionDetail
@@ -407,9 +409,9 @@ export default function ComponentDetailPage({
                     <h2 className="text-lg font-semibold">Component Insights</h2>
                     <p className="max-w-[65ch] text-sm text-muted-foreground">Observed MCP calls and attribution coverage across verified present sessions. Partial activity never proves no use.</p>
                   </div>
-                  <Button type="button" disabled={generateComponentInsight.isPending}
-                    onClick={() => generateComponentInsight.mutate({ type: "mcp", id })}>
-                    {generateComponentInsight.isPending ? "Queueing…" : "Generate report"}
+                  <Button type="button" disabled={generateComponentInsight.isPending || (!!selectedVersion && !selectedInsightVersion)}
+                    onClick={() => generateComponentInsight.mutate({ type: "mcp", id, versionId: selectedInsightVersion?.id })}>
+                    {generateComponentInsight.isPending ? "Queueing…" : selectedVersion ? `Generate v${selectedVersion} report` : "Generate all-versions report"}
                   </Button>
                 </div>
                 {reportsLoading ? <p role="status" className="text-sm text-muted-foreground">Loading reports…</p> :
@@ -423,6 +425,10 @@ export default function ComponentDetailPage({
                      <span className="text-muted-foreground">{report.status}</span>
                    </li>)}
                  </ul>}
+                {hasNextPage && <Button type="button" variant="outline" disabled={isFetchingNextPage}
+                  onClick={() => void fetchNextPage()}>
+                  {isFetchingNextPage ? "Loading older reports…" : "Load older reports"}
+                </Button>}
               </TabsContent>}
 
               <TabsContent value="overview" forceMount className="mt-6 data-[state=inactive]:hidden">
