@@ -37,7 +37,7 @@ $DSH_HOME/sessions/--<normalized-cwd>--/<encoded-session-id>/session.v4.jsonl.zs
 
 Uncompressed `session.v4.jsonl` logs are also supported. The CLI transports raw records through Observal's existing outbox and checkpoint protocol; the server interprets DeepSeek messages, reasoning, tools, usage, and lifecycle events. No MCP telemetry wrappers or OTLP configuration are installed.
 
-The hook bridge supplies a session ID but leaves `transcript_path` empty, so source discovery must locate the corresponding log. A `Stop` hook is a turn boundary, not proof that the session cannot receive more input. Reconciliation covers records missed by hooks.
+The hook bridge supplies a session ID but leaves `transcript_path` empty, so source discovery must locate the corresponding log. A `Stop` hook is a turn boundary, not proof that the session cannot receive more input. **Live `dsh headless` testing found that the v4 log is created only after `Stop` hooks return.** Those hooks fire, but cannot upload that run's transcript; run `observal reconcile --harness deepseek` after the process exits to deliver it. Automatic delivery for a session that has not yet been persisted is not established. DeepSeek's hook shell also drops `DSH_HOME`, so Observal's installed hook command carries a custom runtime home explicitly.
 
 Historical and future session-format generations are not treated as v4. Run a compatible DeepSeek version to migrate historical sessions before reconciling them; retained generations must not be uploaded as duplicate sessions.
 

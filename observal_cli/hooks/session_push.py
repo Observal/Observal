@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -215,6 +216,7 @@ def _recover_sessions(harness: str, exclude_session: str = "", home: Path | None
 def cli_main() -> None:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--harness", default="claude-code")
+    parser.add_argument("--dsh-home", default="")
     parser.add_argument("--finalize-session", default="")
     parser.add_argument("--cwd", default="")
     parser.add_argument("--recover", action="store_true")
@@ -222,6 +224,8 @@ def cli_main() -> None:
     parser.add_argument("--json-response", action="store_true")
     parser.add_argument("--exclude-session", default="")
     args = parser.parse_args()
+    if args.dsh_home and args.harness == "deepseek":
+        os.environ["DSH_HOME"] = args.dsh_home
     try:
         if args.finalize_session:
             _finalize_session(args.harness, args.finalize_session, args.cwd)

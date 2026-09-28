@@ -292,7 +292,7 @@ class DeepSeekAdapter(BaseAdapter):
                         and any(
                             isinstance(handler, dict)
                             and handler.get("type") == "command"
-                            and handler.get("command") == hook_command()
+                            and is_session_push_command(handler.get("command"))
                             for handler in rule.get("hooks", [])
                         )
                         for rule in groups.get(event, [])

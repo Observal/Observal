@@ -4,11 +4,19 @@
 """DeepSeek native patch, skill discovery, hook activation, and isolation checks."""
 
 import json
+import shlex
+import sys
 
 import pytest
 
 from observal_cli.harness.deepseek import DeepSeekAdapter
-from observal_cli.harness_specs.deepseek_hooks_spec import EVENTS, MODULE, build_hooks, hook_command
+from observal_cli.harness_specs.deepseek_hooks_spec import (
+    EVENTS,
+    MODULE,
+    build_hooks,
+    hook_command,
+    is_session_push_command,
+)
 from observal_cli.shared.deepseek_config import HOOK_ID, HOOK_NAME, MCP_NAME, edit_owned_rows, read_entries
 
 
@@ -221,6 +229,27 @@ def test_only_actual_session_push_invocations_are_rewritten_or_removed(installed
     assert merged["hooks"]["Stop"][1]["hooks"][0]["command"] == hook_command()
 
 
+def test_hook_command_carries_runtime_home_into_deepseek_hook_shell(installed, monkeypatch):
+    from observal_cli.hooks import session_push
+    from observal_cli.sessions.deepseek import resolve_dsh_home
+
+    _adapter, root = installed
+    command = hook_command()
+    assert shlex.split(command)[-2:] == ["--dsh-home", str(root)]
+    assert is_session_push_command(command)
+    assert is_session_push_command(f"python3 -m {MODULE} --harness deepseek")
+    assert not is_session_push_command(f"python3 -m {MODULE} --harness deepseek --dsh-home ../relative")
+
+    # The DeepSeek hook subprocess drops DSH_HOME, so the CLI must restore it
+    # before session discovery and before it spawns an outbox worker.
+    monkeypatch.delenv("DSH_HOME")
+    observed = []
+    monkeypatch.setattr(session_push, "main", lambda **kwargs: observed.append((kwargs, resolve_dsh_home())))
+    monkeypatch.setattr(sys, "argv", ["session_push", "--harness", "deepseek", "--dsh-home", str(root)])
+    session_push.cli_main()
+    assert observed == [({"harness": "deepseek"}, root)]
+
+
 def test_hook_detection_requires_both_bridge_and_commands(installed):
     adapter, root = installed
     root.mkdir()
@@ -231,6 +260,15 @@ def test_hook_detection_requires_both_bridge_and_commands(installed):
     (root / "cordis.patch.yml").write_text(
         f"- insert:\n  - id: {HOOK_ID}\n    name: '{HOOK_NAME}'\n    config: {{configPath: {str(hooks)!r}}}\n"
     )
+    assert adapter.detect_hooks(root) == "installed"
+    # The doctor command may run through python3 while the scanner runs through
+    # python, both pointing at the same interpreter in a virtual environment.
+    alternative = build_hooks()
+    for event in EVENTS:
+        alternative["hooks"][event][0]["hooks"][0]["command"] = (
+            f"/opt/test-venv/bin/python3 -m {MODULE} --harness deepseek --dsh-home {root}"
+        )
+    hooks.write_text(json.dumps(alternative))
     assert adapter.detect_hooks(root) == "installed"
     scoped = build_hooks()
     scoped["hooks"]["Stop"][0]["matcher"] = "some-tool-only"

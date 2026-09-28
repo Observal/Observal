@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 import sys
@@ -16,7 +17,12 @@ MODULE = "observal_cli.hooks.session_push"
 
 def hook_command() -> str:
     """Return the local interpreter command invoked by the hooks plugin."""
-    return f"{shlex.quote(sys.executable)} -m {MODULE} --harness deepseek"
+    command = f"{shlex.quote(sys.executable)} -m {MODULE} --harness deepseek"
+    # DeepSeek's hook shell does not inherit DSH_HOME from the launcher. Bind
+    # custom runtime homes into the installed command so hooks find live logs.
+    if os.environ.get("DSH_HOME"):
+        command += f" --dsh-home {shlex.quote(str(Path(os.environ['DSH_HOME']).expanduser().absolute()))}"
+    return command
 
 
 def is_session_push_command(command: object) -> bool:
@@ -28,9 +34,10 @@ def is_session_push_command(command: object) -> bool:
     except ValueError:
         return False
     return (
-        len(argv) == 5
+        len(argv) in (5, 7)
         and re.fullmatch(r"python(?:3(?:\.\d+)?)?(?:\.exe)?", Path(argv[0]).name) is not None
-        and argv[1:] == ["-m", MODULE, "--harness", "deepseek"]
+        and argv[1:5] == ["-m", MODULE, "--harness", "deepseek"]
+        and (len(argv) == 5 or (argv[5] == "--dsh-home" and Path(argv[6]).is_absolute()))
     )
 
 
