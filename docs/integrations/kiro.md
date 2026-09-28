@@ -20,10 +20,11 @@ hooks file — `~/.kiro/hooks/observal.json` (user scope) or
 `UserPromptSubmit` and `Stop` triggers. Both hooks run the shared
 `observal_cli.hooks.session_push --harness kiro` entry point.
 
-The standalone file is the format Kiro IDE 1.0 and Kiro CLI 3.0 read. Observal
-deliberately does **not** write hooks inline into the agent JSON, because Kiro
-IDE 1.0 never fires inline hooks — an inline-hooked agent loads and runs in the
-IDE, it just reports no telemetry.
+Kiro IDE 1.0 and CLI 3.0 read the standalone file; the IDE does not fire
+inline agent hooks. Once installed, shared hooks collect **all** Kiro sessions
+in that scope, including ordinary conversations using MCPs or skills. Agent
+attribution is separate: sessions without a verified registry agent remain
+unattributed.
 
 Inline hooks do **not** hide an agent from the IDE agent picker. What does is
 `allowedTools` or `toolsSettings` without a `permissions` block: Kiro IDE 1.x
@@ -32,18 +33,19 @@ Observal no longer emits either field and strips them on pull.
 
 ### Legacy Kiro CLI 2.x
 
-Kiro CLI 2.x only understands inline agent hooks. When Observal detects a CLI
-2.x install *and no Kiro IDE on the machine*, it additionally writes the legacy
-inline `userPromptSubmit`/`stop` hooks into the agent JSON. Installing the IDE
-later and re-running `observal agent pull` (or `observal doctor patch --harness
-kiro`) removes them again.
+Kiro CLI 2.x only understands inline agent hooks. When Observal detects CLI
+2.x, it additionally writes legacy inline `userPromptSubmit`/`stop` hooks into
+the agent JSON, even when the IDE is installed. Ordinary CLI 2.x sessions do
+not fire these agent-specific hooks; use `observal reconcile --harness kiro`
+to backfill them.
 
 Detection can be overridden with `OBSERVAL_KIRO_CLI_VERSION` and
 `OBSERVAL_KIRO_IDE` (`1`/`0`).
 
-The hook reads Kiro session JSONL files from `~/.kiro/sessions/cli/`. It reads
-only new lines since the last push and sends them to Observal. Note that this
-path is written by the Kiro CLI; IDE-only sessions are not yet collected.
+The hook reads Kiro CLI JSONL files from `~/.kiro/sessions/cli/` and IDE
+transcripts from workspace session directories. It sends new records since the
+last push. Reconciliation backfills missed CLI and IDE sessions, including
+separately stored delegated sub-executions.
 
 ---
 
@@ -103,8 +105,9 @@ Project agents are written to `.kiro/agents/{name}.json`.
 
 Pull the agent again to refresh its Observal hook commands.
 
-Kiro attribution is installed per pulled agent because each hook command carries
-that agent's Observal UUID. `doctor patch` does not install generic Kiro hooks.
+`doctor patch` does not install generic Kiro hooks: pulling an agent installs
+shared hooks for its scope. These hooks do not carry that agent's UUID and
+capture ordinary sessions too. CLI 2.x still needs per-agent inline hooks.
 
 ---
 
@@ -197,19 +200,16 @@ one. Attribution is resolved from the session itself:
    records that agent in `session_start.agentType`, and the agent's own profile
    hooks fire with an agent-scoped `hookId`. Either names the agent.
 2. A session that delegates records `sub_agent_start` with `subAgentName`, and
-   the delegated agent's work is written to a separate sub-execution
-   transcript, captured as its own session.
+   the delegated agent's work is written to a separate child transcript. The
+   parent conversation is collected but is **not** attributed to the delegate.
 3. CLI sessions carry the active agent in the session metadata written beside
    the transcript.
-4. The CLI selects the active server URL under `registries` in `~/.observal/lockfile.json`, then looks up that name under that registry's `kiro` harness.
-5. The session payload is sent with the lockfile agent id and version. A name
-   that the current registry cannot confirm is left unattributed rather than
-   guessed at.
-
-Legacy CLI 2.x inline hooks remain the exception: those carry
-`OBSERVAL_AGENT_ID` directly, and it is used when present.
-5. If the UUID is missing or no lockfile entry exists, the session is left
-   unattributed instead of guessing from the current directory.
+4. The CLI selects the active server URL under `registries` in
+   `~/.observal/lockfile.json`, then looks up that name under that registry's
+   `kiro` harness.
+5. A verified agent receives its lockfile id and version. Ordinary sessions
+   and unknown agents are still collected, with no agent id rather than a
+   guessed one. Legacy CLI 2.x inline hooks may carry `OBSERVAL_AGENT_ID`.
 
 ### Event map
 

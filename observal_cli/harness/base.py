@@ -189,13 +189,11 @@ class BaseAdapter:
         return None
 
     def should_capture_session(self, source: SessionSource, home: Path | None = None) -> bool:
-        """Return whether a discovered session is in scope for telemetry.
+        """Return whether a discovered session is collected by configured hooks.
 
-        Most harnesses bind their hooks to a pulled agent's own profile, so a
-        session that never used an Observal agent never fires a hook and never
-        reaches here. Harnesses whose hooks cannot be scoped that way must
-        decide per session, and should fail closed: capturing a user's
-        unrelated conversations is worse than missing an agent session.
+        Collection is independent of agent attribution. Shared hooks may fire
+        for ordinary sessions using MCPs and skills; those sessions remain
+        unattributed when no registry agent matches.
         """
         return True
 

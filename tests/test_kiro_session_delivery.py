@@ -436,7 +436,7 @@ def test_kiro_ide_without_delegation_stays_unattributed(tmp_path: Path):
 
 
 def test_kiro_ide_identity_resolves_through_lockfile(tmp_path: Path, monkeypatch):
-    """The delegated name must resolve to a registry id, like the CLI path does."""
+    """Only the delegated child, not the chat that called it, gets its registry id."""
     import observal_cli.lockfile as lockfile
 
     monkeypatch.setattr(
@@ -447,12 +447,12 @@ def test_kiro_ide_identity_resolves_through_lockfile(tmp_path: Path, monkeypatch
         ),
     )
     transcript = make_ide_session(tmp_path, sub_agents=("pikachu-dude-agent",), workspace="/work/ide")
+    child = _write_subexecution(transcript, "sub-1")
+    _link_subexecution(transcript, "sub-1", "pikachu-dude-agent")
     ensure_loaded()
 
-    assert get_adapter("kiro").resolve_session_agent_identity(transcript, "/work/ide") == (
-        "agent-uuid",
-        "2.0.0",
-    )
+    assert get_adapter("kiro").resolve_session_agent_identity(transcript, "/work/ide") == (None, None)
+    assert get_adapter("kiro").resolve_session_agent_identity(child, "/work/ide") == ("agent-uuid", "2.0.0")
 
 
 def test_kiro_ide_unknown_agent_is_left_unattributed(tmp_path: Path, monkeypatch):
@@ -501,7 +501,7 @@ def test_kiro_attributes_when_reconciliation_has_not_run(tmp_path: Path, monkeyp
         "get_agent_by_name",
         lambda name, harness, directory=None: {"id": "agent-uuid", "version": "1.0.0"},
     )
-    transcript = make_ide_session(tmp_path, sub_agents=("some-agent",))
+    transcript = _agent_session(tmp_path, "some-agent")
     ensure_loaded()
 
     assert get_adapter("kiro").resolve_session_agent_identity(transcript, "/work") == (
@@ -576,13 +576,7 @@ def test_ide_sub_executions_are_returned_as_related_sources(tmp_path: Path):
 
     assert len(related) == 1
     assert related[0].session_id == "83ed4d5e-4916-45ac-b7db-39a392d3daad"
-    # Deliberately unparented, despite being discovered through its parent. The
-    # vibe conversation that spawned it is never captured, and the sessions
-    # list only returns rows with an empty parent_session_id - so a parented
-    # child would point at a session that does not exist and be filtered out of
-    # the UI permanently. The cursor key still records the relationship, which
-    # is local bookkeeping and never reaches the server.
-    assert related[0].parent_session_id is None
+    assert related[0].parent_session_id == "sess_ide-1"
     assert related[0].cursor_key == "sess_ide-1__sub__83ed4d5e-4916-45ac-b7db-39a392d3daad"
     assert related[0].cwd == "/work/project"
 
@@ -633,13 +627,10 @@ def test_cli_transcripts_have_no_related_sources(tmp_path: Path):
     assert get_adapter("kiro").related_session_sources(_source(transcript, "cli-1")) == []
 
 
-# ── Capture scope ─────────────────────────────────────────────────
+# ── Collection and attribution ────────────────────────────────────
 #
-# Kiro's hooks cannot be scoped to an agent: the IDE ignores hooks declared in
-# an agent profile and only runs a user-scope hooks file, so Observal's hooks
-# fire on every conversation. The IDE's parent conversation is therefore never
-# captured - it belongs to the user - and the agent's own sub-execution
-# transcript is captured instead, as its own session.
+# The shared hooks collect all sessions. Only recognized agent sessions and
+# delegated sub-executions receive an agent id.
 
 
 def _write_subexecution(transcript: Path, sub_id: str, text: str = "done") -> Path:
@@ -691,18 +682,20 @@ def _registry(monkeypatch, *names: str) -> None:
     )
 
 
-def test_the_ide_conversation_itself_is_never_captured(tmp_path: Path, monkeypatch):
-    """It is the user's chat, even on a turn that delegated to an agent."""
+def test_ide_conversation_is_collected_even_when_it_delegates(tmp_path: Path, monkeypatch):
     _registry(monkeypatch, "test")
     transcript = make_ide_session(tmp_path, sub_agents=("test",))
 
-    assert _scope(transcript) is False
+    assert _scope(transcript) is True
+    assert get_adapter("kiro").resolve_session_agent_identity(transcript, "/work/project") == (None, None)
 
 
-def test_a_plain_ide_chat_is_never_captured(tmp_path: Path, monkeypatch):
+def test_plain_ide_chat_is_collected_without_agent_attribution(tmp_path: Path, monkeypatch):
     _registry(monkeypatch, "test")
+    transcript = make_ide_session(tmp_path)
 
-    assert _scope(make_ide_session(tmp_path)) is False
+    assert _scope(transcript) is True
+    assert get_adapter("kiro").resolve_session_agent_identity(transcript, "/work/project") == (None, None)
 
 
 def test_a_delegated_sub_execution_is_captured(tmp_path: Path, monkeypatch):
@@ -715,44 +708,98 @@ def test_a_delegated_sub_execution_is_captured(tmp_path: Path, monkeypatch):
     assert _scope(sub, session_id="sub-1") is True
 
 
-def test_a_sub_execution_of_a_non_registry_agent_is_not_captured(tmp_path: Path, monkeypatch):
+def test_shared_hook_collects_ordinary_cli_chat(tmp_path: Path, monkeypatch):
+    make_session(tmp_path, agent_name="kiro_default")
+    write_config(tmp_path)
+    drained = []
+    monkeypatch.setattr(
+        session_push, "drain_session_source", lambda source, *_args, **_kwargs: drained.append(source) or True
+    )
+    monkeypatch.setattr(session_push, "_spawn_worker", lambda *_args, **_kwargs: None)
+
+    session_push._run_hook({"session_id": "kiro-session", "event": "userPromptSubmit"}, harness="kiro", home=tmp_path)
+
+    assert [source.session_id for source in drained] == ["kiro-session"]
+    assert get_adapter("kiro").resolve_session_agent_identity(drained[0].path, "/work") == (None, None)
+
+
+def test_shared_hook_collects_plain_chat_and_delegated_work(tmp_path: Path, monkeypatch):
+    transcript = make_ide_session(tmp_path, sub_agents=("test",))
+    _write_subexecution(transcript, "sub-1")
+    _link_subexecution(transcript, "sub-1", "test")
+    write_config(tmp_path)
+    drained = []
+    monkeypatch.setattr(
+        session_push, "drain_session_source", lambda source, *_args, **_kwargs: drained.append(source) or True
+    )
+    monkeypatch.setattr(session_push, "_spawn_worker", lambda *_args, **_kwargs: None)
+
+    session_push._run_hook({"session_id": "sess_ide-1", "event": "UserPromptSubmit"}, harness="kiro", home=tmp_path)
+
+    assert [source.session_id for source in drained] == ["sess_ide-1", "sub-1"]
+    assert drained[1].parent_session_id == "sess_ide-1"
+
+
+def test_a_non_registry_sub_execution_is_collected_but_unattributed(tmp_path: Path, monkeypatch):
     _registry(monkeypatch, "test")
     transcript = make_ide_session(tmp_path, sub_agents=("someone-elses-agent",))
     sub = _write_subexecution(transcript, "sub-1")
     _link_subexecution(transcript, "sub-1", "someone-elses-agent")
 
-    assert _scope(sub, session_id="sub-1") is False
+    assert _scope(sub, session_id="sub-1") is True
+    assert get_adapter("kiro").resolve_session_agent_identity(sub, "/work/project") == (None, None)
 
 
-def test_an_orphan_sub_execution_is_not_captured(tmp_path: Path, monkeypatch):
-    """No sub_agent_start names it, so it cannot be attributed - fail closed."""
+def test_an_orphan_sub_execution_is_collected_unattributed(tmp_path: Path, monkeypatch):
     _registry(monkeypatch, "test")
     transcript = make_ide_session(tmp_path, sub_agents=("test",))
     sub = _write_subexecution(transcript, "unlinked")
 
-    assert _scope(sub, session_id="unlinked") is False
+    assert _scope(sub, session_id="unlinked") is True
+    assert get_adapter("kiro").resolve_session_agent_identity(sub, "/work/project") == (None, None)
 
 
 def test_cli_sessions_are_not_gated(tmp_path: Path, monkeypatch):
-    """The CLI declares hooks inside an agent profile, so it is already scoped.
-
-    Only a session started against a pulled agent fires a hook at all, and that
-    is the CLI's own decision to make. Scoping applies to the IDE, whose hooks
-    cannot be bound to an agent.
-    """
+    """Ordinary CLI sessions can still contain MCP and skill activity."""
     _registry(monkeypatch, "test")
 
     assert _scope(make_session(tmp_path, agent_name="kiro_default"), session_id="cli-1") is True
     assert _scope(make_session(tmp_path, "other", agent_name="test"), session_id="other") is True
 
 
-def test_recovery_delivers_a_sub_execution_whose_parent_is_out_of_scope(tmp_path: Path, monkeypatch):
-    """The normal IDE case: the conversation is private, the agent's work is not.
+def test_reconcile_collects_parent_and_sub_execution(tmp_path: Path, monkeypatch):
+    from observal_cli import cmd_reconcile_cli
+    from observal_cli.sessions import base
 
-    Recovery previously only walked the sessions returned by discovery, so a
-    sub-execution missed at hook time could never be recovered - and now that
-    its parent is never captured, nothing would have carried it.
-    """
+    transcript = make_ide_session(tmp_path, sub_agents=("test",))
+    _write_subexecution(transcript, "sub-1")
+    _link_subexecution(transcript, "sub-1", "test")
+    adapter = get_adapter("kiro")
+    discover = adapter.discover_session_sources
+    monkeypatch.setattr(
+        adapter, "discover_session_sources", lambda since_hours: discover(home=tmp_path, since_hours=since_hours)
+    )
+    monkeypatch.setattr(cmd_reconcile_cli, "get_adapter", lambda _name: adapter)
+    monkeypatch.setattr(cmd_reconcile_cli, "read_cursor_state", lambda _key: (0, 0, False))
+    monkeypatch.setattr(base, "read_cursor_state", lambda _key, home=None: (0, 0, False))
+    monkeypatch.setattr(cmd_reconcile_cli, "recover_cursor_from_server", lambda _source, _cfg: (0, 0))
+    drained = []
+    monkeypatch.setattr(
+        cmd_reconcile_cli,
+        "drain_session_source",
+        lambda source, _cfg, **kwargs: drained.append((source, kwargs)) or True,
+    )
+
+    result = cmd_reconcile_cli._reconcile_harness("kiro", {"user_id": "user"}, 24, False)
+
+    assert result["pushed"] == 2
+    assert [source.session_id for source, _kwargs in drained] == ["sess_ide-1", "sub-1"]
+    assert drained[1][0].parent_session_id == "sess_ide-1"
+    assert len(drained[1][1]["extra_records"]) == 1
+
+
+def test_recovery_delivers_parent_and_sub_execution(tmp_path: Path, monkeypatch):
+    """Recovery sends the conversation and separately stored delegated work."""
     _registry(monkeypatch, "test")
     transcript = make_ide_session(tmp_path, sub_agents=("test",))
     sub = _write_subexecution(transcript, "sub-1")
@@ -773,8 +820,7 @@ def test_recovery_delivers_a_sub_execution_whose_parent_is_out_of_scope(tmp_path
 
     session_push._recover_sessions("kiro", home=tmp_path)
 
-    assert drained == ["sub-1.jsonl"]
-    assert "messages.jsonl" not in drained
+    assert drained == ["messages.jsonl", "sub-1.jsonl"]
 
 
 # ── Sessions started as an agent ──────────────────────────────────
@@ -818,10 +864,12 @@ def test_an_agent_session_is_recognised_without_session_start(tmp_path: Path, mo
     assert _scope(transcript, session_id="sess_agent-1") is True
 
 
-def test_a_session_started_as_a_non_registry_agent_is_not_captured(tmp_path: Path, monkeypatch):
+def test_non_registry_agent_session_is_collected_unattributed(tmp_path: Path, monkeypatch):
     _registry(monkeypatch, "pika")
+    transcript = _agent_session(tmp_path, "someone-elses-agent")
 
-    assert _scope(_agent_session(tmp_path, "someone-elses-agent"), session_id="sess_agent-1") is False
+    assert _scope(transcript, session_id="sess_agent-1") is True
+    assert get_adapter("kiro").resolve_session_agent_identity(transcript, "/work/project") == (None, None)
 
 
 def test_an_agent_session_is_attributed_to_that_agent(tmp_path: Path, monkeypatch):
@@ -841,11 +889,14 @@ def test_an_agent_session_is_attributed_to_that_agent(tmp_path: Path, monkeypatc
     assert get_adapter("kiro").resolve_session_agent_identity(transcript, "/work") == ("pika-uuid", "2.0.0")
 
 
-def test_a_plain_vibe_conversation_is_still_never_captured(tmp_path: Path, monkeypatch):
-    """The privacy fix must survive the agent-session change."""
+def test_vibe_session_with_delegated_agent_hook_is_not_misattributed(tmp_path: Path, monkeypatch):
     _registry(monkeypatch, "pika")
+    transcript = make_ide_session(tmp_path, sub_agents=("pika",))
+    with transcript.open("a") as handle:
+        handle.write(json.dumps({"payload": {"type": "ContextualHookInvoked", "hookId": "pika#hook-0"}}) + "\n")
 
-    assert _scope(make_ide_session(tmp_path)) is False
+    assert _scope(transcript) is True
+    assert get_adapter("kiro").resolve_session_agent_identity(transcript, "/work/project") == (None, None)
 
 
 # ── The injected prompt is written once ───────────────────────────

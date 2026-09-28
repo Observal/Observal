@@ -171,21 +171,28 @@ def read_kiro_ide_session_agent(transcript: Path) -> str | None:
     transcript can begin mid-session - while the hooks fire on every turn. A
     "vibe" session is ordinary Kiro and returns None.
     """
+    declared: str | None = None
+    hook_name: str | None = None
+    delegated = False
     for record in _iter_ide_records(transcript):
         payload = record["payload"]
         ptype = payload.get("type")
         if ptype == "session_start":
             agent_type = payload.get("agentType")
-            if isinstance(agent_type, str) and agent_type.strip() and agent_type.strip() != "vibe":
-                return agent_type.strip()
+            if isinstance(agent_type, str) and agent_type.strip():
+                if agent_type.strip() == "vibe":
+                    return None  # A delegated agent's hook does not identify the parent chat.
+                declared = agent_type.strip()
+        elif ptype == "sub_agent_start":
+            delegated = True
         elif ptype == "ContextualHookInvoked":
             hook_id = payload.get("hookId")
             # A path means a standalone hooks file, which is not agent-scoped.
             if isinstance(hook_id, str) and hook_id and not hook_id.startswith("/"):
                 name = hook_id.split("#", 1)[0].strip()
                 if name:
-                    return name
-    return None
+                    hook_name = name
+    return declared or (None if delegated else hook_name)
 
 
 def is_ide_subexecution(path: Path) -> bool:

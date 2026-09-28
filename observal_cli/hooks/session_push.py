@@ -59,10 +59,8 @@ def _run_hook(event: dict, *, harness: str, home: Path | None = None) -> None:
     hook_event = str(event.get("hook_event_name") or event.get("hookEventName") or event.get("event") or "")
     is_final = adapter.is_session_final(event)
     deferred = adapter.defer_session_delivery()
-    # Scope is decided per source, not per hook. A harness whose hooks cannot
-    # be bound to an agent may have a private parent conversation whose child
-    # sub-execution is the agent's own session, so the children are always
-    # considered even when the parent is skipped.
+    # Scope is decided per source. Related transcripts are handled separately
+    # so delegated work is not lost when it lives outside the parent JSONL.
     delivered = True
     if adapter.should_capture_session(source, home=home):
         delivered = drain_session_source(
@@ -172,6 +170,7 @@ def _finalize_session(harness: str, session_id: str, cwd: str, home: Path | None
             hook_event="Stop",
             final=True,
             extra_fields=adapter.session_extra_fields(related, event, True, home=home),
+            extra_records=adapter.session_extra_records(related, event, True, home=home),
             recover_from_server=True,
             home=home,
         )
@@ -217,8 +216,7 @@ def _recover_sessions(harness: str, exclude_session: str = "", home: Path | None
                 recover_from_server=True,
                 home=home,
             )
-        # Children are recovered even when the parent is out of scope, which is
-        # the normal case for an IDE conversation that delegated to an agent.
+        # Recover separately stored delegated work alongside the parent.
         for related in adapter.related_session_sources(source, home=home):
             if not adapter.should_capture_session(related, home=home):
                 continue
@@ -228,6 +226,7 @@ def _recover_sessions(harness: str, exclude_session: str = "", home: Path | None
                 hook_event="CrashRecovery",
                 final=recovery_final,
                 extra_fields=adapter.session_extra_fields(related, event, recovery_final, home=home),
+                extra_records=adapter.session_extra_records(related, event, recovery_final, home=home),
                 recover_from_server=True,
                 home=home,
             )

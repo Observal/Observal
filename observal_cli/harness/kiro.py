@@ -262,63 +262,6 @@ class KiroAdapter(BaseAdapter):
             record["timestamp"] = started_at
         return (json.dumps(record),)
 
-    def should_capture_session(self, source: SessionSource, home: Path | None = None) -> bool:
-        """Return whether this source's content belongs to an Observal agent.
-
-        Kiro is the one harness whose hooks cannot be scoped to an agent: the
-        IDE ignores hooks declared inside an agent profile and only runs a
-        user-scope hooks file, so Observal's hooks fire on every conversation.
-        Scope is therefore decided per source, and fails closed.
-
-        An IDE session started as an agent - picked from the agent dropdown -
-        is captured in full. The whole conversation is that agent's work, it
-        has no sub-execution to fall back on, and the agent's own hooks fire,
-        so this is Kiro's own notion of an agent session rather than anything
-        inferred.
-
-        A plain "vibe" conversation is never captured. It belongs to the user,
-        and a chat that delegates one turn is still overwhelmingly the user's
-        own - capturing it would upload private conversation and attribute its
-        prompts, tokens and cost to the agent. The delegated agent's work is
-        written to a separate sub-execution transcript, which is captured
-        instead and stands alone as that agent's session.
-
-        The CLI is left alone. It declares its hooks inside an agent profile,
-        so a session only ever fires one when it was started against a pulled
-        agent - it is already scoped where it matters, and this decision is not
-        Observal's to second-guess there.
-        """
-        if source.path is None:
-            return False
-
-        from observal_cli.sessions.kiro import (
-            is_ide_subexecution,
-            is_ide_transcript,
-            read_kiro_ide_session_agent,
-            read_kiro_ide_subexecution_origin,
-        )
-
-        if is_ide_subexecution(source.path):
-            name, _prompt, _started = read_kiro_ide_subexecution_origin(source.path)
-            return self._is_registry_agent(name or "", source.cwd)
-
-        if is_ide_transcript(source.path):
-            return self._is_registry_agent(read_kiro_ide_session_agent(source.path) or "", source.cwd)
-
-        return True
-
-    def _is_registry_agent(self, name: str, cwd: str) -> bool:
-        """Return whether a name resolves to an agent this registry still has."""
-        if not name or name == "kiro_default":
-            return False
-        from observal_cli.lockfile import agent_entry_is_registry_backed, get_agent_by_name
-
-        try:
-            entry = get_agent_by_name(name, harness=self.harness_name, directory=cwd or None)
-        except Exception:
-            return False
-        return agent_entry_is_registry_backed(entry)
-
     def related_session_sources(self, source: SessionSource, home: Path | None = None) -> list[SessionSource]:
         """Return the IDE's sub-execution transcripts for a parent session.
 
@@ -350,11 +293,7 @@ class KiroAdapter(BaseAdapter):
                     path,
                     cwd=source.cwd,
                     cursor_key=f"{source.session_id}__sub__{sub_execution_id}",
-                    # Deliberately not parented. The IDE conversation that
-                    # spawned this is never captured, and the sessions list
-                    # only returns rows whose parent_session_id is empty, so a
-                    # child would point at a session that does not exist and be
-                    # filtered out forever. The agent's work stands alone.
+                    parent_session_id=source.session_id,
                 )
             )
         return related
@@ -383,8 +322,10 @@ class KiroAdapter(BaseAdapter):
             # sub_agent_start, so that is checked before the delegation record.
             agent_name = None
             if session_jsonl is not None and is_ide_transcript(session_jsonl):
+                # Delegation does not make the entire parent chat that agent's
+                # work; the child transcript gets its own attribution above.
                 agent_name = read_kiro_ide_session_agent(session_jsonl)
-            if not agent_name:
+            else:
                 agent_name = read_kiro_agent_name(session_jsonl)
         if not agent_name or agent_name == "kiro_default":
             return None, None
