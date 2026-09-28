@@ -132,7 +132,7 @@ def main():
             _send_message(_make_error(None, -32600, "Invalid Request"))
             continue
         method = msg["method"]
-        if not isinstance(method, str):
+        if not isinstance(method, str) or msg.get("jsonrpc") != "2.0":
             _send_message(_make_error(req_id, -32600, "Invalid Request"))
             continue
 

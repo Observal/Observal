@@ -124,6 +124,23 @@ def test_invalid_request_ids_and_stray_responses_do_not_dispatch(fake_runner_pat
     assert replies[6]["result"]["protocolVersion"] == "2025-06-18"
 
 
+def test_invalid_jsonrpc_versions_cannot_dispatch_and_session_recovers(fake_runner_path):
+    replies = _run_session(
+        [
+            {"id": 20, "method": "tools/call", "params": {"name": "run_sandbox_python_pytest"}},
+            {"jsonrpc": "1.0", "id": 21, "method": "tools/list"},
+            {"jsonrpc": 2.0, "id": 22, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}},
+            {"jsonrpc": None, "id": 23, "method": "tools/list"},
+            _initialize(24, "2025-06-18"),
+        ],
+        fake_runner_path,
+    )
+
+    assert [reply["id"] for reply in replies] == [20, 21, 22, 23, 24]
+    assert [reply["error"]["code"] for reply in replies[:4]] == [-32600] * 4
+    assert replies[4]["result"]["protocolVersion"] == "2025-06-18"
+
+
 def test_non_json_constants_and_oversized_integer_recover(fake_runner_path):
     malformed = [
         '{"jsonrpc":"2.0","id":NaN,"method":"tools/list"}',
