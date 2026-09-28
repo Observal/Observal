@@ -168,6 +168,10 @@ class BaseAdapter:
         target = home / resolved[2:] if resolved.startswith("~/") else Path(resolved)
         return BundledSkillPlan(target=target)
 
+    def skill_install_destination(self, name: str, scope: str, cwd: Path) -> Path | None:
+        """Use the existing standalone skill layout unless a harness needs a native path."""
+        return None
+
     def resolve_session_source(self, event: dict[str, Any], home: Path | None = None) -> SessionSource | None:
         """Resolve a hook payload to a session source when the harness supports it."""
         return None
@@ -248,6 +252,28 @@ class BaseAdapter:
 
     def persist_active_agent(self, agent_id: str, name: str, version: str | None) -> None:
         return None
+
+    def resolve_install_path(self, raw_path: str, target_dir: Path, *, allow_home: bool = False) -> Path:
+        """Use pull's existing scope and containment rules unless an adapter overrides them."""
+        from observal_cli.cmd_pull import _resolve_path
+
+        return _resolve_path(raw_path, target_dir, allow_home=allow_home)
+
+    def install_notes(self, is_user_scope: bool) -> tuple[str, ...]:
+        """Return native activation notes to display after an agent pull."""
+        return ()
+
+    def write_mcp_config(self, path: Path, content: Any) -> str:
+        """Apply the existing section merge for mapping-based harness configs."""
+        from observal_cli.cmd_pull import _write_file_checked
+
+        return _write_file_checked(path, content, merge_mcp=True)
+
+    def write_hook_config(self, path: Path, content: Any, *, merge: bool = False) -> str:
+        """Use the existing hook write behavior unless a harness needs rule-level merging."""
+        from observal_cli.cmd_pull import _write_file_checked
+
+        return _write_file_checked(path, content, merge_mcp=merge)
 
     def extract_mcp_servers(self, config: dict) -> dict:
         from observal_shared.harness_registry import HARNESS_REGISTRY

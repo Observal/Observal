@@ -83,6 +83,16 @@ def boundaries(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> SimpleNamespa
     adapter.rewrite_hooks.side_effect = lambda content, agent_id: content
     adapter.rewrite_agent_profile.side_effect = lambda content, agent_id: content
     adapter.allow_home_agent_profile.return_value = False
+    adapter.resolve_install_path.side_effect = lambda raw_path, target_dir, **kwargs: cmd_pull._resolve_path(
+        raw_path, target_dir, **kwargs
+    )
+    adapter.write_mcp_config.side_effect = lambda path, content: cmd_pull._write_file_checked(
+        path, content, merge_mcp=True
+    )
+    adapter.write_hook_config.side_effect = lambda path, content, merge=False: cmd_pull._write_file_checked(
+        path, content, merge_mcp=merge
+    )
+    adapter.install_notes.return_value = ()
 
     def apply_install_options(options: dict, tools: str | None) -> None:
         if tools:

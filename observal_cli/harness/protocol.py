@@ -247,6 +247,10 @@ class HarnessAdapter(Protocol):
         """Return the destination and migration paths for one bundled skill."""
         ...
 
+    def skill_install_destination(self, name: str, scope: str, cwd: Path) -> Path | None:
+        """Optional native destination for standalone skill installs."""
+        ...
+
     def scan_project(self, project_dir: Path) -> ScanResult:
         """Scan a project directory for this harness's configuration.
 
@@ -380,8 +384,24 @@ class HarnessAdapter(Protocol):
         """Persist harness-specific global agent attribution after pull."""
         ...
 
-    def extract_mcp_servers(self, config: dict) -> dict:
+    def extract_mcp_servers(self, config: dict | list) -> dict:
         """Extract MCP server entries from a harness configuration."""
+        ...
+
+    def resolve_install_path(self, raw_path: str, target_dir: Path, *, allow_home: bool = False) -> Path:
+        """Resolve a generated file destination for pull, including dry runs."""
+        ...
+
+    def install_notes(self, is_user_scope: bool) -> tuple[str, ...]:
+        """Report harness-specific activation facts for an agent pull."""
+        ...
+
+    def write_mcp_config(self, path: Path, content: Any) -> str:
+        """Write or merge a generated MCP configuration at its resolved destination."""
+        ...
+
+    def write_hook_config(self, path: Path, content: Any, *, merge: bool = False) -> str:
+        """Write or merge hook rules without discarding unrelated handlers."""
         ...
 
     def patch_hooks(self, dry_run: bool) -> bool:

@@ -27,7 +27,7 @@ from models.mcp import ListingStatus, McpListing
 from models.prompt import PromptListing
 from models.skill import SkillListing
 from observal_shared.harness_registry import HARNESS_REGISTRY
-from services.harness import generate_agent_config
+from services.harness import generate_agent_config, render_config_file
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -176,8 +176,6 @@ async def preview_config(
         name_map[str(row.id)] = row.name
 
     # Generate configs for all target harnesses
-    import json as _json
-
     configs: dict[str, dict[str, str]] = {}
     placeholder_url = "https://observal.example"
 
@@ -198,22 +196,18 @@ async def preview_config(
 
         files: dict[str, str] = {}
         if "agent_profile" in config:
-            rf = config["agent_profile"]
-            files[rf["path"]] = rf["content"]
-        if "agent_profile" in config:
             af = config["agent_profile"]
-            content = af["content"]
-            files[af["path"]] = _json.dumps(content, indent=2) if isinstance(content, dict) else content
+            files[af["path"]] = render_config_file(af["content"])
         if "mcp_config" in config:
             mc = config["mcp_config"]
             if isinstance(mc, dict) and "path" in mc:
-                content = mc["content"]
-                files[mc["path"]] = _json.dumps(content, indent=2) if isinstance(content, dict) else content
+                files[mc["path"]] = render_config_file(mc["content"])
         if "hooks_config" in config:
             hc = config["hooks_config"]
             if isinstance(hc, dict) and "path" in hc:
-                content = hc["content"]
-                files[hc["path"]] = _json.dumps(content, indent=2) if isinstance(content, dict) else content
+                files[hc["path"]] = render_config_file(hc["content"])
+        for hf in config.get("hook_files", []):
+            files[hf["path"]] = hf["content"]
         if "skills" in config:
             for sf in config["skills"]:
                 files[sf["path"]] = sf["content"]

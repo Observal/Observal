@@ -23,6 +23,7 @@ from observal_cli.sessions.base import (
     log_error,
     read_cursor_state,
 )
+from observal_cli.sessions.source_reader import source_size
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -188,19 +189,27 @@ def _recover_sessions(harness: str, exclude_session: str = "", home: Path | None
                 continue
         except OSError:
             continue
+        try:
+            size, complete = source_size(source.path)
+        except (OSError, ValueError) as exc:
+            optic.warning("could not read {} session {}: {}", harness, source.session_id, exc)
+            continue
         offset, _line_count, finalized = read_cursor_state(source.checkpoint_key, home=home)
-        if offset >= stat.st_size and (finalized or not recovery_final):
+        if complete and offset >= size and (finalized or not recovery_final):
             continue
         event = {"session_id": source.session_id, "hook_event_name": "Stop"}
-        drain_session_source(
-            source,
-            config,
-            hook_event="CrashRecovery",
-            final=recovery_final,
-            extra_fields=adapter.session_extra_fields(source, event, recovery_final, home=home),
-            recover_from_server=True,
-            home=home,
-        )
+        try:
+            drain_session_source(
+                source,
+                config,
+                hook_event="CrashRecovery",
+                final=recovery_final,
+                extra_fields=adapter.session_extra_fields(source, event, recovery_final, home=home),
+                recover_from_server=True,
+                home=home,
+            )
+        except (OSError, ValueError) as exc:
+            optic.warning("could not recover {} session {}: {}", harness, source.session_id, exc)
 
 
 def cli_main() -> None:

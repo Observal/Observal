@@ -166,6 +166,19 @@ def ensure_loaded() -> None:
 # ── Orchestrator ──────────────────────────────────────────────────
 
 
+def render_config_file(content: Any) -> str:
+    """Render native patch sequences as YAML; keep existing JSON and text output."""
+    import json
+
+    import yaml
+
+    if isinstance(content, list):
+        return yaml.safe_dump(content, sort_keys=False, allow_unicode=True)
+    if isinstance(content, dict):
+        return json.dumps(content, indent=2)
+    return content
+
+
 def generate_agent_config(
     agent: Any,
     harness: str,
@@ -263,8 +276,6 @@ async def generate_all_harness_configs(
     env_values: dict | None = None,
 ) -> dict[str, dict[str, str]]:
     """Generate harness config files for all target harnesses from an AgentVersion."""
-    import json as _json
-
     from observal_shared.harness_registry import HARNESS_REGISTRY
 
     harnesses = target_harnesses or agent_version.supported_harnesses or list(HARNESS_REGISTRY.keys())
@@ -288,12 +299,18 @@ async def generate_all_harness_configs(
         if "agent_profile" in config:
             af = config["agent_profile"]
             content = af["content"]
-            files[af["path"]] = _json.dumps(content, indent=2) if isinstance(content, dict) else content
+            files[af["path"]] = render_config_file(content)
         if "mcp_config" in config:
             mc = config["mcp_config"]
             if isinstance(mc, dict) and "path" in mc:
                 content = mc["content"]
-                files[mc["path"]] = _json.dumps(content, indent=2) if isinstance(content, dict) else content
+                files[mc["path"]] = render_config_file(content)
+        if "hooks_config" in config:
+            hc = config["hooks_config"]
+            if isinstance(hc, dict) and "path" in hc:
+                files[hc["path"]] = render_config_file(hc["content"])
+        for hf in config.get("hook_files", []):
+            files[hf["path"]] = hf["content"]
         if "skills" in config:
             for sf in config["skills"]:
                 files[sf["path"]] = sf["content"]

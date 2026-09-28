@@ -23,6 +23,7 @@ from observal_cli.sessions.base import (
     read_cursor_state,
     recover_cursor_from_server,
 )
+from observal_cli.sessions.source_reader import source_size
 
 
 def _value(value):
@@ -201,8 +202,8 @@ def _reconcile_harness(
             result["sessions"].append(session)
             continue
         try:
-            size = source.path.stat().st_size
-        except OSError as error:
+            size, complete = source_size(source.path)
+        except (OSError, ValueError) as error:
             result["errors"] += 1
             session.update(status="error", reason=type(error).__name__)
             result["sessions"].append(session)
@@ -217,6 +218,9 @@ def _reconcile_harness(
                 result["would_push"] += 1
                 session["status"] = "would_push"
                 rprint(f"  [dim]Would push:[/dim] {esc(source.session_id)} ({bytes_new} bytes new)")
+            elif not complete:
+                result["skipped"] += 1
+                session.update(status="skipped", reason="incomplete source tail")
             elif not finalized:
                 result["would_finalize"] += 1
                 session["status"] = "would_finalize"
@@ -227,7 +231,7 @@ def _reconcile_harness(
             result["sessions"].append(session)
             continue
 
-        if finalized and local_offset >= size:
+        if complete and finalized and local_offset >= size:
             result["up_to_date"] += 1
             session["status"] = "up_to_date"
             result["sessions"].append(session)
@@ -270,7 +274,7 @@ def _reconcile_harness(
                 remediation="Check local storage and retry.",
                 detail=repr(error),
             )
-        except OSError as error:
+        except (OSError, ValueError) as error:
             result["errors"] += 1
             session.update(status="error", reason=type(error).__name__)
             result["sessions"].append(session)
@@ -287,7 +291,7 @@ def _reconcile_harness(
             session.update(status="rejected", http_status=source_rejections[-1][2])
             rprint(f"  [red]✗[/red] {esc(source.session_id)} rejected by server")
         elif delivered:
-            key = "pushed" if offset < size else "finalized"
+            key = "pushed" if offset < size else "finalized" if complete else "skipped"
             result[key] += 1
             session["status"] = key
             rprint(f"  [green]✓[/green] {esc(source.session_id)}")

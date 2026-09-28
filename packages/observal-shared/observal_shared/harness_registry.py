@@ -449,6 +449,52 @@ HARNESS_REGISTRY: dict[str, dict] = {
         # Not verified: goose runs recipes headless, but agent profiles are not recipes.
         "headless_run": False,
     },
+    "deepseek": {
+        "display_name": "DeepSeek Harness",
+        "capabilities": {"skills", "hooks", "mcp_servers"},
+        "session_parser": "deepseek",
+        "scopes": ["project", "user"],
+        "default_scope": "user",
+        "scope_labels": ("project (.dsh/skills/)", "user (~/.dsh/)"),
+        # Agent instructions are installed as a native skill, not a fictitious
+        # Markdown agent-definition format or a replacement for AGENTS.md.
+        "agent_profile": {
+            "project": ".dsh/skills/observal-{name}/SKILL.md",
+            "user": "~/.dsh/skills/observal-{name}/SKILL.md",
+        },
+        "agent_profile_format": "yaml_frontmatter",
+        "mcp_config": {"project": None, "user": "~/.dsh/cordis.patch.yml"},
+        # Cordis uses a patch sequence, not a server mapping. The adapter owns
+        # extraction and emission of dsh-mcp-client plugin entries.
+        "mcp_servers_key": "",
+        "home_mcp_config": "~/.dsh/cordis.patch.yml",
+        "skills": {
+            "project": ".dsh/skills/{name}/SKILL.md",
+            "user": "~/.dsh/skills/{name}/SKILL.md",
+        },
+        "skill_format": "yaml_frontmatter",
+        "hook_type": "command",
+        "hooks": {"user": "~/.dsh/observal/hooks.json"},
+        "hook_scripts_dir": "~/.dsh/observal/scripts",
+        "hook_events_map": {
+            "PreToolUse": "PreToolUse",
+            "PostToolUse": "PostToolUse",
+            "Stop": "Stop",
+            "SessionStart": "SessionStart",
+            "UserPromptSubmit": "UserPromptSubmit",
+            "SubagentStop": "SubagentStop",
+        },
+        "config_dir": ".dsh",
+        # dsh profile-boot loads the home cordis.patch.yml; project overlays
+        # require an explicit --patch. hooks-claude-code injects context through
+        # awaited agent/created initialization and agent/pre-step listeners.
+        "mcp_install_mode": "user_only",
+        "dynamic_tools": False,
+        "prompt_context_injection": True,
+        "guidance_file_write": False,
+        # No verified Observal agent materialization/headless launch yet.
+        "headless_run": False,
+    },
     "pi": {
         "display_name": "Pi",
         "capabilities": {"skills", "hooks", "mcp_servers"},
@@ -513,6 +559,7 @@ _GUIDANCE_FILES = {
     "opencode": ["opencode.json", "~/.config/opencode/opencode.json"],
     "antigravity": ["AGENTS.md", "GEMINI.md"],
     "goose": [".goosehints", "~/.config/goose/.goosehints", "AGENTS.md"],
+    "deepseek": ["AGENTS.md", "CLAUDE.md", "AGENTS.local.md", "CLAUDE.local.md", "~/.dsh/AGENTS.md"],
     "pi": ["AGENTS.md", "~/.pi/agent/AGENTS.md", ".pi/SYSTEM.md", ".pi/APPEND_SYSTEM.md"],
 }
 

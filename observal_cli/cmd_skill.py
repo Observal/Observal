@@ -834,6 +834,12 @@ def install_skill_registry_direct(
     skill_name = _sanitize_name(name)
     custom_dest = dest is not None
     target_harness = ide or harness
+    if dest is None:
+        from observal_cli.harness import ensure_loaded, get_adapter
+
+        ensure_loaded()
+        dest = get_adapter(target_harness).skill_install_destination(skill_name, scope, cwd or Path.cwd())
+        custom_dest = dest is not None
 
     if dest is None:
         if scope == "user":
@@ -896,6 +902,12 @@ def install_skill_from_git(
     skill_name = _sanitize_name(name)
     custom_dest = dest is not None
     target_harness = ide or harness
+    if dest is None:
+        from observal_cli.harness import ensure_loaded, get_adapter
+
+        ensure_loaded()
+        dest = get_adapter(target_harness).skill_install_destination(skill_name, scope, cwd or Path.cwd())
+        custom_dest = dest is not None
 
     if dest is None:
         if scope == "user":

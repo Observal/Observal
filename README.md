@@ -84,6 +84,7 @@ Observal supports Claude Code, Cursor, Kiro, Pi, Copilot, Codex, OpenCode, and o
 | OpenCode |
 | Antigravity CLI |
 | Goose |
+| [DeepSeek Harness](docs/integrations/deepseek.md) |
 
 One command to install any agent into any supported harness. The config files are generated per-harness automatically.
 

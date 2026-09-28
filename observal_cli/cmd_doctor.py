@@ -125,6 +125,7 @@ def doctor(
             ("OpenCode", _check_opencode),
             ("Antigravity", _check_antigravity),
             ("Goose", _check_goose),
+            ("DeepSeek Harness", _check_deepseek),
         )
 
         rprint("[cyan]Checking Registry lockfile...[/cyan]")
@@ -640,6 +641,21 @@ def _check_goose(issues: list, warnings: list):
         warnings.append(
             f"Goose session push hooks are missing or stale for: {', '.join(stale)}. "
             "Run `observal doctor patch --harness goose` to update them."
+        )
+
+
+def _check_deepseek(issues: list, warnings: list) -> None:
+    """Diagnose both the active user patch bridge and its command rules."""
+    ensure_loaded()
+    adapter = get_adapter("deepseek")
+    if not adapter.is_installed():
+        rprint("  [dim]DeepSeek Harness not detected[/dim]")
+        return
+    status = adapter.detect_hooks(adapter.resolve_home_dir())
+    if status != "installed":
+        warnings.append(
+            "DeepSeek user-scope hook bridge or session push commands are missing/stale. "
+            "Run `observal doctor patch --harness deepseek`; the global patch activates only from DSH_HOME."
         )
 
 
