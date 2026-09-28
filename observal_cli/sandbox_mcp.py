@@ -42,7 +42,7 @@ def _read_message() -> dict | None:
             continue
         try:
             msg = json.loads(line)
-        except json.JSONDecodeError as e:
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
             optic.warning("sandbox mcp: unparseable line: {}", e)
             _send_message(_make_error(None, -32700, "Parse error"))
             continue
@@ -116,7 +116,11 @@ def main():
         req_id = msg["id"]
 
         if method == "initialize":
-            requested = (msg.get("params") or {}).get("protocolVersion")
+            params = msg.get("params")
+            if not isinstance(params, dict):
+                _send_message(_make_error(req_id, -32602, "Invalid params"))
+                continue
+            requested = params.get("protocolVersion")
             version = requested if requested in SUPPORTED_PROTOCOL_VERSIONS else SUPPORTED_PROTOCOL_VERSIONS[0]
             _send_message(
                 _make_response(
@@ -131,9 +135,15 @@ def main():
         elif method == "tools/list":
             _send_message(_make_response(req_id, {"tools": tools}))
         elif method == "tools/call":
-            params = msg.get("params", {})
-            tool_name = params.get("name", "")
+            params = msg.get("params")
+            if not isinstance(params, dict) or not isinstance(params.get("name"), str):
+                _send_message(_make_error(req_id, -32602, "Invalid params"))
+                continue
+            tool_name = params["name"]
             arguments = params.get("arguments", {})
+            if not isinstance(arguments, dict):
+                _send_message(_make_error(req_id, -32602, "Invalid params"))
+                continue
 
             # Direct lookup from tool name to sandbox spec
             sb = tool_to_sandbox.get(tool_name)
