@@ -102,6 +102,43 @@ def test_non_utf8_line_returns_error_then_recovers(fake_runner_path):
     assert replies[1]["result"]["protocolVersion"] == "2025-06-18"
 
 
+def test_invalid_request_ids_and_stray_responses_do_not_dispatch(fake_runner_path):
+    replies = _run_session(
+        [
+            {"jsonrpc": "2.0", "id": None, "method": "tools/call", "params": {"name": "run_sandbox_python_pytest"}},
+            {"jsonrpc": "2.0", "id": True, "method": "tools/list"},
+            {"jsonrpc": "2.0", "id": 1.5, "method": "tools/list"},
+            {"jsonrpc": "2.0", "id": 8},
+            {"jsonrpc": "2.0", "id": [12]},
+            {"jsonrpc": "2.0", "id": 7, "method": None},
+            {"jsonrpc": "2.0", "id": 9, "result": {"tools": []}},
+            {"jsonrpc": "2.0", "method": "tools/call", "params": {"name": "run_sandbox_python_pytest"}},
+            {"jsonrpc": "2.0", "method": "notifications/initialized"},
+            _initialize(10, "2025-06-18"),
+        ],
+        fake_runner_path,
+    )
+
+    assert [reply["id"] for reply in replies] == [None, None, None, 8, None, 7, 10]
+    assert [reply["error"]["code"] for reply in replies[:6]] == [-32600] * 6
+    assert replies[6]["result"]["protocolVersion"] == "2025-06-18"
+
+
+def test_non_json_constants_and_oversized_integer_recover(fake_runner_path):
+    malformed = [
+        '{"jsonrpc":"2.0","id":NaN,"method":"tools/list"}',
+        '{"jsonrpc":"2.0","id":Infinity,"method":"tools/list"}',
+        '{"jsonrpc":"2.0","id":-Infinity,"method":"tools/list"}',
+        '{"jsonrpc":"2.0","id":' + "9" * 5000 + ',"method":"tools/list"}',
+    ]
+    session = "\n".join([*malformed, json.dumps(_initialize(11, "2025-06-18"))]) + "\n"
+    replies = _run_session(session, fake_runner_path)
+
+    assert [reply["id"] for reply in replies] == [None, None, None, None, 11]
+    assert [reply["error"]["code"] for reply in replies[:4]] == [-32700] * 4
+    assert replies[4]["result"]["protocolVersion"] == "2025-06-18"
+
+
 def test_malformed_params_return_errors_and_do_not_stop_later_requests(fake_runner_path):
     replies = _run_session(
         [

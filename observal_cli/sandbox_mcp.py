@@ -31,6 +31,11 @@ from loguru import logger as optic
 SUPPORTED_PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
 
 
+def _reject_constant(_value: str):
+    """The JSON decoder otherwise accepts NaN and Infinity as extensions."""
+    raise ValueError("Non-JSON numeric constant")
+
+
 def _read_message() -> dict | None:
     """Read one newline-delimited JSON-RPC message from stdin. Returns None at EOF."""
     while True:
@@ -41,8 +46,8 @@ def _read_message() -> dict | None:
         if not line:
             continue
         try:
-            msg = json.loads(line)
-        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            msg = json.loads(line, parse_constant=_reject_constant)
+        except ValueError as e:
             optic.warning("sandbox mcp: unparseable line: {}", e)
             _send_message(_make_error(None, -32700, "Parse error"))
             continue
@@ -64,6 +69,10 @@ def _make_response(req_id, result: dict) -> dict:
 
 def _make_error(req_id, code: int, message: str) -> dict:
     return {"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}}
+
+
+def _valid_request_id(value: object) -> bool:
+    return isinstance(value, (str, int)) and not isinstance(value, bool)
 
 
 def main():
@@ -108,12 +117,24 @@ def main():
         if msg is None:
             break
 
-        # Notifications carry no id and get no reply; the server never sends requests, so skip stray responses too
-        if "id" not in msg or "method" not in msg:
+        # Responses to server requests are unexpected here, but are not malformed
+        # requests. Notifications have no id and never receive a reply.
+        if "method" not in msg:
+            if "result" not in msg and "error" not in msg:
+                req_id = msg.get("id")
+                _send_message(_make_error(req_id if _valid_request_id(req_id) else None, -32600, "Invalid Request"))
+            continue
+        if "id" not in msg:
             continue
 
-        method = msg["method"]
         req_id = msg["id"]
+        if not _valid_request_id(req_id):
+            _send_message(_make_error(None, -32600, "Invalid Request"))
+            continue
+        method = msg["method"]
+        if not isinstance(method, str):
+            _send_message(_make_error(req_id, -32600, "Invalid Request"))
+            continue
 
         if method == "initialize":
             params = msg.get("params")
