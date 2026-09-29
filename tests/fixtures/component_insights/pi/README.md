@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: 2026 Naraen Rammoorthi -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 # Pi MCP activity fixtures
 
 Live-derived **sanitized** copies of two consented headless Pi sessions, recorded on 2026-09-29 with Pi 0.84.3 and `pi-mcp-adapter` 2.38.0 in an isolated `HOME`. The pulled Agent was `component-insights-phase0/phase0-observability-probe`, whose MCP servers were installed under the aliases `super-phase0-probe` and `component-insights-phase0-phase0-probe`. Each server was a local stdio fixture with `ping` (succeeds) and `fail` (returns an MCP tool error).
