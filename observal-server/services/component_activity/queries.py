@@ -84,7 +84,7 @@ _SOURCE_STATES = (
            countIf(empty(raw_line) OR raw_line_truncated = 1) AS unavailable_records,
            countIf(empty(line_hash)) AS invalid_hash_records,
            max(line_offset) AS max_offset, sum(content_length) AS bytes,
-           lower(hex(SHA256(toJSONString(arraySort(groupArray(50001)((line_offset, line_hash)))))) AS revision
+           lower(hex(SHA256(toJSONString(arraySort(groupArray(50001)((line_offset, line_hash))))))) AS revision
     FROM session_events FINAL
     WHERE project_id = {project_id:String} AND is_source_record = 1
       AND (user_id, harness, session_id) IN (SELECT user_id, harness, session_id FROM ("""

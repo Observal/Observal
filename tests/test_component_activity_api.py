@@ -245,7 +245,7 @@ async def test_activity_sql_binds_scoped_key_current_version_and_component(monke
     assert "a.component_id = {component_id:String}" in summary_sql
     assert "countIf(status = 'failed') = 0" in summary_sql
     assert captured[0][1]["param_projection_version"] == queries.publication_version()
-    assert captured[0][1]["param_supported"] == "['claude-code']"
+    assert captured[0][1]["param_supported"] == "['claude-code','pi']"
     page_sql, page_params = captured[-1]
     # Source availability reads only sizes/flags server-side; raw text is never selected.
     assert "empty(raw_line)" in page_sql
@@ -254,6 +254,11 @@ async def test_activity_sql_binds_scoped_key_current_version_and_component(monke
     assert "countIf(source_state = 'source_unavailable')" in summary_sql
     assert "s.revision != p.source_revision, 'stale'" in summary_sql
     assert "arraySort(groupArray(50001)((line_offset, line_hash)))" in summary_sql
+    # Keep nested source-revision expressions balanced: malformed SQL used to
+    # make both summary and sessions endpoints return HTTP 500 on ClickHouse.
+    assert queries._SOURCE_STATES.count("(") == queries._SOURCE_STATES.count(")")
+    assert summary_sql.count("(") == summary_sql.count(")")
+    assert page_sql.count("(") == page_sql.count(")")
     assert summary_sql.index("s.unavailable_records > 0, 'source_unavailable'") < summary_sql.index(
         "p.generation > 0, 'complete'"
     )

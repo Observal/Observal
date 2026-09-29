@@ -75,11 +75,20 @@ const versionOnly = await nextSnapshot(3);
 agent.components[0].version = "1.0.0";
 agent.components[0].local_name = "second";
 const aliasOnly = await nextSnapshot(4);
+// Pin identity changes the hash through pins; files are unchanged. The
+// synthetic verification-input entry tracks the MCP id and alias, not version.
+const files = (value: any) => value.harnesses.pi.filter((item: any) => item.path !== "observal:mcp-verification");
+const verificationInputs = (value: any) =>
+  value.harnesses.pi.find((item: any) => item.path === "observal:mcp-verification")?.hash;
 for (const changed of [idOnly, versionOnly, aliasOnly]) {
   assert.notEqual(first.hash, changed.hash);
-  assert.deepEqual(first.harnesses, changed.harnesses);
+  assert.deepEqual(files(first), files(changed));
   assert.notDeepEqual(first.pinned_versions, changed.pinned_versions);
 }
+assert.match(verificationInputs(first), /^sha256-[0-9a-f]{64}$/);
+assert.notEqual(verificationInputs(first), verificationInputs(idOnly));
+assert.equal(verificationInputs(first), verificationInputs(versionOnly));
+assert.notEqual(verificationInputs(first), verificationInputs(aliasOnly));
 assert.match(first.hash, /^v2_[0-9a-f]{60}$/);
 assert.equal(first.pinned_versions.agents[0].components[0].id, "11111111-1111-4111-8111-111111111111");
 assert.equal(idOnly.pinned_versions.agents[0].components[0].id, "22222222-2222-4222-8222-222222222222");
