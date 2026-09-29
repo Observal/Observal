@@ -3,8 +3,8 @@
 
 """Inspect PostgreSQL before initialization and install fresh-only schema objects.
 
-An unversioned database containing tables must never be stamped as current. On
-an empty database, create the current model and the objects that only exist in
+An unversioned target schema containing objects must never be stamped as current.
+On an empty schema, create the current model and the objects that only exist in
 historical migrations before stamping head. Versioned databases use Alembic.
 """
 
@@ -35,10 +35,40 @@ async def schema_state(connection: AsyncConnection) -> str:
         version = await connection.scalar(text("SELECT version_num FROM alembic_version LIMIT 1"))
         return "existing" if version else "unversioned"
 
-    has_tables = await connection.scalar(
-        text("SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_tables WHERE schemaname = current_schema())")
+    # pg_tables alone misses views and sequences: a database containing only a
+    # view could otherwise be initialized and stamped as if it were empty.
+    # Standalone types and routines may also remain after a partial setup.
+    # Exclude extension-owned objects so a preinstalled pg_trgm is still safe.
+    has_objects = await connection.scalar(
+        text("""
+            SELECT EXISTS (
+                SELECT 1 FROM pg_catalog.pg_class
+                WHERE relnamespace = current_schema()::regnamespace
+            ) OR EXISTS (
+                SELECT 1 FROM pg_catalog.pg_type AS t
+                WHERE t.typnamespace = current_schema()::regnamespace
+                  AND t.typcategory <> 'A'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM pg_catalog.pg_depend AS d
+                      WHERE d.classid = 'pg_catalog.pg_type'::regclass
+                        AND d.objid = t.oid
+                        AND d.refclassid = 'pg_catalog.pg_extension'::regclass
+                        AND d.deptype = 'e'
+                  )
+            ) OR EXISTS (
+                SELECT 1 FROM pg_catalog.pg_proc AS p
+                WHERE p.pronamespace = current_schema()::regnamespace
+                  AND NOT EXISTS (
+                      SELECT 1 FROM pg_catalog.pg_depend AS d
+                      WHERE d.classid = 'pg_catalog.pg_proc'::regclass
+                        AND d.objid = p.oid
+                        AND d.refclassid = 'pg_catalog.pg_extension'::regclass
+                        AND d.deptype = 'e'
+                  )
+            )
+        """)
     )
-    return "unversioned" if has_tables else "fresh"
+    return "unversioned" if has_objects else "fresh"
 
 
 async def bootstrap_fresh_schema_objects(connection: AsyncConnection) -> None:

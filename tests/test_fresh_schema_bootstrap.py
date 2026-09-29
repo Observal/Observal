@@ -50,6 +50,10 @@ async def test_schema_state_requires_an_empty_database_or_a_recorded_revision(an
     queries = [str(call.args[0]) for call in connection.scalar.await_args_list]
     assert "pg_catalog.pg_tables" in queries[0] and "current_schema()" in queries[0]
     assert ("SELECT version_num FROM alembic_version" in queries[1]) == bool(answers[0])
+    if not answers[0]:
+        for catalog in ("pg_class", "pg_type", "pg_proc"):
+            assert f"pg_catalog.{catalog}" in queries[1]
+        assert "pg_catalog.pg_depend" in queries[1]  # Ignore preinstalled extension objects.
 
 
 @pytest.mark.asyncio
