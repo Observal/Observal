@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
 import services.dynamic_settings as ds
 from models.saml_config import SamlConfig
-from models.user import User, UserRole
+from models.user import User, UserRole, is_deleted_account
 from schemas.sso_health import all_pass, make_check
 from services import sso_diagnostics
 from services.jwt_service import create_access_token, create_refresh_token
@@ -231,6 +231,9 @@ def _build_auth(config, sp_private_key: str, request_data: dict) -> OneLogin_Sam
 
 
 async def _issue_tokens(user: User) -> tuple[str, str, int]:
+    # A deleted account's revocation must never be undone by a new sign-in.
+    if is_deleted_account(user):
+        raise HTTPException(status_code=401, detail="User no longer exists")
     access_token, expires_in = create_access_token(user.id, user.role)
     refresh_token, jti = create_refresh_token(user.id, user.role)
     refresh_ttl = ds.get_sync_int("jwt.refresh_token_expire_days", 30) * 86400
@@ -877,7 +880,7 @@ async def saml_acs(request: Request, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/exchange")
-async def saml_exchange(request: Request, token_id: str):
+async def saml_exchange(request: Request, token_id: str, db: AsyncSession = Depends(get_db)):
     """Exchange a one-time SAML login token for credentials.
 
     Uses POST to keep the token out of server logs and referrer headers.
@@ -902,6 +905,14 @@ async def saml_exchange(request: Request, token_id: str):
     await redis.delete(rate_key)
 
     payload = json.loads(data)
+    # Tokens pre-issued before the account was deleted are never handed out.
+    try:
+        account_id = uuid.UUID(str(payload["user_id"]))
+    except (KeyError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid or expired SAML token")
+    account = (await db.execute(select(User).where(User.id == account_id))).scalar_one_or_none()
+    if account is None or is_deleted_account(account):
+        raise HTTPException(status_code=400, detail="Invalid or expired SAML token")
     return {
         "access_token": payload["access_token"],
         "refresh_token": payload["refresh_token"],

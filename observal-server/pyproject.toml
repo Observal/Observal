@@ -26,7 +26,7 @@ dependencies = [
     "httpx",
     "gitpython>=3.1.59",
     "boto3",
-    "litellm>=1.80.0,<1.90.0",
+    "litellm>=1.89.7,<1.90.0",  # >=1.89.7: CVE-2026-84377 (proxy credential redirect)
     # Required by LiteLLM for the `vertex_ai/*` models the insights settings
     # page offers. Without it every Vertex call fails with "Google Cloud SDK
     # not found", including Express Mode keys that need no GCP project.
@@ -40,7 +40,9 @@ dependencies = [
     "cryptography>=50.0.0",
     "python3-saml>=1.16.0",
     "slowapi",
-    "PyJWT>=2.13.0",
+    # >=2.14.0: CVE-2026-102274 (malformed RSA JWK aborts JWKS parsing)
+    # and CVE-2026-101917 (unknown-kid JWKS refresh amplification).
+    "PyJWT>=2.14.0",
     "aiosqlite>=0.22.1",
     "tenacity>=8.0.0",
     "python-multipart>=0.0.31",
