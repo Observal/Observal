@@ -87,16 +87,19 @@ observal agent pull <agent-name> --harness pi --scope project
 
 Project pulls write the rules to `AGENTS.md` in the project root, which Pi
 reads directly, and the agent's MCP servers and skills to
-`.pi/agents/{agent-name}/`. Pi loads project MCP servers from `.pi/mcp.json`
-and project skills from `.pi/skills/{name}/SKILL.md`, and `/agent` handles only
-user-scope profiles, so activate them by hand:
+`.pi/agents/{agent-name}/`. `/agent` handles only user-scope profiles, so
+activate a project profile explicitly. With `pi-mcp-adapter` 3.x, copy its
+MCP config to the path that adapter actually loads:
 
 ```bash
-cp .pi/agents/<agent-name>/mcp.json .pi/mcp.json
+cp .pi/agents/<agent-name>/mcp.json .pi/mcp-adapter.json
 cp -r .pi/agents/<agent-name>/skills/. .pi/skills/
 ```
 
-Merge instead of copying if `.pi/mcp.json` already lists other servers.
+With adapter 2.x, use `.pi/mcp.json` instead. Merge rather than overwrite if
+the active file already lists other servers. Pi releases with built-in MCP
+support can also read `mcp.json`, but adapter-specific result attribution
+requires a working adapter; do not assume the two MCP runtimes are equivalent.
 
 ### 4. Install or refresh the telemetry extension
 
@@ -155,9 +158,10 @@ Pi MCP configs use the `mcpServers` key.
 
 ### MCP component insights
 
-Pi itself has no built-in MCP. Install and configure `pi-mcp-adapter` so Pi
-actually dispatches calls to servers listed in the active `mcp.json` (adapter
-2.x) or `mcp-adapter.json` (adapter 3.x). Pulling an agent records an MCP-entry
+Pi MCP support varies by Pi version. Install and configure `pi-mcp-adapter`
+for the adapter-specific result identities verified by component insights;
+its 2.x releases read active `mcp.json` and its 3.x releases read active
+`mcp-adapter.json`. Pulling an agent records an MCP-entry
 fingerprint from the generated profile, but **does not activate that profile**:
 use `/agent` or activate the project config before starting the session. Refresh
 the Observal extension with `observal doctor patch --harness pi` and restart Pi.

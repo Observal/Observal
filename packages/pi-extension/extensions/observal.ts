@@ -741,7 +741,12 @@ export default function (pi: ExtensionAPI) {
           ? component.local_name : "";
         const scope = text(component.scope) || (parent ? text(parent.scope) : "") || "project";
         let status = "unverified";
-        const active = scope === "user" ? "user:mcp.json" : scope === "project" ? "project:.pi/mcp.json" : "";
+        // pi-mcp-adapter 3.x loads mcp-adapter.json; 2.x loads mcp.json.
+        // Prefer the 3.x entry when present, but treat a different definition
+        // at the other path as a shadowing conflict below, never as verified.
+        const activePaths = scope === "user" ? ["user:mcp-adapter.json", "user:mcp.json"]
+          : scope === "project" ? ["project:.pi/mcp-adapter.json", "project:.pi/mcp.json"] : [];
+        const active = activePaths.find((display) => alias && isPlainObject(sources.get(display)?.[alias])) ?? "";
         const integrity = typeof component.mcp_integrity === "string" ? component.mcp_integrity : "";
         const servers = active ? sources.get(active) : undefined;
         const entry = alias && servers ? servers[alias] : undefined;
