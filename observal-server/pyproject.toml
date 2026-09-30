@@ -40,7 +40,8 @@ dependencies = [
     "cryptography>=50.0.0",
     "python3-saml>=1.16.0",
     "slowapi",
-    "PyJWT>=2.13.0",
+    # >=2.14.0: CVE-2026-102265 to CVE-2026-102273 (public JWKs accepted as HMAC keys).
+    "PyJWT>=2.14.0",
     "aiosqlite>=0.22.1",
     "tenacity>=8.0.0",
     "python-multipart>=0.0.31",
@@ -56,6 +57,7 @@ dependencies = [
     "pyarrow>=15.0.0",
     "observal-shared",
     "joserfc>=1.6.7",
+    "opentelemetry-proto>=1.27",
 ]
 
 [tool.uv.sources]
