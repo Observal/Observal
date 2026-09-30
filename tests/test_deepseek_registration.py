@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2026 Observal contributors
+# SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """DeepSeek registration and layer integration across shared entry points."""
