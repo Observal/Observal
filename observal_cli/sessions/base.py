@@ -732,30 +732,44 @@ _TIMESTAMP_KEYS = ("timestamp", "ts", "time", "created_at", "createdAt", "start_
 _MAX_CAPABILITIES_PER_PUSH = 200
 
 
+_START_SCAN_LINES = 20
+
+
 def _first_line_timestamp(session_jsonl: Path):
-    """The earliest timestamp a transcript carries in its first line, if any."""
+    """The earliest timestamp among a transcript's first lines, if any.
+
+    Some harnesses open a transcript with a record that carries no timestamp
+    (a summary or snapshot line), so only the first line is not enough.
+    """
     import json
     from datetime import UTC, datetime
 
+    found = []
     try:
         with session_jsonl.open("r", encoding="utf-8", errors="replace") as handle:
-            first = handle.readline()
-        record = json.loads(first)
-    except (OSError, ValueError):
+            lines = [handle.readline() for _ in range(_START_SCAN_LINES)]
+    except OSError:
         return None
-    if not isinstance(record, dict):
-        return None
-    for key in _TIMESTAMP_KEYS:
-        value = record.get(key)
-        if isinstance(value, int | float) and value > 0:
-            return datetime.fromtimestamp(value / 1000 if value > 1e11 else value, tz=UTC)
-        if isinstance(value, str) and value:
-            try:
-                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-            except ValueError:
-                continue
-            return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
-    return None
+    for line in lines:
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(record, dict):
+            continue
+        for key in _TIMESTAMP_KEYS:
+            value = record.get(key)
+            if isinstance(value, int | float) and value > 0:
+                found.append(datetime.fromtimestamp(value / 1000 if value > 1e11 else value, tz=UTC))
+                break
+            if isinstance(value, str) and value:
+                try:
+                    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+                found.append(parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC))
+                break
+    return min(found) if found else None
 
 
 def _session_started_at(session_jsonl: Path | None):
@@ -793,6 +807,7 @@ def _capabilities_for_session(session_id: str, cwd: str, harness: str, session_j
             harness=harness,
             cwd=cwd or None,
             started_at=_session_started_at(session_jsonl),
+            has_transcript=session_jsonl is not None,
         )
         if not matched:
             return []

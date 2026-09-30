@@ -232,6 +232,7 @@ def for_session(
     harness: str | None,
     cwd: str | None,
     started_at: datetime | None,
+    has_transcript: bool = True,
     path: Path | None = None,
 ) -> list[tuple[CapabilityUse, str]]:
     """Uses attributable to one session, each with its confidence.
@@ -248,7 +249,10 @@ def for_session(
       order, ``reconcile`` and concurrent senders cannot change the result.
       A session with no known start time gets none.
     - Any other un-hinted use (a ``context`` load) matches from shortly before
-      the session started.
+      the session started. If the start is unknown, only recent loads match.
+
+    Confidence is ``exact`` for a hint, ``window`` when the sender has this
+    session's transcript, and ``loose`` when it does not.
     """
     out: list[tuple[CapabilityUse, str]] = []
     for use in read_all(path):
@@ -269,7 +273,7 @@ def for_session(
             if ts >= started_at - CONTEXT_LEAD:
                 out.append((use, "window"))
         elif ts >= _now() - LOOSE_WINDOW:
-            out.append((use, "loose"))
+            out.append((use, "window" if has_transcript else "loose"))
     return out
 
 

@@ -32,10 +32,12 @@ def _record(mode, at, *, hint=None, harness="claude-code", cwd=CWD, component="c
     )
 
 
-def _for(session, started, *, harness="claude-code", cwd=CWD):
+def _for(session, started, *, harness="claude-code", cwd=CWD, transcript=True):
     return [
         (use.component_id, use.mode, confidence)
-        for use, confidence in lock.for_session(session_id=session, harness=harness, cwd=cwd, started_at=started)
+        for use, confidence in lock.for_session(
+            session_id=session, harness=harness, cwd=cwd, started_at=started, has_transcript=transcript
+        )
     ]
 
 
@@ -89,7 +91,9 @@ def test_unhinted_context_load_uses_the_start_window(paths, monkeypatch):
     assert _for("started-just-after", T0 + timedelta(minutes=10)) == [("c-1", "context", "window")]
     assert _for("started-much-later", T0 + timedelta(hours=1)) == []
     monkeypatch.setattr(lock, "_now", lambda: T0 + timedelta(hours=1))
-    assert _for("start-unknown", None) == [("c-1", "context", "loose")]
+    # Confidence says whether the sender has the transcript, not whether the start is known.
+    assert _for("start-unknown", None) == [("c-1", "context", "window")]
+    assert _for("no-transcript", None, transcript=False) == [("c-1", "context", "loose")]
     monkeypatch.setattr(lock, "_now", lambda: T0 + timedelta(hours=30))
     assert _for("start-unknown", None) == [], "unknown start: only recent loads"
 
@@ -103,3 +107,28 @@ def test_attribution_writes_no_shared_state(paths):
     _for("b", T0 + timedelta(minutes=2))
     assert sorted(p.name for p in lock_path.parent.iterdir()) == before
     assert not claims_path.exists()
+
+
+def test_linux_transcript_without_a_first_line_timestamp_still_gets_its_install(tmp_path, monkeypatch):
+    """No file birth time (Linux) and a first record without a timestamp: the
+    start comes from a later line, so the next-session install still attaches."""
+    from observal_cli.sessions import base as sessions_base
+
+    monkeypatch.setattr(lock, "LOCK_PATH", tmp_path / "capability_lock.jsonl")
+    transcript = tmp_path / "session.jsonl"
+    transcript.write_text(
+        '{"type": "summary"}\n{"type": "user", "timestamp": "2026-09-30T13:00:00Z"}\n', encoding="utf-8"
+    )
+
+    class _NoBirth:
+        st_birthtime = None
+
+    class _LinuxPath(type(transcript)):  # only this transcript reports no birth time
+        def stat(self, *args, **kwargs):
+            return _NoBirth()
+
+    transcript = _LinuxPath(transcript)
+    assert sessions_base._session_started_at(transcript) == datetime(2026, 9, 30, 13, 0, tzinfo=UTC)
+    _record(lock.MODE_NEXT_SESSION, T0)  # installed at 12:00, one hour earlier
+    used = sessions_base._capabilities_for_session("next", CWD, "claude-code", transcript)
+    assert [(u["component_id"], u["mode"], u["confidence"]) for u in used] == [("c-1", "next-session", "window")]

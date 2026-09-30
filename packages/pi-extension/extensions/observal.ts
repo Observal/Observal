@@ -763,7 +763,8 @@ export default function (pi: ExtensionAPI) {
         } else if (start !== null) {
           if (at >= start - CAPABILITY_LEAD_MS) confidence = "window";
         } else if (at >= Date.now() - CAPABILITY_FALLBACK_MS) {
-          confidence = "loose";
+          // Start unknown: only recent loads, labelled by whether we have the transcript.
+          confidence = s.sessionFile ? "window" : "loose";
         }
         if (confidence === null) continue;
         const key = (use.identifier as string) || `${use.kind}:${use.component_id ?? use.native_ref ?? ""}`;
