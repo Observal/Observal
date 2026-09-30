@@ -12,7 +12,12 @@ The **Purge Traces & Insights** danger-zone action permanently deletes telemetry
 It removes:
 
 - ClickHouse session events and session aggregates for project `default`.
-- Agent insight reports and insight caches/facets for all agents.
+- Data derived from those sessions: capability actions, and component activity and publication markers.
+- Agent and component insight reports, and insight caches/facets.
+
+Each ClickHouse delete waits until it has completed. The action reports success only if every delete completed; otherwise it returns an error naming the tables that failed. Insight reports are still removed in that case, and running the purge again is safe.
+
+Layer snapshots, their component mappings, and session checkpoints are kept. Snapshots and mappings describe installed configuration rather than session content. Clients remember which snapshots they have already uploaded and do not upload them again, so deleting snapshots or mappings would leave later sessions on the same configuration without verified component attribution until a scheduled backfill rebuilt them.
 
 It does **not** delete registry agents, versions, skills, hooks, prompts, users, reviews, or audit/security logs.
 
@@ -40,7 +45,7 @@ Two legacy Insights tables that current versions no longer write are cleaned con
 - `insight_session_meta` has no project, user, or harness identity. A row is removed only if it was computed before the cutoff and its session ID has no retained session event under any project, user, or harness.
 - `insight_meta_cache` rows whose period starts before the cutoff, or whose period cannot be parsed, are removed. They are caches and are recomputed if needed.
 
-Scheduled retention does not implement deletion requested for a specific user or listing, and the **Purge Traces & Insights** action does not yet cover the component tables described above.
+Scheduled retention does not implement deletion requested for a specific user or listing.
 
 ## ClickHouse TTL {#data-retention}
 
