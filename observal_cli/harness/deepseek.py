@@ -206,6 +206,14 @@ class DeepSeekAdapter(BaseAdapter):
 
         return related_session_sources(source, home=home)
 
+    def resolve_session_agent_identity(
+        self, session_jsonl: Path | None, cwd: str
+    ) -> tuple[str | None, str | None] | None:
+        """Attribute sessions through the observal-<agent> skill call in the log."""
+        from observal_cli.sessions.deepseek import resolve_session_agent_identity
+
+        return resolve_session_agent_identity(session_jsonl, cwd)
+
     def defer_session_delivery(self) -> bool:
         return True
 

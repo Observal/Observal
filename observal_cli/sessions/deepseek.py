@@ -249,3 +249,103 @@ def related_session_sources(
         ),
         key=lambda child: str(child.path),
     )
+
+
+# ── Session-to-agent attribution ────────────────────────────────────
+#
+# DeepSeek agents are on-demand skills, and the harness records the model's
+# skill tool call in the v4 log. The OBSERVAL_AGENT_ID env that pull writes
+# into the MCP plugin config belongs to the harness process and never
+# reaches the collector, so the recorded skill call is the only durable
+# attribution signal — and it survives restarts and recovery.
+
+_AGENT_SKILL_PREFIX = "observal-"
+_resolved_identities: dict[str, tuple[str, str]] = {}
+_scanned_stats: set[tuple[str, int, int]] = set()
+
+
+def _skill_call_agent(record_line: bytes) -> str | None:
+    """The observal-<name> skill a tool/call record invokes, if any."""
+    try:
+        record = json.loads(record_line)
+    except ValueError:
+        return None
+    if not isinstance(record, dict) or record.get("type") != "tool/call":
+        return None
+    data = record.get("data")
+    if not isinstance(data, dict) or data.get("name") != "skill":
+        return None
+    arguments = data.get("arguments")
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments)
+        except ValueError:
+            return None
+    if not isinstance(arguments, dict):
+        return None
+    name = arguments.get("name")
+    return name if isinstance(name, str) and name.startswith(_AGENT_SKILL_PREFIX) else None
+
+
+def _first_agent_skill(path: Path) -> str | None:
+    """Stream the session log until the first observal-<agent> skill call."""
+    pending = b""
+    for chunk in source_chunks(path):
+        pending += chunk
+        while b"\n" in pending:
+            line, pending = pending.split(b"\n", 1)
+            agent = _skill_call_agent(line)
+            if agent:
+                return agent
+    return _skill_call_agent(pending) if pending else None
+
+
+def _lockfile_agent_for_skill(skill_name: str) -> dict | None:
+    from observal_cli.lockfile import read_lockfile
+    from observal_cli.shared.utils import sanitize_name
+
+    # Search every registry section, not just the currently configured one: a
+    # session can be collected after the user switched servers, and the agent
+    # that was pulled for it is still the one whose skill was invoked. Pulls
+    # append entries, so the last name match is the most recent pull of that
+    # agent — the one whose server still knows the id.
+    target = skill_name.removeprefix(_AGENT_SKILL_PREFIX)
+    match: dict | None = None
+    for registry in read_lockfile().get("registries", {}).values():
+        for agent in registry.get("harnesses", {}).get("deepseek", {}).get("agents", []):
+            name = agent.get("name", "")
+            if target == name or skill_name in (f"observal-{name}", f"observal-{sanitize_name(name)}"):
+                match = agent
+    return match
+
+
+def resolve_session_agent_identity(session_jsonl: Path | None, cwd: str) -> tuple[str | None, str | None] | None:
+    """Attribute a session through the observal-<agent> skill it invoked.
+
+    Returns None when no pulled agent's skill was invoked, deferring to the
+    shared resolution. A positive match is pinned per source path (logs are
+    append-only), while misses are keyed by size and mtime so a growing
+    session is rescanned as later batches arrive.
+    """
+    if session_jsonl is None or not session_jsonl.is_file():
+        return None
+    path_key = str(session_jsonl)
+    if path_key in _resolved_identities:
+        return _resolved_identities[path_key]
+    try:
+        stat = session_jsonl.stat()
+    except OSError:
+        return None
+    stat_key = (path_key, stat.st_size, stat.st_mtime_ns)
+    if stat_key in _scanned_stats:
+        return None
+    skill = _first_agent_skill(session_jsonl)
+    entry = _lockfile_agent_for_skill(skill) if skill else None
+    if entry is None:
+        if skill:
+            optic.debug("DeepSeek session invoked non-agent skill {}", skill)
+        _scanned_stats.add(stat_key)
+        return None
+    identity = (entry.get("id") or entry.get("name"), entry.get("version"))
+    _resolved_identities[path_key] = identity
+    return identity

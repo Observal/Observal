@@ -536,3 +536,105 @@ def test_native_collector_delivers_flushed_session_and_recovers_only_old_session
     assert [session_id for session_id, _ in delivered] == ["live", "stale"]
     assert current.exists()
     assert deepseek_collector.main(["--session-id", "nonexistent"]) == 1
+
+
+def _skill_call(name: str) -> bytes:
+    return _line({"type": "tool/call", "data": {"name": "skill", "arguments": {"name": name}}})
+
+
+def _lockfile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, agents: list[dict]) -> None:
+    from observal_cli import lockfile as lockfile_mod
+
+    # CONFIG_DIR is resolved at import time, so point the module at a fixture
+    # lockfile instead of relying on HOME.
+    lock_path = tmp_path / ".observal" / "lockfile.json"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.write_text(
+        json.dumps(
+            {"lock_version": 2, "registries": {"http://server": {"harnesses": {"deepseek": {"agents": agents}}}}}
+        )
+    )
+    monkeypatch.setattr(lockfile_mod, "LOCKFILE_PATH", lock_path)
+    monkeypatch.setattr(lockfile_mod, "_LOCKFILE_LOCK", lock_path.with_suffix(".lock"))
+
+
+class TestSessionAgentAttribution:
+    """Sessions attribute to the pulled agent whose skill the model invoked."""
+
+    def test_skill_call_attributes_to_lockfile_agent(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("DSH_HOME", raising=False)
+        records = (_line({"type": "turn/start"}), _skill_call("observal-my-agent"), _line({"type": "turn/end"}))
+        path = _session(tmp_path, "attributed", records=records)
+        _lockfile(tmp_path, monkeypatch, [{"name": "my-agent", "id": "uuid-1", "version": "1.2.0"}])
+
+        assert deepseek.resolve_session_agent_identity(path, "/work/tree") == ("uuid-1", "1.2.0")
+
+        from observal_cli.harness import ensure_loaded, get_adapter
+
+        ensure_loaded()
+        assert get_adapter("deepseek").resolve_session_agent_identity(path, "/work/tree") == ("uuid-1", "1.2.0")
+
+    def test_string_arguments_are_parsed(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("DSH_HOME", raising=False)
+        call = _line({"type": "tool/call", "data": {"name": "skill", "arguments": '{"name": "observal-my-agent"}'}})
+        path = _session(tmp_path, "string-args", records=(call,))
+        _lockfile(tmp_path, monkeypatch, [{"name": "my-agent", "id": "uuid-1", "version": None}])
+
+        assert deepseek.resolve_session_agent_identity(path, "/work/tree") == ("uuid-1", None)
+
+    def test_session_without_agent_skill_defers_to_shared_resolution(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.delenv("DSH_HOME", raising=False)
+        records = (_line({"type": "turn/start"}), _line({"type": "user/message", "data": {"content": []}}))
+        path = _session(tmp_path, "unattributed", records=records)
+        _lockfile(tmp_path, monkeypatch, [{"name": "my-agent", "id": "uuid-1", "version": "1.2.0"}])
+
+        assert deepseek.resolve_session_agent_identity(path, "/work/tree") is None
+
+    def test_bundled_skill_call_is_not_attribution(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("DSH_HOME", raising=False)
+        path = _session(tmp_path, "bundled", records=(_skill_call("observal-ops"),))
+        _lockfile(tmp_path, monkeypatch, [{"name": "my-agent", "id": "uuid-1", "version": "1.2.0"}])
+
+        assert deepseek.resolve_session_agent_identity(path, "/work/tree") is None
+
+    def test_unknown_agent_skill_defers_without_reruns(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("DSH_HOME", raising=False)
+        path = _session(tmp_path, "unknown", records=(_skill_call("observal-other-agent"),))
+        _lockfile(tmp_path, monkeypatch, [{"name": "my-agent", "id": "uuid-1", "version": "1.2.0"}])
+
+        assert deepseek.resolve_session_agent_identity(path, "/work/tree") is None
+
+    def test_growing_session_is_rescanned_until_the_skill_call_arrives(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.delenv("DSH_HOME", raising=False)
+        path = _session(tmp_path, "growing", records=(_line({"type": "turn/start"}),))
+        _lockfile(tmp_path, monkeypatch, [{"name": "my-agent", "id": "uuid-1", "version": "1.2.0"}])
+
+        assert deepseek.resolve_session_agent_identity(path, "/work/tree") is None
+        frame = _skill_call("observal-my-agent")
+        if path.name.endswith(".zstd"):
+            frame = zstandard.ZstdCompressor(write_checksum=True).compress(frame)
+        with path.open("ab") as handle:
+            handle.write(frame)
+        os.utime(path, None)
+
+        assert deepseek.resolve_session_agent_identity(path, "/work/tree") == ("uuid-1", "1.2.0")
+
+    def test_identity_is_cached_per_path(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        monkeypatch.delenv("DSH_HOME", raising=False)
+        path = _session(tmp_path, "cached", records=(_skill_call("observal-my-agent"),))
+        _lockfile(tmp_path, monkeypatch, [{"name": "my-agent", "id": "uuid-1", "version": "1.2.0"}])
+
+        first = deepseek.resolve_session_agent_identity(path, "/work/tree")
+        calls = []
+        original = deepseek._first_agent_skill
+        monkeypatch.setattr(deepseek, "_first_agent_skill", lambda p: calls.append(p) or original(p))
+        assert deepseek.resolve_session_agent_identity(path, "/work/tree") == first
+        assert calls == []
+
+    def test_null_and_missing_paths_defer(self, tmp_path: Path):
+        assert deepseek.resolve_session_agent_identity(None, "/work/tree") is None
+        assert deepseek.resolve_session_agent_identity(tmp_path / "missing.jsonl", "/work/tree") is None
