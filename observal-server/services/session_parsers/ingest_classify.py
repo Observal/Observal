@@ -29,8 +29,15 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 
-from .base import dict_field, list_field, str_field, strip_cursor_xml_tags
-from .deepseek import _attempt_failure, _text, epoch_ms_timestamp
+from .base import (
+    dict_field,
+    epoch_ms_timestamp,
+    extract_v4_attempt_failure,
+    extract_v4_text,
+    list_field,
+    str_field,
+    strip_cursor_xml_tags,
+)
 
 _PREVIEW_MAX = 500
 
@@ -854,7 +861,7 @@ def _classify_deepseek(parsed: dict) -> str:
     if kind == "user/message":
         return "user_prompt"
     if kind == "assistant/message":
-        text, reasoning = _text(dict_field(dict_field(parsed, "data"), "message"))
+        text, reasoning = extract_v4_text(dict_field(dict_field(parsed, "data"), "message"))
         if reasoning.strip():
             return "thinking"
         if text.strip():
@@ -865,7 +872,7 @@ def _classify_deepseek(parsed: dict) -> str:
     if kind == "tool/result":
         return "tool_result"
     if kind == "assistant/attempt":
-        return "system" if _attempt_failure(dict_field(parsed, "data")) else "meta"
+        return "system" if extract_v4_attempt_failure(dict_field(parsed, "data")) else "meta"
     if kind in ("request/header", "request/context", "session/end-seed"):
         return "meta"
     # Keep headers, lifecycle markers, system/developer messages, and unknown
@@ -880,7 +887,7 @@ def _preview_deepseek(parsed: dict, event_type: str) -> str:
         return f"[session: {str_field(parsed, 'id')}]"[:_PREVIEW_MAX]
     if kind in ("user/message", "assistant/message", "system/message", "developer/message", "tool/result"):
         msg = data if kind == "user/message" else dict_field(data, "message")
-        text, reasoning = _text(msg)
+        text, reasoning = extract_v4_text(msg)
         if kind == "tool/result":
             error = dict_field(data, "error")
             return (text or str_field(error, "reason") or str_field(error, "code"))[:_PREVIEW_MAX]
@@ -888,7 +895,7 @@ def _preview_deepseek(parsed: dict, event_type: str) -> str:
     if kind == "tool/call":
         return f"[tool_call: {str_field(data, 'name')}]"[:_PREVIEW_MAX]
     if kind == "assistant/attempt":
-        failure = dict_field(_attempt_failure(data), "failure")
+        failure = dict_field(extract_v4_attempt_failure(data), "failure")
         return (str_field(failure, "message") or "Uncommitted assistant attempt")[:_PREVIEW_MAX]
     if kind == "turn/end":
         return f"Turn ended: {str_field(dict_field(data, 'reason'), 'kind')}"[:_PREVIEW_MAX]

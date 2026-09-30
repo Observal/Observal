@@ -14,7 +14,7 @@ import zstandard
 
 from observal_cli import telemetry_buffer
 from observal_cli.sessions import base, deepseek
-from observal_cli.sessions.source_reader import source_size
+from observal_cli.sessions.source_reader import hash_session_source, source_size
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -153,7 +153,7 @@ def test_plain_reader_seeks_to_offset(tmp_path: Path, monkeypatch: pytest.Monkey
         requested.append(offset)
         yield from original(path, offset=offset, complete=complete)
 
-    monkeypatch.setattr(base, "source_chunks", tracked)
+    monkeypatch.setattr(source_reader, "source_chunks", tracked)
     assert base.read_new_records(path, offset) == (['{"new":1}'], [path.stat().st_size], 10)
     assert requested == [offset]
 
@@ -189,7 +189,7 @@ def test_checkpoint_and_hash_use_logical_offsets(tmp_path: Path, monkeypatch: py
     assert payload["lines"] == [all_lines[1]]
     assert payload["end_byte_offsets"] == [offsets[1]]
     assert payload["total_offset"] == total
-    assert (payload["session_hash"], payload["hashed_line_count"]) == base.hash_session_source(path)
+    assert (payload["session_hash"], payload["hashed_line_count"]) == hash_session_source(path)
 
 
 def test_final_deferred_for_torn_frame_and_jsonl_tail(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):

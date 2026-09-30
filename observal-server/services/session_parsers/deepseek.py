@@ -10,23 +10,16 @@ attempt evidence, not additional messages; tool calls are separate log events.
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 
-from .base import basic_event, dict_field, list_field, load_line, str_field, strip_ansi
-
-
-def epoch_ms_timestamp(value: object) -> str | None:
-    """Convert a nonnegative Unix-millisecond timestamp to ClickHouse UTC format."""
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        return None
-    try:
-        return (
-            datetime.fromtimestamp(value // 1000, tz=UTC)
-            .replace(microsecond=value % 1000 * 1000)
-            .strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
-        )
-    except (OverflowError, OSError, ValueError):
-        return None
+from .base import (
+    basic_event,
+    dict_field,
+    epoch_ms_timestamp,
+    extract_v4_attempt_failure,
+    extract_v4_text,
+    load_line,
+    str_field,
+)
 
 
 def _event(ts: str, harness: str, name: str, body: str, attrs: dict) -> dict:
@@ -37,20 +30,6 @@ def _event(ts: str, harness: str, name: str, body: str, attrs: dict) -> dict:
         "attributes": attrs,
         "service_name": harness,
     }
-
-
-def _text(message: dict) -> tuple[str, str]:
-    text: list[str] = []
-    reasoning: list[str] = []
-    for block in list_field(message, "content"):
-        if not isinstance(block, dict):
-            continue
-        kind = str_field(block, "type")
-        if kind == "text":
-            text.append(str_field(block, "text"))
-        elif kind == "reasoning":
-            reasoning.append(str_field(block, "text"))
-    return strip_ansi("\n".join(text)), strip_ansi("\n".join(reasoning))
 
 
 def _usage(data: dict) -> dict[str, str]:
@@ -94,18 +73,6 @@ def _context(line: dict, data: dict) -> dict[str, str]:
     if isinstance(seqs, list) and all(isinstance(seq, int) and not isinstance(seq, bool) for seq in seqs):
         attrs["source_event_seqs"] = json.dumps(seqs)
     return attrs
-
-
-def _attempt_failure(data: dict) -> dict:
-    for record in list_field(data, "stream"):
-        if not isinstance(record, dict) or str_field(record, "type") != "chunk":
-            continue
-        chunk = dict_field(record, "chunk")
-        if str_field(chunk, "type") == "finish":
-            reason = dict_field(chunk, "reason")
-            if str_field(reason, "kind") in ("error", "aborted"):
-                return reason
-    return {}
 
 
 def parse_rows(rows: list[dict]) -> list[dict]:
@@ -152,7 +119,7 @@ def parse_rows(rows: list[dict]) -> list[dict]:
             )
         elif kind in ("user/message", "system/message", "developer/message"):
             msg = data if kind == "user/message" else dict_field(data, "message")
-            text, _ = _text(msg)
+            text, _ = extract_v4_text(msg)
             source = dict_field(msg, "source")
             if str_field(source, "kind"):
                 attrs["source_kind"] = str_field(source, "kind")
@@ -173,7 +140,7 @@ def parse_rows(rows: list[dict]) -> list[dict]:
                 events.append(_event(ts, harness, "system", kind, attrs))
         elif kind == "assistant/message":
             msg = dict_field(data, "message")
-            text, reasoning = _text(msg)
+            text, reasoning = extract_v4_text(msg)
             usage = _usage(data)
             if data.get("interrupted") is True:
                 attrs["interrupted"] = "true"
@@ -212,7 +179,7 @@ def parse_rows(rows: list[dict]) -> list[dict]:
         elif kind == "tool/result":
             msg = dict_field(data, "message")
             call_id = str_field(msg, "toolCallId")
-            text, _ = _text(msg)
+            text, _ = extract_v4_text(msg)
             error = dict_field(data, "error")
             result = {**attrs, "tool_use_id": call_id, "tool_response": text}
             if msg.get("isError") is True or error:
@@ -230,7 +197,7 @@ def parse_rows(rows: list[dict]) -> list[dict]:
             else:
                 events.append(_event(ts, harness, "hook_posttooluse", call_id, result))
         elif kind == "assistant/attempt":
-            failure = _attempt_failure(data)
+            failure = extract_v4_attempt_failure(data)
             reason = str_field(failure, "kind")
             detail = dict_field(failure, "failure")
             if reason:

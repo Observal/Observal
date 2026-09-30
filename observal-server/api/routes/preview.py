@@ -28,7 +28,7 @@ from models.mcp import ListingStatus, McpListing
 from models.prompt import PromptListing
 from models.skill import SkillListing
 from observal_shared.harness_registry import HARNESS_REGISTRY
-from services.harness import generate_agent_config, render_config_file
+from services.harness import generate_agent_config, unpack_config_files
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -195,24 +195,7 @@ async def preview_config(
         except Exception:
             continue
 
-        files: dict[str, str] = {}
-        if "agent_profile" in config:
-            af = config["agent_profile"]
-            files[af["path"]] = render_config_file(af["content"])
-        if "mcp_config" in config:
-            mc = config["mcp_config"]
-            if isinstance(mc, dict) and "path" in mc:
-                files[mc["path"]] = render_config_file(mc["content"])
-        if "hooks_config" in config:
-            hc = config["hooks_config"]
-            if isinstance(hc, dict) and "path" in hc:
-                files[hc["path"]] = render_config_file(hc["content"])
-        for hf in config.get("hook_files", []):
-            files[hf["path"]] = hf["content"]
-        if "skills" in config:
-            for sf in config["skills"]:
-                files[sf["path"]] = sf["content"]
-
+        files = unpack_config_files(config)
         if files:
             configs[harness] = files
 

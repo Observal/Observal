@@ -180,6 +180,28 @@ def render_config_file(content: Any) -> str:
     return content
 
 
+def unpack_config_files(config: dict[str, Any]) -> dict[str, str]:
+    """Extract rendered file paths and contents from a generated agent configuration."""
+    files: dict[str, str] = {}
+    if "agent_profile" in config:
+        af = config["agent_profile"]
+        files[af["path"]] = render_config_file(af["content"])
+    if "mcp_config" in config:
+        mc = config["mcp_config"]
+        if isinstance(mc, dict) and "path" in mc:
+            files[mc["path"]] = render_config_file(mc["content"])
+    if "hooks_config" in config:
+        hc = config["hooks_config"]
+        if isinstance(hc, dict) and "path" in hc:
+            files[hc["path"]] = render_config_file(hc["content"])
+    for hf in config.get("hook_files", []):
+        files[hf["path"]] = hf["content"]
+    if "skills" in config:
+        for sf in config["skills"]:
+            files[sf["path"]] = sf["content"]
+    return files
+
+
 def generate_agent_config(
     agent: Any,
     harness: str,
@@ -296,26 +318,7 @@ async def generate_all_harness_configs(
             env_values=env_values,
         )
 
-        files = {}
-        if "agent_profile" in config:
-            af = config["agent_profile"]
-            content = af["content"]
-            files[af["path"]] = render_config_file(content)
-        if "mcp_config" in config:
-            mc = config["mcp_config"]
-            if isinstance(mc, dict) and "path" in mc:
-                content = mc["content"]
-                files[mc["path"]] = render_config_file(content)
-        if "hooks_config" in config:
-            hc = config["hooks_config"]
-            if isinstance(hc, dict) and "path" in hc:
-                files[hc["path"]] = render_config_file(hc["content"])
-        for hf in config.get("hook_files", []):
-            files[hf["path"]] = hf["content"]
-        if "skills" in config:
-            for sf in config["skills"]:
-                files[sf["path"]] = sf["content"]
-
+        files = unpack_config_files(config)
         if files:
             result[harness] = {"files": files}
 

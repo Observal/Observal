@@ -1,10 +1,15 @@
 # SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Read plaintext chunks from JSONL files or committed checksummed Zstd frames."""
+"""Session source file reading: chunks, snapshots, and record hashing.
+
+Plaintext JSONL is read directly; committed checksummed Zstd frames are decoded.
+Callers receive complete records with logical uncompressed byte offsets.
+"""
 
 from __future__ import annotations
 
+import hashlib
 import tempfile
 from typing import TYPE_CHECKING
 
@@ -105,3 +110,58 @@ def source_size(path: Path) -> tuple[int, bool]:
             committed = decoded_bytes + newline + 1
         decoded_bytes += len(chunk)
     return committed, complete[0] and committed == decoded_bytes
+
+
+def read_source_snapshot(jsonl_path: Path, offset: int) -> tuple[list[str], list[int], int, bool]:
+    """Read a checked source snapshot with logical uncompressed byte offsets."""
+    lines: list[str] = []
+    end_offsets: list[int] = []
+    plain = not jsonl_path.name.endswith(".jsonl.zstd")
+    position = offset if plain else 0
+    committed = offset
+    fragment = b""
+    complete = [True]
+    for chunk in source_chunks(jsonl_path, offset=offset if plain else 0, complete=complete):
+        if position + len(chunk) <= offset:
+            position += len(chunk)
+            continue
+        if position < offset:
+            chunk = chunk[offset - position :]
+            position = offset
+        position += len(chunk)
+        parts = (fragment + chunk).split(b"\n")
+        fragment = parts.pop()
+        for part in parts:
+            committed += len(part) + 1
+            line = part.rstrip(b"\r").decode("utf-8", errors="replace")
+            if line.strip():
+                lines.append(line)
+                end_offsets.append(committed)
+    return lines, end_offsets, max(committed - offset, 0), complete[0] and not fragment
+
+
+def read_new_records(jsonl_path: Path, offset: int) -> tuple[list[str], list[int], int]:
+    """Read complete non-empty records and their absolute logical end-byte offsets."""
+    lines, end_offsets, bytes_read, _complete = read_source_snapshot(jsonl_path, offset)
+    return lines, end_offsets, bytes_read
+
+
+def read_new_lines(jsonl_path: Path, offset: int) -> tuple[list[str], int]:
+    """Read complete non-empty lines from a byte offset."""
+    lines, _end_offsets, bytes_read = read_new_records(jsonl_path, offset)
+    return lines, bytes_read
+
+
+def hash_lines(lines: list[str]) -> str:
+    hasher = hashlib.sha256()
+    for line in lines:
+        source_hash = hashlib.sha256(line.encode("utf-8", errors="replace")).hexdigest()
+        hasher.update(source_hash.encode())
+        hasher.update(b"\n")
+    return hasher.hexdigest()
+
+
+def hash_session_source(jsonl_path: Path) -> tuple[str, int]:
+    """Hash complete non-empty source records for final/audit delivery."""
+    lines, _offsets, _bytes_read = read_new_records(jsonl_path, 0)
+    return hash_lines(lines), len(lines)

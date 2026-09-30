@@ -12,7 +12,6 @@ logging. Hooks, background recovery, and public reconcile all use this engine.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import tempfile
 from pathlib import Path
@@ -20,7 +19,12 @@ from typing import TYPE_CHECKING
 
 from loguru import logger as optic
 
-from observal_cli.sessions.source_reader import source_chunks
+from observal_cli.sessions.source_reader import (
+    hash_lines,
+    read_new_records,
+    read_source_snapshot,
+    source_chunks,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -100,66 +104,6 @@ def write_cursor(
     with tempfile.NamedTemporaryFile("w", dir=sync_dir, delete=False) as temporary:
         temporary.write(json.dumps(data))
     Path(temporary.name).replace(state_file)
-
-
-# ---------------------------------------------------------------------------
-# File reading
-# ---------------------------------------------------------------------------
-
-
-def _read_source_snapshot(jsonl_path: Path, offset: int) -> tuple[list[str], list[int], int, bool]:
-    """Read a checked source snapshot with logical uncompressed byte offsets."""
-    lines: list[str] = []
-    end_offsets: list[int] = []
-    plain = not jsonl_path.name.endswith(".jsonl.zstd")
-    position = offset if plain else 0
-    committed = offset
-    fragment = b""
-    complete = [True]
-    for chunk in source_chunks(jsonl_path, offset=offset if plain else 0, complete=complete):
-        if position + len(chunk) <= offset:
-            position += len(chunk)
-            continue
-        if position < offset:
-            chunk = chunk[offset - position :]
-            position = offset
-        position += len(chunk)
-        parts = (fragment + chunk).split(b"\n")
-        fragment = parts.pop()
-        for part in parts:
-            committed += len(part) + 1
-            line = part.rstrip(b"\r").decode("utf-8", errors="replace")
-            if line.strip():
-                lines.append(line)
-                end_offsets.append(committed)
-    return lines, end_offsets, max(committed - offset, 0), complete[0] and not fragment
-
-
-def read_new_records(jsonl_path: Path, offset: int) -> tuple[list[str], list[int], int]:
-    """Read complete non-empty records and their absolute logical end-byte offsets."""
-    lines, end_offsets, bytes_read, _complete = _read_source_snapshot(jsonl_path, offset)
-    return lines, end_offsets, bytes_read
-
-
-def _hash_lines(lines: list[str]) -> str:
-    hasher = hashlib.sha256()
-    for line in lines:
-        source_hash = hashlib.sha256(line.encode("utf-8", errors="replace")).hexdigest()
-        hasher.update(source_hash.encode())
-        hasher.update(b"\n")
-    return hasher.hexdigest()
-
-
-def hash_session_source(jsonl_path: Path) -> tuple[str, int]:
-    """Hash complete non-empty source records for final/audit delivery."""
-    lines, _offsets, _bytes_read = read_new_records(jsonl_path, 0)
-    return _hash_lines(lines), len(lines)
-
-
-def read_new_lines(jsonl_path: Path, offset: int) -> tuple[list[str], int]:
-    """Read complete non-empty lines from a byte offset."""
-    lines, _end_offsets, bytes_read = read_new_records(jsonl_path, offset)
-    return lines, bytes_read
 
 
 # ---------------------------------------------------------------------------
@@ -569,14 +513,14 @@ def drain_session_source(
         db_path=db_path,
     )
     if final:
-        all_lines, all_offsets, _all_bytes, complete = _read_source_snapshot(source.path, 0)
+        all_lines, all_offsets, _all_bytes, complete = read_source_snapshot(source.path, 0)
         if byte_offset > _all_bytes:
             log_error(
                 f"source cursor exceeds committed bytes for {source.harness} session {source.session_id}", home=home
             )
             return False
         final = complete
-        session_hash = _hash_lines(all_lines) if final else None
+        session_hash = hash_lines(all_lines) if final else None
         hashed_line_count = len(all_lines) if final else None
         lines = [line for line, end in zip(all_lines, all_offsets, strict=True) if end > byte_offset]
         end_byte_offsets = [end for end in all_offsets if end > byte_offset]

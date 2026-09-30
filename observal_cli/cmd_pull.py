@@ -1032,6 +1032,24 @@ def write_install_snippet(
                 )
             raise
 
+    def write_with_adapter(write_fn, path: Path, desc: str) -> str:
+        try:
+            return write_fn()
+        except CliError as error:
+            if error.result is None:
+                error.result = _pull_failure_result(written, "write_files", failed_path=str(path))
+            raise
+        except (ValueError, OSError) as error:
+            fail(
+                ErrorCategory.CONFLICT if isinstance(error, ValueError) else ErrorCategory.UNAVAILABLE,
+                f"Could not safely write {desc} configuration: {path}.",
+                operation="Pull agent",
+                resource=str(path),
+                remediation="Repair or back up the existing configuration, then retry.",
+                detail=repr(error),
+                result=_pull_failure_result(written, "write_files", failed_path=str(path)),
+            )
+
     def tracked_skill_install(skill_name: str, installer, **kwargs):
         try:
             with redirect_stdout(StringIO()) if quiet else nullcontext():
@@ -1068,22 +1086,7 @@ def write_install_snippet(
         if dry_run:
             written.append((str(p), "would write"))
         else:
-            try:
-                status = adapter.write_mcp_config(p, mcp_cfg["content"])
-            except CliError as error:
-                if error.result is None:
-                    error.result = _pull_failure_result(written, "write_files", failed_path=str(p))
-                raise
-            except (ValueError, OSError) as error:
-                fail(
-                    ErrorCategory.CONFLICT if isinstance(error, ValueError) else ErrorCategory.UNAVAILABLE,
-                    f"Could not safely write MCP configuration: {p}.",
-                    operation="Pull agent",
-                    resource=str(p),
-                    remediation="Repair or back up the existing configuration, then retry.",
-                    detail=repr(error),
-                    result=_pull_failure_result(written, "write_files", failed_path=str(p)),
-                )
+            status = write_with_adapter(lambda: adapter.write_mcp_config(p, mcp_cfg["content"]), p, "MCP")
             written.append((str(p), status))
 
     # ── hooks_config (Cursor/VSCode/Copilot/OpenCode/Gemini) ─
@@ -1109,22 +1112,11 @@ def write_install_snippet(
         if dry_run:
             written.append((str(p), "would write"))
         else:
-            try:
-                status = adapter.write_hook_config(p, content, merge=hooks_cfg.get("merge", False))
-            except CliError as error:
-                if error.result is None:
-                    error.result = _pull_failure_result(written, "write_files", failed_path=str(p))
-                raise
-            except (ValueError, OSError) as error:
-                fail(
-                    ErrorCategory.CONFLICT if isinstance(error, ValueError) else ErrorCategory.UNAVAILABLE,
-                    f"Could not safely write hook configuration: {p}.",
-                    operation="Pull agent",
-                    resource=str(p),
-                    remediation="Repair or back up the existing configuration, then retry.",
-                    detail=repr(error),
-                    result=_pull_failure_result(written, "write_files", failed_path=str(p)),
-                )
+            status = write_with_adapter(
+                lambda: adapter.write_hook_config(p, content, merge=hooks_cfg.get("merge", False)),
+                p,
+                "hook",
+            )
             written.append((str(p), status))
 
     # ── agent_profile (Kiro, Cursor) ────────────────────────

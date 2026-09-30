@@ -13,6 +13,7 @@ import pytest
 from observal_cli import telemetry_buffer
 from observal_cli.harness import SessionSource
 from observal_cli.sessions import base
+from observal_cli.sessions.source_reader import hash_session_source, read_new_lines
 
 
 def config() -> dict:
@@ -568,7 +569,7 @@ def test_jsonl_readers_handle_symlinks_corruption_offsets_and_partial_records(tm
     link.symlink_to(source)
 
     assert base.read_new_records(link, 0) == (['{"ok":1}', "not-json", "�"], [10, 19, 21], 21)
-    assert base.read_new_lines(link, 10) == (["not-json", "�"], 11)
+    assert read_new_lines(link, 10) == (["not-json", "�"], 11)
 
     empty = tmp_path / "empty.jsonl"
     empty.write_bytes(b"")
@@ -586,7 +587,7 @@ def test_session_hash_uses_complete_nonempty_records(tmp_path: Path):
     source = tmp_path / "session.jsonl"
     source.write_text('{"a":1}\n\nnot-json\ntrailing')
 
-    assert base.hash_session_source(source) == (
+    assert hash_session_source(source) == (
         "43e55b074ecfbeee48dc828e6c4b0eb5648f73ce319f71fd4391c50673220364",
         2,
     )

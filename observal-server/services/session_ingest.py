@@ -32,7 +32,7 @@ from services.clickhouse import (
     refresh_session_summary,
 )
 from services.secrets_redactor import redact_secrets
-from services.session_parsers.base import dict_field, list_field, str_field
+from services.session_parsers.base import dict_field, extract_v4_stream_chunk, str_field
 from services.session_parsers.ingest_classify import extract_timestamp, get_classifier, get_extra_rows
 
 # ---------------------------------------------------------------------------
@@ -155,6 +155,12 @@ def _usage_copilot_cli(parsed: dict) -> dict:
     return {"input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0, "cache_write_tokens": 0, "model": ""}
 
 
+def _deepseek_usage_count(usage: dict, field: str) -> int:
+    """A nonnegative integer token count from an untrusted v4 usage mapping."""
+    value = usage.get(field)
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+
+
 def _usage_deepseek(parsed: dict) -> dict:
     """DeepSeek v4 committed assistant usage, or a failed attempt's reported usage."""
     kind = str_field(parsed, "type")
@@ -165,23 +171,13 @@ def _usage_deepseek(parsed: dict) -> dict:
         usage = dict_field(data, "usage")
         source = dict_field(dict_field(data, "message"), "source")
     elif kind == "assistant/attempt":
-        for record in list_field(data, "stream"):
-            if not isinstance(record, dict) or str_field(record, "type") != "chunk":
-                continue
-            chunk = dict_field(record, "chunk")
-            if str_field(chunk, "type") == "usage":
-                usage = dict_field(chunk, "usage")
-                break
-
-    def count(field: str) -> int:
-        value = usage.get(field)
-        return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+        usage = dict_field(extract_v4_stream_chunk(data, "usage"), "usage")
 
     return {
-        "input_tokens": count("inputTokens"),
-        "output_tokens": count("outputTokens"),
-        "cache_read_tokens": count("cacheReadTokens"),
-        "cache_write_tokens": count("cacheWriteTokens"),
+        "input_tokens": _deepseek_usage_count(usage, "inputTokens"),
+        "output_tokens": _deepseek_usage_count(usage, "outputTokens"),
+        "cache_read_tokens": _deepseek_usage_count(usage, "cacheReadTokens"),
+        "cache_write_tokens": _deepseek_usage_count(usage, "cacheWriteTokens"),
         "model": str_field(source, "model"),
     }
 
