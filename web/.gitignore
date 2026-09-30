@@ -5,6 +5,9 @@
 /node_modules
 /.pnp
 .pnp.*
+# web/ is its own pnpm workspace root (onlyBuiltDependencies), so a local
+# install writes a stray lockfile; the root workspace lockfile is canonical.
+/pnpm-lock.yaml
 .yarn/*
 !.yarn/patches
 !.yarn/plugins
