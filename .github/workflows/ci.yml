@@ -183,6 +183,7 @@ jobs:
             --with pyarrow \
             --with pytest-cov \
             --with pytest-xdist \
+            --with zstandard \
             pytest ../tests/ -q -n auto \
               ${{ matrix.python-version == '3.13' && '--cov=../observal_cli --cov=. --cov-report=xml' || '' }}
 

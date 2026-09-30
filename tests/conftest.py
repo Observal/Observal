@@ -12,6 +12,12 @@ from pathlib import Path
 # harness settings. Set before anything imports observal_cli.
 os.environ["HOME"] = os.environ["USERPROFILE"] = tempfile.mkdtemp(prefix="observal-test-home-")
 
+# The DeepSeek adapter resolves DSH_HOME ahead of the supplied home, so a suite
+# run inside DeepSeek Harness would otherwise leak the real ~/.dsh into
+# active-harness detection and session discovery. Tests that need an override
+# set it explicitly with monkeypatch.
+os.environ.pop("DSH_HOME", None)
+
 # Add server source to path so `from config import settings` works
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "observal-server"))

@@ -23,10 +23,10 @@ check:  ## Full pre-commit check on all files
 # ── Testing ──────────────────────────────────────────────
 
 test:  ## Run Python tests (parallel across cores)
-	cd observal-server && uv run --with pytest --with pytest-asyncio --with pytest-xdist --with pyyaml --with typer --with rich --with hypothesis --with pyarrow pytest ../tests/ -q -n auto
+	cd observal-server && uv run --with pytest --with pytest-asyncio --with pytest-xdist --with pyyaml --with typer --with rich --with hypothesis --with pyarrow --with zstandard pytest ../tests/ -q -n auto
 
 test-v:  ## Run Python tests (verbose, parallel across cores)
-	cd observal-server && uv run --with pytest --with pytest-asyncio --with pytest-xdist --with pyyaml --with typer --with rich --with hypothesis --with pyarrow pytest ../tests/ -v -n auto
+	cd observal-server && uv run --with pytest --with pytest-asyncio --with pytest-xdist --with pyyaml --with typer --with rich --with hypothesis --with pyarrow --with zstandard pytest ../tests/ -v -n auto
 
 test-adversarial:  ## Run BenchJack self-test suite
 	cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml --with typer --with rich pytest ../tests/test_adversarial_self.py -v --tb=short
@@ -40,7 +40,7 @@ test-fuzz:  ## Smoke-test the OSS-Fuzz targets over their seed corpora (see fuzz
 test-all: test test-eval-completeness test-adversarial  ## Run all tests including adversarial and completeness
 
 sync-skill:  ## Regenerate the auto-generated command reference in the bundled Observal skill
-	cd observal-server && uv run --with typer --with rich --with loguru --with pyyaml python ../scripts/sync_observal_skill.py
+	cd observal-server && uv run --with typer --with rich --with loguru --with pyyaml --with zstandard python ../scripts/sync_observal_skill.py
 
 # ── Setup ────────────────────────────────────────────────
 

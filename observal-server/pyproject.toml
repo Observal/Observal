@@ -79,6 +79,7 @@ dev = [
     "pyyaml",
     "typer",
     "rich",
+    "zstandard",
 ]
 
 [tool.coverage.run]
