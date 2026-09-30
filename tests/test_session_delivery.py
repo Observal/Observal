@@ -152,6 +152,63 @@ def test_payload_rejection_status_is_permanent(monkeypatch, status_code: int):
         base.post_to_server_ack("http://server", "token", {"session_id": "bad", "lines": []})
 
 
+def test_stale_non_advancing_batch_does_not_block_later_sessions(tmp_path: Path):
+    """A stale range left over from server data loss must not wedge the queue.
+
+    After the server loses its data, recover-from-server re-spools sessions
+    from line 0 while an older mid-file batch may still sit at the head of
+    the outbox. That batch can never be acknowledged until contiguity is
+    repaired, so the drain skips it, delivers the rows behind it (including
+    the full-history re-spool), and a later drain clears it once the server
+    can acknowledge it.
+    """
+    db = tmp_path / "outbox.db"
+    # Stale mid-file batch for session "stale" (spooled before server data loss).
+    telemetry_buffer.enqueue(
+        {
+            "harness": "claude-code",
+            "session_id": "stale",
+            "lines": ["mid-file"],
+            "start_offset": 50,
+            "end_byte_offsets": [110],
+        },
+        destination="http://server",
+        user_id="user",
+        db_path=db,
+    )
+    # Complete, deliverable batch for another session behind it in the queue.
+    telemetry_buffer.enqueue(
+        {
+            "harness": "claude-code",
+            "session_id": "fresh",
+            "lines": ["from-start"],
+            "start_offset": 0,
+            "end_byte_offsets": [len("from-start")],
+        },
+        destination="http://server",
+        user_id="user",
+        db_path=db,
+    )
+
+    # The server knows nothing (acknowledged_line -1) and never requests repair.
+    def post(payload, _config):
+        if payload["session_id"] == "fresh":
+            return {"acknowledged_line": 0, "acknowledged_offset": len("from-start")}
+        return {"acknowledged_line": -1, "acknowledged_offset": 0}
+
+    assert not base.drain_outbox(config(), home=tmp_path, db_path=db, post=post)
+    remaining = telemetry_buffer.pending(destination="http://server", user_id="user", db_path=db)
+    assert [item.session_id for item in remaining] == ["stale"]
+    assert remaining[0].attempts == 1
+
+    # Once a full-history re-spool repairs contiguity, the stale batch clears.
+    def repaired(_payload, _config):
+        return {"acknowledged_line": 50, "acknowledged_offset": 110}
+
+    assert base.drain_outbox(config(), home=tmp_path, db_path=db, post=repaired)
+    assert telemetry_buffer.pending(destination="http://server", user_id="user", db_path=db) == []
+
+
 def test_permanent_rejection_is_quarantined_without_blocking_later_sessions(tmp_path: Path):
     db = tmp_path / "outbox.db"
     for session_id, line in (("bad", "invalid"), ("good", "valid")):

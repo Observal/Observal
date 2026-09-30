@@ -216,17 +216,23 @@ def pending(
     destination: str,
     user_id: str,
     limit: int = BATCH_SIZE,
+    after_id: int = 0,
     db_path: Path | None = None,
 ) -> list[OutboxItem]:
-    """Return durable batches oldest-first; attempts never make a row terminal."""
+    """Return durable batches oldest-first; attempts never make a row terminal.
+
+    ``after_id`` resumes the scan past a row the caller already handled, so a
+    caller iterating one row at a time can skip a batch it cannot yet deliver
+    without re-reading it forever.
+    """
     conn = _connect(db_path)
     try:
         rows = conn.execute(
             "SELECT id, destination, user_id, harness, session_id, checkpoint_key, "
             "start_line, end_line, end_offset, final, payload, attempts "
-            "FROM session_outbox WHERE destination = ? AND user_id = ? "
+            "FROM session_outbox WHERE destination = ? AND user_id = ? AND id > ? "
             "ORDER BY (end_line < start_line), id LIMIT ?",
-            (destination.rstrip("/"), user_id, limit),
+            (destination.rstrip("/"), user_id, after_id, limit),
         ).fetchall()
         return [
             OutboxItem(

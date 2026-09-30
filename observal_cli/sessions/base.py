@@ -416,7 +416,12 @@ def drain_outbox(
     repairs: list[tuple[str, str]] | None = None,
     rejections: list[tuple[str, str, int]] | None = None,
 ) -> bool:
-    """Drain durable batches for the configured server/user until blocked."""
+    """Drain durable batches for the configured server/user until blocked.
+
+    A batch whose acknowledgement does not advance is skipped rather than
+    allowed to block later batches: the server's contiguous checkpoint stays
+    the safety gate, and a later full-history re-spool can repair it.
+    """
     from observal_cli import telemetry_buffer
 
     destination = str(config.get("server_url") or "").rstrip("/")
@@ -432,13 +437,17 @@ def drain_outbox(
         )
     )
 
+    after_id = 0
+    drained_all = True
     while items := telemetry_buffer.pending(
         destination=destination,
         user_id=user_id,
         limit=1,
+        after_id=after_id,
         db_path=db_path,
     ):
         item = items[0]
+        after_id = item.id
         try:
             acknowledgement = post_batch(item.payload, config)
         except PermanentIngestRejectionError as exc:
@@ -469,7 +478,15 @@ def drain_outbox(
                 repairs.append((item.harness, item.session_id))
             return False
         if acknowledged_line < item.end_line:
-            return False
+            # The server's contiguous checkpoint is still behind this batch -
+            # typically a stale range spooled before the server lost its data.
+            # Aborting here would block every later row for this destination,
+            # including other sessions and the full-history re-spool that
+            # repairs contiguity, so record the attempt and keep draining; the
+            # next drain retries this row once the server can acknowledge it.
+            telemetry_buffer.record_attempt(item.id, db_path=db_path)
+            drained_all = False
+            continue
         if acknowledged_offset <= 0:
             acknowledged_offset = item.end_offset
         write_cursor(
@@ -488,7 +505,7 @@ def drain_outbox(
             include_metadata=item.end_line < item.start_line,
             db_path=db_path,
         )
-    return True
+    return drained_all
 
 
 def drain_session_source(
