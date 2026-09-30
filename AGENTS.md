@@ -34,9 +34,9 @@ Eleven harnesses are registered in `packages/observal-shared/observal_shared/har
 | OpenCode | yes | `opencode` | hooks, mcp_servers, skills | no |
 | Antigravity | yes | `antigravity` | hooks, mcp_servers, skills | no |
 | Goose | yes | `goose` | hooks, mcp_servers, skills | no |
-| DeepSeek Harness | yes | `deepseek` | hooks, mcp_servers, skills | no |
+| DeepSeek Harness | yes | `deepseek` | hooks, mcp_servers, skills | yes (5 specs) |
 
-Every harness now resolves a session parser, so `observal reconcile` works across all eleven. Hook specs in `observal_cli/harness_specs/` exist for nine; Cursor and Pi have none. Only Kiro has harness-specific Playwright coverage.
+Every harness now resolves a session parser, so `observal reconcile` works across all eleven. Hook specs in `observal_cli/harness_specs/` exist for nine; Cursor and Pi have none. Kiro and DeepSeek have harness-specific Playwright coverage.
 
 See `docs/adding-a-harness.md` for the complete guide to adding or promoting a harness.
 
@@ -70,8 +70,8 @@ web/                   Vite 6 SPA / React 19 / TanStack Router (see web/AGENTS.m
 packages/pi-extension/ Pi telemetry extension (npm: observal-pi)
 docker/                Docker Compose stack (10 services)
 fuzz/                  Atheris fuzz targets + OSS-Fuzz project config mirror
-tests/                 pytest (174 files)
-tests/e2e/             Playwright (20 specs)
+tests/                 pytest (257 files)
+tests/e2e/             Playwright (24 specs)
 ```
 
 ## How the modularisation works
@@ -96,7 +96,7 @@ A fully supported harness has all of:
 - Full scanning implementation in its CLI adapter (discovers MCPs, skills, hooks, agents)
 - E2E test coverage in `tests/e2e/`
 
-Today only Kiro meets all four. A minimal harness has:
+Today Kiro and DeepSeek meet all four. A minimal harness has:
 - A registry entry with correct paths
 - A CLI adapter that handles basic MCP scanning
 - A server adapter that generates config files
@@ -228,13 +228,13 @@ make check               # pre-commit on all files
 make hooks               # install pre-commit hooks
 
 # Tests (all mock externals, no Docker needed)
-make test                # runs tests/ only (174 files), parallel via pytest-xdist
+make test                # runs tests/ only (257 files), parallel via pytest-xdist
 make test-v              # verbose
 # observal-server/tests/ (21 files) and observal_cli/tests/ (11 files) are not run
 # by `make test` or CI; invoke pytest on those paths directly.
 make test-fuzz           # smoke-test the OSS-Fuzz targets in fuzz/ (needs atheris)
 # E2E (requires running stack):
-cd tests/e2e && pnpm test   # 20 Playwright specs
+cd tests/e2e && pnpm test   # 24 Playwright specs
 ```
 
 ## Optic (dev logging)
