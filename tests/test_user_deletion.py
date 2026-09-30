@@ -227,3 +227,30 @@ async def test_component_report_job_refuses_a_deleted_requester():
     db.scalar = AsyncMock(return_value=_shell())
     with pytest.raises(ValueError, match="no longer available"):
         await _authorize_component_report_job(db, SimpleNamespace(triggered_by=USER_ID))
+
+
+@pytest.mark.asyncio
+async def test_refresh_rejects_scim_deactivated_account_and_consumes_its_token(monkeypatch):
+    """Requests already refuse a deactivated account; refresh must not mint tokens for it."""
+    import api.routes.auth as auth
+    from api.ratelimit import limiter
+    from schemas.auth import RefreshRequest
+
+    monkeypatch.setattr(limiter, "enabled", False)
+    redis = _Redis({"refresh_jti:old": str(USER_ID)})
+    monkeypatch.setattr(auth, "get_redis", lambda: redis)
+    monkeypatch.setattr(auth, "decode_refresh_token", lambda _t: {"jti": "old", "sub": str(USER_ID)})
+    issue = MagicMock()
+    monkeypatch.setattr(auth, "create_access_token", issue)
+    monkeypatch.setattr(auth, "create_refresh_token", issue)
+    db = MagicMock()
+    db.execute = AsyncMock(
+        return_value=_result(SimpleNamespace(id=USER_ID, role=None, auth_provider="deactivated", deleted_at=None))
+    )
+    request = SimpleNamespace(client=SimpleNamespace(host="127.0.0.1"), headers={}, query_params={}, session={})
+
+    with pytest.raises(HTTPException) as raised:
+        await auth.refresh_token(request, RefreshRequest(refresh_token="r"), db)
+    assert (raised.value.status_code, raised.value.detail) == (401, "Account deactivated")
+    issue.assert_not_called()
+    assert "refresh_jti:old" not in redis.values  # the presented token cannot be retried

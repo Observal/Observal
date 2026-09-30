@@ -1736,6 +1736,10 @@ async def refresh_token(request: Request, req: RefreshRequest, db: AsyncSession 
     user = result.scalar_one_or_none()
     if not user or is_deleted_account(user):
         raise HTTPException(status_code=401, detail="User no longer exists")
+    # Every API request already refuses a SCIM-deactivated account; refresh must
+    # not keep minting tokens for it. Its presented refresh token was consumed above.
+    if user.auth_provider == "deactivated":
+        raise HTTPException(status_code=401, detail="Account deactivated")
 
     # Issue new token pair
     groups = payload.get("groups", [])
