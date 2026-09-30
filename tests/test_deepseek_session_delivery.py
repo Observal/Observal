@@ -574,6 +574,18 @@ class TestSessionAgentAttribution:
         ensure_loaded()
         assert get_adapter("deepseek").resolve_session_agent_identity(path, "/work/tree") == ("uuid-1", "1.2.0")
 
+    def test_qualified_local_name_skill_still_attributes(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+        """A cross-registry pull qualifies the local name; its sessions still attribute."""
+        monkeypatch.delenv("DSH_HOME", raising=False)
+        path = _session(tmp_path, "qualified", records=(_skill_call("observal-super-my-agent"),))
+        _lockfile(
+            tmp_path,
+            monkeypatch,
+            [{"name": "my-agent", "local_name": "super-my-agent", "id": "uuid-1", "version": "1.2.0"}],
+        )
+
+        assert deepseek.resolve_session_agent_identity(path, "/work/tree") == ("uuid-1", "1.2.0")
+
     def test_string_arguments_are_parsed(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         monkeypatch.delenv("DSH_HOME", raising=False)
         call = _line({"type": "tool/call", "data": {"name": "skill", "arguments": '{"name": "observal-my-agent"}'}})

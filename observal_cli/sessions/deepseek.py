@@ -308,13 +308,14 @@ def _lockfile_agent_for_skill(skill_name: str) -> dict | None:
     # session can be collected after the user switched servers, and the agent
     # that was pulled for it is still the one whose skill was invoked. Pulls
     # append entries, so the last name match is the most recent pull of that
-    # agent — the one whose server still knows the id.
-    target = skill_name.removeprefix(_AGENT_SKILL_PREFIX)
+    # agent — the one whose server still knows the id. A cross-namespace or
+    # cross-registry collision qualifies the local name, so either the registry
+    # name or the local name can name the installed skill.
     match: dict | None = None
     for registry in read_lockfile().get("registries", {}).values():
         for agent in registry.get("harnesses", {}).get("deepseek", {}).get("agents", []):
-            name = agent.get("name", "")
-            if target == name or skill_name in (f"observal-{name}", f"observal-{sanitize_name(name)}"):
+            names = filter(None, (agent.get("name"), agent.get("local_name")))
+            if skill_name in {f"observal-{variant}" for name in names for variant in (name, sanitize_name(name))}:
                 match = agent
     return match
 

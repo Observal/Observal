@@ -328,6 +328,11 @@ class BaseAdapter:
             agent_name = agent.get("name", "")
             if agent_name:
                 managed.update(self._format_managed_paths(self.managed_agent_profiles, agent_name))
+            # A cross-namespace or cross-registry collision qualifies the local
+            # name, and the pull writes the agent files under that name.
+            local_name = agent.get("local_name", "")
+            if local_name and local_name != agent_name:
+                managed.update(self._format_managed_paths(self.managed_agent_profiles, local_name))
 
             for component in agent.get("components", []):
                 managed.update(self._managed_component_files(component.get("type", ""), component.get("name", "")))
