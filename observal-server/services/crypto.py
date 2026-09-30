@@ -10,13 +10,22 @@ import base64
 import hashlib
 import os
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Literal, TypeAlias
+from typing import TYPE_CHECKING, Literal, TypeAlias
 
 import jwt
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from loguru import logger as optic
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows has no fcntl
+    fcntl = None
 
 SigningAlgorithm = Literal["ES256", "RS256"]
 PrivateKey: TypeAlias = ec.EllipticCurvePrivateKey | rsa.RSAPrivateKey
@@ -107,17 +116,50 @@ class KeyManager:
         except OSError:
             pass
 
+        # Uvicorn workers (and the worker process) boot concurrently against the
+        # same key directory. Without serialization on a fresh volume each one
+        # generates its own signing key, the JWKS alternates between kids, and
+        # roughly half of all token verifications fail with 401 on the worker
+        # that did not sign the token. The lock makes first boot exactly one
+        # generator; every other boot loads the stored bytes instead.
+        with self._signing_lock():
+            self._ensure_signing_key()
+        self._load_retired_keys()
+        optic.info("JWT signing key ready (alg={}, kid={})", self._algorithm, self._kid)
+
+    @contextmanager
+    def _signing_lock(self) -> Iterator[None]:
+        """Serialize signing-key generation across processes and threads.
+
+        An advisory flock on a lock file beside the signing key; the kernel
+        releases it automatically if a holder dies. Platforms without fcntl
+        fall back to unlocked behaviour, which matches the single-process
+        deployments there.
+        """
+        if fcntl is None:  # pragma: no cover - Windows
+            yield
+            return
+        descriptor = os.open(self._key_dir / ".signing.lock", os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
+
+    def _ensure_signing_key(self) -> None:
+        """Load or (after retirement) generate the signing key, holding the lock."""
         signing_path = self._key_dir / "signing.pem"
         if signing_path.exists():
             self._load_private_key(signing_path)
-            if _algorithm_for_key(self.get_private_key()) != self._algorithm:
-                optic.info("JWT algorithm changed; retiring current signing key")
-                self._retire_current_key()
-                self._generate_key_pair(signing_path)
-        else:
-            self._generate_key_pair(signing_path)
-        self._load_retired_keys()
-        optic.info("JWT signing key ready (alg={}, kid={})", self._algorithm, self._kid)
+            if _algorithm_for_key(self.get_private_key()) == self._algorithm:
+                return
+            optic.info("JWT algorithm changed; retiring current signing key")
+            self._retire_current_key()
+            signing_path.unlink(missing_ok=True)
+        self._generate_key_pair(signing_path)
 
     def get_private_key(self) -> PrivateKey:
         if self._private_key is None:

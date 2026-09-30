@@ -457,3 +457,61 @@ class TestJWKSEndpoint:
     async def test_jwks_endpoint_cache_header(self, jwks_client):
         resp = await jwks_client.get("/api/v1/auth/.well-known/jwks.json")
         assert "max-age" in resp.headers.get("cache-control", "")
+
+
+# ===================================================================
+# Concurrent initialization (multi-worker first boot)
+# ===================================================================
+
+
+class TestConcurrentInitialization:
+    """Uvicorn workers booting against one fresh key directory must share a key.
+
+    Without serialization each worker generates its own signing.pem, the JWKS
+    alternates between kids, and tokens fail verification on whichever worker
+    did not sign them.
+    """
+
+    def test_concurrent_workers_share_one_key(self, tmp_key_dir):
+        import threading
+
+        managers: list[KeyManager] = []
+        barrier = threading.Barrier(8)
+
+        def boot() -> None:
+            manager = KeyManager(key_dir=tmp_key_dir)
+            barrier.wait()
+            manager.initialize()
+            managers.append(manager)
+
+        threads = [threading.Thread(target=boot) for _ in range(8)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=30)
+            assert not thread.is_alive()
+
+        assert len(managers) == 8
+        assert len({manager.get_kid() for manager in managers}) == 1
+        assert len({manager.get_public_key_pem() for manager in managers}) == 1
+
+    def test_initializer_waits_for_a_held_lock(self, tmp_key_dir):
+        import threading
+
+        manager = KeyManager(key_dir=tmp_key_dir)
+        with manager._signing_lock():
+            thread = threading.Thread(target=manager.initialize)
+            thread.start()
+            thread.join(timeout=0.5)
+            assert thread.is_alive(), "initialize must block while another holder owns the lock"
+        thread.join(timeout=30)
+        assert not thread.is_alive()
+        assert (Path(tmp_key_dir) / "signing.pem").is_file()
+        assert manager.get_kid()
+
+    def test_lock_file_stays_beside_the_key(self, tmp_key_dir):
+        manager = KeyManager(key_dir=tmp_key_dir)
+        manager.initialize()
+        assert (Path(tmp_key_dir) / ".signing.lock").is_file()
+        # The lock file must never be picked up as a retired key.
+        assert manager.get_jwks()["keys"][0]["kid"] == manager.get_kid()
