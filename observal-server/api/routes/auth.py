@@ -31,7 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import services.dynamic_settings as ds
 from api.deps import get_current_user, get_db, require_password_auth
 from api.ratelimit import limiter
-from models.user import User, UserRole
+from models.user import User, UserRole, is_deleted_account, live_users
 from models.user_group import UserGroup
 from schemas.auth import (
     ChangePasswordRequest,
@@ -241,6 +241,9 @@ async def _issue_tokens(user: User, groups: list[str] | None = None) -> tuple[st
     Fails open: tokens are still returned if Redis is temporarily unreachable.
     """
     optic.trace("user_id={}, groups={}", user.id, groups)
+    # A deleted account's revocation must never be undone by a new sign-in.
+    if is_deleted_account(user):
+        raise HTTPException(status_code=401, detail="User no longer exists")
     access_token, expires_in = create_access_token(user.id, user.role, groups=groups)
     refresh_token, jti = create_refresh_token(user.id, user.role, groups=groups)
 
@@ -388,9 +391,9 @@ async def login(request: Request, req: LoginRequest, db: AsyncSession = Depends(
     source_ip, user_agent = _extract_request_info(request)
     identifier = req.email
     if "@" in identifier:
-        stmt = select(User).where(User.email == identifier)
+        stmt = select(User).where(User.email == identifier, live_users())
     else:
-        stmt = select(User).where(or_(User.username == identifier, User.email == identifier))
+        stmt = select(User).where(or_(User.username == identifier, User.email == identifier), live_users())
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
     if not user or not user.verify_password(req.password):
@@ -1562,7 +1565,8 @@ async def exchange_code(req: CodeExchangeRequest, db: AsyncSession = Depends(get
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
 
-    if not user:
+    # Tokens pre-issued before the account was deleted are never handed out.
+    if not user or is_deleted_account(user):
         raise HTTPException(status_code=400, detail="Invalid or expired code")
     return InitResponse(
         user=UserResponse.model_validate(user),
@@ -1656,9 +1660,9 @@ async def issue_token(request: Request, req: TokenRequest, db: AsyncSession = De
     source_ip, user_agent = _extract_request_info(request)
     identifier = req.email
     if "@" in identifier:
-        stmt = select(User).where(User.email == identifier)
+        stmt = select(User).where(User.email == identifier, live_users())
     else:
-        stmt = select(User).where(or_(User.username == identifier, User.email == identifier))
+        stmt = select(User).where(or_(User.username == identifier, User.email == identifier), live_users())
     result = await db.execute(stmt)
     user = result.scalar_one_or_none()
     if not user or not user.verify_password(req.password):
@@ -1730,7 +1734,7 @@ async def refresh_token(request: Request, req: RefreshRequest, db: AsyncSession 
     # Look up the user to ensure they still exist
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-    if not user:
+    if not user or is_deleted_account(user):
         raise HTTPException(status_code=401, detail="User no longer exists")
 
     # Issue new token pair

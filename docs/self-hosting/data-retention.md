@@ -45,7 +45,6 @@ Two legacy Insights tables that current versions no longer write are cleaned con
 - `insight_session_meta` has no project, user, or harness identity. A row is removed only if it was computed before the cutoff and its session ID has no retained session event under any project, user, or harness.
 - `insight_meta_cache` rows whose period starts before the cutoff, or whose period cannot be parsed, are removed. They are caches and are recomputed if needed.
 
-Scheduled retention does not implement deletion requested for a specific user or listing.
 
 ## ClickHouse TTL {#data-retention}
 
@@ -91,3 +90,13 @@ Cache duration, in seconds, for trace and session list endpoints.
 | `15` (default) | Keeps trace lists responsive while preserving near-live monitoring |
 | `5` | Useful during active debugging |
 | `60` | Better for large deployments where trace lists are expensive |
+
+## Deleting a user {#deleting-a-user}
+
+Telemetry belongs to the instance once it has been sent. Deleting a user, from the admin users page or through SCIM, does **not** remove or change their sessions, component activity, snapshots, facets, or insight reports. That data keeps the original user ID and is removed only by the retention settings above or by **Purge Traces & Insights**.
+
+Deletion removes the account itself. The user's row stays as an empty shell so that everything referencing the account keeps working: its email, name, username, avatar, password, and SSO subject are cleared, it can no longer log in or refresh a token, and it no longer appears in user lists, search, or SCIM. Listings, versions, reviews, and other records the user created stay in place. The account's name becomes **Deleted user**; where an author's username or email is shown, it appears as a non-identifying `deleted-…` placeholder. The account's group, team membership, work profile, recommendation feedback, and inbox rows are removed. The security event for the deletion keeps the address the account had.
+
+If the same person signs in again through SSO later, a new account is created; the deleted one is not restored.
+
+Once any user has been deleted, the database cannot be downgraded to a version from before this feature: earlier versions cannot lock deleted accounts out, so the downgrade stops with an error instead.

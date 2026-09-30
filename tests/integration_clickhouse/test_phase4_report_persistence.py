@@ -27,7 +27,7 @@ async def test_listing_delete_and_rollback_cleanup_component_reports():
     connection = await asyncpg.connect(_URL.replace("postgresql+asyncpg://", "postgresql://"))
     listing_id, report_id = uuid.uuid4(), uuid.uuid4()
     try:
-        assert await connection.fetchval("SELECT version_num FROM alembic_version") == "031_component_privacy"
+        assert await connection.fetchval("SELECT version_num FROM alembic_version") == "032_user_deleted_at"
         triggers = await connection.fetch(
             "SELECT tgname FROM pg_trigger WHERE tgname IN "
             "('trg_mcp_insight_report_cleanup','trg_skill_insight_report_cleanup','trg_hook_insight_report_cleanup')"

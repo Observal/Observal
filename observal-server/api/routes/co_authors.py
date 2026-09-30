@@ -31,7 +31,7 @@ from models.prompt import PromptListing, PromptVersion
 from models.sandbox import SandboxListing, SandboxVersion
 from models.skill import SkillListing, SkillVersion
 from models.team import TeamRole
-from models.user import User
+from models.user import User, live_users
 from services.inbox import sources as inbox
 from services.ownership import transfer_entity_owner
 from services.registry_namespace import identity_exists
@@ -174,11 +174,11 @@ async def _resolve_target_user(
             parsed_id = _uuid.UUID(user_id)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail="Invalid user ID") from exc
-        result = await db.execute(select(User).where(User.id == parsed_id))
+        result = await db.execute(select(User).where(User.id == parsed_id, live_users()))
     elif email:
-        result = await db.execute(select(User).where(User.email == email.strip().lower()))
+        result = await db.execute(select(User).where(User.email == email.strip().lower(), live_users()))
     elif username:
-        result = await db.execute(select(User).where(User.username == username.strip().lstrip("@")))
+        result = await db.execute(select(User).where(User.username == username.strip().lstrip("@"), live_users()))
     else:
         raise HTTPException(status_code=422, detail="Provide a user")
 
