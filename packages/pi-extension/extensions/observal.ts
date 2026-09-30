@@ -717,36 +717,55 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
-  function sessionStartedAtMs(sessionFile: string | null): number {
-    if (sessionFile) {
-      try {
-        const stat = fs.statSync(sessionFile);
-        if (stat.birthtimeMs > 0) return stat.birthtimeMs - CAPABILITY_LEAD_MS;
-      } catch { }
-      const first = firstLineTimestampMs(sessionFile);
-      if (first !== null) return first - CAPABILITY_LEAD_MS;
-    }
-    return Date.now() - CAPABILITY_FALLBACK_MS;
+  /** When the session began, or null when that cannot be established. */
+  function sessionStartMs(sessionFile: string | null): number | null {
+    if (!sessionFile) return null;
+    try {
+      const stat = fs.statSync(sessionFile);
+      if (stat.birthtimeMs > 0) return stat.birthtimeMs;
+    } catch { }
+    return firstLineTimestampMs(sessionFile);
   }
 
-  /** Capability-lock uses that belong to this session, shaped for the ingest payload. Best effort. */
+  /**
+   * Capability-lock uses that belong to this session, shaped for the ingest
+   * payload. Same rules as ``capability_lock.for_session`` (Python):
+   * - every use must match this harness and directory, even a hinted one;
+   * - a hinted ``context`` use belongs only to its hinted session;
+   * - a ``next-session`` install is a candidate for every session that started
+   *   at or after it (never the installing or an already running session, and
+   *   never when this session's start is unknown). The server keeps only the
+   *   earliest-started candidate, so upload order cannot change the result;
+   * - other un-hinted uses match from shortly before the session started.
+   * Best effort.
+   */
   function capabilitiesForSession(s: ObservalState): Array<Record<string, unknown>> {
     try {
       if (!fs.existsSync(CAPABILITY_LOCK_PATH)) return [];
-      const since = sessionStartedAtMs(s.sessionFile);
+      const start = sessionStartMs(s.sessionFile);
       const latest = new Map<string, Record<string, unknown>>();
       for (const line of fs.readFileSync(CAPABILITY_LOCK_PATH, "utf-8").split("\n")) {
         if (!line.trim()) continue;
         let use: Record<string, unknown>;
         try { use = JSON.parse(line); } catch { continue; }
-        if (typeof use.ts !== "string" || typeof use.kind !== "string") continue;
-        const exact = typeof use.session_hint === "string" && use.session_hint === s.sessionId;
-        if (!exact) {
-          if (typeof use.harness === "string" && use.harness !== "pi") continue;
-          if (typeof use.cwd === "string" && use.cwd && s.cwd && !isSameOrUnder(use.cwd, s.cwd)) continue;
-          const at = Date.parse(use.ts);
-          if (Number.isNaN(at) || at < since) continue;
+        if (!use || typeof use.ts !== "string" || typeof use.kind !== "string") continue;
+        if (typeof use.harness === "string" && use.harness && use.harness !== "pi") continue;
+        if (typeof use.cwd === "string" && use.cwd && s.cwd && !isSameOrUnder(use.cwd, s.cwd)) continue;
+        const at = Date.parse(use.ts);
+        if (Number.isNaN(at)) continue;
+        const mode = typeof use.mode === "string" && use.mode ? use.mode : "context";
+        const hint = typeof use.session_hint === "string" && use.session_hint ? use.session_hint : null;
+        let confidence: string | null = null;
+        if (mode === "next-session") {
+          if (start !== null && at <= start && hint !== s.sessionId) confidence = "window";
+        } else if (hint) {
+          if (hint === s.sessionId) confidence = "exact";
+        } else if (start !== null) {
+          if (at >= start - CAPABILITY_LEAD_MS) confidence = "window";
+        } else if (at >= Date.now() - CAPABILITY_FALLBACK_MS) {
+          confidence = "loose";
         }
+        if (confidence === null) continue;
         const key = (use.identifier as string) || `${use.kind}:${use.component_id ?? use.native_ref ?? ""}`;
         const previous = latest.get(key);
         if (!previous || String(previous.used_at) <= String(use.ts)) {
@@ -757,10 +776,10 @@ export default function (pi: ExtensionAPI) {
             native_ref: use.native_ref ?? null,
             version: use.version ?? null,
             digest: use.digest ?? null,
-            mode: use.mode ?? "context",
+            mode,
             source: use.source ?? "unknown",
             used_at: use.ts,
-            confidence: exact ? "exact" : s.sessionFile ? "window" : "loose",
+            confidence,
           });
         }
       }

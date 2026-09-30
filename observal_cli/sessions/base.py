@@ -728,13 +728,6 @@ def build_payload(
     return payload
 
 
-# How far before a session file first appeared a capability use may still
-# belong to it: a developer often runs `discover use` a moment before the
-# harness creates the transcript.
-_CAPABILITY_LEAD_SECONDS = 15 * 60
-_CAPABILITY_FALLBACK_HOURS = 24
-
-
 _TIMESTAMP_KEYS = ("timestamp", "ts", "time", "created_at", "createdAt", "start_time")
 _MAX_CAPABILITIES_PER_PUSH = 200
 
@@ -766,53 +759,51 @@ def _first_line_timestamp(session_jsonl: Path):
 
 
 def _session_started_at(session_jsonl: Path | None):
-    """When the session began, minus a short lead.
+    """When the session began, or ``None`` when that cannot be established.
 
     Prefer the file's birth time where the platform records one, then the
     transcript's own first timestamp. ``st_ctime`` is deliberately not used:
     on Linux it moves with every write, which would silently drop uses from
-    the start of a long session. Without either signal, fall back to a wide
-    window rather than guess.
+    the start of a long session.
     """
-    from datetime import UTC, datetime, timedelta
+    from datetime import UTC, datetime
 
-    if session_jsonl is not None:
-        started = None
-        try:
-            birth = getattr(session_jsonl.stat(), "st_birthtime", None)
-            if birth:
-                started = datetime.fromtimestamp(birth, tz=UTC)
-        except OSError:
-            pass
-        started = started or _first_line_timestamp(session_jsonl)
-        if started is not None:
-            return started - timedelta(seconds=_CAPABILITY_LEAD_SECONDS)
-    return datetime.now(UTC) - timedelta(hours=_CAPABILITY_FALLBACK_HOURS)
+    if session_jsonl is None:
+        return None
+    try:
+        birth = getattr(session_jsonl.stat(), "st_birthtime", None)
+        if birth:
+            return datetime.fromtimestamp(birth, tz=UTC)
+    except OSError:
+        pass
+    return _first_line_timestamp(session_jsonl)
 
 
 def _capabilities_for_session(session_id: str, cwd: str, harness: str, session_jsonl: Path | None) -> list[dict]:
     """Capability-lock uses that belong to this session, shaped for ingest.
 
-    Matching is harness + directory + time window, or an exact session hint
-    when a hook exposed the harness session id. Best effort: attribution is
-    evidence, so a broken lock file never blocks telemetry.
+    See ``capability_lock.for_session`` for the attribution rules. Best effort:
+    attribution is evidence, so a broken lock file never blocks telemetry.
     """
     try:
         from observal_cli import capability_lock
 
-        uses = capability_lock.matching(
+        matched = capability_lock.for_session(
+            session_id=session_id,
             harness=harness,
             cwd=cwd or None,
-            since=_session_started_at(session_jsonl),
-            session_hint=session_id,
+            started_at=_session_started_at(session_jsonl),
         )
-        if not uses:
+        if not matched:
             return []
-        confidence = "window" if session_jsonl is not None else "loose"
-        latest = capability_lock.dedupe_latest(uses)
+        confidence = {id(use): level for use, level in matched}
+        latest = capability_lock.dedupe_latest(use for use, _ in matched)
         # The ingest contract caps the list; keep the most recent distinct uses.
         latest = sorted(latest, key=lambda u: u.ts, reverse=True)[:_MAX_CAPABILITIES_PER_PUSH]
-        return capability_lock.to_payload(latest, confidence=confidence)
+        return [
+            payload | {"confidence": confidence[id(use)]}
+            for use, payload in zip(latest, capability_lock.to_payload(latest, confidence="window"), strict=True)
+        ]
     except Exception as exc:
         optic.debug("capability attribution skipped for {}: {}", session_id, exc)
         return []
