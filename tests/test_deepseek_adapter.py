@@ -4,20 +4,20 @@
 """DeepSeek native patch, skill discovery, hook activation, and isolation checks."""
 
 import json
-import shlex
-import sys
 
 import pytest
 
+from observal_cli import deepseek_plugin
 from observal_cli.harness.deepseek import DeepSeekAdapter
-from observal_cli.harness_specs.deepseek_hooks_spec import (
-    EVENTS,
-    MODULE,
-    build_hooks,
-    hook_command,
-    is_session_push_command,
+from observal_cli.harness_specs.deepseek_hooks_spec import MODULE, is_session_push_command
+from observal_cli.shared.deepseek_config import (
+    HOOK_ID,
+    HOOK_NAME,
+    MCP_NAME,
+    TELEMETRY_ID,
+    edit_owned_rows,
+    read_entries,
 )
-from observal_cli.shared.deepseek_config import HOOK_ID, HOOK_NAME, MCP_NAME, edit_owned_rows, read_entries
 
 
 @pytest.fixture
@@ -168,7 +168,8 @@ def test_hook_patch_and_cleanup_are_idempotent_and_preserve_foreign_content(inst
     assert patch.read_text() == original
     assert adapter.patch_hooks(dry_run=False)
     assert adapter.detect_hooks(root) == "installed"
-    assert all(event in json.loads(hooks.read_text())["hooks"] for event in EVENTS)
+    assert deepseek_plugin.plugin_path(root).is_file()
+    assert [row["id"] for row in read_entries(patch)] == ["foreign", TELEMETRY_ID, HOOK_ID]
     assert patch.read_text().startswith(original)
     assert not adapter.patch_hooks(dry_run=False)
     assert adapter.cleanup_hooks(dry_run=True)
@@ -176,7 +177,9 @@ def test_hook_patch_and_cleanup_are_idempotent_and_preserve_foreign_content(inst
     assert adapter.cleanup_hooks(dry_run=False)
     assert not adapter.cleanup_hooks(dry_run=False)
     assert patch.read_text().startswith(original)
-    assert "observal-hooks" not in patch.read_text()
+    assert TELEMETRY_ID not in patch.read_text()
+    assert HOOK_ID in patch.read_text()  # Custom hooks must remain active.
+    assert not deepseek_plugin.plugin_path(root).exists()
     assert json.loads(hooks.read_text()) == {
         "custom": 1,
         "hooks": {"Stop": [{"hooks": [{"type": "command", "command": "foreign"}]}]},
@@ -185,9 +188,8 @@ def test_hook_patch_and_cleanup_are_idempotent_and_preserve_foreign_content(inst
 
 def test_custom_hook_rules_are_not_duplicated_on_repeated_install(installed):
     adapter, root = installed
-    incoming = build_hooks()
     custom = {"matcher": "Read", "hooks": [{"type": "command", "command": "my-custom-hook"}]}
-    incoming["hooks"]["Stop"].append(custom)
+    incoming = {"hooks": {"Stop": [custom]}}
     path = root / "observal" / "hooks.json"
     assert adapter.write_hook_config(path, incoming) == "created"
     assert adapter.write_hook_config(path, incoming) == "merged"
@@ -215,67 +217,78 @@ def test_only_actual_session_push_invocations_are_rewritten_or_removed(installed
             ]
         }
     }
-    rewritten = adapter.rewrite_hooks(content, agent_id="unused")
-    assert [handler["command"] for handler in rewritten["hooks"]["Stop"][0]["hooks"]] == [
-        echo,
-        malformed,
-        hook_command(),
-    ]
+    with pytest.raises(ValueError, match="no longer supported"):
+        adapter.rewrite_hooks(content, agent_id="unused")
     assert content["hooks"]["Stop"][0]["hooks"][2]["command"] == stale
     cleaned = adapter._merge_hooks(content, {"hooks": {}})
     assert [handler["command"] for handler in cleaned["hooks"]["Stop"][0]["hooks"]] == [echo, malformed]
-    merged = adapter._merge_hooks(content, build_hooks())
-    assert [handler["command"] for handler in merged["hooks"]["Stop"][0]["hooks"]] == [echo, malformed]
-    assert merged["hooks"]["Stop"][1]["hooks"][0]["command"] == hook_command()
-
-
-def test_hook_command_carries_runtime_home_into_deepseek_hook_shell(installed, monkeypatch):
-    from observal_cli.hooks import session_push
-    from observal_cli.sessions.deepseek import resolve_dsh_home
-
-    _adapter, root = installed
-    command = hook_command()
-    assert shlex.split(command)[-2:] == ["--dsh-home", str(root)]
-    assert is_session_push_command(command)
+    assert is_session_push_command(stale)
     assert is_session_push_command(f"python3 -m {MODULE} --harness deepseek")
     assert not is_session_push_command(f"python3 -m {MODULE} --harness deepseek --dsh-home ../relative")
 
-    # The DeepSeek hook subprocess drops DSH_HOME, so the CLI must restore it
-    # before session discovery and before it spawns an outbox worker.
-    monkeypatch.delenv("DSH_HOME")
-    observed = []
-    monkeypatch.setattr(session_push, "main", lambda **kwargs: observed.append((kwargs, resolve_dsh_home())))
-    monkeypatch.setattr(sys, "argv", ["session_push", "--harness", "deepseek", "--dsh-home", str(root)])
-    session_push.cli_main()
-    assert observed == [({"harness": "deepseek"}, root)]
 
-
-def test_hook_detection_requires_both_bridge_and_commands(installed):
+def test_patch_replaces_legacy_hooks_with_native_plugin(installed):
     adapter, root = installed
-    root.mkdir()
     hooks = root / "observal" / "hooks.json"
-    hooks.parent.mkdir()
-    hooks.write_text(json.dumps(build_hooks()))
-    assert adapter.detect_hooks(root) == "partial"
-    (root / "cordis.patch.yml").write_text(
+    hooks.parent.mkdir(parents=True)
+    command = f"python3 -m {MODULE} --harness deepseek"
+    hooks.write_text(json.dumps({"hooks": {"Stop": [{"hooks": [{"type": "command", "command": command}]}]}}))
+    patch = root / "cordis.patch.yml"
+    patch.write_text(
         f"- insert:\n  - id: {HOOK_ID}\n    name: '{HOOK_NAME}'\n    config: {{configPath: {str(hooks)!r}}}\n"
     )
-    assert adapter.detect_hooks(root) == "installed"
-    # The doctor command may run through python3 while the scanner runs through
-    # python, both pointing at the same interpreter in a virtual environment.
-    alternative = build_hooks()
-    for event in EVENTS:
-        alternative["hooks"][event][0]["hooks"][0]["command"] = (
-            f"/opt/test-venv/bin/python3 -m {MODULE} --harness deepseek --dsh-home {root}"
-        )
-    hooks.write_text(json.dumps(alternative))
-    assert adapter.detect_hooks(root) == "installed"
-    scoped = build_hooks()
-    scoped["hooks"]["Stop"][0]["matcher"] = "some-tool-only"
-    hooks.write_text(json.dumps(scoped))
     assert adapter.detect_hooks(root) == "partial"
-    hooks.write_text(json.dumps({"hooks": {"Stop": []}}))
+    assert adapter.patch_hooks(dry_run=False)
+    assert adapter.detect_hooks(root) == "installed"
+    assert [row["id"] for row in read_entries(patch)] == [TELEMETRY_ID]
+    assert "hooks" not in json.loads(hooks.read_text())
+    assert not adapter.patch_hooks(dry_run=False)
+
+
+def test_native_plugin_does_not_follow_user_symlink_outside_dsh_home(installed, tmp_path):
+    adapter, root = installed
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    root.mkdir()
+    (root / "observal").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match="unmanaged DeepSeek plugin"):
+        adapter.patch_hooks(dry_run=False)
+    assert not list(outside.iterdir())
+    assert not (root / "cordis.patch.yml").exists()
+
+
+def test_native_plugin_upgrade_does_not_back_up_unmodified_owned_version(installed):
+    from hashlib import sha256
+
+    adapter, root = installed
+    adapter.patch_hooks(dry_run=False)
+    path = deepseek_plugin.plugin_path(root)
+    old_source = "// earlier Observal release\n"
+    path.write_text(old_source)
+    manifest = path.with_name(".collector.json")
+    manifest.write_text(json.dumps({"managed": True, "sha256": sha256(old_source.encode()).hexdigest()}))
+    assert adapter.patch_hooks(dry_run=False)
+    assert adapter.detect_hooks(root) == "installed"
+    assert not path.with_name("collector.mjs.bak").exists()
+
+
+def test_native_plugin_needs_matching_file_and_runtime_config(installed):
+    adapter, root = installed
+    assert adapter.detect_hooks(root) == "missing"
+    assert adapter.patch_hooks(dry_run=False)
+    assert adapter.detect_hooks(root) == "installed"
+    plugin = deepseek_plugin.plugin_path(root)
+    assert "session/event" in plugin.read_text()
+    plugin.write_text("// modified by user\n")
     assert adapter.detect_hooks(root) == "partial"
+    assert adapter.patch_hooks(dry_run=False)
+    assert adapter.detect_hooks(root) == "installed"
+    assert (plugin.parent / "collector.mjs.bak").read_text() == "// modified by user\n"
+    rows = read_entries(root / "cordis.patch.yml")
+    assert rows[0]["name"] == str(plugin)
+    assert rows[0]["config"]["dshHome"] == str(root)
+    assert adapter.cleanup_hooks(dry_run=False)
+    assert adapter.detect_hooks(root) != "installed"
 
 
 def test_runtime_home_and_bundled_skill_plan(installed, tmp_path):

@@ -645,7 +645,7 @@ def _check_goose(issues: list, warnings: list):
 
 
 def _check_deepseek(issues: list, warnings: list) -> None:
-    """Diagnose both the active user patch bridge and its command rules."""
+    """Diagnose the in-process DeepSeek session collector."""
     ensure_loaded()
     adapter = get_adapter("deepseek")
     if not adapter.is_installed():
@@ -654,8 +654,8 @@ def _check_deepseek(issues: list, warnings: list) -> None:
     status = adapter.detect_hooks(adapter.resolve_home_dir())
     if status != "installed":
         warnings.append(
-            "DeepSeek user-scope hook bridge or session push commands are missing/stale. "
-            "Run `observal doctor patch --harness deepseek`; the global patch activates only from DSH_HOME."
+            "DeepSeek's native Observal session plugin is missing/stale. "
+            "Run `observal doctor patch --harness deepseek` to install it in DSH_HOME."
         )
 
 

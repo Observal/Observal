@@ -40,7 +40,7 @@ def reconcile(
     dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview without network or cursor changes"),
     output: OutputMode = typer.Option("table", "--output", "-o"),
 ):
-    """Backfill local session records missed by automatic hook delivery.
+    """Backfill local session records missed by automatic delivery (including DeepSeek's native plugin).
 
     Examples:
       observal reconcile --output json
@@ -307,7 +307,7 @@ def register_reconcile(app: typer.Typer) -> None:
     app.command(
         "reconcile",
         help=(
-            "Backfill local session records missed by automatic hook delivery\n\n"
+            "Backfill local session records missed by automatic delivery (including DeepSeek's native plugin)\n\n"
             "Examples:\n"
             "  observal reconcile --output json\n"
             "  observal reconcile --harness kiro --since 24 --output json\n"

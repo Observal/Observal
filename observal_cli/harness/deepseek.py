@@ -8,9 +8,11 @@ from __future__ import annotations
 import json
 import re
 import shlex
+import sys
 from pathlib import Path
 from typing import Any
 
+from observal_cli import deepseek_plugin
 from observal_cli.harness import (
     DiscoveredMcp,
     DiscoveredSkill,
@@ -21,15 +23,15 @@ from observal_cli.harness import (
 )
 from observal_cli.harness.base import BaseAdapter
 from observal_cli.harness.protocol import BundledSkillPlan
-from observal_cli.harness_specs.deepseek_hooks_spec import (
-    EVENTS,
-    MODULE,
-    build_hooks,
-    hook_command,
-    is_session_push_command,
-)
+from observal_cli.harness_specs.deepseek_hooks_spec import EVENTS, is_session_push_command
 from observal_cli.sessions.deepseek import resolve_dsh_home
-from observal_cli.shared.deepseek_config import HOOK_ID, HOOK_NAME, MCP_NAME, edit_owned_rows, read_entries
+from observal_cli.shared.deepseek_config import (
+    HOOK_ID,
+    MCP_NAME,
+    TELEMETRY_ID,
+    edit_owned_rows,
+    read_entries,
+)
 from observal_cli.shared.utils import atomic_write, parse_frontmatter_field, sanitize_name
 
 
@@ -102,9 +104,22 @@ class DeepSeekAdapter(BaseAdapter):
         existed = path.exists()
         previous = path.read_text(encoding="utf-8") if existed else ""
         patches = self._resolve_bridge_path(content, path.parent)
-        merged = edit_owned_rows(previous, patches)
+        if not any(row.get("id") == TELEMETRY_ID for patch in patches for row in patch["insert"]):
+            patches.append({"insert": [self._collector_row(path.parent)]})
+        hooks = path.parent / "observal" / "hooks.json"
+        old_hooks = json.loads(hooks.read_text()) if hooks.is_file() else {}
+        clean_hooks = self._merge_hooks(old_hooks, {"hooks": {}})
+        required = bool(clean_hooks.get("hooks")) or any(
+            row.get("id") == HOOK_ID for patch in patches for row in patch["insert"]
+        )
+        if required and not any(row.get("id") == HOOK_ID for patch in patches for row in patch["insert"]):
+            patches.append({"insert": [self._bridge_row(path.parent)]})
+        merged = edit_owned_rows(previous, patches, target_ids=set() if required else {HOOK_ID})
+        deepseek_plugin.install(home=path.parent)
         if merged != previous:
             _atomic_write_text(path, merged)
+        if clean_hooks != old_hooks:
+            atomic_write(hooks, json.dumps(clean_hooks, indent=2) + "\n")
         return "merged" if existed else "created"
 
     def write_hook_config(self, path: Path, content: Any, *, merge: bool = False) -> str:
@@ -120,8 +135,24 @@ class DeepSeekAdapter(BaseAdapter):
         return "merged" if existed else "created"
 
     @staticmethod
+    def _bridge_row(home: Path) -> dict:
+        return {
+            "id": HOOK_ID,
+            "name": "@deepseek-ai/dsh-hooks-claude-code",
+            "config": {"configPath": str(home / "observal" / "hooks.json")},
+        }
+
+    @staticmethod
+    def _collector_row(home: Path) -> dict:
+        return {
+            "id": TELEMETRY_ID,
+            "name": str(deepseek_plugin.plugin_path(home)),
+            "config": {"pythonPath": sys.executable, "dshHome": str(home)},
+        }
+
+    @staticmethod
     def _resolve_bridge_path(content: list[dict], home: Path) -> list[dict]:
-        """Replace only the generated hook bridge placeholder, not foreign values."""
+        """Resolve generated Cordis paths and interpreter without changing foreign rows."""
         import copy
 
         patches = copy.deepcopy(content)
@@ -136,6 +167,13 @@ class DeepSeekAdapter(BaseAdapter):
                     if not isinstance(config, dict) or config.get("configPath") != "~/.dsh/observal/hooks.json":
                         raise ValueError("invalid DeepSeek hook bridge path")
                     config["configPath"] = str(home / "observal" / "hooks.json")
+                elif row.get("id") == TELEMETRY_ID:
+                    if row.get("name") != "~/.dsh/observal/collector.mjs" or row.get("config") != {
+                        "pythonPath": "<runtime-python>",
+                        "dshHome": "<runtime-dsh-home>",
+                    }:
+                        raise ValueError("invalid DeepSeek collector placeholder")
+                    row.update(DeepSeekAdapter._collector_row(home))
         return patches
 
     def extract_mcp_servers(self, config: dict | list) -> dict:
@@ -244,10 +282,11 @@ class DeepSeekAdapter(BaseAdapter):
             )
 
     def get_hook_spec(self) -> HookSpec:
-        return HookSpec(events=list(EVENTS), format="command", markers=[MODULE])
+        return HookSpec(events=list(EVENTS), format="command", markers=[TELEMETRY_ID])
 
     def generate_hook_config(self, observal_url: str, api_key: str, agent_id: str | None = None) -> dict:
-        return build_hooks()
+        """Telemetry uses the native plugin, not a command-hook JSON config."""
+        return {"hooks": {}}
 
     def rewrite_hooks(self, content: dict, agent_id: str) -> dict:
         """Resolve generated commands to the local interpreter and runtime script paths."""
@@ -263,64 +302,63 @@ class DeepSeekAdapter(BaseAdapter):
                                 continue
                             command = handler.get("command")
                             if is_session_push_command(command):
-                                handler["command"] = hook_command()
-                            elif isinstance(command, str) and command.startswith("~/.dsh/observal/scripts/"):
+                                raise ValueError("DeepSeek session-push command hooks are no longer supported")
+                            if isinstance(command, str) and command.startswith("~/.dsh/observal/scripts/"):
                                 path = self.resolve_install_path(command, Path.cwd())
                                 handler["command"] = shlex.quote(str(path))
         return rewritten
 
     def detect_hooks(self, config_dir: Path) -> str:
         root = config_dir if config_dir.name == ".dsh" or config_dir == resolve_dsh_home() else resolve_dsh_home()
+        patch = root / "cordis.patch.yml"
+        hooks = root / "observal" / "hooks.json"
         try:
-            entries = read_entries(root / "cordis.patch.yml")
-            bridge = any(
-                entry.get("id") == HOOK_ID
-                and entry.get("name") == HOOK_NAME
+            entries = read_entries(patch)
+            collector = self._collector_row(root)
+            installed = any(
+                entry.get("id") == TELEMETRY_ID
+                and entry.get("name") == collector["name"]
+                and entry.get("config") == collector["config"]
                 and entry.get("disabled") is not True
-                and isinstance(entry.get("config"), dict)
-                and entry["config"].get("configPath") == str(root / "observal" / "hooks.json")
                 for entry in entries
             )
-            hooks = json.loads((root / "observal" / "hooks.json").read_text())
-            groups = hooks.get("hooks", {})
-            matched = (
-                sum(
-                    any(
-                        isinstance(rule, dict)
-                        and not rule.get("matcher")
-                        and rule.get("disabled") is not True
-                        and any(
-                            isinstance(handler, dict)
-                            and handler.get("type") == "command"
-                            and is_session_push_command(handler.get("command"))
-                            for handler in rule.get("hooks", [])
-                        )
-                        for rule in groups.get(event, [])
-                    )
-                    for event in EVENTS
-                )
-                if isinstance(groups, dict)
-                else 0
+            old_hooks = json.loads(hooks.read_text()) if hooks.is_file() else {}
+            clean_hooks = self._merge_hooks(old_hooks, {"hooks": {}})
+            bridge = self._bridge_row(root)
+            bridge_installed = any(
+                entry.get("id") == HOOK_ID
+                and entry.get("name") == bridge["name"]
+                and entry.get("config") == bridge["config"]
+                and entry.get("disabled") is not True
+                for entry in entries
             )
+            bridge_needed = bool(clean_hooks.get("hooks"))
         except (OSError, ValueError, TypeError, AttributeError):
-            return (
-                "partial"
-                if (root / "cordis.patch.yml").exists() or (root / "observal" / "hooks.json").exists()
-                else "missing"
-            )
-        return "installed" if bridge and matched == len(EVENTS) else "partial" if bridge or matched else "missing"
+            return "partial" if patch.exists() or hooks.exists() else "missing"
+        if (
+            installed
+            and deepseek_plugin.status(root) == "current"
+            and old_hooks == clean_hooks
+            and bridge_installed == bridge_needed
+        ):
+            return "installed"
+        return "partial" if installed or patch.exists() or hooks.exists() else "missing"
 
     def patch_hooks(self, dry_run: bool) -> bool:
         root = resolve_dsh_home()
         patch = root / "cordis.patch.yml"
         hooks = root / "observal" / "hooks.json"
         current = patch.read_text(encoding="utf-8") if patch.is_file() else ""
-        bridge = [{"insert": [{"id": HOOK_ID, "name": HOOK_NAME, "config": {"configPath": str(hooks)}}]}]
-        updated = edit_owned_rows(current, bridge)
         previous = json.loads(hooks.read_text()) if hooks.is_file() else {}
-        desired = self._merge_hooks(previous, build_hooks())
-        changed = updated != current or desired != previous
+        desired = self._merge_hooks(previous, {"hooks": {}})
+        required = bool(desired.get("hooks"))
+        incoming = [{"insert": [self._collector_row(root)]}]
+        if required:
+            incoming.append({"insert": [self._bridge_row(root)]})
+        updated = edit_owned_rows(current, incoming, target_ids=set() if required else {HOOK_ID})
+        changed = updated != current or desired != previous or deepseek_plugin.status(root) != "current"
         if changed and not dry_run:
+            deepseek_plugin.install(home=root)
             if updated != current:
                 from observal_cli.cmd_pull import _atomic_write_text
 
@@ -334,11 +372,13 @@ class DeepSeekAdapter(BaseAdapter):
         patch = root / "cordis.patch.yml"
         hooks = root / "observal" / "hooks.json"
         current = patch.read_text(encoding="utf-8") if patch.is_file() else ""
-        # Only the hook bridge is removed: MCP plugins must survive doctor cleanup.
-        updated = edit_owned_rows(current, [], target_ids={HOOK_ID})
         previous = json.loads(hooks.read_text()) if hooks.is_file() else {}
         desired = self._merge_hooks(previous, {"hooks": {}})
-        changed = updated != current or desired != previous
+        ids = {TELEMETRY_ID}
+        if not desired.get("hooks"):
+            ids.add(HOOK_ID)
+        updated = edit_owned_rows(current, [], target_ids=ids)
+        changed = updated != current or desired != previous or deepseek_plugin.status(root) in ("current", "stale")
         if changed and not dry_run:
             if updated != current:
                 from observal_cli.cmd_pull import _atomic_write_text
@@ -346,6 +386,7 @@ class DeepSeekAdapter(BaseAdapter):
                 _atomic_write_text(patch, updated)
             if desired != previous:
                 atomic_write(hooks, json.dumps(desired, indent=2) + "\n")
+            deepseek_plugin.remove(home=root)
         return changed
 
     @staticmethod

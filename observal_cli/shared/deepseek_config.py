@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 HOOK_ID = "observal-hooks"
 MCP_PREFIX = "observal-mcp-"
 HOOK_NAME = "@deepseek-ai/dsh-hooks-claude-code"
+TELEMETRY_ID = "observal-session-collector"
 MCP_NAME = "@deepseek-ai/dsh-mcp-client"
 
 
@@ -110,6 +111,12 @@ def _owned(fields: dict[str, Node]) -> bool:
         if name != HOOK_NAME:
             raise ValueError("Observal hook ID belongs to another plugin")
         return True
+    if identifier == TELEMETRY_ID:
+        # This is a local file, not an npm module. Refuse a foreign row that
+        # happens to reuse the Observal ID rather than replacing its config.
+        if not name or not name.endswith("/observal/collector.mjs"):
+            raise ValueError("Observal collector ID belongs to another plugin")
+        return True
     if identifier and identifier.startswith(MCP_PREFIX):
         if name != MCP_NAME:
             raise ValueError("Observal MCP ID belongs to another plugin")
@@ -164,7 +171,7 @@ def edit_owned_rows(
         patch_ids = [_literal(_mapping(item).get("id")) for item in inserts.value]
         if all(
             item_id in requested
-            or (remove_all and (item_id == HOOK_ID or bool(item_id and item_id.startswith(MCP_PREFIX))))
+            or (remove_all and (item_id in (HOOK_ID, TELEMETRY_ID) or bool(item_id and item_id.startswith(MCP_PREFIX))))
             for item_id in patch_ids
         ):
             spans.append(_line_span(text, patch))
@@ -181,10 +188,16 @@ def edit_owned_rows(
             if not isinstance(row, dict) or not isinstance(row.get("id"), str):
                 raise ValueError("invalid generated Cordis plugin")
             identifier = row["id"]
-            if identifier in incoming_ids or (not identifier.startswith(MCP_PREFIX) and identifier != HOOK_ID):
+            if identifier in incoming_ids or (
+                not identifier.startswith(MCP_PREFIX) and identifier not in (HOOK_ID, TELEMETRY_ID)
+            ):
                 raise ValueError("duplicate or foreign generated plugin ID")
             incoming_ids.add(identifier)
-            if row.get("name") != (HOOK_NAME if identifier == HOOK_ID else MCP_NAME):
+            expected = HOOK_NAME if identifier == HOOK_ID else MCP_NAME
+            if identifier == TELEMETRY_ID:
+                if not isinstance(row.get("name"), str) or not row["name"].endswith("/observal/collector.mjs"):
+                    raise ValueError("invalid generated collector path")
+            elif row.get("name") != expected:
                 raise ValueError("generated plugin name does not match its ID")
             if identifier in identifiers and not any(
                 _literal(fields.get("id")) == identifier and _owned(fields) for _, _, _, fields in rows

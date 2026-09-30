@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 import uuid
 from types import SimpleNamespace
@@ -83,12 +82,13 @@ def test_registry_stdio_and_direct_install_are_native():
     config = generate_agent_config(
         instance, "deepseek", mcp_listings={item.id: item}, env_values={str(item.id): {"TOKEN": "secret"}}
     )
-    hook, server = entries(config)
-    assert hook == {
-        "id": "observal-hooks",
-        "name": "@deepseek-ai/dsh-hooks-claude-code",
-        "config": {"configPath": "~/.dsh/observal/hooks.json"},
+    collector, server = entries(config)
+    assert collector == {
+        "id": "observal-session-collector",
+        "name": "~/.dsh/observal/collector.mjs",
+        "config": {"pythonPath": "<runtime-python>", "dshHome": "<runtime-dsh-home>"},
     }
+    assert "hooks_config" not in config
     assert server == {
         "id": "observal-mcp-registry-server",
         "name": "@deepseek-ai/dsh-mcp-client",
@@ -206,21 +206,12 @@ def test_on_demand_skill_and_user_scoped_activation(scope, path):
     assert config["mcp_config"]["path"] == "~/.dsh/cordis.patch.yml"
     assert entries(config) == [
         {
-            "id": "observal-hooks",
-            "name": "@deepseek-ai/dsh-hooks-claude-code",
-            "config": {"configPath": "~/.dsh/observal/hooks.json"},
+            "id": "observal-session-collector",
+            "name": "~/.dsh/observal/collector.mjs",
+            "config": {"pythonPath": "<runtime-python>", "dshHome": "<runtime-dsh-home>"},
         }
     ]
-    assert config["hooks_config"]["path"] == "~/.dsh/observal/hooks.json"
-    assert config["hooks_config"]["merge"] is True
-    assert set(config["hooks_config"]["content"]["hooks"]) == {
-        "PreToolUse",
-        "PostToolUse",
-        "Stop",
-        "SessionStart",
-        "UserPromptSubmit",
-        "SubagentStop",
-    }
+    assert "hooks_config" not in config
     assert all("model" not in row["config"] for row in entries(config))
     assert "explicitly" in " ".join(config["_warnings"])
     if scope == "project":
@@ -241,15 +232,8 @@ def test_command_hook_components_are_nested_under_bridge_rules():
         script_content=None,
     )
     config = generate_agent_config(agent(components=[comp]), "deepseek", hook_listings={item_id: hook})
+    assert [row["id"] for row in entries(config)] == ["observal-session-collector", "observal-hooks"]
     assert config["hooks_config"]["content"]["hooks"]["PreToolUse"] == [
-        {
-            "hooks": [
-                {
-                    "type": "command",
-                    "command": "python3 -m observal_cli.hooks.session_push --harness deepseek",
-                }
-            ]
-        },
         {"hooks": [{"type": "command", "command": "run-check"}]},
     ]
     adapter = get_adapter("deepseek")
@@ -327,11 +311,9 @@ async def test_preview_and_archived_generated_files_are_yaml_sequences():
     assert response.status_code == 200
     files = response.json()["configs"]["deepseek"]
     patches = yaml.safe_load(files["~/.dsh/cordis.patch.yml"])
-    assert patches[0]["insert"][0]["id"] == "observal-hooks"
+    assert patches[0]["insert"][0]["id"] == "observal-session-collector"
     assert "'insert':" not in files["~/.dsh/cordis.patch.yml"]
     assert files["~/.dsh/skills/observal-example/SKILL.md"].startswith("---\n")
     archived = await generate_all_harness_configs(SimpleNamespace(supported_harnesses=["deepseek"]), agent())
     assert yaml.safe_load(archived["deepseek"]["files"]["~/.dsh/cordis.patch.yml"]) == patches
-    assert json.loads(archived["deepseek"]["files"]["~/.dsh/observal/hooks.json"]) == json.loads(
-        files["~/.dsh/observal/hooks.json"]
-    )
+    assert "~/.dsh/observal/hooks.json" not in archived["deepseek"]["files"]

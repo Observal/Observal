@@ -70,6 +70,7 @@ packages = ["observal_cli", "packages/observal-shared/observal_shared"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "packages/pi-extension/extensions/observal.ts" = "observal_cli/_bundled/observal.ts"
+"packages/deepseek-plugin/observal.mjs" = "observal_cli/_bundled/deepseek.mjs"
 
 # ── Ruff ─────────────────────────────────────────────────
 

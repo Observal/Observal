@@ -22,7 +22,11 @@ _HOOK_PLUGIN = {
     "config": {"configPath": _HOOK_PATH},
 }
 _MCP_PLUGIN = "@deepseek-ai/dsh-mcp-client"
-_PUSH_EVENTS = ("PreToolUse", "PostToolUse", "Stop", "SessionStart", "UserPromptSubmit", "SubagentStop")
+_COLLECTOR = {
+    "id": "observal-session-collector",
+    "name": "~/.dsh/observal/collector.mjs",
+    "config": {"pythonPath": "<runtime-python>", "dshHome": "<runtime-dsh-home>"},
+}
 _VALID_NAME = re.compile(r"[A-Za-z0-9_-]{1,32}\Z")
 
 
@@ -64,10 +68,12 @@ def _mcp_plugin(name: str, entry: dict) -> dict:
     return {"id": f"observal-mcp-{server_name}", "name": _MCP_PLUGIN, "config": config}
 
 
-def _patches(entries: dict[str, dict]) -> list[dict]:
+def _patches(entries: dict[str, dict], *, with_hooks: bool = False) -> list[dict]:
     """Keep each owned plugin in its own insert action for lossless client merging."""
-    patches = [{"insert": [dict(_HOOK_PLUGIN)]}]
-    used = {"observal-hooks"}
+    patches = [{"insert": [dict(_COLLECTOR)]}]
+    if with_hooks:
+        patches.append({"insert": [dict(_HOOK_PLUGIN)]})
+    used = {"observal-session-collector", "observal-hooks"}
     for name, entry in entries.items():
         plugin = _mcp_plugin(name, entry)
         if plugin["id"] in used:
@@ -75,12 +81,6 @@ def _patches(entries: dict[str, dict]) -> list[dict]:
         used.add(plugin["id"])
         patches.append({"insert": [plugin]})
     return patches
-
-
-def _hooks_config(platform: str = "") -> dict:
-    executable = "python" if platform == "win32" else "python3"
-    command = f"{executable} -m observal_cli.hooks.session_push --harness deepseek"
-    return {"hooks": {event: [{"hooks": [{"type": "command", "command": command}]}] for event in _PUSH_EVENTS}}
 
 
 class DeepSeekAdapter(BaseHarnessAdapter):
@@ -137,10 +137,10 @@ class DeepSeekAdapter(BaseHarnessAdapter):
         event = str(hook_listing.event)
         if event not in HARNESS_REGISTRY["deepseek"]["hook_events_map"]:
             raise ValueError(f"Unsupported DeepSeek hook event: {event}")
-        command = (
-            f"{'python' if platform == 'win32' else 'python3'} -m observal_cli.hooks.session_push --harness deepseek"
-        )
-        return self.format_hook_install_snippet(event, "command", command, None)
+        return {
+            "_note": "DeepSeek telemetry is collected by Observal's native plugin. "
+            "Run `observal doctor patch --harness deepseek` to install it; no command hook is needed."
+        }
 
     def format_config(self, ctx: ConfigContext) -> dict:
         spec = HARNESS_REGISTRY["deepseek"]
@@ -155,7 +155,7 @@ class DeepSeekAdapter(BaseHarnessAdapter):
             {"name": skill_name, "description": description}, sort_keys=False, allow_unicode=True
         )
         content = f"---\n{frontmatter}---\n\n{ctx.rules_content.rstrip()}\n"
-        hooks_content = _hooks_config(ctx.platform)
+        hooks_content: dict = {"hooks": {}}
         for hook in ctx.hook_configs:
             if hook.get("handler_type", "command") != "command":
                 raise ValueError("DeepSeek's Claude-compatible hook bridge supports command hooks only")
@@ -183,10 +183,14 @@ class DeepSeekAdapter(BaseHarnessAdapter):
 
         result: dict = {
             "agent_profile": {"path": spec["agent_profile"][scope].format(name=ctx.safe_name), "content": content},
-            "mcp_config": {"path": spec["mcp_config"]["user"], "content": _patches(mcp_configs)},
-            "hooks_config": {"path": spec["hooks"]["user"], "content": hooks_content, "merge": True},
+            "mcp_config": {
+                "path": spec["mcp_config"]["user"],
+                "content": _patches(mcp_configs, with_hooks=bool(hooks_content["hooks"])),
+            },
             "scope": scope,
         }
+        if hooks_content["hooks"]:
+            result["hooks_config"] = {"path": spec["hooks"]["user"], "content": hooks_content, "merge": True}
         hook_files = _collect_hook_script_files(ctx.hook_configs, ctx.hook_listings, "deepseek")
         if hook_files:
             result["hook_files"] = hook_files

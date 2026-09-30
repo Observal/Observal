@@ -13,8 +13,7 @@ import pytest
 from observal_cli.cmd_pull import write_install_snippet
 from observal_cli.errors import CliError
 from observal_cli.harness.deepseek import DeepSeekAdapter
-from observal_cli.harness_specs.deepseek_hooks_spec import EVENTS
-from observal_cli.shared.deepseek_config import HOOK_ID, HOOK_NAME, MCP_NAME, read_entries
+from observal_cli.shared.deepseek_config import HOOK_ID, HOOK_NAME, MCP_NAME, TELEMETRY_ID, read_entries
 
 
 def _snippet(scope):
@@ -45,25 +44,20 @@ def _snippet(scope):
                         }
                     ]
                 },
+                {
+                    "insert": [
+                        {
+                            "id": TELEMETRY_ID,
+                            "name": "~/.dsh/observal/collector.mjs",
+                            "config": {"pythonPath": "<runtime-python>", "dshHome": "<runtime-dsh-home>"},
+                        }
+                    ]
+                },
             ],
         },
         "hooks_config": {
             "path": "~/.dsh/observal/hooks.json",
-            "content": {
-                "hooks": {
-                    event: [
-                        {
-                            "hooks": [
-                                {
-                                    "type": "command",
-                                    "command": "python3 -m observal_cli.hooks.session_push --harness deepseek",
-                                }
-                            ]
-                        }
-                    ]
-                    for event in EVENTS
-                }
-            },
+            "content": {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "agent-hook"}]}]}},
             "merge": True,
         },
         "agent_profile": {
@@ -118,8 +112,11 @@ def test_pull_mixed_scope_dry_run_and_native_write(tmp_path, monkeypatch, scope)
     assert adapter.detect_hooks(root) == "installed"
     assert len([row for row in read_entries(patch) if row["id"] == "observal-mcp-tools"]) == 1
     installed_hooks = json.loads(hooks.read_text())["hooks"]
-    assert len(installed_hooks) == len(EVENTS)
-    assert installed_hooks["Stop"][0]["hooks"][0]["command"] == "foreign"
+    assert list(installed_hooks) == ["Stop"]
+    assert [rule["hooks"][0]["command"] for rule in installed_hooks["Stop"]] == ["foreign", "agent-hook"]
+    assert next(row for row in read_entries(patch) if row["id"] == TELEMETRY_ID)["name"] == str(
+        root / "observal" / "collector.mjs"
+    )
     write_install_snippet(
         snippet,
         harness="deepseek",
@@ -158,7 +155,7 @@ def test_server_generated_config_installs_without_format_translation(tmp_path, m
         agent_id=agent.id,
         is_user_scope=False,
     )
-    assert not failed and len(written) == 3
+    assert not failed and len(written) == 2
     assert adapter.detect_hooks(root) == "installed"
     assert [(mcp.name, mcp.command) for mcp in adapter.scan_home().mcps] == [("tools", "node")]
     skill = project / ".dsh/skills/observal-reviewer/SKILL.md"
@@ -174,7 +171,7 @@ def test_hook_scripts_follow_global_bridge_location(tmp_path, monkeypatch, scope
     monkeypatch.setenv("DSH_HOME", str(root))
     snippet = _snippet(scope)
     raw_path = "~/.dsh/observal/scripts/check.sh"
-    snippet["hooks_config"]["content"]["hooks"]["PreToolUse"].append(
+    snippet["hooks_config"]["content"]["hooks"].setdefault("PreToolUse", []).append(
         {"hooks": [{"type": "command", "command": raw_path}]}
     )
     snippet["hook_files"] = [{"path": raw_path, "content": "#!/bin/sh\necho checked\n", "executable": True}]

@@ -508,3 +508,31 @@ def test_literal_extra_root_is_scanned_without_evaluating_configuration(
     assert deepseek.discover_session_sources(tmp_path) == []
     assert [source.path for source in deepseek.discover_session_sources(tmp_path, roots=(root,))] == [target]
     assert deepseek.resolve_session_source({"session_id": "custom"}, tmp_path, roots=(root,)).path == target
+
+
+def test_native_collector_delivers_flushed_session_and_recovers_only_old_sessions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from observal_cli.sessions import deepseek_collector
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("DSH_HOME", raising=False)
+    current = _session(tmp_path, "live", records=(_line({"type": "turn/end"}),))
+    stale = _session(tmp_path, "stale", records=(_line({"type": "turn/end"}),))
+    os.utime(stale, (stale.stat().st_atime - 300, stale.stat().st_mtime - 300))
+    delivered = []
+    monkeypatch.setattr(deepseek_collector, "load_config", lambda: _config())
+    monkeypatch.setattr(
+        deepseek_collector,
+        "drain_session_source",
+        lambda source, config, **kwargs: delivered.append((source.session_id, kwargs)) or True,
+    )
+    assert deepseek_collector.main(["--session-id", "live", "--cwd", "/work/tree"]) == 0
+    assert delivered[0] == (
+        "live",
+        {"hook_event": "DeepSeekSessionFlush", "final": False, "spool_only": False, "recover_from_server": False},
+    )
+    assert deepseek_collector.main(["--recover"]) == 0
+    assert [session_id for session_id, _ in delivered] == ["live", "stale"]
+    assert current.exists()
+    assert deepseek_collector.main(["--session-id", "nonexistent"]) == 1

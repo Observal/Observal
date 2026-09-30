@@ -77,7 +77,7 @@ observal doctor cleanup --dry-run --output json
 observal doctor cleanup --yes --output json
 ```
 
-Patch requires at least one harness or `--all-harnesses`. Cleanup removes only Observal-managed artifacts. JSON cleanup requires confirmation. For Pi, patch installs the bundled extension directly. For `--harness deepseek`, patch installs both the Claude-compatible hook bridge in `$DSH_HOME/cordis.patch.yml` and its JSON command rules; writing the JSON alone does not activate telemetry. `DSH_HOME` defaults to `~/.dsh`.
+Patch requires at least one harness or `--all-harnesses`. Cleanup removes only Observal-managed artifacts. JSON cleanup requires confirmation. For Pi, patch installs the bundled extension directly. For `--harness deepseek`, patch installs Observal's bundled in-process Cordis session plugin into `$DSH_HOME/observal/collector.mjs` and activates it from `$DSH_HOME/cordis.patch.yml`. It removes obsolete Observal command-hook telemetry while preserving unrelated hook commands. No DeepSeek source checkout or build is needed; `DSH_HOME` defaults to `~/.dsh`.
 
 Support bundles are sensitive diagnostic artifacts:
 
