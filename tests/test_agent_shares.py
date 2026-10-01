@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, Response
 from pydantic import ValidationError
 from starlette.requests import Request
 
@@ -105,12 +105,14 @@ async def test_recipient_cannot_enumerate_inaccessible_manifest_items():
     creator = SimpleNamespace(username="creator")
     db = AsyncMock()
     db.get.return_value = creator
+    http_response = Response()
     with (
         patch("api.routes.agent_shares._load_manifest", new=AsyncMock(return_value=manifest)),
         patch("api.routes.agent_shares._load_agent", new=AsyncMock(return_value=None)),
     ):
-        response = await get_agent_share.__wrapped__(TOKEN, _request(), db, current_user)
+        response = await get_agent_share.__wrapped__(TOKEN, _request(), http_response, db, current_user)
 
     assert response.created_by_username == "creator"
     assert response.items == []
+    assert http_response.headers["cache-control"] == "no-store"
     assert response.unavailable_count == 1

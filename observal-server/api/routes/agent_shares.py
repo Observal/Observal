@@ -8,7 +8,7 @@ import re
 import secrets
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -123,10 +123,12 @@ async def create_agent_share(
 async def get_agent_share(
     token: str,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ) -> AgentShareResponse:
     """Return only items the authenticated recipient can currently access."""
+    response.headers["Cache-Control"] = "no-store"
     manifest = await _load_manifest(token, db)
     creator = await db.get(User, manifest.created_by)
     visible: list[SharedAgentSummary] = []

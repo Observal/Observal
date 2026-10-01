@@ -3,8 +3,8 @@
 
 """Add expiring Agent share manifests.
 
-Revision ID: 027_agent_share_manifests
-Revises: 026_usage_ping_state
+Revision ID: 030_agent_share_manifests
+Revises: 029_recommended_flag
 """
 
 import sqlalchemy as sa
@@ -12,8 +12,8 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "027_agent_share_manifests"
-down_revision = "026_usage_ping_state"
+revision = "030_agent_share_manifests"
+down_revision = "029_recommended_flag"
 branch_labels = None
 depends_on = None
 
