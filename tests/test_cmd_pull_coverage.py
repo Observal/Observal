@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import stat
 import subprocess
 import sys
@@ -77,7 +78,11 @@ def boundaries(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> SimpleNamespa
     import observal_cli.layer as layer
     import observal_cli.lockfile as lockfile
     import observal_cli.model_catalog as model_catalog
+    from observal_cli.shared import launcher
 
+    # Launcher resolution spawns an isolated interpreter; pin it to an installed CLI
+    # so it never runs inside a test's mocked subprocess boundary.
+    monkeypatch.setattr(launcher, "importable_in_isolation", lambda: True)
     adapter = MagicMock(name="adapter")
     adapter.saved_model.return_value = None
     adapter.rewrite_hooks.side_effect = lambda content, agent_id: content
@@ -1026,7 +1031,8 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
     assert json.loads(hooks_path.read_text()) == {
         "hooks": {
             "old": [{"command": "echo user"}],
-            "new": [{"command": f"{sys.executable} -m observal_cli.hooks.session_push"}],
+            # Rewritten to this CLI's interpreter, with -P so the project cannot shadow observal_cli.
+            "new": [{"command": f"{shlex.quote(sys.executable)} -I -m observal_cli.hooks.session_push"}],
             "adapter": [{"agent_id": "agent-uuid"}],
         },
         "keep": True,

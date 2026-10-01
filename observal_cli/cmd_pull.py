@@ -724,6 +724,87 @@ def _installed_components(lock: dict, planned: list[dict]) -> list[dict]:
     ]
 
 
+def _record_hook_bindings(
+    snippet: dict, lock_components: list[dict], target_dir: Path, is_user_scope: bool
+) -> list[str]:
+    """Record where each pinned hook was written, so a later snapshot can verify it.
+
+    ``hook_command`` and ``hook_event`` are exactly what the agent file contains
+    (the harness records the command verbatim when the hook runs). The agent
+    file and script are stored as layer display paths; ``hook_integrity`` is the
+    written script's fingerprint, or the command's when there is no script.
+    """
+    import hashlib
+
+    from observal_cli.layer import skill_file_fingerprint
+
+    bindings = {b.get("name"): b for b in snippet.get("hook_bindings") or [] if isinstance(b, dict)}
+    profile = snippet.get("agent_profile") or {}
+    profile_path = profile.get("path") if isinstance(profile, dict) else None
+    config = ""
+    if isinstance(profile_path, str):
+        config = (
+            f"user:{profile_path[len('~/.claude/') :]}"
+            if profile_path.startswith("~/.claude/")
+            else f"project:{profile_path}"
+        )
+    warnings: list[str] = []
+    for component in lock_components:
+        if component.get("type") != "hook" or not component.get("local_name"):
+            continue
+        binding = bindings.get(component["local_name"])
+        if not binding or not config:
+            continue  # HTTP or unbound hooks stay unverified
+        script = binding.get("script")
+        if script:
+            fingerprint = skill_file_fingerprint(_resolve_path(script, target_dir, allow_home=is_user_scope))
+            if not fingerprint:
+                warnings.append("Installed hook script could not be fingerprinted; its presence will be unverified.")
+                continue
+        else:
+            fingerprint = f"sha256-{hashlib.sha256(binding['command'].encode()).hexdigest()}"
+        component.update(
+            hook_event=binding["event"],
+            hook_command=binding["command"],
+            hook_agent=binding.get("agent") or "",
+            hook_config=config,
+            hook_script=f"project:{script}" if script else "",
+            hook_integrity=fingerprint,
+        )
+    return warnings
+
+
+def _fingerprint_written_skills(
+    snippet: dict, lock_components: list[dict], target_dir: Path, is_user_scope: bool
+) -> list[str]:
+    """Record ``skill_integrity`` for each pinned skill from the SKILL.md this pull wrote.
+
+    The written file (a Pi profile's copy, for example) is what a later session
+    snapshot must match before the skill counts as verified-present. A skill
+    whose file cannot be read is left without a fingerprint, so it stays
+    unverified rather than guessed. Returns warnings for the caller to show.
+    """
+    from observal_cli.cmd_skill import _sanitize_name
+    from observal_cli.layer import skill_file_fingerprint
+
+    written = {
+        _sanitize_name(sc.get("name", "")): _resolve_path(sc["path"], target_dir, allow_home=is_user_scope)
+        for sc in snippet.get("skill_components") or []
+        if isinstance(sc, dict) and isinstance(sc.get("path"), str)
+    }
+    warnings: list[str] = []
+    for component in lock_components:
+        if component.get("type") != "skill" or not component.get("local_name"):
+            continue
+        path = written.get(component["local_name"])
+        fingerprint = skill_file_fingerprint(path) if path else None
+        if fingerprint:
+            component["skill_integrity"] = fingerprint
+        else:
+            warnings.append("Installed skill could not be fingerprinted; its presence will be unverified.")
+    return warnings
+
+
 def _progress(output: OutputMode | str, message: str | None = None):
     return nullcontext() if output == "json" else spinner(message)
 
@@ -954,13 +1035,184 @@ def _collect_install_options(
     return opts
 
 
+# Server-emitted launchers name a bare python3, which rarely imports an installed
+# observal_cli but does import one from the working directory (often a project).
+# They are rewritten to this CLI's interpreter, isolated with -I when it imports
+# observal_cli on its own, else with -P and an explicit PYTHONPATH set to the
+# package root (observal_cli.shared.launcher). On Windows the previous form is kept: the
+# fallback and quoting would need cmd.exe-specific handling.
+_BARE_LAUNCHER = re.compile(r"(?<![/\\\w.-])python3? -m observal_cli\.")
+
+
+def rewrite_launcher_command(command: str) -> str:
+    """Rewrite bare ``python3 -m observal_cli.`` launchers inside one shell command string."""
+    from observal_cli.shared.launcher import isolation_flag, posix_prefix
+
+    if sys.platform == "win32":
+        return _BARE_LAUNCHER.sub(lambda _m: f"{sys.executable} -m observal_cli.", command)
+    return _BARE_LAUNCHER.sub(lambda _m: f"{posix_prefix()} {isolation_flag()} -m observal_cli.", command)
+
+
+def rewrite_launchers_in_strings(value):
+    """Apply ``rewrite_launcher_command`` to every string inside JSON-like content (never to its text)."""
+    if isinstance(value, dict):
+        return {key: rewrite_launchers_in_strings(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [rewrite_launchers_in_strings(item) for item in value]
+    return rewrite_launcher_command(value) if isinstance(value, str) else value
+
+
+def _hook_commands(hooks: object) -> list:
+    """Every ``command`` value inside a Claude Code-style ``hooks`` mapping."""
+    found = []
+    for groups in hooks.values() if isinstance(hooks, dict) else ():
+        for group in groups if isinstance(groups, list) else ():
+            for hook in (group.get("hooks") or []) if isinstance(group, dict) else ():
+                if isinstance(hook, dict) and "command" in hook:
+                    found.append(hook)
+    return found
+
+
+_COMMAND_LINE = re.compile(r"^(?P<lead>\s*(?:-\s+)?command:\s*)(?P<value>.+?)\s*$")
+
+
+_MCP_SERVER_KEYS = ("mcp-servers", "mcpServers")
+
+
+def _frontmatter_mcp_launcher(entry: object) -> dict | None:
+    """The rewritten MCP entry if it launches observal_cli through a bare interpreter, else None.
+
+    The fallback PYTHONPATH goes into the argv (``env PYTHONPATH=...``), not an
+    ``env:`` key, so it does not depend on the harness reading one.
+    """
+    if not isinstance(entry, dict) or sys.platform == "win32":
+        return None
+    argv = [entry.get("command"), *(entry.get("args") or [])] if isinstance(entry.get("args") or [], list) else []
+    if not argv or not all(isinstance(item, str) for item in argv):
+        return None
+    rewritten = rewrite_observal_interpreter(argv)
+    if rewritten == argv:
+        return None
+    return {**entry, "command": rewritten[0], "args": rewritten[1:]}
+
+
+def _top_level_block(lines: list[str], key: str) -> tuple[int, int] | None:
+    """Line range of a top-level ``key:`` mapping and its indented children."""
+    for start, line in enumerate(lines):
+        if line.rstrip() == f"{key}:":
+            end = start + 1
+            while end < len(lines) and (not lines[end].strip() or lines[end][:1] in (" ", "\t")):
+                end += 1
+            return start, end
+    return None
+
+
+def _rewrite_mcp_block(lines: list[str], key: str, servers: dict) -> list[str]:
+    """Re-emit only the changed server entries of a ``key:`` block, values as JSON (valid YAML)."""
+    span = _top_level_block(lines, key)
+    if span is None:
+        return lines
+    start, end = span
+    out = lines[: start + 1]
+    index = start + 1
+    while index < end:
+        line = lines[index]
+        indent = len(line) - len(line.lstrip(" "))
+        name = line.strip()[:-1] if line.strip().endswith(":") else None
+        block_end = index + 1
+        while block_end < end and (
+            not lines[block_end].strip() or len(lines[block_end]) - len(lines[block_end].lstrip(" ")) > indent
+        ):
+            block_end += 1
+        replacement = servers.get(name) if name is not None else None
+        if replacement is None:
+            out.extend(lines[index:block_end])
+        else:
+            out.append(line)
+            out.extend(
+                f"{' ' * (indent + 2)}{field}: {json.dumps(value, ensure_ascii=False)}"
+                for field, value in replacement.items()
+            )
+        index = block_end
+    return out + lines[end:]
+
+
+def rewrite_frontmatter_hook_launchers(text: str) -> str:
+    """Rewrite bare observal_cli launchers in a profile's YAML frontmatter, and nowhere else.
+
+    Only hook ``command`` values and MCP server entries (``mcp-servers`` /
+    ``mcpServers``) that launch ``observal_cli`` are rewritten; the body and
+    every other value are left alone. Rewritten values are written as JSON,
+    which is valid YAML for any interpreter path. If the result does not parse
+    to exactly the original with only those values changed, the profile is
+    returned unchanged.
+    """
+    import yaml
+
+    if not text.startswith("---\n"):
+        return text
+    end = text.find("\n---", 4)
+    if end == -1:
+        return text
+    head, rest = text[4:end], text[end:]
+    try:
+        original = yaml.safe_load(head)
+    except yaml.YAMLError:
+        return text
+    if not isinstance(original, dict):
+        return text
+    expected = json.loads(json.dumps(original))
+    targets = {hook["command"] for hook in _hook_commands(original.get("hooks")) if isinstance(hook["command"], str)}
+    targets = {command for command in targets if rewrite_launcher_command(command) != command}
+    servers: dict[str, dict[str, dict]] = {}
+    for key in _MCP_SERVER_KEYS:
+        block = original.get(key)
+        for name, entry in block.items() if isinstance(block, dict) else ():
+            replacement = _frontmatter_mcp_launcher(entry)
+            if replacement is not None and isinstance(name, str):
+                servers.setdefault(key, {})[name] = replacement
+                expected[key][name] = json.loads(json.dumps(replacement))
+    if not targets and not servers:
+        return text
+    lines = head.split("\n")
+    for index, line in enumerate(lines):
+        match = _COMMAND_LINE.match(line)
+        if not match:
+            continue
+        try:
+            value = yaml.safe_load(match["value"])
+        except yaml.YAMLError:
+            continue
+        if value in targets:
+            lines[index] = match["lead"] + json.dumps(rewrite_launcher_command(value), ensure_ascii=False)
+    for key, replacements in servers.items():
+        lines = _rewrite_mcp_block(lines, key, replacements)
+    new_head = "\n".join(lines)
+    try:
+        rewritten = yaml.safe_load(new_head)
+    except yaml.YAMLError:
+        return text
+    for hook in _hook_commands(expected.get("hooks")):
+        if hook["command"] in targets:
+            hook["command"] = rewrite_launcher_command(hook["command"])
+    if rewritten != expected:
+        return text
+    return "---\n" + new_head + rest
+
+
 def rewrite_observal_interpreter(value):
     """Point server-emitted ``python3 -m observal_cli.<module>`` launchers at this CLI's interpreter.
 
     Handles MCP entries (``command`` + ``args``) and argv lists such as
     ``claude mcp add`` setup commands. A bare ``python3`` rarely has
     ``observal_cli`` importable when the CLI was installed with uv or pipx.
+    The rewritten launcher runs with ``-P``, and with ``PYTHONPATH`` (an MCP
+    entry's ``env``, or ``env PYTHONPATH=...`` in argv) when needed.
     """
+    from observal_cli.shared.launcher import isolation_flag, pythonpath_env
+
+    extra_env = pythonpath_env()
+    flag = isolation_flag()
     if isinstance(value, dict):
         out = {key: rewrite_observal_interpreter(item) for key, item in value.items()}
         args = out.get("args")
@@ -972,17 +1224,29 @@ def rewrite_observal_interpreter(value):
             and str(args[1]).startswith("observal_cli.")
         ):
             out["command"] = sys.executable
+            out["args"] = [flag, *args]
+            if extra_env:
+                env = out.get("env") if isinstance(out.get("env"), dict) else {}
+                out["env"] = {**env, **extra_env}
         return out
     if isinstance(value, list):
         items = [rewrite_observal_interpreter(item) for item in value]
-        for index in range(len(items) - 2):
+        index = 0
+        while index < len(items) - 2:
             if (
                 items[index] in ("python3", "python")
                 and items[index + 1] == "-m"
                 and isinstance(items[index + 2], str)
                 and items[index + 2].startswith("observal_cli.")
             ):
-                items[index] = sys.executable
+                if extra_env and sys.platform == "win32":
+                    items[index] = sys.executable  # previous form: no portable inline PYTHONPATH in argv
+                else:
+                    prefix = [f"{key}={val}" for key, val in extra_env.items()]
+                    launcher = [*(["env", *prefix] if prefix else []), sys.executable, flag]
+                    items[index : index + 1] = launcher
+                    index += len(launcher) - 1
+            index += 1
         return items
     return value
 
@@ -1068,14 +1332,8 @@ def write_install_snippet(
             # Resolve hook paths inside JSON content (command fields)
             raw = json.dumps(content)
             raw = _resolve_hook_paths(raw)
-            import re
-
-            raw = re.sub(
-                r"(?<!/)python3? -m observal_cli\.",
-                f"{sys.executable} -m observal_cli.",
-                raw,
-            )
-            content = json.loads(raw)
+            # Launchers are rewritten in the parsed strings, so no interpreter path can break the JSON.
+            content = rewrite_launchers_in_strings(json.loads(raw))
             content = adapter.rewrite_hooks(content, agent_id=agent_id)
         if dry_run:
             written.append((str(p), "would write"))
@@ -1091,7 +1349,7 @@ def write_install_snippet(
         if isinstance(agent_profile.get("content"), dict):
             agent_profile["content"] = adapter.rewrite_agent_profile(agent_profile["content"], agent_id=agent_id)
         elif isinstance(agent_profile.get("content"), str):
-            agent_profile["content"] = _resolve_hook_paths(agent_profile["content"])
+            agent_profile["content"] = rewrite_frontmatter_hook_launchers(_resolve_hook_paths(agent_profile["content"]))
         agent_profile_allow_home = adapter.allow_home_agent_profile(is_user_scope)
         p = _resolve_path(agent_profile["path"], target_dir, allow_home=agent_profile_allow_home)
         if dry_run:
@@ -1699,6 +1957,9 @@ def register_pull(app: typer.Typer):
         if not dry_run:
             agent_version = installed_version
             from observal_cli.layer import verify_installed_mcp
+
+            warnings_list.extend(_fingerprint_written_skills(snippet, lock_components, target_dir, is_user_scope))
+            warnings_list.extend(_record_hook_bindings(snippet, lock_components, target_dir, is_user_scope))
 
             # The MCP file this pull wrote (a Pi profile's mcp.json, for example).
             mcp_cfg = snippet.get("mcp_config")
