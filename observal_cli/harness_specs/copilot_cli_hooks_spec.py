@@ -16,7 +16,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from observal_cli.shared.launcher import isolation_flag
+from observal_cli.shared.launcher import isolation_flag, windows_module_command
 
 COPILOT_CLI_HOOK_EVENTS = (
     "sessionStart",
@@ -42,8 +42,6 @@ def _python_cmd() -> str:
     if importable_in_isolation():
         # Quote to handle spaces in paths
         return f'"{sys.executable}"'
-    if sys.platform == "win32":
-        return f'set "PYTHONPATH={_PKG_ROOT}" && "{sys.executable}"'
     return f'PYTHONPATH="{_PKG_ROOT}" "{sys.executable}"'
 
 
@@ -64,15 +62,17 @@ def build_copilot_cli_hooks(agent_id: str = "") -> dict:
     identifies whichever agent was pulled into that project.
     """
     module = "observal_cli.hooks.session_push"
-    bash_cmd = f"{_python_cmd()} {isolation_flag()} -m {module} --harness copilot-cli"
+    env = {"OBSERVAL_AGENT_ID": agent_id} if agent_id else None
+    if sys.platform == "win32":
+        bash_cmd = f"{windows_module_command(module, env)} --harness copilot-cli"
+    else:
+        bash_cmd = f"{_python_cmd()} {isolation_flag()} -m {module} --harness copilot-cli"
+        if agent_id:
+            bash_cmd = f"OBSERVAL_AGENT_ID={agent_id} {bash_cmd}"
     # PowerShell command uses bare 'python' which must be on Windows PATH
     ps_cmd = f"python -m {module} --harness copilot-cli"
 
     if agent_id:
-        if sys.platform == "win32":
-            bash_cmd = f'set "OBSERVAL_AGENT_ID={agent_id}" && {bash_cmd}'
-        else:
-            bash_cmd = f"OBSERVAL_AGENT_ID={agent_id} {bash_cmd}"
         # PowerShell (used on Windows) sets the env var in-process for the child.
         ps_cmd = f"$env:OBSERVAL_AGENT_ID='{agent_id}'; {ps_cmd}"
 
