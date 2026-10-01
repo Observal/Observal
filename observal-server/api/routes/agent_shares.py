@@ -41,7 +41,7 @@ def _validate_token(token: str) -> str:
     return token
 
 
-async def _load_manifest(token: str, db: AsyncSession) -> AgentShareManifest:
+async def _load_manifest(token: str, db: AsyncSession, *, allow_inactive: bool = False) -> AgentShareManifest:
     token = _validate_token(token)
     manifest = (
         await db.execute(select(AgentShareManifest).where(AgentShareManifest.token_hash == _token_hash(token)))
@@ -49,7 +49,7 @@ async def _load_manifest(token: str, db: AsyncSession) -> AgentShareManifest:
     if manifest is None:
         raise HTTPException(status_code=404, detail="Share not found")
     now = datetime.now(UTC)
-    if manifest.revoked_at is not None or manifest.expires_at <= now:
+    if not allow_inactive and (manifest.revoked_at is not None or manifest.expires_at <= now):
         raise HTTPException(status_code=410, detail="Share has expired or been revoked")
     return manifest
 
@@ -186,9 +186,11 @@ async def revoke_agent_share(
     current_user: User = Depends(require_role(UserRole.user)),
 ) -> AgentShareRevokeResponse:
     """Revoke a share without exposing or deleting its item history."""
-    manifest = await _load_manifest(token, db)
+    manifest = await _load_manifest(token, db, allow_inactive=True)
     if manifest.created_by != current_user.id and current_user.role not in {UserRole.admin, UserRole.super_admin}:
         raise HTTPException(status_code=403, detail="Only the creator or an administrator can revoke this share")
+    if manifest.revoked_at is not None or manifest.expires_at <= datetime.now(UTC):
+        raise HTTPException(status_code=410, detail="Share has expired or been revoked")
     manifest.revoked_at = datetime.now(UTC)
     await db.commit()
     return AgentShareRevokeResponse(revoked=True)

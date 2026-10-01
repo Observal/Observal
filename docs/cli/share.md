@@ -25,6 +25,8 @@ Select explicit installed Agents:
 observal share --agent platform/reviewer --agent platform/github-helper
 ```
 
+The printed URL is not a web page. Open it only with `observal share open`; the web UI has no share route yet. The bare token also works if the URL's host does not match your configured server (`deployment.frontend_url`).
+
 Links expire after 7 days by default. The allowed range is 1 through 30 days. Only project-scoped Agents recorded in the current Registry section of `~/.observal/lockfile.json` are candidates. The repository path, Git remote, harness names, configuration, prompts, and credentials are not uploaded.
 
 ## Inspect candidates
