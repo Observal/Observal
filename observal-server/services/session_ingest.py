@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Session JSONL ingest service.
@@ -31,6 +32,7 @@ from services.clickhouse import (
     refresh_session_summary,
 )
 from services.secrets_redactor import redact_secrets
+from services.session_parsers.base import dict_field, extract_v4_stream_chunk, str_field
 from services.session_parsers.ingest_classify import extract_timestamp, get_classifier, get_extra_rows
 
 # ---------------------------------------------------------------------------
@@ -153,6 +155,33 @@ def _usage_copilot_cli(parsed: dict) -> dict:
     return {"input_tokens": 0, "output_tokens": 0, "cache_read_tokens": 0, "cache_write_tokens": 0, "model": ""}
 
 
+def _deepseek_usage_count(usage: dict, field: str) -> int:
+    """A nonnegative integer token count from an untrusted v4 usage mapping."""
+    value = usage.get(field)
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else 0
+
+
+def _usage_deepseek(parsed: dict) -> dict:
+    """DeepSeek v4 committed assistant usage, or a failed attempt's reported usage."""
+    kind = str_field(parsed, "type")
+    data = dict_field(parsed, "data")
+    usage: dict = {}
+    source: dict = {}
+    if kind == "assistant/message":
+        usage = dict_field(data, "usage")
+        source = dict_field(dict_field(data, "message"), "source")
+    elif kind == "assistant/attempt":
+        usage = dict_field(extract_v4_stream_chunk(data, "usage"), "usage")
+
+    return {
+        "input_tokens": _deepseek_usage_count(usage, "inputTokens"),
+        "output_tokens": _deepseek_usage_count(usage, "outputTokens"),
+        "cache_read_tokens": _deepseek_usage_count(usage, "cacheReadTokens"),
+        "cache_write_tokens": _deepseek_usage_count(usage, "cacheWriteTokens"),
+        "model": str_field(source, "model"),
+    }
+
+
 _UsageFn = Callable[[dict], dict]
 
 _USAGE_EXTRACTORS: dict[str, _UsageFn] = {
@@ -160,6 +189,7 @@ _USAGE_EXTRACTORS: dict[str, _UsageFn] = {
     "codex": _usage_codex,
     "kiro": _usage_claude_code,
     "cursor": _usage_claude_code,
+    "deepseek": _usage_deepseek,
     "goose": _usage_goose,
     "pi": _usage_pi,
     "copilot-cli": _usage_copilot_cli,
@@ -197,12 +227,34 @@ def _uuid_goose(parsed: dict) -> tuple[str | None, str | None]:
     return parsed.get("message_id") or parsed.get("session_id"), parsed.get("parent_session_id")
 
 
+def _uuid_deepseek(parsed: dict) -> tuple[str | None, str | None]:
+    """Use v4 message/call identities; sequence numbers identify log-only rows."""
+    kind = str_field(parsed, "type")
+    if kind == "session":
+        return str_field(parsed, "id") or None, str_field(parsed, "parentSession") or None
+    data = dict_field(parsed, "data")
+    if kind == "user/message":
+        identity = str_field(data, "id")
+    elif kind in ("assistant/message", "tool/result", "system/message", "developer/message"):
+        identity = str_field(dict_field(data, "message"), "id")
+    elif kind == "tool/call":
+        identity = str_field(data, "callId")
+    else:
+        identity = ""
+    seq = parsed.get("seq")
+    if not identity and isinstance(seq, int) and not isinstance(seq, bool) and seq >= 0:
+        identity = f"seq:{seq}"
+    parent = str_field(dict_field(data, "message"), "toolCallId") if kind == "tool/result" else ""
+    return identity or None, parent or None
+
+
 _UuidFn = Callable[[dict], "tuple[str | None, str | None]"]
 
 _UUID_EXTRACTORS: dict[str, _UuidFn] = {
     "claude-code": _uuid_default,
     "kiro": _uuid_default,
     "cursor": _uuid_default,
+    "deepseek": _uuid_deepseek,
     "goose": _uuid_goose,
     "opencode": _uuid_default,
     "pi": _uuid_pi,

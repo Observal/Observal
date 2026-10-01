@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn>
 # SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
+# SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Tests for the CLI-side harness adapter protocol and registry."""
@@ -225,6 +226,21 @@ class TestManagedLayerFiles:
         assert _get_observal_managed_files(lockfile, "codex", None) == {
             "user:agents/agent-one.toml",
             "project:.codex/agents/agent-one.toml",
+            "user:config.toml",
+        }
+
+    def test_managed_files_include_a_qualified_local_name(self):
+        # A cross-namespace or cross-registry collision qualifies the local
+        # name and the pull writes the agent files under it; both names stay
+        # managed so layer snapshots attribute either install.
+        lockfile = self._lockfile_for("codex")
+        lockfile["ides"]["codex"]["agents"][0]["local_name"] = "other-agent-one"
+
+        assert get_adapter("codex").get_observal_managed_files(lockfile) == {
+            "user:agents/agent-one.toml",
+            "project:.codex/agents/agent-one.toml",
+            "user:agents/other-agent-one.toml",
+            "project:.codex/agents/other-agent-one.toml",
             "user:config.toml",
         }
 

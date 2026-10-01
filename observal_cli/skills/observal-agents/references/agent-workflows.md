@@ -1,4 +1,4 @@
-<!-- SPDX-FileCopyrightText: 2026 Observal Contributors -->
+<!-- SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
@@ -57,7 +57,7 @@ Inspect `files`, `warnings`, `setup_commands`, `agent.version`, `agent.resolved_
 observal scan --harness kiro --output json
 ```
 
-For Pi, use the exact local profile name returned by pull with the harness profile command.
+For Pi, use the exact local profile name returned by pull with the harness profile command. For `--harness deepseek`, agent instructions become an on-demand `observal-<name>` skill; ask DeepSeek to use that skill explicitly. `--scope project` makes the skill project-local, but MCPs, the Observal session plugin, and any optional command-hook components activate from the user `$DSH_HOME/cordis.patch.yml` (default `~/.dsh`). Observal does not select DeepSeek models.
 
 ## Direct create
 

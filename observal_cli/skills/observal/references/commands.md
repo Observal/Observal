@@ -2,6 +2,7 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Observal CLI Command Reference
@@ -15,7 +16,7 @@ Every command available in the installed CLI. This block is generated from the T
 
 - `observal api`: Call an authenticated Observal JSON API endpoint.
 - `observal outdated`: Show installed agents and standalone components with their registry status.
-- `observal reconcile`: Backfill local session records missed by automatic hook delivery
+- `observal reconcile`: Backfill local session records missed by automatic delivery (including DeepSeek's native plugin)
 - `observal scan`: Show a read-only inventory of your local harness setup.
 
 **`observal admin`**: Core administration and submission review commands

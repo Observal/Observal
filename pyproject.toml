@@ -6,6 +6,7 @@
 # SPDX-FileCopyrightText: 2026 Santhosh Raja <santhoshpkraja2004@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 [project]
@@ -27,6 +28,7 @@ dependencies = [
     "asyncpg>=0.29.0",
     "packaging>=21.0",
     "loguru>=0.7.0",
+    "zstandard>=0.23.0",
 ]
 
 keywords = ["mcp", "model-context-protocol", "registry", "cli", "agents", "observability"]
@@ -69,6 +71,7 @@ packages = ["observal_cli", "packages/observal-shared/observal_shared"]
 
 [tool.hatch.build.targets.wheel.force-include]
 "packages/pi-extension/extensions/observal.ts" = "observal_cli/_bundled/observal.ts"
+"packages/deepseek-plugin/observal.mjs" = "observal_cli/_bundled/deepseek.mjs"
 
 # ── Ruff ─────────────────────────────────────────────────
 

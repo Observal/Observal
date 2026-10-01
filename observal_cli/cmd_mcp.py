@@ -4,6 +4,7 @@
 # SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """MCP server CLI commands."""
@@ -1266,6 +1267,13 @@ def _install_impl(
 
     rprint(f"\n[bold]Config for {harness}:[/bold]\n")
     console.print_json(_json.dumps(snippet, indent=2))
+    if isinstance(snippet, dict) and isinstance(snippet.get("content"), list) and snippet.get("path"):
+        rprint(
+            f"\n[yellow]Merge the patch entries into {esc(snippet['path'])}; "
+            "do not redirect --raw onto the existing file.[/yellow]"
+        )
+        if snippet.get("_note"):
+            rprint(f"[dim]{esc(snippet['_note'])}[/dim]")
     config_path = harness_config_paths.get(harness, "")
     if config_path and not config_path.startswith("("):
         rprint(f"\n[dim]Add to:[/dim] [bold]{config_path}[/bold]")

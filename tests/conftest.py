@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 import os
@@ -11,6 +12,12 @@ from pathlib import Path
 # patch one must still never write the developer's real config, lockfile, or
 # harness settings. Set before anything imports observal_cli.
 os.environ["HOME"] = os.environ["USERPROFILE"] = tempfile.mkdtemp(prefix="observal-test-home-")
+
+# The DeepSeek adapter resolves DSH_HOME ahead of the supplied home, so a suite
+# run inside DeepSeek Harness would otherwise leak the real ~/.dsh into
+# active-harness detection and session discovery. Tests that need an override
+# set it explicitly with monkeypatch.
+os.environ.pop("DSH_HOME", None)
 
 # Add server source to path so `from config import settings` works
 ROOT = Path(__file__).resolve().parent.parent

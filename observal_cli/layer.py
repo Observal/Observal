@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """harness layer scanning and hash computation.
@@ -227,6 +228,38 @@ HARNESS_LAYER_CONFIGS: dict[str, dict[str, list[tuple[str, list[str]]]]] = {
             ),
         ],
     },
+    "deepseek": {
+        "user": [
+            (
+                "~/.dsh",
+                [
+                    "cordis.patch.yml",
+                    "profiles/*/cordis.patch.yml",
+                    "skills/*/SKILL.md",
+                    "skills/*.md",
+                    "observal/hooks.json",
+                    "observal/scripts/*",
+                    "AGENTS.md",
+                ],
+            ),
+            ("~/.agents", ["skills/*/SKILL.md", "skills/*.md"]),
+        ],
+        "project": [
+            (
+                ".",
+                [
+                    ".dsh/skills/*/SKILL.md",
+                    ".dsh/skills/*.md",
+                    ".agents/skills/*/SKILL.md",
+                    ".agents/skills/*.md",
+                    "AGENTS.md",
+                    "CLAUDE.md",
+                    "AGENTS.local.md",
+                    "CLAUDE.local.md",
+                ],
+            ),
+        ],
+    },
     "goose": {
         "user": [
             (
@@ -360,9 +393,18 @@ def _discover_files(harness: str, project_dir: str | None = None) -> list[tuple[
     Returns list of (absolute_path, relative_display_path) tuples.
     Scans both user and project scopes.
     """
+    from observal_cli.harness import ensure_loaded, get_adapter
+    from observal_shared.harness_registry import HARNESS_REGISTRY
+
     config = HARNESS_LAYER_CONFIGS.get(harness, {})
     found: list[tuple[Path, str]] = []
     seen: set[str] = set()
+    spec = HARNESS_REGISTRY.get(harness, {})
+    default_home = f"~/{spec['config_dir']}" if spec.get("config_dir") else None
+    resolved_home = None
+    if spec:
+        ensure_loaded()
+        resolved_home = get_adapter(harness).resolve_home_dir()
 
     for scope in ("user", "project"):
         scope_configs = config.get(scope, [])
@@ -371,6 +413,8 @@ def _discover_files(harness: str, project_dir: str | None = None) -> list[tuple[
                 continue
 
             resolved_base = Path(project_dir) if scope == "project" else _resolve_base_dir(base_dir)
+            if scope == "user" and base_dir == default_home and resolved_home is not None:
+                resolved_base = resolved_home
 
             if not resolved_base.is_dir():
                 continue

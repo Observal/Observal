@@ -1,0 +1,14 @@
+2{"type":"session","version":4,"id":"session-00000000-0000-4000-8000-000000000001","createdAt":1767225600000,"cwd":"/workspace","isSeeded":false,"delegationDepth":0}
+{"type":"permission/preset","seq":0,"time":1767225600001,"data":{"preset":"workspace-write"}}
+{"type":"sandbox/mode","seq":1,"time":1767225600002,"data":{"mode":"workspace-write"}}
+{"type":"turn/start","seq":2,"time":1767225600003,"data":{"turn":1}}
+{"type":"step/start","seq":3,"time":1767225600004,"data":{"turn":1,"step":1}}
+{"type":"system/message","seq":4,"time":1767225600005,"data":{"turn":1,"step":1,"message":{"role":"system","content":[{"type":"text","text":"You are a coding agent."}]}}}
+{"type":"user/message","seq":5,"time":1767225600006,"data":{"content":[{"type":"text","text":"list the files in src"}],"source":{"kind":"user"},"role":"user","id":"11111111-1111-4111-8111-111111111111"},"surfaceOp":"append"}
+{"type":"assistant/message","seq":6,"time":1767225600007,"data":{"turn":1,"step":1,"message":{"role":"assistant","content":[{"type":"reasoning","text":"I should inspect the directory first."},{"type":"tool-call","id":"call_00_seed","name":"bash","arguments":"{\"command\": \"ls src\"}"}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-flash"}},"usage":{"inputTokens":120,"outputTokens":18,"reasoningTokens":5,"cacheReadTokens":0,"cacheWriteTokens":0}}}
+{"type":"tool/call","seq":7,"time":1767225600008,"data":{"turn":1,"step":1,"callId":"call_00_seed","name":"bash","arguments":"{\"command\": \"ls src\"}"}}
+{"type":"tool/result","seq":8,"time":1767225600009,"data":{"turn":1,"step":1,"message":{"role":"tool","source":{"kind":"tool","callId":"call_00_seed"},"toolCallId":"call_00_seed","content":[{"type":"text","text":"main.py\nutils.py"}]}}}
+{"type":"step/end","seq":9,"time":1767225600010,"data":{"turn":1,"step":1}}
+{"type":"assistant/message","seq":10,"time":1767225600011,"data":{"turn":1,"step":2,"message":{"role":"assistant","content":[{"type":"reasoning","text":""},{"type":"text","text":"src contains main.py and utils.py."}],"source":{"kind":"model","provider":"deepseek-official","model":"deepseek-flash"}},"usage":{"inputTokens":180,"outputTokens":14,"reasoningTokens":0}}}
+{"type":"session/title","seq":11,"time":1767225600012,"data":{"title":"List the files in src","messageSeqs":[5],"source":{"kind":"fallback"}}}
+{"type":"turn/end","seq":12,"time":1767225600013,"data":{"turn":1,"reason":{"kind":"completed"}}}

@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
+# SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Per-harness JSONL line classifiers for the ingest pipeline.
@@ -28,7 +29,15 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 
-from .base import dict_field, list_field, str_field, strip_cursor_xml_tags
+from .base import (
+    dict_field,
+    epoch_ms_timestamp,
+    extract_v4_attempt_failure,
+    extract_v4_text,
+    list_field,
+    str_field,
+    strip_cursor_xml_tags,
+)
 
 _PREVIEW_MAX = 500
 
@@ -843,6 +852,67 @@ def _tool_info_goose(parsed: dict) -> tuple[str | None, str | None]:
 
 
 # ---------------------------------------------------------------------------
+# DeepSeek Harness v4
+# ---------------------------------------------------------------------------
+
+
+def _classify_deepseek(parsed: dict) -> str:
+    kind = str_field(parsed, "type")
+    if kind == "user/message":
+        return "user_prompt"
+    if kind == "assistant/message":
+        text, reasoning = extract_v4_text(dict_field(dict_field(parsed, "data"), "message"))
+        if reasoning.strip():
+            return "thinking"
+        if text.strip():
+            return "assistant_text"
+        return "usage" if dict_field(dict_field(parsed, "data"), "usage") else "meta"
+    if kind == "tool/call":
+        return "tool_call"
+    if kind == "tool/result":
+        return "tool_result"
+    if kind == "assistant/attempt":
+        return "system" if extract_v4_attempt_failure(dict_field(parsed, "data")) else "meta"
+    if kind in ("request/header", "request/context", "session/end-seed"):
+        return "meta"
+    # Keep headers, lifecycle markers, system/developer messages, and unknown
+    # extension events as raw evidence rather than skipping them.
+    return "system"
+
+
+def _preview_deepseek(parsed: dict, event_type: str) -> str:
+    kind = str_field(parsed, "type")
+    data = dict_field(parsed, "data")
+    if kind == "session":
+        return f"[session: {str_field(parsed, 'id')}]"[:_PREVIEW_MAX]
+    if kind in ("user/message", "assistant/message", "system/message", "developer/message", "tool/result"):
+        msg = data if kind == "user/message" else dict_field(data, "message")
+        text, reasoning = extract_v4_text(msg)
+        if kind == "tool/result":
+            error = dict_field(data, "error")
+            return (text or str_field(error, "reason") or str_field(error, "code"))[:_PREVIEW_MAX]
+        return (reasoning if event_type == "thinking" and reasoning else text or reasoning)[:_PREVIEW_MAX]
+    if kind == "tool/call":
+        return f"[tool_call: {str_field(data, 'name')}]"[:_PREVIEW_MAX]
+    if kind == "assistant/attempt":
+        failure = dict_field(extract_v4_attempt_failure(data), "failure")
+        return (str_field(failure, "message") or "Uncommitted assistant attempt")[:_PREVIEW_MAX]
+    if kind == "turn/end":
+        return f"Turn ended: {str_field(dict_field(data, 'reason'), 'kind')}"[:_PREVIEW_MAX]
+    return kind[:_PREVIEW_MAX]
+
+
+def _tool_info_deepseek(parsed: dict) -> tuple[str | None, str | None]:
+    kind = str_field(parsed, "type")
+    data = dict_field(parsed, "data")
+    if kind == "tool/call":
+        return str_field(data, "name") or None, str_field(data, "callId") or None
+    if kind == "tool/result":
+        return None, str_field(dict_field(data, "message"), "toolCallId") or None
+    return None, None
+
+
+# ---------------------------------------------------------------------------
 # Registry  -- add new parsers here, update harness_registry.py session_parser key
 # ---------------------------------------------------------------------------
 
@@ -858,6 +928,7 @@ _CLASSIFIERS: dict[str, _Classifier] = {
     "copilot-cli": (_classify_copilot_cli, _preview_copilot_cli, _tool_info_copilot_cli),
     "kiro": (_classify_kiro, _preview_kiro, _tool_info_kiro),
     "cursor": (_classify_cursor, _preview_cursor, _tool_info_cursor),
+    "deepseek": (_classify_deepseek, _preview_deepseek, _tool_info_deepseek),
     "goose": (_classify_goose, _preview_goose, _tool_info_goose),
     "opencode": (_classify_claude_code, _preview_claude_code, _tool_info_claude_code),
     "pi": (_classify_pi, _preview_pi, _tool_info_pi),
@@ -990,11 +1061,18 @@ def _ts_antigravity(parsed: dict) -> str | None:
     return ts
 
 
+def _ts_deepseek(parsed: dict) -> str | None:
+    """Read Unix milliseconds from a v4 header or event record."""
+    field = "createdAt" if str_field(parsed, "type") == "session" else "time"
+    return epoch_ms_timestamp(parsed.get(field))
+
+
 _TS_EXTRACTORS: dict[str, object] = {
     "claude-code": _ts_claude_code,
     "codex": _ts_claude_code,  # Codex uses same timestamp format as Claude Code
     "kiro": _ts_kiro,
     "cursor": _ts_cursor,
+    "deepseek": _ts_deepseek,
     "goose": _ts_claude_code,  # mirrored goose records carry an ISO `timestamp`
     "opencode": _ts_claude_code,
     "pi": _ts_pi,
@@ -1041,6 +1119,7 @@ _EXTRA_ROWS_HANDLERS: dict[str, _ExtraRowsFn] = {
     "claude-code": _no_extra_rows,
     "codex": _no_extra_rows,
     "cursor": _no_extra_rows,
+    "deepseek": _no_extra_rows,
     "goose": _no_extra_rows,
     "opencode": _no_extra_rows,
     "pi": _no_extra_rows,

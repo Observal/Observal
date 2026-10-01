@@ -8,6 +8,7 @@
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn>
 # SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
+# SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """observal doctor: diagnose and patch harness settings for Observal session telemetry.
@@ -125,6 +126,7 @@ def doctor(
             ("OpenCode", _check_opencode),
             ("Antigravity", _check_antigravity),
             ("Goose", _check_goose),
+            ("DeepSeek Harness", _check_deepseek),
         )
 
         rprint("[cyan]Checking Registry lockfile...[/cyan]")
@@ -640,6 +642,21 @@ def _check_goose(issues: list, warnings: list):
         warnings.append(
             f"Goose session push hooks are missing or stale for: {', '.join(stale)}. "
             "Run `observal doctor patch --harness goose` to update them."
+        )
+
+
+def _check_deepseek(issues: list, warnings: list) -> None:
+    """Diagnose the in-process DeepSeek session collector."""
+    ensure_loaded()
+    adapter = get_adapter("deepseek")
+    if not adapter.is_installed():
+        rprint("  [dim]DeepSeek Harness not detected[/dim]")
+        return
+    status = adapter.detect_hooks(adapter.resolve_home_dir())
+    if status != "installed":
+        warnings.append(
+            "DeepSeek's native Observal session plugin is missing/stale. "
+            "Run `observal doctor patch --harness deepseek` to install it in DSH_HOME."
         )
 
 

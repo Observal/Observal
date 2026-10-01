@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Session JSONL parsers -- READ path (raw ClickHouse rows -> frontend events).
@@ -28,6 +29,7 @@ from .claude_code import parse_rows as _parse_claude_code
 from .codex import parse_rows as _parse_codex
 from .copilot_cli import parse_rows as _parse_copilot_cli
 from .cursor import parse_rows as _parse_cursor
+from .deepseek import parse_rows as _parse_deepseek
 from .goose import parse_rows as _parse_goose
 from .kiro import parse_rows as _parse_kiro
 from .opencode import parse_rows as _parse_opencode
@@ -41,6 +43,7 @@ _PARSERS: dict[str, _ParseFn] = {
     "codex": _parse_codex,
     "copilot-cli": _parse_copilot_cli,
     "cursor": _parse_cursor,
+    "deepseek": _parse_deepseek,
     "goose": _parse_goose,
     "kiro": _parse_kiro,
     "opencode": _parse_opencode,

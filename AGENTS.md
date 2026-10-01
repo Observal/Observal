@@ -2,6 +2,7 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # AGENTS.md
@@ -20,7 +21,7 @@ Agents are the primary entity. Each agent bundles 5 component types: MCP servers
 
 ## harness capability support
 
-Ten harnesses are registered in `packages/observal-shared/observal_shared/harness_registry.py`. Support is per-capability, not a single tier. Verify against the registry before relying on this table.
+Eleven harnesses are registered in `packages/observal-shared/observal_shared/harness_registry.py`. Support is per-capability, not a single tier. Verify against the registry before relying on this table.
 
 | Harness | Hook spec | Session parser | Capabilities | Harness-specific e2e |
 |---|---|---|---|---|
@@ -34,8 +35,9 @@ Ten harnesses are registered in `packages/observal-shared/observal_shared/harnes
 | OpenCode | yes | `opencode` | hooks, mcp_servers, skills | no |
 | Antigravity | yes | `antigravity` | hooks, mcp_servers, skills | no |
 | Goose | yes | `goose` | hooks, mcp_servers, skills | no |
+| DeepSeek Harness | yes | `deepseek` | hooks, mcp_servers, skills | yes (5 specs) |
 
-Every harness now resolves a session parser, so `observal reconcile` works across all ten. Hook specs in `observal_cli/harness_specs/` exist for eight; Cursor and Pi have none. Only Kiro has harness-specific Playwright coverage.
+Every harness now resolves a session parser, so `observal reconcile` works across all eleven. Hook specs in `observal_cli/harness_specs/` exist for nine; Cursor and Pi have none. Kiro and DeepSeek have harness-specific Playwright coverage.
 
 See `docs/adding-a-harness.md` for the complete guide to adding or promoting a harness.
 
@@ -43,8 +45,8 @@ See `docs/adding-a-harness.md` for the complete guide to adding or promoting a h
 
 ```
 observal_cli/          Python CLI (Typer)
-  harness/             CLI-side harness adapters (protocol.py, base.py, 10 adapters)
-  harness_specs/       Hook specs (8: claude_code, kiro, codex, copilot, copilot_cli, opencode, antigravity, goose)
+  harness/             CLI-side harness adapters (protocol.py, base.py, 11 adapters)
+  harness_specs/       Hook specs (9: claude_code, kiro, codex, copilot, copilot_cli, opencode, antigravity, goose, deepseek)
   skills/              Bundled skills installed on login (observal, observal-admin, etc.)
   delegation/          Agent-to-agent delegation: A2A tasks, workspace isolation, headless runs,
                        A2A client, observal-agents MCP server (docs/adr/0002-a2a-delegation.md)
@@ -57,7 +59,7 @@ observal-server/       FastAPI server
   services/            Business logic
     clickhouse/        ClickHouse subpackage (client, schema, insert, query)
     harness/           Server-side harness adapters (config generation)
-    session_parsers/   Per-harness JSONL parsers (9 modules covering all 10 harnesses)
+    session_parsers/   Per-harness JSONL parsers (10 modules covering all 11 harnesses)
     audit/             Compliance audit system (loguru-based)
     config/            Config generation helpers (mcp_builder, skill_builder)
     insights/          Insight engine (report generation, facets, sections, HTML export)
@@ -69,8 +71,8 @@ web/                   Vite 6 SPA / React 19 / TanStack Router (see web/AGENTS.m
 packages/pi-extension/ Pi telemetry extension (npm: observal-pi)
 docker/                Docker Compose stack (10 services)
 fuzz/                  Atheris fuzz targets + OSS-Fuzz project config mirror
-tests/                 pytest (174 files)
-tests/e2e/             Playwright (20 specs)
+tests/                 pytest (257 files)
+tests/e2e/             Playwright (24 specs)
 ```
 
 ## How the modularisation works
@@ -85,7 +87,7 @@ The codebase follows a strict adapter pattern for harness-specific logic. This i
 
 **Headless runs are a verified fact.** The registry's `headless_run` runtime fact says a harness CLI can run one prompt non-interactively; the CLI adapter's `headless_command` builds the argv and `parse_headless_output` reads the answer. Delegation uses only harnesses with the fact set.
 
-**Session parsers are separate from adapters.** They live in `services/session_parsers/` (server-side) and handle converting raw JSONL into normalized trace events. All nine harnesses resolve a parser; Copilot reuses the Copilot CLI parser.
+**Session parsers are separate from adapters.** They live in `services/session_parsers/` (server-side) and handle converting raw JSONL into normalized trace events. All eleven harnesses resolve a parser; Copilot reuses the Copilot CLI parser. DeepSeek's CLI source reader decompresses its v4 JSONL before shared delivery; see `docs/integrations/deepseek.md`.
 
 ### What full support means concretely
 
@@ -95,7 +97,7 @@ A fully supported harness has all of:
 - Full scanning implementation in its CLI adapter (discovers MCPs, skills, hooks, agents)
 - E2E test coverage in `tests/e2e/`
 
-Today only Kiro meets all four. A minimal harness has:
+Today Kiro and DeepSeek meet all four. A minimal harness has:
 - A registry entry with correct paths
 - A CLI adapter that handles basic MCP scanning
 - A server adapter that generates config files
@@ -166,7 +168,7 @@ observal
 │   └── insights             #   agent insight reports
 ├── admin                    # core administration + review (list/show/approve/reject)
 ├── self                     # upgrade, downgrade, rollback, status
-├── doctor                   # diagnose + patch harness settings for all 10 harnesses
+├── doctor                   # diagnose + patch harness settings for all 11 harnesses
 │   ├── patch / cleanup      #   install or remove telemetry hooks
 │   └── support              #   diagnostic bundle with redaction
 └── server                   # start, stop, restart, status, logs, install, reset, config
@@ -227,13 +229,13 @@ make check               # pre-commit on all files
 make hooks               # install pre-commit hooks
 
 # Tests (all mock externals, no Docker needed)
-make test                # runs tests/ only (174 files), parallel via pytest-xdist
+make test                # runs tests/ only (257 files), parallel via pytest-xdist
 make test-v              # verbose
 # observal-server/tests/ (21 files) and observal_cli/tests/ (11 files) are not run
 # by `make test` or CI; invoke pytest on those paths directly.
 make test-fuzz           # smoke-test the OSS-Fuzz targets in fuzz/ (needs atheris)
 # E2E (requires running stack):
-cd tests/e2e && pnpm test   # 20 Playwright specs
+cd tests/e2e && pnpm test   # 24 Playwright specs
 ```
 
 ## Optic (dev logging)

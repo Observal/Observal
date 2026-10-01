@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Shared IO primitives for all harness session push scripts.
@@ -11,13 +12,19 @@ logging. Hooks, background recovery, and public reconcile all use this engine.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from loguru import logger as optic
+
+from observal_cli.sessions.source_reader import (
+    hash_lines,
+    read_new_records,
+    read_source_snapshot,
+    source_chunks,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -97,52 +104,6 @@ def write_cursor(
     with tempfile.NamedTemporaryFile("w", dir=sync_dir, delete=False) as temporary:
         temporary.write(json.dumps(data))
     Path(temporary.name).replace(state_file)
-
-
-# ---------------------------------------------------------------------------
-# File reading
-# ---------------------------------------------------------------------------
-
-
-def read_new_records(jsonl_path: Path, offset: int) -> tuple[list[str], list[int], int]:
-    """Read complete non-empty records and their absolute end-byte offsets."""
-    with open(jsonl_path, "rb") as file:
-        file.seek(offset)
-        raw = file.read()
-    if not raw:
-        return [], [], 0
-
-    complete_bytes = len(raw) if raw.endswith(b"\n") else raw.rfind(b"\n") + 1
-    if complete_bytes <= 0:
-        return [], [], 0
-
-    lines: list[str] = []
-    end_offsets: list[int] = []
-    absolute_offset = offset
-    for encoded_line in raw[:complete_bytes].splitlines(keepends=True):
-        absolute_offset += len(encoded_line)
-        line = encoded_line.rstrip(b"\r\n").decode("utf-8", errors="replace")
-        if line.strip():
-            lines.append(line)
-            end_offsets.append(absolute_offset)
-    return lines, end_offsets, complete_bytes
-
-
-def hash_session_source(jsonl_path: Path) -> tuple[str, int]:
-    """Hash complete non-empty source records for final/audit delivery."""
-    lines, _offsets, _bytes_read = read_new_records(jsonl_path, 0)
-    hasher = hashlib.sha256()
-    for line in lines:
-        source_hash = hashlib.sha256(line.encode("utf-8", errors="replace")).hexdigest()
-        hasher.update(source_hash.encode())
-        hasher.update(b"\n")
-    return hasher.hexdigest(), len(lines)
-
-
-def read_new_lines(jsonl_path: Path, offset: int) -> tuple[list[str], int]:
-    """Read complete non-empty lines from a byte offset."""
-    lines, _end_offsets, bytes_read = read_new_records(jsonl_path, offset)
-    return lines, bytes_read
 
 
 # ---------------------------------------------------------------------------
@@ -322,28 +283,28 @@ def get_server_checkpoint(source: SessionSource, config: dict) -> dict | None:
 
 def _checkpoint_byte_offset(path: Path, line_count: int, server_offset: int) -> int | None:
     """Resolve a server source position to a safe local newline boundary."""
-    try:
-        size = path.stat().st_size
-        if server_offset > 0:
-            if server_offset > size:
+    if line_count == 0 and server_offset == 0:
+        return 0
+    if server_offset > 0 and not path.name.endswith(".jsonl.zstd"):
+        try:
+            if server_offset > path.stat().st_size:
                 return None
             with path.open("rb") as file:
                 file.seek(server_offset - 1)
                 return server_offset if file.read(1) == b"\n" else None
-        if line_count == 0:
-            return 0
-        seen = 0
-        offset = 0
-        with path.open("rb") as file:
-            for encoded_line in file:
-                offset += len(encoded_line)
-                if encoded_line.rstrip(b"\r\n").strip():
-                    seen += 1
-                    if seen == line_count:
-                        return offset
+        except OSError:
+            return None
+    try:
+        lines, offsets, committed = read_new_records(path, 0)
     except OSError:
-        pass
-    return None
+        return None
+    if server_offset > 0:
+        if 0 < line_count <= len(offsets) and server_offset == offsets[line_count - 1]:
+            return server_offset
+        if line_count == len(offsets) and server_offset == committed:
+            return server_offset
+        return None
+    return offsets[line_count - 1] if 0 < line_count <= len(lines) else None
 
 
 def recover_cursor_from_server(
@@ -362,7 +323,11 @@ def recover_cursor_from_server(
     acknowledged_line = int(checkpoint["acknowledged_line"])
     line_count = acknowledged_line + 1
     server_offset = int(checkpoint.get("acknowledged_offset") or 0)
-    byte_offset = _checkpoint_byte_offset(source.path, line_count, server_offset)
+    try:
+        byte_offset = _checkpoint_byte_offset(source.path, line_count, server_offset)
+    except (OSError, ValueError) as exc:
+        log_error(f"could not read checkpoint for {source.harness} session {source.session_id}: {exc}", home=home)
+        return None
     if byte_offset is None:
         log_error(
             f"server checkpoint does not match local source for {source.harness} session {source.session_id}",
@@ -396,7 +361,12 @@ def drain_outbox(
     repairs: list[tuple[str, str]] | None = None,
     rejections: list[tuple[str, str, int]] | None = None,
 ) -> bool:
-    """Drain durable batches for the configured server/user until blocked."""
+    """Drain durable batches for the configured server/user until blocked.
+
+    A batch whose acknowledgement does not advance is skipped rather than
+    allowed to block later batches: the server's contiguous checkpoint stays
+    the safety gate, and a later full-history re-spool can repair it.
+    """
     from observal_cli import telemetry_buffer
 
     destination = str(config.get("server_url") or "").rstrip("/")
@@ -412,13 +382,17 @@ def drain_outbox(
         )
     )
 
+    after_id = 0
+    drained_all = True
     while items := telemetry_buffer.pending(
         destination=destination,
         user_id=user_id,
         limit=1,
+        after_id=after_id,
         db_path=db_path,
     ):
         item = items[0]
+        after_id = item.id
         try:
             acknowledgement = post_batch(item.payload, config)
         except PermanentIngestRejectionError as exc:
@@ -449,7 +423,15 @@ def drain_outbox(
                 repairs.append((item.harness, item.session_id))
             return False
         if acknowledged_line < item.end_line:
-            return False
+            # The server's contiguous checkpoint is still behind this batch -
+            # typically a stale range spooled before the server lost its data.
+            # Aborting here would block every later row for this destination,
+            # including other sessions and the full-history re-spool that
+            # repairs contiguity, so record the attempt and keep draining; the
+            # next drain retries this row once the server can acknowledge it.
+            telemetry_buffer.record_attempt(item.id, db_path=db_path)
+            drained_all = False
+            continue
         if acknowledged_offset <= 0:
             acknowledged_offset = item.end_offset
         write_cursor(
@@ -468,7 +450,7 @@ def drain_outbox(
             include_metadata=item.end_line < item.start_line,
             db_path=db_path,
         )
-    return True
+    return drained_all
 
 
 def drain_session_source(
@@ -495,6 +477,9 @@ def drain_session_source(
     user_id = str(config.get("user_id") or "")
     if source.path is None or not destination or not user_id:
         return False
+    reserved = {"final", "total_line_count", "total_offset", "session_hash", "hashed_line_count"}
+    if extra_fields:
+        extra_fields = {key: value for key, value in extra_fields.items() if key not in reserved}
 
     def source_was_rejected() -> bool:
         return bool(
@@ -527,8 +512,22 @@ def drain_session_source(
         byte_offset=byte_offset,
         db_path=db_path,
     )
-    session_hash, hashed_line_count = hash_session_source(source.path) if final else (None, None)
-    lines, end_byte_offsets, bytes_read = read_new_records(source.path, byte_offset)
+    if final:
+        all_lines, all_offsets, _all_bytes, complete = read_source_snapshot(source.path, 0)
+        if byte_offset > _all_bytes:
+            log_error(
+                f"source cursor exceeds committed bytes for {source.harness} session {source.session_id}", home=home
+            )
+            return False
+        final = complete
+        session_hash = hash_lines(all_lines) if final else None
+        hashed_line_count = len(all_lines) if final else None
+        lines = [line for line, end in zip(all_lines, all_offsets, strict=True) if end > byte_offset]
+        end_byte_offsets = [end for end in all_offsets if end > byte_offset]
+        bytes_read = max((_all_bytes - byte_offset), 0)
+    else:
+        lines, end_byte_offsets, bytes_read = read_new_records(source.path, byte_offset)
+        session_hash = hashed_line_count = None
     if extra_records:
         lines.extend(extra_records)
         end_byte_offsets.extend([byte_offset + bytes_read] * len(extra_records))
@@ -557,13 +556,18 @@ def drain_session_source(
                 payload["total_offset"] = byte_offset
                 payload["session_hash"] = session_hash
                 payload["hashed_line_count"] = hashed_line_count
-            telemetry_buffer.enqueue(
-                payload,
-                destination=destination,
-                user_id=user_id,
-                checkpoint_key=source.checkpoint_key,
-                db_path=db_path,
-            )
+            else:
+                payload.pop("final", None)
+                payload.pop("total_line_count", None)
+                payload.pop("total_offset", None)
+            if final or payload.get("total_credits") is not None:
+                telemetry_buffer.enqueue(
+                    payload,
+                    destination=destination,
+                    user_id=user_id,
+                    checkpoint_key=source.checkpoint_key,
+                    db_path=db_path,
+                )
         if spool_only:
             return True
         repairs: list[tuple[str, str]] = []
@@ -622,6 +626,8 @@ def drain_session_source(
         )
         payload["harness"] = source.harness
         payload["end_byte_offsets"] = chunk_end_offsets
+        if extra_fields:
+            payload.update(extra_fields)
         if final and is_last:
             payload["final"] = True
             payload["total_line_count"] = line_count + len(lines)
@@ -632,8 +638,6 @@ def drain_session_source(
             payload.pop("final", None)
             payload.pop("total_line_count", None)
             payload.pop("total_offset", None)
-        if extra_fields:
-            payload.update(extra_fields)
         telemetry_buffer.enqueue(
             payload,
             destination=destination,
@@ -737,9 +741,12 @@ def _first_line_timestamp(session_jsonl: Path):
     from datetime import UTC, datetime
 
     try:
-        with session_jsonl.open("r", encoding="utf-8", errors="replace") as handle:
-            first = handle.readline()
-        record = json.loads(first)
+        first = b""
+        for chunk in source_chunks(session_jsonl):
+            first += chunk
+            if b"\n" in first:
+                break
+        record = json.loads(first.split(b"\n", 1)[0].decode("utf-8", errors="replace"))
     except (OSError, ValueError):
         return None
     if not isinstance(record, dict):

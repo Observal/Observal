@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Dhanpraja <dhanpraja231@users.noreply.github.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 shreyansh-web <shreyansh487@gmail.com>
+# SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Registry-backed harness model tests."""
@@ -18,7 +19,15 @@ def test_every_harness_has_model_catalog():
     for harness, spec in HARNESS_REGISTRY.items():
         assert spec["model_catalog_file"] == f"harness_models/{harness}.json"
         assert spec["supported_models"] == supported_model_ids(harness)
-        assert spec["supported_models"], f"{harness} has no supported models"
+        if harness != "deepseek":
+            assert spec["supported_models"], f"{harness} has no supported models"
+
+
+def test_deepseek_uses_profile_model_configuration():
+    from observal_shared.harness_registry import has_model_selection
+
+    # Installing a skill/MCP bundle must not change a user's DeepSeek model.
+    assert not has_model_selection("deepseek")
 
 
 def test_dynamic_catalogs_have_expected_sources():

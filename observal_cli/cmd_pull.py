@@ -7,6 +7,7 @@
 # SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """observal pull: fetch agent config from the server and write harness files to disk."""
@@ -35,7 +36,7 @@ from observal_cli.harness import ensure_loaded, get_adapter
 from observal_cli.project_lock import PROJECT_LOCK_FILE
 from observal_cli.prompts import password_input, select_one
 from observal_cli.render import OutputMode, esc, output_json, spinner
-from observal_shared.harness_registry import get_scope_aware_harnesses
+from observal_shared.harness_registry import HARNESS_REGISTRY, get_scope_aware_harnesses
 
 # Hook script names used as placeholders in server-generated agent configs.
 # Resolved to absolute paths client-side before writing to disk.
@@ -1006,6 +1007,19 @@ def write_install_snippet(
     """
     written: list[tuple[str, str]] = []  # (path, status)
 
+    def resolve_install_path(raw_path: str, target_dir: Path, *, allow_home: bool = False) -> Path:
+        try:
+            return adapter.resolve_install_path(raw_path, target_dir, allow_home=allow_home)
+        except ValueError as error:
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Generated path is unsafe: {raw_path}.",
+                operation="Pull agent",
+                resource=raw_path,
+                remediation="Check the server-generated file destination and retry.",
+                detail=repr(error),
+            )
+
     def tracked_write(path: Path, content: str | dict, *, merge_mcp: bool = False) -> str:
         try:
             return _write_file_checked(path, content, merge_mcp=merge_mcp)
@@ -1017,6 +1031,24 @@ def write_install_snippet(
                     failed_path=str(path),
                 )
             raise
+
+    def write_with_adapter(write_fn, path: Path, desc: str) -> str:
+        try:
+            return write_fn()
+        except CliError as error:
+            if error.result is None:
+                error.result = _pull_failure_result(written, "write_files", failed_path=str(path))
+            raise
+        except (ValueError, OSError) as error:
+            fail(
+                ErrorCategory.CONFLICT if isinstance(error, ValueError) else ErrorCategory.UNAVAILABLE,
+                f"Could not safely write {desc} configuration: {path}.",
+                operation="Pull agent",
+                resource=str(path),
+                remediation="Repair or back up the existing configuration, then retry.",
+                detail=repr(error),
+                result=_pull_failure_result(written, "write_files", failed_path=str(path)),
+            )
 
     def tracked_skill_install(skill_name: str, installer, **kwargs):
         try:
@@ -1047,20 +1079,20 @@ def write_install_snippet(
                 ),
             )
 
-    # ── mcp_config with path key (Cursor/VSCode/Gemini) ─
+    # ── MCP configuration (the adapter owns its native merge format) ─
     mcp_cfg = snippet.get("mcp_config")
     if mcp_cfg and isinstance(mcp_cfg, dict) and "path" in mcp_cfg:
-        p = _resolve_path(mcp_cfg["path"], target_dir, allow_home=is_user_scope)
+        p = resolve_install_path(mcp_cfg["path"], target_dir, allow_home=is_user_scope)
         if dry_run:
             written.append((str(p), "would write"))
         else:
-            status = tracked_write(p, mcp_cfg["content"], merge_mcp=True)
+            status = write_with_adapter(lambda: adapter.write_mcp_config(p, mcp_cfg["content"]), p, "MCP")
             written.append((str(p), status))
 
     # ── hooks_config (Cursor/VSCode/Copilot/OpenCode/Gemini) ─
     hooks_cfg = snippet.get("hooks_config")
     if hooks_cfg and isinstance(hooks_cfg, dict) and "path" in hooks_cfg:
-        p = _resolve_path(hooks_cfg["path"], target_dir, allow_home=is_user_scope)
+        p = resolve_install_path(hooks_cfg["path"], target_dir, allow_home=is_user_scope)
         content = hooks_cfg["content"]
         if isinstance(content, str):
             content = _resolve_hook_paths(content)
@@ -1080,7 +1112,11 @@ def write_install_snippet(
         if dry_run:
             written.append((str(p), "would write"))
         else:
-            status = tracked_write(p, content, merge_mcp=hooks_cfg.get("merge", False))
+            status = write_with_adapter(
+                lambda: adapter.write_hook_config(p, content, merge=hooks_cfg.get("merge", False)),
+                p,
+                "hook",
+            )
             written.append((str(p), status))
 
     # ── agent_profile (Kiro, Cursor) ────────────────────────
@@ -1093,7 +1129,7 @@ def write_install_snippet(
         elif isinstance(agent_profile.get("content"), str):
             agent_profile["content"] = _resolve_hook_paths(agent_profile["content"])
         agent_profile_allow_home = adapter.allow_home_agent_profile(is_user_scope)
-        p = _resolve_path(agent_profile["path"], target_dir, allow_home=agent_profile_allow_home)
+        p = resolve_install_path(agent_profile["path"], target_dir, allow_home=agent_profile_allow_home)
         if dry_run:
             written.append((str(p), "would write"))
         else:
@@ -1103,7 +1139,7 @@ def write_install_snippet(
     # ── steering_file (Kiro) ───────────────────────────
     steering_file = snippet.get("steering_file")
     if steering_file:
-        p = _resolve_path(steering_file["path"], target_dir, allow_home=is_user_scope)
+        p = resolve_install_path(steering_file["path"], target_dir, allow_home=is_user_scope)
         if dry_run:
             written.append((str(p), "would write"))
         else:
@@ -1113,7 +1149,7 @@ def write_install_snippet(
     # ── hook_files (script files from hook components) ─────
     hook_files = snippet.get("hook_files") or []
     for hf in hook_files:
-        p = _resolve_path(hf["path"], target_dir, allow_home=is_user_scope)
+        p = resolve_install_path(hf["path"], target_dir, allow_home=is_user_scope)
         if dry_run:
             written.append((str(p), "would write"))
         else:
@@ -1137,7 +1173,7 @@ def write_install_snippet(
 
     # ── prompt_files (native Copilot .github/prompts/*.prompt.md) ─
     for pf in snippet.get("prompt_files") or []:
-        p = _resolve_path(pf["path"], target_dir, allow_home=is_user_scope)
+        p = resolve_install_path(pf["path"], target_dir, allow_home=is_user_scope)
         if dry_run:
             written.append((str(p), "would write"))
         else:
@@ -1147,7 +1183,7 @@ def write_install_snippet(
 
     # ── Direct skill files ─────────────────────────
     for sf in snippet.get("skills") or []:
-        p = _resolve_path(sf["path"], target_dir, allow_home=is_user_scope)
+        p = resolve_install_path(sf["path"], target_dir, allow_home=is_user_scope)
         if dry_run:
             written.append((str(p), "would write"))
         else:
@@ -1168,7 +1204,7 @@ def write_install_snippet(
         git_url = sc.get("git_url")
         skill_dest = None
         if sc.get("path"):
-            skill_dest = _resolve_path(sc["path"], target_dir, allow_home=is_user_scope).parent
+            skill_dest = resolve_install_path(sc["path"], target_dir, allow_home=is_user_scope).parent
 
         if dry_run:
             mode = "would clone" if git_url else "would write"
@@ -1229,7 +1265,7 @@ def register_pull(app: typer.Typer):
             ...,
             "--harness",
             "-i",
-            help="Target harness (cursor, kiro, claude-code, codex, copilot, copilot-cli, opencode, antigravity, pi)",
+            help="Target harness (" + ", ".join(HARNESS_REGISTRY) + ")",
         ),
         directory: str = typer.Option(".", "--dir", "-d", help="Target directory for written files"),
         dry_run: bool = typer.Option(False, "--dry-run", "-n", help="Preview files without writing"),
@@ -1590,6 +1626,7 @@ def register_pull(app: typer.Typer):
         warnings_list = (
             lock_warnings + conflict_warnings + list(result.get("warnings") or []) + (snippet.get("_warnings") or [])
         )
+        warnings_list.extend(adapter.install_notes(is_user_scope))
 
         # Run required harness registration before recording the pull as installed.
         setup_results: list[dict] = []
