@@ -29,6 +29,7 @@ import { TableSkeleton } from "@/components/shared/skeleton-layouts";
 import { useDiscoverySearch } from "@/hooks/use-discovery-api";
 import { useHarnesses } from "@/hooks/use-harnesses";
 import { registryItemPath } from "@/lib/registry-name";
+import { RecommendedBadge } from "@/components/registry/recommended-badge";
 import type { DiscoveryAvailability, DiscoveryKind, DiscoverySearchResult } from "@/lib/types";
 
 const EXAMPLES = [
@@ -184,6 +185,7 @@ function ResultCard({ result, harness }: { result: DiscoverySearchResult; harnes
         <Badge variant="outline" className="capitalize">
           {result["obs:approval"] ?? "unknown"}
         </Badge>
+        {result["obs:recommended"] && <RecommendedBadge />}
         {delegable && kind === "agent" && (
           <Badge
             variant="secondary"

@@ -66,6 +66,7 @@ def register_adapter(adapter: HarnessAdapter) -> None:
         "detect_hooks",
         "resolve_session_source",
         "discover_session_sources",
+        "should_capture_session",
         "related_session_sources",
         "session_extra_fields",
         "session_extra_records",

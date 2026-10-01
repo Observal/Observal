@@ -1539,6 +1539,58 @@ def admin_set_role(
     rprint(f"[green]{esc(result.get('email', email))} is now {esc(result.get('role', role))}[/green]")
 
 
+_RECOMMENDABLE = ("agent", "mcp", "skill", "hook", "prompt", "sandbox")
+_RECOMMENDABLE_ROUTES = {
+    "agent": "agents",
+    "mcp": "mcps",
+    "skill": "skills",
+    "hook": "hooks",
+    "prompt": "prompts",
+    "sandbox": "sandboxes",
+}
+
+
+@admin_app.command(name="recommend")
+def admin_recommend(
+    item_type: str = typer.Argument(..., help="agent, mcp, skill, hook, prompt, or sandbox"),
+    reference: str = typer.Argument(..., help="namespace/slug, UUID, row number, or @alias"),
+    unset: bool = typer.Option(False, "--unset", help="Remove the recommendation instead"),
+    output: OutputMode = typer.Option("table", "--output", "-o"),
+):
+    """Mark or unmark an agent or component as recommended.
+
+    Recommended items get a badge in the registry and `obs:recommended: true`
+    in discovery results. It never changes the relevance score. Requires admin
+    privileges.
+
+    Examples:
+
+        observal admin recommend agent acme/security-reviewer
+
+        observal admin recommend mcp acme/github --unset --output json
+    """
+    operation = "Update recommendation"
+    item_type = _command_choice(item_type, _RECOMMENDABLE, "item type", operation)
+    with _command_progress(output, "Updating recommendation..."):
+        entity_id = client.resolve_registry_reference(item_type, reference)
+        try:
+            entity_id = str(UUID(entity_id))
+        except ValueError:
+            # A bare name: let the item's own route resolve it, as `show` does,
+            # so ambiguity and missing items get that route's error.
+            route = _RECOMMENDABLE_ROUTES[item_type]
+            entity_id = str(client.get(f"/api/v1/{route}/{quote(entity_id, safe='')}")["id"])
+        result = client.patch(
+            "/api/v1/admin/recommended",
+            {"entity_type": item_type, "entity_id": entity_id, "recommended": not unset},
+        )
+    if output == "json":
+        output_json(result)
+        return
+    state = "recommended" if result.get("is_recommended") else "no longer recommended"
+    rprint(f"[green]{esc(reference)} is {state}[/green]")
+
+
 # ── Traces / Spans (on ops_app) ─────────────────────────
 
 

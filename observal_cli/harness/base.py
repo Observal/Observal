@@ -235,6 +235,15 @@ class BaseAdapter:
         """Resolve a harness-specific session identity, or defer to shared resolution."""
         return None
 
+    def should_capture_session(self, source: SessionSource, home: Path | None = None) -> bool:
+        """Return whether a discovered session is collected by configured hooks.
+
+        Collection is independent of agent attribution. Shared hooks may fire
+        for ordinary sessions using MCPs and skills; those sessions remain
+        unattributed when no registry agent matches.
+        """
+        return True
+
     def related_session_sources(self, source: SessionSource, home: Path | None = None) -> list[SessionSource]:
         """Return child sources when a harness stores them separately."""
         return []

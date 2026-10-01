@@ -36,6 +36,7 @@ from observal_cli.render import (
     esc,
     handle,
     kv_panel,
+    listing_status,
     output_json,
     relative_time,
     spinner,
@@ -437,7 +438,7 @@ def hook_show(
         output_json(item)
         return
     rows = [
-        ("Status", status_badge(item.get("status", ""))),
+        ("Status", listing_status(item)),
         ("Event", esc(item.get("event", "N/A"))),
         ("Handler Type", esc(item.get("handler_type", "N/A"))),
         ("Handler Config", esc(_json.dumps(item.get("handler_config", {}), indent=2))),

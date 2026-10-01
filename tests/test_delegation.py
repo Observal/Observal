@@ -368,6 +368,15 @@ def test_choose_harness_prefers_the_caller_and_respects_support(monkeypatch):
         service.choose_harness([], None)
 
 
+def test_choose_harness_never_swaps_an_explicit_harness(monkeypatch):
+    monkeypatch.setattr(service, "headless_harnesses", lambda: ["claude-code", "pi"])
+    assert service.choose_harness(["claude-code", "pi"], "claude-code", required="pi") == "pi"
+    with pytest.raises(service.DelegationError, match="supports claude-code, not pi"):
+        service.choose_harness(["claude-code"], None, required="pi")
+    with pytest.raises(service.DelegationError, match="kiro cannot run an agent headless"):
+        service.choose_harness([], None, required="kiro")
+
+
 def test_start_records_the_delegation_and_runs_the_worker(tmp_path, monkeypatch):
     monkeypatch.setattr(service.client, "get", lambda *_a, **_k: _agent_entry())
     monkeypatch.setattr(service, "headless_harnesses", lambda: ["claude-code"])

@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Observal Contributors
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Behavioral tests for the operations, admin, trace, and self CLI commands."""
@@ -1676,8 +1677,46 @@ def test_every_admin_workflow_has_output_contract():
                 yield name, child
 
     rows = list(leaves(command))
-    assert len(rows) == 24
+    assert len(rows) == 25
     assert all(any(parameter.name == "output" for parameter in leaf.params) for _name, leaf in rows)
+
+
+def test_admin_recommend_resolves_the_reference_and_sends_the_flag(cli, monkeypatch):
+    sent = []
+    ids = {"mcp": "11111111-1111-4111-8111-111111111111", "agent": "22222222-2222-4222-8222-222222222222"}
+    monkeypatch.setattr(ops.client, "resolve_registry_reference", lambda kind, ref: ids[kind])
+    monkeypatch.setattr(
+        ops.client,
+        "patch",
+        lambda path, body: sent.append((path, body)) or {**body, "is_recommended": body["recommended"]},
+    )
+
+    ops.admin_recommend("MCP", "acme/github", False, "json")
+    ops.admin_recommend("agent", "acme/reviewer", True, "table")
+
+    assert sent == [
+        ("/api/v1/admin/recommended", {"entity_type": "mcp", "entity_id": ids["mcp"], "recommended": True}),
+        ("/api/v1/admin/recommended", {"entity_type": "agent", "entity_id": ids["agent"], "recommended": False}),
+    ]
+    assert cli.json[0]["is_recommended"] is True
+    assert "acme/reviewer is no longer recommended" in cli.lines[-1]
+
+
+def test_admin_recommend_resolves_a_bare_name_through_the_item_route(cli, monkeypatch):
+    skill_id = "33333333-3333-4333-8333-333333333333"
+    fetched, sent = [], []
+    monkeypatch.setattr(ops.client, "resolve_registry_reference", lambda kind, ref: ref)
+    monkeypatch.setattr(ops.client, "get", lambda path: fetched.append(path) or {"id": skill_id})
+    monkeypatch.setattr(
+        ops.client,
+        "patch",
+        lambda path, body: sent.append(body) or {**body, "is_recommended": body["recommended"]},
+    )
+
+    ops.admin_recommend("skill", "security review", False, "json")
+
+    assert fetched == ["/api/v1/skills/security%20review"]
+    assert sent == [{"entity_type": "skill", "entity_id": skill_id, "recommended": True}]
 
 
 def test_admin_mutations_return_json_without_human_output(cli, monkeypatch):

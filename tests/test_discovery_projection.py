@@ -42,6 +42,7 @@ from services.discovery.search import (
     rank_entries,
     search_entries,
 )
+from services.discovery.serialize import search_result_item
 from services.discovery.visibility import visible_entries_predicate
 from tests import discovery_support as fx
 
@@ -271,6 +272,26 @@ async def test_rename_keeps_identifier_and_updates_name(sessions):
         assert after.display_name == "Security Audit"
         assert after.native_ref == "acme/security-audit@1.2.0"
         assert after.content_hash != old_hash
+
+
+@pytest.mark.asyncio
+async def test_recommendation_reprojects_as_its_own_term(sessions):
+    async with sessions() as db:
+        owner = await fx.user(db)
+        listing = await fx.skill(db, owner)
+        before = await project_entity(db, DiscoveryKind.skill, listing.id, ctx=fx.CTX)
+        await db.commit()
+        assert before.raw_entry["obs:recommended"] is False
+        old_hash = before.content_hash
+
+        listing.is_recommended = True
+        await db.flush()
+        after = await project_entity(db, DiscoveryKind.skill, listing.id, ctx=fx.CTX)
+        await db.commit()
+
+        assert after.raw_entry["obs:recommended"] is True
+        assert after.content_hash != old_hash
+        _validate_entry(after.raw_entry)
 
 
 @pytest.mark.asyncio
@@ -700,6 +721,22 @@ def test_rank_entries_is_deterministic_on_ties():
 def test_rank_entries_approved_before_pending_on_equal_score():
     ranked = rank_entries("tool", [_entry("A Tool", lifecycle=DiscoveryLifecycle.pending), _entry("B Tool")])
     assert ranked[0].entry.display_name == "B Tool"
+
+
+def test_recommendation_breaks_ties_without_touching_score():
+    plain, endorsed = _entry("A Tool"), _entry("B Tool")
+    endorsed.raw_entry = {"obs:recommended": True}
+    ranked = rank_entries("tool", [plain, endorsed])
+    assert [r.entry.display_name for r in ranked] == ["B Tool", "A Tool"]
+    assert ranked[0].score == ranked[1].score
+    # A better match still wins over a recommended weaker one.
+    weak = _entry("Notes", description="mentions a tool once")
+    weak.raw_entry = {"obs:recommended": True}
+    assert [r.entry.display_name for r in rank_entries("tool", [weak, plain])] == ["A Tool", "Notes"]
+    for r in ranked:
+        r.entry.visibility = DiscoveryVisibility.public
+    assert search_result_item(ranked[0], source="s")["obs:recommended"] is True
+    assert search_result_item(ranked[1], source="s")["obs:recommended"] is False
 
 
 # ── Reprojection hook ────────────────────────────────────────────────────

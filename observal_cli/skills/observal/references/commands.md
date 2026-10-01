@@ -31,6 +31,7 @@ Every command available in the installed CLI. This block is generated from the T
 - `observal admin create-user`: Create a new user account. Requires admin privileges.
 - `observal admin delete-user`: Delete a user account. Requires admin privileges.
 - `observal admin diagnostics`: Show system diagnostics and health status.
+- `observal admin recommend`: Mark or unmark an agent or component as recommended.
 - `observal admin reset-password`: Reset a user's password. Requires admin privileges.
 - `observal admin saml-config`: View current SAML SSO configuration.
 - `observal admin saml-config-delete`: Delete SAML SSO configuration. Disables SAML SSO.
@@ -252,6 +253,13 @@ Every command available in the installed CLI. This block is generated from the T
 - `observal server rollback`: Restore PostgreSQL and the Docker image version from backup.
 - `observal server upgrade`: Upgrade a local Docker deployment.
 - `observal server versions`: List Docker image versions and managed PostgreSQL backups.
+
+**`observal share`**: Share version-pinned Agents installed in the current repository.
+
+- `observal share candidates`: List shareable Agent versions tracked in the current repository.
+- `observal share create`: Select repository Agents and create an opaque, expiring share link.
+- `observal share open`: Open a share and, after confirmation, pull its accessible Agents.
+- `observal share revoke`: Revoke a share link immediately.
 
 **`observal team`**: Manage teamspaces: creation, membership, access, and visibility.
 

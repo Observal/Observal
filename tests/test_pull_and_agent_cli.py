@@ -353,9 +353,9 @@ class TestPullKiro:
         assert data["name"] == "my-agent"
         assert data["tools"] == ["search"]
 
-    def test_rewrites_hook_python_path(self, tmp_path: Path):
-        """Hook commands should use sys.executable, not bare python3."""
-        snippet = {
+    @staticmethod
+    def _hooked_snippet() -> dict:
+        return {
             "config_snippet": {
                 "agent_profile": {
                     "path": "~/.kiro/agents/my-agent.json",
@@ -367,9 +367,57 @@ class TestPullKiro:
                             "stop": [{"command": "python3 -m observal_cli.hooks.kiro_session_push"}],
                         },
                     },
-                }
+                },
+                "hooks_config": {
+                    "path": ".kiro/hooks/observal.json",
+                    "content": {
+                        "version": "v1",
+                        "hooks": [
+                            {
+                                "name": "observal-session-push-stop",
+                                "trigger": "Stop",
+                                "action": {
+                                    "type": "command",
+                                    "command": "python3 -m observal_cli.hooks.session_push --harness kiro",
+                                },
+                            }
+                        ],
+                    },
+                },
             }
         }
+
+    def _pull(self, tmp_path: Path):
+        with _patch_config(), _patch_get_agent(), _patch_post(self._hooked_snippet()):
+            return runner.invoke(
+                cli_app,
+                [
+                    "agent",
+                    "pull",
+                    "abc123",
+                    "--harness",
+                    "kiro",
+                    "--dir",
+                    str(tmp_path),
+                    "--no-prompt",
+                    "--scope",
+                    "project",
+                ],
+            )
+
+    def test_strips_cli_only_tool_fields_a_stale_server_still_emits(self, tmp_path: Path):
+        """Repair profiles on pull, not just at generation time.
+
+        Kiro IDE 1.x ProfileLoader drops any profile carrying ``allowedTools``
+        or ``toolsSettings`` without ``permissions``, so the agent never reaches
+        the picker. The server no longer emits them, but a client talking to an
+        older server has to fix the profile locally.
+        """
+        snippet = self._hooked_snippet()
+        content = snippet["config_snippet"]["agent_profile"]["content"]
+        content["allowedTools"] = []
+        content["toolsSettings"] = {}
+
         with _patch_config(), _patch_get_agent(), _patch_post(snippet):
             result = runner.invoke(
                 cli_app,
@@ -386,6 +434,51 @@ class TestPullKiro:
                     "project",
                 ],
             )
+
+        assert result.exit_code == 0, result.output
+        data = json.loads((tmp_path / ".kiro" / "agents" / "my-agent.json").read_text())
+        assert "allowedTools" not in data
+        assert "toolsSettings" not in data
+        assert data["name"] == "my-agent"
+
+    def test_strips_inline_hooks_when_ide_can_read_the_standalone_file(self, tmp_path: Path, monkeypatch):
+        """Kiro IDE 1.0 loads inline-hooked agents but never fires the hooks."""
+        import observal_cli.harness.kiro as kiro_adapter
+
+        monkeypatch.setattr(kiro_adapter, "use_inline_hooks", lambda *_a, **_k: False)
+        result = self._pull(tmp_path)
+
+        assert result.exit_code == 0, result.output
+        data = json.loads((tmp_path / ".kiro" / "agents" / "my-agent.json").read_text())
+        assert "hooks" not in data
+
+    def test_writes_standalone_v1_hooks_file(self, tmp_path: Path, monkeypatch):
+        """Telemetry hooks live in .kiro/hooks/observal.json, read by IDE and CLI 3.x."""
+        import observal_cli.harness.kiro as kiro_adapter
+
+        monkeypatch.setattr(kiro_adapter, "use_inline_hooks", lambda *_a, **_k: False)
+        result = self._pull(tmp_path)
+
+        assert result.exit_code == 0, result.output
+        hooks_file = tmp_path / ".kiro" / "hooks" / "observal.json"
+        assert hooks_file.exists()
+        data = json.loads(hooks_file.read_text())
+        assert data["version"] == "v1"
+        triggers = {h["trigger"] for h in data["hooks"]}
+        assert triggers == {"UserPromptSubmit", "Stop"}
+        for hook in data["hooks"]:
+            command = hook["action"]["command"]
+            assert sys.executable in command, f"hook missing sys.executable: {command}"
+            # Shared across every agent in the scope, so no per-agent id.
+            assert "OBSERVAL_AGENT_ID" not in command
+            assert not command.startswith("python3 ")
+
+    def test_rewrites_hook_python_path(self, tmp_path: Path, monkeypatch):
+        """On legacy Kiro CLI 2.x, inline hooks stay and use sys.executable."""
+        import observal_cli.harness.kiro as kiro_adapter
+
+        monkeypatch.setattr(kiro_adapter, "use_inline_hooks", lambda *_a, **_k: True)
+        result = self._pull(tmp_path)
 
         assert result.exit_code == 0, result.output
         agent = tmp_path / ".kiro" / "agents" / "my-agent.json"
@@ -635,7 +728,7 @@ class TestPullEdgeCases:
             _patch_config(),
             _patch_get_agent(),
             _patch_post(_codex_snippet()),
-            patch("observal_cli.cmd_pull.config.resolve_alias", return_value="real-uuid") as mock_resolve,
+            patch("observal_cli.config.resolve_alias", return_value="real-uuid") as mock_resolve,
         ):
             result = runner.invoke(
                 cli_app, ["agent", "pull", "@myagent", "--harness", "codex", "--dir", str(tmp_path), "--no-prompt"]

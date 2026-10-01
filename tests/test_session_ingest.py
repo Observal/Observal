@@ -98,6 +98,41 @@ KIRO_TOOL_CALL = json.dumps(
         },
     }
 )
+# Kiro IDE transcripts envelope every record as {id, timestamp, payload} and
+# dispatch on payload.type, unlike the CLI's flat "kind" records above.
+KIRO_IDE_PROMPT = json.dumps(
+    {
+        "id": "ide-prompt-1",
+        "timestamp": "2026-09-26T00:00:00.000Z",
+        "payload": {"type": "user", "content": "pull the agent called test"},
+    }
+)
+KIRO_IDE_TOOL_CALL = json.dumps(
+    {
+        "id": "ide-call-1",
+        "timestamp": "2026-09-26T00:00:01.000Z",
+        "payload": {
+            "type": "tool_call",
+            "toolCallId": "toolu_ide_1",
+            "toolName": "executeBash",
+            "args": {"command": "observal agent list"},
+        },
+    }
+)
+KIRO_IDE_REASONING = json.dumps(
+    {
+        "id": "ide-reason-1",
+        "timestamp": "2026-09-26T00:00:02.000Z",
+        "payload": {"type": "assistant", "content": "thinking...", "operationType": "Reasoning"},
+    }
+)
+KIRO_IDE_TURN_START = json.dumps(
+    {
+        "id": "ide-turn-1",
+        "timestamp": "2026-09-26T00:00:03.000Z",
+        "payload": {"type": "turn_start", "executionId": "exec-1"},
+    }
+)
 CURSOR_TOOL_CALL = json.dumps(
     {
         "role": "assistant",
@@ -175,6 +210,31 @@ GOOSE_TOOL_CALL = json.dumps(
             },
         ),
         (
+            "kiro",
+            KIRO_IDE_PROMPT,
+            {"event_type": "user_prompt", "uuid": "ide-prompt-1"},
+        ),
+        (
+            "kiro",
+            KIRO_IDE_TOOL_CALL,
+            {
+                "event_type": "tool_call",
+                "tool_name": "executeBash",
+                "tool_id": "toolu_ide_1",
+                "uuid": "ide-call-1",
+            },
+        ),
+        (
+            "kiro",
+            KIRO_IDE_REASONING,
+            {"event_type": "thinking"},
+        ),
+        (
+            "kiro",
+            KIRO_IDE_TURN_START,
+            {"event_type": "meta"},
+        ),
+        (
             "cursor",
             CURSOR_TOOL_CALL,
             {
@@ -206,7 +266,7 @@ GOOSE_TOOL_CALL = json.dumps(
             CODEX_USAGE,
             {
                 "event_type": "meta",
-                "input_tokens": 21,
+                "input_tokens": 16,
                 "output_tokens": 13,
                 "cache_read_tokens": 5,
             },
@@ -520,7 +580,7 @@ async def test_clickhouse_failures_propagate_and_stop_later_writes(external_call
             "codex",
             json.loads(CODEX_USAGE),
             {
-                "input_tokens": 21,
+                "input_tokens": 16,
                 "output_tokens": 13,
                 "cache_read_tokens": 5,
                 "cache_write_tokens": 0,
@@ -531,7 +591,7 @@ async def test_clickhouse_failures_propagate_and_stop_later_writes(external_call
             "copilot-cli",
             {"data": {"inputTokens": 7, "outputTokens": 2, "cacheReadTokens": 1, "model": "flat"}},
             {
-                "input_tokens": 7,
+                "input_tokens": 6,
                 "output_tokens": 2,
                 "cache_read_tokens": 1,
                 "cache_write_tokens": 0,
@@ -597,6 +657,32 @@ def test_usage_extraction_is_harness_specific(harness: str, parsed: dict, expect
             {"payload": {"info": {"total_token_usage": {"input_tokens": 9, "output_tokens": 6}}}},
             (9, 6, 0, 0, ""),
         ),
+        ({"payload": {"info": {"last_token_usage": ["not a mapping"]}}}, (0, 0, 0, 0, "")),
+        (
+            {
+                "payload": {
+                    "info": {
+                        "last_token_usage": "invalid",
+                        "total_token_usage": {"input_tokens": 12, "cached_input_tokens": 4},
+                    }
+                }
+            },
+            (8, 0, 4, 0, ""),
+        ),
+        (
+            {
+                "payload": {
+                    "info": {
+                        "last_token_usage": {
+                            "input_tokens": 42,
+                            "cached_input_tokens": -2,
+                            "output_tokens": float("inf"),
+                        }
+                    }
+                }
+            },
+            (42, 0, 0, 0, ""),
+        ),
     ],
 )
 def test_codex_usage_tolerates_payload_variants(parsed: dict, expected: tuple):
@@ -624,6 +710,108 @@ def test_copilot_usage_without_token_fields_is_zeroed():
         "cache_write_tokens": 0,
         "model": "",
     }
+
+
+@pytest.mark.parametrize(
+    ("harness", "parsed", "expected"),
+    [
+        (
+            "copilot-cli",
+            {
+                "data": {
+                    "inputTokens": "42",
+                    "cacheReadTokens": "many",
+                    "cacheWriteTokens": -3,
+                    "outputTokens": float("inf"),
+                }
+            },
+            (42, 0, 0, 0),
+        ),
+        (
+            "copilot",
+            {"event": {"data": {"inputTokens": "many", "cacheReadTokens": 7, "outputTokens": 2}}},
+            (0, 2, 7, 0),
+        ),
+    ],
+)
+def test_copilot_usage_tolerates_malformed_counts(harness: str, parsed: dict, expected: tuple[int, ...]):
+    usage = session_ingest._extract_usage_tokens(parsed, harness)
+    assert (
+        tuple(usage[key] for key in ("input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"))
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    ("harness", "parsed", "expected"),
+    [
+        (
+            "codex",
+            {
+                "type": "event_msg",
+                "payload": {
+                    "type": "token_count",
+                    "info": {
+                        "last_token_usage": {
+                            "input_tokens": 12017,
+                            "cached_input_tokens": 11520,
+                            "output_tokens": 55,
+                            "reasoning_output_tokens": 0,
+                            "total_tokens": 12072,
+                        }
+                    },
+                },
+            },
+            (497, 55, 11520, 0),
+        ),
+        # A cache count above the input total never produces negative input.
+        (
+            "codex",
+            {"payload": {"info": {"last_token_usage": {"input_tokens": 5, "cached_input_tokens": 9}}}},
+            (0, 0, 9, 0),
+        ),
+        (
+            "copilot-cli",
+            {"data": {"inputTokens": 45102, "outputTokens": 2101, "cacheReadTokens": 32512, "cacheWriteTokens": 0}},
+            (12590, 2101, 32512, 0),
+        ),
+        (
+            "copilot",
+            {
+                "event": {
+                    "type": "assistant.usage",
+                    "data": {"inputTokens": 900, "outputTokens": 10, "cacheReadTokens": 600, "cacheWriteTokens": 200},
+                }
+            },
+            (100, 10, 600, 200),
+        ),
+        (
+            "goose",
+            goose_message(
+                "assistant",
+                [],
+                metadata={
+                    "usage": {
+                        "inputTokens": 6010,
+                        "outputTokens": 50,
+                        "cacheReadTokens": 5000,
+                        "cacheWriteTokens": 1000,
+                    }
+                },
+            ),
+            (10, 50, 5000, 1000),
+        ),
+    ],
+)
+def test_cache_inclusive_input_is_stored_without_cache(harness: str, parsed: dict, expected: tuple):
+    """Observal stores input_tokens excluding cache reads and writes for every harness."""
+    usage = session_ingest._extract_usage_tokens(parsed, harness)
+    assert (
+        usage["input_tokens"],
+        usage["output_tokens"],
+        usage["cache_read_tokens"],
+        usage["cache_write_tokens"],
+    ) == expected
 
 
 @pytest.mark.parametrize(

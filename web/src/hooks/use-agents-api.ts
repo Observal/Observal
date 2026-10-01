@@ -21,8 +21,9 @@ import {
   registry,
   feedback,
   bulk,
+  admin,
 } from "@/lib/api";
-import type { LeaderboardWindow } from "@/lib/types";
+import type { LeaderboardWindow, SetRecommendedRequest } from "@/lib/types";
 
 // ── Agent-specific ──────────────────────────────────────────────────
 
@@ -249,6 +250,24 @@ export function useBulkCreateAgents() {
     },
     onError: (err: Error) => {
       toast.error(err.message || "Bulk create failed");
+    },
+  });
+}
+
+// ── Recommended ────────────────────────────────────────────────────
+
+export function useSetRecommended() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: SetRecommendedRequest) =>
+      admin.setRecommended(vars),
+    onSuccess: (_data, vars) => {
+      // Keep the toggle pending until the active detail query reflects the new value.
+      toast.success(vars.recommended ? "Marked as recommended" : "Recommendation removed");
+      return qc.invalidateQueries({ queryKey: ["registry"] });
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || "Failed to update recommendation");
     },
   });
 }

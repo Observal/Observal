@@ -17,7 +17,9 @@ harness-specific data (features, paths, scopes) is defined in
 from __future__ import annotations
 
 import re
-from typing import Literal
+from typing import Annotated, Literal
+
+from pydantic import BeforeValidator
 
 from observal_shared.harness_registry import get_harness_capability_matrix, get_valid_harnesses
 
@@ -204,3 +206,8 @@ def make_harness_list_validator():
         return normalized
 
     return classmethod(_check)
+
+
+# Admin editorial flag. Rows that have not been flushed yet still hold None
+# until the column default applies on insert, so coerce instead of rejecting.
+RecommendedFlag = Annotated[bool, BeforeValidator(bool)]

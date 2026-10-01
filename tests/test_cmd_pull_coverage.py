@@ -499,22 +499,8 @@ def test_write_file_yaml_merges_or_preserves_existing_content(tmp_path: Path) ->
     assert yaml.safe_load(created.read_text()) == {"extensions": {"new": {}}}
 
 
-def test_rewrite_kiro_hooks_replaces_observal_entries_and_keeps_user_hooks(monkeypatch: pytest.MonkeyPatch) -> None:
-    import observal_cli.harness_specs.kiro_hooks_spec as spec
-
-    build = MagicMock(
-        return_value={
-            "stop": [{"command": "new stop"}],
-            "userPromptSubmit": [{"command": "new prompt"}],
-        }
-    )
-    monkeypatch.setattr(spec, "build_kiro_hooks", build)
-    monkeypatch.setattr(
-        cmd_pull.config,
-        "get_or_exit",
-        lambda **_kwargs: {"server_url": "https://registry.example/"},
-    )
-    content = {
+def _kiro_profile_with_hooks() -> dict:
+    return {
         "hooks": {
             "stop": [
                 {"command": "python -m observal_cli.old"},
@@ -524,14 +510,57 @@ def test_rewrite_kiro_hooks_replaces_observal_entries_and_keeps_user_hooks(monke
         }
     }
 
-    assert cmd_pull._rewrite_kiro_hooks(content, agent_id="agent-1") == {
+
+def test_rewrite_kiro_agent_profile_strips_inline_hooks_for_ide(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Kiro IDE 1.0 hides agents carrying a `hooks` field, so Observal's go away."""
+    import observal_cli.harness.kiro as kiro_adapter
+
+    monkeypatch.setattr(kiro_adapter, "use_inline_hooks", lambda *_a, **_k: False)
+
+    assert cmd_pull._rewrite_kiro_agent_profile(_kiro_profile_with_hooks(), agent_id="agent-1") == {
+        "hooks": {
+            "stop": [{"command": "echo user"}],
+            "custom": [{"command": "custom"}],
+        }
+    }
+
+
+def test_rewrite_kiro_agent_profile_drops_hooks_key_when_only_observal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An agent with nothing but Observal hooks must end up with no `hooks` key at all."""
+    import observal_cli.harness.kiro as kiro_adapter
+
+    monkeypatch.setattr(kiro_adapter, "use_inline_hooks", lambda *_a, **_k: False)
+    content = {"name": "a", "hooks": {"stop": [{"command": "python -m observal_cli.hooks.session_push"}]}}
+
+    assert cmd_pull._rewrite_kiro_agent_profile(content, agent_id="agent-1") == {"name": "a"}
+
+
+def test_rewrite_kiro_agent_profile_keeps_inline_hooks_on_legacy_cli(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Kiro CLI 2.x only understands inline hooks, so they are re-added there."""
+    import observal_cli.harness.kiro as kiro_adapter
+    import observal_cli.harness_specs.kiro_hooks_spec as spec
+
+    monkeypatch.setattr(kiro_adapter, "use_inline_hooks", lambda *_a, **_k: True)
+    build = MagicMock(
+        return_value={
+            "stop": [{"command": "new stop"}],
+            "userPromptSubmit": [{"command": "new prompt"}],
+        }
+    )
+    monkeypatch.setattr(spec, "build_kiro_hooks", build)
+
+    assert cmd_pull._rewrite_kiro_agent_profile(_kiro_profile_with_hooks(), agent_id="agent-1") == {
         "hooks": {
             "stop": [{"command": "echo user"}, {"command": "new stop"}],
             "custom": [{"command": "custom"}],
             "userPromptSubmit": [{"command": "new prompt"}],
         }
     }
-    build.assert_called_once_with("https://registry.example/api/v1/telemetry/hooks", agent_id="agent-1")
+    build.assert_called_once_with(agent_id="agent-1")
 
 
 def test_rewrite_copilot_hooks_removes_both_legacy_commands(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2250,3 +2279,25 @@ def test_project_lock_is_sorted_and_versioned(tmp_path):
     (tmp_path / "observal.lock").write_text(json.dumps({"lock_version": 99, "agents": {}}))
     with pytest.raises(project_lock.ProjectLockError, match="unsupported lock_version"):
         project_lock.read(tmp_path)
+
+
+def test_inline_hook_rewrite_survives_a_malformed_entry():
+    """A truthy non-dict entry would raise on .get and abort the whole pull."""
+    from observal_cli.cmd_pull import _rewrite_kiro_agent_profile
+
+    cleaned = _rewrite_kiro_agent_profile(
+        {
+            "hooks": {
+                "userPromptSubmit": [
+                    "a bare string someone hand-edited in",
+                    {"command": "python -m observal_cli.hooks.session_push --harness kiro"},
+                    {"command": "echo mine"},
+                ]
+            }
+        }
+    )
+
+    assert cleaned["hooks"]["userPromptSubmit"][:2] == [
+        "a bare string someone hand-edited in",
+        {"command": "echo mine"},
+    ]

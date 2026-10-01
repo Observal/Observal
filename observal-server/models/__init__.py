@@ -7,6 +7,7 @@
 
 from models.agent import Agent, AgentStatus
 from models.agent_component import AgentComponent
+from models.agent_share import AgentShareItem, AgentShareManifest
 from models.alert import AlertRule
 from models.alert_history import AlertHistory
 from models.base import Base
@@ -49,6 +50,8 @@ __all__ = [
     "Agent",
     "AgentComponent",
     "AgentDownloadRecord",
+    "AgentShareItem",
+    "AgentShareManifest",
     "AgentStatus",
     "AlertHistory",
     "AlertRule",

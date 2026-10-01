@@ -29,6 +29,7 @@ from observal_cli.render import (
     esc,
     handle,
     kv_panel,
+    listing_status,
     output_json,
     relative_time,
     spinner,
@@ -353,7 +354,7 @@ def prompt_show(
         kv_panel(
             f"{esc(display_name(item))} v{esc(item.get('version', '?'))}",
             [
-                ("Status", status_badge(item.get("status", ""))),
+                ("Status", listing_status(item)),
                 ("Category", esc(item.get("category", "N/A"))),
                 ("Namespace", esc(handle(item) or "N/A")),
                 ("Description", esc(item.get("description", ""))),

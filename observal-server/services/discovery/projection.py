@@ -225,6 +225,7 @@ def build_ard_entry(
         "obs:visibility": _visibility(listing).value,
         "obs:activatable": projected.activatable and lifecycle == DiscoveryLifecycle.approved,
         "obs:artifactDigest": projected.artifact.digest,
+        "obs:recommended": bool(getattr(listing, "is_recommended", False)),
         "obs:capabilitiesSource": "derived",
         "obs:representativeQueriesSource": "derived",
     }

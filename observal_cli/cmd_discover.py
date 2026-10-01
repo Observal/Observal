@@ -272,7 +272,7 @@ def discover_search(
             f"{esc(item.get('displayName', ''))}\n[dim]{esc(item.get('obs:nativeRef', ''))}[/dim]",
             esc(item.get("version", "")),
             f"{item.get('score', 0)}",
-            esc(item.get("obs:approval", "")),
+            esc(item.get("obs:approval", "")) + ("\n[cyan]recommended[/cyan]" if item.get("obs:recommended") else ""),
             _AVAILABILITY_LABELS.get(item.get("obs:availability", ""), esc(item.get("obs:availability", ""))),
             esc(", ".join(item.get("matchedOn") or [])),
         )

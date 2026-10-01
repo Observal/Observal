@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
 # SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 [project]
@@ -42,7 +43,7 @@ dependencies = [
     "slowapi",
     # >=2.14.0: CVE-2026-102274 (malformed RSA JWK aborts JWKS parsing)
     # and CVE-2026-101917 (unknown-kid JWKS refresh amplification).
-    "PyJWT>=2.14.0",
+    "PyJWT>=2.15.0",
     "aiosqlite>=0.22.1",
     "tenacity>=8.0.0",
     "python-multipart>=0.0.31",
@@ -51,7 +52,7 @@ dependencies = [
     "structlog>=24.1.0",
     "loguru>=0.7.0",
     "prometheus-fastapi-instrumentator>=7.0.0",
-    "urllib3>=2.7.0",
+    "urllib3>=2.8.0",
     "idna>=3.15",
     "orjson>=3.10.0",
     "xxhash>=3.4.0",

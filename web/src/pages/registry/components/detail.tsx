@@ -29,7 +29,7 @@ import { useComponentInsightReports, useGenerateComponentInsight } from "@/hooks
 import { useOptionalAuth } from "@/hooks/use-auth";
 import { hasMinRole } from "@/hooks/use-role-guard";
 import type { RegistryType } from "@/lib/api";
-import type { FeedbackItem, RegistryItem, ComponentVersionSummary } from "@/lib/types";
+import type { FeedbackItem, RegistryItem, ComponentVersionSummary, RecommendableType } from "@/lib/types";
 import { compactNumber } from "@/lib/utils";
 import { canonicalRouteParts, registryIdentity } from "@/lib/registry-name";
 import { tagColorClasses } from "@/lib/tag-colors";
@@ -52,6 +52,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
+import { RecommendedBadge, RecommendedToggle } from "@/components/registry/recommended-badge";
 import { Button } from "@/components/ui/button";
 import { PickerSelect } from "@/components/ui/picker-select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -142,6 +143,7 @@ export default function ComponentDetailPage({
   const { data: reportPages, isLoading: reportsLoading, isError: reportsError, hasNextPage, fetchNextPage, isFetchingNextPage } = useComponentInsightReports(insightType ?? "mcp", id, showInsights);
   const componentReports = reportPages?.pages.flat() ?? [];
   const generateComponentInsight = useGenerateComponentInsight();
+  const isAdmin = isAuthenticated && hasMinRole(getUserRole(), "admin");
   const owningTeam = item?.team_id ? teams.find((team) => team.id === String(item.team_id)) : undefined;
   const personalTeam = teams.find((team) => team.is_personal && team.visibility === "private");
   const teamRole = owningTeam?.role;
@@ -328,6 +330,7 @@ export default function ComponentDetailPage({
                     {item.status}
                   </Badge>
                 )}
+                {item.is_recommended && <RecommendedBadge />}
                 {showVisibilityControl && (
                   <PickerSelect
                     value={currentVisibility}
@@ -378,6 +381,16 @@ export default function ComponentDetailPage({
                 </div>
               )}
             </div>
+
+            {isAdmin && (
+              <div className="lg:hidden">
+                <RecommendedToggle
+                  entityType={singularType as RecommendableType}
+                  entityId={String(item.id)}
+                  isRecommended={!!item.is_recommended}
+                />
+              </div>
+            )}
 
             {/* Grid: Main + Sidebar */}
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-8 items-start">
@@ -640,6 +653,14 @@ export default function ComponentDetailPage({
                   </h3>
                   <p className="text-sm">{String(item.owner)}</p>
                 </div>
+              )}
+
+              {isAdmin && (
+                <RecommendedToggle
+                  entityType={singularType as RecommendableType}
+                  entityId={String(item.id)}
+                  isRecommended={!!item.is_recommended}
+                />
               )}
 
               {(canEdit || coAuthors.length > 0) && (

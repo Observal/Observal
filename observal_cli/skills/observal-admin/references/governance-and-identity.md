@@ -8,6 +8,7 @@
 - Settings and diagnostics
 - Users
 - Review queue
+- Recommendations
 - Security and audit
 - SAML and SCIM
 
@@ -58,6 +59,17 @@ observal admin review reject REVIEW_UUID --reason 'Not reproducible' --output js
 ```
 
 Component types include `mcp`, `skill`, `hook`, `prompt`, and `sandbox`. Agent and bundle selectors are mutually exclusive. Verify returned status and do not act on unrelated queue items.
+
+## Recommendations
+
+Admins can mark an agent or component as recommended. It adds a registry badge and `obs:recommended: true` in discovery; it never changes relevance scores.
+
+```bash
+observal admin recommend agent NAMESPACE/SLUG --output json
+observal admin recommend mcp NAMESPACE/SLUG --unset --output json
+```
+
+Types are `agent`, `mcp`, `skill`, `hook`, `prompt`, and `sandbox`. Verify `is_recommended` in the response.
 
 ## Security and audit
 

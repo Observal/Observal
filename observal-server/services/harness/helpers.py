@@ -27,13 +27,50 @@ if TYPE_CHECKING:
     from models.agent import Agent
 from services.config_generator import _build_mcp_context
 
-# Map from internal PascalCase event names to Kiro camelCase event names.
+# Map from internal PascalCase event names to legacy Kiro CLI 2.x camelCase
+# event names (inline agent hooks).
 _KIRO_EVENT_MAP = {
     "SessionStart": "agentSpawn",
     "UserPromptSubmit": "userPromptSubmit",
     "PreToolUse": "preToolUse",
     "PostToolUse": "postToolUse",
     "Stop": "stop",
+}
+
+# Map to the v1 standalone-hooks-file triggers used by Kiro IDE 1.0 / CLI 3.0.
+# Accepts both the internal PascalCase names and the legacy camelCase names so
+# hook components authored against either vocabulary keep working.
+_KIRO_V1_TRIGGER_MAP = {
+    "SessionStart": "SessionStart",
+    "agentSpawn": "SessionStart",
+    "UserPromptSubmit": "UserPromptSubmit",
+    "userPromptSubmit": "UserPromptSubmit",
+    "PreToolUse": "PreToolUse",
+    "preToolUse": "PreToolUse",
+    "PostToolUse": "PostToolUse",
+    "postToolUse": "PostToolUse",
+    "Stop": "Stop",
+    "stop": "Stop",
+    "agentStop": "Stop",
+    "PostFileSave": "PostFileSave",
+    "fileEdited": "PostFileSave",
+    "PostFileCreate": "PostFileCreate",
+    "fileCreated": "PostFileCreate",
+    "PostFileDelete": "PostFileDelete",
+    "fileDeleted": "PostFileDelete",
+    "PreTaskExec": "PreTaskExec",
+    "PostTaskExec": "PostTaskExec",
+}
+
+# v1 triggers whose matcher is evaluated; for every other trigger the matcher is
+# ignored by Kiro and must be omitted.
+_KIRO_V1_MATCHER_TRIGGERS = {
+    "PreToolUse",
+    "PostToolUse",
+    "UserPromptSubmit",
+    "PostFileSave",
+    "PostFileCreate",
+    "PostFileDelete",
 }
 
 # Session push hook command - reads JSONL incrementally, only needs 2 events.
