@@ -143,6 +143,10 @@ HARNESS_REGISTRY: dict[str, dict] = {
         "capabilities": {"skills", "hooks", "mcp_servers"},
         "session_parser": "claude-code",
         "invocation_extractor": "claude-code",
+        # Skill loads (Skill tool + linked expansion) and /name invocations (harness-written
+        # isMeta expansion); the skill listing has no locations, so never availability.
+        # Verified against Claude Code 2.1.286 (session_parsers/claude_code_skill_evidence.py).
+        "skill_evidence_extractor": "claude-code",
         "scopes": ["project", "user"],
         "default_scope": "project",
         "scope_labels": ("project (.claude/agents/)", "user (~/.claude/agents/)"),

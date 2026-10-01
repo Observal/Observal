@@ -81,9 +81,10 @@ async def _insert(table: str, rows: list[dict]) -> None:
     response.raise_for_status()
 
 
-def _location(alias: str) -> str:
+def _location(alias: str, harness: str = "pi") -> str:
     """Digest of the active SKILL.md path the verifier fingerprinted (user scope, /home/fixture)."""
-    return hashlib.sha256(f"/home/fixture/.pi/agent/skills/{alias}/SKILL.md".encode()).hexdigest()
+    root = "/home/fixture/.claude/skills" if harness == "claude-code" else "/home/fixture/.pi/agent/skills"
+    return hashlib.sha256(f"{root}/{alias}/SKILL.md".encode()).hexdigest()
 
 
 def _session_lines(fixture: Path, *, failed_read: bool = False, foreign: bool = False) -> list[str]:
@@ -117,6 +118,8 @@ async def _seed(
     foreign: bool = False,
     fixture: Path = _FIXTURE,
     index: bool = True,
+    harness: str = "pi",
+    lines: list[str] | None = None,
 ) -> None:
     now = datetime.now(UTC) - timedelta(minutes=10)
     await _insert(
@@ -125,7 +128,7 @@ async def _seed(
             {
                 "project_id": project,
                 "user_id": user,
-                "harness": "pi",
+                "harness": harness,
                 "session_id": session,
                 "line_offset": offset,
                 "line_hash": xxhash.xxh128(raw.encode()).hexdigest(),
@@ -139,7 +142,9 @@ async def _seed(
                 "timestamp": _ts(now + timedelta(seconds=offset)),
                 "ingested_at": _ts(now + timedelta(days=1)),
             }
-            for offset, raw in enumerate(_session_lines(fixture, failed_read=failed_read, foreign=foreign))
+            for offset, raw in enumerate(
+                lines if lines is not None else _session_lines(fixture, failed_read=failed_read, foreign=foreign)
+            )
         ],
     )
     await _insert(
@@ -148,7 +153,7 @@ async def _seed(
             {
                 "project_id": project,
                 "user_id": user,
-                "harness": "pi",
+                "harness": harness,
                 "session_id": session,
                 "layer_hash": _HASH,
                 "first_event_time": _ts(now),
@@ -165,7 +170,7 @@ async def _seed(
                 "project_id": project,
                 "user_id": user,
                 "hash": _HASH,
-                "harness": "pi",
+                "harness": harness,
                 "content": json.dumps({"pinned_versions": {"schema_version": 2, "agents": [], "standalone": []}}),
                 "uploaded_at": _ts(now),
                 "file_count": 0,
@@ -187,7 +192,7 @@ async def _seed(
                 "occurrence_key": f"skill-{alias}",
                 "component_type": "skill",
                 "source": "agent",
-                "harness": "pi",
+                "harness": harness,
                 "scope": "user",
                 "parent_agent_id": "",
                 "parent_agent_version": "",
@@ -200,7 +205,7 @@ async def _seed(
                 "component_version_id": "",
                 "identity_status": "resolved",
                 "verification_status": "verified",
-                "location_sha256": _location(alias),
+                "location_sha256": _location(alias, harness),
             }
             for alias, component_id in skills.items()
         ],
@@ -402,3 +407,58 @@ async def test_a_real_snapshot_carries_the_verified_location_into_attribution():
     assert published["status"] == "complete"
     summary = await skill_queries.skill_activity_summary(project, str(listing_id), None, _period())
     assert (summary["available_sessions"], summary["confirmed_loads"]) == (1, 1)
+
+
+_CLAUDE = Path(__file__).parents[1] / "fixtures" / "component_insights" / "claude_code"
+
+
+def _claude(name: str) -> list[str]:
+    return (_CLAUDE / name).read_text(encoding="utf-8").splitlines()
+
+
+@pytest.mark.asyncio
+async def test_claude_code_loads_and_invocations_are_attributed_and_availability_is_unknown():
+    project, user = "skillc-" + uuid.uuid4().hex, "skill-owner"
+    probe = str(uuid.uuid4())
+    for session, name in (
+        ("model-read", "skill_session_model_read.jsonl"),
+        ("slash", "skill_session_slash_command.jsonl"),
+        ("literal", "skill_session_literal_text.jsonl"),
+        ("unknown", "skill_session_unknown_skill.jsonl"),
+    ):
+        await _seed(project, user, session, {"observal-probe": probe}, harness="claude-code", lines=_claude(name))
+        assert (await project_session_skill_evidence(project, user, "claude-code", session))["status"] == "complete"
+    summary = await skill_queries.skill_activity_summary(project, probe, None, _period())
+    assert summary["present_sessions"] == 4
+    assert (summary["loaded_sessions"], summary["confirmed_loads"]) == (1, 1)
+    assert (summary["invoked_sessions"], summary["invocations"]) == (1, 1), "only the real /observal-probe"
+    assert summary["available_sessions"] is None, "the skill listing names no file"
+    coverage = summary["coverage"]
+    assert coverage.observed_sessions == 2 and coverage.usage_rate_denominator_sessions == 4
+    assert any(item.startswith("availability_not_recorded") for item in coverage.limitations)
+    assert not any(item.startswith("invocations_not_recorded") for item in coverage.limitations)
+    sessions, _ = await skill_queries.skill_activity_sessions(
+        project, probe, None, _period(), limit=10, cursor=None, cursor_scope=(project, "u", "skill", probe, "", "1")
+    )
+    assert {(s["session_id"], s["available"], s["confirmed_loads"], s["invocations"]) for s in sessions} == {
+        ("literal", None, 0, 0),
+        ("model-read", None, 1, 0),
+        ("slash", None, 0, 1),
+        ("unknown", None, 0, 0),
+    }
+
+
+@pytest.mark.asyncio
+async def test_a_mixed_pi_and_claude_cohort_reports_partial_kinds():
+    project = "skillm-" + uuid.uuid4().hex
+    probe = str(uuid.uuid4())
+    # One layer per user: each extraction replaces that user's mapping for the hash.
+    await _seed(project, "pi-user", "pi-session", {"observal-probe": probe})
+    claude = _claude("skill_session_slash_command.jsonl")
+    await _seed(project, "cc-user", "cc-session", {"observal-probe": probe}, harness="claude-code", lines=claude)
+    for user, harness, session in (("pi-user", "pi", "pi-session"), ("cc-user", "claude-code", "cc-session")):
+        assert (await project_session_skill_evidence(project, user, harness, session))["status"] == "complete"
+    summary = await skill_queries.skill_activity_summary(project, probe, None, _period())
+    assert (summary["available_sessions"], summary["invocations"], summary["confirmed_loads"]) == (1, 1, 1)
+    reasons = summary["coverage"].reasons
+    assert {"available_not_recorded_on_some_harnesses", "invoked_not_recorded_on_some_harnesses"} <= set(reasons)

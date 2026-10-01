@@ -495,15 +495,16 @@ def build_layer_manifest(
     # Save updated cache
     _save_hash_cache(cache)
 
+    verifications: list[dict | None] = []
     if harness == "pi":
-        for verification in (
-            pi_mcp_verification_entry(registry_data, project_dir),
-            pi_skill_verification_entry(registry_data, project_dir),
-        ):
-            if verification is not None:
-                if include_content:
-                    verification["content"] = ""
-                manifest.append(verification)
+        verifications.append(pi_mcp_verification_entry(registry_data, project_dir))
+    if harness in SKILL_VERIFICATION_HARNESSES:
+        verifications.append(skill_verification_entry(harness, registry_data, project_dir))
+    for verification in verifications:
+        if verification is not None:
+            if include_content:
+                verification["content"] = ""
+            manifest.append(verification)
 
     # Sort deterministically for consistent hashing
     manifest.sort(key=lambda e: e["path"])
@@ -514,8 +515,13 @@ PI_MCP_VERIFICATION_PATH = "observal:mcp-verification"
 PI_MCP_VERIFIER = "observal-pi-mcp-verification-v1"
 
 
-PI_SKILL_VERIFICATION_PATH = "observal:skill-verification"
-PI_SKILL_VERIFIER = "observal-pi-skill-verification-v1"
+SKILL_VERIFICATION_PATH = "observal:skill-verification"
+# Harnesses whose skill presence (and location) is bound into the layer identity.
+SKILL_VERIFICATION_HARNESSES = frozenset({"pi", "claude-code"})
+
+
+def _skill_verifier(harness: str) -> str:
+    return f"observal-{harness}-skill-verification-v1"
 
 
 def skill_file_fingerprint(path: Path) -> str | None:
@@ -538,12 +544,12 @@ def skill_location_sha256(harness: str, scope: str, directory: str | None, alias
     return hashlib.sha256(location.encode("utf-8")).hexdigest() if location else ""
 
 
-def pi_skill_verification_entry(registry_data: dict | None, project_dir: str | None) -> dict | None:
-    """Hash-only manifest entry binding pinned Pi skill fingerprints to the layer identity.
+def skill_verification_entry(harness: str, registry_data: dict | None, project_dir: str | None) -> dict | None:
+    """Hash-only manifest entry binding a harness's pinned skill fingerprints to the layer identity.
 
     Present only when at least one pinned skill carries ``skill_integrity``, so
-    layers without fingerprinted skills keep their existing hashes. Must match
-    ``piSkillVerificationEntry`` in the Pi extension byte for byte.
+    layers without fingerprinted skills keep their existing hashes. For Pi it
+    must match ``piSkillVerificationEntry`` in the Pi extension byte for byte.
     """
 
     def shadow_state(component: dict, scope: str) -> str:
@@ -554,19 +560,20 @@ def pi_skill_verification_entry(registry_data: dict | None, project_dir: str | N
 
         ensure_loaded()
         alias = _nfc(component.get("local_name"))
-        paths = get_adapter("pi").skill_shadow_paths(scope, project_dir, alias) if alias else []
-        location = skill_location_sha256("pi", scope, project_dir, alias)
+        paths = get_adapter(harness).skill_shadow_paths(scope, project_dir, alias) if alias else []
+        location = skill_location_sha256(harness, scope, project_dir, alias)
         return "|".join([location, *(skill_file_fingerprint(path) or "" for path in paths)])
 
-    return _pi_pin_verification_entry(
+    return _pin_verification_entry(
         registry_data,
         project_dir,
         "skill",
         "skill_integrity",
-        PI_SKILL_VERIFIER,
-        PI_SKILL_VERIFICATION_PATH,
+        _skill_verifier(harness),
+        SKILL_VERIFICATION_PATH,
         require_integrity=True,
         extra=shadow_state,
+        harness=harness,
     )
 
 
@@ -580,12 +587,12 @@ def pi_mcp_verification_entry(registry_data: dict | None, project_dir: str | Non
     verifier change yields a new snapshot instead of a stale or conflicting one.
     Must match ``piMcpVerificationEntry`` in the Pi extension byte for byte.
     """
-    return _pi_pin_verification_entry(
+    return _pin_verification_entry(
         registry_data, project_dir, "mcp", "mcp_integrity", PI_MCP_VERIFIER, PI_MCP_VERIFICATION_PATH
     )
 
 
-def _pi_pin_verification_entry(
+def _pin_verification_entry(
     registry_data: dict | None,
     project_dir: str | None,
     component_type: str,
@@ -595,9 +602,10 @@ def _pi_pin_verification_entry(
     *,
     require_integrity: bool = False,
     extra: Callable[[dict, str], str] | None = None,
+    harness: str = "pi",
 ) -> dict | None:
     sections = registry_data.get("harnesses", {}) if isinstance(registry_data, dict) else {}
-    section = sections.get("pi") if isinstance(sections, dict) else None
+    section = sections.get(harness) if isinstance(sections, dict) else None
     if not isinstance(section, dict):
         return None
     directory = str(Path(project_dir).resolve()) if project_dir else None

@@ -120,15 +120,15 @@ def test_same_named_skill_pi_might_load_instead_blocks_verification(home):
 
 
 def test_skill_identity_entry_is_absent_without_fingerprints_and_tracks_them(home):
-    assert layer.pi_skill_verification_entry(_registry(None), None) is None, "no hash change for legacy pins"
-    first = layer.pi_skill_verification_entry(_registry("sha256-" + "a" * 64), None)
-    second = layer.pi_skill_verification_entry(_registry("sha256-" + "b" * 64), None)
+    assert layer.skill_verification_entry("pi", _registry(None), None) is None, "no hash change for legacy pins"
+    first = layer.skill_verification_entry("pi", _registry("sha256-" + "a" * 64), None)
+    second = layer.skill_verification_entry("pi", _registry("sha256-" + "b" * 64), None)
     assert first["path"] == "observal:skill-verification"
     assert first["hash"] != second["hash"], "a re-pull with new content yields a new layer identity"
     # A same-named copy Pi could load instead changes the identity, so a cached
     # snapshot can never keep reporting the earlier "verified" result.
     _write(home / ".agents/skills/review/SKILL.md", b"shadow")
-    shadowed = layer.pi_skill_verification_entry(_registry("sha256-" + "a" * 64), None)
+    shadowed = layer.skill_verification_entry("pi", _registry("sha256-" + "a" * 64), None)
     assert shadowed["hash"] != first["hash"]
     # MCP pins are untouched by the skill entry.
     assert layer.pi_mcp_verification_entry(_registry("sha256-" + "a" * 64), None) is None
@@ -205,11 +205,11 @@ def test_verification_records_and_binds_the_absolute_active_location(home, tmp_p
     project_location = str(project / ".pi" / "skills" / "review" / "SKILL.md")
     assert scoped["location_sha256"] == hashlib.sha256(project_location.encode()).hexdigest()
 
-    before = layer.pi_skill_verification_entry(_registry(FINGERPRINT), None)["hash"]
+    before = layer.skill_verification_entry("pi", _registry(FINGERPRINT), None)["hash"]
     other_home = tmp_path / "elsewhere"
     other_home.mkdir()
     monkeypatch.setattr(Path, "home", lambda: other_home)
-    assert layer.pi_skill_verification_entry(_registry(FINGERPRINT), None)["hash"] != before
+    assert layer.skill_verification_entry("pi", _registry(FINGERPRINT), None)["hash"] != before
 
 
 def test_presence_index_keeps_only_a_well_formed_skill_location():

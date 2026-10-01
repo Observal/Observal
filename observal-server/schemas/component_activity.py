@@ -199,6 +199,10 @@ SKILL_INVOCATIONS_LIMITATION = (
     "invocations_not_recorded: no harness in this cohort records a distinguishable explicit skill "
     "invocation, so invocation counts are unknown (null), not zero"
 )
+SKILL_AVAILABILITY_LIMITATION = (
+    "availability_not_recorded: no harness in this cohort records which skill file it advertised, "
+    "so availability is unknown (null), not zero"
+)
 SKILL_CONTEXT_LIMITATION = (
     "entered_context_not_helped: a confirmed load or an invocation shows the skill's instructions "
     "entered the model's context, not that the skill was followed or improved the outcome"
@@ -239,7 +243,9 @@ class SkillActivitySummaryResponse(BaseModel):
     time_basis: str = TIME_BASIS
     present_sessions: int
     present_users: int
-    available_sessions: int = Field(description="Sessions where the skill was advertised to the model")
+    available_sessions: int | None = Field(
+        description="Sessions where the skill was advertised to the model; null when no harness in the cohort records it"
+    )
     loaded_sessions: int = Field(description="Sessions with at least one confirmed load (a successful read)")
     confirmed_loads: int
     load_attempts: int = Field(description="Reads that failed or whose result is unknown; not confirmed loads")
@@ -258,7 +264,7 @@ class SkillActivitySession(BaseModel):
     last_event_time: str
     projection_state: SessionProjectionState
     source_state: SourceAvailabilityState
-    available: bool
+    available: bool | None = Field(description="Null when this harness does not record availability")
     confirmed_loads: int
     load_attempts: int
     invocations: int | None = Field(description="Null when this harness does not record invocations")

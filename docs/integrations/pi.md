@@ -204,7 +204,7 @@ Skills have their own evidence, separate from MCP calls:
 
 Evidence is tied to the exact file that was verified. The verifier records a SHA-256 of the absolute `SKILL.md` path it fingerprinted, and a session's skill evidence is attributed only when the location Pi recorded hashes to the same value. A same-named skill under another directory, such as another user's `.pi/agent/skills`, is not counted. A custom `PI_CODING_AGENT_DIR` is not yet followed by the verifier, so skills there are not counted.
 
-Counts cover only verified-present skills in Pi sessions; other harnesses report skill evidence as `unsupported`. A confirmed load or an invocation shows that the skill's instructions entered the model's context. It does not show that the skill was followed or helped. Component reports for skills are deterministic and include no model-written findings.
+Counts cover only verified-present skills. Pi and Claude Code record different evidence (see [Component insights](../cli/ops.md#component-insights)); other harnesses report skill evidence as `unsupported`. A confirmed load or an invocation shows that the skill's instructions entered the model's context. It does not show that the skill was followed or helped. Component reports for skills are deterministic and include no model-written findings.
 
 ---
 

@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -148,6 +150,33 @@ class ClaudeCodeAdapter(BaseAdapter):
 
     def redact_layer_content(self, display_path: str) -> bool:
         return display_path in {"user:.claude.json", "project:.mcp.json"}
+
+    def skill_manifest_path(self, scope: str, alias: str) -> str | None:
+        """Claude Code loads ``~/.claude/skills/<name>`` (personal) or the project's ``.claude/skills``."""
+        if scope == "user":
+            return f"user:skills/{alias}/SKILL.md"
+        if scope == "project":
+            return f"project:.claude/skills/{alias}/SKILL.md"
+        return None
+
+    def skill_shadow_paths(self, scope: str, directory: str | None, alias: str) -> list[Path]:
+        """An enterprise skill of the same name runs instead of a personal or project one (unhashed)."""
+        managed = (
+            Path("/Library/Application Support/ClaudeCode")
+            if sys.platform == "darwin"
+            else Path(os.environ.get("PROGRAMFILES", r"C:\Program Files")) / "ClaudeCode"
+            if sys.platform == "win32"
+            else Path("/etc/claude-code")
+        )
+        return [managed / ".claude" / "skills" / alias / "SKILL.md"]
+
+    def skill_location(self, scope: str, directory: str | None, alias: str) -> str | None:
+        """``<base dir>/SKILL.md`` as Claude Code names it in the skill's expansion record."""
+        if scope == "user":
+            return str(Path.home() / ".claude" / "skills" / alias / "SKILL.md")
+        if scope == "project" and directory:
+            return os.path.join(os.path.abspath(directory), ".claude", "skills", alias, "SKILL.md")
+        return None
 
     def read_installed_mcp(self, scope: str, directory: str | None, alias: str) -> tuple[str, dict | None]:
         """Read the effective MCP key without exporting the shared settings document."""

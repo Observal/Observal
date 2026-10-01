@@ -956,7 +956,7 @@ export default function (pi: ExtensionAPI) {
     return piPinVerificationEntry(registry, cwd, "mcp", "mcp_integrity", PI_MCP_VERIFIER, PI_MCP_VERIFICATION_PATH, false);
   }
 
-  /** Mirrors ``observal_cli.layer.pi_skill_verification_entry``: only fingerprinted skills, else absent. */
+  /** Mirrors ``observal_cli.layer.skill_verification_entry("pi", ...)``: only fingerprinted skills, else absent. */
   function piSkillVerificationEntry(registry: Record<string, any> | null, cwd: string): LayerFileEntry | null {
     // Same-named skills Pi could load instead live outside the hashed manifest;
     // their state must still change the layer identity.

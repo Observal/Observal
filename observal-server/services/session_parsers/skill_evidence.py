@@ -17,6 +17,10 @@ Evidence kinds, none of which shows that a skill achieved anything:
   ``/skill:name`` expansion is stored as an ordinary user message, which
   pasted text can reproduce, so the Pi extractor never emits ``invoked``.
 
+Each extractor declares the kinds its harness can observe at all
+(``observed_kinds``). A kind outside that set is *not recorded* for the
+harness: its counts are unknown, never a measured zero.
+
 Each fact's ``source_block_key`` is unique within its source line and
 namespaced (``skill-...``), so facts never replace each other or an MCP call
 in the shared activity table.
@@ -65,23 +69,23 @@ class SkillEvidenceExtraction:
 
 
 class SkillEvidenceExtractor(Protocol):
-    # Whether the harness records a distinguishable explicit-invocation origin.
-    # When False, invocation counts are unknown, not zero.
-    records_invocations: bool
+    # The evidence kinds this harness's transcripts can show, tied to a file.
+    observed_kinds: frozenset[EvidenceKind]
 
     def extract(self, rows: Sequence[Mapping[str, object]]) -> SkillEvidenceExtraction: ...
 
 
 def _extractors() -> dict[str, SkillEvidenceExtractor]:
+    from .claude_code_skill_evidence import ClaudeCodeSkillEvidenceExtractor
     from .pi_skill_evidence import PiSkillEvidenceExtractor
 
-    return {"pi": PiSkillEvidenceExtractor()}
+    return {"pi": PiSkillEvidenceExtractor(), "claude-code": ClaudeCodeSkillEvidenceExtractor()}
 
 
-def invocations_recorded(harness: str) -> bool:
-    """True only for a supported harness whose extractor can observe explicit invocations."""
+def kind_recorded(harness: str, kind: EvidenceKind) -> bool:
+    """True only for a supported harness whose extractor can observe this evidence kind."""
     extractor_id = HARNESS_REGISTRY.get(harness, {}).get("skill_evidence_extractor")
-    return bool(extractor_id) and _extractors()[extractor_id].records_invocations
+    return bool(extractor_id) and kind in _extractors()[extractor_id].observed_kinds
 
 
 def extract_skill_evidence(harness: str, rows: Sequence[Mapping[str, object]]) -> SkillEvidenceExtraction:
