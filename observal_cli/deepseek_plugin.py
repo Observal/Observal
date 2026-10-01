@@ -59,8 +59,33 @@ def _back_up(path: Path) -> None:
     shutil.copy2(path, backup)
 
 
+def _is_claimable_orphan(path: Path) -> bool:
+    """Whether an unmanifested plugin file is byte-identical to our bundled source.
+
+    A first install publishes the executable before its ownership manifest, so
+    an interruption between the two leaves a file that looks unmanaged but is
+    ours. Exact equality with the bundled source is the only safe evidence; any
+    other file at this path belongs to the user and stays untouchable.
+    """
+    if path.is_symlink() or not path.is_file():
+        return False
+    try:
+        return path.read_text(encoding="utf-8") == plugin_source()
+    except OSError:
+        return False
+
+
 def _drifted(path: Path, home: Path | None = None) -> bool:
-    return path.is_file() and _sha256(path.read_text(encoding="utf-8")) != _managed_hash(home)
+    """Whether an existing file differs from what Observal published."""
+    if not path.is_file():
+        return False
+    current = path.read_text(encoding="utf-8")
+    managed = _managed_hash(home)
+    if managed is None:
+        # Unmanifested: an identical orphan is about to be rewritten with the
+        # same bytes, so it needs no backup.
+        return current != plugin_source()
+    return _sha256(current) != managed
 
 
 def status(home: Path | None = None) -> str:
@@ -71,8 +96,13 @@ def status(home: Path | None = None) -> str:
         return "unmanaged"
     if not path.exists():
         return "missing" if not _manifest(home).exists() else "stale"
-    if not path.is_file() or _managed_hash(home) is None:
+    if not path.is_file():
         return "unmanaged"
+    if _managed_hash(home) is None:
+        # A first install publishes the executable before its ownership
+        # manifest; treat the resulting orphan as installable so a crash
+        # between the two writes stays recoverable.
+        return "stale" if _is_claimable_orphan(path) else "unmanaged"
     return "current" if path.read_text(encoding="utf-8") == plugin_source() else "stale"
 
 
@@ -95,7 +125,9 @@ def install(*, home: Path | None = None, dry_run: bool = False) -> bool:
 
 def remove(*, home: Path | None = None, dry_run: bool = False) -> bool:
     path = plugin_path(home)
-    if status(home) == "unmanaged" or _managed_hash(home) is None:
+    if status(home) == "unmanaged":
+        return False
+    if _managed_hash(home) is None and not _is_claimable_orphan(path):
         return False
     if not dry_run:
         if _drifted(path, home):

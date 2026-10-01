@@ -15,14 +15,19 @@ import argparse
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from loguru import logger as optic
 
 from observal_cli.harness import SessionSource, ensure_loaded, get_adapter
 from observal_cli.sessions.base import drain_session_source, load_config
 
+if TYPE_CHECKING:
+    from observal_cli.harness.protocol import HarnessAdapter
+
 
 def _collect(source: SessionSource) -> None:
+    """Deliver one session, failing loudly when the server does not acknowledge it."""
     config = load_config()
     if not config:
         raise ValueError("Observal is not configured; run `observal auth login`")
@@ -38,7 +43,29 @@ def _collect(source: SessionSource) -> None:
         raise RuntimeError("session is queued locally but the Observal server did not acknowledge it")
 
 
+def _recover(adapter: HarnessAdapter) -> int:
+    """Deliver every stale session, continuing past any single failure.
+
+    One unreadable or unacknowledged log must not strand the sessions behind
+    it, so each failure is reported and counted instead of ending the sweep.
+    """
+    # Never race a live session's flush. Only older sessions can have been
+    # left behind by a previous invocation/crash.
+    cutoff = datetime.now(UTC) - timedelta(minutes=2)
+    failed = 0
+    for source in adapter.discover_session_sources(home=Path.home(), since_hours=168):
+        try:
+            if source.path.stat().st_mtime > cutoff.timestamp():
+                continue
+            _collect(source)
+        except Exception as exc:
+            failed += 1
+            optic.warning("DeepSeek recovery skipped {}: {}", source.path, exc)
+    return 1 if failed else 0
+
+
 def main(argv: list[str] | None = None) -> int:
+    """Run one flush-driven collection, or a sweep of every stale session."""
     parser = argparse.ArgumentParser(description="Deliver persisted DeepSeek sessions to Observal")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--session-id")
@@ -49,17 +76,11 @@ def main(argv: list[str] | None = None) -> int:
     adapter = get_adapter("deepseek")
     try:
         if options.recover:
-            # Never race a live session's flush. Only older sessions can have
-            # been left behind by a previous invocation/crash.
-            cutoff = datetime.now(UTC) - timedelta(minutes=2)
-            for source in adapter.discover_session_sources(home=Path.home(), since_hours=168):
-                if source.path.stat().st_mtime <= cutoff.timestamp():
-                    _collect(source)
-        else:
-            source = adapter.resolve_session_source({"session_id": options.session_id, "cwd": options.cwd})
-            if source is None:
-                raise FileNotFoundError(f"DeepSeek session source not found: {options.session_id}")
-            _collect(source)
+            return _recover(adapter)
+        source = adapter.resolve_session_source({"session_id": options.session_id, "cwd": options.cwd})
+        if source is None:
+            raise FileNotFoundError(f"DeepSeek session source not found: {options.session_id}")
+        _collect(source)
     except Exception as exc:
         optic.warning("DeepSeek collection failed: {}", exc)
         return 1

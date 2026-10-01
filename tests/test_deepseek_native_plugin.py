@@ -118,3 +118,44 @@ console.log('continued');
         timeout=10,
     )
     assert process.stdout.strip() == "continued"
+
+
+def test_interrupted_first_install_is_recovered(tmp_path: Path):
+    """A crash between the executable and its manifest must stay recoverable."""
+    path = deepseek_plugin.plugin_path(tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # A first install publishes the executable, then dies before the ownership
+    # manifest is written: the file exists but looks unmanaged.
+    path.write_text(deepseek_plugin.plugin_source(), encoding="utf-8")
+
+    assert not deepseek_plugin._manifest(tmp_path).exists()
+    assert deepseek_plugin.status(tmp_path) == "stale"
+    assert deepseek_plugin.install(home=tmp_path) is True
+    assert deepseek_plugin.status(tmp_path) == "current"
+    assert deepseek_plugin.install(home=tmp_path) is False
+    # A file that was already byte-identical is not worth backing up.
+    assert list(path.parent.glob("collector.mjs.bak*")) == []
+
+
+def test_orphaned_plugin_can_be_cleaned_up(tmp_path: Path):
+    """Cleanup must be able to remove the executable it published."""
+    path = deepseek_plugin.plugin_path(tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(deepseek_plugin.plugin_source(), encoding="utf-8")
+
+    assert deepseek_plugin.remove(home=tmp_path) is True
+    assert not path.exists()
+    assert not deepseek_plugin._manifest(tmp_path).exists()
+
+
+def test_foreign_file_at_the_plugin_path_is_never_claimed(tmp_path: Path):
+    """Only a byte-identical copy of our own source may be adopted."""
+    path = deepseek_plugin.plugin_path(tmp_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("// someone else's plugin\n", encoding="utf-8")
+
+    assert deepseek_plugin.status(tmp_path) == "unmanaged"
+    with pytest.raises(ValueError):
+        deepseek_plugin.install(home=tmp_path)
+    assert deepseek_plugin.remove(home=tmp_path) is False
+    assert path.read_text(encoding="utf-8") == "// someone else's plugin\n"

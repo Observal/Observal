@@ -538,6 +538,37 @@ def test_native_collector_delivers_flushed_session_and_recovers_only_old_session
     assert deepseek_collector.main(["--session-id", "nonexistent"]) == 1
 
 
+def test_native_recovery_continues_past_a_failing_session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """One unacknowledged log must not strand the sessions discovered behind it."""
+    from observal_cli.sessions import deepseek_collector
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("DSH_HOME", raising=False)
+    broken = _session(tmp_path, "broken", records=(_line({"type": "turn/end"}),))
+    healthy = _session(tmp_path, "healthy", records=(_line({"type": "turn/end"}),))
+    for path in (broken, healthy):
+        os.utime(path, (path.stat().st_atime - 300, path.stat().st_mtime - 300))
+
+    sources = {source.session_id: source for source in deepseek.discover_session_sources(tmp_path)}
+    deepseek_collector.ensure_loaded()
+    adapter = deepseek_collector.get_adapter("deepseek")
+    monkeypatch.setattr(adapter, "discover_session_sources", lambda **_: [sources["broken"], sources["healthy"]])
+
+    attempted: list[str] = []
+
+    def _drain(source, config, **kwargs):
+        attempted.append(source.session_id)
+        return source.session_id != "broken"
+
+    monkeypatch.setattr(deepseek_collector, "load_config", lambda: _config())
+    monkeypatch.setattr(deepseek_collector, "drain_session_source", _drain)
+
+    # The bad session is reported as a failure, but the sweep still reaches the
+    # next one instead of ending on the first exception.
+    assert deepseek_collector.main(["--recover"]) == 1
+    assert attempted == ["broken", "healthy"]
+
+
 def _skill_call(name: str) -> bytes:
     return _line({"type": "tool/call", "data": {"name": "skill", "arguments": {"name": name}}})
 
