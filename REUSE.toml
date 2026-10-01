@@ -120,6 +120,11 @@ SPDX-FileCopyrightText = "2026 Naraen Rammoorthi"
 SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
+path = ["tests/fixtures/component_insights/claude_code/skill_session_model_read.jsonl", "tests/fixtures/component_insights/claude_code/skill_session_slash_command.jsonl", "tests/fixtures/component_insights/claude_code/skill_session_slash_args.jsonl", "tests/fixtures/component_insights/claude_code/skill_session_literal_text.jsonl", "tests/fixtures/component_insights/claude_code/skill_session_project_skill.jsonl", "tests/fixtures/component_insights/claude_code/skill_session_unknown_skill.jsonl"]
+SPDX-FileCopyrightText = "2026 Observal Contributors"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
 path = "tests/fixtures/model_display_cases.json"
 SPDX-FileCopyrightText = "2026 Aryan Iyappan <aryaniyappan2006@gmail.com>"
 SPDX-License-Identifier = "Apache-2.0"

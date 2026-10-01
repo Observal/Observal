@@ -17,3 +17,24 @@ Current MCP call names follow `mcp__<installed-alias>__<tool>`. Do not identify 
 `standalone_install.json` is a **sanitized identity projection** from a later genuine tracked standalone MCP `--apply` installation into an isolated project. The installed registry item actually lived in a separately isolated PostgreSQL database and was served by the current-source Observal registry resolution/show/install routes (with test-only authentication override), not the older sample server. The real Claude Code 2.1.283 executable wrote a project `.mcp.json` entry; the CLI verified that effective alias, persisted a scoped standalone lockfile entry with the selected version and integrity fingerprint, and built a v2 pinned snapshot. A preliminary attempt in a *different* temporary project registered a Claude entry but failed before tracking when the output pipe closed; it is not the fixture. No existing sample migration, production install, or real user credentials were involved.
 
 The stored fixture replaces the original registry UUID and namespace with constructed values, omits server URL, original layer/file hashes, absolute paths, raw command/arguments, settings content, and the original integrity fingerprint. `v2_hash_built` reports the observed result, **not** an assertion that a hash computed from the sanitized fixture equals the original upload hash. The first-harness integration test creates a synthetic scoped snapshot and registry row from these sanitized pins to test the actual extractor and `presence_cohort`; it does not represent a historical session upload.
+
+## Skill fixtures
+
+Sanitized copies of six headless Claude Code 2.1.286 sessions, recorded on 2026-10-01 with Opus 4.6 on Amazon Bedrock. The recording ran in an isolated `HOME` and `CLAUDE_CONFIG_DIR` with `--allowedTools Skill Read`. Only the authentication variables were passed through. It used two synthetic skills: user-scope `observal-probe`, which replies `PROBE-7F3A`, and project-scope `project-probe`, which replies `PROJECT-9C1D`.
+
+- `skill_session_model_read.jsonl`: "Use the observal-probe skill." The model called `Skill`.
+- `skill_session_slash_command.jsonl`: `/observal-probe`.
+- `skill_session_slash_args.jsonl`: `/observal-probe with extra words`.
+- `skill_session_literal_text.jsonl`: the user typed the `<command-name>`/`<command-message>` tags as literal text. No skill ran.
+- `skill_session_project_skill.jsonl`: "Use the project-probe skill." (project scope).
+- `skill_session_unknown_skill.jsonl`: the model was asked to call `Skill` with `missing-probe`, which failed.
+
+Every line is kept in order. Session, entry, prompt, request, message and tool-use IDs were replaced with fixture values. The isolated config directory was mapped to `/home/fixture/.claude` and the project to `/home/fixture/project`. The system prompt, agent listing, thinking text and signatures were replaced with placeholders. The skill listing was reduced to the two probe skills; the recording also listed Claude Code's bundled skills. Record types, `isMeta`, `promptId`, `sourceToolUseID`, `toolUseResult`, `is_error`, tool names and inputs, the `Base directory for this skill:` expansion text, timestamps, model and usage come from the recording.
+
+### Observed skill evidence
+
+- **Offered:** the `skill_listing` attachment lists `names` and descriptions, but no locations. It cannot be tied to the verified file, so it is not counted.
+- **Loaded by the model:** an assistant `tool_use` named `Skill` with `input.skill`, then its `tool_result` (with `is_error: true` on failure, or `toolUseResult.success: true`), then an `isMeta: true` user record with `sourceToolUseID` set to the call id, whose text starts `Base directory for this skill: <dir>`. An unknown skill gets an error result and no expansion.
+- **Invoked by the user:** `/name` is a user record whose content is exactly `<command-message>name</command-message>\n<command-name>/name</command-name>`, optionally followed by `\n<command-args>…</command-args>`. It is followed by an `isMeta: true` expansion with the same `promptId` and no `sourceToolUseID`. Typing the same tags produces an ordinary user record with no expansion.
+
+None of these shows that a skill achieved anything.
