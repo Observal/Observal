@@ -228,6 +228,29 @@ Report sections include:
 * `on_the_horizon`
 * `fun_ending`
 
+## Component insights
+
+Owners, co-authors and admins of an MCP or skill can report on it with `--component TYPE NAMESPACE/SLUG`:
+
+```bash
+observal ops insights generate --component skill alice/review --period 14 --wait --output json
+observal ops insights list --component skill alice/review --output json
+observal ops insights show --component skill alice/review latest
+```
+
+Periods accept 1 through 90 days. Component reports count only sessions where the component was verified present. If there are none, generation returns 422 with the coverage instead of a zero-use report.
+
+MCP reports count attributed calls. They can add model-written findings when insights are configured.
+
+Skill reports are deterministic. They count present sessions, sessions with a confirmed load (the skill's file text entered the model's context), sessions with an explicit invocation, and sessions where the skill was offered. Each harness records a different subset:
+
+| Harness | Offered | Confirmed load | Invocation |
+| --- | --- | --- | --- |
+| Pi | yes | model read of the skill's `SKILL.md` | not recorded |
+| Claude Code | not recorded | `Skill` tool call with its linked expansion | `/name` command with its harness-written expansion |
+
+"Not recorded" is unknown, never zero. If a cohort mixes harnesses, a count covers only the harnesses that record it, and the report says so. Skill evidence counts only for a verified install at the exact `SKILL.md` location the session names. The verifier assumes the default `~/.claude` and `~/.pi/agent` directories. Skills under a custom `CLAUDE_CONFIG_DIR` or `PI_CODING_AGENT_DIR` are not counted. A load or invocation shows the skill's instructions entered context. It does not show that the skill was followed or that it helped. Hooks do not have component reports yet.
+
 ## Exit codes
 
 | Code | Meaning |

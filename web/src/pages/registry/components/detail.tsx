@@ -136,8 +136,10 @@ export default function ComponentDetailPage({
   const { data: teams = [] } = useTeams(isAuthenticated);
   const updateVisibility = useUpdateRegistryVisibility();
   const canEdit = isAuthenticated && (item?.user_permission === "owner");
-  const showInsights = type === "mcps" && canEdit;
-  const { data: reportPages, isLoading: reportsLoading, isError: reportsError, hasNextPage, fetchNextPage, isFetchingNextPage } = useComponentInsightReports("mcp", id, showInsights);
+  // Component Insights exist for MCPs (observed calls) and skills (loads and invocations).
+  const insightType = type === "mcps" ? "mcp" : type === "skills" ? "skill" : null;
+  const showInsights = insightType !== null && canEdit;
+  const { data: reportPages, isLoading: reportsLoading, isError: reportsError, hasNextPage, fetchNextPage, isFetchingNextPage } = useComponentInsightReports(insightType ?? "mcp", id, showInsights);
   const componentReports = reportPages?.pages.flat() ?? [];
   const generateComponentInsight = useGenerateComponentInsight();
   const owningTeam = item?.team_id ? teams.find((team) => team.id === String(item.team_id)) : undefined;
@@ -407,10 +409,12 @@ export default function ComponentDetailPage({
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div className="space-y-1">
                     <h2 className="text-lg font-semibold">Component Insights</h2>
-                    <p className="max-w-[65ch] text-sm text-muted-foreground">Observed MCP calls and attribution coverage across verified present sessions. Partial activity never proves no use.</p>
+                    <p className="max-w-[65ch] text-sm text-muted-foreground">{insightType === "skill"
+                      ? "Confirmed loads and invocations of this verified skill, and their coverage. A load shows the instructions entered context, not that they helped."
+                      : "Observed MCP calls and attribution coverage across verified present sessions. Partial activity never proves no use."}</p>
                   </div>
                   <Button type="button" disabled={generateComponentInsight.isPending || (!!selectedVersion && !selectedInsightVersion)}
-                    onClick={() => generateComponentInsight.mutate({ type: "mcp", id, versionId: selectedInsightVersion?.id })}>
+                    onClick={() => insightType && generateComponentInsight.mutate({ type: insightType, id, versionId: selectedInsightVersion?.id })}>
                     {generateComponentInsight.isPending ? "Queueing…" : selectedVersion ? `Generate v${selectedVersion} report` : "Generate all-versions report"}
                   </Button>
                 </div>

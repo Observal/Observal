@@ -182,6 +182,37 @@ export interface ComponentInsightCoverage {
 	limitations: string[];
 }
 
+export interface SkillInsightMetrics {
+	present_sessions: number;
+	present_users: number;
+	/** Null when no harness in the cohort records which skill file it advertised. */
+	available_sessions: number | null;
+	loaded_sessions: number;
+	confirmed_loads: number;
+	load_attempts: number;
+	/** Null when no harness in the cohort records a distinguishable invocation. */
+	invoked_sessions: number | null;
+	invocations: number | null;
+	harness_distribution: Record<string, number>;
+	version_distribution: Record<string, number>;
+}
+
+export interface SkillInsightNarrative {
+	summary?: string;
+}
+
+export interface SkillInsightCoverage {
+	attribution_state: "observed" | "no_observed_skill_use" | "attribution_not_possible";
+	presence: { present_sessions: number; present_users: number; eligible_sessions: number };
+	projection: { projection_complete_sessions: number; projection_pending_sessions: number; projection_failed_sessions: number; unsupported_present_sessions: number };
+	evidence: { candidate_facts: number; attributed_facts: number; collision_facts: number; unmatched_facts: number; unknown_load_results: number };
+	usage_rate_denominator_sessions: number;
+	observed_sessions: number;
+	usage_rate: number | null;
+	reasons: string[];
+	limitations: string[];
+}
+
 export interface InsightReportListItem {
 	id: string;
 	agent_id: string | null;
@@ -191,7 +222,7 @@ export interface InsightReportListItem {
 	component_name?: string | null;
 	component_version_id?: string | null;
 	component_version?: string | null;
-	coverage?: ComponentInsightCoverage | null;
+	coverage?: ComponentInsightCoverage | SkillInsightCoverage | null;
 	agent_version_id?: string | null;
 	agent_version?: string | null;
 	version_scope?: string | null;
@@ -370,7 +401,7 @@ export interface InsightReport {
 	component_name?: string | null;
 	component_version_id?: string | null;
 	component_version?: string | null;
-	coverage?: ComponentInsightCoverage | null;
+	coverage?: ComponentInsightCoverage | SkillInsightCoverage | null;
 	agent_version_id?: string | null;
 	agent_version?: string | null;
 	version_scope?: string | null;
