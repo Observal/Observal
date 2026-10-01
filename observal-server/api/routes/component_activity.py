@@ -4,9 +4,10 @@
 """Owner-authorized component observability: presence, activity and coverage.
 
 Contract decisions:
-- ``type=mcp`` is supported. ``skill`` and ``hook`` answer **501** with an
-  explicit ``{"status": "unsupported"}`` body (never zero counts); any other
-  type is 422.
+- ``type=mcp`` reports observed MCP calls; ``type=skill`` reports skill
+  evidence (available, confirmed loads, invocations) with its own fields and
+  coverage. ``hook`` answers **501** with an explicit ``{"status":
+  "unsupported"}`` body (never zero counts); any other type is 422.
 - Access requires listing visibility (else 404, preserving private-listing
   semantics) *and* owner-level permission (owner, co-author or admin; else 403).
   Both checks run before any telemetry query.
@@ -23,20 +24,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user, get_db, get_effective_component_permission, resolve_visible_listing
 from models.mcp import McpListing, McpVersion
+from models.skill import SkillListing, SkillVersion
 from models.user import User
 from observal_shared.migration.constants import DEFAULT_PROJECT_ID
 from schemas.component_activity import (
     ActivitySessionsResponse,
     ActivitySummaryResponse,
     ComponentRef,
+    SkillActivitySessionsResponse,
+    SkillActivitySummaryResponse,
     UnsupportedComponentType,
 )
-from services.component_activity import queries
+from services.component_activity import queries, skill_queries
 
 router = APIRouter(prefix="/api/v1/components", tags=["component-activity"])
 
-_SUPPORTED = {"mcp": (McpListing, McpVersion)}
-_NOT_YET_SUPPORTED = frozenset({"skill", "hook"})
+_SUPPORTED = {"mcp": (McpListing, McpVersion), "skill": (SkillListing, SkillVersion)}
+_NOT_YET_SUPPORTED = frozenset({"hook"})
 
 
 def _unsupported(component_type: str) -> JSONResponse:
@@ -82,7 +86,7 @@ def _period(days: int) -> tuple[datetime, datetime]:
 
 @router.get(
     "/{component_type}/{identifier:path}/activity/summary",
-    response_model=ActivitySummaryResponse,
+    response_model=ActivitySummaryResponse | SkillActivitySummaryResponse,
     responses={501: {"model": UnsupportedComponentType}},
 )
 async def component_activity_summary(
@@ -98,6 +102,17 @@ async def component_activity_summary(
     listing, ref, version_label = await _authorize(component_type, identifier, component_version_id, db, current_user)
     start, end = _period(period_days)
     optic.debug("component activity summary: type={}, listing={}, days={}", component_type, listing.id, period_days)
+    if component_type == "skill":
+        skill_summary = await skill_queries.skill_activity_summary(
+            DEFAULT_PROJECT_ID, str(listing.id), ref.component_version_id, (start, end), component_version=version_label
+        )
+        return SkillActivitySummaryResponse(
+            component=ref,
+            period_days=period_days,
+            period_start=start.isoformat(),
+            period_end=end.isoformat(),
+            **skill_summary,
+        )
     summary = await queries.activity_summary(
         DEFAULT_PROJECT_ID,
         component_type,
@@ -117,7 +132,7 @@ async def component_activity_summary(
 
 @router.get(
     "/{component_type}/{identifier:path}/activity/sessions",
-    response_model=ActivitySessionsResponse,
+    response_model=ActivitySessionsResponse | SkillActivitySessionsResponse,
     responses={501: {"model": UnsupportedComponentType}},
 )
 async def component_activity_sessions(
@@ -152,6 +167,19 @@ async def component_activity_sessions(
             raise HTTPException(status_code=422, detail="Invalid cursor") from error
         period = (period_end - timedelta(days=period_days), period_end)
     optic.debug("component activity sessions: type={}, listing={}, limit={}", component_type, listing.id, limit)
+    if component_type == "skill":
+        skill_sessions, skill_cursor = await skill_queries.skill_activity_sessions(
+            DEFAULT_PROJECT_ID,
+            str(listing.id),
+            ref.component_version_id,
+            period,
+            limit=limit,
+            cursor=key,
+            cursor_scope=scope,
+        )
+        return SkillActivitySessionsResponse(
+            component=ref, period_days=period_days, sessions=skill_sessions, next_cursor=skill_cursor
+        )
     sessions, next_cursor = await queries.activity_sessions(
         DEFAULT_PROJECT_ID,
         component_type,

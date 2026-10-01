@@ -7,12 +7,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import unicodedata
 from collections import defaultdict
 from dataclasses import asdict, dataclass
 
 SUPPORTED_TYPES = frozenset({"mcp", "skill", "hook"})
 _VERIFICATION_KEY = ("harness", "component_id", "alias", "scope", "parent_agent_id")
+_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
 
 @dataclass(frozen=True)
@@ -30,6 +32,8 @@ class Occurrence:
     qualified_name: str
     local_name: str
     verification_status: str
+    # Skills only: SHA-256 of the absolute SKILL.md path the verifier hashed.
+    location_sha256: str = ""
 
 
 def _text(value: object) -> str:
@@ -46,6 +50,7 @@ def normalize_snapshot(pinned_versions: object, drift: object) -> list[Occurrenc
     # Index once (first record wins) so normalization stays linear in input size.
     # MCP and skill results are kept apart: one kind never verifies the other.
     verification_index: dict[str, dict[tuple, object]] = {"mcp": {}, "skill": {}}
+    locations: dict[tuple, str] = {}
     for kind, field_name in (("mcp", "mcp_verifications"), ("skill", "skill_verifications")):
         verifications = drift.get(field_name)
         for item in verifications if isinstance(verifications, list) else []:
@@ -53,7 +58,12 @@ def normalize_snapshot(pinned_versions: object, drift: object) -> list[Occurrenc
                 try:
                     key = tuple(item.get(field) for field in _VERIFICATION_KEY)
                     status = item.get("status")
-                    verification_index[kind].setdefault(key, status if isinstance(status, str) else None)
+                    if key in verification_index[kind]:
+                        continue
+                    verification_index[kind][key] = status if isinstance(status, str) else None
+                    location = item.get("location_sha256")
+                    if kind == "skill" and isinstance(location, str) and _SHA256.fullmatch(location):
+                        locations[key] = location
                 except TypeError:
                     continue
     records: list[dict[str, str]] = []
@@ -69,6 +79,7 @@ def normalize_snapshot(pinned_versions: object, drift: object) -> list[Occurrenc
         item_scope = _text(pin.get("scope")) or scope
         verification = "unverified"
         key = (harness, raw_id, alias, item_scope, parent_id)
+        location = locations.get(key, "") if kind == "skill" else ""
         if kind in verification_index and key in verification_index[kind]:
             status = verification_index[kind][key]
             verification = (
@@ -90,6 +101,7 @@ def normalize_snapshot(pinned_versions: object, drift: object) -> list[Occurrenc
                 "qualified_name": _text(pin.get("qualified_name")),
                 "local_name": alias,
                 "verification_status": verification,
+                "location_sha256": location,
             }
         )
 

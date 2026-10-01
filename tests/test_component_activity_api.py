@@ -129,13 +129,85 @@ def test_version_must_belong_to_listing_and_is_forwarded(api):
     assert api.summary.await_args.kwargs["component_version"] == "1.2.3"
 
 
-@pytest.mark.parametrize("kind", ["skill", "hook"])
-def test_skill_and_hook_are_explicitly_unsupported_not_zero(api, kind):
+def test_hook_is_explicitly_unsupported_not_zero(api):
     for endpoint in ("summary", "sessions"):
-        response = api.client.get(f"/api/v1/components/{kind}/{LISTING_ID}/activity/{endpoint}")
+        response = api.client.get(f"/api/v1/components/hook/{LISTING_ID}/activity/{endpoint}")
         assert response.status_code == 501
         assert response.json()["status"] == "unsupported" and "present_sessions" not in response.json()
     api.resolve.assert_not_awaited()
+
+
+def _skill_summary(state: str = "observed") -> dict:
+    from services.component_activity.skill_queries import build_skill_coverage
+
+    aggregate = {"projection_complete_sessions": 2, "observed_sessions": 1, "supported_present_sessions": 2}
+    coverage = build_skill_coverage({"present_sessions": 2, "present_users": 1}, aggregate, 515)
+    assert coverage.attribution_state == state
+    return {
+        "present_sessions": 2,
+        "present_users": 1,
+        "available_sessions": 2,
+        "loaded_sessions": 1,
+        "confirmed_loads": 1,
+        "load_attempts": 1,
+        "invoked_sessions": 0,
+        "invocations": 0,
+        "harness_distribution": {"pi": 2},
+        "version_distribution": {},
+        "activation_actions": {"context_sessions": 0, "next_session_sessions": 0, "scope": "component"},
+        "coverage": coverage,
+    }
+
+
+def test_skill_reads_skill_evidence_never_mcp_fields(api, monkeypatch):
+    """Skills have their own queries, fields and coverage; owner checks are the same."""
+    from services.component_activity import skill_queries
+
+    skill_summary = AsyncMock(return_value=_skill_summary() | {"invoked_sessions": None, "invocations": None})
+    skill_sessions = AsyncMock(return_value=([], None))
+    monkeypatch.setattr(skill_queries, "skill_activity_summary", skill_summary)
+    monkeypatch.setattr(skill_queries, "skill_activity_sessions", skill_sessions)
+    response = api.client.get(f"/api/v1/components/skill/{LISTING_ID}/activity/summary")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["loaded_sessions"], body["confirmed_loads"], body["load_attempts"]) == (1, 1, 1)
+    assert (body["invoked_sessions"], body["invocations"]) == (None, None), "unknown, not zero"
+    for mcp_only in ("observed_calls", "result_states"):
+        assert mcp_only not in body
+    assert "calls" not in body["coverage"] and "evidence" in body["coverage"]
+    assert any(item.startswith("entered_context_not_helped") for item in body["coverage"]["limitations"])
+    api.summary.assert_not_awaited()  # the MCP query is never consulted for a skill
+    assert api.client.get(f"/api/v1/components/skill/{LISTING_ID}/activity/sessions").status_code == 200
+    api.sessions.assert_not_awaited()
+    skill_sessions.assert_awaited_once()
+    # Same visibility and ownership gate as MCP: a reviewer who is not an owner is refused.
+    api.state["user"] = _user(role=UserRole.reviewer)
+    assert api.client.get(f"/api/v1/components/skill/{LISTING_ID}/activity/summary").status_code == 403
+
+
+def test_skill_coverage_excludes_unsupported_and_incomplete_from_the_denominator():
+    from services.component_activity.skill_queries import build_skill_coverage
+
+    coverage = build_skill_coverage(
+        {"present_sessions": 3, "present_users": 2},
+        {
+            "supported_present_sessions": 2,
+            "unsupported_present_sessions": 1,
+            "projection_complete_sessions": 1,
+            "projection_pending_sessions": 1,
+            "observed_sessions": 0,
+            "unknown_load_results": 1,
+        },
+        515,
+    )
+    assert coverage.usage_rate_denominator_sessions == 1
+    assert coverage.attribution_state == "no_observed_skill_use"
+    assert {"unsupported_harness_sessions", "projection_pending_sessions", "unconfirmed_load_attempts"} <= set(
+        coverage.reasons
+    )
+    none_complete = build_skill_coverage({"present_sessions": 1}, {"unsupported_present_sessions": 1}, 515)
+    assert none_complete.attribution_state == "attribution_not_possible"
+    assert none_complete.usage_rate is None
 
 
 def test_unknown_type_and_period_and_limit_bounds(api):

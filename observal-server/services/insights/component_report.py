@@ -22,11 +22,13 @@ if TYPE_CHECKING:
 async def generate_component_content(report: InsightReport) -> dict:
     if (
         report.subject_type != "component"
-        or report.component_type != "mcp"
+        or report.component_type not in ("mcp", "skill")
         or not report.project_id
         or not report.component_id
     ):
         raise ValueError("Unsupported report subject")
+    if report.component_type == "skill":
+        return await _generate_skill_content(report)
     scope = InsightScope(
         subject_type="component",
         project_id=report.project_id,
@@ -65,4 +67,82 @@ async def generate_component_content(report: InsightReport) -> dict:
         "narrative": narrative,
         "coverage": coverage,
         "sessions_analyzed": summary["present_sessions"],
+    }
+
+
+async def _generate_skill_content(report: InsightReport) -> dict:
+    """Deterministic skill report: published skill evidence and its coverage only.
+
+    No MCP call figures and no model interpretation: a load or invocation shows
+    the skill's instructions entered context, not that the skill helped.
+    """
+    from services.component_activity.skill_queries import skill_activity_summary
+
+    summary = await skill_activity_summary(
+        report.project_id,
+        str(report.component_id),
+        str(report.component_version_id) if report.component_version_id else None,
+        (report.period_start, report.period_end),
+        component_version=report.component_version,
+    )
+    coverage = summary["coverage"].model_dump(mode="json")
+    return {
+        "metrics": {
+            key: summary[key]
+            for key in (
+                "present_sessions",
+                "present_users",
+                "available_sessions",
+                "loaded_sessions",
+                "confirmed_loads",
+                "load_attempts",
+                "invoked_sessions",
+                "invocations",
+                "harness_distribution",
+                "version_distribution",
+                "activation_actions",
+            )
+        },
+        "narrative": generate_skill_sections(summary, coverage),
+        "coverage": coverage,
+        "sessions_analyzed": summary["present_sessions"],
+    }
+
+
+def generate_skill_sections(summary: dict, coverage: dict) -> dict:
+    """Plain-language conclusion and evidence breakdown, from counts alone."""
+    state = coverage["attribution_state"]
+    if state == "observed":
+        conclusion = (
+            "The skill's instructions entered context in processed present sessions "
+            "(a confirmed load or an invocation). This does not show the skill was followed or helped."
+        )
+    elif state == "no_observed_skill_use":
+        conclusion = (
+            "No confirmed load or invocation in processed present sessions; this does not prove the skill "
+            "was never used."
+        )
+    else:
+        conclusion = "Skill evidence is unavailable for this cohort; no use conclusion can be drawn."
+    processed = coverage["projection"]["projection_complete_sessions"]
+    return {
+        "summary": conclusion,
+        "evidence": {
+            "present": summary["present_sessions"],
+            "available": summary["available_sessions"],
+            "confirmed_loads": summary["confirmed_loads"],
+            "unconfirmed_load_attempts": summary["load_attempts"],
+            "invoked": summary["invocations"],  # None: the harness records no invocation origin
+            "activated": summary["activation_actions"],  # configuration actions, not use
+            "unknown": list(coverage["reasons"]),
+        },
+        "synthesis": {
+            "conclusion": conclusion,
+            "coverage": {
+                "attribution_state": state,
+                "processed_present_sessions": processed,
+                "present_sessions": summary["present_sessions"],
+                "limitations": coverage["limitations"],
+            },
+        },
     }

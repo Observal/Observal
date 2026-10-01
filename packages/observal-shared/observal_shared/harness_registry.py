@@ -457,7 +457,8 @@ HARNESS_REGISTRY: dict[str, dict] = {
         # MCP call identity comes from pi-mcp-adapter's tool-result details
         # (fixture-verified against pi-mcp-adapter 2.38.0 and 3.2.0 sources).
         "invocation_extractor": "pi",
-        # Skill availability, model loads and user invocations (session_parsers/pi_skill_evidence.py).
+        # Skill availability and model loads (session_parsers/pi_skill_evidence.py). Pi records no
+        # distinguishable /skill:name origin, so it never reports invocations.
         "skill_evidence_extractor": "pi",
         "scopes": ["project", "user"],
         "default_scope": "user",

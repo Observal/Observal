@@ -432,14 +432,21 @@ async def generate_component_insight(
     )
     now = datetime.now(UTC)
     start = now - timedelta(days=request.period_days)
-    summary = await activity_summary(
-        DEFAULT_PROJECT_ID,
-        component_type,
-        str(listing.id),
-        ref.component_version_id,
-        (start, now),
-        component_version=version_label,
-    )
+    if component_type == "skill":
+        from services.component_activity.skill_queries import skill_activity_summary
+
+        summary = await skill_activity_summary(
+            DEFAULT_PROJECT_ID, str(listing.id), ref.component_version_id, (start, now), component_version=version_label
+        )
+    else:
+        summary = await activity_summary(
+            DEFAULT_PROJECT_ID,
+            component_type,
+            str(listing.id),
+            ref.component_version_id,
+            (start, now),
+            component_version=version_label,
+        )
     coverage = summary["coverage"].model_dump(mode="json")
     if summary["present_sessions"] == 0:
         raise HTTPException(status_code=422, detail={"message": "No verified present sessions", "coverage": coverage})

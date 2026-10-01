@@ -186,3 +186,76 @@ def test_presence_index_verifies_skills_only_from_skill_results():
         o.raw_listing_id: o.verification_status for o in normalize_snapshot(twin, {"skill_verifications": [record]})
     }
     assert set(statuses.values()) == {"unverified"}
+
+
+def test_verification_records_and_binds_the_absolute_active_location(home, tmp_path, monkeypatch):
+    """The verifier names the exact file it fingerprinted; moving it changes identity."""
+    _write(home / ".pi" / "agent" / "skills" / "review" / "SKILL.md")
+    files = {"user:skills/review/SKILL.md": CONTENT}
+    manifest = {"pi": [{"path": path, "hash": _h(data)} for path, data in files.items()]}
+    (record,) = layer._compute_drift(_registry(FINGERPRINT), manifest, None)["skill_verifications"]
+    expected = str(home / ".pi" / "agent" / "skills" / "review" / "SKILL.md")
+    assert record["location_sha256"] == hashlib.sha256(expected.encode()).hexdigest()
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (scoped,) = layer._compute_drift(
+        _registry(FINGERPRINT, scope="project", directory=str(project)), manifest, str(project)
+    )["skill_verifications"]
+    project_location = str(project / ".pi" / "skills" / "review" / "SKILL.md")
+    assert scoped["location_sha256"] == hashlib.sha256(project_location.encode()).hexdigest()
+
+    before = layer.pi_skill_verification_entry(_registry(FINGERPRINT), None)["hash"]
+    other_home = tmp_path / "elsewhere"
+    other_home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: other_home)
+    assert layer.pi_skill_verification_entry(_registry(FINGERPRINT), None)["hash"] != before
+
+
+def test_presence_index_keeps_only_a_well_formed_skill_location():
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "observal-server"))
+    from services.layer_components.normalizer import normalize_snapshot
+
+    component = {
+        "type": "skill",
+        "id": SKILL,
+        "name": "review",
+        "version": "1.0.0",
+        "scope": "user",
+        "local_name": "review",
+    }
+    pins = {
+        "schema_version": 2,
+        "standalone": [],
+        "agents": [
+            {
+                "id": AGENT,
+                "name": "agent",
+                "version": "1.0.0",
+                "harness": "pi",
+                "scope": "user",
+                "components": [component],
+            }
+        ],
+    }
+    record = {
+        "harness": "pi",
+        "component_id": SKILL,
+        "alias": "review",
+        "scope": "user",
+        "parent_agent_id": AGENT,
+        "status": "verified",
+    }
+    digest = "a" * 64
+    (located,) = normalize_snapshot(pins, {"skill_verifications": [record | {"location_sha256": digest}]})
+    assert located.location_sha256 == digest
+    for bad in ("", "A" * 64, "/home/u/.pi/agent/skills/review/SKILL.md", None):
+        (item,) = normalize_snapshot(pins, {"skill_verifications": [record | {"location_sha256": bad}]})
+        assert item.location_sha256 == ""
+    (mcp,) = normalize_snapshot(
+        {**pins, "agents": [{**pins["agents"][0], "components": [component | {"type": "mcp"}]}]},
+        {"mcp_verifications": [record | {"location_sha256": digest}]},
+    )
+    assert mcp.location_sha256 == "", "only skills carry a location"

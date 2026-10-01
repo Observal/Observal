@@ -188,3 +188,89 @@ class UnsupportedComponentType(BaseModel):
     status: Literal["unsupported"] = "unsupported"
     type: str
     detail: str
+
+
+# ── Skills ─────────────────────────────────────────────────────────────────
+# Skill evidence has its own vocabulary. None of these fields means "the skill
+# helped": a load or invocation shows its instructions entered context.
+
+SkillAttributionState = Literal["observed", "no_observed_skill_use", "attribution_not_possible"]
+SKILL_INVOCATIONS_LIMITATION = (
+    "invocations_not_recorded: no harness in this cohort records a distinguishable explicit skill "
+    "invocation, so invocation counts are unknown (null), not zero"
+)
+SKILL_CONTEXT_LIMITATION = (
+    "entered_context_not_helped: a confirmed load or an invocation shows the skill's instructions "
+    "entered the model's context, not that the skill was followed or improved the outcome"
+)
+
+
+class SkillEvidenceCoverage(BaseModel):
+    """Skill facts extracted from complete current skill projections in the present cohort."""
+
+    candidate_facts: int = 0
+    attributed_facts: int = 0
+    collision_facts: int = 0
+    unmatched_facts: int = 0
+    unknown_load_results: int = 0
+
+
+class SkillActivityCoverage(BaseModel):
+    presence: PresenceCoverage
+    projection: ProjectionCoverage
+    evidence: SkillEvidenceCoverage
+    usage_rate_denominator_sessions: int = Field(
+        0, description="Present sessions on a skill-supported harness with a complete current skill projection"
+    )
+    observed_sessions: int = Field(0, description="Sessions with a confirmed load or an invocation")
+    usage_rate: float | None = None
+    attribution_state: SkillAttributionState
+    reasons: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(
+        default_factory=lambda: [SKILL_CONTEXT_LIMITATION, LAYER_STABILITY_LIMITATION, FINAL_PUSH_LIMITATION]
+    )
+
+
+class SkillActivitySummaryResponse(BaseModel):
+    component: ComponentRef
+    period_days: int
+    period_start: str
+    period_end: str
+    time_basis: str = TIME_BASIS
+    present_sessions: int
+    present_users: int
+    available_sessions: int = Field(description="Sessions where the skill was advertised to the model")
+    loaded_sessions: int = Field(description="Sessions with at least one confirmed load (a successful read)")
+    confirmed_loads: int
+    load_attempts: int = Field(description="Reads that failed or whose result is unknown; not confirmed loads")
+    invoked_sessions: int | None = Field(description="Null when no harness in the cohort records invocations")
+    invocations: int | None
+    harness_distribution: dict[str, int]
+    version_distribution: dict[str, int] = Field(default_factory=dict)
+    activation_actions: ActivationActions
+    coverage: SkillActivityCoverage
+
+
+class SkillActivitySession(BaseModel):
+    user_id: str
+    harness: str
+    session_id: str
+    last_event_time: str
+    projection_state: SessionProjectionState
+    source_state: SourceAvailabilityState
+    available: bool
+    confirmed_loads: int
+    load_attempts: int
+    invocations: int | None = Field(description="Null when this harness does not record invocations")
+
+
+class SkillActivitySessionsResponse(BaseModel):
+    component: ComponentRef
+    period_days: int
+    time_basis: str = TIME_BASIS
+    sessions: list[SkillActivitySession]
+    next_cursor: str | None = None
+    pagination_note: str = (
+        "Ordered by immutable (user_id, harness, session_id); the window end is pinned, "
+        "but newly arriving sessions can join the cohort. Not a point-in-time snapshot."
+    )

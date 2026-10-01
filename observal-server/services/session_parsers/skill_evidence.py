@@ -9,12 +9,22 @@ An unsupported harness is not a supported session with no skill evidence.
 Evidence kinds, none of which shows that a skill achieved anything:
 
 * ``available``: the harness advertised the installed skill to the model.
-* ``loaded``: the model read the installed skill's instructions.
-* ``invoked``: the user explicitly invoked the skill.
+* ``load``: the model tried to read the installed skill's instructions. It is a
+  *confirmed* load only when ``result_state`` is ``success`` (the linked read
+  succeeded); ``error`` and ``unknown`` are attempts, not loads.
+* ``invoked``: the user explicitly invoked the skill. Emitted only when the
+  harness records a distinguishable invocation origin. Pi does not: its
+  ``/skill:name`` expansion is stored as an ordinary user message, which
+  pasted text can reproduce, so the Pi extractor never emits ``invoked``.
+
+Each fact's ``source_block_key`` is unique within its source line and
+namespaced (``skill-...``), so facts never replace each other or an MCP call
+in the shared activity table.
 
 Facts identify a skill by its install ``scope`` and ``alias`` (the directory
-Observal installed it into), never by the model-visible name, and carry no
-absolute paths, transcript text, or skill content.
+Observal installed it into) plus ``location_sha256``, the SHA-256 of the
+SKILL.md path the harness recorded, never by the model-visible name. They
+carry no absolute paths, transcript text, or skill content.
 """
 
 from __future__ import annotations
@@ -28,7 +38,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
     from datetime import datetime
 
-EvidenceKind = Literal["available", "loaded", "invoked"]
+EvidenceKind = Literal["available", "load", "invoked"]
 
 
 @dataclass(frozen=True)
@@ -39,8 +49,12 @@ class SkillEvidence:
     source_line_offset: int
     source_block_key: str
     event_time: datetime | None
-    # Only for ``loaded``: whether the read itself returned an error.
+    # Only for ``load``: whether the linked read succeeded (a confirmed load).
     result_state: Literal["unknown", "success", "error"] = "unknown"
+    # Only for ``load``: the read's tool-call id, when it is a unique link key.
+    tool_use_id: str = ""
+    # SHA-256 of the recorded SKILL.md location; matched against the verified install.
+    location_sha256: str = ""
 
 
 @dataclass(frozen=True)
@@ -51,6 +65,10 @@ class SkillEvidenceExtraction:
 
 
 class SkillEvidenceExtractor(Protocol):
+    # Whether the harness records a distinguishable explicit-invocation origin.
+    # When False, invocation counts are unknown, not zero.
+    records_invocations: bool
+
     def extract(self, rows: Sequence[Mapping[str, object]]) -> SkillEvidenceExtraction: ...
 
 
@@ -58,6 +76,12 @@ def _extractors() -> dict[str, SkillEvidenceExtractor]:
     from .pi_skill_evidence import PiSkillEvidenceExtractor
 
     return {"pi": PiSkillEvidenceExtractor()}
+
+
+def invocations_recorded(harness: str) -> bool:
+    """True only for a supported harness whose extractor can observe explicit invocations."""
+    extractor_id = HARNESS_REGISTRY.get(harness, {}).get("skill_evidence_extractor")
+    return bool(extractor_id) and _extractors()[extractor_id].records_invocations
 
 
 def extract_skill_evidence(harness: str, rows: Sequence[Mapping[str, object]]) -> SkillEvidenceExtraction:

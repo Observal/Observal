@@ -39,6 +39,8 @@ Every line is kept in order. Paths were replaced with `/home/fixture/...`, entry
 
 - **Available:** the `system` message's `sections.skills` contains `<available_skills>` with each skill's `name`, `description` and `location` (absolute `SKILL.md` path). This lists what was advertised, not what was used.
 - **Loaded by the model:** an assistant `toolCall` named `read` whose `arguments.path` is the skill's `SKILL.md` location, followed by its `toolResult`.
-- **Invoked by the user:** `/skill:name` becomes a user message containing `<skill name="…" location="…">` with the instructions expanded. In the recording the model then also read the file.
+- **`/skill:name`:** becomes an ordinary user message containing `<skill name="…" location="…">` with the instructions expanded (Pi 0.99.2 `_expandSkillCommand`). Pi records no origin that separates it from the same text typed or pasted by a user, so the extractor does not treat it as an invocation. In the recording the model then also read the file, which counts as a load.
+
+Locations are absolute and recorded as Pi saw them, so the extractor emits a SHA-256 of each location and the server matches it against the path the verifier fingerprinted. Layout and alias alone do not identify this installation's skill.
 
 None of these shows that a skill achieved anything.
