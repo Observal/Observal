@@ -15,6 +15,7 @@ from dataclasses import asdict, dataclass
 SUPPORTED_TYPES = frozenset({"mcp", "skill", "hook"})
 _VERIFICATION_KEY = ("harness", "component_id", "alias", "scope", "parent_agent_id")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+_AGENT = re.compile(r"[A-Za-z0-9_.-]{1,128}\Z")
 
 
 @dataclass(frozen=True)
@@ -32,8 +33,11 @@ class Occurrence:
     qualified_name: str
     local_name: str
     verification_status: str
-    # Skills only: SHA-256 of the absolute SKILL.md path the verifier hashed.
+    # Skills: SHA-256 of the absolute SKILL.md path the verifier hashed.
+    # Hooks: SHA-256 of the (event, command) the harness records when the hook runs.
     location_sha256: str = ""
+    # Hooks only: the agent whose frontmatter installed it ('' for a settings-file hook).
+    binding_agent: str = ""
 
 
 def _text(value: object) -> str:
@@ -49,9 +53,14 @@ def normalize_snapshot(pinned_versions: object, drift: object) -> list[Occurrenc
     globally_drifted = drift.get("is_canonical") is False
     # Index once (first record wins) so normalization stays linear in input size.
     # MCP and skill results are kept apart: one kind never verifies the other.
-    verification_index: dict[str, dict[tuple, object]] = {"mcp": {}, "skill": {}}
-    locations: dict[tuple, str] = {}
-    for kind, field_name in (("mcp", "mcp_verifications"), ("skill", "skill_verifications")):
+    verification_index: dict[str, dict[tuple, object]] = {"mcp": {}, "skill": {}, "hook": {}}
+    locations: dict[tuple[str, tuple], str] = {}
+    hook_agents: dict[tuple, str] = {}
+    for kind, field_name in (
+        ("mcp", "mcp_verifications"),
+        ("skill", "skill_verifications"),
+        ("hook", "hook_verifications"),
+    ):
         verifications = drift.get(field_name)
         for item in verifications if isinstance(verifications, list) else []:
             if isinstance(item, dict):
@@ -62,8 +71,11 @@ def normalize_snapshot(pinned_versions: object, drift: object) -> list[Occurrenc
                         continue
                     verification_index[kind][key] = status if isinstance(status, str) else None
                     location = item.get("location_sha256")
-                    if kind == "skill" and isinstance(location, str) and _SHA256.fullmatch(location):
-                        locations[key] = location
+                    if kind in ("skill", "hook") and isinstance(location, str) and _SHA256.fullmatch(location):
+                        locations[kind, key] = location
+                    agent = item.get("hook_agent")
+                    if kind == "hook" and isinstance(agent, str) and _AGENT.fullmatch(agent):
+                        hook_agents[key] = agent
                 except TypeError:
                     continue
     records: list[dict[str, str]] = []
@@ -79,7 +91,8 @@ def normalize_snapshot(pinned_versions: object, drift: object) -> list[Occurrenc
         item_scope = _text(pin.get("scope")) or scope
         verification = "unverified"
         key = (harness, raw_id, alias, item_scope, parent_id)
-        location = locations.get(key, "") if kind == "skill" else ""
+        location = locations.get((kind, key), "")
+        binding_agent = hook_agents.get(key, "") if kind == "hook" else ""
         if kind in verification_index and key in verification_index[kind]:
             status = verification_index[kind][key]
             verification = (
@@ -102,6 +115,7 @@ def normalize_snapshot(pinned_versions: object, drift: object) -> list[Occurrenc
                 "local_name": alias,
                 "verification_status": verification,
                 "location_sha256": location,
+                "binding_agent": binding_agent,
             }
         )
 

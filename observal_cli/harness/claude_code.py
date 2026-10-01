@@ -10,6 +10,7 @@ import json
 import os
 import sys
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
@@ -150,6 +151,139 @@ class ClaudeCodeAdapter(BaseAdapter):
 
     def redact_layer_content(self, display_path: str) -> bool:
         return display_path in {"user:.claude.json", "project:.mcp.json"}
+
+    def standalone_hook_binding(
+        self, config_path: str, config_snippet: dict, written: list[tuple[Path, Path]]
+    ) -> dict | None:
+        """Bind a ``hook install`` that wrote exactly one command hook into a settings file."""
+        import hashlib
+
+        from observal_cli.layer import skill_file_fingerprint
+
+        if config_path.startswith("~/.claude/"):
+            config = f"user:{config_path[len('~/.claude/') :]}"
+        elif config_path and not config_path.startswith(("~", "/")):
+            config = f"project:{config_path}"
+        else:
+            return None
+        commands = [
+            (event, hook.get("command"))
+            for event, groups in (config_snippet.get("hooks") or {}).items()
+            if isinstance(groups, list)
+            for group in groups
+            if isinstance(group, dict)
+            for hook in group.get("hooks") or []
+            if isinstance(hook, dict) and hook.get("type", "command") == "command"
+        ]
+        if len(commands) != 1 or not isinstance(commands[0][1], str) or not commands[0][1]:
+            return None
+        event, command = commands[0]
+        scripts = [
+            (path, rel) for path, rel in written if command == rel.as_posix() or command.endswith(rel.as_posix())
+        ]
+        if scripts:
+            fingerprint = skill_file_fingerprint(scripts[0][0])
+            if not fingerprint:
+                return None
+            script = f"project:{scripts[0][1].as_posix()}"
+        else:
+            fingerprint, script = f"sha256-{hashlib.sha256(command.encode()).hexdigest()}", ""
+        return {
+            "hook_event": event,
+            "hook_command": command,
+            "hook_agent": "",
+            "hook_config": config,
+            "hook_script": script,
+            "hook_integrity": fingerprint,
+        }
+
+    def _hook_file(self, display: str, directory: str | None) -> Path | None:
+        if display.startswith("user:"):
+            return Path.home() / ".claude" / display[len("user:") :]
+        if display.startswith("project:") and directory:
+            return Path(directory) / display[len("project:") :]
+        return None
+
+    @staticmethod
+    def _hook_entries(path: Path) -> Counter[tuple[str, str]] | None:
+        """How many times each (event, command) is configured in a settings file or agent frontmatter.
+
+        Counts, not a set: two identical entries are two hooks that Claude Code's
+        records cannot tell apart. None when the file cannot be read or parsed.
+        """
+        import yaml
+
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            return None
+        try:
+            if path.suffix == ".md":
+                if not text.startswith("---"):
+                    return Counter()
+                data = yaml.safe_load(text.split("---", 2)[1]) or {}
+            else:
+                data = json.loads(text)
+        except (ValueError, yaml.YAMLError, IndexError):
+            return None
+        hooks = data.get("hooks") if isinstance(data, dict) else None
+        return Counter(
+            (event, hook["command"])
+            for event, groups in (hooks.items() if isinstance(hooks, dict) else ())
+            if isinstance(groups, list)
+            for group in groups
+            if isinstance(group, dict)
+            for hook in group.get("hooks") or []
+            if isinstance(hook, dict) and isinstance(hook.get("command"), str)
+        )
+
+    def _hook_locations(self, directory: str | None) -> list[Path]:
+        """Every place Claude Code reads command hooks from (settings and agent frontmatter)."""
+        base = Path.home() / ".claude"
+        paths = [base / "settings.json", *sorted((base / "agents").glob("*.md"))]
+        if directory:
+            project = Path(directory) / ".claude"
+            paths += [
+                project / "settings.json",
+                project / "settings.local.json",
+                *sorted((project / "agents").glob("*.md")),
+            ]
+        return paths
+
+    def verify_hook_binding(self, directory: str | None, component: dict) -> str:
+        """The recorded hook is configured exactly once where it was written, its script is
+        unchanged, and no other hook location configures the same event and command (which
+        Claude Code's records could not tell apart). A hook location that exists but cannot be
+        read or parsed cannot rule out a duplicate, so it also leaves the hook unverified.
+        """
+        from observal_cli.layer import skill_file_fingerprint
+
+        event, command = component.get("hook_event"), component.get("hook_command")
+        config = self._hook_file(str(component.get("hook_config") or ""), directory)
+        if not event or not command or config is None or not component.get("hook_integrity"):
+            return "unverified"
+        entries = self._hook_entries(config)
+        if entries is None:
+            return "unverified"
+        if entries[event, command] == 0:
+            return "drifted"
+        if entries[event, command] > 1:
+            return "unverified"  # duplicated in the same file: a recorded run names neither copy
+        script = component.get("hook_script") or ""
+        if script:
+            path = self._hook_file(script, directory)
+            fingerprint = skill_file_fingerprint(path) if path else None
+            if fingerprint is None:
+                return "unverified"
+            if fingerprint != component["hook_integrity"]:
+                return "drifted"
+        for other in self._hook_locations(directory):
+            if not other.exists() or other.resolve() == config.resolve():
+                continue
+            found = self._hook_entries(other)
+            if found is None or found[event, command]:
+                return "unverified"
+        return "verified"
 
     def skill_manifest_path(self, scope: str, alias: str) -> str | None:
         """Claude Code loads ``~/.claude/skills/<name>`` (personal) or the project's ``.claude/skills``."""

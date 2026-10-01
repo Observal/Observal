@@ -147,6 +147,9 @@ HARNESS_REGISTRY: dict[str, dict] = {
         # isMeta expansion); the skill listing has no locations, so never availability.
         # Verified against Claude Code 2.1.286 (session_parsers/claude_code_skill_evidence.py).
         "skill_evidence_extractor": "claude-code",
+        # Hook runs that printed output, failed, or blocked a tool; silent successes leave no
+        # record (session_parsers/claude_code_hook_evidence.py, Claude Code 2.1.286).
+        "hook_evidence_extractor": "claude-code",
         "scopes": ["project", "user"],
         "default_scope": "project",
         "scope_labels": ("project (.claude/agents/)", "user (~/.claude/agents/)"),

@@ -130,6 +130,19 @@ class BaseAdapter:
         """Unhashed locations where a same-named skill could be loaded instead."""
         return []
 
+    def standalone_hook_binding(
+        self, config_path: str, config_snippet: dict, written: list[tuple[Path, Path]]
+    ) -> dict | None:
+        """Where a standalone hook install wrote its one command hook, if this harness can verify it.
+
+        ``written`` pairs each script's absolute path with its project-relative path.
+        """
+        return None
+
+    def verify_hook_binding(self, directory: str | None, component: dict) -> str:
+        """``verified``, ``drifted`` or ``unverified`` for a pinned hook's recorded binding (fail closed)."""
+        return "unverified"
+
     def skill_location(self, scope: str, directory: str | None, alias: str) -> str | None:
         """Absolute path of the active skill file, as the harness records it in sessions."""
         return None

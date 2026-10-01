@@ -419,6 +419,7 @@ def upsert_standalone(
     digest: str | None = None,
     requested_version: str | None = None,
     mcp_integrity: str | None = None,
+    hook_binding: dict | None = None,
 ) -> None:
     """Add or update a standalone component (MCP, skill, hook, etc.) in the lock file.
 
@@ -458,6 +459,9 @@ def upsert_standalone(
         entry["digest"] = digest
     if requested_version:
         entry["requested_version"] = requested_version
+    if hook_binding:
+        # Where the hook was written (hook_event, hook_command, hook_config, ...), for verification.
+        entry.update({key: value for key, value in hook_binding.items() if key.startswith("hook_")})
 
     # Find existing entry to update (match on type + id + scope + directory)
     existing_idx = _find_standalone_idx(standalone, component_type, component_id, scope, directory)

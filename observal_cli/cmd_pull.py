@@ -724,6 +724,56 @@ def _installed_components(lock: dict, planned: list[dict]) -> list[dict]:
     ]
 
 
+def _record_hook_bindings(
+    snippet: dict, lock_components: list[dict], target_dir: Path, is_user_scope: bool
+) -> list[str]:
+    """Record where each pinned hook was written, so a later snapshot can verify it.
+
+    ``hook_command`` and ``hook_event`` are exactly what the agent file contains
+    (the harness records the command verbatim when the hook runs). The agent
+    file and script are stored as layer display paths; ``hook_integrity`` is the
+    written script's fingerprint, or the command's when there is no script.
+    """
+    import hashlib
+
+    from observal_cli.layer import skill_file_fingerprint
+
+    bindings = {b.get("name"): b for b in snippet.get("hook_bindings") or [] if isinstance(b, dict)}
+    profile = snippet.get("agent_profile") or {}
+    profile_path = profile.get("path") if isinstance(profile, dict) else None
+    config = ""
+    if isinstance(profile_path, str):
+        config = (
+            f"user:{profile_path[len('~/.claude/') :]}"
+            if profile_path.startswith("~/.claude/")
+            else f"project:{profile_path}"
+        )
+    warnings: list[str] = []
+    for component in lock_components:
+        if component.get("type") != "hook" or not component.get("local_name"):
+            continue
+        binding = bindings.get(component["local_name"])
+        if not binding or not config:
+            continue  # HTTP or unbound hooks stay unverified
+        script = binding.get("script")
+        if script:
+            fingerprint = skill_file_fingerprint(_resolve_path(script, target_dir, allow_home=is_user_scope))
+            if not fingerprint:
+                warnings.append("Installed hook script could not be fingerprinted; its presence will be unverified.")
+                continue
+        else:
+            fingerprint = f"sha256-{hashlib.sha256(binding['command'].encode()).hexdigest()}"
+        component.update(
+            hook_event=binding["event"],
+            hook_command=binding["command"],
+            hook_agent=binding.get("agent") or "",
+            hook_config=config,
+            hook_script=f"project:{script}" if script else "",
+            hook_integrity=fingerprint,
+        )
+    return warnings
+
+
 def _fingerprint_written_skills(
     snippet: dict, lock_components: list[dict], target_dir: Path, is_user_scope: bool
 ) -> list[str]:
@@ -1732,6 +1782,7 @@ def register_pull(app: typer.Typer):
             from observal_cli.layer import verify_installed_mcp
 
             warnings_list.extend(_fingerprint_written_skills(snippet, lock_components, target_dir, is_user_scope))
+            warnings_list.extend(_record_hook_bindings(snippet, lock_components, target_dir, is_user_scope))
 
             # The MCP file this pull wrote (a Pi profile's mcp.json, for example).
             mcp_cfg = snippet.get("mcp_config")
