@@ -123,32 +123,10 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _python_cmd() -> str:
-    """The interpreter prefix for a gated hook command.
+    """The interpreter prefix, resolved like every other observal_cli launcher (isolated check, quoted)."""
+    from observal_cli.shared.launcher import posix_prefix
 
-    Follows the session-push hook (``sys.executable``, else a ``PYTHONPATH``
-    source-root fallback) with two corrections. Importability is checked in an
-    isolated interpreter from ``/``, not in this process, whose ``sys.path``
-    may only work because of its own working directory or ``PYTHONPATH``.
-    Both paths are shell-quoted.
-    """
-    import subprocess
-    from pathlib import Path
-
-    executable = shlex.quote(sys.executable)
-    try:
-        isolated = subprocess.run(
-            [sys.executable, "-I", "-c", "import observal_cli.hook_gate"],
-            cwd="/",
-            capture_output=True,
-            timeout=30,
-            check=False,
-        )
-        if isolated.returncode == 0:
-            return executable
-    except (OSError, subprocess.SubprocessError):
-        pass
-    root = str(Path(__file__).resolve().parent.parent)
-    return f"PYTHONPATH={shlex.quote(root)} {executable}"
+    return posix_prefix()
 
 
 def gated_command(agent: str, command: str, *, on_unknown: str = "skip") -> str:
@@ -160,11 +138,13 @@ def gated_command(agent: str, command: str, *, on_unknown: str = "skip") -> str:
         raise NotImplementedError("the agent hook gate is POSIX-only")
     if on_unknown not in ("run", "skip"):
         raise ValueError("on_unknown must be run or skip")
-    # -P: never put the hook's working directory (the project) on sys.path, so a
-    # repository cannot shadow observal_cli with its own code.
+    from observal_cli.shared.launcher import isolation_flag
+
+    # -I (installed) or -P with an explicit PYTHONPATH (source checkout): neither the
+    # project directory nor an inherited PYTHONPATH can supply observal_cli.
     parts = [
         _python_cmd(),
-        "-P",
+        isolation_flag(),
         "-m",
         "observal_cli.hook_gate",
         "--agent",

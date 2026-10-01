@@ -16,6 +16,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from observal_cli.shared.launcher import isolation_flag
+
 COPILOT_CLI_HOOK_EVENTS = (
     "sessionStart",
     "sessionEnd",
@@ -33,14 +35,13 @@ def _python_cmd() -> str:
 
     Quotes the path to handle spaces in directory names.
     """
-    try:
-        import importlib.util
+    # Checked in an isolated interpreter: the CLI's own process may import
+    # observal_cli only through its working directory or PYTHONPATH.
+    from observal_cli.shared.launcher import importable_in_isolation
 
-        if importlib.util.find_spec("observal_cli") is not None:
-            # Quote to handle spaces in paths
-            return f'"{sys.executable}"'
-    except Exception:
-        pass
+    if importable_in_isolation():
+        # Quote to handle spaces in paths
+        return f'"{sys.executable}"'
     if sys.platform == "win32":
         return f'set "PYTHONPATH={_PKG_ROOT}" && "{sys.executable}"'
     return f'PYTHONPATH="{_PKG_ROOT}" "{sys.executable}"'
@@ -63,7 +64,7 @@ def build_copilot_cli_hooks(agent_id: str = "") -> dict:
     identifies whichever agent was pulled into that project.
     """
     module = "observal_cli.hooks.session_push"
-    bash_cmd = f"{_python_cmd()} -m {module} --harness copilot-cli"
+    bash_cmd = f"{_python_cmd()} {isolation_flag()} -m {module} --harness copilot-cli"
     # PowerShell command uses bare 'python' which must be on Windows PATH
     ps_cmd = f"python -m {module} --harness copilot-cli"
 

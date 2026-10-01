@@ -14,6 +14,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from observal_cli.shared.launcher import isolation_flag
+
 KIRO_HOOK_EVENTS = ("userPromptSubmit", "stop")
 
 # Parent of the observal_cli package directory
@@ -22,13 +24,12 @@ _PKG_ROOT = str(Path(__file__).resolve().parent.parent.parent)
 
 def _python_cmd() -> str:
     """Return python command with PYTHONPATH set if needed."""
-    try:
-        import importlib.util
+    # Checked in an isolated interpreter: the CLI's own process may import
+    # observal_cli only through its working directory or PYTHONPATH.
+    from observal_cli.shared.launcher import importable_in_isolation
 
-        if importlib.util.find_spec("observal_cli") is not None:
-            return sys.executable
-    except Exception:
-        pass
+    if importable_in_isolation():
+        return sys.executable
     if sys.platform == "win32":
         return f'set "PYTHONPATH={_PKG_ROOT}" && {sys.executable}'
     return f"PYTHONPATH={_PKG_ROOT} {sys.executable}"
@@ -41,7 +42,7 @@ def build_kiro_hooks(*args, **kwargs) -> dict:
     Accepts optional agent_id for per-agent attribution.
     """
     agent_id = kwargs.get("agent_id", "") or (args[2] if len(args) > 2 else "")
-    cmd = f"{_python_cmd()} -m observal_cli.hooks.session_push --harness kiro"
+    cmd = f"{_python_cmd()} {isolation_flag()} -m observal_cli.hooks.session_push --harness kiro"
     if agent_id:
         if sys.platform == "win32":
             cmd = f'set "OBSERVAL_AGENT_ID={agent_id}" && {cmd}'
