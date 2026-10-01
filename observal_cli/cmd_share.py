@@ -42,11 +42,11 @@ def _repository_root(directory: str) -> Path:
             timeout=5,
             check=False,
         )
-        if result.returncode == 0 and result.stdout.strip():
-            return Path(result.stdout.strip()).resolve()
-    except (OSError, subprocess.SubprocessError):
-        pass
-    return root
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise typer.BadParameter(f"could not run git in {root}: {exc}") from exc
+    if result.returncode != 0 or not result.stdout.strip():
+        raise typer.BadParameter(f"{root} is not inside a git repository")
+    return Path(result.stdout.strip()).resolve()
 
 
 def _is_within(path: Path, root: Path) -> bool:

@@ -165,3 +165,10 @@ def test_share_open_pulls_with_argument_array_not_shell(monkeypatch, tmp_path):
 def test_share_expiry_is_bounded_before_network_call():
     result = runner.invoke(app, ["share", "--all", "--expires-days", "31"])
     assert result.exit_code != 0
+
+
+def test_repository_root_rejects_non_git_directory(tmp_path):
+    import typer
+
+    with pytest.raises(typer.BadParameter):
+        cmd_share._repository_root(str(tmp_path))
