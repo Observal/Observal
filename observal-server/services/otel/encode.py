@@ -1,16 +1,17 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Encode projected spans as OTLP requests.
+"""Encode projected spans and stored rows as OTLP requests.
 
-Spans are first written in the OTLP/JSON shape and then parsed into the
-protobuf message, the route that is tested against the OpenTelemetry
-Collector.  ``to_bytes`` serializes a request for either OTLP/HTTP encoding:
-binary protobuf (the default) or OTLP/JSON.
+Spans and log records are first written in the OTLP/JSON shape and then
+parsed into the protobuf message, the route that is tested against the
+OpenTelemetry Collector.  ``to_bytes`` serializes a request for either
+OTLP/HTTP encoding: binary protobuf (the default) or OTLP/JSON.
 
-Content (``Span.content`` and ``SpanEvent.content``) is only written when
-``include_content`` is set; structure, timing, models, token usage and tool
-names are always exported.
+Content (``Span.content``, ``SpanEvent.content`` and a log record's body, the
+stored line) is only written when ``include_content`` is set; structure,
+timing, models, token usage and tool names are always exported.
 """
 
 from __future__ import annotations
@@ -19,18 +20,33 @@ import base64
 import json
 from typing import TYPE_CHECKING, Literal
 
-from services.otel.attributes import to_attributes
+from services.otel.attributes import to_attributes, to_int
+from services.otel.ids import to_unix_nanos, trace_id_for
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping, Sequence
 
     from google.protobuf.message import Message
+    from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsServiceRequest
     from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import ExportTraceServiceRequest
 
-    from services.otel.types import Span, SpanEvent
+    from services.otel.types import Row, Span, SpanEvent
 
 SCOPE_NAME = "observal"
 STATUS_CODE_ERROR = 2
+SEVERITY_NUMBER_INFO = 9
+LOG_EVENT_NAME = "observal.session.record"
+
+# Stored per-row token columns, written as stored under observal.* names.  A
+# harness can repeat one response's usage on every line of it (Claude Code
+# does), so these must not be summed as gen_ai.usage.*; spans carry
+# gen_ai.usage.* once per response.
+_ROW_TOKEN_KEYS = {
+    "input_tokens": "observal.usage.input_tokens",
+    "output_tokens": "observal.usage.output_tokens",
+    "cache_read_tokens": "observal.usage.cache_read_tokens",
+    "cache_write_tokens": "observal.usage.cache_write_tokens",
+}
 
 OtlpProtocol = Literal["http/protobuf", "http/json"]
 
@@ -125,6 +141,121 @@ def encode_spans(
         resource_attributes=resource_attributes,
     )
     return ParseDict(_map_ids(request, _hex_to_base64), ExportTraceServiceRequest())
+
+
+def _flag(value: object) -> bool:
+    return str(value).strip().lower() in ("1", "true")
+
+
+def log_record_json(
+    row: Row,
+    *,
+    include_content: bool,
+    span_id: str | None = None,
+    replay: bool = False,
+) -> dict:
+    """One stored row as an OTLP/JSON ``LogRecord``.
+
+    The body is the stored line, unchanged (ingest has already redacted it),
+    and only when ``include_content`` is set.  ``observal.line_offset`` and
+    ``observal.line_hash`` identify the record, so a destination can drop
+    copies that a retry or an integrity replay sends again.
+    """
+    session_id = str(row.get("session_id") or "")
+    parent_session_id = str(row.get("parent_session_id") or "") or None
+    time_ns = to_unix_nanos(row.get("timestamp"))
+    observed_ns = to_unix_nanos(row.get("ingested_at"))
+
+    attributes: dict[str, object] = {
+        "event.name": LOG_EVENT_NAME,
+        "session.id": session_id,
+        "observal.line_offset": to_int(row.get("line_offset")),
+        "observal.line_hash": row.get("line_hash"),
+        "observal.event_type": row.get("event_type"),
+        "observal.uuid": row.get("uuid"),
+        "observal.parent_uuid": row.get("parent_uuid"),
+        "observal.parent_session.id": parent_session_id,
+        "gen_ai.tool.name": row.get("tool_name"),
+        "gen_ai.tool.call.id": row.get("tool_id"),
+        "gen_ai.response.model": row.get("model"),
+        "user.id": row.get("user_id"),
+        "gen_ai.agent.id": row.get("agent_id"),
+        "observal.agent.version": row.get("agent_version"),
+    }
+    for column, key in _ROW_TOKEN_KEYS.items():
+        count = to_int(row.get(column))
+        if count:
+            attributes[key] = count
+    if _flag(row.get("raw_line_truncated")):
+        attributes["observal.raw_line_truncated"] = True
+    if not _flag(row.get("is_source_record", 1)):
+        attributes["observal.record.synthetic"] = True
+    if replay:
+        attributes["observal.forward.replay"] = True
+
+    record: dict = {
+        "timeUnixNano": str(time_ns or observed_ns or 0),
+        "observedTimeUnixNano": str(observed_ns or time_ns or 0),
+        "severityNumber": SEVERITY_NUMBER_INFO,
+        "attributes": to_attributes(attributes.items()),
+        "traceId": trace_id_for(parent_session_id or session_id),
+    }
+    if span_id:
+        record["spanId"] = span_id
+    if include_content:
+        record["body"] = {"stringValue": str(row.get("raw_line") or "")}
+    return record
+
+
+def logs_json(
+    rows: Iterable[Row],
+    *,
+    service_name: str,
+    include_content: bool,
+    span_ids: Mapping[int, str] | None = None,
+    replay: bool = False,
+) -> dict:
+    """An ``ExportLogsServiceRequest`` in the OTLP/JSON shape, one record per row."""
+    span_ids = span_ids or {}
+    records = [
+        log_record_json(
+            row,
+            include_content=include_content,
+            span_id=span_ids.get(to_int(row.get("line_offset"))),
+            replay=replay,
+        )
+        for row in rows
+    ]
+    return {
+        "resourceLogs": [
+            {
+                "resource": {"attributes": to_attributes([("service.name", service_name or "observal")])},
+                "scopeLogs": [{"scope": {"name": SCOPE_NAME}, "logRecords": records}],
+            }
+        ]
+    }
+
+
+def encode_logs(
+    rows: Sequence[Row],
+    *,
+    include_content: bool,
+    span_ids: Mapping[int, str] | None = None,
+    replay: bool = False,
+) -> ExportLogsServiceRequest:
+    """Build the protobuf ``ExportLogsServiceRequest`` for one session's stored rows."""
+    from google.protobuf.json_format import ParseDict
+    from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import ExportLogsServiceRequest
+
+    service_name = str(rows[0].get("harness") or "") if rows else ""
+    request = logs_json(
+        rows,
+        service_name=service_name,
+        include_content=include_content,
+        span_ids=span_ids,
+        replay=replay,
+    )
+    return ParseDict(_map_ids(request, _hex_to_base64), ExportLogsServiceRequest())
 
 
 def to_json(request: Message) -> dict:
