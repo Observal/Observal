@@ -153,6 +153,9 @@ def main():
                     },
                 )
             )
+        elif method == "ping":
+            # MCP requires every receiver to answer ping with an empty result.
+            _send_message(_make_response(req_id, {}))
         elif method == "tools/list":
             _send_message(_make_response(req_id, {"tools": tools}))
         elif method == "tools/call":
@@ -161,7 +164,10 @@ def main():
                 _send_message(_make_error(req_id, -32602, "Invalid params"))
                 continue
             tool_name = params["name"]
-            arguments = params.get("arguments", {})
+            # Some clients send an explicit null when a tool takes no arguments.
+            arguments = params.get("arguments")
+            if arguments is None:
+                arguments = {}
             if not isinstance(arguments, dict):
                 _send_message(_make_error(req_id, -32602, "Invalid params"))
                 continue

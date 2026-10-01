@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Drive observal_cli.sandbox_mcp over real stdio pipes using MCP's newline-delimited framing."""
@@ -186,3 +187,27 @@ def test_unsupported_protocol_version_falls_back_to_latest(fake_runner_path):
     (reply,) = _run_session([_initialize(1, "1999-01-01")], fake_runner_path)
 
     assert reply["result"]["protocolVersion"] == SUPPORTED_PROTOCOL_VERSIONS[0]
+
+
+def test_ping_gets_an_empty_result(fake_runner_path):
+    (reply,) = _run_session([{"jsonrpc": "2.0", "id": 1, "method": "ping"}], fake_runner_path)
+
+    assert reply == {"jsonrpc": "2.0", "id": 1, "result": {}}
+
+
+def test_null_tool_arguments_use_the_sandbox_entrypoint(fake_runner_path):
+    (reply,) = _run_session(
+        [
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "run_sandbox_python_pytest", "arguments": None},
+            }
+        ],
+        fake_runner_path,
+    )
+
+    assert reply["result"]["isError"] is False
+    argv = json.loads(reply["result"]["content"][0]["text"])
+    assert argv[argv.index("--command") + 1] == "pytest"
