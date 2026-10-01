@@ -146,6 +146,7 @@ def find_agents(text: str, *, limit: int = 5) -> list[dict]:
             "version": r.get("version"),
             "harnesses": r.get("obs:supportedHarnesses") or [],
             "ref": r.get("obs:nativeRef"),
+            "recommended": bool(r.get("obs:recommended")),
         }
         for r in results[:limit]
     ]
@@ -200,8 +201,23 @@ def headless_harnesses() -> list[str]:
     return out
 
 
-def choose_harness(supported: list[str], preferred: str | None) -> str:
+def choose_harness(supported: list[str], preferred: str | None, *, required: str | None = None) -> str:
+    """Pick the harness a delegated agent runs in.
+
+    ``preferred`` (the caller's own harness) is a hint that falls back to any
+    usable harness. ``required`` (an explicit ``--harness``) is used as given
+    or the delegation fails; it never silently becomes a different harness.
+    """
     available = headless_harnesses()
+    if required:
+        if required not in available:
+            raise DelegationError(
+                f"{required} cannot run an agent headless on this machine."
+                + (f" Usable here: {', '.join(available)}." if available else "")
+            )
+        if supported and required not in supported:
+            raise DelegationError(f"The agent supports {', '.join(supported)}, not {required}.")
+        return required
     ordered = ([preferred] if preferred else []) + [h for h in available if h != preferred]
     for harness in ordered:
         if harness in available and (not supported or harness in supported):
@@ -350,7 +366,9 @@ def start(
         if not agent_id:
             raise DelegationError("Could not tell which registry agent that identifier names.")
         observal["agentId"] = agent_id
-        observal["harness"] = choose_harness(list(entry.get("obs:supportedHarnesses") or []), harness or parent_harness)
+        observal["harness"] = choose_harness(
+            list(entry.get("obs:supportedHarnesses") or []), parent_harness, required=harness
+        )
     else:
         observal["remoteUrl"] = (entry.get("obs:a2aInterface") or {}).get("url")
 

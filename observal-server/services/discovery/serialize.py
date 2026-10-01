@@ -49,6 +49,11 @@ def availability(entry: DiscoveryEntry, harness: str | None = None) -> str:
     return AVAILABILITY_NEXT_SESSION
 
 
+def recommended(entry: DiscoveryEntry) -> bool:
+    """Whether an admin marked the resource as recommended (editorial, never part of ``score``)."""
+    return bool((entry.raw_entry or {}).get("obs:recommended"))
+
+
 def delegable(entry: DiscoveryEntry) -> bool:
     """Whether a running agent may hand this entry a task (ADR 0002).
 
@@ -98,6 +103,7 @@ def search_result_item(ranked: Ranked, *, source: str, harness: str | None = Non
         "obs:availability": availability(entry, harness),
         "obs:activatable": bool(entry.activatable),
         "obs:delegable": delegable(entry),
+        "obs:recommended": recommended(entry),
         "obs:artifactDigest": entry.artifact_digest,
         "obs:publisher": entry.publisher_domain,
     }
@@ -149,5 +155,6 @@ def list_item(entry: DiscoveryEntry) -> dict[str, Any]:
         "obs:nativeRef": entry.native_ref,
         "obs:approval": entry.lifecycle_status.value,
         "obs:supportedHarnesses": list(entry.supported_harnesses or []),
+        "obs:recommended": recommended(entry),
         "updatedAt": entry.updated_at_source.isoformat() if entry.updated_at_source else None,
     }

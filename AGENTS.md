@@ -65,7 +65,7 @@ observal-server/       FastAPI server
   jobs/                Background job definitions (catalog, maintenance, migration)
 
 
-web/                   Vite 6 SPA / React 19 / TanStack Router (see web/AGENTS.md)
+web/                   Vite 8 SPA / React 19 / TanStack Router (see web/AGENTS.md)
 packages/pi-extension/ Pi telemetry extension (npm: observal-pi)
 docker/                Docker Compose stack (10 services)
 fuzz/                  Atheris fuzz targets + OSS-Fuzz project config mirror
@@ -116,7 +116,7 @@ Today only Kiro meets all four. A minimal harness has:
 
 ### TypeScript (web)
 
-Vite 6 SPA with TanStack Router, not Next.js. `web/AGENTS.md` is the authoritative frontend reference; the rules below are the short form.
+Vite 8 SPA with TanStack Router, not Next.js. `web/AGENTS.md` is the authoritative frontend reference; the rules below are the short form.
 
 - **Auth storage is split.** `observal_access_token` lives in sessionStorage; `observal_refresh_token` and cached profile fields (role, name, email, username, avatar) live in localStorage so refresh survives reloads and new tabs. Do not widen localStorage use without changing the auth model deliberately.
 - **TanStack Query hooks** from `use-api.ts` for all data fetching. Raw `fetch` in components is a known exception, not a pattern: a handful of call sites (co-authors, edit-lock release via `keepalive`, logout, SAML exchange) still use it. Do not add more.
@@ -131,6 +131,8 @@ Vite 6 SPA with TanStack Router, not Next.js. `web/AGENTS.md` is the authoritati
 - **Canonical registry identity is `namespace/slug`.** UUIDs remain accepted; legacy bare names resolve only when unambiguous. CLI slash-qualified references resolve to UUIDs before using existing action routes.
 - **Hard rewrite policy.** No deprecation wrappers. When code moves, callers update in the same PR. Dead code is deleted immediately.
 - **Tests mock externals.** No Docker needed to run the test suite. E2E specs in `tests/e2e/` are the exception (require running stack).
+- **Verify against a live instance, not only tests.** When a change affects runtime behavior (API routes, worker, migrations, web UI, Dockerfiles, compose), run `make rebuild` and exercise it on the running stack (curl the endpoint, click through the page, run the relevant Playwright spec) before calling it done. Mocked tests passing is not proof it works in the container. Skip this for docs-only, test-only, or pure refactors with no runtime effect.
+- **Docker image facts.** The API container root filesystem is read-only, so Python bytecode is precompiled in `Dockerfile.api` (otherwise every start recompiles). The web image runs `tsc` and the Vite bundle as parallel BuildKit stages, so a type error still fails the build via the `typecheck` stage marker.
 
 ## CLI structure
 
@@ -212,7 +214,7 @@ Session delivery uses a local outbox and resumes after transient network failure
 # Docker stack (10 services: init, api, db, clickhouse, redis, worker, web, lb, prometheus, grafana)
 make up                  # start
 make down                # stop
-make rebuild             # rebuild and restart
+make rebuild             # rebuild api/web images once and restart (alias: make rebuild-fast, same target)
 make logs                # tail logs
 
 # CLI (installed via uv)

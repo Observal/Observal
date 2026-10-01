@@ -44,6 +44,7 @@ import { TableSkeleton, CardSkeleton } from "@/components/shared/skeleton-layout
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
 import { StatusBadge } from "@/components/registry/status-badge";
+import { RecommendedBadge } from "@/components/registry/recommended-badge";
 import { EntityGlyph } from "@/components/registry/entity-glyph";
 import { RegistryName } from "@/components/registry/registry-name";
 import { HarnessBadges } from "@/components/registry/harness-badges";
@@ -314,7 +315,10 @@ function AgentCatalogCard({
       {/* Top row: icon + status badge */}
       <div className="flex items-start justify-between gap-3">
         <EntityGlyph type="agent" size="sm" labelled={false} />
-        <StatusBadge status={status} />
+        <div className="flex items-center gap-1.5">
+          {agent.is_recommended && <RecommendedBadge />}
+          <StatusBadge status={status} />
+        </div>
       </div>
 
       {/* Title */}
@@ -401,7 +405,10 @@ function AgentListRow({ agent, onClick }: { agent: RegistryItem; onClick: () => 
       </div>
 
       {/* Status */}
-      <StatusBadge status={status} />
+      <div className="flex items-center gap-1.5">
+        {agent.is_recommended && <RecommendedBadge />}
+        <StatusBadge status={status} />
+      </div>
 
       {/* Pulls */}
       <span className="font-mono text-[10px] text-muted-foreground">

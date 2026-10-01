@@ -27,6 +27,7 @@ from observal_cli.render import (
     esc,
     handle,
     kv_panel,
+    listing_status,
     output_json,
     relative_time,
     spinner,
@@ -387,7 +388,7 @@ def sandbox_show(
         kv_panel(
             f"{esc(display_name(item))} v{esc(item.get('version', '?'))}",
             [
-                ("Status", status_badge(item.get("status", ""))),
+                ("Status", listing_status(item)),
                 ("Runtime", esc(item.get("runtime_type", "N/A"))),
                 ("Image", esc(item.get("image", "N/A"))),
                 ("Namespace", esc(handle(item) or "N/A")),

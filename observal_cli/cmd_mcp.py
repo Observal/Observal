@@ -37,6 +37,7 @@ from observal_cli.render import (
     handle,
     ide_tags,
     kv_panel,
+    listing_status,
     name_inline,
     output_json,
     relative_time,
@@ -1052,7 +1053,7 @@ def _show_impl(mcp_id, output):
         kv_panel(
             f"{esc(display_name(item))} v{esc(item.get('version', '?'))}",
             [
-                ("Status", status_badge(item.get("status", ""))),
+                ("Status", listing_status(item)),
                 ("Category", esc(item.get("category", "N/A"))),
                 ("Namespace", esc(handle(item) or "N/A")),
                 ("Description", esc(item.get("description", ""))),

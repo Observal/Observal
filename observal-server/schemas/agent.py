@@ -16,7 +16,7 @@ from typing import Literal
 from pydantic import BaseModel, field_validator
 
 from models.agent import AgentStatus
-from schemas.constants import AGENT_NAME_REGEX, Visibility, make_name_validator
+from schemas.constants import AGENT_NAME_REGEX, RecommendedFlag, Visibility, make_name_validator
 from services.versioning import validate_semver
 
 VALID_COMPONENT_TYPES = {"mcp", "skill", "hook", "prompt", "sandbox"}
@@ -236,6 +236,7 @@ class AgentResponse(BaseModel):
     user_permission: str | None = None
     latest_approved_version: str | None = None
     latest_version: str | None = None
+    is_recommended: RecommendedFlag = False
 
     model_config = {"from_attributes": True}
 
@@ -269,6 +270,8 @@ class AgentSummary(BaseModel):
     updated_at: datetime | None = None
     components_ready: bool = True
     blocking_components: list = []
+    is_recommended: RecommendedFlag = False
+
     model_config = {"from_attributes": True}
 
 

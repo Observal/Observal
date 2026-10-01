@@ -2081,7 +2081,7 @@ requires-dist = [
     { name = "pyarrow", specifier = ">=15.0.0" },
     { name = "pydantic" },
     { name = "pydantic-settings", specifier = ">=2.14.2" },
-    { name = "pyjwt", specifier = ">=2.14.0" },
+    { name = "pyjwt", specifier = ">=2.15.0" },
     { name = "python-dotenv" },
     { name = "python-multipart", specifier = ">=0.0.31" },
     { name = "python3-saml", specifier = ">=1.16.0" },
@@ -2092,7 +2092,7 @@ requires-dist = [
     { name = "strawberry-graphql", extras = ["fastapi"], specifier = ">=0.315.4" },
     { name = "structlog", specifier = ">=24.1.0" },
     { name = "tenacity", specifier = ">=8.0.0" },
-    { name = "urllib3", specifier = ">=2.7.0" },
+    { name = "urllib3", specifier = ">=2.8.0" },
     { name = "uvicorn", extras = ["standard"] },
     { name = "xxhash", specifier = ">=3.4.0" },
 ]

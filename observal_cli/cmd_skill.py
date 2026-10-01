@@ -33,6 +33,7 @@ from observal_cli.render import (
     esc,
     handle,
     kv_panel,
+    listing_status,
     output_json,
     relative_time,
     spinner,
@@ -525,7 +526,7 @@ def skill_show(
         kv_panel(
             f"{esc(display_name(item))} v{esc(item.get('version', '?'))}",
             [
-                ("Status", status_badge(item.get("status", ""))),
+                ("Status", listing_status(item)),
                 ("Validated", "✓" if item.get("validated") else "✗"),
                 ("Task Type", esc(item.get("task_type", "N/A"))),
                 ("Delivery Mode", esc(item.get("delivery_mode", "git_fetch"))),

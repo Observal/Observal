@@ -104,6 +104,7 @@ This pre-fills `components` from everything used in the current directory in the
 | `obs:approval` / `obs:lifecycle` | `approved`, `pending`, `rejected`, `archived`, `draft`. Only `approved` loads without `--yes`. |
 | `obs:availability` | `now`, `next-session`, `explicit-install`, `delegate`, `not-approved`, `archived`, `unsupported-in-harness`. |
 | `obs:delegable` | The entry can take a delegated task now (approved agent with a headless harness, or approved remote A2A agent). |
+| `obs:recommended` | An admin marked it as recommended. Editorial, never part of `score`; it only breaks ties between equal scores. Prefer it among usable candidates of similar relevance. `find_agents` returns it as `recommended`. |
 | `obs:provider` | Remote A2A agents only: the organization named on the agent card, as the card states it (not verified). |
 | `obs:supportedHarnesses` | Harnesses the publisher declared. Empty means unrestricted. |
 | `obs:nativeRef` | `namespace/slug@version`, usable with `observal registry ... show` and `observal agent pull`. |

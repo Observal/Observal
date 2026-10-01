@@ -45,6 +45,7 @@ class HookListing(Base):
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )
+    is_recommended: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     latest_version_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("hook_versions.id", use_alter=True, ondelete="SET NULL"),

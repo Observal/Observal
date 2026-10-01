@@ -197,13 +197,13 @@ Watch progress with:
 make logs
 ```
 
-For normal code and dependency changes, prefer the fast rebuild target:
+For code, dependency, and Compose changes, use:
 
 ```bash
-make rebuild-fast
+make rebuild
 ```
 
-`make rebuild-fast` is not a separate dev profile and does not enable hot reload. It uses the same Docker Compose stack as `make rebuild`, but only builds the two app images that contain local code:
+`make rebuild-fast` is the same target under another name. It is not a separate dev profile and does not enable hot reload. It builds only the two app images that contain local code:
 
 * `observal-api`, shared by the API, init, and worker services
 * `observal-web`, used by the web service
@@ -259,8 +259,7 @@ Seeded automatically on first startup:
 ```bash
 make up            # start the full Docker stack
 make down          # stop the stack
-make rebuild-fast  # fast app rebuild for code and dependency changes
-make rebuild       # rebuild every service image and restart
+make rebuild       # rebuild app images and restart (alias: make rebuild-fast)
 make logs          # tail logs from all services
 make test          # run the test suite quickly
 make test-v        # verbose test output
@@ -273,17 +272,12 @@ make reset         # nuke all volumes and rebuild from scratch (destructive)
 
 ### Which rebuild target should I use?
 
-| Situation                                                                                    | Target               | Notes                                                                                                                                                                                  |
-| -------------------------------------------------------------------------------------------- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Backend source changed                                                                       | `make rebuild-fast`  | Rebuilds the shared API image used by API, init, and worker.                                                                                                                           |
-| Worker, init, migration, or ClickHouse setup code changed                                    | `make rebuild-fast`  | These services use the same `observal-api` image. This is the safe path for schema and init path changes because it refreshes the image used by `observal-init` and `observal-worker`. |
-| Python dependencies changed in `observal-server/pyproject.toml` or `observal-server/uv.lock` | `make rebuild-fast`  | Docker reruns the Python dependency layer when those files change.                                                                                                                     |
-| Frontend source changed                                                                      | `make rebuild-fast`  | Rebuilds the web image.                                                                                                                                                                |
-| Frontend dependencies changed in `package.json`, `web/package.json`, or `pnpm-lock.yaml`     | `make rebuild-fast`  | Docker reruns the pnpm dependency layer when those files change.                                                                                                                       |
-| Compose topology changed                                                                     | `make rebuild`       | Use this for new services, changed image names, changed build contexts, changed profiles, or volume and network changes.                                                               |
-| Cache looks stale or the stack behaves unexpectedly                                          | `make rebuild` first | Use `make rebuild-clean` only when you intentionally want a no-cache rebuild with volumes removed.                                                                                     |
+| Situation | Target | Notes |
+| --- | --- | --- |
+| Any code, dependency, schema, init, worker, or Compose change | `make rebuild` | `make rebuild-fast` is the same target. Rebuilds the shared API image (API, init, worker) and the web image, then recreates changed services. |
+| Cache looks stale or the stack behaves unexpectedly | `make rebuild-clean` | Rebuilds from scratch without the Docker cache and removes volumes. |
 
-`make down` stops containers started by either `make rebuild` or `make rebuild-fast`. Both targets use the same Compose project and the same volumes.
+`make down` stops containers started by `make rebuild`.
 
 ***
 

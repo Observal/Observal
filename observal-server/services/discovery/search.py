@@ -224,6 +224,8 @@ def rank_entries(text: str, entries: list[DiscoveryEntry]) -> list[Ranked]:
         key=lambda r: (
             -r.score,
             r.entry.lifecycle_status != DiscoveryLifecycle.approved,
+            # Equal relevance only: an admin's recommendation breaks the tie, it never moves score.
+            not (r.entry.raw_entry or {}).get("obs:recommended"),
             (r.entry.display_name or "").lower(),
             r.entry.ard_identifier,
         )

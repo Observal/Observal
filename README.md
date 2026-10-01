@@ -321,7 +321,7 @@ Start here for deployment and operations:
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | Vite 6, React 19, TanStack Router, Tailwind CSS 4, shadcn/ui |
+| Frontend | Vite 8, React 19, TanStack Router, Tailwind CSS 4, shadcn/ui |
 | Backend | Python 3.11+, FastAPI, Strawberry GraphQL |
 | Databases | PostgreSQL 16 (registry), ClickHouse (telemetry) |
 | Queue | Redis + arq |

@@ -44,6 +44,7 @@ import { TableSkeleton, CardSkeleton } from "@/components/shared/skeleton-layout
 import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
 import { StatusBadge } from "@/components/registry/status-badge";
+import { RecommendedBadge } from "@/components/registry/recommended-badge";
 import { EntityGlyph, toEntityKind } from "@/components/registry/entity-glyph";
 import { RegistryName } from "@/components/registry/registry-name";
 import { registryItemPath, canonicalRouteParts } from "@/lib/registry-name";
@@ -143,7 +144,10 @@ function ComponentCatalogCard({
       {/* Top row: icon + status badge */}
       <div className="flex items-start justify-between gap-3">
         <EntityGlyph type={glyphKind} size="sm" labelled />
-        <StatusBadge status={status} />
+        <div className="flex items-center gap-1.5">
+          {item.is_recommended && <RecommendedBadge />}
+          <StatusBadge status={status} />
+        </div>
       </div>
 
       {/* Title */}
@@ -233,7 +237,10 @@ function ComponentListRow({
       <span className="text-[10px] text-muted-foreground">{usage}</span>
 
       {/* Status */}
-      <StatusBadge status={status} />
+      <div className="flex items-center gap-1.5">
+        {item.is_recommended && <RecommendedBadge />}
+        <StatusBadge status={status} />
+      </div>
     </div>
   );
 }

@@ -38,6 +38,7 @@ from observal_cli.render import (
     handle,
     ide_tags,
     kv_panel,
+    listing_status,
     name_inline,
     output_json,
     relative_time,
@@ -1059,7 +1060,7 @@ def agent_show(
         kv_panel(
             f"{display_name(item)} v{item.get('version', '?')}",
             [
-                ("Status", status_badge(item.get("status", ""))),
+                ("Status", listing_status(item)),
                 ("Model", f"[bold]{esc(item.get('model_name', 'N/A'))}[/bold]"),
                 ("Namespace", esc(handle(item) or "N/A")),
                 ("Created By", esc(item.get("created_by_username") or item.get("created_by_email", ""))),

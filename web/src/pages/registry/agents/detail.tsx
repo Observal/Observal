@@ -64,6 +64,7 @@ import { ShareLinkButton } from "@/components/registry/share-link-button";
 import { canonicalRouteParts, registryIdentity, registryItemPath, type QualifiedIdentity } from "@/lib/registry-name";
 import { VersionDropdown } from "@/components/registry/version-dropdown";
 import { StatusBadge } from "@/components/registry/status-badge";
+import { RecommendedBadge, RecommendedToggle } from "@/components/registry/recommended-badge";
 import { HarnessBadges } from "@/components/registry/harness-badges";
 import { ReviewForm } from "@/components/registry/review-form";
 import {
@@ -203,6 +204,7 @@ interface AgentDetail {
   supported_harnesses?: string[];
   required_capabilities?: string[];
   inferred_supported_harnesses?: string[];
+  is_recommended?: boolean;
   [key: string]: unknown;
 }
 
@@ -873,6 +875,7 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
                     handleClassName="text-sm text-muted-foreground"
                   />
                   {a.status && <StatusBadge status={a.status} />}
+                  {a.is_recommended && <RecommendedBadge />}
                   {showVisibilityControl && (
                     <PickerSelect
                       value={currentVisibility}
@@ -948,6 +951,16 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
                   latestVersion={latestApprovedVersion ?? a.version}
                 />
               </div>
+
+              {isAdmin && (
+                <div className="lg:hidden">
+                  <RecommendedToggle
+                    entityType="agent"
+                    entityId={String(a.id)}
+                    isRecommended={!!a.is_recommended}
+                  />
+                </div>
+              )}
 
               {/* Tabs */}
               <Tabs defaultValue="overview">
@@ -1243,6 +1256,14 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
                   </h3>
                   <p className="text-sm">{a.owner}</p>
                 </div>
+              )}
+
+              {isAdmin && (
+                <RecommendedToggle
+                  entityType="agent"
+                  entityId={String(a.id)}
+                  isRecommended={!!a.is_recommended}
+                />
               )}
 
               {(a?.user_permission === "owner" || coAuthors.length > 0 || canManageLifecycle) && (

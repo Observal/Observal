@@ -12,6 +12,7 @@ from models.mcp import ListingStatus
 from schemas.constants import (
     VALID_MCP_CATEGORIES,
     VALID_MCP_FRAMEWORKS,
+    RecommendedFlag,
     Visibility,
     make_harness_list_validator,
     make_option_validator,
@@ -189,6 +190,7 @@ class McpListingResponse(BaseModel):
     validation_results: list[McpValidationResultResponse] = []
     download_count: int = 0
     user_permission: str | None = None
+    is_recommended: RecommendedFlag = False
 
     @field_validator("user_permission", mode="before")
     @classmethod
@@ -215,6 +217,7 @@ class McpListingSummary(BaseModel):
     status: ListingStatus
     rejection_reason: str | None = None
     updated_at: datetime | None = None
+    is_recommended: RecommendedFlag = False
 
     model_config = {"from_attributes": True}
 
