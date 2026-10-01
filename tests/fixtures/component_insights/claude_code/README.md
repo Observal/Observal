@@ -66,3 +66,25 @@ The interactive session was driven through a pseudo-terminal, with onboarding ma
 - **Agent frontmatter hooks** ran only in the interactive session. They did not run under headless `-p`, either with `--agent` or when the agent ran as a subagent; that subagent recording is not kept as a fixture. A matcher of `"*"` made no difference. Settings hooks ran in both modes, including inside a headless subagent.
 
 None of these shows what a hook achieved.
+
+## Agent hook gate fixtures (prototype)
+
+These were recorded on 2026-10-01 with Claude Code 2.1.286 and Opus 4.6 on Bedrock, using the same isolation as the fixtures above. They inform the opt-in move of agent hooks from frontmatter into a gated `settings.json` (`observal_cli/hook_gate.py`). `agent pull` does not use the gate yet.
+
+`hook_inputs/` holds the raw hook input JSON that Claude Code passed to a recorder hook, for every event in six modes: headless and interactive `--agent probe-agent`, headless and interactive plain sessions, and headless and interactive plain sessions that ran `probe-agent` as a subagent. File names are `<mode>-<owner>--<event>[-<tool>].json`. The owner is `probe-agent` when the event belongs to that agent, and `main` for the main thread of a subagent session. Session, prompt and tool-use IDs, paths, prompts, tool inputs and responses are replaced. Keys, `hook_event_name`, `agent_type`, the presence of `agent_id`, `tool_name`, `permission_mode` and `source` come from the recording. Observed:
+
+- With `--agent`, every event, from `SessionStart` to `Stop`, carries `agent_type` set to the agent and no `agent_id`, headless and interactive.
+- A subagent's own events (`PreToolUse`, `PostToolUse`, `SubagentStop`) carry `agent_type` and `agent_id`. The main thread's events in the same session carry neither.
+- Plain sessions carry no `agent_type` on any event. A present but malformed `agent_type` was never seen.
+- Claude Code runs a hook command as `/bin/sh -c <command>` (bash 3.2 in POSIX mode on macOS) in the project directory.
+
+`gate_session_*.jsonl` are sanitized transcripts of sessions in which the probe hooks were configured in `settings.json`, each wrapped by the gate for `probe-agent`: prompt context, a silent success, a failure, an exit-2 block on `Glob`, and a shell-heavy `Stop`/`SubagentStop` command. The marker file showed:
+
+| Fixture | Mode | Gated hooks that ran |
+| --- | --- | --- |
+| `gate_session_headless_agent.jsonl` | headless `--agent probe-agent` | all five (the headless gap is closed) |
+| `gate_session_headless_other_agent.jsonl` | headless `--agent other-agent` | none |
+| `gate_session_headless_plain.jsonl` | headless plain | none |
+| `gate_session_headless_subagent_main.jsonl` / `gate_session_headless_subagent.jsonl` | headless plain session, and its `probe-agent` subagent transcript | the subagent's pre, fail and `SubagentStop`; not the main thread's prompt hook |
+
+Interactive `--agent probe-agent` ran all five, and interactive plain ran none. Those transcripts are not kept. The shell-heavy command wrote `A B|it's` and received the exact stdin. Records name the full gated command. The interpreter and source paths in those commands were replaced with `/home/fixture/.local/share/observal/bin/python3` and `/home/fixture/observal-src`; the recording used the source-checkout `PYTHONPATH` fallback.
