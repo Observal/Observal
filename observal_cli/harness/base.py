@@ -122,6 +122,18 @@ class BaseAdapter:
         """Return the safe file-manifest location needed to verify this MCP scope."""
         return None
 
+    def skill_manifest_path(self, scope: str, alias: str) -> str | None:
+        """Manifest display path of the ACTIVE skill file this harness loads, if verifiable."""
+        return None
+
+    def skill_shadow_paths(self, scope: str, directory: str | None, alias: str) -> list[Path]:
+        """Unhashed locations where a same-named skill could be loaded instead."""
+        return []
+
+    def skill_location(self, scope: str, directory: str | None, alias: str) -> str | None:
+        """Absolute path of the active skill file, as the harness records it in sessions."""
+        return None
+
     def redact_layer_content(self, display_path: str) -> bool:
         """Whether the manifest may carry hashes but must not upload file bytes."""
         return False

@@ -43,18 +43,19 @@ def normalize_snapshot(pinned_versions: object, drift: object) -> list[Occurrenc
     drift = drift if isinstance(drift, dict) else {}
     is_v2 = pinned_versions.get("schema_version") == 2
     globally_drifted = drift.get("is_canonical") is False
-    verifications = drift.get("mcp_verifications")
-    verifications = verifications if isinstance(verifications, list) else []
     # Index once (first record wins) so normalization stays linear in input size.
-    verification_index: dict[tuple, object] = {}
-    for item in verifications:
-        if isinstance(item, dict):
-            try:
-                key = tuple(item.get(field) for field in _VERIFICATION_KEY)
-                status = item.get("status")
-                verification_index.setdefault(key, status if isinstance(status, str) else None)
-            except TypeError:
-                continue
+    # MCP and skill results are kept apart: one kind never verifies the other.
+    verification_index: dict[str, dict[tuple, object]] = {"mcp": {}, "skill": {}}
+    for kind, field_name in (("mcp", "mcp_verifications"), ("skill", "skill_verifications")):
+        verifications = drift.get(field_name)
+        for item in verifications if isinstance(verifications, list) else []:
+            if isinstance(item, dict):
+                try:
+                    key = tuple(item.get(field) for field in _VERIFICATION_KEY)
+                    status = item.get("status")
+                    verification_index[kind].setdefault(key, status if isinstance(status, str) else None)
+                except TypeError:
+                    continue
     records: list[dict[str, str]] = []
 
     def append(
@@ -68,8 +69,8 @@ def normalize_snapshot(pinned_versions: object, drift: object) -> list[Occurrenc
         item_scope = _text(pin.get("scope")) or scope
         verification = "unverified"
         key = (harness, raw_id, alias, item_scope, parent_id)
-        if kind == "mcp" and key in verification_index:
-            status = verification_index[key]
+        if kind in verification_index and key in verification_index[kind]:
+            status = verification_index[kind][key]
             verification = (
                 "verified"
                 if is_v2 and not globally_drifted and raw_id and alias and status == "verified"
@@ -115,17 +116,15 @@ def normalize_snapshot(pinned_versions: object, drift: object) -> list[Occurrenc
 
     # One installed alias cannot prove two different registry identities in the
     # same harness and scope. A duplicated claim about the *same* identity is fine.
-    alias_claims: dict[tuple[str, str, str], set[tuple[str, str]]] = defaultdict(set)
+    alias_claims: dict[tuple[str, str, str, str], set[tuple[str, str]]] = defaultdict(set)
     for record in records:
-        if record["component_type"] == "mcp" and record["local_name"]:
-            alias_claims[record["harness"], record["scope"], record["local_name"]].add(
+        if record["component_type"] in ("mcp", "skill") and record["local_name"]:
+            alias_claims[record["component_type"], record["harness"], record["scope"], record["local_name"]].add(
                 (record["raw_listing_id"], record["raw_version"])
             )
     for record in records:
-        if (
-            record["component_type"] == "mcp"
-            and len(alias_claims.get((record["harness"], record["scope"], record["local_name"]), ())) > 1
-        ):
+        claim = (record["component_type"], record["harness"], record["scope"], record["local_name"])
+        if record["component_type"] in ("mcp", "skill") and len(alias_claims.get(claim, ())) > 1:
             record["verification_status"] = "unverified"
 
     # The published identity is derived from immutable pin fields, not from the

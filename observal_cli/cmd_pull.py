@@ -724,6 +724,37 @@ def _installed_components(lock: dict, planned: list[dict]) -> list[dict]:
     ]
 
 
+def _fingerprint_written_skills(
+    snippet: dict, lock_components: list[dict], target_dir: Path, is_user_scope: bool
+) -> list[str]:
+    """Record ``skill_integrity`` for each pinned skill from the SKILL.md this pull wrote.
+
+    The written file (a Pi profile's copy, for example) is what a later session
+    snapshot must match before the skill counts as verified-present. A skill
+    whose file cannot be read is left without a fingerprint, so it stays
+    unverified rather than guessed. Returns warnings for the caller to show.
+    """
+    from observal_cli.cmd_skill import _sanitize_name
+    from observal_cli.layer import skill_file_fingerprint
+
+    written = {
+        _sanitize_name(sc.get("name", "")): _resolve_path(sc["path"], target_dir, allow_home=is_user_scope)
+        for sc in snippet.get("skill_components") or []
+        if isinstance(sc, dict) and isinstance(sc.get("path"), str)
+    }
+    warnings: list[str] = []
+    for component in lock_components:
+        if component.get("type") != "skill" or not component.get("local_name"):
+            continue
+        path = written.get(component["local_name"])
+        fingerprint = skill_file_fingerprint(path) if path else None
+        if fingerprint:
+            component["skill_integrity"] = fingerprint
+        else:
+            warnings.append("Installed skill could not be fingerprinted; its presence will be unverified.")
+    return warnings
+
+
 def _progress(output: OutputMode | str, message: str | None = None):
     return nullcontext() if output == "json" else spinner(message)
 
@@ -1699,6 +1730,8 @@ def register_pull(app: typer.Typer):
         if not dry_run:
             agent_version = installed_version
             from observal_cli.layer import verify_installed_mcp
+
+            warnings_list.extend(_fingerprint_written_skills(snippet, lock_components, target_dir, is_user_scope))
 
             # The MCP file this pull wrote (a Pi profile's mcp.json, for example).
             mcp_cfg = snippet.get("mcp_config")
