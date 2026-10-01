@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
 # SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 [project]
@@ -26,7 +27,7 @@ dependencies = [
     "httpx",
     "gitpython>=3.1.59",
     "boto3",
-    "litellm>=1.80.0,<1.90.0",
+    "litellm>=1.88.6,<1.90.0",
     # Required by LiteLLM for the `vertex_ai/*` models the insights settings
     # page offers. Without it every Vertex call fails with "Google Cloud SDK
     # not found", including Express Mode keys that need no GCP project.
@@ -40,7 +41,7 @@ dependencies = [
     "cryptography>=50.0.0",
     "python3-saml>=1.16.0",
     "slowapi",
-    "PyJWT>=2.13.0",
+    "PyJWT>=2.15.0",
     "aiosqlite>=0.22.1",
     "tenacity>=8.0.0",
     "python-multipart>=0.0.31",
@@ -49,7 +50,7 @@ dependencies = [
     "structlog>=24.1.0",
     "loguru>=0.7.0",
     "prometheus-fastapi-instrumentator>=7.0.0",
-    "urllib3>=2.7.0",
+    "urllib3>=2.8.0",
     "idna>=3.15",
     "orjson>=3.10.0",
     "xxhash>=3.4.0",
