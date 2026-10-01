@@ -18,10 +18,14 @@ root, may supply ``observal_cli``:
 * Source checkout: launch with ``-P`` (no working directory) and an explicit
   ``PYTHONPATH`` set to the package root, which replaces rather than extends
   any inherited value.
+
+The same rule applies to the CLI's own child processes (:func:`module_subprocess`),
+which inherit the caller's working directory, often a project.
 """
 
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
 import sys
@@ -72,3 +76,18 @@ def posix_prefix() -> str:
 def posix_module_command(module: str) -> str:
     """``<prefix> <isolation flag> -m <module>`` for a POSIX shell."""
     return f"{posix_prefix()} {isolation_flag()} -m {module}"
+
+
+def module_subprocess(module: str, *args: str, options: tuple[str, ...] = ()) -> tuple[list[str], dict[str, str]]:
+    """Argv and environment for running ``observal_cli.<module>`` as a child of this process.
+
+    A bare ``sys.executable -m`` would put the child's working directory first
+    on ``sys.path``. A process that is itself isolated (as installed hooks and
+    MCP servers are) already proves ``-I`` works, so the probe is skipped.
+    ``options`` are extra interpreter options placed before ``-m``.
+    """
+    env = dict(os.environ)
+    if sys.flags.isolated:
+        return [sys.executable, "-I", *options, "-m", module, *args], env
+    env.update(pythonpath_env())
+    return [sys.executable, isolation_flag(), *options, "-m", module, *args], env

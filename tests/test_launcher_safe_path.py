@@ -13,6 +13,7 @@ an explicit ``PYTHONPATH`` set to the package root.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -484,3 +485,111 @@ def test_no_harness_pull_output_keeps_a_bare_observal_cli_launcher(monkeypatch, 
         assert not found, (harness, found[:2])
         checked.append(harness)
     assert {"claude-code", "copilot-cli", "kiro", "goose", "cursor"} <= set(checked)
+
+
+# ── The CLI's own child processes ────────────────────────────────────────────
+
+
+def _child_call_sites(tmp_path: Path, monkeypatch) -> dict[str, tuple[list[str], dict]]:
+    """Run each internal observal_cli launch with subprocess stubbed, and capture its argv and env."""
+    from observal_cli import cmd_auth
+    from observal_cli.delegation import service, tasks
+    from observal_cli.hooks import session_push
+
+    captured: dict[str, tuple[list[str], dict]] = {}
+
+    def recorder(name):
+        def record(argv, **kwargs):
+            captured[name] = (list(argv), dict(kwargs.get("env") or os.environ))
+            return SimpleNamespace(pid=1, returncode=0, stdout="", stderr="")
+
+        return record
+
+    monkeypatch.setattr(session_push.subprocess, "Popen", recorder("session_push worker"))
+    session_push._spawn_worker("--drain-outbox", harness="claude-code")
+
+    monkeypatch.setattr(service, "SPAWN", None)
+    monkeypatch.setattr(tasks, "task_dir", lambda task_id: tmp_path)
+    monkeypatch.setattr(service.subprocess, "Popen", recorder("delegation runner"))
+    service._spawn("task-1")
+
+    monkeypatch.setattr(subprocess, "run", recorder("doctor patch after login"))
+    cmd_auth._run_doctor_patch("cursor")
+    return captured
+
+
+def _as_probe(argv: list[str]) -> list[str]:
+    """The same interpreter and options, with the module replaced by the probe."""
+    return [*argv[: argv.index("-m")], "-m", _PROBE]
+
+
+@pytest.mark.parametrize("installed", [True, False])
+def test_internal_child_processes_ignore_a_hostile_project_and_pythonpath(tmp_path, monkeypatch, installed):
+    """Regression: session-push workers, delegation runners and doctor patch ran ``sys.executable -m`` bare."""
+    python = _installed_python(tmp_path) if installed else sys.executable
+    project = _hostile_project(tmp_path / "project")
+    monkeypatch.setattr(launcher, "importable_in_isolation", lambda: installed)
+    monkeypatch.setattr(sys, "executable", python)
+    monkeypatch.setenv("PYTHONPATH", str(project))  # inherited by the parent, as from a hostile shell
+    sites = _child_call_sites(tmp_path, monkeypatch)
+    monkeypatch.undo()
+    assert set(sites) == {"session_push worker", "delegation runner", "doctor patch after login"}
+    for name, (argv, env) in sites.items():
+        assert argv[:2] == [python, "-I" if installed else "-P"], name
+        if not installed:
+            assert env["PYTHONPATH"] == launcher.package_root(), name
+        result = subprocess.run(_as_probe(argv), cwd=project, env=env, capture_output=True, check=False)
+        assert _genuine(result), (name, result.stdout, result.stderr[-200:])
+    unsafe = subprocess.run(
+        [python, "-m", _PROBE],
+        cwd=project,
+        env={**_clean_env(project), "PYTHONPATH": str(project)},
+        capture_output=True,
+        check=False,
+    )
+    assert b"HIJACKED" in unsafe.stdout, "the old bare form really imports the project"
+
+
+def test_an_isolated_parent_launches_isolated_children_without_probing(tmp_path):
+    python = _installed_python(tmp_path)
+    project = _hostile_project(tmp_path / "project")
+    script = (
+        "import json; from observal_cli.shared import launcher; "
+        "argv, env = launcher.module_subprocess('observal_cli.hooks.session_push', '--x'); "
+        "print(json.dumps([argv, launcher.importable_in_isolation.cache_info().currsize]))"
+    )
+    out = subprocess.run(
+        [python, "-I", "-c", script],
+        cwd=project,
+        env={**_clean_env(project), "PYTHONPATH": str(project)},
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    argv, probes = json.loads(out)
+    assert argv == [python, "-I", "-m", "observal_cli.hooks.session_push", "--x"]
+    assert probes == 0, "no probe subprocess on the hook path"
+
+
+def test_no_cli_source_launches_observal_cli_with_a_bare_interpreter():
+    """Every ``[sys.executable, "-m", "observal_cli..."]`` list must go through launcher.module_subprocess."""
+    import ast
+
+    root = Path(launcher.package_root()) / "observal_cli"
+    offenders = []
+    for path in root.rglob("*.py"):
+        if "tests" in path.parts:
+            continue
+        for node in ast.walk(ast.parse(path.read_text(), str(path))):
+            if not isinstance(node, ast.List) or len(node.elts) < 3:
+                continue
+            first, second, third = node.elts[:3]
+            if (
+                ast.unparse(first) == "sys.executable"
+                and isinstance(second, ast.Constant)
+                and second.value == "-m"
+                and isinstance(third, ast.Constant)
+                and str(third.value).startswith("observal_cli")
+            ):
+                offenders.append(f"{path.relative_to(root.parent)}:{node.lineno}")
+    assert not offenders, offenders
