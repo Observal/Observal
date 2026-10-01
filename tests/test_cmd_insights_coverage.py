@@ -939,8 +939,55 @@ def test_skill_component_reports_use_skill_routes_and_never_mcp_wording(cli):
     cli.client_post.assert_called_once_with("/api/v1/insights/components/skill/skill-id/generate", {"period_days": 14})
 
 
-def test_hook_component_reports_are_refused_before_any_request(cli):
-    result = runner.invoke(insights.insights_app, ["list", "--component", "hook", "team/hook"])
+def test_unsupported_component_reports_are_refused_before_any_request(cli):
+    result = runner.invoke(insights.insights_app, ["list", "--component", "prompt", "team/p"])
     assert result.exit_code != 0
     cli.resolve.assert_not_called()
     cli.client_get.assert_not_called()
+
+
+def _hook_report(**metrics) -> dict:
+    """Shape of a real hook report (services.insights.component_report._generate_hook_content)."""
+    return {
+        "id": REPORT_ID,
+        "subject_type": "component",
+        "component_type": "hook",
+        "component_name": "team/lint",
+        "status": "completed",
+        "metrics": {
+            "present_sessions": 3,
+            "eligible_sessions": 1,
+            "sessions_with_recorded_run": 1,
+            "runs_with_output": 0,
+            "failures": 1,
+            "blocks": 0,
+            "harness_distribution": {"claude-code": 3},
+            "version_distribution": {},
+        }
+        | metrics,
+        "narrative": {"summary": "The hook has recorded runs in sessions where it could run."},
+        "coverage": {
+            "attribution_state": "observed",
+            "presence": {"present_sessions": 3},
+            "projection": {"projection_complete_sessions": 3},
+            "eligibility": {"eligible_sessions": 1, "headless_sessions": 1, "agent_inactive_sessions": 1},
+            "evidence": {"collision_runs": 0, "unmatched_runs": 0},
+            "usage_rate_denominator_sessions": 1,
+            "reasons": ["agent_hook_headless_sessions"],
+            "limitations": ["silent_success_unrecorded: recorded runs are a lower bound"],
+        },
+    }
+
+
+def test_hook_component_reports_show_lower_bounds_and_sessions_that_could_not_run(cli):
+    _returns(cli.resolve, "hook-id")
+    cli.client_get.side_effect = [[{"id": REPORT_ID, "status": "completed"}], _hook_report()]
+    shown = runner.invoke(insights.insights_app, ["show", "--component", "hook", "team/lint"])
+    assert shown.exit_code == 0, shown.output
+    assert cli.client_get.call_args_list[0] == call("/api/v1/insights/components/hook/hook-id/reports")
+    text = " ".join(cli.messages())
+    assert "Sessions with a recorded run: 1 (a lower bound)" in text
+    assert "0 with output, 1 failed, 0 blocked" in text
+    assert "1 headless (agent hooks do not run), 1 agent not active" in text
+    for other in ("Observed calls", "confirmed load", "invocation"):
+        assert other not in text

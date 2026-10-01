@@ -9,6 +9,8 @@ import type {
   ComponentInsightCoverage,
   ComponentInsightMetrics,
   ComponentInsightNarrative,
+  HookInsightCoverage,
+  HookInsightMetrics,
   InsightReport,
   SkillInsightCoverage,
   SkillInsightMetrics,
@@ -21,7 +23,7 @@ function ReportHeader({ report }: { report: InsightReport }) {
   return (
     <>
       <Link to="/components/$componentId" params={{ componentId: report.component_id ?? "" }}
-        search={{ type: report.component_type === "skill" ? "skills" : "mcps" }}
+        search={{ type: report.component_type === "skill" ? "skills" : report.component_type === "hook" ? "hooks" : "mcps" }}
         className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
         <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Back to component
       </Link>
@@ -113,8 +115,55 @@ function SkillReport({ report }: { report: InsightReport }) {
   );
 }
 
+function HookReport({ report }: { report: InsightReport }) {
+  const coverage = report.coverage as HookInsightCoverage | null | undefined;
+  const metrics = report.metrics as unknown as HookInsightMetrics | null;
+  const narrative = report.narrative as unknown as SkillInsightNarrative | null;
+  const measured = !!coverage && coverage.usage_rate_denominator_sessions > 0;
+  const eligibility = coverage?.eligibility;
+  const couldNotRun = [
+    eligibility?.headless_sessions ? `${eligibility.headless_sessions} ran headless, where agent hooks do not run` : null,
+    eligibility?.agent_inactive_sessions ? `${eligibility.agent_inactive_sessions} did not run the hook's agent` : null,
+    eligibility?.mode_unknown_sessions ? `${eligibility.mode_unknown_sessions} did not record whether they were headless` : null,
+  ].filter(Boolean);
+  const notMeasured = <>Not measured</>;
+  return (
+    <main className="mx-auto max-w-4xl space-y-8 px-4 py-8 sm:px-6">
+      <ReportHeader report={report} />
+      <ReportStatus report={report}>
+        <section aria-label="Evidence" className="space-y-4 border-b border-border pb-6">
+          <h2 className="text-lg font-semibold">What the data shows</h2>
+          <p className="max-w-[70ch] text-sm leading-relaxed">{narrative?.summary}</p>
+          <dl className="grid gap-4 sm:grid-cols-4">
+            <div><dt className="text-sm text-muted-foreground">Present sessions</dt><dd className="text-xl font-semibold tabular-nums">{metrics?.present_sessions ?? "—"}</dd></div>
+            <div><dt className="text-sm text-muted-foreground">Sessions where it could run</dt><dd className="text-xl font-semibold tabular-nums">{metrics?.eligible_sessions ?? "—"}</dd></div>
+            <div><dt className="text-sm text-muted-foreground">Sessions with a recorded run</dt><dd className="text-xl font-semibold tabular-nums">{measured ? <>{metrics?.sessions_with_recorded_run}<span className="block text-xs font-normal text-muted-foreground">At least; silent runs are unrecorded</span></> : notMeasured}</dd></div>
+            <div><dt className="text-sm text-muted-foreground">Failed or blocked runs</dt><dd className="text-xl font-semibold tabular-nums">{measured ? (metrics ? metrics.failures + metrics.blocks : "—") : notMeasured}</dd></div>
+          </dl>
+          {measured && metrics && <p className="text-sm text-muted-foreground">Recorded runs: {metrics.runs_with_output} succeeded with output, {metrics.failures} failed, {metrics.blocks} blocked an action.</p>}
+          {couldNotRun.length > 0 && <p className="text-sm text-muted-foreground">Excluded because the hook could not run: {couldNotRun.join("; ")}.</p>}
+          {!measured && <p className="text-sm text-muted-foreground">There were no processed sessions where this hook could run; missing measurements do not imply no use.</p>}
+        </section>
+        <DistributionSection versions={metrics?.version_distribution} harnesses={metrics?.harness_distribution} />
+        <section aria-label="Attribution coverage" className="space-y-3">
+          <h2 className="text-lg font-semibold">Attribution coverage</h2>
+          {coverage ? <>
+            <p className="text-sm">{coverage.projection.projection_complete_sessions} of {coverage.presence.present_sessions} present sessions processed. {coverage.observed_sessions} of {coverage.usage_rate_denominator_sessions} sessions where it could run had a recorded run.</p>
+            <p className="text-sm text-muted-foreground">{coverage.evidence.collision_runs} ambiguous and {coverage.evidence.unmatched_runs} unmatched recorded runs could not be tied to this verified hook, and are not counted.</p>
+            {coverage.reasons.length > 0 && <p className="text-sm text-muted-foreground">Gaps: {coverage.reasons.join(", ").replaceAll("_", " ")}.</p>}
+            <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+              {coverage.limitations.map((note) => <li key={note}>{note.replaceAll("_", " ")}</li>)}
+            </ul>
+          </> : <p className="text-sm text-muted-foreground">Coverage is unavailable for this report.</p>}
+        </section>
+      </ReportStatus>
+    </main>
+  );
+}
+
 function ComponentReport({ report }: { report: InsightReport }) {
   if (report.component_type === "skill") return <SkillReport report={report} />;
+  if (report.component_type === "hook") return <HookReport report={report} />;
   const coverage = report.coverage as ComponentInsightCoverage | null | undefined;
   const metrics = report.metrics as unknown as ComponentInsightMetrics | null;
   const narrative = report.narrative as unknown as ComponentInsightNarrative | null;

@@ -213,6 +213,33 @@ export interface SkillInsightCoverage {
 	limitations: string[];
 }
 
+export interface HookInsightMetrics {
+	present_sessions: number;
+	present_users: number;
+	/** Processed present sessions where the hook could run. */
+	eligible_sessions: number;
+	/** A lower bound where silent successes leave no record. */
+	sessions_with_recorded_run: number;
+	runs_with_output: number;
+	failures: number;
+	blocks: number;
+	harness_distribution: Record<string, number>;
+	version_distribution: Record<string, number>;
+}
+
+export interface HookInsightCoverage {
+	attribution_state: "observed" | "no_recorded_runs" | "attribution_not_possible";
+	presence: { present_sessions: number; present_users: number; eligible_sessions: number };
+	projection: { projection_complete_sessions: number; projection_pending_sessions: number; projection_failed_sessions: number; unsupported_present_sessions: number };
+	eligibility: { eligible_sessions: number; headless_sessions: number; agent_inactive_sessions: number; mode_unknown_sessions: number };
+	evidence: { candidate_runs: number; attributed_runs: number; collision_runs: number; unmatched_runs: number };
+	usage_rate_denominator_sessions: number;
+	observed_sessions: number;
+	usage_rate: number | null;
+	reasons: string[];
+	limitations: string[];
+}
+
 export interface InsightReportListItem {
 	id: string;
 	agent_id: string | null;
@@ -222,7 +249,7 @@ export interface InsightReportListItem {
 	component_name?: string | null;
 	component_version_id?: string | null;
 	component_version?: string | null;
-	coverage?: ComponentInsightCoverage | SkillInsightCoverage | null;
+	coverage?: ComponentInsightCoverage | SkillInsightCoverage | HookInsightCoverage | null;
 	agent_version_id?: string | null;
 	agent_version?: string | null;
 	version_scope?: string | null;
@@ -401,7 +428,7 @@ export interface InsightReport {
 	component_name?: string | null;
 	component_version_id?: string | null;
 	component_version?: string | null;
-	coverage?: ComponentInsightCoverage | SkillInsightCoverage | null;
+	coverage?: ComponentInsightCoverage | SkillInsightCoverage | HookInsightCoverage | null;
 	agent_version_id?: string | null;
 	agent_version?: string | null;
 	version_scope?: string | null;

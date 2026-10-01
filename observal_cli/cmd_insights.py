@@ -29,7 +29,7 @@ from observal_cli.render import (
 
 insights_app = typer.Typer(
     help=(
-        "Agent, MCP and skill component insight reports\n\n"
+        "Agent, MCP, skill and hook component insight reports\n\n"
         "Examples:\n"
         "  observal ops insights list alice/my-agent\n"
         "  observal ops insights show alice/my-agent latest\n"
@@ -131,7 +131,7 @@ def _select_report_id(reports: list[dict], report_ref: str | None) -> str:
     )
 
 
-_COMPONENT_REPORT_TYPES = ("mcp", "skill")
+_COMPONENT_REPORT_TYPES = ("mcp", "skill", "hook")
 
 
 def _component_path(component: tuple[str, str]) -> str:
@@ -139,10 +139,10 @@ def _component_path(component: tuple[str, str]) -> str:
     if kind not in _COMPONENT_REPORT_TYPES:
         fail(
             ErrorCategory.VALIDATION,
-            f"Component reports support {' and '.join(_COMPONENT_REPORT_TYPES)} only.",
+            f"Component reports support {', '.join(_COMPONENT_REPORT_TYPES)} only.",
             operation="Component insight report",
             resource="component type",
-            remediation="Use --component mcp <ref> or --component skill <ref>.",
+            remediation="Use --component mcp|skill|hook <ref>.",
         )
     resolved = client.resolve_registry_reference(kind, ref)
     return f"/api/v1/insights/components/{kind}/{resolved}"
@@ -341,6 +341,10 @@ def insights_show(
         _render_skill_report(data)
         return
 
+    if data.get("subject_type") == "component" and data.get("component_type") == "hook":
+        _render_hook_report(data)
+        return
+
     if data.get("subject_type") == "component":
         metrics = data.get("metrics") or {}
         coverage = data.get("coverage") or {}
@@ -520,6 +524,55 @@ def _render_skill_report(data: dict) -> None:
     )
     if reasons:
         rprint(f"  Gaps: {esc(', '.join(reasons))}")
+    for limitation in coverage.get("limitations") or []:
+        rprint(f"  [dim]{esc(limitation)}[/dim]")
+
+
+def _render_hook_report(data: dict) -> None:
+    """Deterministic hook evidence: recorded runs are a lower bound and never show effect."""
+    metrics = data.get("metrics") or {}
+    coverage = data.get("coverage") or {}
+    eligibility = coverage.get("eligibility") or {}
+    measured = bool(coverage.get("usage_rate_denominator_sessions", 0))
+    rprint(f"[bold]{esc(data.get('component_name') or 'Hook')} Insights[/bold]")
+    rprint(f"  {esc((data.get('narrative') or {}).get('summary') or 'No summary available')}")
+    rprint(f"  Present sessions: {metrics.get('present_sessions', 0)}")
+    rprint(f"  Sessions where it could run: {metrics.get('eligible_sessions', 0)}")
+    if measured:
+        rprint(f"  Sessions with a recorded run: {metrics.get('sessions_with_recorded_run', 0)} (a lower bound)")
+        rprint(
+            f"  Recorded runs: {metrics.get('runs_with_output', 0)} with output, "
+            f"{metrics.get('failures', 0)} failed, {metrics.get('blocks', 0)} blocked"
+        )
+    else:
+        rprint("  Recorded runs: not measured (no processed session where it could run)")
+    labels = (
+        ("headless_sessions", "headless (agent hooks do not run)"),
+        ("agent_inactive_sessions", "agent not active"),
+        ("mode_unknown_sessions", "session mode unknown"),
+    )
+    could_not = [f"{eligibility[key]} {label}" for key, label in labels if eligibility.get(key)]
+    if could_not:
+        rprint(f"  Could not run: {esc(', '.join(could_not))}")
+    for label, values in (
+        ("Versions", metrics.get("version_distribution") or {}),
+        ("Harnesses", metrics.get("harness_distribution") or {}),
+    ):
+        if values:
+            rprint(f"  {label}: " + ", ".join(f"{esc(name)} ({count})" for name, count in sorted(values.items())))
+    projection = coverage.get("projection") or {}
+    evidence = coverage.get("evidence") or {}
+    rprint(
+        f"  Coverage: {projection.get('projection_complete_sessions', 0)} of "
+        f"{(coverage.get('presence') or {}).get('present_sessions', 0)} present sessions processed; "
+        f"state: {esc(coverage.get('attribution_state', 'unknown'))}"
+    )
+    rprint(
+        f"  Not counted: {evidence.get('collision_runs', 0)} ambiguous, "
+        f"{evidence.get('unmatched_runs', 0)} unmatched recorded runs (not tied to this verified hook)"
+    )
+    if coverage.get("reasons"):
+        rprint(f"  Gaps: {esc(', '.join(coverage['reasons']))}")
     for limitation in coverage.get("limitations") or []:
         rprint(f"  [dim]{esc(limitation)}[/dim]")
 
