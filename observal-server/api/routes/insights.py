@@ -432,10 +432,11 @@ async def generate_component_insight(
     )
     now = datetime.now(UTC)
     start = now - timedelta(days=request.period_days)
-    if component_type == "skill":
-        from services.component_activity.skill_queries import skill_activity_summary
+    if component_type in ("skill", "hook"):
+        from services.component_activity import hook_queries, skill_queries
 
-        summary = await skill_activity_summary(
+        read = skill_queries.skill_activity_summary if component_type == "skill" else hook_queries.hook_activity_summary
+        summary = await read(
             DEFAULT_PROJECT_ID, str(listing.id), ref.component_version_id, (start, now), component_version=version_label
         )
     else:

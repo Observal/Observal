@@ -129,12 +129,80 @@ def test_version_must_belong_to_listing_and_is_forwarded(api):
     assert api.summary.await_args.kwargs["component_version"] == "1.2.3"
 
 
-def test_hook_is_explicitly_unsupported_not_zero(api):
+def test_unknown_component_type_is_rejected_before_any_query(api):
     for endpoint in ("summary", "sessions"):
-        response = api.client.get(f"/api/v1/components/hook/{LISTING_ID}/activity/{endpoint}")
-        assert response.status_code == 501
-        assert response.json()["status"] == "unsupported" and "present_sessions" not in response.json()
-    api.resolve.assert_not_awaited()
+        response = api.client.get(f"/api/v1/components/prompt/{LISTING_ID}/activity/{endpoint}")
+        assert response.status_code == 422
+    api.summary.assert_not_awaited()
+
+
+def _hook_summary(aggregate: dict | None = None) -> dict:
+    from services.component_activity.hook_queries import build_hook_coverage
+
+    aggregate = aggregate or {
+        "supported_present_sessions": 3,
+        "projection_complete_sessions": 3,
+        "eligible_sessions": 2,
+        "headless_sessions": 1,
+        "observed_sessions": 1,
+    }
+    coverage = build_hook_coverage({"present_sessions": 3, "present_users": 1}, aggregate, 515)
+    return {
+        "present_sessions": 3,
+        "present_users": 1,
+        "eligible_sessions": coverage.eligibility.eligible_sessions,
+        "sessions_with_recorded_run": coverage.observed_sessions,
+        "runs_with_output": 1,
+        "failures": 1,
+        "blocks": 0,
+        "harness_distribution": {"claude-code": 3},
+        "version_distribution": {},
+        "activation_actions": {"context_sessions": 0, "next_session_sessions": 0, "scope": "component"},
+        "coverage": coverage,
+    }
+
+
+def test_hook_reads_hook_evidence_never_mcp_or_skill_fields(api, monkeypatch):
+    from services.component_activity import hook_queries
+
+    summary = AsyncMock(return_value=_hook_summary())
+    sessions = AsyncMock(return_value=([], None))
+    monkeypatch.setattr(hook_queries, "hook_activity_summary", summary)
+    monkeypatch.setattr(hook_queries, "hook_activity_sessions", sessions)
+    response = api.client.get(f"/api/v1/components/hook/{LISTING_ID}/activity/summary")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["eligible_sessions"], body["sessions_with_recorded_run"]) == (2, 1)
+    assert body["coverage"]["eligibility"]["headless_sessions"] == 1
+    assert "agent_hook_headless_sessions" in body["coverage"]["reasons"]
+    for other in ("observed_calls", "result_states", "loaded_sessions", "invocations"):
+        assert other not in body
+    api.summary.assert_not_awaited()
+    assert api.client.get(f"/api/v1/components/hook/{LISTING_ID}/activity/sessions").status_code == 200
+    sessions.assert_awaited_once()
+    api.state["user"] = _user(role=UserRole.reviewer)
+    assert api.client.get(f"/api/v1/components/hook/{LISTING_ID}/activity/summary").status_code == 403
+
+
+def test_hook_denominator_counts_only_sessions_where_the_hook_could_run():
+    from services.component_activity.hook_queries import build_hook_coverage
+
+    coverage = build_hook_coverage(
+        {"present_sessions": 4},
+        {
+            "projection_complete_sessions": 4,
+            "eligible_sessions": 1,
+            "headless_sessions": 2,
+            "agent_inactive_sessions": 1,
+            "observed_sessions": 0,
+        },
+        515,
+    )
+    assert coverage.usage_rate_denominator_sessions == 1
+    assert coverage.attribution_state == "no_recorded_runs"
+    none_could_run = build_hook_coverage({"present_sessions": 2}, {"headless_sessions": 2}, 515)
+    assert none_could_run.attribution_state == "attribution_not_possible" and none_could_run.usage_rate is None
+    assert any(item.startswith("effect_not_observed") for item in coverage.limitations)
 
 
 def _skill_summary(state: str = "observed") -> dict:

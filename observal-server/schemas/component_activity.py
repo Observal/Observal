@@ -184,12 +184,6 @@ class ActivitySessionsResponse(BaseModel):
     )
 
 
-class UnsupportedComponentType(BaseModel):
-    status: Literal["unsupported"] = "unsupported"
-    type: str
-    detail: str
-
-
 # ── Skills ─────────────────────────────────────────────────────────────────
 # Skill evidence has its own vocabulary. None of these fields means "the skill
 # helped": a load or invocation shows its instructions entered context.
@@ -275,6 +269,100 @@ class SkillActivitySessionsResponse(BaseModel):
     period_days: int
     time_basis: str = TIME_BASIS
     sessions: list[SkillActivitySession]
+    next_cursor: str | None = None
+    pagination_note: str = (
+        "Ordered by immutable (user_id, harness, session_id); the window end is pinned, "
+        "but newly arriving sessions can join the cohort. Not a point-in-time snapshot."
+    )
+
+
+# ── Hooks ──────────────────────────────────────────────────────────────────
+# Hook evidence has its own vocabulary. A recorded run shows the hook executed;
+# it never shows what the hook changed or that it helped.
+
+HookAttributionState = Literal["observed", "no_recorded_runs", "attribution_not_possible"]
+HookEligibilityState = Literal["eligible", "headless", "agent_inactive", "mode_unknown", "not_processed"]
+HOOK_EFFECT_LIMITATION = (
+    "effect_not_observed: a recorded run shows the hook executed, not what it changed or whether it helped"
+)
+HOOK_SILENT_LIMITATION = (
+    "silent_success_unrecorded: a hook that succeeds without printing output leaves no record, so recorded "
+    "runs are a lower bound and no recorded run is not proof the hook did not run"
+)
+
+
+class HookEvidenceCoverage(BaseModel):
+    """Recorded hook runs from complete current hook projections in the present cohort."""
+
+    candidate_runs: int = 0
+    attributed_runs: int = 0
+    collision_runs: int = 0
+    unmatched_runs: int = 0
+
+
+class HookEligibility(BaseModel):
+    """Whether each processed present session's installed hook could run at all."""
+
+    eligible_sessions: int = Field(0, description="Settings hooks, or agent hooks whose agent ran interactively")
+    headless_sessions: int = Field(0, description="Agent hooks whose agent ran headless, where they do not run")
+    agent_inactive_sessions: int = Field(0, description="Agent hooks whose agent did not run in the session")
+    mode_unknown_sessions: int = 0
+
+
+class HookActivityCoverage(BaseModel):
+    presence: PresenceCoverage
+    projection: ProjectionCoverage
+    eligibility: HookEligibility
+    evidence: HookEvidenceCoverage
+    usage_rate_denominator_sessions: int = Field(
+        0, description="Processed present sessions where the hook could run (eligible)"
+    )
+    observed_sessions: int = Field(0, description="Eligible sessions with at least one recorded run")
+    usage_rate: float | None = Field(None, description="A lower bound when silent successes are unrecorded")
+    attribution_state: HookAttributionState
+    reasons: list[str] = Field(default_factory=list)
+    limitations: list[str] = Field(
+        default_factory=lambda: [HOOK_EFFECT_LIMITATION, LAYER_STABILITY_LIMITATION, FINAL_PUSH_LIMITATION]
+    )
+
+
+class HookActivitySummaryResponse(BaseModel):
+    component: ComponentRef
+    period_days: int
+    period_start: str
+    period_end: str
+    time_basis: str = TIME_BASIS
+    present_sessions: int
+    present_users: int
+    eligible_sessions: int = Field(description="Processed present sessions where the hook could run")
+    sessions_with_recorded_run: int
+    runs_with_output: int = Field(description="Successful runs that printed output (silent successes are unrecorded)")
+    failures: int
+    blocks: int
+    harness_distribution: dict[str, int]
+    version_distribution: dict[str, int] = Field(default_factory=dict)
+    activation_actions: ActivationActions
+    coverage: HookActivityCoverage
+
+
+class HookActivitySession(BaseModel):
+    user_id: str
+    harness: str
+    session_id: str
+    last_event_time: str
+    projection_state: SessionProjectionState
+    source_state: SourceAvailabilityState
+    eligibility: HookEligibilityState
+    runs_with_output: int
+    failures: int
+    blocks: int
+
+
+class HookActivitySessionsResponse(BaseModel):
+    component: ComponentRef
+    period_days: int
+    time_basis: str = TIME_BASIS
+    sessions: list[HookActivitySession]
     next_cursor: str | None = None
     pagination_note: str = (
         "Ordered by immutable (user_id, harness, session_id); the window end is pinned, "

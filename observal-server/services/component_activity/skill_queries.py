@@ -46,7 +46,13 @@ from services.session_parsers.skill_evidence import kind_recorded
 if TYPE_CHECKING:
     from datetime import datetime
 
-_LATEST_SKILL_PUBLICATION = """SELECT user_id, harness, session_id, max(projection_generation) AS generation,
+
+def latest_publication_sql(evidence_type: str) -> str:
+    """Latest complete, never-failed publication per scoped session for one evidence type."""
+    if evidence_type not in ("skill", "hook"):
+        raise ValueError("unknown evidence type")
+    return (
+        """SELECT user_id, harness, session_id, max(projection_generation) AS generation,
            argMax(source_revision, projection_generation) AS source_revision,
            argMax(candidate_count, projection_generation) AS candidate_count,
            argMax(attributed_count, projection_generation) AS attributed_count,
@@ -60,16 +66,54 @@ _LATEST_SKILL_PUBLICATION = """SELECT user_id, harness, session_id, max(projecti
                max(unmatched_count) AS unmatched_count, max(unknown_result_count) AS unknown_result_count
         FROM component_activity_publications
         WHERE project_id = {project_id:String} AND projection_version = {projection_version:UInt16}
-          AND evidence_type = 'skill'
+          AND evidence_type = '"""
+        + evidence_type
+        + """'
         GROUP BY user_id, harness, session_id, projection_generation
         HAVING countIf(status = 'complete') > 0 AND countIf(status = 'failed') = 0
     ) GROUP BY user_id, harness, session_id"""
+    )
 
-_SKILL_MARKER_STATES = """SELECT user_id, harness, session_id,
+
+def marker_states_sql(evidence_type: str) -> str:
+    """Failed current markers and complete markers of another version, per scoped session."""
+    if evidence_type not in ("skill", "hook"):
+        raise ValueError("unknown evidence type")
+    return (
+        """SELECT user_id, harness, session_id,
            countIf(status = 'failed' AND projection_version = {projection_version:UInt16}) AS failed_markers,
            countIf(status = 'complete' AND projection_version != {projection_version:UInt16}) AS other_complete
-    FROM component_activity_publications WHERE project_id = {project_id:String} AND evidence_type = 'skill'
+    FROM component_activity_publications WHERE project_id = {project_id:String}
+      AND evidence_type = '"""
+        + evidence_type
+        + """'
     GROUP BY user_id, harness, session_id"""
+    )
+
+
+def projection_state_sql(supported: str = "{supported:Array(String)}") -> tuple[str, str]:
+    """(source_state, projection_state) expressions over c (cohort), s (source), p (latest), m (markers)."""
+    source = f"""multiIf(NOT has({supported}, c.harness), 'unsupported',
+                   s.records = 0, 'source_missing',
+                   s.records > {{max_source_records:UInt32}} OR s.bytes > {{max_source_bytes:UInt64}}, 'source_too_large',
+                   s.unavailable_records > 0, 'source_unavailable',
+                   s.max_offset + 1 != s.records OR s.invalid_hash_records > 0, 'source_incomplete',
+                   'available')"""
+    projection = f"""multiIf(NOT has({supported}, c.harness), 'unsupported',
+                   s.records = 0, 'source_missing',
+                   s.records > {{max_source_records:UInt32}} OR s.bytes > {{max_source_bytes:UInt64}}, 'source_too_large',
+                   s.unavailable_records > 0, 'source_unavailable',
+                   s.max_offset + 1 != s.records OR s.invalid_hash_records > 0, 'source_incomplete',
+                   p.generation > 0 AND s.revision != p.source_revision, 'stale',
+                   p.generation > 0, 'complete',
+                   m.failed_markers > 0, 'failed',
+                   m.other_complete > 0, 'stale',
+                   'pending')"""
+    return source, projection
+
+
+_LATEST_SKILL_PUBLICATION = latest_publication_sql("skill")
+_SKILL_MARKER_STATES = marker_states_sql("skill")
 
 _SKILL_EVIDENCE = (
     """SELECT a.user_id AS user_id, a.harness AS harness, a.session_id AS session_id,

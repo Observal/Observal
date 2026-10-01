@@ -77,8 +77,51 @@ async def test_skill_report_states_what_the_evidence_does_and_does_not_show(monk
 
 
 @pytest.mark.asyncio
-async def test_hook_reports_are_rejected():
+async def test_unsupported_component_types_are_rejected():
     report = _report()
-    report.component_type = "hook"
+    report.component_type = "prompt"
     with pytest.raises(ValueError, match="Unsupported report subject"):
         await component_report.generate_component_content(report)
+
+
+def _hook_summary(aggregate: dict) -> dict:
+    from services.component_activity.hook_queries import build_hook_coverage
+
+    coverage = build_hook_coverage({"present_sessions": 3, "present_users": 1}, aggregate, 515)
+    return {
+        "present_sessions": 3,
+        "present_users": 1,
+        "eligible_sessions": coverage.eligibility.eligible_sessions,
+        "sessions_with_recorded_run": coverage.observed_sessions,
+        "runs_with_output": 1,
+        "failures": 1,
+        "blocks": 0,
+        "harness_distribution": {"claude-code": 3},
+        "version_distribution": {},
+        "activation_actions": {"context_sessions": 0, "next_session_sessions": 0, "scope": "component"},
+        "coverage": coverage,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("aggregate", "phrases"),
+    [
+        ({"eligible_sessions": 2, "observed_sessions": 1}, ["recorded runs", "not what it changed"]),
+        ({"eligible_sessions": 2}, ["does not show the hook never ran"]),
+        ({"headless_sessions": 3}, ["no conclusion can be drawn", "ran headless"]),
+    ],
+)
+async def test_hook_report_states_what_runs_do_and_do_not_show(monkeypatch, aggregate, phrases):
+    from services.component_activity import hook_queries
+
+    monkeypatch.setattr(hook_queries, "hook_activity_summary", AsyncMock(return_value=_hook_summary(aggregate)))
+    report = _report()
+    report.component_type = "hook"
+    content = await component_report.generate_component_content(report)
+    for phrase in phrases:
+        assert phrase in content["narrative"]["summary"]
+    for other in ("observed_calls", "loaded_sessions", "invocations"):
+        assert other not in content["metrics"]
+    assert "component_analysis" not in content["narrative"]
+    assert any(item.startswith("effect_not_observed") for item in content["coverage"]["limitations"])

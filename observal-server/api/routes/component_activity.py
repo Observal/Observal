@@ -5,9 +5,10 @@
 
 Contract decisions:
 - ``type=mcp`` reports observed MCP calls; ``type=skill`` reports skill
-  evidence (available, confirmed loads, invocations) with its own fields and
-  coverage. ``hook`` answers **501** with an explicit ``{"status":
-  "unsupported"}`` body (never zero counts); any other type is 422.
+  evidence (available, confirmed loads, invocations); ``type=hook`` reports
+  recorded hook runs and whether the hook could run. Each has its own fields
+  and coverage; any other type is 422. A harness without an extractor for the
+  type is counted as unsupported in coverage, never as zero.
 - Access requires listing visibility (else 404, preserving private-listing
   semantics) *and* owner-level permission (owner, co-author or admin; else 403).
   Both checks run before any telemetry query.
@@ -17,12 +18,12 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse
 from loguru import logger as optic
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user, get_db, get_effective_component_permission, resolve_visible_listing
+from models.hook import HookListing, HookVersion
 from models.mcp import McpListing, McpVersion
 from models.skill import SkillListing, SkillVersion
 from models.user import User
@@ -31,24 +32,38 @@ from schemas.component_activity import (
     ActivitySessionsResponse,
     ActivitySummaryResponse,
     ComponentRef,
+    HookActivitySessionsResponse,
+    HookActivitySummaryResponse,
     SkillActivitySessionsResponse,
     SkillActivitySummaryResponse,
-    UnsupportedComponentType,
 )
-from services.component_activity import queries, skill_queries
+from services.component_activity import hook_queries, queries, skill_queries
 
 router = APIRouter(prefix="/api/v1/components", tags=["component-activity"])
 
-_SUPPORTED = {"mcp": (McpListing, McpVersion), "skill": (SkillListing, SkillVersion)}
-_NOT_YET_SUPPORTED = frozenset({"hook"})
-
-
-def _unsupported(component_type: str) -> JSONResponse:
-    body = UnsupportedComponentType(
-        type=component_type,
-        detail=f"Activity observability is not implemented for {component_type} components",
-    )
-    return JSONResponse(status_code=501, content=body.model_dump())
+_SUPPORTED = {
+    "mcp": (McpListing, McpVersion),
+    "skill": (SkillListing, SkillVersion),
+    "hook": (HookListing, HookVersion),
+}
+# Non-MCP types: (query module, summary function, sessions function, summary model, sessions model).
+# Functions are resolved on the module at call time.
+_EVIDENCE_READS = {
+    "skill": (
+        skill_queries,
+        "skill_activity_summary",
+        "skill_activity_sessions",
+        SkillActivitySummaryResponse,
+        SkillActivitySessionsResponse,
+    ),
+    "hook": (
+        hook_queries,
+        "hook_activity_summary",
+        "hook_activity_sessions",
+        HookActivitySummaryResponse,
+        HookActivitySessionsResponse,
+    ),
+}
 
 
 async def _authorize(
@@ -86,8 +101,7 @@ def _period(days: int) -> tuple[datetime, datetime]:
 
 @router.get(
     "/{component_type}/{identifier:path}/activity/summary",
-    response_model=ActivitySummaryResponse | SkillActivitySummaryResponse,
-    responses={501: {"model": UnsupportedComponentType}},
+    response_model=ActivitySummaryResponse | SkillActivitySummaryResponse | HookActivitySummaryResponse,
 )
 async def component_activity_summary(
     component_type: str,
@@ -97,21 +111,20 @@ async def component_activity_summary(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if component_type in _NOT_YET_SUPPORTED:
-        return _unsupported(component_type)
     listing, ref, version_label = await _authorize(component_type, identifier, component_version_id, db, current_user)
     start, end = _period(period_days)
     optic.debug("component activity summary: type={}, listing={}, days={}", component_type, listing.id, period_days)
-    if component_type == "skill":
-        skill_summary = await skill_queries.skill_activity_summary(
+    if component_type in _EVIDENCE_READS:
+        module, summary_name, _, summary_model, _ = _EVIDENCE_READS[component_type]
+        evidence = await getattr(module, summary_name)(
             DEFAULT_PROJECT_ID, str(listing.id), ref.component_version_id, (start, end), component_version=version_label
         )
-        return SkillActivitySummaryResponse(
+        return summary_model(
             component=ref,
             period_days=period_days,
             period_start=start.isoformat(),
             period_end=end.isoformat(),
-            **skill_summary,
+            **evidence,
         )
     summary = await queries.activity_summary(
         DEFAULT_PROJECT_ID,
@@ -132,8 +145,7 @@ async def component_activity_summary(
 
 @router.get(
     "/{component_type}/{identifier:path}/activity/sessions",
-    response_model=ActivitySessionsResponse | SkillActivitySessionsResponse,
-    responses={501: {"model": UnsupportedComponentType}},
+    response_model=ActivitySessionsResponse | SkillActivitySessionsResponse | HookActivitySessionsResponse,
 )
 async def component_activity_sessions(
     component_type: str,
@@ -145,8 +157,6 @@ async def component_activity_sessions(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if component_type in _NOT_YET_SUPPORTED:
-        return _unsupported(component_type)
     # Authorize first, including the version's listing membership. A cursor is
     # signed and scoped to this user, listing, version and period.
     listing, ref, _ = await _authorize(component_type, identifier, component_version_id, db, current_user)
@@ -167,8 +177,9 @@ async def component_activity_sessions(
             raise HTTPException(status_code=422, detail="Invalid cursor") from error
         period = (period_end - timedelta(days=period_days), period_end)
     optic.debug("component activity sessions: type={}, listing={}, limit={}", component_type, listing.id, limit)
-    if component_type == "skill":
-        skill_sessions, skill_cursor = await skill_queries.skill_activity_sessions(
+    if component_type in _EVIDENCE_READS:
+        module, _, sessions_name, _, sessions_model = _EVIDENCE_READS[component_type]
+        evidence_sessions, evidence_cursor = await getattr(module, sessions_name)(
             DEFAULT_PROJECT_ID,
             str(listing.id),
             ref.component_version_id,
@@ -177,8 +188,8 @@ async def component_activity_sessions(
             cursor=key,
             cursor_scope=scope,
         )
-        return SkillActivitySessionsResponse(
-            component=ref, period_days=period_days, sessions=skill_sessions, next_cursor=skill_cursor
+        return sessions_model(
+            component=ref, period_days=period_days, sessions=evidence_sessions, next_cursor=evidence_cursor
         )
     sessions, next_cursor = await queries.activity_sessions(
         DEFAULT_PROJECT_ID,
