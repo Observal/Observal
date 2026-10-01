@@ -120,7 +120,7 @@ SPDX-FileCopyrightText = "2026 Naraen Rammoorthi"
 SPDX-License-Identifier = "Apache-2.0"
 
 [[annotations]]
-path = ["tests/fixtures/component_insights/claude_code/skill_session_model_read.jsonl", "tests/fixtures/component_insights/claude_code/skill_session_slash_command.jsonl", "tests/fixtures/component_insights/claude_code/skill_session_slash_args.jsonl", "tests/fixtures/component_insights/claude_code/skill_session_literal_text.jsonl", "tests/fixtures/component_insights/claude_code/skill_session_project_skill.jsonl", "tests/fixtures/component_insights/claude_code/skill_session_unknown_skill.jsonl"]
+path = ["tests/fixtures/component_insights/claude_code/skill_session_model_read.jsonl", "tests/fixtures/component_insights/claude_code/skill_session_slash_command.jsonl", "tests/fixtures/component_insights/claude_code/skill_session_slash_args.jsonl", "tests/fixtures/component_insights/claude_code/skill_session_literal_text.jsonl", "tests/fixtures/component_insights/claude_code/skill_session_project_skill.jsonl", "tests/fixtures/component_insights/claude_code/skill_session_unknown_skill.jsonl", "tests/fixtures/component_insights/claude_code/hook_session_settings_outcomes.jsonl", "tests/fixtures/component_insights/claude_code/hook_session_silent_success.jsonl", "tests/fixtures/component_insights/claude_code/hook_session_agent_interactive.jsonl", "tests/fixtures/component_insights/claude_code/hook_session_agent_headless.jsonl"]
 SPDX-FileCopyrightText = "2026 Observal Contributors"
 SPDX-License-Identifier = "Apache-2.0"
 

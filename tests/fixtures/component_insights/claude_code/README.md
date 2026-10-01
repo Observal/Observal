@@ -38,3 +38,31 @@ Every line is kept in order. Session, entry, prompt, request, message and tool-u
 - **Invoked by the user:** `/name` is a user record whose content is exactly `<command-message>name</command-message>\n<command-name>/name</command-name>`, optionally followed by `\n<command-args>…</command-args>`. It is followed by an `isMeta: true` expansion with the same `promptId` and no `sourceToolUseID`. Typing the same tags produces an ordinary user record with no expansion.
 
 None of these shows that a skill achieved anything.
+
+## Hook fixtures
+
+Sanitized copies of four Claude Code 2.1.286 sessions, recorded on 2026-10-01 with Opus 4.6 on Amazon Bedrock. The recording used the same isolation as the skill fixtures, with `--allowedTools Read` (plus `Glob` where noted). Probe hooks in the project's `.claude/hooks/` appended a line to a marker file each time they ran, so whether a hook actually ran is known independently of the transcript:
+
+- `probe-prompt.sh` (`UserPromptSubmit`) prints one line to stdout and exits 0.
+- `probe-pre.sh` (`PreToolUse`) prints nothing and exits 0.
+- `probe-fail.sh` (`PostToolUse`) writes to stderr and exits 1.
+- `probe-block.sh` (`PreToolUse`, matcher `Glob`) writes to stderr and exits 2.
+
+| Fixture | Mode and install path | Ran (marker file) | Recorded in the transcript |
+| --- | --- | --- | --- |
+| `hook_session_settings_outcomes.jsonl` | headless `-p`, project `settings.json` (the standalone `hook install` shape) | prompt, block, fail | `hook_success` (prompt), a blocked `tool_result`, `hook_non_blocking_error` (fail) |
+| `hook_session_silent_success.jsonl` | headless `-p`, project `settings.json` | pre | nothing |
+| `hook_session_agent_interactive.jsonl` | interactive `--agent probe-agent`, hooks in the agent's frontmatter exactly as Observal writes them (no `matcher`) | prompt, pre, fail | `hook_success` (prompt), `hook_non_blocking_error` (fail); nothing for the silent pre |
+| `hook_session_agent_headless.jsonl` | headless `-p --agent probe-agent`, same frontmatter | none | nothing |
+
+The interactive session was driven through a pseudo-terminal, with onboarding marked complete and the project marked trusted in the isolated config. IDs, paths, the system prompt and thinking were replaced as for the skill fixtures. Hook record fields, `toolDenialKind`, tool results, timestamps and usage come from the recording.
+
+### Observed hook evidence
+
+- **Success with output:** `attachment.type: "hook_success"`, with `hookEvent`, `hookName`, `command` (exactly as configured), `exitCode: 0`, `stdout`, `durationMs` and `toolUseID`.
+- **Silent success:** no record at all. A hook that ran and printed nothing cannot be distinguished from a hook that did not run.
+- **Non-blocking failure:** `attachment.type: "hook_non_blocking_error"`, with the same fields and the non-zero `exitCode`.
+- **Blocking failure (exit 2):** no hook attachment. The blocked tool's `tool_result` has `is_error: true` and the content `"<Event>:<Tool> hook error: [<command>]: <stderr>"`, and the record has `toolDenialKind: "permission-rule"`.
+- **Agent frontmatter hooks** ran only in the interactive session. They did not run under headless `-p`, either with `--agent` or when the agent ran as a subagent; that subagent recording is not kept as a fixture. A matcher of `"*"` made no difference. Settings hooks ran in both modes, including inside a headless subagent.
+
+None of these shows what a hook achieved.
