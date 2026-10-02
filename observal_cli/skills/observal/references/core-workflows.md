@@ -61,7 +61,13 @@ observal scan --output json
 observal scan --harness kiro --output json
 observal outdated --output json
 observal outdated --harness claude-code --no-report --output json
+observal freeze --output json
+observal unfreeze --output json
+observal unfreeze --project --dir ./repo --output json
+observal freeze --project --dir ./repo --output json
 ```
+
+`freeze`/`unfreeze` change only local consent for *future* automatic registry updates; automatic installers are not yet connected. They require a locally signed-in account but make no network request. Consent is per account and registry; a different login or environment-overridden token never inherits it. Auto-updating defaults to frozen. Global `unfreeze` covers eligible user-scoped installs; project changes additionally require local `unfreeze --project` and may alter the committed `observal.lock` when project auto-updating is implemented. Manual installs remain possible while frozen. Verify `effective` in JSON: a project grant is dormant when global auto-updating is frozen.
 
 For scan results, report detected harnesses, installed components, Agents, and unregistered items. For outdated results, inspect `items`, `summary`, and `report`. `--no-report` suppresses inbox reporting, not the Registry check. An Agent's `upgrade_command` uses `observal agent pull --upgrade`, because a plain pull keeps the version locked in the project's `observal.lock`; run it only after the user agrees. An `unknown` item has no recorded version; its reinstall command records one.
 

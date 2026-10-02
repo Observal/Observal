@@ -19,6 +19,7 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { spawn } from "node:child_process";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
 import * as http from "node:http";
@@ -90,6 +91,11 @@ const SYNC_STATE_PATH = path.join(OBSERVAL_DIR, "sync_state.json");
 const LAYER_SNAPSHOT_PATH = path.join(OBSERVAL_DIR, "layer_snapshot.json");
 const LOCKFILE_PATH = path.join(OBSERVAL_DIR, "lockfile.json");
 const OUTBOX_DIR = path.join(OBSERVAL_DIR, "pi_session_outbox");
+const UPDATE_NOTICE_DIR = path.join(OBSERVAL_DIR, "update-notices");
+const UPDATE_SHUTDOWN_DIR = path.join(OBSERVAL_DIR, "update-shutdown");
+const UPDATE_CHECK_TIMEOUT_MS = 10_000;
+const UPDATE_NOTICE_MAX_BYTES = 64 * 1024;
+const UPDATE_NOTICE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 // Written by `observal discover use` and the install commands; read here so the
 // session payload can say which registry resources this session relied on.
 const CAPABILITY_LOCK_PATH = path.join(OBSERVAL_DIR, "capability_lock.jsonl");
@@ -113,9 +119,32 @@ export function acknowledgementCovers(acknowledgement: unknown, pending: Pending
 
 export default function (pi: ExtensionAPI) {
   let state: ObservalState | null = null;
+  let updateCheckSession: string | null = null;
+  const startedChecks = new Set<string>();
+  const pendingWarningsShown = new Set<string>();
 
   pi.on("session_start", async (event, ctx) => {
+    updateCheckSession = null;
     state = initState(ctx);
+
+    // Notices are delivered after the local worker exits, never by blocking
+    // Pi startup or sending subprocess output through the session protocol.
+    if (ctx.hasUI && state.config?.user_id && ![
+      "OBSERVAL_ACCESS_TOKEN", "OBSERVAL_API_KEY", "OBSERVAL_TOKEN", "OBSERVAL_SERVER_URL",
+    ].some((name) => process.env[name] || process.env[`${name}_FILE`])) {
+      try {
+        updateCheckSession = state.sessionId;
+        deliverPendingUpdateNotices(state.config, ctx);
+        const key = noticeKey(state.config, state.sessionId);
+        if (!startedChecks.has(key)) {
+          if (startedChecks.size >= 100) startedChecks.clear();
+          startedChecks.add(key);
+          startUpdateCheck(state.config, state.sessionId, ctx);
+        }
+      } catch {
+        // An invalid local registry must never interrupt Pi startup.
+      }
+    }
 
     if (state.config && state.layerSnapshot) {
       uploadLayerSnapshot(state.config, state.layerSnapshot)
@@ -144,6 +173,19 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("session_shutdown", async (_event, _ctx) => {
+    // Record departure before awaiting telemetry. The apply worker checks
+    // the marker under its install gate, but Pi does not share that gate:
+    // shutdown racing after the last check can still lead to a verified install.
+    if (updateCheckSession && state?.config?.user_id) {
+      try {
+        fs.mkdirSync(UPDATE_SHUTDOWN_DIR, { recursive: true, mode: 0o700 });
+        const marker = path.join(UPDATE_SHUTDOWN_DIR, `${noticeKey(state.config, updateCheckSession)}.json`);
+        const temp = `${marker}.${process.pid}.${crypto.randomUUID()}.tmp`;
+        fs.writeFileSync(temp, "{}", { mode: 0o600, flag: "wx" });
+        fs.renameSync(temp, marker);
+      } catch { /* A failed marker write cannot guarantee shutdown prevents admission; verify before enabling apply. */ }
+    }
+    updateCheckSession = null;
     if (!state?.config || !state.sessionFile) return;
     await pushNewLines(state, { final: true });
     state = null;
@@ -289,6 +331,218 @@ export default function (pi: ExtensionAPI) {
       }
     },
   });
+
+  // ─── Startup update notices and isolated Pi apply pilot ────────────────
+
+  function registryKey(config: ObservalConfig): string {
+    const url = new URL(config.server_url);
+    url.hash = "";
+    url.search = "";
+    url.pathname = url.pathname.replace(/\/+$/, "");
+    return url.toString().replace(/\/$/, "");
+  }
+
+  function noticeKey(config: ObservalConfig, sessionId: string): string {
+    return crypto.createHash("sha256").update(
+      [registryKey(config), config.user_id ?? "", sessionId].join("\0"),
+    ).digest("hex");
+  }
+
+  function safeNotice(value: unknown, limit = 600): string {
+    return String(value ?? "").replace(/[\x00-\x1f\x7f-\x9f]/g, " ").slice(0, limit);
+  }
+
+  function deliverPendingUpdateNotices(config: ObservalConfig, ctx: ExtensionContext): void {
+    if (!ctx.hasUI || !fs.existsSync(UPDATE_NOTICE_DIR)) return;
+    try {
+      const files = fs.readdirSync(UPDATE_NOTICE_DIR);
+      const isSealedOutcome = (key: string, identity: any): boolean => {
+        try {
+          const resultFile = path.join(UPDATE_NOTICE_DIR, `${key}.json`);
+          const sealFile = path.join(UPDATE_NOTICE_DIR, `${key}.complete`);
+          const resultStat = fs.lstatSync(resultFile);
+          const sealStat = fs.lstatSync(sealFile);
+          if (!resultStat.isFile() || resultStat.isSymbolicLink() || resultStat.size > UPDATE_NOTICE_MAX_BYTES
+            || !sealStat.isFile() || sealStat.isSymbolicLink() || sealStat.size > UPDATE_NOTICE_MAX_BYTES) return false;
+          const result = JSON.parse(fs.readFileSync(resultFile, "utf-8"));
+          const seal = JSON.parse(fs.readFileSync(sealFile, "utf-8"));
+          return result?.outcome_final === true && result.journaled === true && seal?.state === "complete"
+            && result.registry === identity.registry && result.account_id === identity.account_id
+            && result.session_id === identity.session_id && seal.registry === identity.registry
+            && seal.account_id === identity.account_id && seal.session_id === identity.session_id;
+        } catch { return false; }
+      };
+      // The final notice was delivered and deleted but the cleanup of its
+      // completion seal failed. A seal alone is not an unresolved install.
+      for (const name of files.filter((file) => /^[0-9a-f]{64}\.complete$/.test(file))) {
+        const key = name.slice(0, 64);
+        if (!fs.existsSync(path.join(UPDATE_NOTICE_DIR, `${key}.json`))
+          && !fs.existsSync(path.join(UPDATE_NOTICE_DIR, `${key}.pending`))) {
+          fs.unlinkSync(path.join(UPDATE_NOTICE_DIR, name));
+        }
+      }
+      // A write-ahead record survives a crash or a full/unwritable spool after
+      // mutation. Never consume it as a success, or delete it on delivery.
+      for (const name of files.filter((file) => /^[0-9a-f]{64}\.pending$/.test(file)).slice(0, 50)) {
+        const file = path.join(UPDATE_NOTICE_DIR, name);
+        const stat = fs.lstatSync(file);
+        if (!stat.isFile() || stat.isSymbolicLink() || stat.size > UPDATE_NOTICE_MAX_BYTES) continue;
+        const record = JSON.parse(fs.readFileSync(file, "utf-8"));
+        if (record?.schema !== 1 || record.state !== "pending" || record.registry !== registryKey(config)
+          || record.account_id !== config.user_id) continue;
+        if (isSealedOutcome(name.slice(0, 64), record)) continue;
+        const shownKey = `${updateCheckSession}:${name}`;
+        if (pendingWarningsShown.has(shownKey)) continue;
+        const item = record.item ?? {};
+        const label = safeNotice(item.name, 180);
+        const completed = Array.isArray(record.completed) ? record.completed : [];
+        const previous = completed.slice(0, 8)
+          .map((entry: any) => `${safeNotice(entry.name, 80)} (${safeNotice(entry.status, 20)})`).join(", ");
+        ctx.ui.notify(`Observal update outcome pending from a Pi session: ${label} `
+          + `${safeNotice(item.current_version, 80)} → ${safeNotice(item.latest_version, 80)}. `
+          + (previous ? `Earlier items in this worker: ${previous}${completed.length > 8 ? ", and more in the record" : ""}. ` : "")
+          + "Files may have changed; inspect managed profiles and installed locks before trying again. "
+          + `Unresolved local record: ${safeNotice(file, 1200)}`, "warning");
+        pendingWarningsShown.add(shownKey);
+      }
+      const pending = files.filter((name) => /^[0-9a-f]{64}\.json$/.test(name)).slice(0, 50);
+      for (const name of pending) {
+        const file = path.join(UPDATE_NOTICE_DIR, name);
+        const stat = fs.lstatSync(file);
+        if (!stat.isFile() || stat.isSymbolicLink() || stat.size > UPDATE_NOTICE_MAX_BYTES) continue;
+        if (Date.now() - stat.mtimeMs > UPDATE_NOTICE_MAX_AGE_MS) {
+          fs.unlinkSync(file);
+          continue;
+        }
+        const notice = JSON.parse(fs.readFileSync(file, "utf-8"));
+        if (notice?.schema !== 1 || notice.registry !== registryKey(config)
+          || notice.account_id !== config.user_id || !Array.isArray(notice.items)) continue;
+        if (notice.journaled === true && !isSealedOutcome(name.slice(0, 64), notice)) continue;
+        const messages: string[] = [];
+        const recoveryMessages: string[] = [];
+        if (notice.session_id !== updateCheckSession) {
+          const when = Number.isFinite(notice.checked_at)
+            ? new Date(notice.checked_at * 1000).toLocaleString() : "earlier";
+          messages.push(notice.items.some((item: any) => item.status === "updated")
+            ? `Observal update result from a previous Pi session (${when}); re-select the saved agent with /agent and reload to activate it.`
+            : notice.items.some((item: any) => item.status === "failed")
+              ? `Observal update failure from a previous Pi session (${when}); inspect managed files before re-pulling.`
+              : `Observal update check from a previous Pi session (${when}); this check did not change files.`);
+        }
+        if (notice.warning) messages.push(`Observal: ${safeNotice(notice.warning)}`);
+        for (const item of notice.items.slice(0, 20)) {
+          const version = `${safeNotice(item.current_version, 80)} → ${safeNotice(item.latest_version, 80)}`;
+          const label = item.status === "updated" ? "installed on disk" : item.status === "failed"
+            ? "update failed" : item.status === "skipped" ? "automatic update skipped"
+            : item.status === "available" ? "update available" : "newer version unverified";
+          messages.push(`Observal: ${label} ${safeNotice(item.name, 180)} ${version} (${safeNotice(item.scope, 20)})`);
+          if (item.status !== "unverified") {
+            const target = safeNotice(item.latest_version, 80);
+            messages.push(item.description || item.changelog
+              ? `Author notes for target release ${target}: ${safeNotice(item.changelog || item.description)}`
+              : `No release notes supplied for target release ${target}.`);
+          }
+          if (item.reason) messages.push(safeNotice(item.reason));
+          if (item.manual_command) messages.push(`To update manually: ${safeNotice(item.manual_command, 400)}`);
+          if (item.status === "failed" && item.recovery?.partial) {
+            recoveryMessages.push(`Local recovery backups (keep these files): ${safeNotice(item.recovery.recovery_dir, 2000)}`);
+            const files = Array.isArray(item.recovery.recovery_files) ? item.recovery.recovery_files : [];
+            for (const entry of files.slice(0, 20)) {
+              recoveryMessages.push(`Inspect ${safeNotice(entry.target, 1200)} and restore from ${safeNotice(entry.backup, 1200)} if needed.`);
+            }
+            const omitted = Math.max(0, Number(item.recovery.recovery_files_omitted) || 0) + Math.max(0, files.length - 20);
+            if (omitted > 0) recoveryMessages.push(`${omitted} more recovery files remain in the private backup directory.`);
+          }
+        }
+        if (messages.length > 0) {
+          messages.push("`observal freeze` disables future auto-updates; manual updates remain available.");
+          // Deliver every item: truncating a combined notice and deleting its
+          // spool would silently lose version changes later in the list.
+          let chunk = "";
+          for (const line of messages) {
+            if (chunk && chunk.length + line.length + 1 > 3900) {
+              ctx.ui.notify(chunk, "info");
+              chunk = "";
+            }
+            chunk += `${chunk ? "\n" : ""}${line}`;
+          }
+          if (chunk) ctx.ui.notify(chunk, "info");
+        }
+        // Recovery references must not be silently cut off by the general
+        // 4 KiB notice limit. A failed notification leaves the spool intact.
+        for (const recovery of recoveryMessages) ctx.ui.notify(recovery, "warning");
+        // Only a *durable verified worker outcome* may resolve its journal;
+        // a bridge diagnostic or check-only result must never erase it.
+        if (notice.journaled === true) {
+          const journal = path.join(UPDATE_NOTICE_DIR, `${name.slice(0, 64)}.pending`);
+          if (fs.existsSync(journal)) {
+            const pendingRecord = JSON.parse(fs.readFileSync(journal, "utf-8"));
+            if (pendingRecord?.registry !== notice.registry || pendingRecord.account_id !== notice.account_id
+              || pendingRecord.session_id !== notice.session_id || pendingRecord.state !== "pending") continue;
+            fs.unlinkSync(journal);
+          }
+        }
+        // Mark delivered only after the UI accepts the notification. The
+        // worker's file is never reused as a prompt or model message.
+        fs.unlinkSync(file);
+        if (notice.journaled === true) fs.unlinkSync(path.join(UPDATE_NOTICE_DIR, `${name.slice(0, 64)}.complete`));
+      }
+    } catch {
+      // Never interfere with the Pi session; leave undelivered results for next startup.
+    }
+  }
+
+  function startUpdateCheck(config: ObservalConfig, sessionId: string, ctx: ExtensionContext): void {
+    if (!sessionId || !config.user_id) return;
+    const key = noticeKey(config, sessionId);
+    const noticeFile = path.join(UPDATE_NOTICE_DIR, `${key}.json`);
+    const diagnostic = (warning: string) => {
+      try {
+        if (fs.existsSync(noticeFile)) return;
+        fs.mkdirSync(UPDATE_NOTICE_DIR, { recursive: true, mode: 0o700 });
+        const temp = path.join(UPDATE_NOTICE_DIR, `.${key}.${process.pid}.tmp`);
+        fs.writeFileSync(temp, JSON.stringify({ schema: 1, registry: registryKey(config),
+          account_id: config.user_id, session_id: sessionId, checked_at: Math.floor(Date.now() / 1000),
+          items: [], warning }), { mode: 0o600, flag: "wx" });
+        fs.renameSync(temp, noticeFile);
+      } catch { /* no startup failure for an unwritable spool */ }
+    };
+    const command = process.env.OBSERVAL_CLI_BIN || "observal";
+    // Temporary rollout gate in addition to account-scoped `observal unfreeze`.
+    // The Python worker alone authorizes each exact release and file mutation.
+    const applyPilot = process.env.OBSERVAL_PI_AUTO_APPLY === "1";
+    try {
+      const child = spawn(command, [applyPilot ? "_startup-apply" : "_startup-check", "--cwd", ctx.cwd,
+        "--session-id", sessionId, "--notice-key", key], { stdio: "ignore", shell: false });
+      if (applyPilot) child.unref(); // Pi exit cannot kill or wait for commit/rollback.
+      let finished = false;
+      let timedOut = false;
+      // Only the check-only worker can be interrupted. Apply enforces its own
+      // admission deadline and may finish safely after the session exits.
+      const timeout = applyPilot ? undefined : setTimeout(() => {
+        if (!finished) {
+          timedOut = true;
+          child.kill();
+        }
+      }, UPDATE_CHECK_TIMEOUT_MS);
+      child.once("error", () => {
+        finished = true;
+        if (timeout) clearTimeout(timeout);
+        diagnostic("Update worker could not start; run `observal outdated` manually.");
+      });
+      child.once("close", (code) => {
+        finished = true;
+        if (timeout) clearTimeout(timeout);
+        if (code !== 0) diagnostic(applyPilot
+          ? "Update worker stopped unexpectedly; inspect managed files before trying again."
+          : timedOut ? "Update check timed out; run `observal outdated` later."
+            : "Update check failed; run `observal outdated` later.");
+        if (updateCheckSession === sessionId) deliverPendingUpdateNotices(config, ctx);
+      });
+    } catch {
+      diagnostic("Update check could not start; run `observal outdated` manually.");
+    }
+  }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
 
