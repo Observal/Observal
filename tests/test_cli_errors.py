@@ -472,8 +472,11 @@ def test_every_leaf_command_exposes_json_machine_output():
             leaves.append(command)
 
     walk(root)
-    assert len(leaves) == 212
+    assert len(leaves) == 216
+    assert {command.name for command in leaves if command.hidden} == {"_startup-check", "_startup-apply"}
     for command in leaves:
+        if command.hidden:  # Internal worker protocol, not a user-facing CLI command.
+            continue
         output = next((parameter for parameter in command.params if parameter.name == "output"), None)
         assert output is not None, command.name
         choices = {getattr(choice, "value", choice) for choice in getattr(output.type, "choices", ())}
@@ -722,7 +725,7 @@ def test_root_group_enforces_error_contract_for_all_commands():
                 walk(child)
 
     walk(root)
-    assert len(executable) == 218
+    assert len(executable) == 222
 
 
 @pytest.mark.parametrize(
@@ -832,6 +835,49 @@ def test_transient_status_retries_once_then_succeeds(monkeypatch, isolated_clien
     assert all(item.kwargs["timeout"] == 19 for item in get.call_args_list)
     assert all(item.kwargs["params"] == {"page": 2} for item in get.call_args_list)
     isolated_client.sleep.assert_called_once_with(0.5)
+
+
+def test_startup_network_budget_caps_requests_without_changing_manual_calls(monkeypatch):
+    get = MagicMock(return_value=_response(200, data={"ok": True}))
+    monkeypatch.setattr(client.config, "get_timeout", lambda: 30)
+    monkeypatch.setattr(client.httpx, "get", get)
+    with client.bounded_requests(client.time.monotonic() + 4):
+        client._request_with_retry("get", "https://registry.example.test/api/v1/items", {})
+    assert 0 < get.call_args.kwargs["timeout"] <= 4
+    assert client._NETWORK_CUTOFF.get() is None
+    client._request_with_retry("get", "https://registry.example.test/api/v1/items", {})
+    assert get.call_args.kwargs["timeout"] == 30
+
+
+@pytest.mark.parametrize("retry_after", ["3600", "inf", "-1"])
+def test_startup_network_budget_refuses_unbounded_retry_wait(monkeypatch, retry_after):
+    get = MagicMock(return_value=_response(503, data={"retry": True}, headers={"Retry-After": retry_after}))
+    sleep = MagicMock()
+    monkeypatch.setattr(client.httpx, "get", get)
+    monkeypatch.setattr(client.time, "sleep", sleep)
+    with client.bounded_requests(client.time.monotonic() + 3), pytest.raises(httpx.ReadTimeout):
+        client._request_with_retry("get", "https://registry.example.test/api/v1/items", {})
+    get.assert_called_once()
+    sleep.assert_not_called()
+
+
+def test_startup_budget_timeout_has_actionable_worker_remediation(monkeypatch):
+    monkeypatch.setattr(client, "_client", lambda: ("https://registry.example.test", {}))
+    get = MagicMock(return_value=_response(503, headers={"Retry-After": "3600"}))
+    monkeypatch.setattr(client.httpx, "get", get)
+    with client.bounded_requests(client.time.monotonic() + 2), pytest.raises(CliError) as error:
+        client.get("/api/v1/items")
+    assert "startup update network budget expired" in error.value.message.lower()
+    assert "observal outdated" in error.value.remediation
+    get.assert_called_once()
+
+
+def test_expired_startup_network_budget_never_starts_request(monkeypatch):
+    get = MagicMock()
+    monkeypatch.setattr(client.httpx, "get", get)
+    with client.bounded_requests(client.time.monotonic() - 1), pytest.raises(httpx.ReadTimeout):
+        client._request_with_retry("get", "https://registry.example.test/api/v1/items", {})
+    get.assert_not_called()
 
 
 @pytest.mark.parametrize("method", ["post", "put", "patch", "delete"])

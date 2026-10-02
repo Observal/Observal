@@ -17,7 +17,7 @@ import tempfile
 import time
 from typing import TYPE_CHECKING
 
-from observal_cli import auto_update_install, auto_update_policy, installed_updates
+from observal_cli import auto_update_install, auto_update_policy, client, installed_updates
 from observal_cli import startup_update_check as check
 from observal_cli.errors import CliError
 
@@ -129,7 +129,10 @@ def apply_pi(cwd: str, session_id: str, notice_key: str) -> None:
     # Hold a separate cross-process gate until the final seal or failure. The
     # inner installer takes the registry gate; neither freeze nor manual pulls
     # ever wait for this outer worker gate while holding their own locks.
-    with auto_update_policy.apply_worker_gate(registry, account, timeout=max(0, deadline - time.monotonic())):
+    with (
+        auto_update_policy.apply_worker_gate(registry, account, timeout=max(0, deadline - time.monotonic())),
+        client.bounded_requests(deadline - RECOVERY_RESERVE_SECONDS),
+    ):
         _apply_pi_serialized(cwd, session_id, notice_key, registry=registry, account=account, deadline=deadline)
 
 

@@ -6,8 +6,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import logging
+import math
 import time
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from contextvars import ContextVar
 from urllib.parse import quote, urlparse, urlunparse
 
@@ -30,7 +33,23 @@ _version_enforced: bool = False
 _EXEMPT_SUBCOMMANDS = frozenset({"self", "server"})
 _OPTIONAL_AUTH = ContextVar("observal_optional_auth", default=False)
 _PUBLIC_POST = ContextVar("observal_public_post", default=False)
+_NETWORK_CUTOFF: ContextVar[float | None] = ContextVar("observal_network_cutoff", default=None)
 _QueryParams = dict | list[tuple[str, str]]
+
+
+@contextmanager
+def bounded_requests(cutoff: float) -> Iterator[None]:
+    """Limit only this worker's registry calls/retry waits before commit admission.
+
+    The cutoff is monotonic and excludes the reserved mutation/recovery window.
+    Ordinary CLI requests are unchanged. This is a pre-commit budget, never a
+    signal or process kill once file replacement begins.
+    """
+    token = _NETWORK_CUTOFF.set(cutoff)
+    try:
+        yield
+    finally:
+        _NETWORK_CUTOFF.reset(token)
 
 
 def _get_cli_version() -> str:
@@ -220,10 +239,16 @@ def _handle_timeout(
     timeout = config.get_timeout()
     fail(
         ErrorCategory.UNAVAILABLE,
-        f"The request timed out after {timeout} seconds.",
+        "The startup update network budget expired."
+        if _NETWORK_CUTOFF.get() is not None
+        else f"The request timed out after {timeout} seconds.",
         operation=operation or f"Request {path or 'server resource'}",
         resource=resource or path or "Observal server",
-        remediation="Increase OBSERVAL_TIMEOUT if appropriate and check server health with observal doctor.",
+        remediation=(
+            "Retry on the next startup or check manually with `observal outdated`."
+            if _NETWORK_CUTOFF.get() is not None
+            else "Increase OBSERVAL_TIMEOUT if appropriate and check server health with observal doctor."
+        ),
         detail=detail,
     )
 
@@ -280,6 +305,7 @@ def _request_with_retry(
     """
     optic.trace("method={}, url={}", method, url)
     timeout = config.get_timeout()
+    cutoff = _NETWORK_CUTOFF.get()
     func = getattr(httpx, method)
 
     request_headers = headers
@@ -298,6 +324,11 @@ def _request_with_retry(
     t0 = time.monotonic()
 
     for attempt in range(_MAX_RETRIES):
+        if cutoff is not None:
+            remaining = cutoff - time.monotonic()
+            if remaining <= 0:
+                raise httpx.ReadTimeout("Startup update network admission window expired")
+            kwargs["timeout"] = min(timeout, remaining)
         r = func(url, **kwargs)
 
         # Auto-refresh on 401
@@ -318,6 +349,10 @@ def _request_with_retry(
         # Honor Retry-After header if present
         retry_after = r.headers.get("Retry-After")
         delay = float(retry_after) if retry_after else 0.5 * (2**attempt)
+        # An untrusted Retry-After cannot park an apply worker (and its
+        # registry/account admission gate) for hours.
+        if cutoff is not None and (not math.isfinite(delay) or delay < 0 or time.monotonic() + delay >= cutoff):
+            raise httpx.ReadTimeout("Registry retry exceeds startup network admission window")
         logger.debug(f"Retrying {method.upper()} {safe_url} (attempt {attempt + 1}, delay {delay:.1f}s)")
         optic.debug("retrying {} {} (attempt {}, delay {:.1f}s)", method.upper(), safe_url, attempt + 1, delay)
         time.sleep(delay)

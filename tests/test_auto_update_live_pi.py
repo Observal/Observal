@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import select
 import shutil
 import signal
 import subprocess
@@ -36,6 +37,7 @@ class Registry(str):
         result = str.__new__(cls, value)
         result.pause = False
         result.unsafe = False
+        result.retry_after = False
         result.install_calls = 0
         result.started = threading.Event()
         result.release = threading.Event()
@@ -62,6 +64,12 @@ def registry() -> Iterator[Registry]:
             if self.path == "/api/v1/config/version":
                 return self.send({"server_version": "dev"})
             if self.path == f"/api/v1/agents/{AGENT}":
+                if control is not None and control.retry_after:
+                    self.send_response(503)
+                    self.send_header("Retry-After", "3600")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
                 return self.send(
                     {"id": AGENT, "latest_approved_version": "2.0.0", "namespace": "alice", "slug": "reviewer"}
                 )
@@ -113,6 +121,68 @@ def registry() -> Iterator[Registry]:
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+def _tui_notice(home: Path, env: dict, *, expected: str) -> None:
+    """Exercise Pi's actual terminal renderer, not a mocked ctx.ui.notify."""
+    import fcntl
+    import pty
+    import struct
+    import termios
+
+    pi = shutil.which("pi")
+    assert pi
+    master, slave = pty.openpty()
+    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
+    proc = subprocess.Popen(
+        [
+            pi,
+            "--offline",
+            "--no-skills",
+            "--no-context-files",
+            "--no-extensions",
+            "--extension",
+            str(EXTENSION),
+            "--tui-mode",
+            "regular",
+        ],
+        cwd=home,
+        env={**env, "TERM": "xterm-256color", "OBSERVAL_PI_AUTO_APPLY": "0"},
+        stdin=slave,
+        stdout=slave,
+        stderr=slave,
+        start_new_session=True,
+    )
+    os.close(slave)
+    output = bytearray()
+    try:
+        until = time.monotonic() + 12
+        while time.monotonic() < until:
+            ready, _, _ = select.select([master], [], [], 0.2)
+            if ready:
+                try:
+                    output.extend(os.read(master, 65536))
+                except OSError:
+                    break
+                if expected.encode() in output:
+                    return
+        pytest.fail(f"Pi TUI did not render {expected!r}: {bytes(output[-500:])!r}")
+    finally:
+        if proc.poll() is None:
+            try:
+                os.write(master, b"\x03")
+            except OSError:
+                pass  # Pi may close the PTY between poll and input.
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=5)
+        os.close(master)
 
 
 def _rpc_session(home: Path, env: dict, *, expected: str) -> list[str]:
@@ -210,11 +280,20 @@ install_baseline.capture(registry={registry!r}, harness='pi', agent_id={AGENT!r}
     messages = _rpc_session(home, env, expected="update available")
     assert "Author release notes" in "\n".join(messages)
     assert profile.read_text() == "old profile", "frozen startup must not install"
+    if os.name != "nt":
+        _tui_notice(home, env, expected="Author release notes")
+        assert profile.read_text() == "old profile", "TUI notice must not install while frozen"
     subprocess.run([str(CLI), "unfreeze"], cwd=home, env=env, check=True, capture_output=True)
     profile.write_text("local edit")
     messages = _rpc_session(home, env, expected="automatic update skipped")
     assert profile.read_text() == "local edit", "dirty managed files must not be overwritten"
     profile.write_text("old profile")  # Explicitly restore known baseline for this isolated test.
+    registry.retry_after = True
+    started = time.monotonic()
+    messages = _rpc_session(home, env, expected="automatic update skipped")
+    assert time.monotonic() - started < 10, "a long Retry-After must not park the apply worker"
+    assert profile.read_text() == "old profile"
+    registry.retry_after = False
 
     # Pause the real registry's install response, close Pi while the worker is
     # waiting, then release it. Pi must exit without killing the worker; the

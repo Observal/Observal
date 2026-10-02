@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from observal_cli import auto_update_install, auto_update_policy, installed_updates
+from observal_cli import auto_update_install, auto_update_policy, client, installed_updates
 from observal_cli import startup_update_apply as worker
 from observal_cli import startup_update_check as check
 
@@ -107,6 +107,21 @@ def test_two_sessions_first_unsealed_result_blocks_second_before_admission(
     second_notice = json.loads((check.NOTICE_DIR / f"{second_key}.json").read_text())
     assert second_notice["items"][0]["status"] == "skipped"
     assert "unresolved" in second_notice["items"][0]["reason"]
+
+
+def test_apply_worker_scopes_network_budget_before_recovery_window(setup: dict) -> None:
+    seen: list[float] = []
+
+    def check_cutoff(*_args: object, **_kwargs: object) -> dict:
+        cutoff = client._NETWORK_CUTOFF.get()
+        assert cutoff is not None
+        seen.append(cutoff - time.monotonic())
+        return {"status": "updated"}
+
+    setup["apply"].side_effect = check_cutoff
+    worker.apply_pi(str(setup["tmp"]), "session-a", KEY)
+    assert len(seen) == 1 and 0 < seen[0] <= worker.APPLY_SECONDS - worker.RECOVERY_RESERVE_SECONDS
+    assert client._NETWORK_CUTOFF.get() is None
 
 
 def test_cannot_reserve_spool_refuses_install(setup: dict, monkeypatch: pytest.MonkeyPatch) -> None:
