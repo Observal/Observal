@@ -88,7 +88,7 @@ Maintainers volunteer their time. Treat them accordingly.
 | ------- | ------------------- | ------------------------------------------------------------------------- |
 | Docker  | 24+ with Compose v2 | [docs.docker.com](https://docs.docker.com/get-docker/)                    |
 | uv      | latest              | `curl -LsSf https://astral.sh/uv/install.sh \| sh`                        |
-| Node.js | 20+                 | Via [nvm](https://github.com/nvm-sh/nvm) or [mise](https://mise.jdx.dev/) |
+| Node.js | 22.6+               | Via [nvm](https://github.com/nvm-sh/nvm) or [mise](https://mise.jdx.dev/) |
 | pnpm    | 10+                 | `npm install -g pnpm`                                                     |
 | Git     | 2.28+               | [git-scm.com](https://git-scm.com/)                                       |
 

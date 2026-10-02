@@ -42,7 +42,7 @@ Please read our [Code of Conduct](https://github.com/Observal/Observal/blob/main
 
 * Docker and Docker Compose
 * [uv](https://docs.astral.sh/uv/) (Python 3.11+)
-* Node.js 20+ and pnpm (for the web frontend)
+* Node.js 22.6+ and pnpm (for the web frontend and `make test`; matches `package.json` `engines` and `--experimental-strip-types`)
 * Git
 
 ### Fork and Clone
