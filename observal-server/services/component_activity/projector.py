@@ -19,6 +19,14 @@ from services.session_parsers.invocations import extract_invocations
 
 from .matcher import MatchResult, match_invocations
 
+
+class ProjectionRaceError(RuntimeError):
+    """The source or published mapping changed during publication; the attempt failed closed.
+
+    Its message is fixed text with no session data, so it may be logged.
+    """
+
+
 # 2: activity rows carry evidence_kind and publications evidence_type, so MCP
 # and skill projections complete independently (ClickHouse migration 008).
 # 3: hook extraction no longer counts runs of Observal's own telemetry hooks as
@@ -454,7 +462,7 @@ async def project_session_activity(
                 data="\n".join(json.dumps(row | {"projection_generation": generation}) for row in rows),
             )
         if not await _inputs_unchanged(params, revision, source, generations, project_id, user_id, harness):
-            raise RuntimeError("Canonical source or published layer mapping changed during activity publication")
+            raise ProjectionRaceError("Canonical source or published layer mapping changed during activity publication")
         await _marker(params, version, generation, "complete", revision, counts)
     except Exception:
         try:
