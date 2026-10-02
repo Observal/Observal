@@ -19,32 +19,11 @@ Bump HOOKS_SPEC_VERSION whenever the hook definitions change.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-from observal_cli.shared.launcher import isolation_flag
+from observal_cli.shared.launcher import module_command
 from observal_cli.shared.utils import OBSERVAL_METADATA_KEY
 
 # Bump this when hook definitions change.
-HOOKS_SPEC_VERSION = "12"
-
-
-# Parent of the observal_cli package directory
-_PKG_ROOT = str(Path(__file__).resolve().parent.parent.parent)
-
-
-def _python_cmd() -> str:
-    """Return python command with PYTHONPATH set if needed."""
-    # Checked in an isolated interpreter: the CLI's own process may import
-    # observal_cli only through its working directory or PYTHONPATH.
-    from observal_cli.shared.launcher import importable_in_isolation, posix_prefix
-
-    if sys.platform == "win32":
-        if importable_in_isolation():
-            return sys.executable
-        return f'set "PYTHONPATH={_PKG_ROOT}" && {sys.executable}'
-    # Shell-quoted, so an interpreter or package root containing spaces stays one word.
-    return posix_prefix()
+HOOKS_SPEC_VERSION = "13"
 
 
 def get_desired_hooks() -> dict[str, list[dict]]:
@@ -54,7 +33,7 @@ def get_desired_hooks() -> dict[str, list[dict]]:
     push hook which reads the JSONL file incrementally.
     """
     meta = {OBSERVAL_METADATA_KEY: {"version": HOOKS_SPEC_VERSION}}
-    cmd = f"{_python_cmd()} {isolation_flag()} -m observal_cli.hooks.session_push --harness claude-code"
+    cmd = f"{module_command('observal_cli.hooks.session_push')} --harness claude-code"
 
     hook_group: list[dict] = [{**meta, "hooks": [{"type": "command", "command": cmd}]}]
 

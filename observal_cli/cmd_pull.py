@@ -1077,17 +1077,18 @@ def _collect_install_options(
 # observal_cli but does import one from the working directory (often a project).
 # They are rewritten to this CLI's interpreter, isolated with -I when it imports
 # observal_cli on its own, else with -P and an explicit PYTHONPATH set to the
-# package root (observal_cli.shared.launcher). On Windows the previous form is kept: the
-# fallback and quoting would need cmd.exe-specific handling.
+# package root (observal_cli.shared.launcher). On Windows they use the shell-neutral
+# form instead: a quoted interpreter with -I, and the package root set from -c code.
 _BARE_LAUNCHER = re.compile(r"(?<![/\\\w.-])python3? -m observal_cli\.")
+_BARE_LAUNCHER_MODULE = re.compile(r"(?<![/\\\w.-])python3? -m (observal_cli(?:\.[A-Za-z_][A-Za-z0-9_]*)+)")
 
 
 def rewrite_launcher_command(command: str) -> str:
     """Rewrite bare ``python3 -m observal_cli.`` launchers inside one shell command string."""
-    from observal_cli.shared.launcher import isolation_flag, posix_prefix
+    from observal_cli.shared.launcher import isolation_flag, posix_prefix, windows_module_command
 
     if sys.platform == "win32":
-        return _BARE_LAUNCHER.sub(lambda _m: f"{sys.executable} -m observal_cli.", command)
+        return _BARE_LAUNCHER_MODULE.sub(lambda match: windows_module_command(match[1]), command)
     return _BARE_LAUNCHER.sub(lambda _m: f"{posix_prefix()} {isolation_flag()} -m observal_cli.", command)
 
 
@@ -1120,10 +1121,11 @@ _MCP_SERVER_KEYS = ("mcp-servers", "mcpServers")
 def _frontmatter_mcp_launcher(entry: object) -> dict | None:
     """The rewritten MCP entry if it launches observal_cli through a bare interpreter, else None.
 
-    The fallback PYTHONPATH goes into the argv (``env PYTHONPATH=...``), not an
-    ``env:`` key, so it does not depend on the harness reading one.
+    The fallback package root goes into the argv (``env PYTHONPATH=...``, or
+    ``-I -c`` code on Windows), not an ``env:`` key, so it does not depend on the
+    harness reading one.
     """
-    if not isinstance(entry, dict) or sys.platform == "win32":
+    if not isinstance(entry, dict):
         return None
     argv = [entry.get("command"), *(entry.get("args") or [])] if isinstance(entry.get("args") or [], list) else []
     if not argv or not all(isinstance(item, str) for item in argv):
@@ -1247,7 +1249,7 @@ def rewrite_observal_interpreter(value):
     The rewritten launcher runs with ``-P``, and with ``PYTHONPATH`` (an MCP
     entry's ``env``, or ``env PYTHONPATH=...`` in argv) when needed.
     """
-    from observal_cli.shared.launcher import isolation_flag, pythonpath_env
+    from observal_cli.shared.launcher import isolation_flag, pythonpath_env, windows_module_argv
 
     extra_env = pythonpath_env()
     flag = isolation_flag()
@@ -1277,8 +1279,11 @@ def rewrite_observal_interpreter(value):
                 and isinstance(items[index + 2], str)
                 and items[index + 2].startswith("observal_cli.")
             ):
-                if extra_env and sys.platform == "win32":
-                    items[index] = sys.executable  # previous form: no portable inline PYTHONPATH in argv
+                if sys.platform == "win32":
+                    # No `env` program on Windows: -I, with the package root set from -c when needed.
+                    launcher = windows_module_argv(items[index + 2])
+                    items[index : index + 3] = launcher
+                    index += len(launcher) - 1
                 else:
                     prefix = [f"{key}={val}" for key, val in extra_env.items()]
                     launcher = [*(["env", *prefix] if prefix else []), sys.executable, flag]

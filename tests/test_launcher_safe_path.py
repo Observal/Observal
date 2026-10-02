@@ -627,3 +627,97 @@ def test_every_generated_launcher_works_with_spaces_in_its_paths(tmp_path, monke
             ["/bin/sh", "-c", _probe(command)], cwd=outside, env=_clean_env(outside), capture_output=True, check=False
         )
         assert _genuine(result), (name, command, result.stderr[-300:])
+
+
+# ── Windows forms (run here under sh, as Git Bash would; cmd.exe needs a Windows reviewer) ──
+
+
+def _windows_commands(agent_id: str = "a1") -> dict[str, str]:
+    from observal_cli import cmd_doctor  # noqa: F401  (imported for the Cursor hook below)
+
+    def first(output) -> str:
+        values = [json.loads(f'"{raw}"') for raw in re.findall(r'"((?:[^"\\]|\\.)*)"', json.dumps(output))]
+        return next(value for value in values if "observal_cli.hooks." in value)
+
+    return {
+        "claude-code": first(claude_code_hooks_spec.get_desired_hooks()),
+        "codex": first(codex_hooks_spec.build_codex_hooks()),
+        "kiro": kiro_hooks_spec.build_kiro_push_command(agent_id),
+        "antigravity": first(antigravity_hooks_spec.build_antigravity_hooks()),
+        "copilot-cli": copilot_cli_hooks_spec.build_copilot_cli_hooks(agent_id)["hooks"]["sessionStart"][0]["bash"],
+        "cursor (doctor)": launcher.module_command("observal_cli.hooks.session_push"),
+        "agent pull rewrite": cmd_pull.rewrite_launcher_command(
+            "python3 -m observal_cli.hooks.session_push --harness x"
+        ),
+    }
+
+
+def _as_windows_probe(command: str) -> str:
+    """The same launcher with the module swapped for the probe (in -m or in the -c bootstrap)."""
+    swapped = re.sub(r"observal_cli\.hooks\.[a-z_]+", _PROBE, command)
+    assert swapped != command, command
+    return swapped
+
+
+@pytest.mark.parametrize("installed", [True, False])
+def test_windows_hook_launchers_avoid_cmd_only_syntax_and_ignore_a_hostile_project(tmp_path, monkeypatch, installed):
+    """Regression: Windows hooks used `set "PYTHONPATH=..." &&` (cmd.exe only; under Git Bash the
+    variable is never set) and an unquoted interpreter that splits at C:\\Program Files."""
+    python = _venv(tmp_path / "py dir" / "venv", with_package=installed)
+    root = tmp_path / "Observal Flare"
+    root.symlink_to(launcher.package_root(), target_is_directory=True)
+    monkeypatch.setattr(launcher, "importable_in_isolation", lambda: installed)
+    monkeypatch.setattr(launcher, "package_root", lambda: str(root))
+    monkeypatch.setattr(sys, "executable", python)
+    monkeypatch.setattr(sys, "platform", "win32")
+    commands = _windows_commands()
+    monkeypatch.setattr(sys, "platform", "darwin")  # run them here, under sh
+    project = _hostile_project(tmp_path / "project")
+    for name, command in commands.items():
+        assert 'set "' not in command and "&&" not in command and "PYTHONPATH=" not in command, (name, command)
+        assert command.startswith(f'"{python}" -I '), (name, command)
+        result = _run_hostile(_as_windows_probe(command), project)
+        assert _genuine(result), (name, command, result.stdout, result.stderr[-300:])
+
+
+def test_windows_bootstrap_sets_the_agent_and_package_root_without_shell_quoting(monkeypatch):
+    import runpy
+
+    monkeypatch.setattr(launcher, "importable_in_isolation", lambda: False)
+    monkeypatch.setattr(launcher, "package_root", lambda: "C:\\Users\\a b\\Observal 'src'")
+    argv = launcher.windows_module_argv("observal_cli.hooks.session_push", {"OBSERVAL_AGENT_ID": "a1%PATH%$x"})
+    assert argv[1:3] == ["-I", "-c"]
+    code = argv[3]
+    assert not set(code) & set('%$`\\"!'), "nothing any shell would expand or unquote"
+    called = []
+    monkeypatch.setattr(runpy, "run_module", lambda module, **kwargs: called.append((module, kwargs)))
+    monkeypatch.delenv("OBSERVAL_AGENT_ID", raising=False)
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    exec(compile(code, "<bootstrap>", "exec"), {})
+    assert os.environ["OBSERVAL_AGENT_ID"] == "a1%PATH%$x"
+    assert sys.path[0] == "C:\\Users\\a b\\Observal 'src'"
+    assert called == [("observal_cli.hooks.session_push", {"run_name": "__main__", "alter_sys": True})]
+    monkeypatch.setattr(launcher, "importable_in_isolation", lambda: True)
+    assert launcher.windows_module_argv("observal_cli.x") == [sys.executable, "-I", "-m", "observal_cli.x"]
+
+
+@pytest.mark.parametrize("installed", [True, False])
+def test_windows_argv_and_copilot_cli_profile_launchers_are_isolated(tmp_path, monkeypatch, installed):
+    """Regression: on Windows a source checkout's argv launcher fell back to a bare interpreter,
+    and Copilot CLI profile MCP launchers were not rewritten at all."""
+    python = _venv(tmp_path / "py dir" / "venv", with_package=installed)
+    monkeypatch.setattr(launcher, "importable_in_isolation", lambda: installed)
+    monkeypatch.setattr(sys, "executable", python)
+    monkeypatch.setattr(sys, "platform", "win32")
+    argv = cmd_pull.rewrite_observal_interpreter(["claude", "mcp", "add", "x", "--", "python3", "-m", _PROBE, "--y"])
+    profile = _copilot_cli_profile({"observal-agents": {"command": "python3", "args": ["-m", _PROBE], "env": {}}})
+    entry = _frontmatter(cmd_pull.rewrite_frontmatter_hook_launchers(profile))["mcp-servers"]["observal-agents"]
+    monkeypatch.setattr(sys, "platform", "darwin")
+    launch = argv[argv.index("--") + 1 :]
+    assert launch[:2] == [python, "-I"] and "env" not in argv
+    assert [entry["command"], *entry["args"]][:2] == [python, "-I"]
+    project = _hostile_project(tmp_path / "project")
+    hostile = {**_clean_env(project), "PYTHONPATH": str(project)}
+    for command in (launch, [entry["command"], *entry["args"]]):
+        result = subprocess.run(command, cwd=project, env=hostile, capture_output=True, check=False)
+        assert _genuine(result), (command, result.stderr[-300:])
