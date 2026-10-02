@@ -21,7 +21,9 @@ from .matcher import MatchResult, match_invocations
 
 # 2: activity rows carry evidence_kind and publications evidence_type, so MCP
 # and skill projections complete independently (ClickHouse migration 008).
-PROJECTION_VERSION = 2
+# 3: hook extraction no longer counts runs of Observal's own telemetry hooks as
+# unmatched candidates; the bump replays hook publications made before the fix.
+PROJECTION_VERSION = 3
 # 2: result-link ordering changed. 3: harness-reported server identity (Pi).
 # Every bump makes old publications invisible until the durable full replay
 # (``jobs.activity.replay_activity_revision``) republishes them.
