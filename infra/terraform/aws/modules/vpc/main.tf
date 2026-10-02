@@ -2,12 +2,30 @@
 # SPDX-License-Identifier: Apache-2.0
 
 locals {
-  public_subnet_cidrs = length(var.public_subnet_cidrs) == length(var.azs) ? var.public_subnet_cidrs : [
+  public_subnet_cidrs = length(var.public_subnet_cidrs) == 0 ? [
     for i, _ in var.azs : cidrsubnet(var.vpc_cidr, 8, i)
-  ]
-  private_subnet_cidrs = length(var.private_subnet_cidrs) == length(var.azs) ? var.private_subnet_cidrs : [
+  ] : var.public_subnet_cidrs
+
+  private_subnet_cidrs = length(var.private_subnet_cidrs) == 0 ? [
     for i, _ in var.azs : cidrsubnet(var.vpc_cidr, 8, i + 10)
-  ]
+  ] : var.private_subnet_cidrs
+}
+
+check "subnet_cidr_lengths" {
+  assert {
+    condition = (
+      length(var.public_subnet_cidrs) == 0 ||
+      length(var.public_subnet_cidrs) == length(var.azs)
+    )
+    error_message = "public_subnet_cidrs must be empty (auto-derive) or have exactly one entry per AZ."
+  }
+  assert {
+    condition = (
+      length(var.private_subnet_cidrs) == 0 ||
+      length(var.private_subnet_cidrs) == length(var.azs)
+    )
+    error_message = "private_subnet_cidrs must be empty (auto-derive) or have exactly one entry per AZ."
+  }
 }
 
 resource "aws_vpc" "main" {
@@ -23,6 +41,7 @@ resource "aws_internet_gateway" "main" {
   tags   = merge(var.tags, { Name = "${var.name}-igw" })
 }
 
+# tfsec:ignore:aws-ec2-no-public-ip-subnet Public subnets host the ALB and NAT gateway only; application workloads live in private subnets.
 resource "aws_subnet" "public" {
   count                   = length(var.azs)
   vpc_id                  = aws_vpc.main.id
@@ -91,6 +110,7 @@ resource "aws_route_table_association" "private" {
   route_table_id = aws_route_table.private.id
 }
 
+# tfsec:ignore:aws-cloudwatch-log-group-customer-key AWS-managed key by default; supply a CMK via kms_key_id for stricter compliance.
 resource "aws_cloudwatch_log_group" "flow_logs" {
   count             = var.enable_flow_logs ? 1 : 0
   name              = "/aws/vpc/${var.name}/flow-logs"
@@ -112,20 +132,15 @@ data "aws_iam_policy_document" "flow_logs_assume" {
 
 data "aws_iam_policy_document" "flow_logs_publish" {
   count = var.enable_flow_logs ? 1 : 0
+  # tfsec:ignore:aws-iam-no-policy-wildcards Resource wildcard is bounded to log streams within the flow-log group only.
   statement {
     actions = [
-      "logs:CreateLogGroup",
       "logs:CreateLogStream",
       "logs:PutLogEvents",
-    ]
-    resources = ["${aws_cloudwatch_log_group.flow_logs[0].arn}:*"]
-  }
-  statement {
-    actions = [
       "logs:DescribeLogGroups",
       "logs:DescribeLogStreams",
     ]
-    resources = ["*"]
+    resources = ["${aws_cloudwatch_log_group.flow_logs[0].arn}:*"]
   }
 }
 
@@ -150,4 +165,3 @@ resource "aws_flow_log" "main" {
 
   tags = merge(var.tags, { Name = "${var.name}-flow-logs" })
 }
-

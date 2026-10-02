@@ -30,8 +30,8 @@ module "vpc" {
 | `name` | Name prefix for all VPC resources. | `string` | n/a | yes |
 | `vpc_cidr` | CIDR block for the VPC. | `string` | `"10.42.0.0/16"` | no |
 | `azs` | List of availability zones to use. | `list(string)` | n/a | yes |
-| `public_subnet_cidrs` | CIDRs for public subnets (one per AZ). If omitted or length does not match azs, CIDRs are derived from vpc_cidr. | `list(string)` | `[]` | no |
-| `private_subnet_cidrs` | CIDRs for private subnets (one per AZ). If omitted or length does not match azs, CIDRs are derived from vpc_cidr. | `list(string)` | `[]` | no |
+| `public_subnet_cidrs` | CIDRs for public subnets (one per AZ). Empty list derives from vpc_cidr via cidrsubnet; non-empty list must match length(azs). | `list(string)` | `[]` | no |
+| `private_subnet_cidrs` | CIDRs for private subnets (one per AZ). Empty list derives from vpc_cidr via cidrsubnet; non-empty list must match length(azs). | `list(string)` | `[]` | no |
 | `log_retention_days` | CloudWatch log retention for flow logs. | `number` | `30` | no |
 | `enable_flow_logs` | Enable VPC flow logs. | `bool` | `true` | no |
 | `tags` | Tags to apply to all resources. | `map(string)` | `{}` | no |

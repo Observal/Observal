@@ -23,13 +23,13 @@ variable "azs" {
 }
 
 variable "public_subnet_cidrs" {
-  description = "CIDRs for public subnets (one per AZ). If omitted or length does not match azs, CIDRs are derived from vpc_cidr."
+  description = "CIDRs for public subnets (one per AZ). Empty list derives from vpc_cidr via cidrsubnet; non-empty list must match length(azs)."
   type        = list(string)
   default     = []
 }
 
 variable "private_subnet_cidrs" {
-  description = "CIDRs for private subnets (one per AZ). If omitted or length does not match azs, CIDRs are derived from vpc_cidr."
+  description = "CIDRs for private subnets (one per AZ). Empty list derives from vpc_cidr via cidrsubnet; non-empty list must match length(azs)."
   type        = list(string)
   default     = []
 }
