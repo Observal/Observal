@@ -819,11 +819,17 @@ def _fingerprint_written_skills(
     from observal_cli.cmd_skill import _sanitize_name
     from observal_cli.layer import skill_file_fingerprint
 
-    written = {
-        _sanitize_name(sc.get("name", "")): _resolve_path(sc["path"], target_dir, allow_home=is_user_scope)
-        for sc in snippet.get("skill_components") or []
-        if isinstance(sc, dict) and isinstance(sc.get("path"), str)
-    }
+    written = {}
+    for sc in snippet.get("skill_components") or []:
+        if not isinstance(sc, dict):
+            continue
+        if isinstance(sc.get("path"), str):
+            written[_sanitize_name(sc.get("name", ""))] = _resolve_path(
+                sc["path"], target_dir, allow_home=is_user_scope
+            )
+        elif isinstance(sc.get("installed_skill_md"), str):
+            # Written where the installer chose (Claude Code: .agents/skills, linked into .claude/skills).
+            written[_sanitize_name(sc.get("name", ""))] = Path(sc["installed_skill_md"])
     warnings: list[str] = []
     for component in lock_components:
         if component.get("type") != "skill" or not component.get("local_name"):
@@ -1507,6 +1513,10 @@ def write_install_snippet(
                 failed_skills.append(sc_name)
                 if not quiet:
                     rprint(f"[red]\u2717 Failed to install skill '{esc(sc_name)}'.[/red] No content available.")
+        if result_path and not sc.get("path"):
+            # No server-given path: the installer chose the location. Remember the
+            # SKILL.md it wrote so the pull can fingerprint it (_fingerprint_written_skills).
+            sc["installed_skill_md"] = str(Path(result_path) / "SKILL.md")
 
     return written, failed_skills
 
