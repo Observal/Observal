@@ -167,38 +167,17 @@ async def _find_listing(listing_id: str, db: AsyncSession):
 
 
 async def _check_agent_components_ready(components, db: AsyncSession) -> tuple[bool, list[dict]]:
-    """Check if all of an agent version's components are approved."""
+    """Check that the component version each pin names is approved.
+
+    An agent version is approved together with the exact component releases it
+    pins, so the gate reads those releases, not each listing's latest one.
+    """
     optic.trace("components={}", components)
     if not components:
         return True, []
+    from services.agent_lock import pinned_component_blockers
 
-    by_type: dict[str, list[uuid.UUID]] = {}
-    for comp in components:
-        by_type.setdefault(comp.component_type, []).append(comp.component_id)
-
-    blocking: list[dict] = []
-    for comp_type, ids in by_type.items():
-        model = LISTING_MODELS.get(comp_type)
-        version_model = VERSION_MODELS.get(comp_type)
-        if not model or not version_model:
-            continue
-        rows = (
-            await db.execute(
-                select(model.id, model.name, version_model.status)
-                .join(version_model, model.latest_version_id == version_model.id)
-                .where(model.id.in_(ids))
-            )
-        ).all()
-        for row in rows:
-            if row.status != ListingStatus.approved:
-                blocking.append(
-                    {
-                        "component_type": comp_type,
-                        "component_id": str(row.id),
-                        "name": row.name,
-                        "status": row.status.value,
-                    }
-                )
+    blocking = await pinned_component_blockers(db, components)
     return len(blocking) == 0, blocking
 
 
@@ -839,6 +818,11 @@ async def approve_agent(
 
     # Flush version changes first to avoid CircularDependencyError
     await db.flush()
+
+    # Approval freezes the lock: nothing writes an approved version's components.
+    from services.agent_lock import lock_agent_version
+
+    await lock_agent_version(db, agent, newest_pending)
 
     current_latest = agent.latest_version
     new_parsed = parse_semver(newest_pending.version)

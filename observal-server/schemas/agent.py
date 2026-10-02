@@ -8,6 +8,7 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
+import re
 import uuid
 from datetime import datetime
 from typing import Literal
@@ -15,7 +16,7 @@ from typing import Literal
 from pydantic import BaseModel, field_validator
 
 from models.agent import AgentStatus
-from schemas.constants import AGENT_NAME_REGEX, Visibility, make_name_validator
+from schemas.constants import AGENT_NAME_REGEX, RecommendedFlag, Visibility, make_name_validator
 from services.versioning import validate_semver
 
 VALID_COMPONENT_TYPES = {"mcp", "skill", "hook", "prompt", "sandbox"}
@@ -76,12 +77,28 @@ class SuccessCriteria(BaseModel):
 ComponentType = Literal["mcp", "skill", "hook", "prompt", "sandbox"]
 
 
+_COMPONENT_VERSION_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?$")
+
+
 class ComponentRef(BaseModel):
-    """Reference to a registry component to include in an agent."""
+    """Reference to a registry component to include in an agent.
+
+    ``version`` pins an exact component release. Without it, the agent keeps the
+    version its previous release pinned, or pins the latest approved release for
+    a component it did not have before.
+    """
 
     component_type: ComponentType
     component_id: uuid.UUID
+    version: str | None = None
     config_override: dict | None = None
+
+    @field_validator("version")
+    @classmethod
+    def _validate_version(cls, v: str | None) -> str | None:
+        if v is not None and (len(v) > 50 or not _COMPONENT_VERSION_RE.match(v)):
+            raise ValueError(f"Invalid component version '{v}'. Use an exact version such as 1.2.0")
+        return v
 
 
 class AgentCreateRequest(BaseModel):
@@ -219,6 +236,7 @@ class AgentResponse(BaseModel):
     user_permission: str | None = None
     latest_approved_version: str | None = None
     latest_version: str | None = None
+    is_recommended: RecommendedFlag = False
 
     model_config = {"from_attributes": True}
 
@@ -252,6 +270,8 @@ class AgentSummary(BaseModel):
     updated_at: datetime | None = None
     components_ready: bool = True
     blocking_components: list = []
+    is_recommended: RecommendedFlag = False
+
     model_config = {"from_attributes": True}
 
 
@@ -281,13 +301,20 @@ class AgentInstallRequest(BaseModel):
     options: dict = {}
     platform: str = ""  # e.g. "win32", "darwin", "linux" - empty = Unix default
     version: str | None = None  # Specific version to install (None = latest)
+    # Refuse the install when any component is unlocked, changed after it was
+    # locked, or pinned to a version that is not approved.
+    strict: bool = False
 
 
 class AgentInstallResponse(BaseModel):
     agent_id: uuid.UUID
     harness: str
+    # The agent version that was actually installed.
+    version: str | None = None
     config_snippet: dict
     warnings: list[str] = []
+    # The component versions that were installed and how they matched the lock.
+    lock: dict | None = None
 
 
 class AgentVersionCreateRequest(BaseModel):
@@ -304,6 +331,10 @@ class AgentVersionCreateRequest(BaseModel):
     is_prerelease: bool = False
     save_as_draft: bool = False
     success_criteria: SuccessCriteria | None = None
+    # Authors upgrade components deliberately: without this, a release keeps every
+    # component pin from the agent's current release unless a component names a
+    # version. With it, unversioned components move to their latest approved release.
+    refresh_components: bool = False
 
     @field_validator("version")
     @classmethod

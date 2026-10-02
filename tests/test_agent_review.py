@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Tests for agent review workflow (approve/reject via review endpoints).
@@ -12,7 +13,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -22,6 +23,15 @@ from api.deps import get_current_user, get_db
 from api.routes.review import router
 from models.agent import AgentStatus
 from models.user import User, UserRole
+
+
+@pytest.fixture(autouse=True)
+def _lock_service_stub(monkeypatch):
+    """These routes run on a mocked session; the lock service has its own tests."""
+    import services.agent_lock as agent_lock
+
+    monkeypatch.setattr(agent_lock, "lock_agent_version", AsyncMock(return_value={}))
+
 
 # ── Helpers ──────────────────────────────────────────────
 
@@ -161,24 +171,24 @@ class TestAgentApprove:
         pending_ver = _version_mock(status=AgentStatus.pending, components=[comp])
         agent = _agent_mock(status=AgentStatus.pending, components=[comp])
 
-        # Row returned by _check_agent_components_ready
-        blocking_row = MagicMock()
-        blocking_row.id = comp.component_id
-        blocking_row.name = "unapproved-mcp"
-        from models.mcp import ListingStatus
+        # The gate reads the pinned component release, which is still pending.
+        blocker = {
+            "component_type": "mcp",
+            "component_id": str(comp.component_id),
+            "name": "unapproved-mcp",
+            "version": "1.0.0",
+            "status": "pending",
+        }
 
-        blocking_row.status = ListingStatus.pending
+        # 1st: select Agent; 2nd: select pending AgentVersion
+        db.execute = AsyncMock(side_effect=_script(_result_with(agent), _result_with(pending_ver)))
 
-        component_result = MagicMock()
-        component_result.all.return_value = [blocking_row]
-
-        # 1st: select Agent; 2nd: select pending AgentVersion; 3rd: component check
-        db.execute = AsyncMock(side_effect=_script(_result_with(agent), _result_with(pending_ver), component_result))
-
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            r = await ac.post(f"/api/v1/review/agents/{agent.id}/approve")
+        with patch("services.agent_lock.pinned_component_blockers", AsyncMock(return_value=[blocker])):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+                r = await ac.post(f"/api/v1/review/agents/{agent.id}/approve")
 
         assert r.status_code == 422
+        assert r.json()["detail"]["blocking_components"] == [blocker]
 
     @pytest.mark.asyncio
     async def test_response_includes_id_and_name(self):

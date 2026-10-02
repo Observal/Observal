@@ -40,13 +40,21 @@ The CLI is what you use to log in, instrument harness configs, pull agents, and 
 
 The standalone binary is the simplest way to install. No Python required.
 
+macOS / Linux:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Observal/Observal/main/install.sh | bash
 ```
 
-This downloads the latest release binary for your platform and places it on your `PATH`.
+Windows (PowerShell):
 
-This validates the Ed25519-signed key, installs the CLI, and writes the key to `~/.observal/config.json`. If the key is invalid or expired, the installer exits with an error.
+```powershell
+irm https://raw.githubusercontent.com/Observal/Observal/main/install.ps1 | iex
+```
+
+This downloads the latest release binary for your platform and places it on your `PATH`. On Windows it installs to `%LOCALAPPDATA%\Programs\Observal` and updates your user `PATH` (open a new terminal afterwards). Set `OBSERVAL_VERSION` or `OBSERVAL_BIN_DIR` before running to pin a version or change the install directory.
+
+Connecting to a server your team already runs? See the [Setup guide](onboarding.md).
 
 Verify it worked:
 

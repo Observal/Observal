@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 0xSHSH <156781261+0xSHSH@users.noreply.github.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn>
+# SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Behavioral coverage for the doctor CLI commands and untested state branches."""
@@ -19,7 +20,13 @@ import pytest
 from typer.testing import CliRunner
 
 import observal_cli.cmd_doctor as doctor_module
+from observal_cli import pi_extension
 from observal_cli.harness.protocol import NotSupportedError
+
+# Fixed regardless of what observal-cli version this test environment actually
+# resolves (which varies across invocation contexts) - keeps Pi stale/current/newer
+# comparisons deterministic.
+CLI_VERSION = "2.0.0"
 
 _ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _DIAGNOSTIC_CHECKS = (
@@ -61,6 +68,7 @@ def isolated_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> SimpleN
     monkeypatch.setattr(httpx, "get", network)
     monkeypatch.setattr(subprocess, "run", process)
     monkeypatch.setattr(doctor_module.typer, "confirm", prompt)
+    monkeypatch.setattr(pi_extension, "get_current_version", lambda: CLI_VERSION)
     return SimpleNamespace(network=network, process=process, prompt=prompt)
 
 
@@ -338,14 +346,10 @@ class TestHarnessDiagnosisState:
 
         assert warnings == []
 
-    def test_pi_current_extension_reports_legacy_dict_registration(self, tmp_path: Path):
-        source = doctor_module._pi_extension_source()
-        extension = tmp_path / ".pi" / "agent" / "extensions" / "observal.ts"
-        extension.parent.mkdir(parents=True)
-        extension.write_text(source, encoding="utf-8")
+    def test_pi_recognizes_dict_form_npm_entry_and_ignores_malformed_entries(self, tmp_path: Path):
         _write_json(
             tmp_path / ".pi" / "agent" / "settings.json",
-            {"packages": [{"source": "npm:observal-pi@1.0.0"}, 7]},
+            {"packages": [{"source": f"npm:observal-pi@{CLI_VERSION}"}, 7]},
         )
         issues: list[str] = []
         warnings: list[str] = []
@@ -353,19 +357,19 @@ class TestHarnessDiagnosisState:
         doctor_module._check_pi(issues, warnings)
 
         assert issues == []
-        assert warnings == ["Legacy npm:observal-pi registration remains. Doctor can remove it."]
-        assert doctor_module._is_legacy_pi_package(7) is False
+        assert warnings == []  # npm configured and current: no local install, nothing to report
+        assert not (tmp_path / ".pi" / "agent" / "extensions" / "observal.ts").exists()
 
     def test_pi_source_and_settings_failures_are_issues(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         (tmp_path / ".pi" / "agent").mkdir(parents=True)
-        monkeypatch.setattr(doctor_module, "_pi_extension_source", MagicMock(side_effect=OSError("source missing")))
+        monkeypatch.setattr(pi_extension, "extension_source", MagicMock(side_effect=OSError("source missing")))
         issues: list[str] = []
 
         doctor_module._check_pi(issues, [])
 
-        assert issues == ["source missing"]
+        assert issues == ["Pi telemetry extension: source missing"]
 
-        monkeypatch.setattr(doctor_module, "_pi_extension_source", lambda: "source")
+        monkeypatch.setattr(pi_extension, "extension_source", lambda: "source")
         settings = tmp_path / ".pi" / "agent" / "settings.json"
         settings.write_text("invalid", encoding="utf-8")
         issues = []
@@ -377,10 +381,10 @@ class TestHarnessDiagnosisState:
     def test_pi_extension_source_fails_when_no_bundled_or_source_file_exists(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ):
-        monkeypatch.setattr(doctor_module, "__file__", str(tmp_path / "pkg" / "observal_cli" / "cmd_doctor.py"))
+        monkeypatch.setattr(pi_extension, "__file__", str(tmp_path / "pkg" / "observal_cli" / "pi_extension.py"))
 
         with pytest.raises(FileNotFoundError, match="Bundled Pi telemetry extension is missing"):
-            doctor_module._pi_extension_source()
+            pi_extension.extension_source()
 
     @pytest.mark.parametrize(
         ("harness", "relative_path", "checker", "expected"),
@@ -880,26 +884,34 @@ class TestPatchStateEdges:
         pi_dir.mkdir(parents=True)
         settings = pi_dir / "settings.json"
         settings.write_text("invalid", encoding="utf-8")
-        monkeypatch.setattr(doctor_module, "_pi_extension_source", lambda: "source")
 
         with pytest.raises(json.JSONDecodeError):
             doctor_module._patch_pi(dry_run=False)
         assert not (pi_dir / "extensions" / "observal.ts").exists()
 
-    def test_pi_dry_run_preserves_legacy_settings_and_extension_state(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    def test_pi_dry_run_leaves_npm_configured_settings_untouched(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ):
         settings = tmp_path / ".pi" / "agent" / "settings.json"
         _write_json(settings, {"packages": ["npm:observal-pi"]})
-        monkeypatch.setattr(doctor_module, "_pi_extension_source", lambda: "source")
         before = settings.read_text(encoding="utf-8")
 
-        assert doctor_module._patch_pi(dry_run=True) is True
+        assert doctor_module._patch_pi(dry_run=True) is False
         assert settings.read_text(encoding="utf-8") == before
         assert not (tmp_path / ".pi" / "agent" / "extensions" / "observal.ts").exists()
         output = _plain(capsys.readouterr().out)
+        assert "npm:observal-pi is configured" in output
+
+    def test_pi_dry_run_previews_local_install_without_writing(
+        self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    ):
+        (tmp_path / ".pi" / "agent").mkdir(parents=True)
+
+        assert doctor_module._patch_pi(dry_run=True) is True
+        assert not (tmp_path / ".pi" / "agent" / "extensions" / "observal.ts").exists()
+        assert not (tmp_path / ".pi" / "agent" / "extensions" / ".observal-extension.json").exists()
+        output = _plain(capsys.readouterr().out)
         assert "Would install" in output
-        assert "Would remove legacy npm:observal-pi" in output
 
     def test_codex_dry_run_on_missing_state_does_not_create_directory(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]

@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Observal Contributors -->
+<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Core workflows
@@ -9,6 +10,7 @@
 - CLI configuration
 - Local inventory and update checks
 - Diagnosis and telemetry setup
+- Agent sharing
 - Inbox
 - API escape hatch
 - Error handling
@@ -61,7 +63,7 @@ observal outdated --output json
 observal outdated --harness claude-code --no-report --output json
 ```
 
-For scan results, report detected harnesses, installed components, Agents, and unregistered items. For outdated results, inspect `items`, `summary`, and `report`. `--no-report` suppresses inbox reporting, not the Registry check.
+For scan results, report detected harnesses, installed components, Agents, and unregistered items. For outdated results, inspect `items`, `summary`, and `report`. `--no-report` suppresses inbox reporting, not the Registry check. An Agent's `upgrade_command` uses `observal agent pull --upgrade`, because a plain pull keeps the version locked in the project's `observal.lock`; run it only after the user agrees. An `unknown` item has no recorded version; its reinstall command records one.
 
 ## Diagnosis and telemetry setup
 
@@ -87,6 +89,20 @@ observal doctor support inspect /tmp/observal-support.tar.gz --output json
 
 Verify `healthy`, `issues`, `warnings`, and per-harness results. Exit status zero means checks ran, not necessarily that every check is healthy.
 
+## Agent sharing
+
+Create shares only from project-scoped Agents tracked in the current repository. JSON creation must use `--all` or explicit repeated `--agent` values.
+
+```bash
+observal share candidates --output json
+observal share --all --expires-days 7 --output json
+observal share create --agent namespace/slug --expires-days 3 --output json
+observal share open SHARE_URL --no-pull --output json
+observal share revoke SHARE_URL --yes --output json
+```
+
+Links default to seven days and cannot exceed thirty. Treat the opaque link as sensitive even though recipients must authenticate and pass current Registry visibility checks. Never alter, decode, fetch, or follow the supplied URL manually; `share open` validates its origin and extracts its token without sending credentials to that URL. Pull only after the user chooses the Agents and target harness and confirms installation.
+
 ## Inbox
 
 ```bash
@@ -108,11 +124,11 @@ Use only when no dedicated command exists. It preserves raw endpoint JSON and us
 
 ```bash
 observal api GET /api/v1/teams --output json
-observal api GET /api/v1/agents --param limit=10 --output json
+observal api GET /api/v1/agents --param limit=10 --param tag=review --param tag=security --output json
 observal api POST /api/v1/teams --from-file team.json --output json
 ```
 
-Mutation bodies come from one JSON object in a file or standard input. Full URLs and arbitrary authorization headers are rejected. Prefer dedicated commands for validation and confirmations.
+Mutation bodies accept any valid JSON value from a file or standard input, including arrays, scalars, and `null`. Repeated `--param` keys are preserved in order. Full URLs and arbitrary authorization headers are rejected. Prefer dedicated commands for validation and confirmations.
 
 ## Error handling
 

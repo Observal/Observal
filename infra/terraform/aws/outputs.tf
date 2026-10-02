@@ -43,18 +43,18 @@ output "redis_endpoint" {
 }
 
 output "data_host_instance_id" {
-  description = "EC2 instance id for the ClickHouse data host. Empty when clickhouse_mode = 'cloud'."
-  value       = local.clickhouse_self_hosted ? aws_instance.data_host[0].id : ""
+  description = "EC2 instance id for the ClickHouse data host."
+  value       = aws_instance.data_host.id
 }
 
 output "data_host_ssm_session_command" {
   description = "Open a shell on the data tier host (no SSH key needed)."
-  value       = local.clickhouse_self_hosted ? "aws ssm start-session --region ${var.region} --target ${aws_instance.data_host[0].id}" : ""
+  value       = "aws ssm start-session --region ${var.region} --target ${aws_instance.data_host.id}"
 }
 
 output "clickhouse_endpoint" {
   description = "Internal ClickHouse endpoint (DNS within the VPC)."
-  value       = local.clickhouse_self_hosted ? local.clickhouse_host_internal : var.clickhouse_cloud_url
+  value       = local.clickhouse_host_internal
   sensitive   = true
 }
 

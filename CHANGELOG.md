@@ -5,11 +5,32 @@
 <!-- SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 DoomsCoder <vedantkakade05@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn> -->
+<!-- SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Changelog
 
 All notable changes to this project will be documented in this file.
+
+## [1.13.1] - 2026-09-05
+
+### Features
+
+- add configurable usage reporting ([#1701](https://github.com/Observal/Observal/pull/1701))
+
+### Fixes
+
+- keep UUIDs as text in SQLite tests ([#1704](https://github.com/Observal/Observal/pull/1704))
+- use npm trusted publishing ([#1715](https://github.com/Observal/Observal/pull/1715))
+- bundle harness model data ([#1716](https://github.com/Observal/Observal/pull/1716))
+
+### Documentation
+
+- add optional Discord field to PR template ([#1703](https://github.com/Observal/Observal/pull/1703))
+
+### Maintenance
+
+- Add kubeconform validation for Helm chart ([#1693](https://github.com/Observal/Observal/pull/1693))
 
 ## [1.13.0] - 2026-08-23
 
@@ -80,6 +101,10 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- add bounded, resumable ClickHouse telemetry migration exports
+- auto-install the bundled Pi telemetry extension during login and report stale npm or local installs (#1602)
+- migrate Pi telemetry extensions installed before version tracking, keeping a `.bak` copy (#1602)
+- remove a local Pi extension that duplicates a configured `npm:observal-pi`, which sent every session twice (#1602)
 - add an authenticated JSON API escape hatch and mixed Registry component bulk submission
 - standardize dedicated list JSON output with `items`, `total`, `page`, and `page_size`
 - make mutation retry behavior explicit and reserve automatic transient retries for reads
@@ -95,6 +120,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixes
 
+- answer malformed ARD search and list requests with a 400 ARD error envelope instead of a 422
+- support multi-artifact migration validation and import uploads
 - restore teamspace discovery, membership controls, private join requests, and empty personal deletion
 - require global review before a teamspace becomes public
 - let approved public teamspace owners and reviewers decide all team content

@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002
 from api.deps import (
     get_db,
     get_effective_component_permission,
+    get_registry_user,
     may_view_unapproved,
     require_role,
     resolve_visible_listing,
@@ -103,7 +104,7 @@ async def _list_versions(
     version_model,
     component_type: str,
     db: AsyncSession,
-    current_user: User,
+    current_user: User | None,
 ) -> dict:
     optic.trace("listing_id={}, page={}", listing_id, page)
     listing = await resolve_visible_listing(listing_model, listing_id, db, current_user)
@@ -149,7 +150,7 @@ async def _get_version(
     version_model,
     component_type: str,
     db: AsyncSession,
-    current_user: User,
+    current_user: User | None,
 ) -> dict:
     optic.trace("listing_id={}, version={}", listing_id, version)
     listing = await resolve_visible_listing(listing_model, listing_id, db, current_user)
@@ -365,7 +366,7 @@ def create_version_router(
         page: int = Query(1, ge=1),
         page_size: int = Query(20, ge=1, le=100),
         db: AsyncSession = Depends(get_db),
-        current_user: User = Depends(require_role(UserRole.user)),
+        current_user: User | None = Depends(get_registry_user),
     ):
         optic.trace("listing_id={}, page={}", listing_id, page)
         return await _list_versions(
@@ -384,7 +385,7 @@ def create_version_router(
         listing_id: str,
         version: str,
         db: AsyncSession = Depends(get_db),
-        current_user: User = Depends(require_role(UserRole.user)),
+        current_user: User | None = Depends(get_registry_user),
     ):
         optic.trace("listing_id={}, version={}", listing_id, version)
         return await _get_version(

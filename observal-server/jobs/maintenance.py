@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-"""Maintenance background jobs: ClickHouse optimization, component source sync, retention."""
+"""Maintenance background jobs: ClickHouse optimization, component source sync, retention, discovery."""
 
 from loguru import logger as optic
 
@@ -133,3 +133,26 @@ async def maintain_clickhouse(ctx: dict):
                     )
     except Exception as e:
         optic.debug("Part health check failed: {}", e)
+
+
+async def reproject_discovery_entries(ctx: dict):
+    """Rebuild the discovery index from the native registry tables.
+
+    The per-change session hook keeps the index current; this is the safety
+    net for anything it missed (a crash between commit and reprojection, a
+    manual database edit). Idempotent: unchanged resources only get their
+    ``last_seen_at`` touched, removed resources are tombstoned.
+    """
+    optic.debug("reproject_discovery_entries")
+    from database import async_session
+    from services.discovery.projection import reproject_all
+
+    async with async_session() as db:
+        stats = await reproject_all(db)
+    optic.info(
+        "discovery reprojection job projected={} tombstoned={} failed={}",
+        stats.projected,
+        stats.tombstoned,
+        stats.failed,
+    )
+    return {"projected": stats.projected, "tombstoned": stats.tombstoned, "failed": stats.failed}

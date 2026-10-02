@@ -2,7 +2,6 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-
 import { useState, useCallback, useMemo, useEffect } from "react";
 import { ArrowRight, Plus, Minus, RefreshCw } from "lucide-react";
 import {
@@ -19,6 +18,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
+import {
 	Tooltip,
 	TooltipContent,
 	TooltipProvider,
@@ -27,7 +33,8 @@ import {
 import { Link } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import yaml from "js-yaml";
-import { YamlDiffView } from "./yaml-diff-view";
+import { componentBlockers } from "./validation-badges";
+import { YamlDiffView, YamlSnapshot } from "./yaml-diff-view";
 import {
 	useAgentVersions,
 	useAgentVersionDetail,
@@ -39,6 +46,22 @@ import { registry } from "@/lib/api";
 import type { RegistryType } from "@/lib/api";
 import { registryItemPath } from "@/lib/registry-name";
 import type { ComponentChange, ReviewItem, SuccessCriteria } from "@/lib/types";
+
+/** Sentinel for "keep the existing category" — see the Category select below. */
+const KEEP_CATEGORY = "__keep__";
+
+const APPROVE_CATEGORIES = [
+	"Code Review",
+	"Testing",
+	"Documentation",
+	"DevOps",
+	"Security",
+	"Data",
+	"Incident Response",
+	"Deployment",
+	"Cost Optimization",
+	"Other",
+] as const;
 
 function pluralizeType(type: string): string {
 	if (type === "agent") return "agents";
@@ -89,7 +112,7 @@ function ComponentChangesList({ changes }: { changes: ComponentChange[] }) {
 				>
 					<Badge
 						variant="outline"
-						className={`text-[10px] shrink-0 flex items-center gap-1 ${changeBadgeClasses[c.change] ?? ""}`}
+						className={`text-2xs shrink-0 flex items-center gap-1 ${changeBadgeClasses[c.change] ?? ""}`}
 					>
 						{changeIcon[c.change]}
 						{c.change}
@@ -358,17 +381,17 @@ function LinkedComponentDetail({
 	return (
 		<div className="rounded border border-border overflow-hidden text-xs">
 			<div className="flex items-center gap-2 px-3 py-2 bg-muted/50">
-				<Badge variant="outline" className="text-[10px] shrink-0">
+				<Badge variant="outline" className="text-2xs shrink-0">
 					{componentType}
 				</Badge>
 				{isPending && onPendingClick ? (
 					<button
 						type="button"
 						onClick={() => onPendingClick(componentId, componentType)}
-						className="font-medium hover:underline text-amber-500 text-left"
+						className="font-medium hover:underline text-warning text-left"
 					>
 						{name}
-						<span className="ml-1 text-[9px] opacity-70">(pending)</span>
+						<span className="ml-1 text-2xs opacity-70">(pending)</span>
 					</button>
 				) : (
 					<Link
@@ -380,19 +403,19 @@ function LinkedComponentDetail({
 				)}
 			</div>
 			{description && (
-				<p className="px-3 py-1.5 text-[11px] text-muted-foreground border-b border-border/50">
+				<p className="px-3 py-1.5 text-2xs text-muted-foreground border-b border-border/50">
 					{description}
 				</p>
 			)}
 			{contentEntries.length > 0 && (
 				<details open className="group">
-					<summary className="cursor-pointer select-none px-3 py-1.5 text-[10px] font-medium text-muted-foreground hover:text-foreground list-none flex items-center gap-1">
+					<summary className="cursor-pointer select-none px-3 py-1.5 text-2xs font-medium text-muted-foreground hover:text-foreground list-none flex items-center gap-1">
 						<span className="group-open:rotate-90 transition-transform inline-block">
 							▶
 						</span>
 						Content
 					</summary>
-					<pre className="px-3 py-2 text-[11px] font-mono leading-relaxed overflow-auto max-h-60 bg-background border-t border-border/50 break-words whitespace-pre-wrap">
+					<pre className="px-3 py-2 text-2xs font-mono leading-relaxed overflow-auto max-h-60 bg-background border-t border-border/50 break-words whitespace-pre-wrap">
 						{contentEntries
 							.map(
 								([k, v]) =>
@@ -693,13 +716,13 @@ function DiffDialogBody({
 			<div className="shrink-0 px-5 py-4 border-b border-border">
 				<DialogHeader className="space-y-1.5">
 					<div className="flex items-center gap-2 flex-wrap">
-						<Badge variant="outline" className="text-[10px]">
+						<Badge variant="outline" className="text-2xs">
 							{item.type}
 						</Badge>
 						{bumpType && (
 							<Badge
 								variant="outline"
-								className={`text-[10px] ${bumpBadgeClasses[bumpType]}`}
+								className={`text-2xs ${bumpBadgeClasses[bumpType]}`}
 							>
 								{bumpType}
 							</Badge>
@@ -732,13 +755,13 @@ function DiffDialogBody({
 			</div>
 
 			{/* Body: left details pane + right diff/snapshot pane */}
-			<div className="flex flex-1 min-h-0">
+			<div className="flex flex-col md:flex-row flex-1 min-h-0">
 				{/* Left pane: version details (~40%) */}
-				<ScrollArea className="w-[40%] shrink-0 border-r border-border">
+				<ScrollArea className="w-full md:w-[40%] shrink-0 max-h-[40%] md:max-h-none border-b md:border-b-0 md:border-r border-border">
 					<div className="p-5 space-y-5">
 						{/* Submission metadata */}
 						<div className="space-y-2">
-							<h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+							<h4 className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider">
 								Submission
 							</h4>
 							<dl className="space-y-1.5 text-xs">
@@ -764,7 +787,7 @@ function DiffDialogBody({
 										<dd>
 											<Badge
 												variant="outline"
-												className={`text-[10px] ${bumpBadgeClasses[bumpType]}`}
+												className={`text-2xs ${bumpBadgeClasses[bumpType]}`}
 											>
 												{bumpType}
 											</Badge>
@@ -779,7 +802,7 @@ function DiffDialogBody({
 							<>
 								<Separator />
 								<div className="space-y-2">
-									<h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+									<h4 className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider">
 										Model
 									</h4>
 									{modelName && (
@@ -789,7 +812,7 @@ function DiffDialogBody({
 									)}
 									{modelsByHarnessEntries.length > 0 && (
 										<dl className="space-y-1 text-xs">
-											<dt className="text-[10px] uppercase tracking-wider text-muted-foreground">
+											<dt className="text-2xs uppercase tracking-wider text-muted-foreground">
 												Per-harness overrides
 											</dt>
 											{modelsByHarnessEntries.map(([harness, value]) => (
@@ -811,7 +834,7 @@ function DiffDialogBody({
 							<>
 								<Separator />
 								<div className="space-y-2">
-									<h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+									<h4 className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider">
 										Supported harnesses
 									</h4>
 									<p className="text-xs font-medium">
@@ -826,7 +849,7 @@ function DiffDialogBody({
 							<>
 								<Separator />
 								<div className="space-y-2">
-									<h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+									<h4 className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider">
 										Prompt
 									</h4>
 									<pre className="text-xs font-[family-name:var(--font-mono)] whitespace-pre-wrap break-words bg-muted/40 rounded p-3 leading-relaxed max-h-64 overflow-y-auto">
@@ -841,17 +864,17 @@ function DiffDialogBody({
 							<>
 								<Separator />
 								<div className="space-y-2">
-									<h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+									<h4 className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider">
 										Success Criteria
 									</h4>
 									<div className="space-y-2 text-xs">
 										<div>
-											<span className="text-[10px] font-medium text-muted-foreground uppercase">Purpose</span>
+											<span className="text-2xs font-medium text-muted-foreground uppercase">Purpose</span>
 											<p className="whitespace-pre-wrap">{successCriteria.intended_purpose}</p>
 										</div>
 										{(successCriteria.success_metrics?.length ?? 0) > 0 && (
 											<div>
-												<span className="text-[10px] font-medium text-muted-foreground uppercase">Metrics</span>
+												<span className="text-2xs font-medium text-muted-foreground uppercase">Metrics</span>
 												<div className="mt-1 space-y-1">
 													{successCriteria.success_metrics!.map((m, i) => (
 														<div key={i} className="flex flex-wrap gap-x-2 rounded bg-muted/50 px-2 py-1">
@@ -865,7 +888,7 @@ function DiffDialogBody({
 										)}
 										{successCriteria.evaluation_notes && (
 											<div>
-												<span className="text-[10px] font-medium text-muted-foreground uppercase">Evaluation Notes</span>
+												<span className="text-2xs font-medium text-muted-foreground uppercase">Evaluation Notes</span>
 												<p className="whitespace-pre-wrap">{successCriteria.evaluation_notes}</p>
 											</div>
 										)}
@@ -881,7 +904,7 @@ function DiffDialogBody({
 									<>
 										<Separator />
 										<div className="space-y-2">
-											<h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+											<h4 className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider">
 												Template
 											</h4>
 											<pre className="text-xs font-[family-name:var(--font-mono)] whitespace-pre-wrap break-words bg-muted/40 rounded p-3 leading-relaxed max-h-64 overflow-y-auto">
@@ -894,7 +917,7 @@ function DiffDialogBody({
 									<>
 										<Separator />
 										<div className="space-y-2">
-											<h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+											<h4 className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider">
 												Category
 											</h4>
 											<p className="text-xs font-medium">
@@ -907,7 +930,7 @@ function DiffDialogBody({
 									<>
 										<Separator />
 										<div className="space-y-2">
-											<h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+											<h4 className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider">
 												Event
 											</h4>
 											<p className="text-xs font-medium">
@@ -920,7 +943,7 @@ function DiffDialogBody({
 									<>
 										<Separator />
 										<div className="space-y-2">
-											<h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+											<h4 className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider">
 												Handler
 											</h4>
 											<p className="text-xs font-medium">
@@ -933,7 +956,7 @@ function DiffDialogBody({
 									<>
 										<Separator />
 										<div className="space-y-2">
-											<h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+											<h4 className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider">
 												Changelog
 											</h4>
 											<pre className="text-xs font-[family-name:var(--font-mono)] whitespace-pre-wrap break-words bg-muted/40 rounded p-3 leading-relaxed max-h-32 overflow-y-auto">
@@ -950,7 +973,7 @@ function DiffDialogBody({
 							<>
 								<Separator />
 								<div className="space-y-2">
-									<h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+									<h4 className="text-2xs font-semibold text-muted-foreground uppercase tracking-wider">
 										{`Components (${components.length})`}
 									</h4>
 									<div className="space-y-2">
@@ -961,7 +984,7 @@ function DiffDialogBody({
 													{change && change !== "context" && (
 														<Badge
 															variant="outline"
-															className={`mb-1 text-[10px] flex items-center gap-1 w-fit ${changeBadgeClasses[change as keyof typeof changeBadgeClasses] ?? ""}`}
+															className={`mb-1 text-2xs flex items-center gap-1 w-fit ${changeBadgeClasses[change as keyof typeof changeBadgeClasses] ?? ""}`}
 														>
 															{changeIcon[change as keyof typeof changeIcon]}
 															{change}
@@ -980,12 +1003,12 @@ function DiffDialogBody({
 														}
 														onPendingClick={onOpenComponentReview}
 														isPending={
-															item.component_blockers?.some(
+															componentBlockers(item).some(
 																(b) =>
 																	b.component_id ===
 																	(ch as { component_id?: string })
 																		.component_id,
-															) ?? false
+															)
 														}
 													/>
 												</div>
@@ -1028,62 +1051,29 @@ function DiffDialogBody({
 							</div>
 							{yamlSnapshot ? (
 								<div className="flex-1 min-h-0 overflow-y-auto">
-									<div className="overflow-x-auto">
-										<table className="w-full border-collapse font-[family-name:var(--font-mono)] text-xs leading-5">
-											<tbody>
-												{yamlSnapshot.split("\n").map((line, i) => (
-													<tr key={i} className="hover:bg-muted/30">
-														<td className="select-none w-10 shrink-0 px-2 text-right tabular-nums text-muted-foreground/50 border-r border-border/40">
-															{i + 1}
-														</td>
-														<td className="px-3 whitespace-pre-wrap break-words text-foreground leading-relaxed">
-															{line}
-														</td>
-													</tr>
-												))}
-											</tbody>
-										</table>
-									</div>
+									<YamlSnapshot source={yamlSnapshot} />
 								</div>
 							) : (
 								<div className="flex-1 min-h-0 overflow-y-auto">
-									<div className="overflow-x-auto">
-										<table className="w-full border-collapse font-[family-name:var(--font-mono)] text-xs leading-5">
-											<tbody>
-												{(() => {
-													const structural = toReviewYaml({
-														description: item.description || undefined,
-														prompt: prompt || undefined,
-														model_name: modelName || undefined,
-														models_by_harness: modelsByHarnessEntries.length
-															? Object.fromEntries(modelsByHarnessEntries)
-															: undefined,
-														supported_harnesses: supportedIdes.length
-															? supportedIdes
-															: undefined,
-														components: components.length
-															? components.map(
-																	(c) =>
-																		`${c.component_type}: ${((c as Record<string, unknown>).name as string) || c.component_id}`,
-																)
-															: undefined,
-													} as Record<string, unknown>);
-													return structural
-														.split("\n")
-														.map((line: string, i: number) => (
-															<tr key={i} className="hover:bg-muted/30">
-																<td className="select-none w-10 shrink-0 px-2 text-right tabular-nums text-muted-foreground/50 border-r border-border/40">
-																	{i + 1}
-																</td>
-																<td className="px-3 whitespace-pre-wrap break-words text-foreground leading-relaxed">
-																	{line}
-																</td>
-															</tr>
-														));
-												})()}
-											</tbody>
-										</table>
-									</div>
+									<YamlSnapshot
+										source={toReviewYaml({
+											description: item.description || undefined,
+											prompt: prompt || undefined,
+											model_name: modelName || undefined,
+											models_by_harness: modelsByHarnessEntries.length
+												? Object.fromEntries(modelsByHarnessEntries)
+												: undefined,
+											supported_harnesses: supportedIdes.length
+												? supportedIdes
+												: undefined,
+											components: components.length
+												? components.map(
+														(c) =>
+															`${c.component_type}: ${((c as Record<string, unknown>).name as string) || c.component_id}`,
+													)
+												: undefined,
+										} as Record<string, unknown>)}
+									/>
 								</div>
 							)}
 						</div>
@@ -1108,23 +1098,27 @@ function DiffDialogBody({
 						<span className="text-xs text-muted-foreground whitespace-nowrap">
 							Category:
 						</span>
-						<select
-							value={approveCategory}
-							onChange={(e) => setApproveCategory(e.target.value)}
-							className="flex h-7 flex-1 rounded-md border border-input bg-transparent px-2 py-1 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+						{/* Radix reserves "" for "no value", so the keep-existing
+						    choice travels as a sentinel and is mapped back to the
+						    empty string the approve call already expects. */}
+						<Select
+							value={approveCategory === "" ? KEEP_CATEGORY : approveCategory}
+							onValueChange={(v) =>
+								setApproveCategory(v === KEEP_CATEGORY ? "" : v)
+							}
 						>
-							<option value="">None (keep existing)</option>
-							<option value="Code Review">Code Review</option>
-							<option value="Testing">Testing</option>
-							<option value="Documentation">Documentation</option>
-							<option value="DevOps">DevOps</option>
-							<option value="Security">Security</option>
-							<option value="Data">Data</option>
-							<option value="Incident Response">Incident Response</option>
-							<option value="Deployment">Deployment</option>
-							<option value="Cost Optimization">Cost Optimization</option>
-							<option value="Other">Other</option>
-						</select>
+							<SelectTrigger className="h-7 flex-1 text-xs" aria-label="Category">
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value={KEEP_CATEGORY}>None (keep existing)</SelectItem>
+								{APPROVE_CATEGORIES.map((c) => (
+									<SelectItem key={c} value={c}>
+										{c}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
 					</div>
 				)}
 				<div className="flex items-center gap-2">

@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Dynamic settings service: DB-backed runtime configuration with Redis cache.
@@ -324,6 +325,7 @@ DEFAULTS: dict[str, str] = {
     "github.allowed_orgs": "",
     # Deployment
     "deployment.sso_only": "false",
+    "deployment.public_registry_enabled": "false",
     "deployment.frontend_url": "http://localhost:3000",
     "deployment.public_url": "",
     "deployment.cors_origins": "http://localhost:3000",
@@ -387,6 +389,17 @@ DEFAULTS: dict[str, str] = {
     "observability.log_format": "json",  # 'json' or 'console' (colorized). Requires restart.
     "observability.enable_openapi": "false",
     "observability.enable_metrics": "false",
+    # Discovery (ARD). The publisher domain is the first segment of every
+    # permanent identifier; it is pinned automatically the first time a real
+    # deployment.public_url is seen and changing it renames every identifier.
+    "discovery.publisher_domain": "",
+    # Delegation (ADR 0002). When on, every pulled Agent gets the observal-agents
+    # MCP server so it can find and hand tasks to other approved agents.
+    "discovery.delegation_enabled": "true",
+    # Comma-separated hosts whose Agent Cards may be fetched even though they
+    # resolve to private addresses (internal A2A agents). Plain http is allowed
+    # for these hosts only.
+    "discovery.a2a_private_hosts": "",
     # Misc
     "misc.harness_allowlist": "",
     "misc.default_harness": "",
@@ -405,6 +418,13 @@ SENSITIVE_KEYS: set[str] = {
 }
 
 SETTING_FEATURES: dict[str, str] = {}
+
+SETTING_SUBTITLES: dict[str, str] = {
+    "deployment.public_registry_enabled": (
+        "Allow signed-out visitors to browse and install approved public registry content. "
+        "Publishing, private data, telemetry, and administration still require authentication."
+    ),
+}
 
 RESTART_REQUIRED_KEYS: set[str] = {
     "oauth.client_id",
@@ -458,7 +478,7 @@ def settings_schema() -> list[dict[str, Any]]:
                 {
                     "key": key,
                     "label": _setting_label(key),
-                    "subtitle": "",
+                    "subtitle": SETTING_SUBTITLES.get(key, ""),
                     "default": DEFAULTS.get(key, ""),
                     "requires_feature": SETTING_FEATURES.get(key) or section.get("requires_feature"),
                     "restart_required": key in RESTART_REQUIRED_KEYS,
@@ -507,6 +527,13 @@ SECTIONS: list[dict[str, Any]] = [
         "description": "Share aggregate adoption data with Observal on a super-admin-selected schedule. No prompts, traces, source code, credentials, or user identities are included.",
         "icon": "activity",
         "keys": [k for k in DEFAULTS if k.startswith("usage_ping.")],
+    },
+    {
+        "id": "discovery",
+        "title": "Discovery",
+        "description": "Agentic Resource Discovery identifiers and agent delegation. The publisher domain is pinned from the public URL on first use; changing it renames every published identifier.",
+        "icon": "search",
+        "keys": [k for k in DEFAULTS if k.startswith("discovery.")],
     },
     {
         "id": "security",

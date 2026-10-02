@@ -1986,6 +1986,10 @@ export default function InsightReportPage() {
 		<>
 			<PageHeader
 				title="Insight Report"
+				breadcrumbs={[
+					{ label: "Agents", href: "/agents" },
+					{ label: `Insight report · ${agentId}` },
+				]}
 				actionButtonsRight={
 					<div className="flex items-center gap-2">
 						{report?.status === "completed" && (

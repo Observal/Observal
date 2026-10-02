@@ -11,6 +11,7 @@
 
 * [Installation](README.md)
 * [Quickstart](getting-started/quickstart.md)
+* [Setup guide](getting-started/onboarding.md)
 
 ## Core Concepts
 
@@ -33,7 +34,9 @@
 * [Mutation retries and idempotency](cli/idempotency.md)
 * [observal auth](cli/auth.md)
 * [observal config](cli/config.md)
+* [observal discover](cli/discover.md)
 * [observal scan](cli/scan.md)
+* [observal share](cli/share.md)
 * [observal outdated](cli/outdated.md)
 * [observal reconcile](cli/reconcile.md)
 * [observal inbox](cli/inbox.md)
@@ -79,6 +82,7 @@
 * [Goose](integrations/goose.md)
 * [Kiro](integrations/kiro.md)
 * [OpenCode](integrations/opencode.md)
+* [Pi](integrations/pi.md)
 
 ## Reference
 
@@ -91,6 +95,10 @@
 
 * [Security assurance case](security/assurance-case.md)
 * [Release verification](security/release-verification.md)
+
+## Architecture Decisions
+
+* [ADR 0001: Agentic Resource Discovery](adr/0001-agentic-resource-discovery.md)
 
 ## Contributing
 

@@ -11,14 +11,14 @@ import {
 import { useExecPlatforms, useExecStrategicInsights } from "@/hooks/use-api";
 import type { ExecPlatformScore } from "@/lib/types";
 
-const COLORS = ["#2563eb", "#7c3aed", "#0d9488", "#f59e0b", "#e11d48", "#6366f1", "#84cc16"];
+import { CHART_SERIES } from "@/lib/chart-theme";
 
-function deriveRadarData(p: ExecPlatformScore, best: { latency: number; cost: number }) {
-  const speedScore = best.latency > 0 ? Math.max(0, 100 - ((p.avg_latency_ms / best.latency) - 1) * 50) : 100;
-  const costScore = best.cost > 0 ? Math.max(0, 100 - ((p.avg_cost / best.cost) - 1) * 50) : 100;
+const COLORS = CHART_SERIES;
+
+function deriveRadarData(p: ExecPlatformScore, bestLatency: number) {
+  const speedScore = bestLatency > 0 ? Math.max(0, 100 - ((p.avg_latency_ms / bestLatency) - 1) * 50) : 100;
   const data = [
     { metric: "Speed", value: Math.min(Math.max(speedScore, 0), 100) },
-    { metric: "Cost Efficiency", value: Math.min(Math.max(costScore, 0), 100) },
     { metric: "Volume", value: Math.min(Math.max(p.composite_score, 0), 100) },
   ];
   if (p.success_rate !== null) data.unshift({ metric: "Success Rate", value: Math.min(p.success_rate, 100) });
@@ -45,7 +45,7 @@ export function InvestmentsTab() {
   if (isLoading) {
     return (
       <div className="space-y-6 pt-4">
-        <div className="h-80 rounded-lg border border-border animate-pulse bg-muted/30" />
+        <div className="h-80 rounded-xl bg-card shadow-sm animate-pulse" />
       </div>
     );
   }
@@ -53,7 +53,7 @@ export function InvestmentsTab() {
   if (!platforms || platforms.length === 0) {
     return (
       <div className="space-y-6 pt-4">
-        <div className="rounded-md border border-border p-8 text-center text-muted-foreground">
+        <div className="rounded-xl bg-card p-8 shadow-sm text-center text-muted-foreground">
           <p className="text-sm">No platform data yet. Traces from different harnesses will populate this view.</p>
         </div>
       </div>
@@ -62,8 +62,8 @@ export function InvestmentsTab() {
 
   const platform = platforms[selected];
   const bestLatency = Math.min(...platforms.map((p) => p.avg_latency_ms || Infinity));
-  const bestCost = Math.min(...platforms.filter((p) => p.avg_cost > 0).map((p) => p.avg_cost));
-  const radarData = deriveRadarData(platform, { latency: bestLatency, cost: bestCost || 1 });
+  const radarData = deriveRadarData(platform, bestLatency);
+  const hasCostData = platform.avg_cost > 0;
 
   const chartData = platforms.map((p, i) => ({
     name: p.platform,
@@ -73,16 +73,15 @@ export function InvestmentsTab() {
 
   return (
     <div className="space-y-6 pt-4">
-      {/* Sessions bar chart, sorted by adoption (most used = most validated). */}
-      <div className="rounded-lg border border-border p-4">
+      <div className="rounded-xl bg-card shadow-sm p-5">
         <h3 className="text-sm font-medium mb-1">Platform Adoption</h3>
         <p className="text-xs text-muted-foreground mb-4">Sorted by usage volume. Click a bar to view platform details.</p>
         <ResponsiveContainer width="100%" height={280}>
           <BarChart data={chartData} margin={{ top: 10, right: 10, bottom: 0, left: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.5} vertical={false} />
-            <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}K` : v} axisLine={false} tickLine={false} />
-            <Tooltip formatter={(value) => [Number(value).toLocaleString(), "Sessions"]} contentStyle={{ background: "hsl(var(--background))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} cursor={{ fill: "hsl(var(--muted))", opacity: 0.3 }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="oklch(var(--border))" strokeOpacity={0.5} vertical={false} />
+            <XAxis dataKey="name" tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} axisLine={false} tickLine={false} />
+            <YAxis tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}K` : v} axisLine={false} tickLine={false} />
+            <Tooltip formatter={(value) => [Number(value).toLocaleString(), "Sessions"]} contentStyle={{ background: "oklch(var(--background))", border: "1px solid oklch(var(--border))", borderRadius: 8, fontSize: 12 }} cursor={{ fill: "oklch(var(--muted))", opacity: 0.3 }} />
             <Bar dataKey="sessions" radius={[6, 6, 0, 0]} barSize={48} onClick={(_, index) => setSelected(index)} className="cursor-pointer" activeBar={false}>
               {chartData.map((entry, i) => (
                 <Cell key={i} fill={i === selected ? entry.color : `${entry.color}66`} />
@@ -91,11 +90,8 @@ export function InvestmentsTab() {
           </BarChart>
         </ResponsiveContainer>
       </div>
-
-      {/* Detail + Radar */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Detail Card */}
-        <div className="rounded-lg border border-border p-5">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="rounded-xl bg-card shadow-sm p-5">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
               <div className="w-3 h-3 rounded" style={{ background: COLORS[selected % COLORS.length] }} />
@@ -107,22 +103,20 @@ export function InvestmentsTab() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4 pt-4 border-t border-border">
-            <div className="text-center">
-              <div className="text-lg font-bold">{(platform.sessions / 1000).toFixed(1)}K</div>
-              <div className="text-xs text-muted-foreground">Sessions</div>
-            </div>
-            <div className="text-center">
-              <div className="text-lg font-bold text-green-600">${platform.avg_cost.toFixed(3)}</div>
-              <div className="text-xs text-muted-foreground">Avg Cost/Task</div>
-            </div>
+          <div className="grid grid-cols-1 gap-4 border-t border-border pt-4 sm:grid-cols-2">
+            {hasCostData && (
+              <div className="text-center">
+                <div className="text-lg font-bold text-success">${platform.avg_cost.toFixed(3)}</div>
+                <div className="text-xs text-muted-foreground">Avg Cost/Task</div>
+              </div>
+            )}
             <div className="text-center">
               <div className="text-lg font-bold">{formatPercent(platform.success_rate)}</div>
               <div className="text-xs text-muted-foreground">Success Rate</div>
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4 mt-4">
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="text-center">
               <div className="text-lg font-bold">{platform.avg_latency_ms.toFixed(0)}ms</div>
               <div className="text-xs text-muted-foreground">Avg Latency</div>
@@ -137,14 +131,12 @@ export function InvestmentsTab() {
             </div>
           </div>
         </div>
-
-        {/* Radar Chart */}
-        <div className="rounded-lg border border-border p-4">
-          <h3 className="text-sm font-medium mb-2">Performance Radar</h3>
+        <div className="rounded-xl bg-card shadow-sm p-5">
+          <h3 className="text-sm font-medium mb-2">Platform signals</h3>
           <ResponsiveContainer width="100%" height={300}>
             <RadarChart data={radarData} cx="50%" cy="50%" outerRadius="80%">
-              <PolarGrid stroke="hsl(var(--border))" strokeOpacity={0.5} />
-              <PolarAngleAxis dataKey="metric" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
+              <PolarGrid stroke="oklch(var(--border))" strokeOpacity={0.5} />
+              <PolarAngleAxis dataKey="metric" tick={{ fill: "oklch(var(--muted-foreground))", fontSize: 11 }} />
               <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
               <Radar
                 dataKey="value"
@@ -157,9 +149,7 @@ export function InvestmentsTab() {
           </ResponsiveContainer>
         </div>
       </div>
-
-      {/* Comparison Table */}
-      <div className="rounded-lg border border-border overflow-hidden">
+      <div className="overflow-x-auto rounded-xl bg-card shadow-sm">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/30">
@@ -194,8 +184,6 @@ export function InvestmentsTab() {
           </tbody>
         </table>
       </div>
-
-      {/* Model Provider Comparison */}
       <ModelComparison />
     </div>
   );
@@ -210,23 +198,14 @@ function ModelComparison() {
   if (models.length === 0) return null;
 
   const model = models[selectedModel];
-  const maxSessions = Math.max(...models.map((m) => m.sessions)) || 1;
-
-  const radarData = [
-    { metric: "Success Rate", value: model?.success_rate ?? 0 },
-    { metric: "Cost Efficiency", value: model ? Math.max(0, 100 - (model.avg_cost * 2000)) : 0 },
-    { metric: "Token Efficiency", value: model ? Math.max(0, 100 - (model.avg_tokens / 100)) : 0 },
-    { metric: "Volume", value: model ? (model.sessions / maxSessions) * 100 : 0 },
-  ];
 
   return (
     <div className="space-y-6">
-      <div className="rounded-lg border border-border p-4">
+      <div className="rounded-xl bg-card shadow-sm p-5">
         <h3 className="text-sm font-medium mb-1">Model Provider Comparison</h3>
-        <p className="text-xs text-muted-foreground mb-4">Performance and cost by AI model (from actual usage)</p>
+        <p className="text-xs text-muted-foreground mb-4">Observed usage, cost, tokens, and outcomes by AI model.</p>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Model list */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <div className="space-y-2">
             {models.slice(0, 8).map((m, i) => (
               <div
@@ -247,33 +226,30 @@ function ModelComparison() {
               </div>
             ))}
           </div>
-
-          {/* Radar for selected model */}
-          <div>
-            <ResponsiveContainer width="100%" height={260}>
-              <RadarChart data={radarData} cx="50%" cy="50%" outerRadius="80%">
-                <PolarGrid stroke="hsl(var(--border))" strokeOpacity={0.5} />
-                <PolarAngleAxis dataKey="metric" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
-                <PolarRadiusAxis domain={[0, 100]} tick={false} axisLine={false} />
-                <Radar
-                  dataKey="value"
-                  stroke={COLORS[selectedModel % COLORS.length]}
-                  fill={COLORS[selectedModel % COLORS.length]}
-                  fillOpacity={0.2}
-                  strokeWidth={2.5}
-                />
-              </RadarChart>
-            </ResponsiveContainer>
-            <div className="text-center mt-2">
-              <p className="text-sm font-semibold">{model?.model}</p>
-              <p className="text-xs text-muted-foreground">{model?.avg_tokens.toLocaleString()} avg tokens/session</p>
-            </div>
+          <div className="rounded-lg border border-border bg-surface-raised p-4">
+            <p className="text-sm font-semibold">{model?.model}</p>
+            <dl className="mt-4 grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <dt className="text-xs text-muted-foreground">Sessions</dt>
+                <dd className="mt-1 font-semibold tabular-nums">{model?.sessions.toLocaleString()}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Success rate</dt>
+                <dd className="mt-1 font-semibold tabular-nums">{model?.success_rate}%</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Average cost</dt>
+                <dd className="mt-1 font-semibold tabular-nums">${model?.avg_cost.toFixed(4)}</dd>
+              </div>
+              <div>
+                <dt className="text-xs text-muted-foreground">Average tokens</dt>
+                <dd className="mt-1 font-semibold tabular-nums">{model?.avg_tokens.toLocaleString()}</dd>
+              </div>
+            </dl>
           </div>
         </div>
       </div>
-
-      {/* Model comparison table */}
-      <div className="rounded-lg border border-border overflow-hidden">
+      <div className="overflow-x-auto rounded-xl bg-card shadow-sm">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/30">

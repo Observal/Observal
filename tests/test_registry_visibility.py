@@ -33,7 +33,7 @@ from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from api.deps import get_db, optional_current_user
+from api.deps import get_db, get_registry_user
 
 # api.routes.registry is imported eagerly on purpose: it binds resolve_listing at
 # import time, so a first import that happened inside a patch() block would
@@ -101,7 +101,7 @@ def _app(user):
     app = FastAPI()
     app.include_router(registry_router)
     app.dependency_overrides[get_db] = lambda: AsyncMock()
-    app.dependency_overrides[optional_current_user] = lambda: user
+    app.dependency_overrides[get_registry_user] = lambda: user
     return app
 
 

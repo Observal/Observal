@@ -23,7 +23,7 @@ export function EmptyState({
   onAction,
 }: EmptyStateProps) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-md border border-dashed py-16">
+    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed px-8 py-20">
       <Icon className="h-10 w-10 text-muted-foreground/50" />
       <p className="mt-4 text-sm font-medium">{title}</p>
       {description && (

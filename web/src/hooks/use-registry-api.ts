@@ -23,10 +23,11 @@ import {
 
 // ── Component Draft/Submit (generic) ──────────────────────────────
 
-export function useMyComponents(type: RegistryType) {
+export function useMyComponents(type: RegistryType, enabled = true) {
   return useQuery({
     queryKey: ["registry", type, "my"],
     queryFn: () => registry.my(type),
+    enabled,
   });
 }
 

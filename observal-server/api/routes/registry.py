@@ -20,8 +20,8 @@ from api.deps import (
     get_db,
     get_effective_agent_permission,
     get_effective_component_permission,
+    get_registry_user,
     may_view_unapproved,
-    optional_current_user,
     resolve_listing,
     resolve_visible_listing,
 )
@@ -99,7 +99,7 @@ async def resolve_registry_identifier(
     type: str = Query(..., pattern="^(agent|mcp|skill|hook|prompt|sandbox)$"),
     identifier: str = Query(..., min_length=1, max_length=129),
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(optional_current_user),
+    current_user: User | None = Depends(get_registry_user),
 ):
     """Resolve a canonical or legacy registry reference without exposing hidden listings."""
     if type == "agent":

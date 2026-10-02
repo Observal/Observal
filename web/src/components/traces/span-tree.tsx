@@ -58,14 +58,19 @@ function countDescendants(node: SpanNode): number {
   return count;
 }
 
-const threadColor: Record<string, { line: string; hover: string; bg: string }> = {
-  tool_call:    { line: "bg-info",        hover: "bg-info",       bg: "bg-light-blue text-dark-blue" },
-  llm:          { line: "bg-purple-400", hover: "bg-purple-500", bg: "bg-purple-100 text-purple-700" },
-  retrieval:    { line: "bg-amber-400",  hover: "bg-amber-500",  bg: "bg-amber-100 text-amber-700" },
-  sandbox_exec: { line: "bg-success",    hover: "bg-success",    bg: "bg-light-green text-dark-green" },
-  hook:         { line: "bg-pink-400",   hover: "bg-pink-500",   bg: "bg-pink-100 text-pink-700" },
-  prompt:       { line: "bg-teal-400",   hover: "bg-teal-500",   bg: "bg-teal-100 text-teal-700" },
-  lifecycle:    { line: "bg-muted-foreground", hover: "bg-muted-foreground", bg: "bg-muted text-muted-foreground" },
+// Span kinds are categorical identity — what a span *is*, not what state it is
+// in — so they ride the `kind-*` token family rather than raw Tailwind palette
+// classes, which had no dark-mode or preset behaviour at all (bg-purple-100 is
+// the same near-white in every theme). Surfaces are derived with alpha, so a
+// kind needs no separate background token.
+const threadColor: Record<string, { line: string; bg: string }> = {
+  tool_call:    { line: "bg-kind-tool",      bg: "bg-kind-tool/10 text-kind-tool" },
+  llm:          { line: "bg-kind-response",  bg: "bg-kind-response/10 text-kind-response" },
+  retrieval:    { line: "bg-kind-mcp",       bg: "bg-kind-mcp/10 text-kind-mcp" },
+  sandbox_exec: { line: "bg-kind-worktree",  bg: "bg-kind-worktree/10 text-kind-worktree" },
+  hook:         { line: "bg-kind-task",      bg: "bg-kind-task/10 text-kind-task" },
+  prompt:       { line: "bg-kind-prompt",    bg: "bg-kind-prompt/10 text-kind-prompt" },
+  lifecycle:    { line: "bg-muted-foreground", bg: "bg-muted text-muted-foreground" },
 };
 
 function isLifecycleSpan(span: Span): boolean {
@@ -73,7 +78,7 @@ function isLifecycleSpan(span: Span): boolean {
 }
 
 function getColors(type: string) {
-  return threadColor[type] ?? { line: "bg-muted-foreground", hover: "bg-muted-foreground", bg: "bg-muted text-muted-foreground" };
+  return threadColor[type] ?? { line: "bg-muted-foreground", bg: "bg-muted text-muted-foreground" };
 }
 
 function statusDot(status: string) {
@@ -140,11 +145,13 @@ function SpanRow({
             title={isCollapsed ? "Expand children" : "Collapse children"}
           >
             <div
+              // The old `group-hover/line:${colors.hover}` interpolation never
+              // reached Tailwind's scanner, so it compiled to nothing. Width is
+              // the hover cue instead, which reads without relying on colour.
               className={cn(
                 "absolute left-[5px] top-0 bottom-0 w-0.5 transition-all rounded-full",
                 colors.line,
-                "group-hover/line:w-[3px] group-hover/line:left-[4px]",
-                `group-hover/line:${colors.hover}`
+                "group-hover/line:w-[3px] group-hover/line:left-[4px]"
               )}
             />
           </div>
@@ -153,8 +160,8 @@ function SpanRow({
         <button
           onClick={() => onSelect(node.span)}
           className={cn(
-            "flex w-full items-center gap-2 rounded px-2 py-1 text-sm hover:bg-muted/60 relative",
-            isSelected && "bg-muted",
+            "relative flex w-full items-center gap-2 rounded-sm px-2 py-1 text-sm transition-colors hover:bg-surface-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+            isSelected && "bg-surface-raised ring-1 ring-border",
             isLifecycle && "opacity-50",
             isAncestorOnly && "opacity-40"
           )}
@@ -163,9 +170,9 @@ function SpanRow({
           {statusDot(node.span.status)}
           <span className="truncate">{node.span.name}</span>
           {isCollapsed && (
-            <span className="text-[10px] text-muted-foreground whitespace-nowrap">[+{descendantCount}]</span>
+            <span className="text-3xs text-muted-foreground whitespace-nowrap">[+{descendantCount}]</span>
           )}
-          <Badge variant="outline" className={cn("ml-auto text-[10px] px-1.5 py-0 shrink-0", colors.bg)}>
+          <Badge variant="outline" className={cn("ml-auto text-3xs px-1.5 py-0 shrink-0 border-transparent", colors.bg)}>
             {isLifecycle ? "lifecycle" : node.span.type}
           </Badge>
           {node.span.latency_ms != null && (

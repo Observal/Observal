@@ -1,5 +1,7 @@
 <!-- SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Observal CLI Command Reference
@@ -29,6 +31,7 @@ Every command available in the installed CLI. This block is generated from the T
 - `observal admin create-user`: Create a new user account. Requires admin privileges.
 - `observal admin delete-user`: Delete a user account. Requires admin privileges.
 - `observal admin diagnostics`: Show system diagnostics and health status.
+- `observal admin recommend`: Mark or unmark an agent or component as recommended.
 - `observal admin reset-password`: Reset a user's password. Requires admin privileges.
 - `observal admin saml-config`: View current SAML SSO configuration.
 - `observal admin saml-config-delete`: Delete SAML SSO configuration. Disables SAML SSO.
@@ -60,6 +63,7 @@ Every command available in the installed CLI. This block is generated from the T
 - `observal agent install`: Get install config for an agent.
 - `observal agent list`: List active agents (paginated).
 - `observal agent my`: List your own agents (all statuses).
+- `observal agent outdated`: Show which components an agent version pins behind their latest release.
 - `observal agent publish`: Publish the agent definition to the server.
 - `observal agent pull`: Fetch agent config and write harness files to disk.
 - `observal agent release`: Bump version and push a versioned release to the registry.
@@ -84,6 +88,22 @@ Every command available in the installed CLI. This block is generated from the T
 - `observal config path`: Show the config file path.
 - `observal config set`: Set a validated user-managed CLI setting.
 - `observal config show`: Show effective CLI configuration without exposing credentials.
+
+**`observal delegate`**: Hand a task to another approved agent (registry or remote A2A)
+
+- `observal delegate cancel`: Stop a delegated task.
+- `observal delegate find`: Find approved agents (registry and remote A2A) that can take a task.
+- `observal delegate list`: List recent delegated tasks on this machine.
+- `observal delegate mcp`: Run the observal-agents MCP server on stdio.
+- `observal delegate reply`: Answer a remote agent that asked for more input.
+- `observal delegate run`: Delegate a task and wait for the result.
+- `observal delegate status`: Show a delegated task, optionally waiting for it to finish.
+
+**`observal discover`**: Find approved resources for a task and use them in this session
+
+- `observal discover inspect`: Show the complete entry for one resource.
+- `observal discover search`: Search approved resources for a task.
+- `observal discover use`: Activate a resource for the current task.
 
 **`observal doctor`**: Diagnose and patch harness settings for Observal telemetry
 
@@ -121,8 +141,13 @@ Every command available in the installed CLI. This block is generated from the T
 - `observal ops top`: Show top MCP servers or agents by usage.
 - `observal ops traces`: List recent traces (sessions).
 
-**`observal registry`**: Component registry (MCPs, skills, hooks, prompts, sandboxes)
+**`observal registry`**: Component registry (MCPs, skills, hooks, prompts, sandboxes, remote A2A agents)
 
+- `observal registry a2a`: Remote A2A agents (register an Agent Card, review, remove)
+  - `observal registry a2a list`: List remote A2A agents you can see, including pending ones you own or review.
+  - `observal registry a2a remove`: Remove a registered agent from discovery (owner or admin).
+  - `observal registry a2a review`: Approve or reject a registered agent (reviewers and admins).
+  - `observal registry a2a submit`: Register (or refresh) a remote A2A agent for review.
 - `observal registry bulk`: Submit mixed Registry components from one JSON file.
   - `observal registry bulk submit`: Submit mixed MCP, skill, hook, prompt, and sandbox entries.
 - `observal registry hook`: Hook registry commands
@@ -228,6 +253,13 @@ Every command available in the installed CLI. This block is generated from the T
 - `observal server rollback`: Restore PostgreSQL and the Docker image version from backup.
 - `observal server upgrade`: Upgrade a local Docker deployment.
 - `observal server versions`: List Docker image versions and managed PostgreSQL backups.
+
+**`observal share`**: Share version-pinned Agents installed in the current repository.
+
+- `observal share candidates`: List shareable Agent versions tracked in the current repository.
+- `observal share create`: Select repository Agents and create an opaque, expiring share link.
+- `observal share open`: Open a share and, after confirmation, pull its accessible Agents.
+- `observal share revoke`: Revoke a share link immediately.
 
 **`observal team`**: Manage teamspaces: creation, membership, access, and visibility.
 

@@ -28,7 +28,7 @@ from rich.table import Table
 
 from observal_cli import client, config
 from observal_cli.constants import AGENT_NAME_REGEX, VALID_HARNESSES
-from observal_cli.errors import CliError, ErrorCategory, fail
+from observal_cli.errors import CliError, ErrorCategory, exit_partial, fail
 from observal_cli.prompts import fuzzy_select, select_many, select_one, text_input
 from observal_cli.render import (
     OutputMode,
@@ -38,6 +38,7 @@ from observal_cli.render import (
     handle,
     ide_tags,
     kv_panel,
+    listing_status,
     name_inline,
     output_json,
     relative_time,
@@ -48,6 +49,7 @@ from observal_cli.render import (
 # ── Agent authoring constants ──────────────────────────────
 YAML_FILE = "observal-agent.yaml"
 VALID_COMPONENT_TYPES = {"mcp", "skill", "hook", "prompt", "sandbox"}
+_RESERVED_AGENT_SLUGS = {"archive", "draft", "install", "resolve", "restore", "submit", "unarchive", "versions"}
 
 # Common model choices for the interactive wizard
 _MODEL_CHOICES = [
@@ -66,6 +68,12 @@ def _slugify(raw: str) -> str:
     s = re.sub(r"[^a-z0-9_-]+", "-", s)
     s = re.sub(r"-{2,}", "-", s)
     return s.strip("-")
+
+
+def _bulk_agent_slug(raw: str) -> str:
+    """Mirror the server's canonical registry slug for duplicate preflight."""
+    slug = re.sub(r"[^a-z0-9_-]+", "-", raw.strip().lower()).strip("-_")
+    return slug[:64].rstrip("-_")
 
 
 def _validate_name(name: str) -> str | None:
@@ -100,6 +108,26 @@ def _validate_version(value: str, *, operation: str) -> str:
             resource="agent version",
             remediation="Use a semantic version such as 1.2.3.",
         )
+
+
+_EXACT_VERSION_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?$")
+
+
+def _validate_exact_version(value: str, *, operation: str, resource: str) -> str:
+    """Pinned and looked-up versions are matched exactly, so keep them exactly as written.
+
+    Unlike ``_validate_version``, this never normalizes: PEP 440 would turn
+    ``1.2.0-beta.1`` into ``1.2.0b1``, which names no registry version.
+    """
+    if not _EXACT_VERSION_RE.match(value):
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Invalid {resource}: {value}.",
+            operation=operation,
+            resource=resource,
+            remediation="Use an exact version such as 1.2.0.",
+        )
+    return value
 
 
 def _validate_harnesses(values: list[str], *, operation: str) -> list[str]:
@@ -620,6 +648,131 @@ def agent_bulk_create(
             resource=file_path,
             remediation="Replace scalar or array entries with agent definition objects.",
         )
+    if len(agents) > 50:
+        fail(
+            ErrorCategory.VALIDATION,
+            "Bulk agent files may contain at most 50 entries.",
+            operation="Bulk create agents",
+            resource=file_path,
+            remediation="Split the input into files of 50 entries or fewer.",
+        )
+
+    identities: dict[str, int] = {}
+    for index, item in enumerate(agents, 1):
+        name = item.get("name")
+        if not isinstance(name, str) or not name.strip():
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Bulk agent entry {index} requires a non-empty string name.",
+                operation="Bulk create agents",
+                resource=file_path,
+                remediation="Add a name to every agent definition.",
+            )
+        if len(name) > 255:
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Bulk agent entry {index} has a name longer than 255 characters.",
+                operation="Bulk create agents",
+                resource=file_path,
+                remediation="Shorten the agent name and retry.",
+            )
+        identity = _bulk_agent_slug(name)
+        if not identity:
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Bulk agent entry {index} has a name without letters or numbers.",
+                operation="Bulk create agents",
+                resource=file_path,
+                remediation="Use a name containing at least one letter or number.",
+            )
+        if identity in _RESERVED_AGENT_SLUGS:
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Bulk agent entry {index} resolves to reserved name: {identity}.",
+                operation="Bulk create agents",
+                resource=file_path,
+                remediation="Choose a non-reserved agent name.",
+            )
+        if identity in identities:
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Bulk agent entries {identities[identity]} and {index} resolve to the same name: {identity}.",
+                operation="Bulk create agents",
+                resource=file_path,
+                remediation="Keep one entry for each canonical agent name.",
+            )
+        identities[identity] = index
+
+        components = item.get("components", [])
+        if not isinstance(components, list):
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Bulk agent entry {index} components must be a list.",
+                operation="Bulk create agents",
+                resource=file_path,
+                remediation="Use a list of component reference objects.",
+            )
+        for component_index, component in enumerate(components, 1):
+            if not isinstance(component, dict):
+                fail(
+                    ErrorCategory.VALIDATION,
+                    f"Bulk agent entry {index} component {component_index} must be an object.",
+                    operation="Bulk create agents",
+                    resource=file_path,
+                    remediation="Replace scalar component references with objects.",
+                )
+            component_type = component.get("component_type", "mcp")
+            if component_type not in VALID_COMPONENT_TYPES or not str(component.get("component_id") or "").strip():
+                fail(
+                    ErrorCategory.VALIDATION,
+                    f"Bulk agent entry {index} component {component_index} is incomplete.",
+                    operation="Bulk create agents",
+                    resource=file_path,
+                    remediation="Provide a valid component_type and component_id.",
+                )
+        for field in ("version", "description", "owner", "prompt", "model_name"):
+            if field in item and not isinstance(item[field], str):
+                fail(
+                    ErrorCategory.VALIDATION,
+                    f"Bulk agent entry {index} field {field} has the wrong type.",
+                    operation="Bulk create agents",
+                    resource=file_path,
+                    remediation=f"Use a JSON string for {field}.",
+                )
+        if "model_config_json" in item and not isinstance(item["model_config_json"], dict):
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Bulk agent entry {index} field model_config_json has the wrong type.",
+                operation="Bulk create agents",
+                resource=file_path,
+                remediation="Use a JSON object for model_config_json.",
+            )
+        for field in ("supported_harnesses", "external_mcps"):
+            if field in item and not isinstance(item[field], list):
+                fail(
+                    ErrorCategory.VALIDATION,
+                    f"Bulk agent entry {index} field {field} has the wrong type.",
+                    operation="Bulk create agents",
+                    resource=file_path,
+                    remediation=f"Use a JSON list for {field}.",
+                )
+        if "supported_harnesses" in item and not all(isinstance(value, str) for value in item["supported_harnesses"]):
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Bulk agent entry {index} supported_harnesses must contain strings.",
+                operation="Bulk create agents",
+                resource=file_path,
+                remediation="Replace non-string harness values.",
+            )
+        if "external_mcps" in item and not all(isinstance(value, dict) for value in item["external_mcps"]):
+            fail(
+                ErrorCategory.VALIDATION,
+                f"Bulk agent entry {index} external_mcps must contain objects.",
+                operation="Bulk create agents",
+                resource=file_path,
+                remediation="Replace non-object external MCP values.",
+            )
+
     if output == "json" and not (dry_run or yes):
         fail(
             ErrorCategory.VALIDATION,
@@ -652,8 +805,12 @@ def agent_bulk_create(
     if dry_run:
         with _progress(output, "Running dry-run..."):
             result = client.post("/api/v1/bulk/agents", {"agents": agents, "dry_run": True})
+        result = dict(result)
+        result["partial"] = result.get("errors", 0) > 0
         if output == "json":
             output_json(result)
+            if result["partial"]:
+                exit_partial()
             return
 
         results_table = Table(title="Dry-run results", show_lines=False, padding=(0, 1))
@@ -675,6 +832,8 @@ def agent_bulk_create(
             f"\n[bold]Summary:[/bold] {result.get('created', 0)} would be created, "
             f"{result.get('skipped', 0)} skipped, {result.get('errors', 0)} errors"
         )
+        if result["partial"]:
+            exit_partial()
         return
 
     # ── Confirmation ─────────────────────────────────────────
@@ -685,8 +844,12 @@ def agent_bulk_create(
     # ── Create ───────────────────────────────────────────────
     with _progress(output, "Creating agents..."):
         result = client.post("/api/v1/bulk/agents", {"agents": agents, "dry_run": False})
+    result = dict(result)
+    result["partial"] = result.get("errors", 0) > 0
     if output == "json":
         output_json(result)
+        if result["partial"]:
+            exit_partial()
         return
 
     results_table = Table(title="Bulk create results", show_lines=False, padding=(0, 1))
@@ -711,6 +874,8 @@ def agent_bulk_create(
         f"{result.get('created', 0)} created, {result.get('skipped', 0)} skipped, "
         f"{result.get('errors', 0)} errors"
     )
+    if result["partial"]:
+        exit_partial()
 
 
 @agent_app.command(name="list")
@@ -895,7 +1060,7 @@ def agent_show(
         kv_panel(
             f"{display_name(item)} v{item.get('version', '?')}",
             [
-                ("Status", status_badge(item.get("status", ""))),
+                ("Status", listing_status(item)),
                 ("Model", f"[bold]{esc(item.get('model_name', 'N/A'))}[/bold]"),
                 ("Namespace", esc(handle(item) or "N/A")),
                 ("Created By", esc(item.get("created_by_username") or item.get("created_by_email", ""))),
@@ -952,7 +1117,7 @@ def agent_install(
     harness = _validate_harnesses([harness], operation="Generate agent installation")[0]
     resolved = client.resolve_registry_reference("agent", agent_id)
     with _progress("json" if raw else output, f"Generating {harness} config..."):
-        result = client.post(f"/api/v1/agents/{resolved}/install", {"harness": harness})
+        result = client.post_public(f"/api/v1/agents/{resolved}/install", {"harness": harness})
 
     snippet = result.get("config_snippet", {})
     if raw:
@@ -1107,6 +1272,61 @@ def agent_unarchive(
 # ═══════════════════════════════════════════════════════════════
 
 
+_SINCE_UNITS = {"m": 60, "h": 3600, "d": 86400, "w": 604800}
+
+
+def _parse_since(value: str, *, operation: str) -> int:
+    """Turn ``2h`` / ``3d`` / ``45m`` into seconds."""
+    text = (value or "").strip().lower()
+    match = re.fullmatch(r"(\d+)([mhdw])", text)
+    if not match:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Invalid --since value: {value}.",
+            operation=operation,
+            resource="--since",
+            remediation="Use a number and unit, e.g. 45m, 2h, 3d, 1w.",
+        )
+    return int(match.group(1)) * _SINCE_UNITS[match.group(2)]
+
+
+def _components_from_capabilities(since: str, *, operation: str) -> tuple[list[dict], list[str], list[str]]:
+    """Read the capability lock for this directory and shape it into agent components.
+
+    Returns (components, harnesses seen, skipped agent refs). Agents are
+    skipped because an Agent cannot nest another Agent; the user is told.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from observal_cli import capability_lock
+
+    window = timedelta(seconds=_parse_since(since, operation=operation))
+    uses = capability_lock.matching(harness=None, cwd=str(Path.cwd()), since=datetime.now(UTC) - window)
+    components: list[dict] = []
+    harnesses: list[str] = []
+    skipped: list[str] = []
+    for use in capability_lock.dedupe_latest(uses):
+        if use.harness and use.harness in VALID_HARNESSES and use.harness not in harnesses:
+            harnesses.append(use.harness)
+        if use.kind == "agent":
+            skipped.append(use.native_ref or use.component_id or use.identifier or "unknown")
+            continue
+        if use.kind not in VALID_COMPONENT_TYPES or not use.component_id:
+            continue
+        components.append(
+            {
+                "component_type": use.kind,
+                "component_id": use.component_id,
+                "native_ref": use.native_ref,
+                "version": use.version,
+                "identifier": use.identifier,
+                "mode": use.mode,
+                "used_at": use.ts,
+            }
+        )
+    return components, sorted(harnesses), skipped
+
+
 @agent_app.command(name="init")
 def agent_init(
     directory: str = typer.Option(".", "--dir", "-d", help="Directory to scaffold in"),
@@ -1118,6 +1338,12 @@ def agent_init(
     prompt: str | None = typer.Option(None, "--prompt", "-p", help="System prompt text"),
     prompt_file: str | None = typer.Option(None, "--prompt-file", help="Read system prompt from a file"),
     supported_harnesses: list[str] | None = typer.Option(None, "--harness", help="Supported harness (repeatable)"),
+    from_capabilities: bool = typer.Option(
+        False,
+        "--from-capabilities",
+        help="Pre-fill components from resources used in this directory (the capability lock)",
+    ),
+    since: str = typer.Option("24h", "--since", help="With --from-capabilities: how far back to look (e.g. 2h, 3d)"),
     output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Scaffold an observal-agent.yaml definition file.
@@ -1127,18 +1353,45 @@ def agent_init(
     observal-agent.yaml in the target directory. Use --beta to start
     at version 0.1.0 instead of 1.0.0.
 
+    With --from-capabilities, the components list is pre-filled from the
+    resources `observal discover use` and the install commands recorded for
+    this directory, so a session that worked can be saved as an Agent.
+
     Examples:
       observal agent init
-      observal agent init --dir ./my-agent
-      observal agent init --beta
+      observal agent init --dir ./my-agent --beta
+      observal agent init --from-capabilities --name pr-review-flow --output json
     """
     dir_path = Path(directory)
     yaml_path = dir_path / YAML_FILE
 
-    if output == "json" and not any(
+    flag_mode = any(
         value is not None
         for value in (name, version, description, model_name, prompt, prompt_file, supported_harnesses)
-    ):
+    )
+    captured: list[dict] = []
+    captured_harnesses: list[str] = []
+    skipped_agents: list[str] = []
+    if from_capabilities:
+        captured, captured_harnesses, skipped_agents = _components_from_capabilities(
+            since, operation="Initialize agent definition"
+        )
+        if not captured and not skipped_agents:
+            fail(
+                ErrorCategory.NOT_FOUND,
+                f"No resources were used in {Path.cwd()} in the last {since}.",
+                operation="Initialize agent definition",
+                resource="capability lock",
+                remediation="Use `observal discover use <identifier>` or install something first, or widen --since.",
+            )
+        if description is None and output == "json":
+            description = f"Assembled from {len(captured)} resource(s) used in {Path.cwd().name}."
+        if prompt is None and prompt_file is None and output == "json":
+            prompt = "Use the attached components to complete the task."
+        if not supported_harnesses and captured_harnesses:
+            supported_harnesses = captured_harnesses
+
+    if output == "json" and not flag_mode:
         fail(
             ErrorCategory.VALIDATION,
             "JSON mode cannot run the interactive agent initializer.",
@@ -1160,9 +1413,6 @@ def agent_init(
             raise typer.Abort()
 
     default_version = "0.1.0" if beta else "1.0.0"
-    flag_mode = any(
-        x is not None for x in (name, version, description, model_name, prompt, prompt_file, supported_harnesses)
-    )
     if flag_mode:
         if not name or not description or not (prompt or prompt_file):
             fail(
@@ -1205,7 +1455,9 @@ def agent_init(
         description = text_input("Description")
         model_name = text_input("Model name", default="claude-sonnet-4")
         prompt_text = text_input("System prompt")
-        harnesses = list(VALID_HARNESSES)
+        harnesses = _validate_harnesses(
+            supported_harnesses or list(VALID_HARNESSES), operation="Initialize agent definition"
+        )
 
     name = _slugify(raw_name)
     if name != raw_name:
@@ -1240,17 +1492,38 @@ def agent_init(
         "success_criteria": None,
     }
 
+    if captured:
+        data["components"] = [
+            {"component_type": item["component_type"], "component_id": item["component_id"]} for item in captured
+        ]
+
     saved_path = _save_agent_yaml(dir_path, data, operation="Initialize agent definition")
     if output == "json":
-        output_json({"path": str(saved_path), "agent": data})
+        result: dict = {"path": str(saved_path), "agent": data}
+        if from_capabilities:
+            result["from_capabilities"] = {"components": captured, "skipped_agents": skipped_agents, "since": since}
+        output_json(result)
         return
     rprint(f"[green]✓ Created {esc(yaml_path)}[/green]")
+    if captured:
+        rprint(
+            f"  [dim]Pre-filled {len(captured)} component(s) from resources used here in the last {esc(since)}:[/dim]"
+        )
+        for item in captured:
+            rprint(f"    • {esc(item['component_type'])} {esc(item.get('native_ref') or item['component_id'])}")
+    for ref in skipped_agents:
+        rprint(
+            f"  [yellow]Skipped agent {esc(ref)}: an Agent cannot contain another Agent; add its components instead.[/yellow]"
+        )
 
 
 @agent_app.command(name="add")
 def agent_add(
     component_type: str = typer.Argument(..., help="Component type: mcp, skill, hook, prompt, sandbox"),
     component_id: str = typer.Argument(..., help="Component ID (UUID)"),
+    version: str | None = typer.Option(
+        None, "--version", "-V", help="Pin an exact component version (default: keep or use latest approved)"
+    ),
     directory: str = typer.Option(".", "--dir", "-d", help="Directory containing observal-agent.yaml"),
     output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
@@ -1258,11 +1531,13 @@ def agent_add(
 
     Appends a component entry to the components list in your local
     observal-agent.yaml file. The component is referenced by type and
-    UUID. Duplicates are rejected.
+    UUID. Duplicates are rejected. With --version the agent pins that exact
+    release; without it the agent keeps its current pin, or pins the latest
+    approved release when it first gains the component.
 
     Examples:
       observal agent add mcp a1b2c3d4-e5f6-7890-abcd-ef1234567890
-      observal agent add skill b2c3d4e5-f6a7-8901-bcde-f12345678901
+      observal agent add skill b2c3d4e5-f6a7-8901-bcde-f12345678901 --version 1.2.0
       observal agent add hook c3d4e5f6-... --dir ./my-agent
     """
     component_type = component_type.strip().lower()
@@ -1275,6 +1550,8 @@ def agent_add(
             remediation=f"Choose from: {', '.join(sorted(VALID_COMPONENT_TYPES))}.",
         )
     component_id = _validate_component_id(component_id)
+    if version is not None:
+        version = _validate_exact_version(version, operation="Add agent component", resource="component version")
 
     dir_path = Path(directory)
     data = _load_agent_yaml(dir_path, operation="Add agent component")
@@ -1298,7 +1575,10 @@ def agent_add(
                 remediation="Choose a different component or leave the definition unchanged.",
             )
 
-    components.append({"component_type": component_type, "component_id": component_id})
+    entry = {"component_type": component_type, "component_id": component_id}
+    if version is not None:
+        entry["version"] = version
+    components.append(entry)
     data["components"] = components
     path = _save_agent_yaml(dir_path, data, operation="Add agent component")
     result = {"path": str(path), "component": components[-1]}
@@ -1371,6 +1651,9 @@ def agent_build(
         # API convention: plural resource name
         plural = {"mcp": "mcps", "skill": "skills", "hook": "hooks", "prompt": "prompts", "sandbox": "sandboxes"}
         endpoint = f"/api/v1/{plural[ctype]}/{cid}"
+        if comp.get("version"):
+            # A pinned version has to exist, not just the component.
+            endpoint = f"{endpoint}/versions/{comp['version']}"
         try:
             with _progress(output, f"Checking {ctype} {cid[:8]}..."):
                 client.get(endpoint)
@@ -1413,7 +1696,7 @@ def agent_build(
             operation="Validate agent",
             resource=str(dir_path / YAML_FILE),
             remediation="Fix the reported component references or target scope and retry.",
-            detail=_json.dumps(result, default=str),
+            result=result,
         )
     if output == "json":
         output_json(result)
@@ -1584,6 +1867,11 @@ def agent_release(
     name: str = typer.Argument(..., help="Agent name, ID, row number, or @alias"),
     bump: str = typer.Option(..., "--bump", help="Version bump type: patch, minor, or major"),
     directory: str = typer.Option(".", "--dir", "-d", help="Directory containing observal-agent.yaml"),
+    refresh_components: bool = typer.Option(
+        False,
+        "--refresh-components",
+        help="Move every component without a version in the YAML to its latest approved release",
+    ),
     output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Bump version and push a versioned release to the registry.
@@ -1592,10 +1880,16 @@ def agent_release(
     to the review queue. The YAML must contain all required fields including
     model_config_json: {} and external_mcps: [].
 
+    A release keeps every component at the version the current release
+    pinned, so components never change without the author asking. Pin one
+    component by giving it a `version` in the YAML, or pass
+    --refresh-components to move the rest to their latest approved release.
+    `observal agent outdated` shows what that would change.
+
     Examples:
       observal agent release my-agent --bump patch
       observal agent release my-agent --bump minor --dir /tmp/my-agent
-      observal agent release my-agent --bump major
+      observal agent release my-agent --bump patch --refresh-components
     """
     if bump not in ("patch", "minor", "major"):
         fail(
@@ -1651,6 +1945,7 @@ def agent_release(
         "components": data.get("components", []),
         "yaml_snapshot": raw_yaml,
         "success_criteria": data.get("success_criteria"),
+        "refresh_components": refresh_components,
     }
 
     if output != "json":
@@ -1719,3 +2014,77 @@ def agent_versions(
         )
 
     console.print(table)
+
+
+@agent_app.command(name="outdated")
+def agent_outdated(
+    name: str = typer.Argument(..., help="Agent name, ID, row number, or @alias"),
+    version: str | None = typer.Option(
+        None, "--version", "-V", help="Agent version to check (default: the latest version)"
+    ),
+    output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
+):
+    """Show which components an agent version pins behind their latest release.
+
+    Every agent version pins exact component versions, and pulls always
+    install those pins. Use this as the agent's author to see what a
+    refreshed release would change, then publish one with
+    `observal agent release <agent> --bump patch --refresh-components`.
+
+    Examples:
+      observal agent outdated alice/reviewer
+      observal agent outdated alice/reviewer --version 1.2.0 --output json
+    """
+    if version:
+        version = _validate_exact_version(version, operation="Check agent components", resource="agent version")
+    resolved = client.resolve_registry_reference("agent", name)
+    with _progress(output, "Checking pinned components..."):
+        if not version:
+            version = str(client.get(f"/api/v1/agents/{resolved}").get("version") or "")
+        data = client.get(f"/api/v1/agents/{resolved}/versions/{version}/outdated")
+
+    if output == "json":
+        output_json(data)
+        return
+
+    components = data.get("components", [])
+    if not components:
+        rprint(f"[dim]{esc(data.get('qualified_name', name))} v{esc(version)} has no components.[/dim]")
+        return
+
+    table = Table(title=f"{data.get('qualified_name', name)} v{version}", show_lines=False, padding=(0, 1))
+    table.add_column("TYPE", style="dim")
+    table.add_column("COMPONENT", style="cyan")
+    table.add_column("PINNED", style="yellow")
+    table.add_column("LATEST", style="green")
+    table.add_column("STATUS")
+    for item in components:
+        if not item.get("locked"):
+            status = "[yellow]unlocked[/yellow]"
+        elif item.get("outdated"):
+            status = "[yellow]outdated[/yellow]"
+        else:
+            status = "[green]current[/green]"
+        if item.get("archived"):
+            status += " [dim](archived)[/dim]"
+        table.add_row(
+            esc(item.get("type", "")),
+            esc(item.get("qualified_name") or item.get("name", "")),
+            esc(item.get("pinned_version") or "?"),
+            esc(item.get("latest_version") or "none"),
+            status,
+        )
+    console.print(table)
+
+    summary = data.get("summary", {})
+    if summary.get("outdated") or summary.get("unlocked"):
+        rprint(
+            f"\n[yellow]{summary.get('outdated', 0)} outdated, {summary.get('unlocked', 0)} unlocked.[/yellow] "
+            "Release a refreshed version to move pins forward:"
+        )
+        rprint(
+            f"  [cyan]observal agent release {esc(data.get('qualified_name', name))} --bump patch "
+            "--refresh-components[/cyan]"
+        )
+    else:
+        rprint("\n[green]✓ Every pinned component is on its latest approved release.[/green]")

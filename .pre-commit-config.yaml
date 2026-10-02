@@ -19,7 +19,9 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
+        exclude: ^observal-server/vendor/  # vendored upstream files stay byte-identical
       - id: end-of-file-fixer
+        exclude: ^observal-server/vendor/
       - id: check-yaml
         exclude: ^infra/helm/.*/templates/.*
       - id: check-toml

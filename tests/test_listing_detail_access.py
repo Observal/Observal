@@ -21,7 +21,7 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from api.deps import get_db, optional_current_user
+from api.deps import get_db, get_registry_user
 from models.mcp import ListingStatus
 from models.user import User, UserRole
 
@@ -56,9 +56,9 @@ def _app_with(router, user=None, membership=None):
     app.include_router(router)
     app.dependency_overrides[get_db] = lambda: db
     if user is not None:
-        app.dependency_overrides[optional_current_user] = lambda: user
+        app.dependency_overrides[get_registry_user] = lambda: user
     else:
-        app.dependency_overrides[optional_current_user] = lambda: None
+        app.dependency_overrides[get_registry_user] = lambda: None
     return app
 
 

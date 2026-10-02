@@ -119,25 +119,25 @@ test.describe("Frontend Flows", () => {
     await page.waitForLoadState("networkidle");
 
     // The component page has custom tab buttons for each type
-    const mcpTab = page.locator('button:has-text("MCPs")');
+    const mcpTab = page.locator('button:has-text("MCP servers")');
     const skillsTab = page.locator('button:has-text("Skills")');
     const hooksTab = page.locator('button:has-text("Hooks")');
 
     await expect(mcpTab).toBeVisible();
 
-    // MCPs tab should be active by default (has text-foreground class, not text-muted-foreground)
-    await expect(mcpTab).toHaveClass(/text-foreground/);
+    // MCP servers tab should be active by default (gets border-foreground)
+    await expect(mcpTab).toHaveClass(/border-foreground/);
 
     // Click Skills tab — should become active
     await skillsTab.click();
     await page.waitForLoadState("networkidle");
-    await expect(skillsTab).toHaveClass(/text-foreground/);
-    await expect(mcpTab).toHaveClass(/text-muted-foreground/);
+    await expect(skillsTab).toHaveClass(/border-foreground/);
+    await expect(mcpTab).not.toHaveClass(/border-foreground/);
 
     // Click Hooks tab
     await hooksTab.click();
     await page.waitForLoadState("networkidle");
-    await expect(hooksTab).toHaveClass(/text-foreground/);
-    await expect(skillsTab).toHaveClass(/text-muted-foreground/);
+    await expect(hooksTab).toHaveClass(/border-foreground/);
+    await expect(skillsTab).not.toHaveClass(/border-foreground/);
   });
 });

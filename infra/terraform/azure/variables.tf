@@ -158,30 +158,6 @@ variable "worker_max_replicas" {
 
 # -- Data tier (ClickHouse) --------------------------------------------------
 
-variable "clickhouse_mode" {
-  description = "Where ClickHouse lives. 'self_hosted' = Azure VM. 'cloud' = ClickHouse Cloud (supply clickhouse_cloud_url + clickhouse_cloud_password)."
-  type        = string
-  default     = "self_hosted"
-  validation {
-    condition     = contains(["self_hosted", "cloud"], var.clickhouse_mode)
-    error_message = "clickhouse_mode must be 'self_hosted' or 'cloud'."
-  }
-}
-
-variable "clickhouse_cloud_url" {
-  description = "ClickHouse Cloud DSN. Required when clickhouse_mode = 'cloud'."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
-variable "clickhouse_cloud_password" {
-  description = "ClickHouse Cloud password. Required when clickhouse_mode = 'cloud'."
-  type        = string
-  default     = ""
-  sensitive   = true
-}
-
 variable "clickhouse_vm_size" {
   description = "Azure VM size for the ClickHouse host."
   type        = string

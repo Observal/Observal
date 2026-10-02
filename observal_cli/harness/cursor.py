@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Cursor harness adapter."""
@@ -16,7 +17,8 @@ from observal_cli.harness import (
     SessionSource,
     register_adapter,
 )
-from observal_cli.harness.base import BaseAdapter
+from observal_cli.harness.base import BaseAdapter, inline_agent_prompt, parse_json_result
+from observal_cli.harness.protocol import HeadlessPlan, HeadlessRequest, HeadlessResult
 from observal_cli.shared.utils import extract_mcp_servers
 
 
@@ -24,6 +26,7 @@ class CursorAdapter(BaseAdapter):
     """Adapter for Cursor."""
 
     home_markers = (".cursor",)
+    headless_binary = "cursor-agent"
     managed_agent_profiles = (
         "user:agents/{name}.md",
         "project:.cursor/agents/{name}.md",
@@ -202,6 +205,31 @@ class CursorAdapter(BaseAdapter):
         from observal_cli.cmd_doctor import _cleanup_cursor
 
         return _cleanup_cursor(dry_run)
+
+    # ── Headless delegation ──────────────────────────────────
+
+    def _headless_command(self, request: HeadlessRequest) -> HeadlessPlan:
+        # cursor-agent --help: -p/--print, --output-format json, --trust,
+        # --approve-mcps, --sandbox, --workspace. There is no agent flag, so the
+        # agent's instructions are inlined; the sandbox restricts the terminal.
+        argv = [
+            "cursor-agent",
+            "-p",
+            "--output-format",
+            "json",
+            "--trust",
+            "--approve-mcps",
+            "--sandbox",
+            "enabled",
+            "--workspace",
+            str(request.workdir),
+        ]
+        if request.model:
+            argv += ["--model", request.model]
+        return HeadlessPlan(argv=[*argv, "--", inline_agent_prompt(request)])
+
+    def parse_headless_output(self, plan: HeadlessPlan, stdout: str) -> HeadlessResult:
+        return parse_json_result(plan, stdout) or super().parse_headless_output(plan, stdout)
 
 
 register_adapter(CursorAdapter())

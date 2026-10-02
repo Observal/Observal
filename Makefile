@@ -97,14 +97,7 @@ new-migration:  ## Autogenerate a new migration (requires running stack): make n
 	@echo "Migration generated in observal-server/alembic/versions/."
 	@echo "Inspect the file, then apply with: make migrate"
 
-rebuild: ensure-host-dirs  ## Rebuild and restart Docker stack (runs migrations automatically)
-	cd docker && docker compose $(COMPOSE_FILES) up --build -d
-	@echo "Waiting for API to be healthy..."
-	@cd docker && until docker compose $(COMPOSE_FILES) exec observal-api python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" >/dev/null 2>&1; do sleep 1; done
-	cd docker && docker compose $(COMPOSE_FILES) restart observal-lb
-	@echo "API is healthy."
-
-rebuild-fast: ensure-host-dirs  ## Fast app rebuild: build shared API and web images once
+rebuild rebuild-fast: ensure-host-dirs  ## Rebuild and restart Docker stack (builds API and web images once; rebuild-fast is the same target)
 	cd docker && docker compose $(COMPOSE_FILES) build observal-api observal-web
 	cd docker && docker compose $(COMPOSE_FILES) up -d --no-build
 	@echo "Waiting for API to be healthy..."
@@ -191,6 +184,6 @@ release-preview:  ## Preview a curated release without writing changes
 	uv run python tools/release.py --preview
 
 help:  ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_ -]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
 .DEFAULT_GOAL := help

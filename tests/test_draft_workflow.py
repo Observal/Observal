@@ -4,6 +4,7 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Kaushik Kumar <kaushikrjpm10@gmail.com>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Tests for the draft agent lifecycle (save, update, submit).
@@ -29,6 +30,15 @@ from models.team import Team, TeamRole
 from models.user import User, UserRole
 
 # ── Helpers ──────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _lock_service_stub(monkeypatch):
+    """These routes run on a mocked session; the lock service has its own tests."""
+    import services.agent_lock as agent_lock
+
+    monkeypatch.setattr(agent_lock, "lock_agent_version", AsyncMock(return_value={}))
+    monkeypatch.setattr(agent_lock, "attach_pinned_components", AsyncMock(return_value=[]))
 
 
 def _user(**kw):

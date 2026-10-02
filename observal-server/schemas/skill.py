@@ -10,7 +10,13 @@ from datetime import datetime
 from pydantic import BaseModel, field_validator
 
 from models.mcp import ListingStatus
-from schemas.constants import VALID_SKILL_TASK_TYPES, Visibility, make_harness_list_validator, make_option_validator
+from schemas.constants import (
+    VALID_SKILL_TASK_TYPES,
+    RecommendedFlag,
+    Visibility,
+    make_harness_list_validator,
+    make_option_validator,
+)
 from schemas.skill_commands import normalize_slash_command
 
 
@@ -125,6 +131,7 @@ class SkillListingResponse(BaseModel):
     updated_at: datetime
     download_count: int = 0
     user_permission: str | None = None
+    is_recommended: RecommendedFlag = False
 
     @field_validator("user_permission", mode="before")
     @classmethod
@@ -151,6 +158,8 @@ class SkillListingSummary(BaseModel):
     status: ListingStatus
     rejection_reason: str | None = None
     updated_at: datetime | None = None
+    is_recommended: RecommendedFlag = False
+
     model_config = {"from_attributes": True}
 
 
@@ -166,3 +175,7 @@ class SkillInstallResponse(BaseModel):
     harness: str
     config_snippet: dict
     warnings: list[str] = []
+    # The exact component version that was installed and its content digest.
+    version: str | None = None
+    version_id: uuid.UUID | None = None
+    digest: str | None = None

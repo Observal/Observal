@@ -5,6 +5,7 @@
 import { Link } from "@tanstack/react-router";
 import { GitBranch } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { RecommendedBadge } from "@/components/registry/recommended-badge";
 import { RegistryName } from "@/components/registry/registry-name";
 import { canonicalRouteParts } from "@/lib/registry-name";
 import type { RegistryType } from "@/lib/api";
@@ -20,6 +21,7 @@ interface ComponentCardProps {
   version?: string;
   status?: string;
   git_url?: string;
+  is_recommended?: boolean;
   className?: string;
 }
 
@@ -42,12 +44,13 @@ export function ComponentCard({
   version,
   status,
   git_url,
+  is_recommended,
   className,
 }: ComponentCardProps) {
   const cardClassName = [
-    "group block border border-border bg-card p-4 rounded-md",
+    "group block bg-card p-[18px] rounded-xl shadow-sm",
     "transition-all duration-200 ease-out",
-    "hover:-translate-y-0.5 hover:border-foreground/20 hover:bg-accent/40",
+    "hover:-translate-y-0.5 hover:shadow-md",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
     className ?? "",
   ].join(" ");
@@ -63,9 +66,12 @@ export function ComponentCard({
           item={{ name, namespace, slug, qualified_name }}
           nameClassName="font-display text-sm font-semibold leading-tight"
         />
-        <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0">
-          {TYPE_LABELS[type] ?? type}
-        </Badge>
+        <div className="flex items-center gap-1.5">
+          {is_recommended && <RecommendedBadge />}
+          <Badge variant="outline" className="shrink-0 text-[10px] px-1.5 py-0">
+            {TYPE_LABELS[type] ?? type}
+          </Badge>
+        </div>
       </div>
 
       {description && (

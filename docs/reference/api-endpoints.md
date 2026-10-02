@@ -1,5 +1,7 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # API endpoints
@@ -41,6 +43,24 @@ All `{id}` parameters accept a UUID or a name.
 | `GET` | `/{type}/{id}/metrics` | Metrics |
 | `POST` | `/agents/{id}/pull` | Pull agent (installs all components) |
 
+`POST /{type}/{id}/install` accepts `version` for agents, MCP servers, skills, and hooks. The response reports the `version` that was installed; component installs also return its `version_id` and content `digest`.
+
+### Agent versions and locks
+
+Each agent version pins exact component versions. Installs generate every component from its pinned version. Agent versions released before pinning can have unlocked components: those install at their latest approved release, are reported with `source: fallback-latest` in the install `lock`, and are refused by a `strict` install.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/agents/{id}/versions` | Version history |
+| `POST` | `/agents/{id}/versions` | Release a version for review. Components keep the current release's pins unless a component names a `version` or `refresh_components` is true |
+| `GET` | `/agents/{id}/versions/{version}/lock` | The version's lock: exact component versions, version ids, and digests. Frozen once approved |
+| `GET` | `/agents/{id}/versions/{version}/outdated` | For each pin, the latest approved release and whether the pin is behind |
+| `PUT` | `/agents/{id}` | Edits version-owned fields only while the latest version is a draft, pending, or rejected; otherwise `409` |
+
+A component reference's `version` must name an approved (or archived) release. Drafts may also pin a release that is not approved yet, but only a caller who may read it (its owner, co-authors, admins, and reviewers); to anyone else it does not exist, as on the component version routes.
+
+`POST /agents/{id}/install` also accepts `strict`. Its response includes `version` (the agent version installed) and `lock`: `status` (`locked`, `partial`, or `unlocked`), `digest`, `components` with each one's `source`, and `problems`. With `strict: true`, any problem is a `409` and nothing is generated.
+
 ### Scan
 
 | Method | Path | Description |
@@ -55,6 +75,49 @@ All `{id}` parameters accept a UUID or a name.
 | `GET` | `/review/{id}` | Submission details |
 | `POST` | `/review/{id}/approve` | Approve |
 | `POST` | `/review/{id}/reject` | Reject |
+
+## Discovery (ARD)
+
+Agentic Resource Discovery endpoints. Authentication is optional: anonymous
+callers see public, approved resources only when `deployment.public_registry_enabled`
+is on; authenticated callers see what the registry's visibility rules
+already grant them (public, their teams', and their own drafts). Errors use the
+ARD envelope `{"errorCode": "INVALID_ARGUMENT", "message": "..."}`. See
+[ADR 0001](../adr/0001-agentic-resource-discovery.md).
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/.well-known/ard.json` | Manifest of the registry entry plus this deployment's public approved resources (not imported remote agents) |
+| `GET` | `/.well-known/ai-catalog.json` | Predecessor path, same document |
+| `POST` | `/api/v1/ard/search` | ARD Search. `score` is relevance only; `obs:approval`, `obs:availability`, `obs:supportedHarnesses`, `obs:delegable` carry the rest; remote A2A results add `obs:provider` from the card |
+| `GET` | `/api/v1/ard/agents` | ARD List: deterministic browse with `filter`, `orderBy`, `pageSize`, `pageToken` |
+| `POST` | `/api/v1/ard/explore` | ARD Explore: `501` until facets ship |
+| `GET` | `/api/v1/ard/entries/{identifier}` | One complete entry by `urn:air:` identifier (Observal-specific) |
+| `GET` | `/api/v1/artifacts/{kind}/{uuid}/{version}` | Permanent versioned artifact; `Digest` and `X-Artifact-Digest` headers |
+
+Search request body follows the spec: `{"query": {"text": "...", "filter": {...}}, "federation": "none", "pageSize": 5}`.
+Supported filter terms: `type`, `tags`, `capabilities`, `publisher`, `version`,
+`obs:kind`, `obs:supportedHarnesses`, `obs:lifecycle`, `obs:activatable`.
+
+### Remote A2A agents
+
+Remote agents are registered by Agent Card URL and reviewed before anyone can
+delegate to them. They then appear in search as `type:
+application/a2a-agent-card+json` with the reviewed card pinned in the entry
+(`obs:agentCard`, `obs:a2aInterface`). Clients call the agent directly; the
+server does not proxy A2A traffic. See [ADR 0002](../adr/0002-a2a-delegation.md).
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/v1/ard/imports` | Remote agents the caller can see, including their own and (reviewers) pending ones |
+| `POST` | `/api/v1/ard/imports/a2a` | Register or refresh a card: `{"cardUrl": "...", "visibility": "private\|team\|public", "teamId": "..."}`. `201` new, `200` refresh; a changed card returns to `pending` |
+| `POST` | `/api/v1/ard/imports/{identifier}/review` | Reviewers in scope (team owners and reviewers for team agents, global reviewers for public, admins for private): `{"action": "approve\|reject", "reason": "...", "digest": "sha256:..."}` (`digest` of the reviewed card required to approve, 409 when the card changed since; reason required to reject) |
+| `DELETE` | `/api/v1/ard/imports/{identifier}` | Owner or admin: remove from discovery |
+
+Cards must be served over https from a public address. Internal hosts are
+allowed individually with the `discovery.a2a_private_hosts` setting. The
+`discovery.delegation_enabled` setting (default on) adds the `observal-agents`
+MCP server to every pulled Agent.
 
 ## Telemetry
 

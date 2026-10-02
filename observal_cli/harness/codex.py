@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Codex CLI harness adapter."""
@@ -17,7 +18,8 @@ from observal_cli.harness import (
     SessionSource,
     register_adapter,
 )
-from observal_cli.harness.base import BaseAdapter
+from observal_cli.harness.base import BaseAdapter, inline_agent_prompt
+from observal_cli.harness.protocol import HeadlessPlan, HeadlessRequest
 from observal_cli.shared.utils import _OBSERVAL_HOOK_MARKERS
 
 
@@ -47,6 +49,7 @@ class CodexAdapter(BaseAdapter):
     """Adapter for Codex CLI (OpenAI)."""
 
     home_markers = (".codex",)
+    headless_binary = "codex"
     managed_agent_profiles = ("user:agents/{name}.toml", "project:.codex/agents/{name}.toml")
     managed_mcp_files = ("user:config.toml",)
 
@@ -217,6 +220,28 @@ class CodexAdapter(BaseAdapter):
         from observal_cli.cmd_doctor import _cleanup_codex
 
         return _cleanup_codex(dry_run)
+
+    # ── Headless delegation ──────────────────────────────────
+
+    def _headless_command(self, request: HeadlessRequest) -> HeadlessPlan:
+        # Codex CLI reference: exec, --cd, --sandbox workspace-write,
+        # --skip-git-repo-check, --output-last-message. exec has no flag to pick
+        # a custom agent, so its instructions are inlined into the prompt.
+        output = request.scratch_dir / "last-message.txt"
+        argv = [
+            "codex",
+            "exec",
+            "--cd",
+            str(request.workdir),
+            "--sandbox",
+            "workspace-write",
+            "--skip-git-repo-check",
+            "--output-last-message",
+            str(output),
+        ]
+        if request.model:
+            argv += ["--model", request.model]
+        return HeadlessPlan(argv=[*argv, "--", inline_agent_prompt(request)], output_file=output)
 
 
 register_adapter(CodexAdapter())

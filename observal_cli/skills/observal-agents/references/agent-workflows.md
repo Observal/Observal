@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Observal Contributors -->
+<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Agent workflows
@@ -44,11 +45,13 @@ observal agent pull NAMESPACE/AGENT_SLUG --harness kiro --no-prompt --dir . --ou
 observal agent pull NAMESPACE/AGENT_SLUG --harness claude-code --scope project --dry-run --no-prompt --output json
 ```
 
-JSON pull requires `--no-prompt` and is appropriate only when no secret values are required. The `--env` and `--header` options expose values in shell history and process arguments, so use them only for non-secret configuration.
+JSON pull requires `--no-prompt` and is appropriate only when no secret values are required. If required values are missing, it exits nonzero with `error.result.needs_input: true` before installing anything. The `--env` and `--header` options expose values in shell history and process arguments, so use them only for non-secret configuration.
 
 For credentials or tokens, omit `--no-prompt` and JSON output, then enter values through the interactive prompts. This keeps values out of process arguments. Treat generated harness configuration as sensitive because the harness may store those values.
 
-Inspect `files`, `warnings`, `setup_commands`, and lockfile results. Then verify installation:
+Pulls are pinned. The first pull in a project installs the latest approved version and records it in `observal.lock` in `--dir`; later pulls install that same version even after newer ones are approved. Only add `--upgrade` (latest approved) or `--version X` when the user asks to update or pick a version. Tell the user to commit `observal.lock` so teammates and CI install the same versions. For CI, add `--strict` (or set `OBSERVAL_STRICT=1`) so an install that does not match its lock fails instead of warning.
+
+Inspect `files`, `warnings`, `setup_commands`, `agent.version`, `agent.resolved_from`, `agent.latest_version`, and `lock` (`status`, `components`, `problems`). Report a newer `latest_version` as available rather than installing it. Then verify installation:
 
 ```bash
 observal scan --harness kiro --output json
@@ -105,7 +108,7 @@ observal agent publish --dir ./my-agent --team platform-tools --visibility publi
 
 ## Update in place
 
-Use only when the user wants to change the current listing without a reviewed version.
+Use only when the user wants to change the current listing without a reviewed version, and only while its latest version is a draft, pending, or rejected. An approved version is immutable; the update fails with a conflict that points to `agent release`. Use [Release a version](#release-a-version) instead.
 
 1. Read current state with `agent show`.
 2. Preserve required fields in `observal-agent.yaml`, including `model_config_json: {}` and `external_mcps: []`.
@@ -129,6 +132,15 @@ observal agent versions NAMESPACE/AGENT_SLUG --output json
 
 The YAML must include all required fields. Report the returned review status and version. A submitted release is not approved until review says so.
 
+A release pins every component to an exact version and keeps the pins of the current release, so components do not change unless asked. To see what is behind, and to move components forward:
+
+```bash
+observal agent outdated NAMESPACE/AGENT_SLUG --output json
+observal agent release NAMESPACE/AGENT_SLUG --bump minor --dir ./my-agent --refresh-components --output json
+```
+
+`--refresh-components` moves every component without a `version` in the YAML to its latest approved release. To pin one component to an exact release instead, set its `version` in the YAML, or add it with `observal agent add TYPE COMPONENT_UUID --version X.Y.Z --dir ./my-agent`. Only refresh when the user asks for newer component versions.
+
 ## Bulk create
 
 Run dry run first, then execute the same prepared input:
@@ -138,7 +150,7 @@ observal agent bulk-create --from-file agents.json --dry-run --output json
 observal agent bulk-create --from-file agents.json --yes --output json
 ```
 
-Verify each returned item. Do not treat a partial batch as complete.
+A file contains 1-50 agents and duplicate canonical names are rejected before the request. Verify each returned item. `errors > 0` sets `partial: true` and exits with code `11`; skips alone remain successful.
 
 ## Lifecycle and collaboration
 
@@ -157,5 +169,5 @@ Use user UUIDs returned by co-author list for removal. Verify ownership and life
 
 - 409 ambiguous name: re-list and use `qualified_name` or UUID.
 - 409 existing Agent: choose update only for in-place change, release for a new version.
-- Validation names a required YAML field: correct the source file, rebuild, and retry once.
+- Validation names a required YAML field: inspect `error.result.components` and `error.result.issues`, correct the source file, rebuild, and retry once.
 - Unavailable or not configured: stop. Load `observal-advanced` only for an explicit fallback request.

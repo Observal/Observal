@@ -29,6 +29,7 @@ from observal_cli.render import (
     esc,
     handle,
     kv_panel,
+    listing_status,
     output_json,
     relative_time,
     spinner,
@@ -353,7 +354,7 @@ def prompt_show(
         kv_panel(
             f"{esc(display_name(item))} v{esc(item.get('version', '?'))}",
             [
-                ("Status", status_badge(item.get("status", ""))),
+                ("Status", listing_status(item)),
                 ("Category", esc(item.get("category", "N/A"))),
                 ("Namespace", esc(handle(item) or "N/A")),
                 ("Description", esc(item.get("description", ""))),
@@ -398,7 +399,7 @@ def prompt_render(
         variables[key.strip()] = raw.strip("\"'")
     render_context = nullcontext() if output == "json" else spinner("Rendering prompt...")
     with render_context:
-        result = client.post(f"/api/v1/prompts/{resolved}/render", {"variables": variables})
+        result = client.post_public(f"/api/v1/prompts/{resolved}/render", {"variables": variables})
     if output == "json":
         output_json(result)
     else:

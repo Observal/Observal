@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
+# SPDX-FileCopyrightText: 2026 Srihari <sriharilegend23@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 """
 Pre-commit hook: ensures the committer's SPDX-FileCopyrightText line is present
@@ -19,8 +20,10 @@ import sys
 from datetime import date
 from pathlib import Path
 
-SKIP_DIRS = {"LICENSES", ".reuse", "node_modules", ".git", ".venv", "__pycache__"}
+SKIP_DIRS = {"LICENSES", ".reuse", "node_modules", ".git", ".venv", "__pycache__", "vendor"}
 SKIP_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".ico", ".woff", ".woff2", ".ttf", ".eot", ".map", ".lock"}
+# JSON has no comments, so a header would break the file; REUSE.toml covers these instead.
+SKIP_EXTS |= {".json", ".jsonl"}
 
 
 def git_identity() -> tuple[str, str]:
@@ -97,8 +100,7 @@ def inject_copyright(path: Path, name: str, email: str, year: int):
     if style is None:
         return
 
-    prefix, suffix = style
-    new_line = f"{prefix}SPDX-FileCopyrightText: {year} {name} <{email}>{suffix}\n"
+    prefix = style[0]
 
     raw = path.read_bytes()
     eol = b"\r\n" if b"\r\n" in raw[:1024] else b"\n"
@@ -106,19 +108,89 @@ def inject_copyright(path: Path, name: str, email: str, year: int):
 
     text = raw.decode("utf-8", errors="replace")
 
-    # Insert after the last existing SPDX-FileCopyrightText line
+    # Insert after the last SPDX-FileCopyrightText line of the leading comment
+    # block only. Files that generate SPDX headers (release tooling, manifest
+    # writers) mention the pattern inside strings further down; injecting there
+    # corrupts the source.
     lines = text.splitlines(keepends=True)
+    header_end = _header_block_end(lines, prefix)
+    header_has_copyright = any("SPDX-FileCopyrightText" in line for line in lines[:header_end])
+    if not header_has_copyright and _starts_with_comment(lines):
+        # Templates, Helm partials, SQL files and license sidecars use comment
+        # styles that do not match the extension-derived prefix. Fall back to
+        # the first run of copyright lines instead of skipping the injection,
+        # and stop there so SPDX examples further down stay untouched. Files
+        # that do not start with a comment (e.g. generators whose strings merely
+        # mention SPDX) keep the header-only restriction.
+        header_end = next((i for i, line in enumerate(lines) if "SPDX-FileCopyrightText" in line), len(lines))
+        while header_end < len(lines) and "SPDX-FileCopyrightText" in lines[header_end]:
+            header_end += 1
     last_copyright_idx = -1
-    for i, line in enumerate(lines):
+    for i, line in enumerate(lines[:header_end]):
         if "SPDX-FileCopyrightText" in line:
             last_copyright_idx = i
 
     if last_copyright_idx == -1:
         return  # no existing copyright lines, skip
 
-    new_line_eol = new_line.rstrip("\r\n") + nl
-    lines.insert(last_copyright_idx + 1, new_line_eol)
+    actual_prefix, actual_suffix = _line_comment_style(lines[last_copyright_idx])
+    new_line = f"{actual_prefix}SPDX-FileCopyrightText: {year} {name} <{email}>{actual_suffix}{nl}"
+    lines.insert(last_copyright_idx + 1, new_line)
     path.write_bytes("".join(lines).encode("utf-8", errors="replace"))
+
+
+def _line_comment_style(line: str) -> tuple[str, str]:
+    """Prefix and suffix for a copyright line inserted right after ``line``.
+
+    Derived from the matched line rather than the extension so any comment style
+    stays valid, including block comments that open or close on this line.
+    """
+    body = line.rstrip()
+    prefix = body[: body.index("SPDX-FileCopyrightText")]
+    indent = prefix[: len(prefix) - len(prefix.lstrip())]
+    opener = prefix.strip()
+    closer = next((c for c in BLOCK_COMMENTS.values() if body.endswith(c)), None)
+    suffix = body[len(body[: -len(closer)].rstrip()) :] if closer else ""
+    if opener in BLOCK_COMMENTS and not closer:
+        # Opens a multi-line comment: repeating the opener would nest it, which
+        # is invalid XML. Stay inside the block with the indentation only.
+        return indent, ""
+    if closer and opener not in BLOCK_COMMENTS:
+        # Closes a multi-line comment: the new line lands after the block, so it
+        # needs a complete comment of its own.
+        op = next(o for o, c in BLOCK_COMMENTS.items() if c == closer)
+        return f"{indent}{op} ", suffix
+    return prefix, suffix
+
+
+def _header_block_end(lines: list[str], prefix: str) -> int:
+    """Index one past the leading run of blank and comment lines.
+
+    A leading XML declaration (``<?xml ...?>``) belongs to the header.
+    """
+    marker = prefix.strip()
+    end = 0
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped or stripped.startswith(marker) or (index == 0 and stripped.startswith("<?xml")):
+            end = index + 1
+            continue
+        break
+    return end
+
+
+BLOCK_COMMENTS = {"<!--": "-->", "/*": "*/", "{{/*": "*/}}"}
+COMMENT_STARTS = ("#", "//", "--", "/*", "{{/*", "<!--", ";", "*", "SPDX-")
+
+
+def _starts_with_comment(lines: list[str]) -> bool:
+    """True when the first non-blank line looks like a comment in any style."""
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        return stripped.startswith(COMMENT_STARTS)
+    return False
 
 
 def add_fresh_header(path: Path, name: str, email: str, year: int):
@@ -177,6 +249,8 @@ def main():
     created = []
 
     for path in files:
+        if comment_prefix(path) is None:
+            continue  # nothing to add, so nothing to report
         try:
             raw = path.read_bytes()
         except Exception:

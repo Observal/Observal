@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-
 export interface YamlDiffViewProps {
   diff: string;
   versionA: string;
@@ -114,20 +113,48 @@ function buildSplitRows(lines: DiffLine[]): SplitRow[] {
   return rows;
 }
 
+// Added/removed rows were literal rgba() copies of GitHub's diff palette,
+// which ignored the active preset and light/dark mode. They ride the semantic
+// tokens now; the gutter marker below carries the same distinction without
+// relying on the tint, since a 10% wash is not a reliable signal on its own.
 const kindClasses: Record<string, string> = {
   context: "bg-transparent text-foreground",
-  remove: "bg-[rgba(248,81,73,0.10)] text-foreground",
-  add: "bg-[rgba(63,185,80,0.10)] text-foreground",
+  remove: "bg-destructive/10 text-foreground",
+  add: "bg-success/10 text-foreground",
   empty: "bg-muted/30",
   "hunk-header": "bg-muted/50 text-muted-foreground italic",
 };
 
 const lineNumClasses: Record<string, string> = {
   context: "text-muted-foreground/50",
-  remove: "text-[rgba(248,81,73,0.5)]",
-  add: "text-[rgba(63,185,80,0.5)]",
+  remove: "text-destructive/70",
+  add: "text-success/70",
   empty: "text-transparent",
   "hunk-header": "text-transparent",
+};
+
+/**
+ * Spoken equivalent of the ± marker. `parseDiffLines` strips the leading +/-
+ * from the text, and the marker cell is `aria-hidden`, so without this a
+ * screen reader hears added and removed rows as identical plain YAML. In the
+ * split view the only other cue is which column a row sits in, which is not
+ * conveyed either.
+ */
+const kindSrLabels: Record<string, string> = {
+  context: "",
+  remove: "Removed line: ",
+  add: "Added line: ",
+  empty: "",
+  "hunk-header": "",
+};
+
+/** The ± column, so add/remove reads without depending on the row tint. */
+const kindMarkers: Record<string, string> = {
+  context: "",
+  remove: "−",
+  add: "+",
+  empty: "",
+  "hunk-header": "",
 };
 
 function DiffPane({
@@ -153,7 +180,16 @@ function DiffPane({
                 >
                   {num ?? ""}
                 </td>
+                <td
+                  className={`select-none w-4 text-center tabular-nums ${lineNumClasses[kind]}`}
+                  aria-hidden="true"
+                >
+                  {kindMarkers[kind]}
+                </td>
                 <td className="px-3 whitespace-pre-wrap break-words leading-relaxed">
+                  {kindSrLabels[kind] && (
+                    <span className="sr-only">{kindSrLabels[kind]}</span>
+                  )}
                   {text ?? ""}
                 </td>
               </tr>
@@ -163,6 +199,73 @@ function DiffPane({
       </table>
     </div>
   );
+}
+
+/**
+ * Single-column diff for narrow viewports. The side-by-side panes each get
+ * roughly half of an already-small width, so below `md` we fall back to a
+ * unified view rather than two unreadable columns — dropping the left pane
+ * instead would hide every removed line, which a reviewer needs to see.
+ */
+function UnifiedPane({ lines }: { lines: DiffLine[] }) {
+  return (
+    <div className="overflow-x-auto font-[family-name:var(--font-mono)] text-xs leading-5">
+      <table className="w-full border-collapse">
+        <tbody>
+          {lines.map((line, idx) => {
+            if (line.kind === "file-header") return null;
+            const kind = line.kind === "hunk-header" ? "hunk-header" : line.kind;
+            return (
+              <tr key={idx} className={kindClasses[kind]}>
+                <td
+                  className={`select-none w-4 pl-2 text-center ${lineNumClasses[kind]}`}
+                  aria-hidden="true"
+                >
+                  {kindMarkers[kind]}
+                </td>
+                <td className="px-3 whitespace-pre-wrap break-words leading-relaxed">
+                  {kindSrLabels[kind] && (
+                    <span className="sr-only">{kindSrLabels[kind]}</span>
+                  )}
+                  {line.text}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/**
+ * A read-only, line-numbered YAML listing — what a first release shows in place
+ * of a diff, since there is no previous version to compare against.
+ *
+ * Lives here so it shares the gutter, wrapping and monospace treatment with the
+ * diff panes above; it was previously inlined twice in `review-diff-sheet.tsx`.
+ * Deliberately not the `Table` primitive: that is styled for data rows, and
+ * this is a code listing.
+ */
+export function YamlSnapshot({ source }: { source: string }) {
+	return (
+		<div className="overflow-x-auto font-[family-name:var(--font-mono)] text-xs leading-5">
+			<table className="w-full border-collapse">
+				<tbody>
+					{source.split("\n").map((line, i) => (
+						<tr key={i} className="hover:bg-muted/30">
+							<td className="select-none w-10 shrink-0 px-2 text-right tabular-nums text-muted-foreground/50 border-r border-border/40">
+								{i + 1}
+							</td>
+							<td className="px-3 whitespace-pre-wrap break-words text-foreground leading-relaxed">
+								{line}
+							</td>
+						</tr>
+					))}
+				</tbody>
+			</table>
+		</div>
+	);
 }
 
 export function YamlDiffView({ diff, versionA, versionB }: YamlDiffViewProps) {
@@ -184,9 +287,9 @@ export function YamlDiffView({ diff, versionA, versionB }: YamlDiffViewProps) {
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      {/* Column headers */}
+      {/* Column headers — the split pair collapses to one label when unified */}
       <div className="flex shrink-0 border-b border-border text-xs font-medium text-muted-foreground">
-        <div className="flex-1 px-4 py-2 border-r border-border">
+        <div className="hidden flex-1 px-4 py-2 border-r border-border md:block">
           {isNewFile ? (
             <span className="italic">No previous version</span>
           ) : (
@@ -194,12 +297,15 @@ export function YamlDiffView({ diff, versionA, versionB }: YamlDiffViewProps) {
           )}
         </div>
         <div className="flex-1 px-4 py-2">
-          <span>v{versionB}</span>
+          <span className="md:hidden">
+            {isNewFile ? `v${versionB}` : `v${versionA} → v${versionB}`}
+          </span>
+          <span className="hidden md:inline">v{versionB}</span>
         </div>
       </div>
 
-      {/* Split panes */}
-      <div className="flex flex-1 min-h-0 overflow-y-auto">
+      {/* Split panes at md and up, unified below */}
+      <div className="hidden flex-1 min-h-0 overflow-y-auto md:flex">
         <div className="flex-1 border-r border-border overflow-x-auto">
           {isNewFile ? (
             <div className="flex items-center justify-center h-full text-sm text-muted-foreground/50 italic select-none">
@@ -212,6 +318,9 @@ export function YamlDiffView({ diff, versionA, versionB }: YamlDiffViewProps) {
         <div className="flex-1 overflow-x-auto">
           <DiffPane rows={rows} side="right" />
         </div>
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto md:hidden">
+        <UnifiedPane lines={lines} />
       </div>
     </div>
   );

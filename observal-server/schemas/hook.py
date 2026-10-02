@@ -14,6 +14,7 @@ from schemas.constants import (
     VALID_HOOK_EXECUTION_MODES,
     VALID_HOOK_HANDLER_TYPES,
     VALID_HOOK_SCOPES,
+    RecommendedFlag,
     Visibility,
     make_harness_list_validator,
     make_option_validator,
@@ -132,6 +133,7 @@ class HookListingResponse(BaseModel):
     updated_at: datetime
     download_count: int = 0
     user_permission: str | None = None
+    is_recommended: RecommendedFlag = False
 
     @field_validator("user_permission", mode="before")
     @classmethod
@@ -158,6 +160,8 @@ class HookListingSummary(BaseModel):
     status: ListingStatus
     rejection_reason: str | None = None
     updated_at: datetime | None = None
+    is_recommended: RecommendedFlag = False
+
     model_config = {"from_attributes": True}
 
 
@@ -165,6 +169,7 @@ class HookInstallRequest(BaseModel):
     harness: str
     local_name: str | None = None
     platform: str = ""  # e.g. "win32", "darwin", "linux" - empty = Unix default
+    version: str | None = None  # Specific version to install (None = latest)
 
 
 class HookFileEntry(BaseModel):
@@ -183,3 +188,7 @@ class HookInstallResponse(BaseModel):
     source_fetch: dict | None = None
     notes: list[str] = []
     warnings: list[str] = []
+    # The exact component version that was installed and its content digest.
+    version: str | None = None
+    version_id: uuid.UUID | None = None
+    digest: str | None = None

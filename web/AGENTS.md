@@ -3,7 +3,7 @@
 
 # Web Frontend
 
-Vite 6 / React 19 / TypeScript 6 / TanStack Router / Tailwind CSS 4 / Playwright 1.59
+Vite 8 / React 19 / TypeScript 6 / TanStack Router / Tailwind CSS 4 / Playwright 1.59
 
 ## How users interact with it
 
@@ -33,7 +33,7 @@ The web UI is one of three ways to interact with Observal, alongside the CLI and
 
 OKLCH color space with semantic tokens: `background`, `foreground`, `card`, `border`, `primary`, `secondary`, `accent`, `destructive`, `success`, `warning`, `info`.
 
-The product ships two composed themes: dark (default) and light. Tokens are defined in `app.css` and switched by `ThemeProvider` in `src/lib/theme.tsx`. Unsupported legacy theme values stored by older builds migrate to dark.
+Themes include light, dark, midnight, forest, sunset, solarized, dracula, nord, monokai, gruvbox, catppuccin, tokyo night, one dark, and rose pine. Tokens are defined in `app.css` and switched by `ThemeProvider` in `src/lib/theme.tsx`.
 
 Typography uses local fonts only. Tailwind CSS 4 reads tokens directly from CSS.
 
@@ -133,7 +133,7 @@ src/lib/           # API wrapper, types, query client, theme, GraphQL WS
 
 ```bash
 pnpm dev          # Vite dev server on :3000
-pnpm build        # Typecheck and production build
+pnpm build        # Typecheck and production build (Vite 8 / Rolldown; chunking is `build.rolldownOptions.output.codeSplitting`, not Rollup `manualChunks`)
 pnpm lint         # ESLint
 pnpm typecheck    # TypeScript only
 pnpm e2e          # Playwright, requires running Docker stack
@@ -142,3 +142,5 @@ pnpm e2e:ui       # Playwright UI mode
 ```
 
 E2E specs live in `tests/e2e/*.spec.ts` in the repo root workspace.
+
+For UI changes, rebuild the live stack with `make rebuild` and check the affected pages in a browser (or run the relevant spec with `CI=1 pnpm exec playwright test <spec>` against `:80`) in addition to `pnpm build` and `pnpm lint`.

@@ -1,4 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Agent install, download stats, traces, resolve, manifest, and validate routes."""
@@ -15,7 +17,7 @@ from api.deps import (
     apply_visibility_filter,
     get_db,
     get_effective_agent_permission,
-    optional_current_user,
+    get_registry_user,
     require_role,
 )
 from api.routes._component_archive import archived_install_warning
@@ -23,7 +25,7 @@ from models.agent import AgentStatus
 from models.hook import HookListing
 from models.mcp import ListingStatus, McpListing
 from models.prompt import PromptListing
-from models.sandbox import SandboxListing, SandboxVersion
+from models.sandbox import SandboxListing
 from models.skill import SkillListing
 from models.user import User, UserRole
 from schemas.agent import (
@@ -46,19 +48,21 @@ async def install_agent(
     req: AgentInstallRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.user)),
+    current_user: User | None = Depends(get_registry_user),
 ):
     optic.debug("installing agent")
     agent = await _load_agent(
         db,
         agent_id,
-        prefer_user_id=current_user.id,
+        prefer_user_id=current_user.id if current_user else None,
         current_user=current_user,
     )
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     if agent.status != AgentStatus.approved and not (
-        _ds.get_sync_bool("security.allow_draft_install") and agent.created_by == current_user.id
+        current_user is not None
+        and _ds.get_sync_bool("security.allow_draft_install")
+        and agent.created_by == current_user.id
     ):
         raise HTTPException(status_code=404, detail="Agent not found or not approved for installation")
     if get_effective_agent_permission(agent, current_user) == "none":
@@ -215,36 +219,6 @@ async def install_agent(
             .all()
         )
         sandbox_listings_map = {row.id: row for row in sandbox_rows}
-        sandbox_components = {c.component_id: c for c in install_components if c.component_type == "sandbox"}
-
-        class _VersionedSandboxListing:
-            def __init__(self, listing, version):
-                self._listing = listing
-                self._version = version
-
-            def __getattr__(self, name):
-                if name == "latest_version":
-                    return self._version
-                if hasattr(self._version, name):
-                    return getattr(self._version, name)
-                return getattr(self._listing, name)
-
-        for sid, listing in list(sandbox_listings_map.items()):
-            resolved_version = sandbox_components[sid].resolved_version
-            if resolved_version and resolved_version != "latest" and resolved_version != listing.version:
-                pinned = (
-                    await db.execute(
-                        select(SandboxVersion).where(
-                            SandboxVersion.listing_id == sid,
-                            SandboxVersion.version == resolved_version,
-                        )
-                    )
-                ).scalar_one_or_none()
-                if not pinned:
-                    raise HTTPException(
-                        status_code=404, detail=f"Sandbox {listing.name} version {resolved_version!r} not found"
-                    )
-                sandbox_listings_map[sid] = _VersionedSandboxListing(listing, pinned)
 
     component_maps = (
         (mcp_comp_ids, mcp_listings_map),
@@ -256,6 +230,36 @@ async def install_agent(
     if any(set(ids) - set(listings) for ids, listings in component_maps):
         raise HTTPException(status_code=404, detail="Agent contains a component unavailable to this agent target")
 
+    # Generate every component from the exact version this agent release pinned,
+    # never from the listing's latest release.
+    from services.agent_lock import LOCK_VERSION, load_pinned_listings, stored_lock_digest
+
+    pins = await load_pinned_listings(
+        db,
+        install_components,
+        {
+            "mcp": mcp_listings_map,
+            "skill": skill_listings_map,
+            "hook": hook_listings_map,
+            "prompt": prompt_listings_map,
+            "sandbox": sandbox_listings_map,
+        },
+    )
+    if req.strict and pins.problems:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Strict install refused: {'; '.join(pins.problems)}. Install without strict mode to accept "
+                "these with warnings, or ask the agent author to release a new version."
+            ),
+        )
+    lock_digest = stored_lock_digest(install_version)
+    mcp_listings_map = pins.listings["mcp"]
+    skill_listings_map = pins.listings["skill"]
+    hook_listings_map = pins.listings["hook"]
+    prompt_listings_map = pins.listings["prompt"]
+    sandbox_listings_map = pins.listings["sandbox"]
+
     archived_warnings = []
     setup_warnings = []
     for item_type, rows in (
@@ -266,7 +270,7 @@ async def install_agent(
         ("sandbox", sandbox_listings_map.values()),
     ):
         for row in rows:
-            if row.status == ListingStatus.archived:
+            if getattr(row, "listing_status", row.status) == ListingStatus.archived:
                 archived_warnings.append(archived_install_warning(item_type, row.name))
             if item_type == "MCP" and row.setup_instructions:
                 setup_warnings.append(f"MCP '{row.name}' requires local setup before use:\n{row.setup_instructions}")
@@ -291,6 +295,7 @@ async def install_agent(
     )
     install_options["_resolved_model"] = resolved_model
     install_options["_model_warnings"] = model_warnings
+    install_options["_delegation"] = _ds.get_sync_bool("discovery.delegation_enabled", True)
 
     snippet = generate_agent_config(
         install_agent_obj,
@@ -312,31 +317,49 @@ async def install_agent(
     # instance (e.g. savepoint rollback on duplicate download).
     resolved_agent_id = agent.id
 
-    from services.download_tracker import record_agent_download
+    if current_user is not None:
+        from services.download_tracker import record_agent_download
 
-    await record_agent_download(
-        agent_id=resolved_agent_id,
-        user_id=current_user.id,
-        source="api",
-        harness=req.harness,
-        request=request,
-        db=db,
-    )
-    await db.commit()
+        await record_agent_download(
+            agent_id=resolved_agent_id,
+            user_id=current_user.id,
+            source="api",
+            harness=req.harness,
+            request=request,
+            db=db,
+        )
+        await db.commit()
 
-    emit_registry_event(
-        action="agent.install",
-        user_id=str(current_user.id),
-        user_email=current_user.email,
-        user_role=current_user.role.value,
-        agent_id=str(resolved_agent_id),
-        resource_name=agent.name,
-        metadata={"harness": req.harness},
-    )
+        emit_registry_event(
+            action="agent.install",
+            user_id=str(current_user.id),
+            user_email=current_user.email,
+            user_role=current_user.role.value,
+            agent_id=str(resolved_agent_id),
+            resource_name=agent.name,
+            metadata={
+                "harness": req.harness,
+                "version": install_version.version,
+                "lock_status": pins.status,
+                "lock_digest": lock_digest or "",
+            },
+        )
 
-    warnings = archived_warnings + setup_warnings + snippet.pop("_warnings", [])
+    warnings = pins.warnings + archived_warnings + setup_warnings + snippet.pop("_warnings", [])
+    lock = {
+        "lock_version": LOCK_VERSION,
+        "status": pins.status,
+        "digest": lock_digest,
+        "components": pins.entries,
+        "problems": pins.problems,
+    }
     return AgentInstallResponse(
-        agent_id=resolved_agent_id, harness=req.harness, config_snippet=snippet, warnings=warnings
+        agent_id=resolved_agent_id,
+        harness=req.harness,
+        version=install_version.version,
+        config_snippet=snippet,
+        warnings=warnings,
+        lock=lock,
     )
 
 
@@ -344,13 +367,13 @@ async def install_agent(
 async def agent_download_stats(
     agent_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(optional_current_user),
+    current_user: User = Depends(require_role(UserRole.user)),
 ):
     optic.trace("agent_id={}", agent_id)
     agent = await _load_agent(
         db,
         agent_id,
-        prefer_user_id=current_user.id if current_user else None,
+        prefer_user_id=current_user.id,
         current_user=current_user,
     )
     if not agent:
@@ -369,14 +392,14 @@ async def get_agent_traces(
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(optional_current_user),
+    current_user: User = Depends(require_role(UserRole.user)),
 ):
     """Return all traces where this agent participated."""
     optic.trace("agent_id={}, limit={}", agent_id, limit)
     agent = await _load_agent(
         db,
         agent_id,
-        prefer_user_id=current_user.id if current_user else None,
+        prefer_user_id=current_user.id,
         current_user=current_user,
     )
     if not agent:
@@ -390,11 +413,16 @@ async def get_agent_traces(
 async def resolve_agent_components(
     agent_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.user)),
+    current_user: User | None = Depends(get_registry_user),
 ):
     """Resolve all components for an agent - validates they exist and are approved."""
     optic.trace("agent_id={}", agent_id)
-    agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, current_user=current_user)
+    agent = await _load_agent(
+        db,
+        agent_id,
+        prefer_user_id=current_user.id if current_user else None,
+        current_user=current_user,
+    )
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     if get_effective_agent_permission(agent, current_user) == "none":
@@ -411,11 +439,16 @@ async def resolve_agent_components(
 async def get_agent_manifest(
     agent_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.user)),
+    current_user: User | None = Depends(get_registry_user),
 ):
     """Generate a portable agent manifest with all resolved components."""
     optic.trace("agent_id={}", agent_id)
-    agent = await _load_agent(db, agent_id, prefer_user_id=current_user.id, current_user=current_user)
+    agent = await _load_agent(
+        db,
+        agent_id,
+        prefer_user_id=current_user.id if current_user else None,
+        current_user=current_user,
+    )
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
     if get_effective_agent_permission(agent, current_user) == "none":

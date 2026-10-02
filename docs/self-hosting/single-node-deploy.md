@@ -371,7 +371,7 @@ When you outgrow a single node:
 | Symptom | Fix |
 |---|---|
 | API response times increasing | Increase `API_WORKERS` in `.env` (default 2), or bump to a bigger VM |
-| ClickHouse queries slow | Increase `CLICKHOUSE_MEMORY_LIMIT`, move to a bigger VM, or externalize to [ClickHouse Cloud](https://clickhouse.cloud) |
+| ClickHouse queries slow | Increase `CLICKHOUSE_MEMORY_LIMIT` or move to a bigger VM |
 | Disk filling up | Reduce `DATA_RETENTION_DAYS`, add a bigger disk, or move ClickHouse data to a separate volume |
 | Need HA / zero downtime deploys | Migrate to the [Terraform module](aws-terraform.md) |
 

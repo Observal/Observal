@@ -17,7 +17,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
  * Resolves role for authenticated users so sidebar can show/hide admin items.
  */
 export function OptionalAuthGuard({ children }: { children: React.ReactNode }) {
-  useOptionalAuth();
-  // Render children immediately to prevent hydration mismatch
+  const { ready } = useOptionalAuth();
+  if (!ready) return <div className="flex h-screen w-full items-center justify-center" />;
   return <>{children}</>;
 }

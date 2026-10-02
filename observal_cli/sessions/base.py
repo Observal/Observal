@@ -694,7 +694,9 @@ def build_payload(
     Defaults harness telemetry to ``claude-code``; callers override ``payload["harness"]``
     for other harnesses.
     """
-    agent_id, agent_version = _resolve_agent(cwd, lines, session_jsonl, harness=harness)
+    agent_id, agent_version = _resolve_agent(
+        cwd, lines, session_jsonl, harness=harness, session_ids=(session_id, parent_session_id)
+    )
     layer_hash = _get_cached_layer_hash(session_id, cwd)
     payload: dict = {
         "session_id": session_id,
@@ -707,12 +709,105 @@ def build_payload(
         "hook_event": hook_event,
         "parent_session_id": parent_session_id,
     }
+    capabilities = _capabilities_for_session(session_id, cwd, harness, session_jsonl)
+    if capabilities:
+        payload["capabilities_used"] = capabilities
     if hook_event == "Stop":
         payload["final"] = True
         payload["total_line_count"] = line_count_before + len(lines)
         payload["total_offset"] = new_offset
         _evict_layer_hash_cache(session_id)
     return payload
+
+
+# How far before a session file first appeared a capability use may still
+# belong to it: a developer often runs `discover use` a moment before the
+# harness creates the transcript.
+_CAPABILITY_LEAD_SECONDS = 15 * 60
+_CAPABILITY_FALLBACK_HOURS = 24
+
+
+_TIMESTAMP_KEYS = ("timestamp", "ts", "time", "created_at", "createdAt", "start_time")
+_MAX_CAPABILITIES_PER_PUSH = 200
+
+
+def _first_line_timestamp(session_jsonl: Path):
+    """The earliest timestamp a transcript carries in its first line, if any."""
+    import json
+    from datetime import UTC, datetime
+
+    try:
+        with session_jsonl.open("r", encoding="utf-8", errors="replace") as handle:
+            first = handle.readline()
+        record = json.loads(first)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(record, dict):
+        return None
+    for key in _TIMESTAMP_KEYS:
+        value = record.get(key)
+        if isinstance(value, int | float) and value > 0:
+            return datetime.fromtimestamp(value / 1000 if value > 1e11 else value, tz=UTC)
+        if isinstance(value, str) and value:
+            try:
+                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    return None
+
+
+def _session_started_at(session_jsonl: Path | None):
+    """When the session began, minus a short lead.
+
+    Prefer the file's birth time where the platform records one, then the
+    transcript's own first timestamp. ``st_ctime`` is deliberately not used:
+    on Linux it moves with every write, which would silently drop uses from
+    the start of a long session. Without either signal, fall back to a wide
+    window rather than guess.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    if session_jsonl is not None:
+        started = None
+        try:
+            birth = getattr(session_jsonl.stat(), "st_birthtime", None)
+            if birth:
+                started = datetime.fromtimestamp(birth, tz=UTC)
+        except OSError:
+            pass
+        started = started or _first_line_timestamp(session_jsonl)
+        if started is not None:
+            return started - timedelta(seconds=_CAPABILITY_LEAD_SECONDS)
+    return datetime.now(UTC) - timedelta(hours=_CAPABILITY_FALLBACK_HOURS)
+
+
+def _capabilities_for_session(session_id: str, cwd: str, harness: str, session_jsonl: Path | None) -> list[dict]:
+    """Capability-lock uses that belong to this session, shaped for ingest.
+
+    Matching is harness + directory + time window, or an exact session hint
+    when a hook exposed the harness session id. Best effort: attribution is
+    evidence, so a broken lock file never blocks telemetry.
+    """
+    try:
+        from observal_cli import capability_lock
+
+        uses = capability_lock.matching(
+            harness=harness,
+            cwd=cwd or None,
+            since=_session_started_at(session_jsonl),
+            session_hint=session_id,
+        )
+        if not uses:
+            return []
+        confidence = "window" if session_jsonl is not None else "loose"
+        latest = capability_lock.dedupe_latest(uses)
+        # The ingest contract caps the list; keep the most recent distinct uses.
+        latest = sorted(latest, key=lambda u: u.ts, reverse=True)[:_MAX_CAPABILITIES_PER_PUSH]
+        return capability_lock.to_payload(latest, confidence=confidence)
+    except Exception as exc:
+        optic.debug("capability attribution skipped for {}: {}", session_id, exc)
+        return []
 
 
 # Per-session layer_hash cache: avoids re-scanning harness dirs on every chunk
@@ -818,11 +913,17 @@ def _resolve_agent(
     lines: list[str],
     session_jsonl: Path | None,
     harness: str = "claude-code",
+    session_ids: tuple[str | None, ...] = (),
 ) -> tuple[str | None, str | None]:
-    """Resolve agent identity through the harness adapter, environment, and lockfile."""
+    """Resolve agent identity: delegated child first, then harness adapter, environment, and lockfile."""
     import os
 
+    from observal_cli.delegation.tasks import delegated_agent
     from observal_cli.harness import ensure_loaded, get_adapter
+
+    delegated = delegated_agent(cwd, session_ids)
+    if delegated:
+        return delegated
 
     ensure_loaded()
     adapter = get_adapter(harness)
@@ -845,6 +946,15 @@ def _resolve_agent(
         if lockfile_entry is None:
             lockfile_entry = _lookup_lockfile_agent_by_id(env_agent_id)
         if lockfile_entry:
+            from observal_cli.lockfile import agent_entry_is_registry_backed
+
+            if not agent_entry_is_registry_backed(lockfile_entry):
+                optic.warning(
+                    "OBSERVAL_AGENT_ID={} is not registry-backed (status={}); leaving unattributed",
+                    env_agent_id,
+                    lockfile_entry.get("registry_status"),
+                )
+                return None, None
             return lockfile_entry.get("id"), lockfile_entry.get("version")
         optic.warning("OBSERVAL_AGENT_ID={} not found in lockfile (harness={})", env_agent_id, harness)
         return None, None

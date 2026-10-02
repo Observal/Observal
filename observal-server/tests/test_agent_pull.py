@@ -355,3 +355,39 @@ async def test_install_agent_with_approved_version_succeeds():
     assert result.agent_id == agent.id
     assert result.harness == "claude-code"
     assert isinstance(result.config_snippet, dict)
+
+
+@pytest.mark.asyncio
+async def test_anonymous_agent_install_does_not_record_download_metrics():
+    """Guests can install approved agents without mutating download metrics."""
+    from api.routes.agent.install import install_agent
+    from schemas.agent import AgentInstallRequest
+
+    agent = _make_agent(with_approved_version=True)
+    request = MagicMock()
+    request.url = MagicMock()
+    request.url.scheme = "http"
+    request.url.hostname = "localhost"
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=MagicMock(all=lambda: []))))
+    db.commit = AsyncMock()
+    record_download = AsyncMock()
+
+    with (
+        patch("api.routes.agent.install._load_agent", new=AsyncMock(return_value=agent)),
+        patch("api.routes.agent.install.get_effective_agent_permission", return_value="view"),
+        patch("api.routes.agent.install.generate_agent_config", return_value={"mcpServers": {}}),
+        patch("api.routes.config.derive_endpoints", return_value={"api": "http://localhost:8000", "otlp_http": ""}),
+        patch("services.download_tracker.record_agent_download", new=record_download),
+    ):
+        result = await install_agent(
+            agent_id=str(agent.id),
+            req=AgentInstallRequest(harness="claude-code"),
+            request=request,
+            db=db,
+            current_user=None,
+        )
+
+    assert result.agent_id == agent.id
+    record_download.assert_not_awaited()
+    db.commit.assert_not_awaited()

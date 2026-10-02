@@ -107,7 +107,7 @@ Session record size depends on harness transcript detail and tool output size. M
 
 ### External ClickHouse
 
-For heavy workloads, run ClickHouse outside the compose stack (ClickHouse Cloud, a dedicated VM, etc.). Point the API at it:
+For heavy workloads, run ClickHouse on a dedicated host outside the compose stack. Point the API at it:
 
 ```
 CLICKHOUSE_URL=clickhouse://user:pass@external-clickhouse.example.com:8123/observal

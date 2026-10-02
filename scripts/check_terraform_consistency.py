@@ -33,7 +33,6 @@ COMMON_VARS = {
     "environment",
     "name_prefix",
     "image_tag",
-    "clickhouse_mode",
 }
 
 PROVIDER_SPECIFIC: dict[str, set[str]] = {

@@ -121,8 +121,21 @@ Both the CLI and server import this shared registry.
     },
 
     "config_dir": ".my-harness",
+
+    # Verified runtime facts (discovery and activation gate on these).
+    # Only set a non-default value when you have checked the harness's own
+    # docs or code, and record the evidence in a comment.
+    "mcp_install_mode": "file",          # file | setup_command | adapter | user_only
+    "dynamic_tools": False,              # refreshes MCP tools mid-session (verify at runtime)
+    "prompt_context_injection": False,   # a hook/extension can add context before the model answers
+    "guidance_file_write": False,        # always False: the bundled skill is the instruction channel
 }
 ```
+
+The runtime facts are checked by `tests/test_harness_registry.py`, which holds an
+explicit table of verified values. Add your harness to that table in the same
+change, and make sure `mcp_install_mode` agrees with the `mcp_config` paths
+(`setup_command` means no paths, `user_only` means only a user path).
 
 ## Step 2.5: Update Doctor and Layer Scan (required)
 

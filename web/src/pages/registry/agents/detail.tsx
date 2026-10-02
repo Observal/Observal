@@ -24,7 +24,7 @@ import {
   Sparkles,
   AlertTriangle,
 } from "lucide-react";
-import { useState, useEffect, useCallback, useMemo, useSyncExternalStore } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 
 import {
@@ -38,6 +38,7 @@ import {
   useWhoami,
   useAgentVersions,
   useAgentVersionDetail,
+  useAgentVersionOutdated,
   useInsightReports,
   useInsightSessionCount,
   useGenerateInsight,
@@ -46,11 +47,13 @@ import {
   useDeleteAgent,
   useUnarchiveAgent,
 } from "@/hooks/use-api";
-import { getUserRole } from "@/lib/api";
+import { useOptionalAuth } from "@/hooks/use-auth";
 import { hasMinRole } from "@/hooks/use-role-guard";
 import type {
+  AgentComponentLink,
   AgentComponentReference,
   AgentVersionSummary,
+  ComponentPinFreshness,
   FeedbackItem,
   InsightReportListItem,
   SuccessCriteria,
@@ -61,6 +64,7 @@ import { ShareLinkButton } from "@/components/registry/share-link-button";
 import { canonicalRouteParts, registryIdentity, registryItemPath, type QualifiedIdentity } from "@/lib/registry-name";
 import { VersionDropdown } from "@/components/registry/version-dropdown";
 import { StatusBadge } from "@/components/registry/status-badge";
+import { RecommendedBadge, RecommendedToggle } from "@/components/registry/recommended-badge";
 import { HarnessBadges } from "@/components/registry/harness-badges";
 import { ReviewForm } from "@/components/registry/review-form";
 import {
@@ -195,11 +199,12 @@ interface AgentDetail {
   model_name?: string;
   download_count?: number;
   created_by?: string;
-  component_links?: ComponentLink[];
+  component_links?: AgentComponentLink[];
   mcp_links?: ComponentLink[];
   supported_harnesses?: string[];
   required_capabilities?: string[];
   inferred_supported_harnesses?: string[];
+  is_recommended?: boolean;
   [key: string]: unknown;
 }
 
@@ -245,6 +250,30 @@ function ArchivedComponentsBanner({ components }: { components: ComponentLink[] 
   );
 }
 
+/** Flags a pin that is behind its latest approved release, or has no lock at all. */
+function PinFreshnessBadge({ pin }: { pin?: ComponentPinFreshness }) {
+  if (!pin) return null;
+  if (!pin.locked) {
+    return (
+      <span
+        className="shrink-0 rounded bg-light-yellow px-1.5 py-0.5 text-[10px] text-dark-yellow"
+        title="Released before component pinning; installs use the latest approved version."
+      >
+        unlocked
+      </span>
+    );
+  }
+  if (!pin.outdated || !pin.latest_version) return null;
+  return (
+    <span
+      className="shrink-0 rounded bg-light-yellow px-1.5 py-0.5 text-[10px] text-dark-yellow"
+      title="Installs keep the pinned version until the author releases a new agent version."
+    >
+      v{pin.latest_version} available
+    </span>
+  );
+}
+
 function PromptSection({ prompt }: { prompt: string }) {
   const [expanded, setExpanded] = useState(false);
   const lineCount = prompt.split("\n").length;
@@ -286,8 +315,10 @@ function PromptSection({ prompt }: { prompt: string }) {
 
 function AgentVersionContents({
   components,
+  freshness,
 }: {
   components: ComponentLink[];
+  freshness?: Map<string, ComponentPinFreshness>;
 }) {
   const [activeTab, setActiveTab] = useState<ComponentGroupKey>("mcps");
   const groupedComponents = useMemo(() => groupComponents(components), [components]);
@@ -354,6 +385,7 @@ function AgentVersionContents({
                                   {component.resolved_version === "latest" ? "latest" : `v${component.resolved_version}`}
                                 </span>
                               )}
+                              <PinFreshnessBadge pin={componentId ? freshness?.get(componentId) : undefined} />
                             </div>
                             {component.status && component.status !== "archived" && <StatusBadge status={component.status} />}
                           </div>
@@ -513,10 +545,10 @@ function InsightStatusBadge({ status }: { status: InsightReportListItem["status"
   }
 }
 
-function InsightsTab({ agentId, agentVersion }: { agentId: string; agentVersion?: string | null }) {
-  const { data: reports, isLoading: reportsLoading } = useInsightReports(agentId);
-  const { data: sessionCountData, isLoading: countLoading } = useInsightSessionCount(agentId, agentVersion);
-  const { data: insightsStatus } = useInsightsStatus();
+function InsightsTab({ agentId, agentVersion, enabled }: { agentId: string; agentVersion?: string | null; enabled: boolean }) {
+  const { data: reports, isLoading: reportsLoading } = useInsightReports(agentId, enabled);
+  const { data: sessionCountData, isLoading: countLoading } = useInsightSessionCount(agentId, agentVersion, enabled);
+  const { data: insightsStatus } = useInsightsStatus(enabled);
   const generateInsight = useGenerateInsight();
 
   const availableSessions = sessionCountData?.session_count ?? 0;
@@ -631,6 +663,7 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
   const params = useParams({ strict: false }) as { agentId?: string };
   const id = agentId ?? params.agentId ?? "";
   const navigate = useNavigate();
+  const { isAuthenticated, role } = useOptionalAuth();
   const {
     data: agent,
     isLoading,
@@ -645,10 +678,10 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
   );
   const { data: feedbackSummary, refetch: refetchSummary } =
     useFeedbackSummary(id);
-  const { data: myReview } = useMyFeedback("agent", id);
+  const { data: myReview } = useMyFeedback("agent", id, isAuthenticated);
 
-  const { data: whoami } = useWhoami();
-  const { data: teams = [] } = useTeams();
+  const { data: whoami } = useWhoami(isAuthenticated);
+  const { data: teams = [] } = useTeams(isAuthenticated);
   const updateVisibility = useUpdateRegistryVisibility();
   const { data: versionsData } = useAgentVersions(id);
   const versions = versionsData?.items ?? [];
@@ -658,10 +691,22 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
   const { data: versionDetail, isLoading: isVersionDetailLoading } = useAgentVersionDetail(id, selectedVersion);
   const effectiveVersionForDetail = selectedVersion ?? latestApprovedVersion ?? (agent as unknown as AgentDetail | undefined)?.version ?? null;
   const { data: effectiveVersionDetail } = useAgentVersionDetail(id, effectiveVersionForDetail);
+  // Freshness badges describe the rows on screen: the selected version's components,
+  // or by default `component_links`, which come from the agent's current version.
+  const pinnedRowsVersion = selectedVersion ?? (agent as unknown as AgentDetail | undefined)?.version ?? null;
+  const { data: pinReport } = useAgentVersionOutdated(id, pinnedRowsVersion);
+  const pinFreshness = useMemo(
+    () => new Map((pinReport?.components ?? []).map((pin) => [pin.id, pin])),
+    [pinReport],
+  );
 
   // Co-authors
   const [coAuthors, setCoAuthors] = useState<CoAuthor[]>([]);
   useEffect(() => {
+    if (!isAuthenticated) {
+      setCoAuthors([]);
+      return;
+    }
     const token = sessionStorage.getItem("observal_access_token");
     const headers: Record<string, string> = {};
     if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -669,29 +714,23 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
       .then((r) => (r.ok ? r.json() : []))
       .then((data) => setCoAuthors(data))
       .catch(() => {});
-  }, [id]);
+  }, [id, isAuthenticated]);
 
-  const storeSub = useCallback((cb: () => void) => {
-    window.addEventListener("storage", cb);
-    return () => window.removeEventListener("storage", cb);
-  }, []);
-  const isAuthenticated = useSyncExternalStore(
-    storeSub,
-    () => !!sessionStorage.getItem("observal_access_token"),
-    () => false,
-  );
-  const isAdmin = useSyncExternalStore(
-    storeSub,
-    () => hasMinRole(getUserRole(), "admin"),
-    () => false,
-  );
+  const isAdmin = isAuthenticated && hasMinRole(role, "admin");
 
   const a = agent as unknown as AgentDetail | undefined;
   const effectiveVersion = selectedVersion ?? latestApprovedVersion ?? a?.version;
   const selectedVersionSummary = versions.find((v) => v.version === effectiveVersion);
   const vd = versionDetail ?? effectiveVersionDetail;
   const isVersionContentLoading = !!selectedVersion && !versionDetail && isVersionDetailLoading;
-  const baseComponents: ComponentLink[] = a?.component_links ?? a?.mcp_links ?? [];
+  // Agent component links name the pin `version_ref`; version details call it `resolved_version`.
+  const baseComponents: ComponentLink[] = a?.component_links
+    ? a.component_links.map(({ version_ref, status, ...component }) => ({
+        ...component,
+        resolved_version: version_ref,
+        status: status ?? undefined,
+      }))
+    : (a?.mcp_links ?? []);
   const versionComponents = selectedVersion ? normalizeVersionComponents(vd?.components) : undefined;
   const components: ComponentLink[] = selectedVersion ? (versionComponents ?? []) : baseComponents;
   const displayComponentCount = selectedVersion
@@ -715,7 +754,7 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
   // and a personal one needs its creator.
   const canChangeVisibility = Boolean(
     a &&
-      (hasMinRole(getUserRole(), "admin") ||
+      (hasMinRole(role, "admin") ||
         (a.team_id ? teamRole === "owner" || teamRole === "reviewer" : isOwner)),
   );
   const currentVisibility = a?.visibility ?? (a?.is_private ? "team" : "public");
@@ -811,7 +850,7 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
         }
       />
 
-      <div className="p-6 lg:p-8 w-full">
+      <div className="page-body w-full">
         {isLoading ? (
           <DetailSkeleton />
         ) : isError ? (
@@ -836,6 +875,7 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
                     handleClassName="text-sm text-muted-foreground"
                   />
                   {a.status && <StatusBadge status={a.status} />}
+                  {a.is_recommended && <RecommendedBadge />}
                   {showVisibilityControl && (
                     <PickerSelect
                       value={currentVisibility}
@@ -911,6 +951,16 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
                   latestVersion={latestApprovedVersion ?? a.version}
                 />
               </div>
+
+              {isAdmin && (
+                <div className="lg:hidden">
+                  <RecommendedToggle
+                    entityType="agent"
+                    entityId={String(a.id)}
+                    isRecommended={!!a.is_recommended}
+                  />
+                </div>
+              )}
 
               {/* Tabs */}
               <Tabs defaultValue="overview">
@@ -1012,6 +1062,7 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
                     ) : (
                       <AgentVersionContents
                         components={components}
+                        freshness={pinFreshness}
                       />
                     )}
                   </div>
@@ -1058,7 +1109,7 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
                                   key={i}
                                   className={`h-3.5 w-3.5 ${
                                     i < fb.rating
-                                      ? "fill-current text-amber-500"
+                                      ? "fill-current text-warning"
                                       : "text-muted-foreground/30"
                                   }`}
                                 />
@@ -1097,7 +1148,7 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
                 )}
                 {canEdit && (
                   <TabsContent value="insights" className="mt-6">
-                    <InsightsTab agentId={id} agentVersion={effectiveVersion} />
+                    <InsightsTab agentId={id} agentVersion={effectiveVersion} enabled={canEdit} />
                   </TabsContent>
                 )}
 
@@ -1205,6 +1256,14 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
                   </h3>
                   <p className="text-sm">{a.owner}</p>
                 </div>
+              )}
+
+              {isAdmin && (
+                <RecommendedToggle
+                  entityType="agent"
+                  entityId={String(a.id)}
+                  isRecommended={!!a.is_recommended}
+                />
               )}
 
               {(a?.user_permission === "owner" || coAuthors.length > 0 || canManageLifecycle) && (

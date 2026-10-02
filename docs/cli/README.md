@@ -18,7 +18,9 @@ Complete reference for the `observal` CLI. Every subcommand has its own page; th
 | [`observal api`](api.md)                                                                   | Call authenticated JSON endpoints without a dedicated command                         |
 | [`observal auth`](auth.md)                                                                 | Authentication and account management                                                 |
 | [`observal config`](config.md)                                                             | Local CLI configuration, aliases                                                      |
+| [`observal discover`](discover.md)                                                         | Find approved resources for a task and use them in the current session                |
 | [`observal scan`](scan.md)                                                                 | Discover what's installed across your harnesses (read-only)                           |
+| [`observal share`](share.md)                                                               | Share and pull scoped, version-pinned repository Agent sets                           |
 | [`observal outdated`](outdated.md)                                                         | Compare installed agent and component versions with the active registry               |
 | [`observal reconcile`](reconcile.md)                                                       | Backfill sessions missed by automatic telemetry delivery                              |
 | [`observal inbox`](inbox.md)                                                               | Read and update the signed-in user's work and event feed                               |
@@ -82,10 +84,11 @@ Consistent across all commands:
 | 8    | Rate limit reached                           |
 | 9    | Network, service, or dependency unavailable  |
 | 10   | CLI and server version mismatch              |
+| 11   | Batch completed with one or more item errors |
 
-Errors identify the failed operation, resource, remediation, and server request ID when available. Internal details appear only with `--debug`.
+Errors identify the failed operation, resource, remediation, and server request ID when available. Repairable failures may include a safe structured `result`; internal details appear only with `--debug`.
 
-When JSON output is selected, errors are written to stderr as one JSON object and stdout remains clean:
+When JSON output is selected, errors are written to stderr as one JSON object and stdout remains clean. Startup migrations and update notices never write to JSON stdout. A nonfatal startup migration warning is a structured `warning` object on stderr.
 
 ```json
 {

@@ -7,13 +7,14 @@
 
 import uuid
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from api.deps import get_current_user, get_db
+from api.deps import get_current_user, get_db, get_registry_user
 from models.mcp import ListingStatus
 from models.user import User, UserRole
 
@@ -54,6 +55,7 @@ def _app_with(router, user=None, db=None):
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_registry_user] = lambda: user
     app.dependency_overrides[get_db] = lambda: db
     return app, db, user
 
@@ -76,6 +78,7 @@ def _listing_mock(model_cls, status=ListingStatus.pending, **extra):
     m.skill_md_content = None
     m.created_at = datetime.now(UTC)
     m.updated_at = datetime.now(UTC)
+    m.latest_version = SimpleNamespace(id=uuid.uuid4(), version=m.version, status=status, download_count=0)
     for k, v in extra.items():
         setattr(m, k, v)
     return m

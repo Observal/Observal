@@ -8,11 +8,13 @@ import { Toaster as Sonner } from "sonner"
 type ToasterProps = React.ComponentProps<typeof Sonner>
 
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { theme = "system" } = useTheme()
+  // Sonner expects "light" | "dark" | "system"; `theme` is now a preset name,
+  // so pass the resolved light/dark mode instead.
+  const { resolvedMode } = useTheme()
 
   return (
     <Sonner
-      theme={theme as ToasterProps["theme"]}
+      theme={resolvedMode as ToasterProps["theme"]}
       className="toaster group"
       toastOptions={{
         classNames: {

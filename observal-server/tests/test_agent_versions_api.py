@@ -172,6 +172,29 @@ async def test_list_versions_with_data():
 
 
 @pytest.mark.asyncio
+async def test_anonymous_version_count_only_includes_approved_versions():
+    """Anonymous pagination totals use the same approved-only filter as the rows."""
+    from api.routes.agent_versions import _list_agent_versions
+
+    agent = _make_agent()
+    db = _db_returning_versions([], total=0)
+
+    with patch("api.routes.agent_versions._load_agent", new=AsyncMock(return_value=agent)):
+        await _list_agent_versions(
+            agent_id=str(agent.id),
+            page=1,
+            page_size=20,
+            db=db,
+            current_user=None,
+        )
+
+    list_statement = db.execute.await_args_list[0].args[0]
+    count_statement = db.execute.await_args_list[1].args[0]
+    assert "agent_versions.status" in str(list_statement)
+    assert "agent_versions.status" in str(count_statement)
+
+
+@pytest.mark.asyncio
 async def test_list_versions_pagination():
     """list_agent_versions respects page/page_size parameters."""
     from api.routes.agent_versions import _list_agent_versions

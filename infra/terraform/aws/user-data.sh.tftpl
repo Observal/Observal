@@ -165,6 +165,16 @@ cat > "$INSTALL_DIR/docker/clickhouse/config.d/memory.xml" <<'CHCFG'
 </clickhouse>
 CHCFG
 
+cat > "$INSTALL_DIR/docker/clickhouse/config.d/telemetry.xml" <<'CHTELEMETRY'
+<clickhouse>
+    <send_crash_reports>
+        <enabled>false</enabled>
+        <send_logical_errors>false</send_logical_errors>
+    </send_crash_reports>
+    <remote_url_allow_hosts></remote_url_allow_hosts>
+</clickhouse>
+CHTELEMETRY
+
 cat > "$INSTALL_DIR/docker/clickhouse/users.d/default-user.xml" <<CHUSER
 <clickhouse>
   <users>

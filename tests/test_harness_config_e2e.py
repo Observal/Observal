@@ -350,6 +350,8 @@ class TestGenerateOpenCodeConfig:
         cfg = generate_agent_config(agent, "opencode")
         assert "mcp" in cfg["mcp_config"]["content"]
         assert "my-server" in cfg["mcp_config"]["content"]["mcp"]
+        # OpenCode rewrites a project config without "$schema" whenever it starts.
+        assert cfg["mcp_config"]["content"]["$schema"] == "https://opencode.ai/config.json"
 
     def test_opencode_entries_have_type_local(self):
         ext = [{"name": "my-server", "command": "npx", "args": ["-y", "my-server"]}]
@@ -651,7 +653,7 @@ def isolated_lockfile(tmp_path, monkeypatch):
 
 
 def _patch_post(return_value):
-    return patch("observal_cli.client.post", return_value=return_value)
+    return patch("observal_cli.client.post_public", return_value=return_value)
 
 
 _AGENT_DETAIL_NO_ENV = {
@@ -1348,7 +1350,22 @@ class TestMcpAuthHeadersInAgentPull:
             },
         ),
         ("cursor", {"version": 1, "hooks": {"preToolUse": [{"command": "python guard.py"}]}}),
-        ("kiro", {"hooks": {"preToolUse": [{"command": "python guard.py"}]}}),
+        (
+            # Kiro uses the standalone v1 hooks-file schema (IDE 1.0 / CLI 3.0);
+            # the legacy inline shape is hidden by the IDE.
+            "kiro",
+            {
+                "version": "v1",
+                "hooks": [
+                    {
+                        "name": "observal-pretooluse",
+                        "trigger": "PreToolUse",
+                        "action": {"type": "command", "command": "python guard.py"},
+                        "timeout": 10,
+                    }
+                ],
+            },
+        ),
         ("copilot", {"hooks": {"PreToolUse": [{"command": "python guard.py"}]}}),
         (
             "codex",

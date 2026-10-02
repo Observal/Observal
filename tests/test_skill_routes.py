@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Observal Contributors
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 from __future__ import annotations
@@ -347,6 +348,7 @@ class TestSubmitSkill:
             "updated_at": NOW,
             "download_count": 0,
             "user_permission": None,
+            "is_recommended": False,
         }
         assert events == [
             "add:SkillListing",
@@ -682,6 +684,54 @@ class TestListAndDetail:
 
 class TestInstallSkill:
     @pytest.mark.asyncio
+    async def test_anonymous_approved_install_does_not_change_download_metrics(self, monkeypatch):
+        db = _db()
+        listing = _listing()
+        commit = AsyncMock()
+        monkeypatch.setattr(skill, "resolve_visible_listing", AsyncMock(return_value=listing))
+        monkeypatch.setattr(skill, "commit_or_name_conflict", commit)
+        monkeypatch.setattr("api.routes.config.derive_endpoints", AsyncMock(return_value={"api": "https://api.test"}))
+        monkeypatch.setattr(
+            "services.skill_config_generator.generate_skill_config",
+            Mock(return_value={"skill": {"name": "review"}}),
+        )
+
+        response = await skill.install_skill(
+            "alice/review-skill",
+            SkillInstallRequest(harness="pi"),
+            MagicMock(),
+            db,
+            None,
+        )
+
+        assert response.config_snippet == {"skill": {"name": "review"}}
+        assert listing.latest_version.download_count == 7
+        db.add.assert_not_called()
+        commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_anonymous_archived_install_is_hidden(self, monkeypatch):
+        db = _db()
+        listing = _listing(status=ListingStatus.archived)
+        monkeypatch.setattr(skill, "resolve_visible_listing", AsyncMock(side_effect=[None, listing]))
+        commit = AsyncMock()
+        monkeypatch.setattr(skill, "commit_or_name_conflict", commit)
+
+        with pytest.raises(HTTPException) as exc:
+            await skill.install_skill(
+                "alice/review-skill",
+                SkillInstallRequest(harness="pi"),
+                MagicMock(),
+                db,
+                None,
+            )
+
+        _http_error(exc, 404, "Listing not found or not approved")
+        assert listing.latest_version.download_count == 7
+        db.add.assert_not_called()
+        commit.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_archived_version_install_tracks_usage_then_generates_exact_config(self, monkeypatch):
         db = _db()
         listing = _listing(status=ListingStatus.archived)
@@ -715,7 +765,11 @@ class TestInstallSkill:
             "harness": "pi",
             "config_snippet": {"skill": {"ok": True}},
             "warnings": ["Archived skill 'Review Skill' is deprecated and may be removed from future agent pulls."],
+            "version": "1.0.0",
+            "version_id": override.id,
+            "digest": response.digest,
         }
+        assert response.digest.startswith("sha256:")
         assert resolve.await_args_list == [
             call(SkillListing, "alice/review-skill", db, _user(), require_status=ListingStatus.approved),
             call(SkillListing, "alice/review-skill", db, _user()),
@@ -725,11 +779,12 @@ class TestInstallSkill:
         params = version_stmt.compile().params
         assert params["listing_id_1"] == LISTING_ID
         assert params["version_1"] == "1.0.0"
-        assert params["status_1"] == [ListingStatus.approved, ListingStatus.archived]
         download = db.add.call_args.args[0]
         assert isinstance(download, SkillDownload)
         assert (download.listing_id, download.user_id, download.harness) == (LISTING_ID, USER_ID, "pi")
-        assert listing.latest_version.download_count == 8
+        # The download is counted against the version that was installed.
+        assert override.download_count == 1
+        assert listing.latest_version.download_count == 7
         assert events == ["commit", "derive", "generate"]
         commit.assert_awaited_once_with(db, "skill")
         derive.assert_awaited_once_with(request)

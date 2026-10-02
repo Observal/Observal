@@ -23,7 +23,12 @@ a = Analysis(
     [str(spec_dir / "main.py")],
     pathex=[str(repo_root)],
     binaries=[],
-    datas=[],
+    datas=[
+        (
+            str(repo_root / "packages" / "observal-shared" / "observal_shared" / "harness_models"),
+            "observal_shared/harness_models",
+        ),
+    ],
     hiddenimports=[
         "observal_cli.sandbox_runner",
         "typer",

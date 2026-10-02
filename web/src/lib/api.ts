@@ -42,6 +42,7 @@ import type {
 	ComponentVersionsResponse,
 	ComponentVersionDetail,
 	VersionDiff,
+	AgentVersionOutdated,
 	BulkResult,
 	ComponentLeaderboardItem,
 	AuditLogEntry,
@@ -85,6 +86,10 @@ import type {
 	TeamRole,
 	TeamUpdateBody,
 	RecommendationsResponse,
+	SetRecommendedRequest,
+	SetRecommendedResponse,
+	DiscoverySearchFilter,
+	DiscoverySearchResponse,
 	InboxItem,
 	InboxItemDetail,
 	InboxListResponse,
@@ -123,6 +128,7 @@ function getRefreshToken(): string | null {
 export function setTokens(accessToken: string, refreshToken: string) {
 	sessionStorage.setItem(STORAGE_KEY_ACCESS_TOKEN, accessToken);
 	localStorage.setItem(STORAGE_KEY_REFRESH_TOKEN, refreshToken);
+	window.dispatchEvent(new Event("storage"));
 }
 
 export function clearSession() {
@@ -134,6 +140,8 @@ export function clearSession() {
 	localStorage.removeItem(STORAGE_KEY_USER_EMAIL);
 	localStorage.removeItem(STORAGE_KEY_USER_USERNAME);
 	localStorage.removeItem(STORAGE_KEY_USER_AVATAR);
+	window.dispatchEvent(new Event("observal:session-cleared"));
+	window.dispatchEvent(new Event("storage"));
 }
 
 export function setUserRole(role: string) {
@@ -514,6 +522,8 @@ export const registry = {
 		post<unknown>(`/agents/${agentId}/versions`, body),
 	getVersionDiff: (agentId: string, v1: string, v2: string) =>
 		get<VersionDiff>(`/agents/${agentId}/versions/${v1}/diff/${v2}`),
+	getVersionOutdated: (agentId: string, version: string) =>
+		get<AgentVersionOutdated>(`/agents/${agentId}/versions/${version}/outdated`),
 
 	// Component versions
 	listComponentVersions: (
@@ -655,10 +665,11 @@ export const dashboard = {
 		const qs = params.toString();
 		return get<LeaderboardItem[]>(`/overview/leaderboard${qs ? `?${qs}` : ""}`);
 	},
-	componentLeaderboard: (window?: LeaderboardWindow, limit?: number) => {
+	componentLeaderboard: (window?: LeaderboardWindow, limit?: number, user?: string) => {
 		const params = new URLSearchParams();
 		if (window) params.set("window", window);
 		if (limit) params.set("limit", String(limit));
+		if (user) params.set("user", user);
 		const qs = params.toString();
 		return get<ComponentLeaderboardItem[]>(
 			`/overview/component-leaderboard${qs ? `?${qs}` : ""}`,
@@ -924,6 +935,8 @@ export const admin = {
 			`/admin/migrate/jobs/${jobId}/artifacts/${name}/token`,
 			{},
 		),
+	setRecommended: (body: SetRecommendedRequest) =>
+		patch<SetRecommendedResponse>("/admin/recommended", body),
 };
 
 // ── Retention Types ───────────────────────────────────────────────
@@ -979,6 +992,7 @@ export type PublicConfig = {
 	google_sso_enabled: boolean;
 	github_sso_enabled: boolean;
 	sso_only: boolean;
+	public_registry_enabled: boolean;
 	self_registration_enabled: boolean;
 	saml_enabled: boolean;
 	exec_dashboard_available: boolean;
@@ -996,11 +1010,22 @@ export type VersionConfig = {
 	recommended_cli_version: string;
 };
 
+export type HarnessMcpInstallMode = "file" | "setup_command" | "adapter" | "user_only";
+
+/** Verified per-harness runtime facts (see harness_registry.py). */
+export interface HarnessRuntimeFacts {
+	mcp_install_mode: HarnessMcpInstallMode;
+	dynamic_tools: boolean;
+	prompt_context_injection: boolean;
+	guidance_file_write: boolean;
+}
+
 export interface HarnessEntry {
 	name: string;
 	display_name: string;
 	capabilities: string[];
 	supported_models: string[];
+	runtime: HarnessRuntimeFacts;
 }
 
 interface HarnessesResponse {
@@ -1088,6 +1113,36 @@ export const recommendations = {
 			component_id: componentId,
 			action,
 		}),
+};
+
+// ── Discovery (ARD) ─────────────────────────────────────────────────
+const DISCOVERY_MEDIA_TYPES: Record<string, string> = {
+	skill: "application/ai-skill+md",
+	mcp: "application/mcp-server-card+json",
+	prompt: "application/vnd.observal.prompt+json",
+	sandbox: "application/vnd.observal.sandbox+json",
+	hook: "application/vnd.observal.hook+json",
+	agent: "application/vnd.observal.agent+json",
+	external: "application/a2a-agent-card+json",
+};
+
+export const discovery = {
+	/** ARD Search. Omitting federation means the spec's `auto`, bounded by the admin allowlist. */
+	search: (text: string, filter: DiscoverySearchFilter = {}, pageSize = 10, pageToken?: string) => {
+		const ardFilter: Record<string, string[]> = {};
+		if (filter.kind) ardFilter.type = [DISCOVERY_MEDIA_TYPES[filter.kind]];
+		if (filter.harness) ardFilter["obs:supportedHarnesses"] = [filter.harness];
+		if (!filter.includeUnapproved) ardFilter["obs:lifecycle"] = ["approved"];
+		const body: Record<string, unknown> = {
+			query: { text, filter: ardFilter },
+			federation: "none",
+			pageSize,
+		};
+		if (pageToken) body.pageToken = pageToken;
+		return post<DiscoverySearchResponse>("/ard/search", body);
+	},
+	entry: (identifier: string) =>
+		get<Record<string, unknown>>(`/ard/entries/${encodeURIComponent(identifier)}`),
 };
 
 // ── Inbox ──────────────────────────────────────────────────────────

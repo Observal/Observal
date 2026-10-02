@@ -33,6 +33,7 @@ from observal_cli.render import (
     esc,
     handle,
     kv_panel,
+    listing_status,
     output_json,
     relative_time,
     spinner,
@@ -525,7 +526,7 @@ def skill_show(
         kv_panel(
             f"{esc(display_name(item))} v{esc(item.get('version', '?'))}",
             [
-                ("Status", status_badge(item.get("status", ""))),
+                ("Status", listing_status(item)),
                 ("Validated", "✓" if item.get("validated") else "✗"),
                 ("Task Type", esc(item.get("task_type", "N/A"))),
                 ("Delivery Mode", esc(item.get("delivery_mode", "git_fetch"))),
@@ -681,7 +682,7 @@ def skill_install(
         install_body = {"harness": harness, "scope": scope, "local_name": local_name}
         if version:
             install_body["version"] = version
-        result = client.post(f"/api/v1/skills/{resolved}/install", install_body)
+        result = client.post_public(f"/api/v1/skills/{resolved}/install", install_body)
     snippet = result.get("config_snippet", result)
 
     if raw:
@@ -739,12 +740,15 @@ def skill_install(
                 component_type="skill",
                 name=skill_info.get("name", resolved),
                 component_id=str(skill_info.get("id", resolved)),
-                version=version or skill_info.get("version") or skill_info.get("latest_version"),
+                version=result.get("version") or version or skill_info.get("version") or listing.get("version"),
                 scope=scope,
                 directory=directory,
                 namespace=listing.get("namespace"),
                 slug=listing.get("slug"),
                 local_name=local_name,
+                version_id=str(result["version_id"]) if result.get("version_id") else None,
+                digest=result.get("digest"),
+                requested_version=version,
             )
         except PermissionError as error:
             fail(

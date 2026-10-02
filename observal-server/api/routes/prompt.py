@@ -19,8 +19,8 @@ from api.deps import (
     commit_or_name_conflict,
     get_db,
     get_effective_component_permission,
+    get_registry_user,
     may_view_unapproved,
-    optional_current_user,
     require_role,
     resolve_listing,
     resolve_visible_listing,
@@ -46,6 +46,7 @@ from services.registry_namespace import identity_exists
 from services.teamspace import publish_auto_approves_for_entity, resolve_publish_target
 
 router = APIRouter(prefix="/api/v1/prompts", tags=["prompts"])
+_PROMPT_VARIABLE_RE = re.compile(r"\{\{\s*([^{}\r\n]*?\S)\s*\}\}")
 
 
 @router.post("/submit", response_model=PromptListingResponse)
@@ -124,7 +125,7 @@ async def list_prompts(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(optional_current_user),
+    current_user: User | None = Depends(get_registry_user),
 ):
     optic.debug("prompt list: search={}", search)
     stmt = (
@@ -195,7 +196,7 @@ async def my_prompts(
 async def get_prompt(
     listing_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User | None = Depends(optional_current_user),
+    current_user: User | None = Depends(get_registry_user),
 ):
     optic.debug("prompt get: listing_id={}", listing_id)
     listing = await resolve_visible_listing(
@@ -218,7 +219,7 @@ async def render_prompt(
     listing_id: str,
     req: PromptRenderRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.user)),
+    current_user: User | None = Depends(get_registry_user),
 ):
     optic.debug("prompt render")
     listing = await resolve_visible_listing(
@@ -226,15 +227,21 @@ async def render_prompt(
     )
     if not listing:
         listing = await resolve_visible_listing(PromptListing, listing_id, db, current_user)
-        if not listing or (
-            listing.status != ListingStatus.archived
-            and get_effective_component_permission(listing, current_user) != "owner"
+        if (
+            not listing
+            or current_user is None
+            or (
+                listing.status != ListingStatus.archived
+                and get_effective_component_permission(listing, current_user) != "owner"
+            )
         ):
             raise HTTPException(status_code=404, detail="Listing not found or not approved")
 
-    rendered = listing.template
-    for key, value in req.variables.items():
-        rendered = re.sub(r"\{\{\s*" + re.escape(key) + r"\s*\}\}", value, rendered)
+    def replace_variable(match: re.Match[str]) -> str:
+        key = match.group(1)
+        return req.variables[key] if key in req.variables else match.group(0)
+
+    rendered = _PROMPT_VARIABLE_RE.sub(replace_variable, listing.template)
 
     return PromptRenderResponse(listing_id=listing.id, rendered=rendered)
 

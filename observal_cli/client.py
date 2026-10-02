@@ -8,6 +8,7 @@
 import logging
 import time
 import uuid
+from contextvars import ContextVar
 from urllib.parse import quote, urlparse, urlunparse
 
 import httpx
@@ -27,6 +28,9 @@ _version_enforced: bool = False
 
 # Subcommands exempt from version enforcement (user needs these to fix mismatches)
 _EXEMPT_SUBCOMMANDS = frozenset({"self", "server"})
+_OPTIONAL_AUTH = ContextVar("observal_optional_auth", default=False)
+_PUBLIC_POST = ContextVar("observal_public_post", default=False)
+_QueryParams = dict | list[tuple[str, str]]
 
 
 def _get_cli_version() -> str:
@@ -40,12 +44,12 @@ def _get_cli_version() -> str:
 
 
 def _client() -> tuple[str, dict]:
-    cfg = config.get_or_exit()
+    auth_required = not _OPTIONAL_AUTH.get()
+    cfg = config.get_or_exit() if auth_required else config.get_or_exit(require_auth=False)
     base_url = cfg["server_url"].rstrip("/")
-    headers = {
-        "Authorization": f"Bearer {cfg['access_token']}",
-        "X-Observal-CLI-Version": _get_cli_version(),
-    }
+    headers = {"X-Observal-CLI-Version": _get_cli_version()}
+    if token := cfg.get("access_token"):
+        headers["Authorization"] = f"Bearer {token}"
     # Run version enforcement once per session (unless exempt subcommand)
     _enforce_version_once(base_url)
     return base_url, headers
@@ -88,7 +92,8 @@ def _safe_detail(response: httpx.Response) -> str | None:
         data = response.json()
     except (ValueError, UnicodeDecodeError):
         return None
-    detail = data.get("detail") if isinstance(data, dict) else None
+    # FastAPI errors use ``detail``; ARD routes use ``{"errorCode", "message"}``.
+    detail = (data.get("detail") or data.get("message")) if isinstance(data, dict) else None
     return detail.strip()[:500] if isinstance(detail, str) and detail.strip() else None
 
 
@@ -263,8 +268,9 @@ def _request_with_retry(
     url: str,
     headers: dict,
     *,
-    params: dict | None = None,
+    params: _QueryParams | None = None,
     json: object | None = None,
+    send_json: bool = False,
 ) -> httpx.Response:
     """Execute HTTP with transient retries for GET requests only.
 
@@ -276,10 +282,15 @@ def _request_with_retry(
     timeout = config.get_timeout()
     func = getattr(httpx, method)
 
-    kwargs: dict = {"headers": headers, "timeout": timeout}
+    request_headers = headers
+    kwargs: dict = {"headers": request_headers, "timeout": timeout}
     if params is not None:
         kwargs["params"] = params
-    if json is not None:
+    if send_json and json is None:
+        request_headers = {**headers, "Content-Type": "application/json"}
+        kwargs["headers"] = request_headers
+        kwargs["content"] = b"null"
+    elif json is not None:
         kwargs["json"] = json
 
     safe_url = urlunparse(urlparse(url)._replace(netloc=urlparse(url).hostname or ""))
@@ -294,7 +305,8 @@ def _request_with_retry(
             # Update headers with new token and retry
             cfg = config.load()
             headers["Authorization"] = f"Bearer {cfg['access_token']}"
-            kwargs["headers"] = headers
+            request_headers["Authorization"] = headers["Authorization"]
+            kwargs["headers"] = request_headers
             optic.debug("token refreshed, retrying")
             continue
 
@@ -395,15 +407,23 @@ def _request(
     *,
     operation: str,
     resource: str,
-    params: dict | None = None,
+    params: _QueryParams | None = None,
     json_data: object | None = None,
+    auth_required: bool = True,
+    send_json: bool = False,
 ) -> httpx.Response:
-    base, headers = _client()
+    optional_auth_token = _OPTIONAL_AUTH.set(not auth_required)
+    try:
+        base, headers = _client()
+    finally:
+        _OPTIONAL_AUTH.reset(optional_auth_token)
     request_kwargs: dict = {}
     if params is not None:
         request_kwargs["params"] = params
-    if json_data is not None:
+    if json_data is not None or send_json:
         request_kwargs["json"] = json_data
+    if send_json:
+        request_kwargs["send_json"] = True
     try:
         return _request_with_retry(method, f"{base}{path}", headers, **request_kwargs)
     except httpx.HTTPStatusError as error:
@@ -447,8 +467,9 @@ def request_json(
     method: str,
     path: str,
     *,
-    params: dict | None = None,
+    params: _QueryParams | None = None,
     json_data: object | None = None,
+    send_json: bool = False,
     operation: str | None = None,
     resource: str | None = None,
 ) -> object:
@@ -460,7 +481,15 @@ def request_json(
         default_operation=f"Call {method.upper()} {path}",
         default_resource=path,
     )
-    response = _request(method, path, operation=operation, resource=resource, params=params, json_data=json_data)
+    response = _request(
+        method,
+        path,
+        operation=operation,
+        resource=resource,
+        params=params,
+        json_data=json_data,
+        send_json=send_json,
+    )
     return _json_response(
         response,
         operation=operation,
@@ -471,7 +500,7 @@ def request_json(
 
 def get(
     path: str,
-    params: dict | None = None,
+    params: _QueryParams | None = None,
     *,
     operation: str | None = None,
     resource: str | None = None,
@@ -483,13 +512,20 @@ def get(
         default_operation=f"Fetch {path}",
         default_resource=path,
     )
-    response = _request("get", path, operation=operation, resource=resource, params=params)
+    response = _request(
+        "get",
+        path,
+        operation=operation,
+        resource=resource,
+        params=params,
+        auth_required=False,
+    )
     return _json_response(response, operation=operation, resource=resource)
 
 
 def get_text(
     path: str,
-    params: dict | None = None,
+    params: _QueryParams | None = None,
     *,
     content_type: str | None = None,
     operation: str | None = None,
@@ -503,7 +539,14 @@ def get_text(
         default_operation=f"Fetch {path}",
         default_resource=path,
     )
-    response = _request("get", path, operation=operation, resource=resource, params=params)
+    response = _request(
+        "get",
+        path,
+        operation=operation,
+        resource=resource,
+        params=params,
+        auth_required=False,
+    )
     actual_content_type = response.headers.get("content-type", "").lower()
     if content_type and content_type.lower() not in actual_content_type:
         fail(
@@ -520,7 +563,7 @@ def get_text(
 
 def get_with_headers(
     path: str,
-    params: dict | None = None,
+    params: _QueryParams | None = None,
     *,
     operation: str | None = None,
     resource: str | None = None,
@@ -533,7 +576,14 @@ def get_with_headers(
         default_operation=f"Fetch {path}",
         default_resource=path,
     )
-    response = _request("get", path, operation=operation, resource=resource, params=params)
+    response = _request(
+        "get",
+        path,
+        operation=operation,
+        resource=resource,
+        params=params,
+        auth_required=False,
+    )
     headers = {key.lower(): value for key, value in response.headers.items()}
     return _json_response(response, operation=operation, resource=resource), headers
 
@@ -552,8 +602,32 @@ def post(
         default_operation=f"Create or act on {path}",
         default_resource=path,
     )
-    response = _request("post", path, operation=operation, resource=resource, json_data=json_data)
+    response = _request(
+        "post",
+        path,
+        operation=operation,
+        resource=resource,
+        json_data=json_data,
+        auth_required=not _PUBLIC_POST.get(),
+    )
     return _json_response(response, operation=operation, resource=resource, allow_empty=True)
+
+
+def post_public(
+    path: str,
+    json_data: dict | None = None,
+    *,
+    operation: str | None = None,
+    resource: str | None = None,
+) -> dict:
+    """POST to a read-like public endpoint, using credentials when available."""
+    public_post_token = _PUBLIC_POST.set(True)
+    try:
+        if operation is None and resource is None:
+            return post(path, json_data)
+        return post(path, json_data, operation=operation, resource=resource)
+    finally:
+        _PUBLIC_POST.reset(public_post_token)
 
 
 def put(

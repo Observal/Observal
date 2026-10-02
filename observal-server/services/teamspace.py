@@ -62,6 +62,8 @@ async def team_membership(db: AsyncSession, team_id: uuid.UUID, user_id: uuid.UU
 # The team roles that clear review for their own teamspace. A plain member
 # publishes into the queue; it is these two that empty it.
 REVIEWING_TEAM_ROLES = (TeamRole.owner, TeamRole.reviewer)
+# A teamspace whose visibility change is under review is locked: its roles review nothing meanwhile.
+TEAM_REVIEW_UNLOCKED = or_(Team.visibility_request_status.is_(None), Team.visibility_request_status != "pending")
 
 
 @dataclass(frozen=True)
@@ -104,7 +106,7 @@ async def review_scope(db: AsyncSession, user: User) -> ReviewScope:
             .where(
                 TeamMembership.user_id == user.id,
                 TeamMembership.role.in_(REVIEWING_TEAM_ROLES),
-                or_(Team.visibility_request_status.is_(None), Team.visibility_request_status != "pending"),
+                TEAM_REVIEW_UNLOCKED,
             )
         )
     ).all()

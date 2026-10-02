@@ -66,10 +66,10 @@ export function useSubmitFeedback() {
   });
 }
 
-export function useMyFeedback(type: string | undefined, id: string | undefined) {
+export function useMyFeedback(type: string | undefined, id: string | undefined, enabled = true) {
   return useQuery({
     queryKey: ["feedback", "mine", type, id],
-    enabled: !!type && !!id,
+    enabled: !!type && !!id && enabled,
     queryFn: () => feedback.mine(type!, id!),
     retry: (_count, err: unknown) => {
       const status = (err as { status?: number })?.status;
@@ -109,28 +109,29 @@ export function useDeleteFeedback() {
 
 // ── Insights ───────────────────────────────────────────────────────
 
-export function useInsightsStatus() {
+export function useInsightsStatus(enabled = true) {
   return useQuery({
     queryKey: ["insights", "status"],
     queryFn: () => insights.status(),
+    enabled,
     staleTime: 0,
   });
 }
 
-export function useInsightSessionCount(agentId: string | undefined, agentVersion?: string | null) {
+export function useInsightSessionCount(agentId: string | undefined, agentVersion?: string | null, enabled = true) {
   return useQuery({
     queryKey: ["insights", "session-count", agentId, agentVersion],
     queryFn: () => insights.sessionCount(agentId!, agentVersion ?? undefined),
-    enabled: !!agentId,
+    enabled: !!agentId && enabled,
     refetchInterval: 30_000,
   });
 }
 
-export function useInsightReports(agentId: string | undefined) {
+export function useInsightReports(agentId: string | undefined, enabled = true) {
   return useQuery({
     queryKey: ["insights", "reports", agentId],
     queryFn: () => insights.listReports(agentId!),
-    enabled: !!agentId,
+    enabled: !!agentId && enabled,
     refetchInterval: (query) => {
       const reports = query.state.data;
       if (Array.isArray(reports) && reports.some((r: { status: string }) => r.status === "pending" || r.status === "running")) {

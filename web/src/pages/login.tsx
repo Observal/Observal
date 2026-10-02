@@ -11,6 +11,7 @@ import { Link, useRouter, useSearch } from "@tanstack/react-router";
 import { Eye, EyeOff, ArrowRight, Loader2, AlertCircle, RefreshCw, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { auth, config as configApi, setTokens, clearSession, setUserRole, getUserRole, setUserName, setUserEmail, setUserUsername, setUserAvatar } from "@/lib/api";
+import { isPublicRegistryPath } from "@/lib/public-registry";
 import { isSafeNext, safeNext } from "@/lib/safe-next";
 import type { SsoHealthResult, E2eStatusResult, HealthCheck } from "@/lib/api";
 import { useDeploymentConfig } from "@/hooks/use-deployment-config";
@@ -29,6 +30,7 @@ function LoginContent() {
     googleSsoEnabled,
     githubSsoEnabled,
     ssoOnly,
+    publicRegistryEnabled,
     selfRegistrationEnabled,
     samlEnabled,
     brandingAppName,
@@ -261,6 +263,13 @@ function LoginContent() {
     window.location.href = ssoStartUrl("/api/v1/sso/saml/login");
   }
 
+  function handleGuestLogin() {
+    clearSession();
+    const requestedPath = safeNext(searchParams.next);
+    const pathname = requestedPath.split(/[?#]/, 1)[0];
+    window.location.replace(isPublicRegistryPath(pathname) ? requestedPath : "/");
+  }
+
   useEffect(() => {
     if (searchParams.sso !== "1" || directSsoStarted.current) return;
     directSsoStarted.current = true;
@@ -389,7 +398,7 @@ function LoginContent() {
               </h1>
             )}
             <p className="text-sm text-muted-foreground">
-              Sign in to your account
+              {publicRegistryEnabled ? "Sign in or browse the public registry" : "Sign in to your account"}
             </p>
           </div>
 
@@ -624,6 +633,32 @@ function LoginContent() {
                       )}
                     </Button>
                   </div>
+                )}
+
+                {publicRegistryEnabled && (
+                  <>
+                    <div className="relative py-2">
+                      <div className="absolute inset-0 flex items-center">
+                        <span className="w-full border-t" />
+                      </div>
+                      <div className="relative flex justify-center text-xs uppercase">
+                        <span className="bg-card px-2 text-muted-foreground">Public access</span>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full"
+                      onClick={handleGuestLogin}
+                      disabled={loading || ssoLoading}
+                    >
+                      Sign in as guest
+                      <ArrowRight className="ml-1 h-4 w-4" />
+                    </Button>
+                    <p className="text-center text-xs leading-5 text-muted-foreground">
+                      Browse and install approved public registry content without an account.
+                    </p>
+                  </>
                 )}
               </div>
 

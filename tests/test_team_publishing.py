@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Team publishing review rules.
@@ -27,6 +28,15 @@ from models.mcp import ListingStatus
 from models.team import TeamRole
 from models.user import User, UserRole
 from services.teamspace import publish_auto_approves_for_entity, resolve_publish_target
+
+
+@pytest.fixture(autouse=True)
+def _lock_service_stub(monkeypatch):
+    """These routes run on a mocked session; the lock service has its own tests."""
+    import services.agent_lock as agent_lock
+
+    monkeypatch.setattr(agent_lock, "lock_agent_version", AsyncMock(return_value={}))
+
 
 # ── Helpers ──────────────────────────────────────────────
 

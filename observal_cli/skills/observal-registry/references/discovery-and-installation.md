@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Observal Contributors -->
+<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Discovery and installation
@@ -12,7 +13,17 @@
 
 ## Search and inspect
 
-Start broad with natural-language search, then narrow only when needed.
+For "is there something that does X?" start with cross-kind discovery, which ranks agents, MCP servers, skills, hooks, prompts, and sandboxes together and tells you whether each result can be used right now:
+
+```bash
+observal discover search 'review a pull request for authentication bugs' --output json
+observal discover inspect urn:air:... --output json
+observal discover use urn:air:... --output json
+```
+
+Skills and prompts load into the current session; other kinds return the install command below as `next_step`. The `observal` skill's Discovery reference covers the fields in detail.
+
+For kind-specific browsing and filters, use the registry list commands. Start broad with natural-language search, then narrow only when needed.
 
 ```bash
 observal registry mcp list --search 'github docker' --output json
@@ -71,6 +82,7 @@ observal registry skill install NAMESPACE/SLUG --harness claude-code --scope pro
 observal registry skill install NAMESPACE/SLUG --harness kiro --scope user --version 1.2.0 --output json
 observal registry hook install NAMESPACE/SLUG --harness kiro --output json
 observal registry hook install NAMESPACE/SLUG --harness claude-code --platform darwin --dir . --output json
+observal registry hook install NAMESPACE/SLUG --harness claude-code --version 1.0.0 --dir . --output json
 ```
 
 Use raw output only when the user explicitly asks for a config snippet or raw response:
@@ -79,7 +91,7 @@ Use raw output only when the user explicitly asks for a config snippet or raw re
 observal registry mcp install NAMESPACE/SLUG --harness claude-code --raw
 ```
 
-Never combine raw and JSON modes. Never print supplied environment or header values.
+Never combine raw and JSON modes. JSON MCP installation requires `--no-prompt`; missing required values return a nonzero `error.result.needs_input` response before install generation. Raw mode is the only template workflow that may intentionally contain placeholders. Never print supplied environment or header values.
 
 ## Verification
 

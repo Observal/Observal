@@ -27,6 +27,7 @@ import { useInboxCounts } from "@/hooks/use-inbox-api";
 
 import {
 	Home,
+	Search,
 	Bot,
 	Blocks,
 	Hammer,
@@ -42,6 +43,7 @@ import {
 	KeyRound,
 	BookOpen,
 	Inbox,
+	LogIn,
 } from "lucide-react";
 import { useSyncExternalStore } from "react";
 import {
@@ -66,7 +68,9 @@ type NavItem = {
 
 const registryNav: NavItem[] = [
 	{ title: "Home", href: "/", icon: Home },
+	{ title: "Discover", href: "/discover", icon: Search },
 	{ title: "Agents", href: "/agents", icon: Bot },
+	{ title: "Leaderboard", href: "/leaderboard", icon: Trophy },
 	{ title: "Components", href: "/components", icon: Blocks },
 	{
 		title: "Teamspaces",
@@ -74,20 +78,22 @@ const registryNav: NavItem[] = [
 		icon: Users,
 		requiresAuth: true,
 	},
-];
-
-const workspaceNav: NavItem[] = [
 	{
 		title: "Builder",
 		href: "/agents/builder",
 		icon: Hammer,
 		requiresAuth: true,
 	},
+	{ title: "Wiki", href: "/wiki", icon: BookOpen },
+];
+
+const reviewNav: NavItem[] = [
 	{ title: "Review", href: "/review", icon: ShieldCheck, minRole: "reviewer" },
+];
+
+const userNav: NavItem[] = [
 	{ title: "Inbox", href: "/inbox", icon: Inbox, minRole: "user" },
 	{ title: "My Traces", href: "/traces", icon: Activity, minRole: "user" },
-	{ title: "Leaderboard", href: "/leaderboard", icon: Trophy },
-	{ title: "Wiki", href: "/wiki", icon: BookOpen },
 ];
 
 const adminNav: NavItem[] = [
@@ -127,8 +133,9 @@ const adminNav: NavItem[] = [
 
 export const allNavItems = [
 	{ group: "Registry", items: registryNav },
-	{ group: "Workspace", items: workspaceNav },
-	{ group: "Administration", items: adminNav },
+	{ group: "Review", items: reviewNav },
+	{ group: "Traces", items: userNav },
+	{ group: "Admin", items: adminNav },
 ];
 
 const storeSub = (cb: () => void) => {
@@ -145,54 +152,9 @@ function ServerVersionBadge() {
 	if (loading || !serverVersion || serverVersion === "dev") return null;
 
 	return (
-		<div className="group-data-[collapsible=icon]:hidden rounded-md px-2 py-1.5 text-xs leading-none text-sidebar-foreground/55">
+		<div className="group-data-[collapsible=icon]:hidden rounded-md px-2 py-1.5 text-[11px] leading-none text-sidebar-foreground/55">
 			Server v{serverVersion}
 		</div>
-	);
-}
-
-function NavGroup({
-	label,
-	items,
-	isActive,
-	inboxUnread = 0,
-}: {
-	label: string;
-	items: NavItem[];
-	isActive: (href: string) => boolean;
-	inboxUnread?: number;
-}) {
-	if (items.length === 0) return null;
-	return (
-		<SidebarGroup className="py-1.5">
-			<SidebarGroupLabel className="h-7 text-xs font-semibold uppercase tracking-[0.12em] text-sidebar-foreground/55">
-				{label}
-			</SidebarGroupLabel>
-			<SidebarGroupContent>
-				<SidebarMenu className="gap-0.5">
-					{items.map((item) => (
-						<SidebarMenuItem key={item.href}>
-							<SidebarMenuButton
-								asChild
-								isActive={isActive(item.href)}
-								tooltip={item.title}
-							>
-								<Link to={item.href}>
-									<item.icon className="h-4 w-4" />
-									<span>{item.title}</span>
-								</Link>
-							</SidebarMenuButton>
-							{item.href === "/inbox" && inboxUnread > 0 && (
-								<SidebarMenuBadge>
-									{inboxUnread}
-									<span className="sr-only"> unread inbox items</span>
-								</SidebarMenuBadge>
-							)}
-						</SidebarMenuItem>
-					))}
-				</SidebarMenu>
-			</SidebarGroupContent>
-		</SidebarGroup>
 	);
 }
 
@@ -212,9 +174,12 @@ export function RegistrySidebar() {
 		if (pathname === href) return true;
 		// Only treat as active if no *more-specific* sibling nav item matches.
 		// e.g. /agents should NOT be active when /agents/builder matches.
-		const allHrefs = [...registryNav, ...workspaceNav, ...adminNav].map(
-			(n) => n.href,
-		);
+		const allHrefs = [
+			...registryNav,
+			...reviewNav,
+			...userNav,
+			...adminNav,
+		].map((n) => n.href);
 		const moreSpecific = allHrefs.some(
 			(h) => h !== href && h.startsWith(href + "/") && pathname.startsWith(h),
 		);
@@ -226,11 +191,15 @@ export function RegistrySidebar() {
 		(item) => !item.requiresAuth || isAuthenticated,
 	);
 
-	const visibleWorkspaceNav = workspaceNav.filter(
-		(item) =>
-			(!item.requiresAuth || isAuthenticated) &&
-			(!item.minRole || (isAuthenticated && hasMinRole(role, item.minRole))),
-	);
+	const visibleReviewNav = isAuthenticated
+		? reviewNav.filter(
+				(item) => !item.minRole || hasMinRole(role, item.minRole),
+			)
+		: [];
+
+	const visibleUserNav = isAuthenticated
+		? userNav.filter((item) => !item.minRole || hasMinRole(role, item.minRole))
+		: [];
 
 	// Only unread drives the badge. Action-required is shown inside the page,
 	// because a count that never clears until the work is done would sit on the
@@ -244,7 +213,7 @@ export function RegistrySidebar() {
 
 	return (
 		<Sidebar collapsible="icon">
-			<SidebarHeader className="border-b border-sidebar-border/70 px-2 py-2.5">
+			<SidebarHeader>
 				<SidebarMenu>
 					<SidebarMenuItem>
 						<SidebarMenuButton size="lg" asChild>
@@ -288,25 +257,124 @@ export function RegistrySidebar() {
 					</SidebarMenuItem>
 				</SidebarMenu>
 			</SidebarHeader>
-			<SidebarContent className="gap-0 py-1">
-				<NavGroup label="Registry" items={visibleRegistryNav} isActive={isActive} />
-				<NavGroup
-					label="Workspace"
-					items={visibleWorkspaceNav}
-					isActive={isActive}
-					inboxUnread={inboxUnread}
-				/>
-				<NavGroup label="Administration" items={visibleAdminNav} isActive={isActive} />
+			<SidebarContent>
+				<SidebarGroup>
+					<SidebarGroupLabel className="text-2xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
+						Registry
+					</SidebarGroupLabel>
+					<SidebarGroupContent>
+						<SidebarMenu>
+							{visibleRegistryNav.map((item) => (
+								<SidebarMenuItem key={item.href}>
+									<SidebarMenuButton asChild isActive={isActive(item.href)}>
+										<Link to={item.href}>
+											<item.icon className="h-4 w-4" />
+											<span>{item.title}</span>
+										</Link>
+									</SidebarMenuButton>
+								</SidebarMenuItem>
+							))}
+						</SidebarMenu>
+					</SidebarGroupContent>
+				</SidebarGroup>
+
+				{visibleReviewNav.length > 0 && (
+					<SidebarGroup>
+						<SidebarGroupLabel className="text-2xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
+							Review
+						</SidebarGroupLabel>
+						<SidebarGroupContent>
+							<SidebarMenu>
+								{visibleReviewNav.map((item) => (
+									<SidebarMenuItem key={item.href}>
+										<SidebarMenuButton asChild isActive={isActive(item.href)}>
+											<Link to={item.href}>
+												<item.icon className="h-4 w-4" />
+												<span>{item.title}</span>
+											</Link>
+										</SidebarMenuButton>
+									</SidebarMenuItem>
+								))}
+							</SidebarMenu>
+						</SidebarGroupContent>
+					</SidebarGroup>
+				)}
+
+				{visibleUserNav.length > 0 && (
+					<SidebarGroup>
+						<SidebarGroupLabel className="text-2xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
+							My Work
+						</SidebarGroupLabel>
+						<SidebarGroupContent>
+							<SidebarMenu>
+								{visibleUserNav.map((item) => (
+									<SidebarMenuItem key={item.href}>
+										<SidebarMenuButton asChild isActive={isActive(item.href)}>
+											<Link to={item.href}>
+												<item.icon className="h-4 w-4" />
+												<span>{item.title}</span>
+											</Link>
+										</SidebarMenuButton>
+										{/* Sibling of the button, not a child: SidebarMenuBadge
+										    positions itself off peer/menu-button, so nesting it
+										    inside the Link kills the active and hover styles. */}
+										{item.href === "/inbox" && inboxUnread > 0 && (
+											<SidebarMenuBadge>
+												{inboxUnread}
+												<span className="sr-only"> unread inbox items</span>
+											</SidebarMenuBadge>
+										)}
+									</SidebarMenuItem>
+								))}
+							</SidebarMenu>
+						</SidebarGroupContent>
+					</SidebarGroup>
+				)}
+
+				{visibleAdminNav.length > 0 && (
+					<SidebarGroup>
+						<SidebarGroupLabel className="text-2xs font-medium uppercase tracking-[0.06em] text-muted-foreground">
+							Admin
+						</SidebarGroupLabel>
+						<SidebarGroupContent>
+							<SidebarMenu>
+								{visibleAdminNav.map((item) => (
+									<SidebarMenuItem key={item.href}>
+										<SidebarMenuButton asChild isActive={isActive(item.href)}>
+											<Link to={item.href}>
+												<item.icon className="h-4 w-4" />
+												<span>{item.title}</span>
+											</Link>
+										</SidebarMenuButton>
+									</SidebarMenuItem>
+								))}
+							</SidebarMenu>
+						</SidebarGroupContent>
+					</SidebarGroup>
+				)}
 			</SidebarContent>
-			<SidebarFooter className="border-t border-sidebar-border/70 px-2 py-2.5">
+			<SidebarFooter>
 				<ServerVersionBadge />
-				<NavUser
-					user={{
-						name: userName || "User",
-						email: userEmail || "",
-						username: userUsername || undefined,
-					}}
-				/>
+				{isAuthenticated ? (
+					<NavUser
+						user={{
+							name: userName || "User",
+							email: userEmail || "",
+							username: userUsername || undefined,
+						}}
+					/>
+				) : (
+					<SidebarMenu>
+						<SidebarMenuItem>
+							<SidebarMenuButton asChild size="lg">
+								<Link to="/login">
+									<LogIn className="h-4 w-4" />
+									<span>Sign in to contribute</span>
+								</Link>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
+					</SidebarMenu>
+				)}
 			</SidebarFooter>
 			<SidebarRail />
 		</Sidebar>

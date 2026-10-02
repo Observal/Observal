@@ -15,7 +15,7 @@ from fastapi import FastAPI
 from fastapi.routing import APIRoute
 from httpx import ASGITransport, AsyncClient
 
-from api.deps import get_current_user, get_db, optional_current_user
+from api.deps import get_current_user, get_db, get_registry_user
 from api.routes import dashboard
 from models.user import UserRole
 
@@ -307,7 +307,7 @@ async def test_agent_leaderboard_filters_period_and_user_and_serializes_rows(mon
         limit=4,
         user=r"alice%_\team",
         db=db,
-        current_user=None,
+        current_user=_user(),
     )
 
     assert [item.model_dump(mode="json") for item in result] == [
@@ -339,6 +339,24 @@ async def test_agent_leaderboard_filters_period_and_user_and_serializes_rows(mon
 
 
 @pytest.mark.asyncio
+async def test_anonymous_agent_leaderboard_ignores_email_filter():
+    db = _db(_Result())
+
+    result = await dashboard.agent_leaderboard(
+        window="7d",
+        limit=4,
+        user="private@example.test",
+        db=db,
+        current_user=None,
+    )
+
+    assert result == []
+    sql = _sql(db.execute.await_args_list[0].args[0])
+    assert "JOIN users" not in sql
+    assert "private@example.test" not in str(db.execute.await_args_list[0].args[0].compile().params)
+
+
+@pytest.mark.asyncio
 async def test_agent_leaderboard_backfills_zero_download_agents_and_missing_creators():
     extra = SimpleNamespace(
         id=SECOND_AGENT_ID,
@@ -363,7 +381,7 @@ async def test_agent_leaderboard_backfills_zero_download_agents_and_missing_crea
         limit=2,
         user="owner",
         db=db,
-        current_user=None,
+        current_user=_user(),
     )
 
     assert [item.model_dump(mode="json") for item in result] == [
@@ -426,7 +444,7 @@ async def test_component_leaderboard_aggregates_all_types_ratings_and_emails(mon
         limit=5,
         user=r"creator%_\team",
         db=db,
-        current_user=None,
+        current_user=_user(),
     )
 
     assert [(item.component_type, item.download_count, item.total_reviews) for item in result] == [
@@ -467,6 +485,44 @@ async def test_component_leaderboard_aggregates_all_types_ratings_and_emails(mon
     assert "avg(feedback.rating) AS avg_rating" in feedback_sql
     assert "count(feedback.id) AS total_reviews" in feedback_sql
     assert [vars(item) for item in rows] == snapshots
+
+
+@pytest.mark.asyncio
+async def test_anonymous_component_leaderboard_hides_email_and_ignores_filter():
+    component_id = uuid.UUID("00000000-0000-4000-8000-000000000099")
+    row = SimpleNamespace(
+        component_id=component_id,
+        cnt=1,
+        name="Public MCP",
+        namespace="public",
+        slug="public-mcp",
+        description="Public component",
+        submitted_by=USER_ID,
+    )
+    db = _db(
+        _Result([row]),
+        _Result(),
+        _Result(),
+        _Result(),
+        _Result(),
+        _Result(),
+    )
+
+    result = await dashboard.component_leaderboard(
+        window="7d",
+        limit=1,
+        user="private@example.test",
+        db=db,
+        current_user=None,
+    )
+
+    assert len(result) == 1
+    assert result[0].created_by_email == ""
+    assert db.execute.await_count == 6
+    for awaited in db.execute.await_args_list[:5]:
+        statement = awaited.args[0]
+        assert "JOIN users" not in _sql(statement)
+        assert "private@example.test" not in str(statement.compile().params)
 
 
 @pytest.mark.asyncio
@@ -516,7 +572,7 @@ async def test_component_leaderboard_backfills_deduplicates_and_stops_at_limit()
         limit=3,
         user=None,
         db=db,
-        current_user=None,
+        current_user=_user(),
     )
 
     assert [item.id for item in result] == [first_id, second_id, third_id]
@@ -631,22 +687,26 @@ def test_dashboard_route_role_contract_is_explicit():
         "/api/v1/dashboard/unannotated-traces",
     }
 
+    user_paths = {"/api/v1/overview/stats"}
     public_scoped_paths = {
-        "/api/v1/overview/stats",
         "/api/v1/overview/top-mcps",
         "/api/v1/overview/top-agents",
         "/api/v1/overview/leaderboard",
         "/api/v1/overview/component-leaderboard",
     }
 
-    assert admin_paths | public_scoped_paths <= routes.keys()
+    assert admin_paths | user_paths | public_scoped_paths <= routes.keys()
     for path in admin_paths:
         dependencies = [item for item in routes[path].dependant.dependencies if item.name == "current_user"]
         assert len(dependencies) == 1, path
         assert inspect.getclosurevars(dependencies[0].call).nonlocals["min_role"] == UserRole.admin
+    for path in user_paths:
+        dependencies = [item for item in routes[path].dependant.dependencies if item.name == "current_user"]
+        assert len(dependencies) == 1, path
+        assert inspect.getclosurevars(dependencies[0].call).nonlocals["min_role"] == UserRole.user
     for path in public_scoped_paths:
         dependencies = [item for item in routes[path].dependant.dependencies if item.name == "current_user"]
-        assert [item.call for item in dependencies] == [optional_current_user], path
+        assert [item.call for item in dependencies] == [get_registry_user], path
 
     assert all(item.name != "current_user" for item in routes["/api/v1/dashboard/tokens"].dependant.dependencies)
 
@@ -660,6 +720,11 @@ async def _dashboard_app(user=None):
         yield database
 
     app.dependency_overrides[get_db] = database_override
+
+    async def registry_user_override():
+        return user
+
+    app.dependency_overrides[get_registry_user] = registry_user_override
     if user is not None:
 
         async def user_override():

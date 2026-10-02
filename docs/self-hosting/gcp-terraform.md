@@ -128,15 +128,6 @@ redis_tier           = "BASIC"         # or STANDARD_HA
 
 For high-throughput installs, bump `data_machine_type` to `e2-standard-4`, `db_tier` to `db-custom-4-16384`, and `redis_tier` to `STANDARD_HA`.
 
-### ClickHouse Cloud
-
-```hcl
-clickhouse_mode      = "cloud"
-clickhouse_cloud_url = "https://abc123.us-central1.gcp.clickhouse.cloud:8443"
-```
-
-The GCE data host is skipped entirely.
-
 ## Operating the install
 
 ### Shell into the data host
@@ -235,7 +226,6 @@ Cloud Run scales to zero when idle (if `min_instances = 0`), which can significa
 - [ ] Enable Cloud Armor (WAF) on the Global HTTPS Load Balancer
 - [ ] Enable Security Command Center in the project
 - [ ] Set up alerting on Cloud SQL CPU, memory, and Cloud Run error rates
-- [ ] Move ClickHouse to ClickHouse Cloud for HA
 - [ ] Configure [SSO](authentication.md)
 - [ ] Test [backup and restore](backup-and-restore.md) end-to-end
 - [ ] Set up Terraform remote state in GCS

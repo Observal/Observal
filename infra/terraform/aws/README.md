@@ -43,7 +43,7 @@ Production-shaped self-hosted Observal in your own AWS account. One `terraform a
          └──────────────────────────────┘
 ```
 
-The stateless app tier (api/web/worker) lives on Fargate across both AZs with autoscaling and rolling deploys. The stateful data tier lives on a single EC2 with EBS so ClickHouse keeps its disk across instance replacements. Prometheus and Grafana are enabled with `observability_stack`. Real ClickHouse HA is out of scope; set `clickhouse_mode = "cloud"` and point at ClickHouse Cloud when you need it.
+The stateless app tier (api/web/worker) lives on Fargate across both AZs with autoscaling and rolling deploys. The stateful data tier lives on a single EC2 with EBS so ClickHouse keeps its disk across instance replacements. Prometheus and Grafana are enabled with `observability_stack`. ClickHouse HA is out of scope.
 
 ## Prerequisites
 
@@ -205,7 +205,6 @@ You only need to supply:
 2. **`region`** (default `us-east-1`).
 3. **(Optional) `domain_name` + `route53_zone_id`** for HTTPS on a real domain.
 4. **(Optional) `alb_ingress_cidrs`** to lock the ALB to specific IP ranges.
-5. **(Optional) `clickhouse_mode = "cloud"` + `clickhouse_cloud_*`** to use ClickHouse Cloud instead of self-hosting.
 
 ## Operating the install
 
@@ -289,7 +288,6 @@ Before using in front of customers:
 - [ ] Add a WAF in front of the ALB (`aws_wafv2_web_acl_association`)
 - [ ] Set `transit_encryption_enabled = true` on the ElastiCache replication group and switch `REDIS_URL` to `rediss://...`
 - [ ] Replace the GitHub-tarball pull in `user-data.sh.tftpl` with your own signed artifact location
-- [ ] Move ClickHouse to ClickHouse Cloud (`clickhouse_mode = "cloud"`) for actual HA
 
 ## Layout
 

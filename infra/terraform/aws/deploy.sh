@@ -347,21 +347,6 @@ if [ "$TFVARS_EXISTS" = "false" ] && [ "$MODE" != "check" ]; then
     V_SIZING="${V_SIZING:-medium}"
 
     echo ""
-    echo "  ClickHouse (analytics database):"
-    echo "    self_hosted — bundled on EC2, simpler, single point of failure"
-    echo "    cloud       — ClickHouse Cloud, HA, you supply the URL"
-    read -rp "  ClickHouse mode [self_hosted]: " V_CH_MODE
-    V_CH_MODE="${V_CH_MODE:-self_hosted}"
-
-    V_CH_URL="" V_CH_PASS=""
-    if [ "$V_CH_MODE" = "cloud" ]; then
-      read -rp "  ClickHouse Cloud URL: " V_CH_URL
-      read -rsp "  ClickHouse Cloud password: " V_CH_PASS
-      echo ""
-    fi
-
-
-    echo ""
     read -rp "  Use existing VPC? [y/N]: " V_BYO
     V_BYO="${V_BYO:-N}"
     V_VPC="" V_PRIV="" V_PUB=""
@@ -403,14 +388,6 @@ EOF
     [ "$V_SIZING" != "custom" ] && echo "sizing = \"$V_SIZING\"" >> terraform.tfvars
     [ -n "$V_DOMAIN" ] && echo "domain_name     = \"$V_DOMAIN\"" >> terraform.tfvars
     [ -n "$V_ZONE" ] && echo "route53_zone_id = \"$V_ZONE\"" >> terraform.tfvars
-
-    if [ "$V_CH_MODE" = "cloud" ]; then
-      cat >> terraform.tfvars <<CHEOF
-clickhouse_mode           = "cloud"
-clickhouse_cloud_url      = "$V_CH_URL"
-clickhouse_cloud_password = "$V_CH_PASS"
-CHEOF
-    fi
 
     if [ -n "$V_VPC" ]; then
       PRIV_LIST=$(echo "$V_PRIV" | sed 's/ //g' | sed 's/,/", "/g')

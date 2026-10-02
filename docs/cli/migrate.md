@@ -80,7 +80,7 @@ observal server migrate export-telemetry \
 
 The destination must not already exist. This lets the exporter remove the complete directory after failure without touching pre-existing files. The directory and streamed Parquet files use restrictive permissions and atomic temporary files.
 
-The export covers active session, checkpoint, layer, audit, security, and webhook tables. Older sources may omit tables. Each non-empty month produces a Parquet file, and `telemetry_manifest.json` records checksums, row counts, ranges, and the migration ID.
+The export covers active session, checkpoint, layer, audit, security, and webhook tables. Older sources may omit tables. Telemetry is divided into deterministic time-and-hash chunks so each ClickHouse query and Parquet file stays bounded independently of the total dataset size. Oversized or memory-limited chunks are split again automatically. `telemetry_manifest.json` records every chunk's range, shard, checksum, size, row count, and migration ID.
 
 ## ClickHouse validation and import
 
@@ -102,7 +102,7 @@ Telemetry validation checks:
 
 Checksum failure is fatal. Row-count differences and orphan groups are returned explicitly.
 
-Telemetry import is resumable. Completed tables are skipped and progress state remains in the input directory. Imported project-keyed rows normalize to the deployment project `default`.
+Telemetry import is resumable per Parquet chunk. Successfully imported chunk IDs and checksums are recorded in `.import_state.json` in the input directory, so a retry skips only verified completed chunks rather than an entire table or month. Deterministic insert tokens protect ambiguous retries on current non-replicated MergeTree schemas. Imported project-keyed rows normalize to the deployment project `default`, and session summaries are rebuilt after event import so summaries reflect complete sessions rather than individual insert blocks.
 
 ## Human and JSON behavior
 

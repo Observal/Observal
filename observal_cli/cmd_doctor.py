@@ -7,6 +7,7 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-FileCopyrightText: 2026 EuanTop <euan@mail.bnu.edu.cn>
+# SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """observal doctor: diagnose and patch harness settings for Observal session telemetry.
@@ -17,19 +18,17 @@ push session JSONL incrementally to the server.
 
 import hashlib
 import json
-import os
 import sys
 from contextlib import nullcontext, redirect_stdout
 from io import StringIO
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 
 import typer
 from loguru import logger as optic
 from rich import print as rprint
 from typer.models import OptionInfo
 
-from observal_cli import config
+from observal_cli import config, pi_extension
 from observal_cli.errors import ErrorCategory, fail
 from observal_cli.harness import ensure_loaded, get_adapter
 from observal_cli.harness_specs.claude_code_hooks_spec import (
@@ -37,6 +36,9 @@ from observal_cli.harness_specs.claude_code_hooks_spec import (
     get_desired_hooks,
 )
 from observal_cli.render import OutputMode, esc, output_json
+from observal_cli.shared.utils import (
+    atomic_write,
+)
 from observal_cli.shared.utils import (
     is_observal_hook_entry as _is_observal_hook_entry,
 )
@@ -84,23 +86,6 @@ def _value(value):
 
 def _capture(output: OutputMode | str):
     return redirect_stdout(StringIO()) if _value(output) == "json" else nullcontext()
-
-
-def _atomic_write(path: Path, content: str) -> None:
-    temporary: Path | None = None
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        existing_mode = path.stat().st_mode if path.exists() else None
-        with NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.", delete=False) as file:
-            temporary = Path(file.name)
-            file.write(content)
-        if existing_mode is not None:
-            os.chmod(temporary, existing_mode)
-        temporary.replace(path)
-    except OSError:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
-        raise
 
 
 # ── Diagnose command ─────────────────────────────────────────
@@ -352,63 +337,23 @@ def _check_kiro(issues: list, warnings: list):
         )
 
 
-def _pi_extension_source() -> str:
-    bundled = Path(__file__).parent / "_bundled" / "observal.ts"
-    source_tree = Path(__file__).parents[1] / "packages" / "pi-extension" / "extensions" / "observal.ts"
-    for path in (bundled, source_tree):
-        if path.exists():
-            return path.read_text()
-    raise FileNotFoundError("Bundled Pi telemetry extension is missing")
-
-
-def _pi_extension_path() -> Path:
-    return Path.home() / ".pi" / "agent" / "extensions" / "observal.ts"
-
-
-def _is_legacy_pi_package(package) -> bool:
-    if isinstance(package, str):
-        source = package
-    elif isinstance(package, dict):
-        source = package.get("source", "")
-    else:
-        return False
-    return source == "npm:observal-pi" or source.startswith("npm:observal-pi@")
-
-
 def _check_pi(issues: list, warnings: list):
-    """Check whether the bundled Pi telemetry extension is current."""
+    """Check whether the Pi telemetry extension (npm or local) is current."""
     optic.debug("_check_pi")
-    pi_dir = Path.home() / ".pi" / "agent"
-    if not pi_dir.exists():
+    try:
+        status = pi_extension.check_status()
+    except json.JSONDecodeError:
+        issues.append(f"{pi_extension.settings_path()}: not valid JSON.")
+        return
+    except (OSError, ValueError, TypeError) as exc:
+        issues.append(f"Pi telemetry extension: {exc}")
+        return
+
+    if status.state == pi_extension.NOT_DETECTED:
         rprint("  [dim]Pi not detected[/dim]")
         return
-
-    try:
-        expected = _pi_extension_source()
-    except OSError as exc:
-        issues.append(str(exc))
-        return
-    extension_path = _pi_extension_path()
-    try:
-        current = extension_path.read_text() if extension_path.exists() else None
-    except OSError as exc:
-        issues.append(f"{extension_path}: {exc}")
-        return
-
-    settings_path = pi_dir / "settings.json"
-    legacy_registered = False
-    if settings_path.exists():
-        settings = _load_json(settings_path)
-        if settings is None:
-            issues.append(f"{settings_path}: not valid JSON.")
-            return
-        legacy_registered = any(_is_legacy_pi_package(package) for package in settings.get("packages", []))
-
-    if current != expected:
-        state = "stale" if current is not None else "not installed"
-        warnings.append(f"Observal Pi extension is {state}. Doctor can install {extension_path} directly.")
-    elif legacy_registered:
-        warnings.append("Legacy npm:observal-pi registration remains. Doctor can remove it.")
+    if status.message:
+        warnings.append(status.message)
 
 
 def _check_cursor(issues: list, warnings: list):
@@ -895,7 +840,7 @@ def _cleanup_claude_code(dry_run: bool) -> bool:
             data.pop("env", None)
         if not data.get("hooks"):
             data.pop("hooks", None)
-        _atomic_write(settings_path, json.dumps(data, indent=2) + "\n")
+        atomic_write(settings_path, json.dumps(data, indent=2) + "\n")
         rprint(f"  [green]Written {esc(settings_path)}[/green]")
 
     if not changed:
@@ -938,7 +883,11 @@ def _cleanup_kiro(dry_run: bool) -> bool:
             verb = "Would clean" if dry_run else "Cleaned"
             rprint(f"  {verb} {esc(agent_profile.name)}")
             if not dry_run:
-                _atomic_write(agent_profile, json.dumps(agent_data, indent=2) + "\n")
+                atomic_write(agent_profile, json.dumps(agent_data, indent=2) + "\n")
+
+    # Standalone v1 hooks files (~/.kiro/hooks/observal.json and project copies)
+    if _cleanup_kiro_hook_files(dry_run):
+        changed = True
 
     if not changed:
         rprint("  [dim]No Observal artifacts found in Kiro agents[/dim]")
@@ -946,31 +895,87 @@ def _cleanup_kiro(dry_run: bool) -> bool:
     return changed
 
 
-def _cleanup_pi(dry_run: bool) -> bool:
-    rprint("[cyan]Pi[/cyan]")
-    extension_path = _pi_extension_path()
-    settings_path = Path.home() / ".pi" / "agent" / "settings.json"
-    changed = extension_path.exists()
-    if extension_path.exists():
-        verb = "Would remove" if dry_run else "Removed"
-        rprint(f"  {verb} {esc(extension_path)}")
-        if not dry_run:
-            extension_path.unlink()
+def _kiro_hook_dirs() -> set[Path]:
+    """Return every directory ``_patch_kiro`` may write a v1 hooks file into.
 
-    if settings_path.exists():
-        settings = _read_json_object(settings_path)
-        packages = settings.get("packages", [])
-        cleaned = [package for package in packages if not _is_legacy_pi_package(package)]
-        if cleaned != packages:
+    Cleanup has to cover exactly the same set. Patch writes one file per scope -
+    the user scope plus each locked agent's project - so cleaning only the user
+    scope leaves project hooks live and Kiro keeps running Observal commands
+    after an uninstall.
+    """
+    from observal_cli.lockfile import read_registry_lockfile
+
+    dirs: set[Path] = set()
+    user_config_dir = Path.home() / ".kiro"
+    if user_config_dir.is_dir():
+        dirs.add(user_config_dir)
+    try:
+        _, registry = read_registry_lockfile()
+        for agent in registry.get("harnesses", {}).get("kiro", {}).get("agents", []):
+            directory = agent.get("directory")
+            if directory:
+                dirs.add(Path(directory) / ".kiro")
+    except Exception as exc:
+        optic.debug("could not read lockfile for Kiro hook cleanup: {}", exc)
+    return dirs
+
+
+def _cleanup_kiro_hook_files(dry_run: bool) -> bool:
+    """Strip Observal entries from every standalone v1 Kiro hooks file."""
+    changed = False
+    for config_dir in sorted(_kiro_hook_dirs()):
+        if _cleanup_kiro_hook_file(config_dir / "hooks", dry_run):
             changed = True
-            verb = "Would remove" if dry_run else "Removed"
-            rprint(f"  {verb} legacy npm:observal-pi package registration")
-            if not dry_run:
-                settings["packages"] = cleaned
-                _atomic_write(settings_path, json.dumps(settings, indent=2) + "\n")
+    return changed
 
-    if not changed:
-        rprint("  [dim]No Observal Pi extension found[/dim]")
+
+def _cleanup_kiro_hook_file(hooks_dir: Path, dry_run: bool) -> bool:
+    """Strip Observal entries from one v1 hooks file."""
+    from observal_cli.harness_specs.kiro_hooks_spec import (
+        KIRO_V1_HOOK_FILENAME,
+        is_observal_v1_hook,
+    )
+
+    hooks_file = hooks_dir / KIRO_V1_HOOK_FILENAME
+    try:
+        data = json.loads(hooks_file.read_text())
+    except (json.JSONDecodeError, OSError):
+        return False
+    if not isinstance(data, dict):
+        return False
+
+    entries = data.get("hooks")
+    if not isinstance(entries, list):
+        return False
+    kept = [h for h in entries if not is_observal_v1_hook(h)]
+    if len(kept) == len(entries):
+        return False
+
+    verb = "Would clean" if dry_run else "Cleaned"
+    rprint(f"  {verb} {esc(hooks_file)}")
+    if not dry_run:
+        if kept:
+            data["hooks"] = kept
+            atomic_write(hooks_file, json.dumps(data, indent=2) + "\n")
+        else:
+            hooks_file.unlink(missing_ok=True)
+    return True
+
+
+def _cleanup_pi(dry_run: bool) -> bool:
+    """Remove an Observal-managed local Pi extension install.
+
+    Never touches an npm:observal-pi registration (that's the user's own
+    choice, not something Observal installed) and never touches a local
+    file that isn't Observal-managed.
+    """
+    rprint("[cyan]Pi[/cyan]")
+    changed = pi_extension.remove(dry_run=dry_run)
+    if changed:
+        verb = "Would remove" if dry_run else "Removed"
+        rprint(f"  {verb} {esc(pi_extension.extension_path())}")
+    else:
+        rprint("  [dim]No Observal-managed Pi extension found[/dim]")
     return changed
 
 
@@ -1011,7 +1016,7 @@ def _cleanup_cursor(dry_run: bool) -> bool:
         if not dry_run:
             if not data.get("hooks"):
                 data.pop("hooks", None)
-            _atomic_write(hooks_path, json.dumps(data, indent=2) + "\n")
+            atomic_write(hooks_path, json.dumps(data, indent=2) + "\n")
             rprint(f"  [green]Written {esc(hooks_path)}[/green]")
     else:
         rprint("  [dim]No Observal artifacts found[/dim]")
@@ -1058,7 +1063,7 @@ def _cleanup_codex(dry_run: bool) -> bool:
         if not dry_run:
             if not data.get("hooks"):
                 data.pop("hooks", None)
-            _atomic_write(hooks_path, json.dumps(data, indent=2) + "\n")
+            atomic_write(hooks_path, json.dumps(data, indent=2) + "\n")
             rprint(f"  [green]Written {esc(hooks_path)}[/green]")
     else:
         rprint("  [dim]No Observal artifacts found[/dim]")
@@ -1174,7 +1179,7 @@ def _cleanup_goose(dry_run: bool) -> bool:
         verb = "Would remove" if dry_run else "Removed"
         rprint(f"  {verb} Observal hooks from {esc(hooks_path)} (kept {len(foreign)} foreign event(s))")
         if not dry_run:
-            _atomic_write(hooks_path, json.dumps({**data, "hooks": foreign}, indent=2) + "\n")
+            atomic_write(hooks_path, json.dumps({**data, "hooks": foreign}, indent=2) + "\n")
         return True
 
     verb = "Would remove" if dry_run else "Removed"
@@ -1283,40 +1288,81 @@ def _patch_kiro(dry_run: bool) -> bool:
     rprint("[cyan]Kiro - session push hooks[/cyan]")
     _, registry = read_registry_lockfile()
     agents = registry.get("harnesses", {}).get("kiro", {}).get("agents", [])
+    changed = False
+    hook_dirs: set[Path] = set()
+
     if not agents:
         rprint("  [dim]No locked Kiro agents[/dim]")
-        return False
-
-    ensure_loaded()
-    adapter = get_adapter("kiro")
-    changed = False
-    for entry in agents:
-        local_name = entry.get("local_name") or entry.get("slug") or entry.get("name")
-        agent_id = str(entry.get("id") or "")
-        if not local_name or not agent_id:
-            continue
-        if entry.get("scope") == "user":
-            profile = Path.home() / ".kiro" / "agents" / f"{local_name}.json"
-        else:
-            directory = entry.get("directory")
-            if not directory:
+    else:
+        ensure_loaded()
+        adapter = get_adapter("kiro")
+        for entry in agents:
+            local_name = entry.get("local_name") or entry.get("slug") or entry.get("name")
+            agent_id = str(entry.get("id") or "")
+            if not local_name or not agent_id:
                 continue
-            profile = Path(directory) / ".kiro" / "agents" / f"{local_name}.json"
-        if not profile.exists():
-            rprint(f"  [yellow]Missing locked profile: {esc(profile)}[/yellow]")
-            continue
-        current = _read_json_object(profile)
-        desired = adapter.rewrite_agent_profile(json.loads(json.dumps(current)), agent_id=agent_id)
-        if desired == current:
-            continue
-        changed = True
-        verb = "Would repair" if dry_run else "Repaired"
-        rprint(f"  {verb} {esc(profile)}")
-        if not dry_run:
-            _atomic_write(profile, json.dumps(desired, indent=2) + "\n")
+            if entry.get("scope") == "user":
+                profile = Path.home() / ".kiro" / "agents" / f"{local_name}.json"
+            else:
+                directory = entry.get("directory")
+                if not directory:
+                    continue
+                profile = Path(directory) / ".kiro" / "agents" / f"{local_name}.json"
+            if not profile.exists():
+                rprint(f"  [yellow]Missing locked profile: {esc(profile)}[/yellow]")
+                continue
+            current = _read_json_object(profile)
+            desired = adapter.rewrite_agent_profile(json.loads(json.dumps(current)), agent_id=agent_id)
+            if desired != current:
+                changed = True
+                verb = "Would repair" if dry_run else "Repaired"
+                rprint(f"  {verb} {esc(profile)}")
+                if not dry_run:
+                    atomic_write(profile, json.dumps(desired, indent=2) + "\n")
+
+            # The standalone v1 hooks file is what Kiro IDE 1.0 and CLI 3.0
+            # actually read. One file per scope, shared by every agent there.
+            hook_dirs.add(profile.parent.parent)
+
+    # Kiro reads ~/.kiro/hooks/observal.json for *every* session, whichever agent
+    # is active, so the user-scope file has to exist even when the lockfile holds
+    # no usable Kiro agents - otherwise the harness emits no telemetry at all.
+    user_config_dir = Path.home() / ".kiro"
+    if user_config_dir.is_dir():
+        hook_dirs.add(user_config_dir)
+
+    for hook_dir in sorted(hook_dirs):
+        if _patch_kiro_hook_file(hook_dir, dry_run):
+            changed = True
+
     if not changed:
         rprint("  [dim]Already up to date[/dim]")
     return changed
+
+
+def _patch_kiro_hook_file(config_dir: Path, dry_run: bool) -> bool:
+    """Write/refresh <config_dir>/hooks/observal.json in the v1 schema."""
+    from observal_cli.harness_specs.kiro_hooks_spec import (
+        KIRO_V1_HOOK_FILENAME,
+        merge_kiro_hooks_file,
+    )
+
+    hooks_file = config_dir / "hooks" / KIRO_V1_HOOK_FILENAME
+    try:
+        current = json.loads(hooks_file.read_text())
+    except (json.JSONDecodeError, OSError):
+        current = None
+    if not isinstance(current, dict):
+        current = None
+    desired = merge_kiro_hooks_file(current)
+    if desired == current:
+        return False
+    verb = "Would write" if dry_run else "Wrote"
+    rprint(f"  {verb} {esc(hooks_file)}")
+    if not dry_run:
+        hooks_file.parent.mkdir(parents=True, exist_ok=True)
+        atomic_write(hooks_file, json.dumps(desired, indent=2) + "\n")
+    return True
 
 
 def _patch_cursor(dry_run: bool) -> bool:
@@ -1378,7 +1424,7 @@ def _patch_cursor(dry_run: bool) -> bool:
     result = {"version": 1, "hooks": merged_hooks}
 
     if not dry_run:
-        _atomic_write(hooks_path, json.dumps(result, indent=2) + "\n")
+        atomic_write(hooks_path, json.dumps(result, indent=2) + "\n")
 
     verb = "Would install" if dry_run else "Installed"
     rprint(f"  {verb} hooks in {esc(hooks_path)}")
@@ -1413,56 +1459,59 @@ def _patch_antigravity(dry_run: bool) -> bool:
 
     existing.update(desired)
     if not dry_run:
-        _atomic_write(hooks_path, json.dumps(existing, indent=2) + "\n")
+        atomic_write(hooks_path, json.dumps(existing, indent=2) + "\n")
 
     verb = "Would install" if dry_run else "Installed"
     rprint(f"  {verb} hooks in {esc(hooks_path)}")
     return True
 
 
+_PI_ACTION_VERBS = {
+    "install": ("Would install", "Installed"),
+    "refresh": ("Would update", "Updated"),
+    "adopt": ("Would record install metadata for", "Recorded install metadata for"),
+    "migrate": ("Would migrate", "Migrated"),
+    "restore": ("Would restore", "Restored"),
+    "dedupe": ("Would remove the duplicate", "Removed the duplicate"),
+}
+
+
 def _patch_pi(dry_run: bool) -> bool:
-    """Install the bundled telemetry extension directly into Pi's user directory."""
+    """Install or refresh the bundled telemetry extension, when npm isn't configured."""
     optic.trace("dry_run={}", dry_run)
     rprint("[cyan]Pi - session telemetry extension[/cyan]")
 
-    pi_dir = Path.home() / ".pi" / "agent"
-    if not pi_dir.is_dir():
-        rprint("  [dim]No ~/.pi/agent/ directory - skipping[/dim]")
+    status = pi_extension.check_status()
+    result = pi_extension.install_or_refresh(dry_run=dry_run, status=status)
+    action, backup = result.action, result.backup
+
+    if not result.changed:
+        if status.state == pi_extension.NOT_DETECTED:
+            rprint("  [dim]No ~/.pi/agent/ directory - skipping[/dim]")
+        elif status.state in (pi_extension.NPM_CURRENT, pi_extension.NPM_UNPINNED, pi_extension.NPM_STALE):
+            rprint("  [dim]npm:observal-pi is configured - Observal does not install a local extension[/dim]")
+            if status.message:
+                rprint(f"  [yellow]{esc(status.message)}[/yellow]")
+        elif status.state == pi_extension.UNMANAGED:
+            rprint(f"  [yellow]{esc(status.message)}[/yellow]")
+        else:
+            rprint("  [dim]Already up to date[/dim]")
         return False
 
-    source = _pi_extension_source()
-    extension_path = _pi_extension_path()
-    current = extension_path.read_text() if extension_path.exists() else None
-    extension_changed = current != source
-
-    settings_path = pi_dir / "settings.json"
-    settings: dict = {}
-    if settings_path.exists():
-        settings = _read_json_object(settings_path)
-    packages = settings.get("packages", [])
-    cleaned_packages = [package for package in packages if not _is_legacy_pi_package(package)]
-    settings_changed = cleaned_packages != packages
-
-    if not extension_changed and not settings_changed:
-        rprint("  [dim]Already up to date[/dim]")
-        return False
-
-    if extension_changed:
-        verb = "Would install" if current is None else "Would update"
-        if not dry_run:
-            extension_path.parent.mkdir(parents=True, exist_ok=True)
-            _atomic_write(extension_path, source)
-            verb = "Installed" if current is None else "Updated"
-        rprint(f"  {verb} {esc(extension_path)}")
-
-    if settings_changed:
-        if not dry_run:
-            settings["packages"] = cleaned_packages
-            _atomic_write(settings_path, json.dumps(settings, indent=2) + "\n")
-        verb = "Would remove" if dry_run else "Removed"
-        rprint(f"  {verb} legacy npm:observal-pi package registration")
-
-    rprint("  [dim]Restart pi or run /reload to activate[/dim]")
+    would_verb, done_verb = _PI_ACTION_VERBS[action]
+    verb = would_verb if dry_run else done_verb
+    rprint(f"  {verb} {esc(pi_extension.extension_path())}")
+    if backup is not None:
+        kept = "Would keep" if dry_run else "Kept"
+        rprint(f"  [dim]{kept} the previous file at {esc(backup)}[/dim]")
+    if not dry_run and action != "adopt":
+        rprint("  [dim]Restart pi or run /reload to activate[/dim]")
+    if action == "dedupe" and not dry_run:
+        # The duplicate warning absorbed any stale-npm reminder. Now that the
+        # local copy is gone, re-read the state so that reminder still lands.
+        remaining = pi_extension.check_status()
+        if remaining.message:
+            rprint(f"  [yellow]{esc(remaining.message)}[/yellow]")
     return True
 
 
@@ -1532,7 +1581,7 @@ def _patch_codex(dry_run: bool) -> bool:
 
         if not dry_run:
             codex_dir.mkdir(parents=True, exist_ok=True)
-            _atomic_write(hooks_path, json.dumps(result, indent=2) + "\n")
+            atomic_write(hooks_path, json.dumps(result, indent=2) + "\n")
 
         verb = "Would install" if dry_run else "Installed"
         rprint(f"  {verb} hooks in {esc(hooks_path)}")
@@ -1547,9 +1596,9 @@ def _patch_codex(dry_run: bool) -> bool:
                     content = content.replace("codex_hooks = false", "codex_hooks = true")
                 elif "codex_hooks" not in content:
                     content = f"codex_hooks = true\n{content}"
-                _atomic_write(config_path, content)
+                atomic_write(config_path, content)
             else:
-                _atomic_write(config_path, "codex_hooks = true\n")
+                atomic_write(config_path, "codex_hooks = true\n")
 
         verb = "Would enable" if dry_run else "Enabled"
         rprint(f"  {verb} codex_hooks flag in {esc(config_path)}")
@@ -1610,7 +1659,7 @@ def _patch_copilot(dry_run: bool) -> bool:
 
         if not dry_run:
             hooks_dir.mkdir(parents=True, exist_ok=True)
-            _atomic_write(hooks_path, json.dumps(result, indent=2) + "\n")
+            atomic_write(hooks_path, json.dumps(result, indent=2) + "\n")
 
         verb = "Would install" if dry_run else "Installed"
         rprint(f"  {verb} hooks in {esc(hooks_path)}")
@@ -1660,7 +1709,7 @@ def _patch_copilot(dry_run: bool) -> bool:
     if needs_ps1_update:
         if not dry_run:
             hooks_dir.mkdir(parents=True, exist_ok=True)
-            _atomic_write(ps1_path, ps1_content)
+            atomic_write(ps1_path, ps1_content)
         verb = "Would install" if dry_run else "Installed"
         rprint(f"  {verb} PowerShell wrapper at {esc(ps1_path)}")
         any_changes = True
@@ -1716,7 +1765,7 @@ def _patch_copilot_cli(dry_run: bool) -> bool:
 
     if not dry_run:
         hooks_dir.mkdir(parents=True, exist_ok=True)
-        _atomic_write(hooks_path, json.dumps(result, indent=2) + "\n")
+        atomic_write(hooks_path, json.dumps(result, indent=2) + "\n")
 
     verb = "Would install" if dry_run else "Installed"
     rprint(f"  {verb} hooks in {esc(hooks_path)}")
@@ -1744,7 +1793,7 @@ def _patch_opencode(dry_run: bool) -> bool:
 
     if not dry_run:
         plugins_dir.mkdir(parents=True, exist_ok=True)
-        _atomic_write(plugin_path, plugin_source)
+        atomic_write(plugin_path, plugin_source)
 
     verb = (
         "Would update"
@@ -1810,8 +1859,8 @@ def _patch_goose(dry_run: bool) -> bool:
 
     if not dry_run:
         hooks_path.parent.mkdir(parents=True, exist_ok=True)
-        _atomic_write(manifest_path, json.dumps(manifest, indent=2) + "\n")
-        _atomic_write(hooks_path, json.dumps({**existing, "hooks": merged}, indent=2) + "\n")
+        atomic_write(manifest_path, json.dumps(manifest, indent=2) + "\n")
+        atomic_write(hooks_path, json.dumps({**existing, "hooks": merged}, indent=2) + "\n")
 
     verb = "Would install" if dry_run else "Installed"
     rprint(f"  {verb} hook plugin at {esc(hooks_path.parent.parent)}")

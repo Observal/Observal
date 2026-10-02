@@ -25,6 +25,13 @@ from services.audit import AUDIT_ENABLED
 
 DEFAULT_CORS_ALLOWED_ORIGINS = "http://localhost:3000"
 DEFAULT_MAX_REQUEST_SIZE_MB = "10"
+DEFAULT_MAX_MIGRATION_REQUEST_SIZE_MB = "6144"
+MIGRATION_UPLOAD_PATHS = frozenset(
+    {
+        "/api/v1/admin/migrate/import",
+        "/api/v1/admin/migrate/validate",
+    }
+)
 CLI_VERSION_EXEMPT_PATHS = {
     "/api/v1/config/version",
     "/api/v1/config/public",
@@ -50,12 +57,17 @@ CLI_USER_AGENT_PREFIXES = (
 )
 
 
-class RequestSizeLimitMiddleware:
-    """Reject requests whose Content-Length exceeds the configured limit."""
+class RequestBodyTooLargeError(Exception):
+    """Raised while streaming an ASGI request body beyond its route limit."""
 
-    def __init__(self, app, max_request_size_bytes: int):
+
+class RequestSizeLimitMiddleware:
+    """Reject declared or streamed request bodies that exceed route limits."""
+
+    def __init__(self, app, max_request_size_bytes: int, max_migration_request_size_bytes: int):
         self.app = app
         self.max_request_size_bytes = max_request_size_bytes
+        self.max_migration_request_size_bytes = max_migration_request_size_bytes
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
@@ -63,11 +75,40 @@ class RequestSizeLimitMiddleware:
             return
         headers = dict(scope.get("headers", []))
         content_length = headers.get(b"content-length")
-        if content_length and int(content_length) > self.max_request_size_bytes:
+        request_path = (scope.get("path") or "/").rstrip("/") or "/"
+        request_limit = (
+            self.max_migration_request_size_bytes
+            if request_path in MIGRATION_UPLOAD_PATHS
+            else self.max_request_size_bytes
+        )
+        if content_length:
+            try:
+                declared_length = int(content_length)
+            except ValueError:
+                response = JSONResponse(status_code=400, content={"detail": "Invalid Content-Length"})
+                await response(scope, receive, send)
+                return
+            if declared_length > request_limit:
+                response = JSONResponse(status_code=413, content={"detail": "Request body too large"})
+                await response(scope, receive, send)
+                return
+
+        bytes_received = 0
+
+        async def receive_with_limit():
+            nonlocal bytes_received
+            message = await receive()
+            if message["type"] == "http.request":
+                bytes_received += len(message.get("body", b""))
+                if bytes_received > request_limit:
+                    raise RequestBodyTooLargeError
+            return message
+
+        try:
+            await self.app(scope, receive_with_limit, send)
+        except RequestBodyTooLargeError:
             response = JSONResponse(status_code=413, content={"detail": "Request body too large"})
             await response(scope, receive, send)
-            return
-        await self.app(scope, receive, send)
 
 
 class SecurityHeadersMiddleware:
@@ -126,6 +167,10 @@ def get_cors_allowed_origins() -> list[str]:
 
 def get_max_request_size_bytes() -> int:
     return int(os.environ.get("MAX_REQUEST_SIZE_MB", DEFAULT_MAX_REQUEST_SIZE_MB)) * 1024 * 1024
+
+
+def get_max_migration_request_size_bytes() -> int:
+    return int(os.environ.get("MAX_MIGRATION_REQUEST_SIZE_MB", DEFAULT_MAX_MIGRATION_REQUEST_SIZE_MB)) * 1024 * 1024
 
 
 def build_security_headers(cors_allowed_origins: list[str]) -> list[tuple[bytes, bytes]]:
@@ -274,7 +319,11 @@ def configure_middleware(app: FastAPI) -> None:
         allow_headers=["Content-Type", "Authorization", "X-Request-ID"],
     )
 
-    app.add_middleware(RequestSizeLimitMiddleware, max_request_size_bytes=get_max_request_size_bytes())
+    app.add_middleware(
+        RequestSizeLimitMiddleware,
+        max_request_size_bytes=get_max_request_size_bytes(),
+        max_migration_request_size_bytes=get_max_migration_request_size_bytes(),
+    )
     app.add_middleware(SecurityHeadersMiddleware, security_headers=build_security_headers(cors_allowed_origins))
     app.add_middleware(ContentTypeMiddleware)
     app.add_middleware(RequestIDMiddleware)

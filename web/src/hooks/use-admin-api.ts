@@ -28,10 +28,13 @@ import { hasMinRole } from "@/hooks/use-role-guard";
 
 // ── Auth ────────────────────────────────────────────────────────────
 
-export function useWhoami() {
+export function useWhoami(
+  enabled = typeof window !== "undefined" && !!sessionStorage.getItem("observal_access_token"),
+) {
   return useQuery({
     queryKey: ["auth", "whoami"],
     queryFn: auth.whoami,
+    enabled,
     retry: false,
   });
 }

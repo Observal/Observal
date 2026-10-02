@@ -50,9 +50,9 @@ function Header({
   loading?: boolean;
 }) {
   return (
-    <header className="flex min-h-16 flex-col justify-center gap-1 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-5">
+    <header className="flex min-h-14 flex-col justify-center gap-1 border-b border-border px-5 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-5">
       <div className="min-w-0">
-        <h2 className="text-base font-semibold tracking-tight text-foreground">
+        <h2 className="text-base font-medium text-foreground">
           {loading
             ? "Recommended for you"
             : personalized
@@ -84,7 +84,7 @@ export function RecommendedForYou({ limit = 6 }: { limit?: number }) {
 
   if (isLoading) {
     return (
-      <section className="overflow-hidden rounded-md border border-border bg-card">
+      <section className="overflow-hidden rounded-xl bg-card shadow-sm">
         <Header loading personalized={false} sessions={0} />
         <div className="p-3">
           <TableSkeleton rows={3} cols={3} />
@@ -98,7 +98,7 @@ export function RecommendedForYou({ limit = 6 }: { limit?: number }) {
   const sessions = data?.profile_sessions ?? 0;
 
   return (
-    <section className="overflow-hidden rounded-md border border-border bg-card">
+    <section className="overflow-hidden rounded-xl bg-card shadow-sm">
       <Header personalized={personalized} sessions={sessions} />
 
       {items.length === 0 ? (
@@ -114,7 +114,7 @@ export function RecommendedForYou({ limit = 6 }: { limit?: number }) {
             return (
               <div
                 key={`${item.type}:${item.id}`}
-                className="group grid min-h-20 grid-cols-[1.25rem_minmax(0,1fr)_auto] gap-3 border-b border-border/75 px-4 py-3 last:border-b-0 hover:bg-accent/45"
+                className="group grid min-h-20 grid-cols-[1.25rem_minmax(0,1fr)_auto] gap-3 border-b border-border/75 px-5 py-3 last:border-b-0 hover:bg-accent/45"
               >
                 <Icon
                   className={`mt-0.5 h-4 w-4 ${meta.color}`}

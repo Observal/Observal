@@ -337,6 +337,57 @@ jobs:
         if: needs.changes.outputs.docker == 'true'
         run: docker compose build
 
+      - name: Verify ClickHouse egress restrictions
+        if: needs.changes.outputs.docker == 'true'
+        run: |
+          set -euo pipefail
+          container="observal-clickhouse-egress-check"
+          trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
+
+          docker run --detach --name "$container" \
+            --volume "$PWD/clickhouse/config.d:/etc/clickhouse-server/config.d:ro" \
+            clickhouse/clickhouse-server:26.6
+
+          ready=false
+          for _ in $(seq 1 60); do
+            if docker exec "$container" clickhouse-client --query "SELECT 1" >/dev/null 2>&1; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != true ]; then
+            docker logs "$container"
+            exit 1
+          fi
+
+          settings=$(docker exec "$container" clickhouse-client --query \
+            "SELECT name, value FROM system.server_settings WHERE name LIKE 'send_crash_reports%' FORMAT TSV")
+          if [ -n "$settings" ]; then
+            printf '%s\n' "$settings"
+            printf '%s\n' "$settings" | awk -F '\t' '$2 != "false" && $2 != "0" { exit 1 }'
+          else
+            config_ok=false
+            for _ in $(seq 1 10); do
+              rm -f /tmp/clickhouse-config.xml
+              docker cp "$container:/var/lib/clickhouse/preprocessed_configs/config.xml" /tmp/clickhouse-config.xml
+              if python3 -c 'from xml.etree import ElementTree as ET; raise SystemExit(ET.parse("/tmp/clickhouse-config.xml").findtext("send_crash_reports/enabled") != "false")'; then
+                config_ok=true
+                break
+              fi
+              sleep 1
+            done
+            test "$config_ok" = true
+          fi
+
+          if docker exec "$container" clickhouse-client --query \
+            "SELECT * FROM url('https://example.com', 'RawBLOB')" \
+            >/tmp/clickhouse-url.out 2>/tmp/clickhouse-url.err; then
+            echo "URL table function unexpectedly succeeded"
+            exit 1
+          fi
+          grep -q "UNACCEPTABLE_URL" /tmp/clickhouse-url.err
+
 # ── Job 7: Dependency audit ─────────────────────────────────────────────────
   dependency-audit:
     name: dependency-audit

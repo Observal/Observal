@@ -122,7 +122,7 @@ resource "aws_lb_listener_rule" "http_api" {
 
   condition {
     path_pattern {
-      values = ["/api/*", "/auth/*", "/readyz", "/healthz", "/health"]
+      values = ["/api/*", "/auth/*", "/readyz", "/healthz", "/health", "/.well-known/ard.json", "/.well-known/ai-catalog.json"]
     }
   }
 }
@@ -207,7 +207,7 @@ resource "aws_lb_listener_rule" "https_api" {
 
   condition {
     path_pattern {
-      values = ["/api/*", "/auth/*", "/readyz", "/healthz", "/health"]
+      values = ["/api/*", "/auth/*", "/readyz", "/healthz", "/health", "/.well-known/ard.json", "/.well-known/ai-catalog.json"]
     }
   }
 }

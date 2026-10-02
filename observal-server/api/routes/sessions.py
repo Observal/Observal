@@ -50,6 +50,26 @@ def _is_admin_user(user: User) -> bool:
     return user.role in (UserRole.admin, UserRole.super_admin)
 
 
+def _resolved_agent_name(agent_id: str, names: dict[str, str], *, queried: bool) -> str | None:
+    """Return a display name for an agent id, or None when it cannot be judged.
+
+    A session can outlive the agent it was attributed to: the agent may be
+    deleted, or the local lockfile may hold an id from a different registry.
+    Returning None there renders as a row with an agent id and a blank name,
+    which reads as a bug. Name the state instead.
+
+    ``queried`` must be True only when Postgres was actually asked about this
+    id and answered. A malformed id was never queried and a failed query proves
+    nothing, so both keep returning None rather than claiming the agent is gone.
+    """
+    name = names.get(agent_id)
+    if name is not None:
+        return name
+    if queried:
+        return f"unknown agent ({agent_id[:8]})"
+    return None
+
+
 def _has_admin_trace_access(user: User) -> bool:
     """Check if user has admin-level trace access."""
     optic.trace("user_id={}", user.id)
@@ -147,19 +167,41 @@ async def list_sessions(
         if aid:
             agent_ids_to_resolve.add(aid)
 
+    # Ids this request actually asked Postgres about. Only those can be called
+    # missing: a malformed id was never queried, and a failed query proves
+    # nothing about whether the agent exists.
+    queried_agent_ids: set[str] = set()
+    agent_lookup_succeeded = False
+
     if agent_ids_to_resolve:
         try:
             agent_uuids = []
+            # A session can store a valid but non-canonical id - uppercase, or
+            # without hyphens. Those query correctly, but the row comes back
+            # canonical, so keying results by str(row_id) alone would miss the
+            # stored form and label a live agent unknown.
+            #
+            # Every stored form is kept, not just one: two sessions on the same
+            # page can spell the same agent differently, and mapping each
+            # canonical id to a single form would resolve one session and leave
+            # the other unresolved.
+            canonical_to_stored: dict[str, list[str]] = {}
             for aid in agent_ids_to_resolve:
                 try:
-                    agent_uuids.append(_uuid.UUID(aid))
+                    parsed = _uuid.UUID(aid)
                 except ValueError:
-                    pass
+                    continue
+                agent_uuids.append(parsed)
+                canonical_to_stored.setdefault(str(parsed), []).append(aid)
+                queried_agent_ids.add(aid)
             if agent_uuids:
                 async with async_session() as db:
                     result = await db.execute(select(Agent.id, Agent.name).where(Agent.id.in_(agent_uuids)))
                     for a_id, a_name in result.all():
-                        agent_id_to_name[str(a_id)] = a_name
+                        canonical = str(a_id)
+                        for stored in canonical_to_stored.get(canonical, [canonical]):
+                            agent_id_to_name[stored] = a_name
+                agent_lookup_succeeded = True
         except Exception:
             optic.opt(exception=True).warning("Agent name resolution failed")
 
@@ -172,7 +214,15 @@ async def list_sessions(
         row["is_active"] = bool(int(row.get("is_active", 0)))
         agent_id = row.get("agent_id") or None
         row["agent_id"] = agent_id if agent_id else None
-        row["agent_name"] = agent_id_to_name.get(agent_id) if agent_id else None
+        row["agent_name"] = (
+            _resolved_agent_name(
+                agent_id,
+                agent_id_to_name,
+                queried=agent_lookup_succeeded and agent_id in queried_agent_ids,
+            )
+            if agent_id
+            else None
+        )
         row["agent_version"] = row.get("agent_version") or None
 
     if status == "active":
@@ -394,13 +444,23 @@ async def get_session(
     agent_name = None
     if agent_id:
         try:
-            from models.agent import Agent
+            agent_uuid = _uuid.UUID(agent_id)
+        except ValueError:
+            agent_uuid = None
+        if agent_uuid is not None:
+            try:
+                from models.agent import Agent
 
-            async with async_session() as db:
-                result = await db.execute(select(Agent.name).where(Agent.id == _uuid.UUID(agent_id)))
-                agent_name = result.scalar_one_or_none()
-        except Exception:
-            optic.opt(exception=True).warning("Agent name resolution failed")
+                async with async_session() as db:
+                    result = await db.execute(select(Agent.name).where(Agent.id == agent_uuid))
+                    resolved = result.scalar_one_or_none()
+                agent_name = _resolved_agent_name(
+                    agent_id,
+                    {agent_id: resolved} if resolved is not None else {},
+                    queried=True,
+                )
+            except Exception:
+                optic.opt(exception=True).warning("Agent name resolution failed")
 
     # Track max line_offset for incremental fetch cursor
     max_offset = max(int(r.get("line_offset", 0)) for r in rows) if rows else (after_offset or 0)

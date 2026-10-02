@@ -120,7 +120,7 @@ done
 echo "Setting up Observal server package..."
 
 # Clone only the server-package config files (nginx, grafana, clickhouse configs)
-run_remote "rm -rf /opt/observal && git clone --depth 1 --branch $OBSERVAL_REF $OBSERVAL_REPO /opt/observal-src && mkdir -p /opt/observal && cp /opt/observal-src/docker/server-package/* /opt/observal/ && cp -r /opt/observal-src/docker/server-package/clickhouse /opt/observal/ 2>/dev/null || true && cp -r /opt/observal-src/docker/server-package/grafana /opt/observal/ 2>/dev/null || true && cp -r /opt/observal-src/docker/server-package/prometheus* /opt/observal/ 2>/dev/null || true && rm -rf /opt/observal-src"
+run_remote "rm -rf /opt/observal && git clone --depth 1 --branch $OBSERVAL_REF $OBSERVAL_REPO /opt/observal-src && mkdir -p /opt/observal && cp /opt/observal-src/docker/server-package/* /opt/observal/ && cp -r /opt/observal-src/docker/clickhouse /opt/observal/ 2>/dev/null || true && cp -r /opt/observal-src/docker/server-package/grafana /opt/observal/ 2>/dev/null || true && cp -r /opt/observal-src/docker/server-package/prometheus* /opt/observal/ 2>/dev/null || true && rm -rf /opt/observal-src"
 
 # ── Configure .env ───────────────────────────────────────────────────────────
 

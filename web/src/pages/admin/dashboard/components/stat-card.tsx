@@ -14,12 +14,12 @@ interface StatCardProps {
 
 export function StatCard({ label, value, trend, subtitle }: StatCardProps) {
   return (
-    <div className="rounded-lg border border-border p-4 space-y-1">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-2xl font-semibold font-[family-name:var(--font-display)] tabular-nums">
+    <div className="min-w-0 bg-card px-5 py-4">
+      <p className="text-2xs text-muted-foreground">{label}</p>
+      <p className="mt-3 text-2xl font-semibold tracking-[-0.025em] tabular-nums">
         {value}
       </p>
-      <div className="flex items-center gap-1.5">
+      <div className="mt-1 flex items-center gap-1.5">
         {trend !== undefined && trend !== 0 && (
           <>
             {trend > 0 ? (
@@ -28,7 +28,7 @@ export function StatCard({ label, value, trend, subtitle }: StatCardProps) {
               <TrendingDown className="h-3 w-3 text-destructive" />
             )}
             <span
-              className={`text-xs tabular-nums ${
+              className={`text-2xs font-semibold tabular-nums ${
                 trend > 0 ? "text-success" : "text-destructive"
               }`}
             >
@@ -39,7 +39,7 @@ export function StatCard({ label, value, trend, subtitle }: StatCardProps) {
         )}
         {trend === 0 && <Minus className="h-3 w-3 text-muted-foreground" />}
         {subtitle && (
-          <span className="text-xs text-muted-foreground">{subtitle}</span>
+          <span className="text-2xs text-muted-foreground">{subtitle}</span>
         )}
       </div>
     </div>

@@ -56,10 +56,10 @@ export function useRegistryResolve(type: RegistryType, identifier: string | unde
   });
 }
 
-export function useRegistryMetrics(type: RegistryType, id: string | undefined) {
+export function useRegistryMetrics(type: RegistryType, id: string | undefined, enabled = true) {
   return useQuery({
     queryKey: ["registry", type, id, "metrics"],
-    enabled: !!id,
+    enabled: !!id && enabled,
     queryFn: () => registry.metrics(type, id!),
   });
 }
@@ -89,5 +89,14 @@ export function useVersionDiff(
     queryKey: ["version-diff", agentId, v1, v2],
     enabled: !!agentId && !!v1 && !!v2,
     queryFn: () => registry.getVersionDiff(agentId!, v1!, v2!),
+  });
+}
+
+/** Which components an agent version pins behind their latest approved release. */
+export function useAgentVersionOutdated(agentId: string | undefined, version: string | null | undefined) {
+  return useQuery({
+    queryKey: ["agent-version-outdated", agentId, version],
+    enabled: !!agentId && !!version,
+    queryFn: () => registry.getVersionOutdated(agentId!, version!),
   });
 }

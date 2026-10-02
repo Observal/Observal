@@ -109,6 +109,18 @@ _PASSWORD_CHANGE_EXEMPT_PATHS = frozenset(
 )
 
 
+async def _enforce_password_change(request: Request, user: User) -> None:
+    """Block authenticated requests until a required password change is complete."""
+    if request.url.path in _PASSWORD_CHANGE_EXEMPT_PATHS:
+        return
+    try:
+        redis = get_redis()
+        if await redis.get(f"must_change_password:{user.id}"):
+            raise HTTPException(status_code=403, detail="Password change required")
+    except RedisError:
+        raise HTTPException(status_code=503, detail="Auth service temporarily unavailable")
+
+
 async def get_current_user(
     request: Request,
     authorization: str | None = Header(None),
@@ -131,15 +143,8 @@ async def get_current_user(
     # Expose user to audit middleware
     request.state.audit_user = user
 
-    # Enforce must_change_password - fail closed: if Redis is down we cannot
-    # guarantee the gate is enforced, so block non-exempt requests.
-    if request.url.path not in _PASSWORD_CHANGE_EXEMPT_PATHS:
-        try:
-            redis = get_redis()
-            if await redis.get(f"must_change_password:{user.id}"):
-                raise HTTPException(status_code=403, detail="Password change required")
-        except RedisError:
-            raise HTTPException(status_code=503, detail="Auth service temporarily unavailable")
+    # Fail closed when a required password change cannot be verified.
+    await _enforce_password_change(request, user)
 
     request.state.current_user = user
     return user
@@ -163,6 +168,22 @@ async def optional_current_user(
     if user.auth_provider == "deactivated":
         raise HTTPException(status_code=401, detail="Account deactivated")
     return user
+
+
+async def get_registry_user(
+    request: Request,
+    current_user: User | None = Depends(optional_current_user),
+) -> User | None:
+    """Authorize registry reads, allowing guests only when public access is enabled."""
+    if current_user is None:
+        if not await ds.get_bool("deployment.public_registry_enabled"):
+            raise HTTPException(status_code=401, detail="Authentication required")
+        return None
+
+    request.state.audit_user = current_user
+    await _enforce_password_change(request, current_user)
+    request.state.current_user = current_user
+    return current_user
 
 
 # Role hierarchy: lower number = higher privilege

@@ -15,7 +15,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
 
-from api.deps import get_current_user, get_db
+from api.deps import get_current_user, get_db, get_registry_user
 from api.routes import component_versions as versions
 from models.hook import HookListing, HookVersion
 from models.mcp import ListingStatus, McpListing, McpVersion
@@ -1197,6 +1197,7 @@ def _generic_app(component_type="mcp", *, actor=None):
     app.dependency_overrides[get_db] = lambda: db
     if actor is not None:
         app.dependency_overrides[get_current_user] = lambda: actor
+        app.dependency_overrides[get_registry_user] = lambda: actor
     return app, db
 
 
@@ -1410,7 +1411,7 @@ async def test_router_authentication_and_reviewer_role_fail_before_handlers(monk
         unauthenticated = await client.get(f"/api/v1/mcps/{LISTING_ID}/versions")
 
     assert unauthenticated.status_code == 401
-    assert unauthenticated.json() == {"detail": "Missing credentials"}
+    assert unauthenticated.json() == {"detail": "Authentication required"}
     list_call.assert_not_awaited()
 
     user_app, _db_instance = _generic_app(actor=_user(user_id=OWNER_ID))

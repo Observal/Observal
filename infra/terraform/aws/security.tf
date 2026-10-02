@@ -75,7 +75,6 @@ resource "aws_security_group" "ecs_tasks" {
 
 # ── Data tier EC2 (ClickHouse plus optional observability) ─────────────────
 resource "aws_security_group" "data_host" {
-  count       = local.clickhouse_self_hosted ? 1 : 0
   name        = "${local.name}-data-host"
   description = "ClickHouse EC2 with optional observability. Inbound from ALB and ECS tasks."
   vpc_id      = local.vpc_id

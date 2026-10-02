@@ -21,7 +21,7 @@ export function DashboardContent({
   className,
 }: DashboardShellProps) {
   return (
-    <main className={cn("flex-1 overflow-y-auto p-3", className)}>
+    <main className={cn("flex-1 overflow-y-auto px-[30px] pt-5 pb-10", className)}>
       {children}
     </main>
   );

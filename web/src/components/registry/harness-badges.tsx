@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-import { Badge } from "@/components/ui/badge";
 import { useHarnesses } from "@/hooks/use-harnesses";
 
 function formatHarnessSlug(harness: string): string {
@@ -41,11 +40,14 @@ export function HarnessBadges({
   const overflow = harnesses.length - max;
 
   return (
-    <div className={["flex flex-wrap items-center gap-1", className ?? ""].join(" ")}>
+    <div className={["flex flex-wrap items-center gap-[5px]", className ?? ""].join(" ")}>
       {visible.map((harness) => (
-        <Badge key={harness} variant="outline" className="text-[10px] px-1.5 py-0 font-normal leading-4">
+        <span
+          key={harness}
+          className="rounded-[5px] bg-surface-raised px-[7px] py-0.5 font-mono text-[10px] text-muted-foreground"
+        >
           {getHarnessDisplayName(harness, harnessList)}
-        </Badge>
+        </span>
       ))}
       {overflow > 0 && <span className="text-[10px] text-muted-foreground">+{overflow} more</span>}
     </div>

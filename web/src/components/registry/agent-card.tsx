@@ -7,6 +7,7 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowDownToLine, Puzzle, Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { RecommendedBadge } from "@/components/registry/recommended-badge";
 import { HarnessBadges } from "@/components/registry/harness-badges";
 import { RegistryName } from "@/components/registry/registry-name";
 import { canonicalRouteParts } from "@/lib/registry-name";
@@ -29,6 +30,7 @@ interface AgentCardProps {
   status?: string;
   supported_harnesses?: string[];
   inferred_supported_harnesses?: string[];
+  is_recommended?: boolean;
   className?: string;
 }
 
@@ -47,12 +49,13 @@ export function AgentCard({
   component_count,
   supported_harnesses,
   inferred_supported_harnesses,
+  is_recommended,
   className,
 }: AgentCardProps) {
   const cardClassName = [
-    "group flex h-full min-h-60 flex-col rounded-md border border-border bg-card p-4",
+    "group flex h-full min-h-40 flex-col rounded-xl bg-card p-[18px] shadow-sm",
     "transition-all duration-200 ease-out",
-    "hover:-translate-y-0.5 hover:border-foreground/20 hover:bg-accent/40",
+    "hover:-translate-y-0.5 hover:shadow-md",
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
     className ?? "",
   ].join(" ");
@@ -68,11 +71,14 @@ export function AgentCard({
           item={{ name, namespace, slug, qualified_name }}
           nameClassName="font-display text-sm font-semibold leading-tight"
         />
-        {version && (
-          <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0">
-            {version}
-          </Badge>
-        )}
+        <div className="flex items-center gap-1.5">
+          {is_recommended && <RecommendedBadge />}
+          {version && (
+            <Badge variant="secondary" className="shrink-0 text-[10px] px-1.5 py-0">
+              {version}
+            </Badge>
+          )}
+        </div>
       </div>
 
       {description && (
@@ -89,7 +95,7 @@ export function AgentCard({
         </p>
       )}
 
-      <div className="mt-auto flex items-center gap-4 pt-3 text-xs text-muted-foreground">
+      <div className="mt-auto flex items-center gap-4 border-t border-border pt-3 mt-3.5 text-[10px] text-muted-foreground">
         {downloads != null && (
           <span className="inline-flex items-center gap-1">
             <ArrowDownToLine className="h-3 w-3" />

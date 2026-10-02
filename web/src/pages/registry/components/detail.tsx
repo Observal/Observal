@@ -7,7 +7,7 @@
 
 
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
-import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
+import { useState, useEffect } from "react";
 import { Star, ArrowLeft, History, Loader2, ArrowDownToLine, Archive, ArchiveRestore, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -25,11 +25,13 @@ import {
   useWhoami,
 } from "@/hooks/use-api";
 import { getUserRole } from "@/lib/api";
+import { useOptionalAuth } from "@/hooks/use-auth";
 import { hasMinRole } from "@/hooks/use-role-guard";
 import type { RegistryType } from "@/lib/api";
-import type { FeedbackItem, RegistryItem, ComponentVersionSummary } from "@/lib/types";
+import type { FeedbackItem, RegistryItem, ComponentVersionSummary, RecommendableType } from "@/lib/types";
 import { compactNumber } from "@/lib/utils";
 import { canonicalRouteParts, registryIdentity } from "@/lib/registry-name";
+import { tagColorClasses } from "@/lib/tag-colors";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ReviewForm } from "@/components/registry/review-form";
@@ -49,6 +51,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
+import { RecommendedBadge, RecommendedToggle } from "@/components/registry/recommended-badge";
 import { Button } from "@/components/ui/button";
 import { PickerSelect } from "@/components/ui/picker-select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -120,28 +123,20 @@ export default function ComponentDetailPage({
   const type = (componentType ?? search.type ?? "mcps") as RegistryType;
   const navigate = useNavigate();
   const singularType = type === "sandboxes" ? "sandbox" : type.replace(/s$/, "");
+  const { isAuthenticated } = useOptionalAuth();
   const { data: item, isLoading, isError, error, refetch } = useRegistryItem(type, id);
   const { data: feedbackItems, refetch: refetchFeedback } = useFeedback(singularType, id);
   const { data: feedbackSummary, refetch: refetchSummary } = useFeedbackSummary(id);
-  const { data: myReview } = useMyFeedback(singularType, id);
-  const { data: rawMetrics } = useRegistryMetrics(type, id);
+  const { data: myReview } = useMyFeedback(singularType, id, isAuthenticated);
+  const { data: rawMetrics } = useRegistryMetrics(type, id, isAuthenticated);
   const { data: versionsData, isLoading: versionsLoading } = useComponentVersions(type, id);
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
   const { data: versionDetail } = useComponentVersionDetail(type, id, selectedVersion);
-  const { data: whoami } = useWhoami();
-  const { data: teams = [] } = useTeams();
+  const { data: whoami } = useWhoami(isAuthenticated);
+  const { data: teams = [] } = useTeams(isAuthenticated);
   const updateVisibility = useUpdateRegistryVisibility();
-
-  const storeSub = useCallback((cb: () => void) => {
-    window.addEventListener("storage", cb);
-    return () => window.removeEventListener("storage", cb);
-  }, []);
-  const isAuthenticated = useSyncExternalStore(
-    storeSub,
-    () => !!sessionStorage.getItem("observal_access_token"),
-    () => false,
-  );
   const canEdit = isAuthenticated && (item?.user_permission === "owner");
+  const isAdmin = isAuthenticated && hasMinRole(getUserRole(), "admin");
   const owningTeam = item?.team_id ? teams.find((team) => team.id === String(item.team_id)) : undefined;
   const personalTeam = teams.find((team) => team.is_personal && team.visibility === "private");
   const teamRole = owningTeam?.role;
@@ -171,14 +166,22 @@ export default function ComponentDetailPage({
   // Co-authors
   const [coAuthors, setCoAuthors] = useState<CoAuthor[]>([]);
   useEffect(() => {
+    if (!isAuthenticated) {
+      setCoAuthors([]);
+      return;
+    }
+    const controller = new AbortController();
     const token = sessionStorage.getItem("observal_access_token");
     const headers: Record<string, string> = {};
     if (token) headers["Authorization"] = `Bearer ${token}`;
-    fetch(`/api/v1/${type}/${id}/co-authors`, { headers })
+    fetch(`/api/v1/${type}/${id}/co-authors`, { headers, signal: controller.signal })
       .then((r) => (r.ok ? r.json() : []))
-      .then((data) => setCoAuthors(data))
+      .then((data) => {
+        if (!controller.signal.aborted) setCoAuthors(data);
+      })
       .catch(() => {});
-  }, [type, id]);
+    return () => controller.abort();
+  }, [type, id, isAuthenticated]);
 
   const versions = versionsData?.items ?? [];
   // VersionDropdown expects AgentVersionSummary shape; ComponentVersionSummary is compatible
@@ -257,7 +260,7 @@ export default function ComponentDetailPage({
 
   const avgRating = feedbackSummary?.average_rating;
   const totalReviews = feedbackSummary?.total_reviews ?? 0;
-  const metricsEntries: [string, string][] = rawMetrics && typeof rawMetrics === "object"
+  const metricsEntries: [string, string][] = isAuthenticated && rawMetrics && typeof rawMetrics === "object"
     ? Object.entries(rawMetrics as Record<string, unknown>).map(([k, v]) => [k, typeof v === "number" ? v.toLocaleString() : String(v ?? "")])
     : [];
 
@@ -286,7 +289,7 @@ export default function ComponentDetailPage({
           ) : undefined
         }
       />
-      <div className="p-6 w-full mx-auto space-y-6">
+      <div className="page-body w-full mx-auto space-y-5">
         {isLoading ? (
           <DetailSkeleton />
         ) : isError ? (
@@ -308,7 +311,9 @@ export default function ComponentDetailPage({
                   nameClassName="text-2xl font-display font-bold tracking-tight"
                   handleClassName="text-sm text-muted-foreground"
                 />
-                <Badge variant="outline" className="text-xs">{singularType}</Badge>
+                <span className={`rounded-full px-2.5 py-0.5 text-2xs font-medium ${tagColorClasses(singularType)}`}>
+                  {singularType}
+                </span>
                 {item.status && (
                   <Badge
                     variant={statusVariant(item.status)}
@@ -317,6 +322,7 @@ export default function ComponentDetailPage({
                     {item.status}
                   </Badge>
                 )}
+                {item.is_recommended && <RecommendedBadge />}
                 {showVisibilityControl && (
                   <PickerSelect
                     value={currentVisibility}
@@ -359,7 +365,7 @@ export default function ComponentDetailPage({
                     {Array.from({ length: 5 }).map((_, i) => (
                       <Star
                         key={i}
-                        className={`h-3.5 w-3.5 ${i < Math.round(avgRating) ? "fill-current text-amber-500" : "text-muted-foreground/30"}`}
+                        className={`h-3.5 w-3.5 ${i < Math.round(avgRating) ? "fill-current text-warning" : "text-muted-foreground/30"}`}
                       />
                     ))}
                   </div>
@@ -367,6 +373,16 @@ export default function ComponentDetailPage({
                 </div>
               )}
             </div>
+
+            {isAdmin && (
+              <div className="lg:hidden">
+                <RecommendedToggle
+                  entityType={singularType as RecommendableType}
+                  entityId={String(item.id)}
+                  isRecommended={!!item.is_recommended}
+                />
+              </div>
+            )}
 
             {/* Grid: Main + Sidebar */}
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-8 items-start">
@@ -428,7 +444,7 @@ export default function ComponentDetailPage({
                 ) : (
                   <div className="space-y-4">
                     {feedbackItems
-                      .filter((fb: FeedbackItem) => !myReview || fb.id !== myReview.id)
+                      .filter((fb: FeedbackItem) => !isAuthenticated || !myReview || fb.id !== myReview.id)
                       .map((fb: FeedbackItem) => (
                       <div key={fb.id} className="rounded-md border border-border p-4 space-y-2">
                         <div className="flex items-center justify-between">
@@ -438,7 +454,7 @@ export default function ComponentDetailPage({
                                 key={i}
                                 className={`h-3.5 w-3.5 ${
                                   i < fb.rating
-                                    ? "fill-current text-amber-500"
+                                    ? "fill-current text-warning"
                                     : "text-muted-foreground/30"
                                 }`}
                               />
@@ -596,6 +612,14 @@ export default function ComponentDetailPage({
                   </h3>
                   <p className="text-sm">{String(item.owner)}</p>
                 </div>
+              )}
+
+              {isAdmin && (
+                <RecommendedToggle
+                  entityType={singularType as RecommendableType}
+                  entityId={String(item.id)}
+                  isRecommended={!!item.is_recommended}
+                />
               )}
 
               {(canEdit || coAuthors.length > 0) && (

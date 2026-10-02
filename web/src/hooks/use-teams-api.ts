@@ -11,10 +11,11 @@ const JOIN_REQUESTS_KEY = (teamId: string | undefined) => ["teams", teamId, "joi
 const TEAMS_STALE_MS = 5 * 60 * 1000;
 const TEAM_REFRESH_MS = 10 * 1000;
 
-export function useTeams() {
+export function useTeams(enabled = true) {
 	return useQuery({
 		queryKey: ["teams"],
 		queryFn: teams.list,
+		enabled,
 		staleTime: TEAMS_STALE_MS,
 		refetchOnWindowFocus: "always",
 	});

@@ -32,6 +32,7 @@ export interface RegistryItem {
 	rejection_reason?: string;
 	created_at?: string;
 	updated_at?: string;
+	is_recommended?: boolean;
 	[key: string]: unknown;
 }
 
@@ -110,6 +111,21 @@ export interface AgentComponentReference {
 	mcp_name?: string;
 	resolved_version?: string;
 	status?: string;
+}
+
+/** A component of the agent's current version, as the agent detail response lists it. */
+export interface AgentComponentLink {
+	component_type: string;
+	component_id: string;
+	component_name?: string;
+	namespace?: string;
+	slug?: string;
+	qualified_name?: string;
+	/** The exact component version this agent version pins. */
+	version_ref: string;
+	order: number;
+	config_override?: Record<string, unknown> | null;
+	status?: string | null;
 }
 
 export interface SuccessMetric {
@@ -215,6 +231,7 @@ export interface BulkResult {
 	created: number;
 	skipped: number;
 	errors: number;
+	partial: boolean;
 	dry_run: boolean;
 	results: BulkResultItem[];
 }
@@ -256,6 +273,29 @@ export interface VersionDiff {
 	component_changes: ComponentChange[];
 }
 
+// ── Component pins ──────────────────────────────────────────────────
+
+/** One component an agent version pins, and how that pin compares with the registry. */
+export interface ComponentPinFreshness {
+	type: string;
+	id: string;
+	name: string;
+	qualified_name: string;
+	pinned_version: string | null;
+	latest_version: string | null;
+	outdated: boolean;
+	archived: boolean;
+	locked: boolean;
+}
+
+export interface AgentVersionOutdated {
+	agent_id: string;
+	qualified_name: string;
+	version: string;
+	components: ComponentPinFreshness[];
+	summary: { total: number; outdated: number; unlocked: number; archived: number };
+}
+
 // ── Review ──────────────────────────────────────────────────────────
 
 export interface McpValidationResult {
@@ -263,6 +303,13 @@ export interface McpValidationResult {
 	passed: boolean;
 	details?: string;
 	run_at?: string;
+}
+
+export interface ReviewComponentBlocker {
+	component_type: string;
+	component_id: string;
+	name: string;
+	status: string;
 }
 
 export interface ReviewItem {
@@ -281,12 +328,8 @@ export interface ReviewItem {
 	mcp_validated?: boolean;
 	validation_results?: McpValidationResult[];
 	components_ready?: boolean;
-	component_blockers?: {
-		component_type: string;
-		component_id: string;
-		name: string;
-		status: string;
-	}[];
+	component_blockers?: ReviewComponentBlocker[];
+	blocking_components?: ReviewComponentBlocker[];
 	bundle_id?: string;
 	bundle_name?: string;
 	rejection_reason?: string;
@@ -417,4 +460,76 @@ export interface RecommendationsResponse {
 	personalized: boolean;
 	profile_sessions: number;
 	topics: string[];
+}
+
+// ── Admin Recommended ────────────────────────────────────────────────
+
+export type RecommendableType = "agent" | "mcp" | "skill" | "hook" | "prompt" | "sandbox";
+
+export interface SetRecommendedRequest {
+	entity_type: RecommendableType;
+	entity_id: string;
+	recommended: boolean;
+}
+
+export interface SetRecommendedResponse {
+	entity_type: RecommendableType;
+	entity_id: string;
+	is_recommended: boolean;
+}
+
+// ── Discovery (ARD) ─────────────────────────────────────────────────
+
+/** `external` is a remote agent registered by its A2A Agent Card (ADR 0002). */
+export type DiscoveryKind = "agent" | "mcp" | "skill" | "hook" | "prompt" | "sandbox" | "external";
+
+export type DiscoveryApproval = "approved" | "pending" | "rejected" | "archived" | "draft";
+
+export type DiscoveryAvailability =
+	| "now"
+	| "next-session"
+	| "explicit-install"
+	| "delegate"
+	| "not-approved"
+	| "archived"
+	| "unsupported-in-harness";
+
+/** One entry of `results` in an ARD Search response. `score` is relevance only. */
+export interface DiscoverySearchResult {
+	identifier: string;
+	displayName?: string;
+	type?: string;
+	url?: string;
+	version?: string;
+	description?: string;
+	capabilities?: string[];
+	score: number;
+	source: string;
+	matchedOn?: string[];
+	"obs:kind"?: DiscoveryKind;
+	"obs:nativeRef"?: string | null;
+	"obs:approval"?: DiscoveryApproval;
+	"obs:visibility"?: "public" | "team" | "owner";
+	"obs:supportedHarnesses"?: string[];
+	"obs:availability"?: DiscoveryAvailability;
+	"obs:activatable"?: boolean;
+	/** Can take a delegated task right now (approved agent with a headless harness, or remote A2A agent). */
+	"obs:delegable"?: boolean;
+	/** An admin marked this as recommended. Editorial only; never part of `score`. */
+	"obs:recommended"?: boolean;
+	"obs:artifactDigest"?: string | null;
+	"obs:publisher"?: string;
+	/** Organization named on a remote A2A agent's card, as the card states it. */
+	"obs:provider"?: string;
+}
+
+export interface DiscoverySearchResponse {
+	results: DiscoverySearchResult[];
+	pageToken?: string;
+}
+
+export interface DiscoverySearchFilter {
+	kind?: DiscoveryKind;
+	harness?: string;
+	includeUnapproved?: boolean;
 }

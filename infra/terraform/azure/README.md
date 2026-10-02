@@ -65,11 +65,9 @@ terraform output web_url
 | `staging.tfvars` | Cost-optimized, single replicas, smaller SKUs |
 | `prod.tfvars` | Zone-redundant PostgreSQL, HA Redis, autoscaling, larger VMs |
 
-## ClickHouse Modes
+## ClickHouse
 
-Set `clickhouse_mode`:
-- `"self_hosted"` (default) - Azure VM with managed disk. Cheapest option.
-- `"cloud"` - ClickHouse Cloud. Supply `clickhouse_cloud_url` and `clickhouse_cloud_password`.
+The module deploys ClickHouse on an Azure VM with a managed disk.
 
 ## Estimated Monthly Cost (Staging)
 

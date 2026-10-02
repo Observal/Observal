@@ -1,6 +1,7 @@
 <!-- SPDX-FileCopyrightText: 2026 Hemalatha Madeswaran <hemalathamadeswaran@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 tsitu0 <tomsitu0102@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # `observal agent`
@@ -29,6 +30,7 @@ Canonical identities use `namespace/slug`. Commands also accept UUIDs, unambiguo
 | `publish` | Create, update, save, or submit an agent |
 | `release` | Publish a reviewed version bump |
 | `versions` | List version history |
+| `outdated` | Show which pinned components have newer approved releases |
 | `transfer-owner` | Transfer ownership |
 | `co-authors` | List, add, or remove co-authors |
 
@@ -85,7 +87,7 @@ observal agent bulk-create --from-file agents.json --dry-run --output json
 observal agent bulk-create --from-file agents.json --yes --output json
 ```
 
-JSON mode requires either `--dry-run` or `--yes`. It returns the direct bulk result, including per-agent statuses and summary counts.
+Input contains 1-50 agents. The CLI rejects malformed fields and duplicate canonical names before HTTP, and the server applies the same duplicate rules. JSON mode requires either `--dry-run` or `--yes`. Results include per-agent statuses, summary counts, and `partial`. Item errors set `partial: true` and exit with code 11; skips alone remain successful.
 
 ## List, my, and show
 
@@ -153,6 +155,22 @@ observal agent init \
 
 The no-flag form is interactive. JSON mode requires complete flags and refuses to overwrite an existing definition. Writes are atomic.
 
+#### From a working session
+
+```bash
+observal agent init --from-capabilities --name pr-review-flow --dir ./pr-review-flow --output json
+observal agent init --from-capabilities --since 3d --name data-helper --output json
+```
+
+`--from-capabilities` pre-fills `components` and `supported_harnesses` from the
+resources recorded in the capability lock for the current directory (see
+[`observal discover`](discover.md)): everything loaded with `discover use` and
+every component installed here in the last 24 hours (`--since` accepts `45m`,
+`2h`, `3d`, `1w`). In JSON mode a default description and prompt are filled in
+when omitted. Agents cannot nest other agents, so a pulled agent is reported
+under `from_capabilities.skipped_agents` rather than added. Exit code `5` when
+nothing was used in the window.
+
 JSON returns:
 
 ```json
@@ -176,6 +194,14 @@ observal agent add skill 22222222-2222-2222-2222-222222222222 --dir ./reviewer -
 
 Valid types are `mcp`, `skill`, `hook`, `prompt`, and `sandbox`. Duplicate type and UUID pairs return conflict exit code 6. Invalid types or IDs return validation exit code 7.
 
+Pin an exact component release with `--version`:
+
+```bash
+observal agent add mcp 33333333-3333-3333-3333-333333333333 --version 1.4.2 --dir ./reviewer --output json
+```
+
+This writes `version: 1.4.2` on the component entry. Without a version, the Agent keeps the version its current release pins, or pins the latest approved release when it first gains the component. Versions are matched exactly; `latest` and ranges are not accepted. A release pins approved versions only; a draft may also pin a component release still in review, but only one you can read (your own component, or as an admin or reviewer).
+
 JSON returns the YAML path and added component.
 
 ### Build
@@ -185,7 +211,7 @@ observal agent build --dir ./reviewer --output json
 observal agent build --dir ./reviewer --team platform --visibility team --output json
 ```
 
-Build verifies every component and validates whether private components are visible to the target owner. A successful JSON result contains `valid`, `agent`, `components`, and `issues`. Invalid composition exits with code 7 and leaves JSON stdout empty.
+Build verifies every component, checks that any pinned component `version` exists, and validates whether private components are visible to the target owner. A successful JSON result contains `valid`, `agent`, `components`, and `issues`. Invalid composition exits with code 7 and leaves JSON stdout empty; the stderr error includes the same repairable data under `error.result`.
 
 ### Publish
 
@@ -198,6 +224,8 @@ observal agent publish --dir ./reviewer --update --bump minor --output json
 
 `--draft` and `--submit` are mutually exclusive. Scope changes cannot be combined with `--update`; use ownership transfer or a separate visibility operation. Non-interactive updates may use `--bump patch|minor|major`.
 
+`--update` edits the latest version in place, so it only works while that version is a draft, pending, or rejected. An approved version is immutable: installs and locks depend on it. The server answers conflict exit code 6 and points to `observal agent release`, which publishes a new version for review.
+
 JSON returns the direct created, saved, submitted, or updated Agent object.
 
 ## Release and versions
@@ -208,6 +236,28 @@ observal agent versions alice/reviewer --page 1 --page-size 50 --output json
 ```
 
 Release obtains the server's semantic-version suggestion, submits the complete YAML snapshot, then updates local YAML atomically only after the server accepts the release. A failed server request leaves the local version unchanged.
+
+Every release pins each component to an exact version, and those pins are what every pull of the release installs. A release keeps the pins of the Agent's current release, so components never move unless the author asks:
+
+* give a component a `version` in the YAML to pin that release;
+* pass `--refresh-components` to move every other component to its latest approved release.
+
+```bash
+observal agent release alice/reviewer --bump minor --dir ./reviewer --refresh-components --output json
+```
+
+Approval freezes the release's lock. The review gate checks that each pinned component version is approved.
+
+## Check component pins
+
+```bash
+observal agent outdated alice/reviewer
+observal agent outdated alice/reviewer --version 1.2.0 --output json
+```
+
+Lists each component the Agent version pins with its pinned version, its latest approved release, and a status: `current`, `outdated`, or `unlocked` (Agent versions released before pinning). Archived components are marked. Defaults to the latest Agent version.
+
+JSON returns `agent_id`, `qualified_name`, `version`, `components`, and a `summary` with `total`, `outdated`, `unlocked`, and `archived` counts. Consumers keep installing the pins; this is the author's cue to release a refreshed version.
 
 Versions JSON returns the direct paginated server object. Page size is 1 through 100.
 
@@ -238,7 +288,7 @@ List returns the standard list envelope. Add returns the added user. Remove requ
 observal agent pull alice/reviewer --harness kiro --no-prompt --output json
 ```
 
-Pull writes harness files, records the exact Agent and component versions, and reports every file and setup action. See the [Pull reference](pull.md) for path, secret, merge, dry-run, and JSON behavior.
+Pull writes harness files, records the exact Agent and component versions in `observal.lock` and the local lockfile, and reports every file and setup action. Later pulls keep the locked version until `--upgrade` or `--version`. See the [Pull reference](pull.md) for pinning, strict mode, path, secret, merge, dry-run, and JSON behavior.
 
 ## Exit codes
 
@@ -254,6 +304,7 @@ Common Agent failures use:
 | 8 | Server rate limit |
 | 9 | Server, filesystem, lockfile, generated config, or setup dependency unavailable |
 | 10 | CLI and server version mismatch |
+| 11 | Bulk operation returned one or more item errors |
 
 ## Related
 

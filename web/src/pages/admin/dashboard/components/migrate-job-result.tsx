@@ -43,7 +43,7 @@ export function MigrateJobResult({ job, onReset }: MigrateJobResultProps) {
 				</div>
 				<button
 					onClick={onReset}
-					className="w-full px-4 py-2 text-sm font-medium rounded-md border border-border hover:bg-muted/50 transition-colors"
+					className="w-full px-4 py-2 text-sm font-medium rounded-md bg-card shadow-sm hover:bg-muted/50 transition-colors"
 				>
 					Try Again
 				</button>
@@ -86,7 +86,7 @@ export function MigrateJobResult({ job, onReset }: MigrateJobResultProps) {
 								key={a.name}
 								onClick={() => handleDownload(a.name)}
 								disabled={downloadTokenMutation.isPending}
-								className="flex items-center justify-between w-full px-3 py-1.5 text-xs rounded-md border border-border hover:bg-muted/50 transition-colors"
+								className="flex items-center justify-between w-full px-3 py-1.5 text-xs rounded-md bg-card shadow-sm hover:bg-muted/50 transition-colors"
 							>
 								<span className="truncate">{a.name}</span>
 								<span className="text-muted-foreground ml-2">
@@ -109,7 +109,7 @@ export function MigrateJobResult({ job, onReset }: MigrateJobResultProps) {
 
 			<button
 				onClick={onReset}
-				className="w-full px-4 py-2 text-sm font-medium rounded-md border border-border hover:bg-muted/50 transition-colors"
+				className="w-full px-4 py-2 text-sm font-medium rounded-md bg-card shadow-sm hover:bg-muted/50 transition-colors"
 			>
 				Start New Operation
 			</button>

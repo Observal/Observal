@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Observal Contributors
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Focused coverage for the agent CLI command group."""
@@ -349,11 +350,85 @@ def test_bulk_create_rejects_missing_file(tmp_path):
     assert "JSON file not found" in result.output
 
 
+def test_bulk_create_rejects_server_limit_and_canonical_duplicates_before_http(tmp_path, monkeypatch):
+    post = Mock()
+    monkeypatch.setattr(agent.client, "post", post)
+
+    too_many = tmp_path / "too-many.json"
+    too_many.write_text(json.dumps([{"name": f"agent-{index}"} for index in range(51)]), encoding="utf-8")
+    oversized = _invoke("bulk-create", "--from-file", str(too_many), "--dry-run")
+
+    duplicates = tmp_path / "duplicates.json"
+    duplicates.write_text(json.dumps([{"name": "Review Agent"}, {"name": "review-agent"}]), encoding="utf-8")
+    repeated = _invoke("bulk-create", "--from-file", str(duplicates), "--dry-run")
+
+    assert oversized.exit_code == 7
+    assert "at most 50" in oversized.output
+    assert repeated.exit_code == 7
+    assert "resolve to the same name" in repeated.output
+    post.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "agent_payload",
+    [
+        {"name": "___"},
+        {"name": "install"},
+        {"name": "valid", "components": "not-a-list"},
+        {"name": "valid", "components": ["not-an-object"]},
+        {"name": "valid", "components": [{"component_type": "skill"}]},
+        {"name": "valid", "version": 1},
+        {"name": "valid", "model_config_json": []},
+        {"name": "valid", "supported_harnesses": {}},
+        {"name": "valid", "supported_harnesses": [1]},
+        {"name": "valid", "external_mcps": {}},
+        {"name": "valid", "external_mcps": [1]},
+    ],
+)
+def test_bulk_create_rejects_invalid_agent_shapes_before_http(tmp_path, monkeypatch, agent_payload):
+    source = tmp_path / "invalid-agent.json"
+    source.write_text(json.dumps([agent_payload]), encoding="utf-8")
+    post = Mock()
+    monkeypatch.setattr(agent.client, "post", post)
+
+    result = _invoke("bulk-create", "--from-file", str(source), "--dry-run")
+
+    assert result.exit_code == 7
+    post.assert_not_called()
+
+
+def test_bulk_create_does_not_collapse_distinct_valid_hyphenated_names(tmp_path, monkeypatch):
+    agents = [{"name": "agent--one"}, {"name": "agent-one"}]
+    source = tmp_path / "distinct.json"
+    source.write_text(json.dumps(agents), encoding="utf-8")
+    post = Mock(return_value={"created": 2, "skipped": 0, "errors": 0, "results": []})
+    monkeypatch.setattr(agent.client, "post", post)
+
+    result = _invoke("bulk-create", "--from-file", str(source), "--dry-run", "--output", "json")
+
+    assert result.exit_code == 0
+    post.assert_called_once()
+
+
+def test_bulk_create_accepts_exactly_fifty_unique_agents(tmp_path, monkeypatch):
+    agents = [{"name": f"agent-{index}"} for index in range(50)]
+    source = tmp_path / "agents.json"
+    source.write_text(json.dumps(agents), encoding="utf-8")
+    post = Mock(return_value={"created": 50, "skipped": 0, "errors": 0, "results": []})
+    monkeypatch.setattr(agent.client, "post", post)
+
+    result = _invoke("bulk-create", "--from-file", str(source), "--dry-run", "--output", "json")
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["partial"] is False
+    post.assert_called_once_with("/api/v1/bulk/agents", {"agents": agents, "dry_run": True})
+
+
 def test_bulk_create_dry_run_renders_each_status_and_exact_payload(tmp_path, monkeypatch):
     agents = [
         {"name": "one", "version": "1.0.0", "model_name": "gpt-4o", "components": []},
         {"name": "two"},
-        {"name": "three", "components": [{"component_type": "skill"}]},
+        {"name": "three", "components": [{"component_type": "skill", "component_id": "bad-id"}]},
     ]
     source = tmp_path / "agents.json"
     source.write_text(json.dumps({"agents": agents}), encoding="utf-8")
@@ -372,7 +447,7 @@ def test_bulk_create_dry_run_renders_each_status_and_exact_payload(tmp_path, mon
 
     result = _invoke("bulk-create", "--from-file", str(source), "--dry-run")
 
-    assert result.exit_code == 0, result.output
+    assert result.exit_code == 11, result.output
     assert "Dry-run results" in result.output
     assert "created" in result.output
     assert "skipped" in result.output
@@ -407,10 +482,46 @@ def test_bulk_create_cancellation_and_creation_results(tmp_path, monkeypatch):
     }
     created = _invoke("bulk-create", "--from-file", str(source), "--yes")
 
-    assert created.exit_code == 0, created.output
+    assert created.exit_code == 11, created.output
     assert "Bulk create complete" in created.output
     assert "12345678" in created.output
     post.assert_called_once_with("/api/v1/bulk/agents", {"agents": agents, "dry_run": False})
+
+
+def test_bulk_create_partial_json_result_survives_nonzero_root_exit(tmp_path, monkeypatch):
+    import observal_cli.main as main
+
+    source = tmp_path / "agents.json"
+    source.write_text(json.dumps([{"name": "one"}, {"name": "two"}]), encoding="utf-8")
+    monkeypatch.setattr(main, "_migrate_legacy_mcp_configs", lambda: None)
+    monkeypatch.setattr(main, "_try_lockfile_migration", lambda: None)
+    monkeypatch.setattr(
+        agent.client,
+        "post",
+        Mock(
+            return_value={
+                "created": 1,
+                "skipped": 0,
+                "errors": 1,
+                "results": [
+                    {"name": "one", "status": "created", "agent_id": "agent-1"},
+                    {"name": "two", "status": "error", "error": "invalid"},
+                ],
+            }
+        ),
+    )
+
+    result = runner.invoke(
+        cli_app,
+        ["agent", "bulk-create", "--from-file", str(source), "--yes", "--output", "json"],
+    )
+
+    assert result.exit_code == 11
+    assert result.stderr == ""
+    payload = json.loads(result.stdout)
+    assert payload["partial"] is True
+    assert payload["errors"] == 1
+    assert len(payload["results"]) == 2
 
 
 def test_agent_list_table_filters_ids_and_pagination(monkeypatch, _isolated_boundaries):
@@ -1284,6 +1395,35 @@ def test_local_init_add_and_build_json_contracts(tmp_path, monkeypatch):
     assert json.loads(built.output)["valid"] is True
 
 
+def test_build_json_error_contains_structured_repair_result(tmp_path, monkeypatch):
+    import observal_cli.main as main
+    from observal_cli.errors import CliError, ErrorCategory
+
+    _write_agent_yaml(
+        tmp_path,
+        components=[{"component_type": "skill", "component_id": "missing-skill"}],
+    )
+    monkeypatch.setattr(main, "_migrate_legacy_mcp_configs", lambda: None)
+    monkeypatch.setattr(main, "_try_lockfile_migration", lambda: None)
+    monkeypatch.setattr(
+        agent.client,
+        "get",
+        Mock(side_effect=CliError(ErrorCategory.NOT_FOUND, "Missing.", operation="Validate agent")),
+    )
+    monkeypatch.setattr(agent.client, "post", Mock(return_value={"valid": True, "issues": []}))
+    monkeypatch.setattr(agent.client, "add_publish_target", Mock(side_effect=_publish_target))
+
+    result = runner.invoke(cli_app, ["agent", "build", "--dir", str(tmp_path), "--output", "json"])
+
+    assert result.exit_code == 7
+    assert result.stdout == ""
+    error = json.loads(result.stderr)["error"]
+    assert error["result"]["valid"] is False
+    assert error["result"]["components"] == [
+        {"type": "skill", "id": "missing-skill", "valid": False, "error": "not found"}
+    ]
+
+
 def test_publish_and_release_json_return_server_results(tmp_path, monkeypatch):
     _write_agent_yaml(tmp_path)
     monkeypatch.setattr(agent.client, "add_publish_target", Mock(side_effect=_publish_target))
@@ -1376,3 +1516,129 @@ def test_agent_json_validation_uses_shared_error_boundary(arguments):
     assert result.exit_code == 7
     assert result.stdout == ""
     assert json.loads(result.stderr)["error"]["category"] == "validation"
+
+
+def test_agent_release_refresh_components_asks_the_server_to_move_pins(tmp_path, monkeypatch):
+    _write_agent_yaml(tmp_path)
+    monkeypatch.setattr(agent.client, "resolve_registry_reference", Mock(return_value="resolved"))
+    monkeypatch.setattr(
+        agent.client,
+        "get",
+        Mock(side_effect=[{"id": "agent-1"}, {"current": "1.2.3", "suggestions": {"patch": "1.2.4"}}]),
+    )
+    post = Mock(return_value={})
+    monkeypatch.setattr(agent.client, "post", post)
+
+    kept = _invoke("release", "alice/reviewer", "--bump", "patch", "--dir", str(tmp_path), "--output", "json")
+    assert kept.exit_code == 0, kept.output
+    assert post.call_args.args[1]["refresh_components"] is False
+
+    monkeypatch.setattr(
+        agent.client,
+        "get",
+        Mock(side_effect=[{"id": "agent-1"}, {"current": "1.2.4", "suggestions": {"patch": "1.2.5"}}]),
+    )
+    refreshed = _invoke(
+        "release", "alice/reviewer", "--bump", "patch", "--dir", str(tmp_path), "--refresh-components", "-o", "json"
+    )
+    assert refreshed.exit_code == 0, refreshed.output
+    assert post.call_args.args[1]["refresh_components"] is True
+
+
+def test_agent_add_records_an_exact_component_version(tmp_path):
+    _write_agent_yaml(tmp_path, components=[])
+    component = "33333333-3333-3333-3333-333333333333"
+
+    added = _invoke("add", "mcp", component, "--version", "1.2.0-beta.1", "--dir", str(tmp_path), "--output", "json")
+    invalid = _invoke("add", "skill", component, "--version", "latest", "--dir", str(tmp_path))
+
+    assert added.exit_code == 0, added.output
+    saved = yaml.safe_load((tmp_path / agent.YAML_FILE).read_text(encoding="utf-8"))
+    assert saved["components"] == [{"component_type": "mcp", "component_id": component, "version": "1.2.0-beta.1"}]
+    assert invalid.exit_code == 7
+
+
+def test_agent_build_checks_that_a_pinned_component_version_exists(tmp_path, monkeypatch):
+    _write_agent_yaml(tmp_path, components=[{"component_type": "skill", "component_id": "skill-1", "version": "2.0.0"}])
+    get = Mock(return_value={})
+    monkeypatch.setattr(agent.client, "get", get)
+    monkeypatch.setattr(agent.client, "add_publish_target", Mock())
+    monkeypatch.setattr(agent.client, "post", Mock(return_value={"issues": []}))
+
+    result = _invoke("build", "--dir", str(tmp_path), "--output", "json")
+
+    assert result.exit_code == 0, result.output
+    get.assert_called_once_with("/api/v1/skills/skill-1/versions/2.0.0")
+
+
+def test_agent_outdated_reports_pins_and_suggests_a_refreshed_release(monkeypatch):
+    monkeypatch.setattr(agent.client, "resolve_registry_reference", Mock(return_value="resolved"))
+    report = {
+        "qualified_name": "alice/reviewer",
+        "version": "1.2.3",
+        "components": [
+            {
+                "type": "mcp",
+                "qualified_name": "acme/github",
+                "pinned_version": "1.4.2",
+                "latest_version": "2.0.0",
+                "outdated": True,
+                "archived": False,
+                "locked": True,
+            },
+            {
+                "type": "skill",
+                "qualified_name": "acme/review",
+                "pinned_version": "1.0.0",
+                "latest_version": "1.0.0",
+                "outdated": False,
+                "archived": True,
+                "locked": True,
+            },
+        ],
+        "summary": {"total": 2, "outdated": 1, "unlocked": 0, "archived": 1},
+    }
+    get = Mock(side_effect=[{"version": "1.2.3"}, report])
+    monkeypatch.setattr(agent.client, "get", get)
+
+    table = _invoke("outdated", "alice/reviewer")
+
+    assert table.exit_code == 0, table.output
+    assert get.call_args_list == [
+        call("/api/v1/agents/resolved"),
+        call("/api/v1/agents/resolved/versions/1.2.3/outdated"),
+    ]
+    assert "acme/github" in table.output
+    assert "outdated" in table.output
+    assert "--refresh-components" in table.output
+
+    get.reset_mock(side_effect=True)
+    get.return_value = report
+    pinned = _invoke("outdated", "alice/reviewer", "--version", "1.2.3", "--output", "json")
+    assert pinned.exit_code == 0, pinned.output
+    assert json.loads(pinned.output) == report
+    get.assert_called_once_with("/api/v1/agents/resolved/versions/1.2.3/outdated")
+
+
+@pytest.mark.parametrize("version", ["1.2.0-beta.1", "1.2.0-rc.1"])
+def test_agent_outdated_looks_up_the_version_exactly_as_written(monkeypatch, version):
+    """PEP 440 would rewrite 1.2.0-beta.1 as 1.2.0b1, which names no agent version."""
+    monkeypatch.setattr(agent.client, "resolve_registry_reference", Mock(return_value="resolved"))
+    get = Mock(return_value={"components": []})
+    monkeypatch.setattr(agent.client, "get", get)
+
+    result = _invoke("outdated", "alice/reviewer", "--version", version, "--output", "json")
+
+    assert result.exit_code == 0, result.output
+    get.assert_called_once_with(f"/api/v1/agents/resolved/versions/{version}/outdated")
+
+
+def test_agent_outdated_rejects_a_version_that_is_not_exact(monkeypatch):
+    get = Mock()
+    monkeypatch.setattr(agent.client, "get", get)
+
+    result = _invoke("outdated", "alice/reviewer", "--version", "latest")
+
+    assert result.exit_code == 7
+    assert "Invalid agent version" in result.output
+    get.assert_not_called()

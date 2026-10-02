@@ -63,7 +63,7 @@ flowchart TB
 | Compute (stateless) | ECS Fargate | api, web, worker as separate services |
 | Postgres | RDS Postgres 16 | Multi-AZ on prod, encrypted, automated backups |
 | Redis | ElastiCache Redis 7 | 2-node replication, automatic failover on prod |
-| ClickHouse | EC2 + EBS gp3 | Self-hosted; option to use ClickHouse Cloud |
+| ClickHouse | EC2 + EBS gp3 | Self-hosted |
 | Load balancer | ALB | HTTPS via ACM, path-based routing |
 | Secrets | SSM Parameter Store | Encrypted with KMS, injected into ECS tasks |
 | Logging | CloudWatch | Per-service log groups |
@@ -134,7 +134,7 @@ flowchart TB
 | Migrations | Cloud Run Jobs | One-shot init task |
 | Postgres | Cloud SQL | HA configuration available |
 | Redis | Memorystore | Managed Redis |
-| ClickHouse | GCE instance | Docker Compose on a single VM; option for ClickHouse Cloud |
+| ClickHouse | GCE instance | Docker Compose on a single VM |
 | Load balancer | Global HTTPS LB | Managed SSL certificate |
 | Secrets | Secret Manager | Injected into Cloud Run at start |
 | Logging | Cloud Logging | Built-in, no config needed |
@@ -216,18 +216,6 @@ data_instance_type = "m6i.xlarge"        # AWS
 terraform apply
 ```
 
-### ClickHouse Cloud (for HA)
-
-The self-hosted ClickHouse is a single instance. For real high availability:
-
-```hcl
-clickhouse_mode           = "cloud"
-clickhouse_cloud_url      = "https://abc123.us-east-1.aws.clickhouse.cloud:8443"
-clickhouse_cloud_password = "..."
-```
-
-The EC2/GCE data host is skipped entirely. You become responsible for Grafana hosting (AWS Managed Grafana or a separate Cloud Run service).
-
 ### Tear down
 
 ```bash
@@ -284,7 +272,6 @@ Applies to both clouds. See the cloud-specific guides for implementation details
 - [ ] Attach a WAF to the load balancer
 - [ ] Enable Redis transit encryption
 - [ ] Configure [SSO](authentication.md) (SAML or OIDC)
-- [ ] Move ClickHouse to ClickHouse Cloud for HA
 - [ ] Test the [backup and restore](backup-and-restore.md) procedure end-to-end
 - [ ] Replace the GitHub tarball pull in the data host bootstrap with an artifact you control
 

@@ -1087,7 +1087,7 @@ return (
           </div>
         }
       />
-      <div className="p-6 w-full mx-auto space-y-6">
+      <div className="page-body w-full mx-auto space-y-5">
         <SsoSettingsSection />
         <OidcConfigSection />
         <SamlConfigSection />

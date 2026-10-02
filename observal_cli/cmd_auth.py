@@ -10,6 +10,7 @@
 # SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-FileCopyrightText: 2026 Riya Rani <rr1182764@gmail.com>
+# SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Auth & config CLI commands."""
@@ -157,6 +158,10 @@ def _save_login(server_url: str, data: dict) -> dict:
     endpoints = _fetch_endpoints(server_url)
     if endpoints:
         cfg_data["web_url"] = endpoints.get("web", "")
+    previous = config.load_persisted()
+    if previous.get("server_url") != server_url or str(previous.get("user_id", "")) != str(cfg_data["user_id"]):
+        # The hooks token belongs to the previous login; hooks prefer it, so every upload would be refused.
+        config.remove("api_key")
     config.save(cfg_data)
     return user
 
@@ -639,6 +644,7 @@ def whoami(
         observal auth whoami
         observal auth whoami --output json
     """
+    config.get_or_exit()
     with nullcontext() if _is_json(output) else spinner("Checking..."):
         user = client.get("/api/v1/auth/whoami")
     if _is_json(output):
@@ -1450,8 +1456,9 @@ def register_config(app: typer.Typer):
 
 
 def _post_login_setup():
-    """Post-login setup: install skills unconditionally, then run doctor."""
+    """Post-login setup: install skills and the Pi extension unconditionally, then run doctor."""
     _install_observal_skill()
+    _install_or_check_pi_extension()
     _generate_initial_layer_snapshot()
     rprint()
     try:
@@ -1541,6 +1548,41 @@ def _install_observal_skill():
     from observal_cli.skill_installer import install_observal_skill
 
     install_observal_skill()
+
+
+def _install_or_check_pi_extension():
+    """Install or refresh the bundled Pi telemetry extension when Pi is detected.
+
+    Runs unconditionally (no prompt), mirroring skill install. An npm-configured
+    install is left untouched (only reported if stale). Never blocks login -
+    failures are printed and swallowed.
+    """
+    try:
+        from observal_cli import pi_extension
+
+        status = pi_extension.check_status()
+        if status.state == pi_extension.NOT_DETECTED:
+            return
+        if status.action == "dedupe":
+            # Deleting a file mid-login is too surprising; doctor patch does it.
+            rprint(f"[yellow]{esc(status.message)}[/yellow]")
+        elif status.action in ("install", "refresh", "migrate", "restore"):
+            result = pi_extension.install_or_refresh(dry_run=False, status=status)
+            verb = {"install": "Installed", "refresh": "Updated", "migrate": "Migrated", "restore": "Restored"}[
+                status.action
+            ]
+            rprint(f"[green]✓ {verb} the Pi telemetry extension.[/green]")
+            if result.backup is not None:
+                rprint(f"  [dim]Kept the previous file at {esc(result.backup)}.[/dim]")
+            if status.action != "install":
+                rprint("  [dim]Restart Pi or run /reload to activate.[/dim]")
+        elif status.action == "adopt":
+            pi_extension.install_or_refresh(dry_run=False, status=status)
+        elif status.message:
+            rprint(f"[yellow]{esc(status.message)}[/yellow]")
+    except Exception as exc:
+        rprint(f"[yellow]Could not check the Pi telemetry extension: {exc}[/yellow]")
+        rprint("  Run [bold]observal doctor[/bold] manually to check it.")
 
 
 def _run_doctor_patch(ide_name: str):

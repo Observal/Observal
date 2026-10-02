@@ -4,7 +4,7 @@
 
 
 import { useContext, useState } from "react";
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Line } from "recharts";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Line } from "recharts";
 import { useExecAdoption, useExecAgentCounts, useExecUsageByCategory, useExecPlatformCoverage } from "@/hooks/use-api";
 import { StatCard } from "./stat-card";
 import { DashboardRangeContext } from "../context";
@@ -27,34 +27,30 @@ export function AdoptionTab() {
   if (adoptionLoading || agentsLoading) {
     return (
       <div className="space-y-6 pt-4">
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-px overflow-hidden rounded-xl bg-border sm:grid-cols-2 xl:grid-cols-4">
           {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-24 rounded-lg border border-border animate-pulse bg-muted/30" />
+            <div key={i} className="h-24 rounded-xl bg-card shadow-sm animate-pulse" />
           ))}
         </div>
-        <div className="h-64 rounded-lg border border-border animate-pulse bg-muted/30" />
+        <div className="h-64 rounded-xl bg-card shadow-sm animate-pulse" />
       </div>
     );
   }
 
   return (
     <div className="space-y-6 pt-4">
-      {/* KPI Row */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-px overflow-hidden rounded-xl bg-border shadow-sm sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="AI Adoption" value={`${adoption?.current_pct ?? 0}%`} subtitle="of users active" />
         <StatCard label="Active Users" value={adoption?.active_users ?? 0} subtitle={`of ${adoption?.total_users ?? 0} total`} />
         <StatCard label="Departments" value={adoption?.departments_covered ?? 0} subtitle="with AI usage" />
         <StatCard label="Active Agents" value={agents?.active ?? 0} subtitle={`of ${agents?.total ?? 0} total`} />
       </div>
 
-      {/* Adoption curve + Agent counts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Adoption Chart */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <AdoptionChart monthly={adoption?.monthly ?? []} />
 
 
-        {/* Agent Count Breakdown */}
-        <div className="rounded-lg border border-border p-4">
+        <div className="rounded-xl bg-card shadow-sm p-5">
           <h3 className="text-sm font-medium mb-4">Agents by Category</h3>
           <div className="flex items-center gap-4 mb-4 text-xs text-muted-foreground">
             <span><strong className="text-foreground">{agents?.published ?? 0}</strong> published</span>
@@ -74,10 +70,8 @@ export function AdoptionTab() {
         </div>
       </div>
 
-      {/* Usage by Category + Platform Coverage */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Usage by Category */}
-        <div className="rounded-lg border border-border p-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="rounded-xl bg-card shadow-sm p-5">
           <h3 className="text-sm font-medium mb-4">Agent Usage by Category</h3>
           {usage && usage.length > 0 ? (
             <div className="space-y-3">
@@ -91,7 +85,7 @@ export function AdoptionTab() {
                     />
                   </div>
                   <span className="text-xs tabular-nums text-muted-foreground w-16 text-right">{item.sessions.toLocaleString()}</span>
-                  <span className={`text-xs tabular-nums w-12 text-right ${item.growth_pct > 0 ? "text-green-600" : item.growth_pct < 0 ? "text-red-600" : "text-muted-foreground"}`}>
+                  <span className={`text-xs tabular-nums w-12 text-right ${item.growth_pct > 0 ? "text-success" : item.growth_pct < 0 ? "text-destructive" : "text-muted-foreground"}`}>
                     {item.growth_pct > 0 ? "+" : ""}{item.growth_pct}%
                   </span>
                 </div>
@@ -102,8 +96,7 @@ export function AdoptionTab() {
           )}
         </div>
 
-        {/* Platform Coverage */}
-        <div className="rounded-lg border border-border p-4">
+        <div className="rounded-xl bg-card shadow-sm p-5">
           <h3 className="text-sm font-medium mb-4">Platform Coverage</h3>
           {platforms && platforms.length > 0 ? (
             <div className="space-y-3">
@@ -139,7 +132,7 @@ function AdoptionChart({ monthly }: { monthly: { month: string; adoption_pct: nu
   }));
 
   return (
-    <div className="lg:col-span-2 rounded-lg border border-border p-4">
+    <div className="lg:col-span-2 rounded-xl bg-card shadow-sm p-5">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-medium">AI Adoption Over Time</h3>
         {monthly.length >= 4 && (
@@ -161,17 +154,17 @@ function AdoptionChart({ monthly }: { monthly: { month: string; adoption_pct: nu
             <AreaChart data={chartData} margin={{ top: 10, right: 10, bottom: 0, left: 5 }}>
               <defs>
                 <linearGradient id="adoptionGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.3} />
-                  <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0.02} />
+                  <stop offset="0%" stopColor="oklch(var(--primary))" stopOpacity={0.3} />
+                  <stop offset="100%" stopColor="oklch(var(--primary))" stopOpacity={0.02} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.5} vertical={false} />
-              <XAxis dataKey="month" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} axisLine={false} tickLine={false} />
-              <Tooltip formatter={(value, name) => [`${value}%`, name === "previous_pct" ? "Previous Period" : "Current"]} contentStyle={{ background: "hsl(var(--background))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }} />
-              <Area type="natural" dataKey="adoption_pct" stroke="hsl(var(--primary))" strokeWidth={2.5} fill="url(#adoptionGrad)" dot={false} activeDot={{ r: 4, strokeWidth: 2, fill: "hsl(var(--background))" }} />
+              <CartesianGrid strokeDasharray="3 3" stroke="oklch(var(--border))" strokeOpacity={0.5} vertical={false} />
+              <XAxis dataKey="month" tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{ fill: "var(--chart-axis-tick)", fontSize: 11 }} axisLine={false} tickLine={false} />
+              <Tooltip formatter={(value, name) => [`${value}%`, name === "previous_pct" ? "Previous Period" : "Current"]} contentStyle={{ background: "oklch(var(--background))", border: "1px solid oklch(var(--border))", borderRadius: 8, fontSize: 12 }} />
+              <Area type="natural" dataKey="adoption_pct" stroke="oklch(var(--primary))" strokeWidth={2.5} fill="url(#adoptionGrad)" dot={false} activeDot={{ r: 4, strokeWidth: 2, fill: "oklch(var(--background))" }} />
               {showPrevious && (
-                <Line type="natural" dataKey="previous_pct" stroke="hsl(var(--muted-foreground))" strokeWidth={1.5} strokeDasharray="4 4" dot={false} connectNulls={false} />
+                <Line type="natural" dataKey="previous_pct" stroke="oklch(var(--muted-foreground))" strokeWidth={1.5} strokeDasharray="4 4" dot={false} connectNulls={false} />
               )}
             </AreaChart>
           </ResponsiveContainer>

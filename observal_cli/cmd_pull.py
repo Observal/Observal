@@ -28,10 +28,11 @@ from loguru import logger as optic
 from packaging.version import InvalidVersion, Version
 from rich import print as rprint
 
-from observal_cli import client, config
+from observal_cli import client
 from observal_cli.constants import VALID_HARNESSES
-from observal_cli.errors import ErrorCategory, fail
+from observal_cli.errors import CliError, ErrorCategory, fail
 from observal_cli.harness import ensure_loaded, get_adapter
+from observal_cli.project_lock import PROJECT_LOCK_FILE
 from observal_cli.prompts import password_input, select_one
 from observal_cli.render import OutputMode, esc, output_json, spinner
 from observal_shared.harness_registry import get_scope_aware_harnesses
@@ -42,7 +43,12 @@ _HOOK_SCRIPT_NAMES = ("observal-hook.sh", "observal-stop-hook.sh")
 
 
 def _component_conflicts(harness: str, agent_name: str, components: list[dict]) -> list[str]:
-    """Return installed component version conflicts for the incoming agent."""
+    """Return installed component version conflicts for the incoming agent.
+
+    Two agents in the same harness that pin different versions of one component
+    write the same files, so the last pull wins. Components are matched by
+    registry id; entries recorded before ids were stored fall back to the name.
+    """
     from observal_cli.lockfile import read_registry_lockfile
 
     try:
@@ -59,27 +65,28 @@ def _component_conflicts(harness: str, agent_name: str, components: list[dict]) 
     harness_section = registry.get("harnesses", {}).get(harness, {})
     other_agents = harness_section.get("agents", [])
 
+    def key(component: dict) -> str:
+        return component.get("id") or component.get("name", "")
+
     existing: dict[str, list[tuple[str, str]]] = {}
     for other in other_agents:
         if other.get("name") == agent_name:
             continue
         for component in other.get("components", []):
-            component_name = component.get("name", "")
             component_version = component.get("version")
-            if component_name and component_version:
-                existing.setdefault(component_name, []).append((component_version, other.get("name", "?")))
+            if key(component) and component_version:
+                existing.setdefault(key(component), []).append((component_version, other.get("name", "?")))
 
     conflicts: list[str] = []
     for component in components:
-        component_name = component.get("name", "")
         component_version = component.get("version")
-        if not component_name or not component_version:
+        if not key(component) or not component_version:
             continue
-        for existing_version, existing_agent in existing.get(component_name, []):
+        for existing_version, existing_agent in existing.get(key(component), []):
             if existing_version != component_version:
                 conflicts.append(
-                    f"{component.get('type', 'component')} {component_name}: v{component_version} "
-                    f"(this agent) vs v{existing_version} (from {existing_agent})"
+                    f"{component.get('type', 'component')} {component.get('name') or key(component)}: "
+                    f"v{component_version} (this agent) vs v{existing_version} (from {existing_agent})"
                 )
     return conflicts
 
@@ -114,8 +121,72 @@ def _resolve_hook_paths(content: str) -> str:
     return content
 
 
+def _mcp_components(agent_detail: dict) -> list[tuple[str, str, str | None]]:
+    """(listing id, display name, pinned version) for each MCP an agent version uses."""
+    mcps: list[tuple[str, str, str | None]] = []
+    for link in agent_detail.get("mcp_links", []):
+        mcps.append((str(link["mcp_listing_id"]), link.get("mcp_name", ""), None))
+    for link in agent_detail.get("component_links", []):
+        if link.get("component_type") != "mcp":
+            continue
+        cid = str(link["component_id"])
+        pinned = link.get("version_ref") or link.get("resolved_version")
+        pinned = pinned if pinned and pinned != "latest" else None
+        known = next((index for index, (mid, _name, _version) in enumerate(mcps) if mid == cid), None)
+        if known is None:
+            mcps.append((cid, link.get("component_name", ""), pinned))
+        elif pinned:
+            mcps[known] = (cid, mcps[known][1], pinned)
+    return mcps
+
+
+def _mcp_spec(listing_id: str, version: str | None, cache: dict | None) -> dict:
+    """The MCP definition an install will use: the pinned version when there is one."""
+    cache_key = (listing_id, version)
+    if cache is not None and cache_key in cache:
+        return cache[cache_key]
+    spec = None
+    if version:
+        try:
+            spec = client.get(f"/api/v1/mcps/{listing_id}/versions/{version}")
+        except CliError as error:
+            # An unapproved pinned release is hidden from non-owners; its install
+            # still falls back to the listing, so read the listing too.
+            if error.category is not ErrorCategory.NOT_FOUND:
+                raise
+    if spec is None:
+        spec = client.get(f"/api/v1/mcps/{listing_id}")
+    if cache is not None:
+        cache[cache_key] = spec
+    return spec
+
+
+def _component_input_definitions(listing: dict, field: str, kind: str, component: str) -> list[dict]:
+    definitions = listing.get(field, [])
+    if definitions is None:
+        definitions = []
+    if not isinstance(definitions, list) or any(
+        not isinstance(item, dict) or not isinstance(item.get("name"), str) or not item["name"].strip()
+        for item in definitions
+    ):
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            "The server returned invalid agent installation requirements.",
+            operation="Pull agent",
+            resource=component,
+            remediation="Check server compatibility and retry.",
+            result={"invalid_input_kind": kind, "component": component},
+        )
+    return definitions
+
+
 def _collect_mcp_env_vars(
-    agent_detail: dict, *, no_prompt: bool = False, env_overrides: dict[str, str] | None = None
+    agent_detail: dict,
+    *,
+    no_prompt: bool = False,
+    env_overrides: dict[str, str] | None = None,
+    spec_cache: dict | None = None,
+    missing_inputs: list[dict[str, str]] | None = None,
 ) -> dict[str, dict[str, str]]:
     """Discover MCP env vars from agent components and prompt the user for values.
 
@@ -128,31 +199,26 @@ def _collect_mcp_env_vars(
     env_values: dict[str, dict[str, str]] = {}
     _overrides = env_overrides or {}
 
-    # Collect MCP component IDs from both mcp_links and component_links
-    mcp_ids: list[tuple[str, str]] = []  # (listing_id, display_name)
-    for link in agent_detail.get("mcp_links", []):
-        mcp_ids.append((str(link["mcp_listing_id"]), link.get("mcp_name", "")))
-    for link in agent_detail.get("component_links", []):
-        if link.get("component_type") == "mcp":
-            cid = str(link["component_id"])
-            # Avoid duplicates if already in mcp_links
-            if not any(mid == cid for mid, _ in mcp_ids):
-                mcp_ids.append((cid, link.get("component_name", "")))
-
+    mcp_ids = _mcp_components(agent_detail)
     if not mcp_ids:
         return env_values
 
-    # Fetch each MCP listing to get its environment_variables
-    for listing_id, display_name in mcp_ids:
-        listing = client.get(f"/api/v1/mcps/{listing_id}")
+    # Read each MCP's environment variables from the version the agent pins
+    for listing_id, display_name, pinned in mcp_ids:
+        listing = _mcp_spec(listing_id, pinned, spec_cache)
 
-        ev_list = listing.get("environment_variables") or []
+        mcp_name = display_name or listing.get("name", listing_id[:8])
+        ev_list = _component_input_definitions(
+            listing,
+            "environment_variables",
+            "environment_variable",
+            mcp_name,
+        )
         if not ev_list:
             continue
 
         required = [ev for ev in ev_list if ev.get("required", True)]
         optional = [ev for ev in ev_list if not ev.get("required", True)]
-        mcp_name = display_name or listing.get("name", listing_id[:8])
         mcp_env: dict[str, str] = {}
 
         if no_prompt:
@@ -160,6 +226,8 @@ def _collect_mcp_env_vars(
             for ev in required + optional:
                 if ev["name"] in _overrides:
                     mcp_env[ev["name"]] = _overrides[ev["name"]]
+                elif ev.get("required", True) and missing_inputs is not None:
+                    missing_inputs.append({"kind": "environment_variable", "name": ev["name"], "component": mcp_name})
         else:
             if required:
                 rprint(f"\n[bold]{esc(mcp_name)}[/bold] requires {len(required)} environment variable(s):")
@@ -192,7 +260,12 @@ def _collect_mcp_env_vars(
 
 
 def _collect_mcp_headers(
-    agent_detail: dict, *, no_prompt: bool = False, header_overrides: dict[str, str] | None = None
+    agent_detail: dict,
+    *,
+    no_prompt: bool = False,
+    header_overrides: dict[str, str] | None = None,
+    spec_cache: dict | None = None,
+    missing_inputs: list[dict[str, str]] | None = None,
 ) -> dict[str, dict[str, str]]:
     """Discover MCP headers from agent components and prompt the user for values.
 
@@ -204,35 +277,28 @@ def _collect_mcp_headers(
     header_values: dict[str, dict[str, str]] = {}
     _overrides = header_overrides or {}
 
-    # Collect MCP component IDs from both mcp_links and component_links
-    mcp_ids: list[tuple[str, str]] = []
-    for link in agent_detail.get("mcp_links", []):
-        mcp_ids.append((str(link["mcp_listing_id"]), link.get("mcp_name", "")))
-    for link in agent_detail.get("component_links", []):
-        if link.get("component_type") == "mcp":
-            cid = str(link["component_id"])
-            if not any(mid == cid for mid, _ in mcp_ids):
-                mcp_ids.append((cid, link.get("component_name", "")))
-
+    mcp_ids = _mcp_components(agent_detail)
     if not mcp_ids:
         return header_values
 
-    for listing_id, display_name in mcp_ids:
-        listing = client.get(f"/api/v1/mcps/{listing_id}")
+    for listing_id, display_name, pinned in mcp_ids:
+        listing = _mcp_spec(listing_id, pinned, spec_cache)
 
-        header_list = listing.get("headers") or []
+        mcp_name = display_name or listing.get("name", listing_id[:8])
+        header_list = _component_input_definitions(listing, "headers", "header", mcp_name)
         if not header_list:
             continue
 
         required = [h for h in header_list if h.get("required", True)]
         optional = [h for h in header_list if not h.get("required", True)]
-        mcp_name = display_name or listing.get("name", listing_id[:8])
         mcp_hdrs: dict[str, str] = {}
 
         if no_prompt:
             for h in required + optional:
                 if h["name"] in _overrides:
                     mcp_hdrs[h["name"]] = _overrides[h["name"]]
+                elif h.get("required", True) and missing_inputs is not None:
+                    missing_inputs.append({"kind": "header", "name": h["name"], "component": mcp_name})
         else:
             if required:
                 rprint(f"\n[bold]{esc(mcp_name)}[/bold] requires {len(required)} header(s):")
@@ -376,7 +442,13 @@ def _write_file(path: Path, content: str | dict, *, merge_mcp: bool = False) -> 
     existed = path.exists()
 
     if isinstance(content, dict):
-        root_key = next(iter(content.keys())) if content else "mcpServers"
+        # The merged section is the first mapping (mcpServers, hooks, ...). Configs
+        # such as Cursor's hooks.json start with a scalar ("version": 1), which
+        # must not be mistaken for the section.
+        root_key = next(
+            (key for key, value in content.items() if isinstance(value, dict)),
+            next(iter(content), "mcpServers"),
+        )
         if path.suffix == ".toml":
             toml_str = _dict_to_toml(content)
             if existed and merge_mcp:
@@ -405,6 +477,9 @@ def _write_file(path: Path, content: str | dict, *, merge_mcp: bool = False) -> 
                 if not isinstance(section, dict) or not isinstance(incoming_servers, dict):
                     raise ValueError(f"cannot merge non-object JSON section {root_key}: {path}")
                 section.update(incoming_servers)
+                for key, value in content.items():
+                    if key != root_key and not isinstance(value, dict):
+                        existing[key] = value
                 _atomic_write_text(path, json.dumps(existing, indent=2) + "\n")
                 return "merged"
             _atomic_write_text(path, json.dumps(content, indent=2) + "\n")
@@ -437,28 +512,60 @@ def _write_file_checked(path: Path, content: str | dict, *, merge_mcp: bool = Fa
         )
 
 
-def _rewrite_kiro_hooks(content: dict, agent_id: str | None = None) -> dict:
-    """Rewrite Kiro hook commands to use the current Python interpreter.
+def _rewrite_kiro_agent_profile(content: dict, agent_id: str | None = None) -> dict:
+    """Prepare a Kiro agent profile for the hook format this machine can read.
 
-    The server generates commands with bare 'python3' which won't find
-    observal_cli when installed in a project-local virtual environment.
+    Telemetry hooks normally live in the standalone ``.kiro/hooks/observal.json``
+    file, which every Kiro surface reads. Kiro IDE 1.0 loads an agent carrying
+    inline ``hooks`` but never fires them, so Observal's inline hooks are
+    stripped here and only re-added on machines that are provably legacy Kiro
+    CLI 2.x with no IDE installed.
+
+    Empty CLI-only tool fields are also dropped. That is what actually keeps an
+    agent out of the IDE picker: ProfileLoader rejects any JSON profile carrying
+    ``allowedTools`` or ``toolsSettings`` without a ``permissions`` block.
+
+    Hook commands are also rewritten to the current Python interpreter: the
+    server generates bare ``python3``, which won't find ``observal_cli`` when it
+    is installed in a project-local virtual environment.
     """
-    hooks = content.get("hooks") or {}
-
+    from observal_cli.harness.kiro import strip_ide_hostile_fields, use_inline_hooks
     from observal_cli.harness_specs.kiro_hooks_spec import build_kiro_hooks
 
-    cfg = config.get_or_exit()
-    hooks_url = f"{cfg['server_url'].rstrip('/')}/api/v1/telemetry/hooks"
-    desired_hooks = build_kiro_hooks(hooks_url, agent_id=agent_id or "")
+    strip_ide_hostile_fields(content)
 
-    # Replace only Observal hooks, preserve any user-added hooks
-    for event, desired_entries in desired_hooks.items():
-        existing = hooks.get(event, [])
-        cleaned = [h for h in existing if "observal_cli" not in h.get("command", "")]
-        hooks[event] = cleaned + desired_entries
+    hooks = content.get("hooks") or {}
 
-    content["hooks"] = hooks
+    # Drop Observal-owned inline entries; keep whatever the user added.
+    cleaned_hooks: dict = {}
+    for event, entries in hooks.items():
+        if not isinstance(entries, list):
+            cleaned_hooks[event] = entries
+            continue
+        # A truthy non-dict entry - a bare string, say - would raise on .get and
+        # abort the whole pull. Malformed user entries are left untouched.
+        kept = [h for h in entries if not (isinstance(h, dict) and "observal_cli" in str(h.get("command", "")))]
+        if kept:
+            cleaned_hooks[event] = kept
+
+    if use_inline_hooks():
+        for event, desired_entries in build_kiro_hooks(agent_id=agent_id or "").items():
+            cleaned_hooks[event] = cleaned_hooks.get(event, []) + desired_entries
+
+    if cleaned_hooks:
+        content["hooks"] = cleaned_hooks
+    else:
+        content.pop("hooks", None)
     return content
+
+
+def _rewrite_kiro_hooks(content: dict, agent_id: str | None = None) -> dict:
+    """Backwards-compatible alias for the inline-hook rewrite.
+
+    Retained so external callers keep working; new code should use
+    :func:`_rewrite_kiro_agent_profile`.
+    """
+    return _rewrite_kiro_agent_profile(content, agent_id=agent_id)
 
 
 def _rewrite_copilot_cli_hooks(content: dict, agent_id: str | None = None) -> dict:
@@ -532,8 +639,155 @@ def _resolve_path(raw_path: str, target_dir: Path, *, allow_home: bool = False) 
 _SCOPE_AWARE_HARNESSES = get_scope_aware_harnesses()
 
 
+_TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
+
+
+def _strict_mode(flag: bool | None) -> bool:
+    """--strict/--no-strict wins; otherwise OBSERVAL_STRICT decides (for CI)."""
+    import os
+
+    if flag is not None:
+        return flag
+    return os.environ.get("OBSERVAL_STRICT", "").strip().lower() in _TRUE_VALUES
+
+
+def _project_locked_agent(directory: Path, qualified_name: str, agent_id: str | None = None) -> dict | None:
+    from observal_cli import project_lock
+
+    try:
+        return project_lock.locked_agent(directory, qualified_name, agent_id)
+    except project_lock.ProjectLockError as error:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"{PROJECT_LOCK_FILE} in {directory} cannot be used.",
+            operation="Pull agent",
+            resource=str(directory / PROJECT_LOCK_FILE),
+            remediation="Fix or restore the file from version control, then retry.",
+            detail=repr(error),
+        )
+
+
+def _installed_agent(harness: str, agent_id: str, options: dict, directory: Path) -> dict | None:
+    from observal_cli.lockfile import installed_agent
+
+    try:
+        return installed_agent(harness, agent_id, scope=options.get("scope", "project"), directory=str(directory))
+    except (OSError, RuntimeError) as error:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            "Could not read the local installation lockfile.",
+            operation="Pull agent",
+            resource="Observal lockfile",
+            remediation="Repair or remove the malformed lockfile, then retry.",
+            detail=repr(error),
+        )
+
+
+def _locked_version_detail(
+    agent_ref: str, version: str, resolved_from: str, *, qualified_name: str, directory: Path
+) -> dict:
+    """Fetch the agent version a pull will install.
+
+    When that version came from a lock rather than from --version, a missing
+    version means the lock is stale (or was written against another server), so
+    say where it came from and how to move on instead of a bare "not found".
+    """
+    try:
+        return client.get(f"/api/v1/agents/{agent_ref}/versions/{version}")
+    except CliError as error:
+        if error.category is not ErrorCategory.NOT_FOUND or resolved_from not in ("project-lock", "installed"):
+            raise
+        source = (
+            str(directory / PROJECT_LOCK_FILE)
+            if resolved_from == "project-lock"
+            else "this machine's Observal lockfile"
+        )
+        fail(
+            ErrorCategory.NOT_FOUND,
+            f"{source} pins agent {qualified_name} to version {version}, which is not available on this server.",
+            operation="Pull agent",
+            resource=f"{qualified_name}@{version}",
+            remediation=(
+                "Pull with --upgrade to install the latest approved version, or --version to choose one; "
+                "either updates the lock."
+            ),
+            request_id=error.request_id,
+            http_status=error.http_status,
+        )
+
+
+def _target_version(
+    *, requested: str | None, upgrade: bool, project_locked: dict | None, installed: dict | None
+) -> tuple[str | None, str]:
+    """The agent version a pull installs, and why. None means the latest approved."""
+    if requested:
+        return requested, "requested"
+    if upgrade:
+        return None, "upgrade"
+    if project_locked and project_locked.get("version"):
+        return str(project_locked["version"]), "project-lock"
+    if installed and installed.get("version"):
+        return str(installed["version"]), "installed"
+    return None, "latest"
+
+
+def _installed_components(lock: dict, planned: list[dict]) -> list[dict]:
+    """Lockfile component entries from the server's install lock.
+
+    Falls back to the planned components when the server returned no lock.
+    """
+    names = {component["id"]: component.get("name", "") for component in planned}
+    entries = lock.get("components")
+    if not isinstance(entries, list):
+        return planned
+    return [
+        {
+            "type": entry.get("type", "unknown"),
+            "name": names.get(str(entry.get("id")), "") or entry.get("qualified_name", ""),
+            "id": str(entry.get("id", "")),
+            "version": entry.get("version"),
+            "version_id": entry.get("version_id"),
+            "digest": entry.get("digest"),
+            "qualified_name": entry.get("qualified_name"),
+            "source": entry.get("source"),
+        }
+        for entry in entries
+        if isinstance(entry, dict)
+    ]
+
+
 def _progress(output: OutputMode | str, message: str | None = None):
     return nullcontext() if output == "json" else spinner(message)
+
+
+def _pull_failure_result(
+    written: list[tuple[str, str]],
+    stage: str,
+    *,
+    setup_results: list[dict] | None = None,
+    **state: object,
+) -> dict:
+    """Build a secret-free description of pull side effects completed before failure."""
+    result: dict[str, object] = {
+        "partial": bool(written) and not bool(state.get("dry_run")),
+        "stage": stage,
+        "files": [{"path": path, "status": status} for path, status in written],
+    }
+    if setup_results is not None:
+        result["setup_commands"] = [
+            {
+                "executable": str(item.get("command", [""])[0]) if item.get("command") else "",
+                "status": item.get("status"),
+                "return_code": item.get("return_code"),
+            }
+            for item in setup_results
+        ]
+    result.update(state)
+    return result
+
+
+def _valid_setup_command(command: object) -> bool:
+    return isinstance(command, list) and bool(command) and all(isinstance(argument, str) for argument in command)
 
 
 def _parse_assignments(values: list[str] | None, label: str) -> dict[str, str]:
@@ -732,6 +986,273 @@ def _collect_install_options(
     return opts
 
 
+def rewrite_observal_interpreter(value):
+    """Point server-emitted ``python3 -m observal_cli.<module>`` launchers at this CLI's interpreter.
+
+    Handles MCP entries (``command`` + ``args``) and argv lists such as
+    ``claude mcp add`` setup commands. A bare ``python3`` rarely has
+    ``observal_cli`` importable when the CLI was installed with uv or pipx.
+    """
+    if isinstance(value, dict):
+        out = {key: rewrite_observal_interpreter(item) for key, item in value.items()}
+        args = out.get("args")
+        if (
+            out.get("command") in ("python3", "python")
+            and isinstance(args, list)
+            and len(args) >= 2
+            and args[0] == "-m"
+            and str(args[1]).startswith("observal_cli.")
+        ):
+            out["command"] = sys.executable
+        return out
+    if isinstance(value, list):
+        items = [rewrite_observal_interpreter(item) for item in value]
+        for index in range(len(items) - 2):
+            if (
+                items[index] in ("python3", "python")
+                and items[index + 1] == "-m"
+                and isinstance(items[index + 2], str)
+                and items[index + 2].startswith("observal_cli.")
+            ):
+                items[index] = sys.executable
+        return items
+    return value
+
+
+def write_install_snippet(
+    snippet: dict,
+    *,
+    harness: str,
+    adapter,
+    target_dir: Path,
+    agent_id: str,
+    is_user_scope: bool,
+    dry_run: bool = False,
+    quiet: bool = False,
+) -> tuple[list[tuple[str, str]], list[str]]:
+    """Write every file an agent install snippet carries under *target_dir*.
+
+    Shared by ``observal agent pull`` and delegation, which materializes an
+    agent into a throwaway worktree. Returns ``(written, failed_skills)``;
+    setup commands and install tracking stay with the caller.
+    """
+    written: list[tuple[str, str]] = []  # (path, status)
+
+    def tracked_write(path: Path, content: str | dict, *, merge_mcp: bool = False) -> str:
+        try:
+            return _write_file_checked(path, content, merge_mcp=merge_mcp)
+        except CliError as error:
+            if error.result is None:
+                error.result = _pull_failure_result(
+                    written,
+                    "write_files",
+                    failed_path=str(path),
+                )
+            raise
+
+    def tracked_skill_install(skill_name: str, installer, **kwargs):
+        try:
+            with redirect_stdout(StringIO()) if quiet else nullcontext():
+                return installer(**kwargs)
+        except CliError as error:
+            if error.result is None:
+                error.result = _pull_failure_result(
+                    written,
+                    "install_skills",
+                    failed_skills=[skill_name],
+                    installation_tracked=False,
+                )
+            raise
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+            fail(
+                ErrorCategory.UNAVAILABLE,
+                f"Failed to install agent skill: {skill_name}.",
+                operation="Pull agent",
+                resource="agent skills",
+                remediation="Check skill source access and local filesystem permissions, then retry.",
+                detail=repr(error),
+                result=_pull_failure_result(
+                    written,
+                    "install_skills",
+                    failed_skills=[skill_name],
+                    installation_tracked=False,
+                ),
+            )
+
+    # ── mcp_config with path key (Cursor/VSCode/Gemini) ─
+    mcp_cfg = snippet.get("mcp_config")
+    if mcp_cfg and isinstance(mcp_cfg, dict) and "path" in mcp_cfg:
+        p = _resolve_path(mcp_cfg["path"], target_dir, allow_home=is_user_scope)
+        if dry_run:
+            written.append((str(p), "would write"))
+        else:
+            status = tracked_write(p, mcp_cfg["content"], merge_mcp=True)
+            written.append((str(p), status))
+
+    # ── hooks_config (Cursor/VSCode/Copilot/OpenCode/Gemini) ─
+    hooks_cfg = snippet.get("hooks_config")
+    if hooks_cfg and isinstance(hooks_cfg, dict) and "path" in hooks_cfg:
+        p = _resolve_path(hooks_cfg["path"], target_dir, allow_home=is_user_scope)
+        content = hooks_cfg["content"]
+        if isinstance(content, str):
+            content = _resolve_hook_paths(content)
+        elif isinstance(content, dict):
+            # Resolve hook paths inside JSON content (command fields)
+            raw = json.dumps(content)
+            raw = _resolve_hook_paths(raw)
+            import re
+
+            raw = re.sub(
+                r"(?<!/)python3? -m observal_cli\.",
+                f"{sys.executable} -m observal_cli.",
+                raw,
+            )
+            content = json.loads(raw)
+            content = adapter.rewrite_hooks(content, agent_id=agent_id)
+        if dry_run:
+            written.append((str(p), "would write"))
+        else:
+            status = tracked_write(p, content, merge_mcp=hooks_cfg.get("merge", False))
+            written.append((str(p), status))
+
+    # ── agent_profile (Kiro, Cursor) ────────────────────────
+    agent_profile = snippet.get("agent_profile")
+    if agent_profile:
+        # Rewrite hook commands to use the current Python interpreter
+        # so they work regardless of which directory Kiro is launched from.
+        if isinstance(agent_profile.get("content"), dict):
+            agent_profile["content"] = adapter.rewrite_agent_profile(agent_profile["content"], agent_id=agent_id)
+        elif isinstance(agent_profile.get("content"), str):
+            agent_profile["content"] = _resolve_hook_paths(agent_profile["content"])
+        agent_profile_allow_home = adapter.allow_home_agent_profile(is_user_scope)
+        p = _resolve_path(agent_profile["path"], target_dir, allow_home=agent_profile_allow_home)
+        if dry_run:
+            written.append((str(p), "would write"))
+        else:
+            status = tracked_write(p, agent_profile["content"])
+            written.append((str(p), status))
+
+    # ── steering_file (Kiro) ───────────────────────────
+    steering_file = snippet.get("steering_file")
+    if steering_file:
+        p = _resolve_path(steering_file["path"], target_dir, allow_home=is_user_scope)
+        if dry_run:
+            written.append((str(p), "would write"))
+        else:
+            status = tracked_write(p, steering_file["content"])
+            written.append((str(p), status))
+
+    # ── hook_files (script files from hook components) ─────
+    hook_files = snippet.get("hook_files") or []
+    for hf in hook_files:
+        p = _resolve_path(hf["path"], target_dir, allow_home=is_user_scope)
+        if dry_run:
+            written.append((str(p), "would write"))
+        else:
+            status = tracked_write(p, hf["content"])
+            written.append((str(p), status))
+            if hf.get("executable"):
+                import os
+
+                try:
+                    os.chmod(p, 0o755)
+                except OSError as error:
+                    fail(
+                        ErrorCategory.UNAVAILABLE,
+                        f"Could not mark generated hook executable: {p}.",
+                        operation="Pull agent",
+                        resource=str(p),
+                        remediation="Check file ownership and permissions.",
+                        detail=repr(error),
+                        result=_pull_failure_result(written, "mark_hook_executable", failed_path=str(p)),
+                    )
+
+    # ── prompt_files (native Copilot .github/prompts/*.prompt.md) ─
+    for pf in snippet.get("prompt_files") or []:
+        p = _resolve_path(pf["path"], target_dir, allow_home=is_user_scope)
+        if dry_run:
+            written.append((str(p), "would write"))
+        else:
+            existed = p.exists()
+            tracked_write(p, pf["content"])
+            written.append((str(p), "updated" if existed else "created"))
+
+    # ── Direct skill files ─────────────────────────
+    for sf in snippet.get("skills") or []:
+        p = _resolve_path(sf["path"], target_dir, allow_home=is_user_scope)
+        if dry_run:
+            written.append((str(p), "would write"))
+        else:
+            status = tracked_write(p, sf["content"])
+            written.append((str(p), status))
+
+    # ── Skills ────────────────────────────────────
+    # Two install modes:
+    #   1. git_url present → clone full skill directory from git
+    #   2. skill_md_content present (registry_direct) → write SKILL.md + optional script
+    from observal_cli.cmd_skill import _sanitize_name, install_skill_from_git, install_skill_registry_direct
+
+    skill_components = snippet.get("skill_components") or []
+    failed_skills: list[str] = []
+    scope_str = "user" if is_user_scope else "project"
+    for sc in skill_components:
+        sc_name = _sanitize_name(sc.get("name", "skill"))
+        git_url = sc.get("git_url")
+        skill_dest = None
+        if sc.get("path"):
+            skill_dest = _resolve_path(sc["path"], target_dir, allow_home=is_user_scope).parent
+
+        if dry_run:
+            mode = "would clone" if git_url else "would write"
+            written.append((str(skill_dest) if skill_dest else f"<skill:{sc_name}>", mode))
+            continue
+
+        if git_url:
+            result_path = tracked_skill_install(
+                sc_name,
+                install_skill_from_git,
+                name=sc.get("name", "skill"),
+                git_url=git_url,
+                skill_path=sc.get("skill_path", "/"),
+                git_ref=sc.get("git_ref", "main"),
+                harness=harness,
+                scope=scope_str,
+                skill_md_content=sc.get("skill_md_content"),
+                cwd=target_dir,
+                dest=skill_dest,
+            )
+            if result_path:
+                written.append((str(result_path), "cloned"))
+            else:
+                failed_skills.append(sc_name)
+                if not quiet:
+                    rprint(
+                        f"[red]\u2717 Failed to install skill '{esc(sc_name)}'.[/red] Clone from {esc(git_url)} failed."
+                    )
+        else:
+            # Registry direct: SKILL.md content + optional script
+            result_path = tracked_skill_install(
+                sc_name,
+                install_skill_registry_direct,
+                name=sc.get("name", "skill"),
+                skill_md_content=sc.get("skill_md_content"),
+                script_content=sc.get("script_content"),
+                script_filename=sc.get("script_filename"),
+                harness=harness,
+                scope=scope_str,
+                cwd=target_dir,
+                dest=skill_dest,
+            )
+            if result_path:
+                written.append((str(result_path), "installed"))
+            else:
+                failed_skills.append(sc_name)
+                if not quiet:
+                    rprint(f"[red]\u2717 Failed to install skill '{esc(sc_name)}'.[/red] No content available.")
+
+    return written, failed_skills
+
+
 def register_pull(app: typer.Typer):
     @app.command("pull")
     def pull(
@@ -769,6 +1290,19 @@ def register_pull(app: typer.Typer):
         version: str | None = typer.Option(
             None, "--version", "-V", help="Install a specific version (e.g. '1.2.0'). Defaults to latest."
         ),
+        upgrade: bool = typer.Option(
+            False,
+            "--upgrade",
+            help="Install the latest approved agent version instead of the one already locked here",
+        ),
+        strict: bool | None = typer.Option(
+            None,
+            "--strict/--no-strict",
+            help=(
+                "Refuse to install unless every component matches the agent version's lock. "
+                "Defaults to the OBSERVAL_STRICT environment variable."
+            ),
+        ),
         output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
     ):
         """Fetch agent config and write harness files to disk.
@@ -777,6 +1311,17 @@ def register_pull(app: typer.Typer):
         then writes rules files, MCP configs, and agent files into the target
         directory.  Use --dry-run to preview without writing.
 
+        Pulls are pinned. The first pull installs the latest approved agent
+        version and records it in observal.lock in the project directory
+        (commit it) and in this machine's lockfile. Later pulls, by anyone in
+        that project, install the same agent version even after newer ones are
+        approved. Move it deliberately with --upgrade or --version.
+
+        Every component is installed at the exact version that agent version
+        pinned. Components without a lock (agents released before pinning) fall
+        back to their latest version with a warning; use --strict, or set
+        OBSERVAL_STRICT=1, to refuse instead. The flag wins over the variable.
+
         Use --env KEY=VALUE and --header Header-Name=value only for non-secret
         settings because command arguments are visible to other processes. For
         credentials, omit --no-prompt and enter values interactively. When
@@ -784,9 +1329,10 @@ def register_pull(app: typer.Typer):
 
         Examples:
           observal agent pull my-agent --harness claude-code --no-prompt
-          observal agent pull my-agent --harness claude-code --version 1.2.0
-          observal agent pull my-agent --harness cursor --no-prompt --dry-run
+          observal agent pull my-agent --harness claude-code --no-prompt --upgrade
+          observal agent pull my-agent --harness cursor --version 1.2.0 --strict
         """
+        harness, scope, version = _validate_pull_inputs(harness, scope, version)
         if output == "json" and not no_prompt:
             fail(
                 ErrorCategory.VALIDATION,
@@ -795,7 +1341,14 @@ def register_pull(app: typer.Typer):
                 resource="agent installation",
                 remediation="Add --no-prompt only when no secret values are required; otherwise use interactive table mode.",
             )
-        harness, scope, version = _validate_pull_inputs(harness, scope, version)
+        if upgrade and version:
+            fail(
+                ErrorCategory.VALIDATION,
+                "--upgrade and --version cannot be combined.",
+                operation="Pull agent",
+                resource="agent version",
+                remediation="Use --version to install one version, or --upgrade for the latest approved one.",
+            )
         env_overrides = _parse_assignments(env, "environment variable")
         header_overrides = _parse_assignments(header, "header")
         model_default, model_overrides = _parse_model_overrides(model or [])
@@ -840,14 +1393,10 @@ def register_pull(app: typer.Typer):
         ensure_loaded()
         adapter = get_adapter(harness)
 
-        # Fetch agent details to discover MCP env vars
+        strict = _strict_mode(strict)
+
         with _progress(output, "Fetching agent details..."):
             agent_detail = client.get(f"/api/v1/agents/{resolved}")
-
-        env_values = _collect_mcp_env_vars(agent_detail, no_prompt=no_prompt, env_overrides=env_overrides or None)
-        header_values = _collect_mcp_headers(
-            agent_detail, no_prompt=no_prompt, header_overrides=header_overrides or None
-        )
 
         if output != "json":
             rprint(f"\n[bold]Install options for [cyan]{esc(harness)}[/cyan]:[/bold]")
@@ -869,6 +1418,67 @@ def register_pull(app: typer.Typer):
         is_user_scope = options.get("scope") == "user"
         if is_user_scope and output != "json":
             rprint("  [dim]Files will be written to your home directory (user scope).[/dim]")
+
+        # Which agent version to install: an explicit --version, the latest with
+        # --upgrade, otherwise whatever this project (observal.lock) or this
+        # machine (lockfile.json) already installed. Only a first install, or a
+        # deliberate --upgrade, picks up a newly approved version.
+        qualified_name = agent_detail.get("qualified_name") or (
+            f"{agent_detail.get('namespace', '')}/{agent_detail.get('slug') or agent_detail.get('name', '')}"
+        )
+        agent_uuid = str(agent_detail.get("id", resolved))
+        locked_entry = None if is_user_scope else _project_locked_agent(target_dir, qualified_name, agent_uuid)
+        version, resolved_from = _target_version(
+            requested=version,
+            upgrade=upgrade,
+            project_locked=locked_entry,
+            installed=_installed_agent(harness, agent_uuid, options, target_dir),
+        )
+
+        # MCP env vars and headers come from the versions that will be installed
+        plan = agent_detail
+        if version:
+            with _progress(output, f"Fetching agent version {version}..."):
+                version_detail = _locked_version_detail(
+                    resolved, version, resolved_from, qualified_name=qualified_name, directory=target_dir
+                )
+            plan = {
+                "component_links": [
+                    {
+                        "component_type": component.get("component_type"),
+                        "component_id": component.get("component_id"),
+                        "component_name": component.get("name", ""),
+                        "version_ref": component.get("resolved_version"),
+                    }
+                    for component in version_detail.get("components", [])
+                ]
+            }
+
+        spec_cache: dict = {}
+        missing_inputs: list[dict[str, str]] = []
+        env_values = _collect_mcp_env_vars(
+            plan,
+            no_prompt=no_prompt,
+            env_overrides=env_overrides or None,
+            spec_cache=spec_cache,
+            missing_inputs=missing_inputs,
+        )
+        header_values = _collect_mcp_headers(
+            plan,
+            no_prompt=no_prompt,
+            header_overrides=header_overrides or None,
+            spec_cache=spec_cache,
+            missing_inputs=missing_inputs,
+        )
+        if missing_inputs:
+            fail(
+                ErrorCategory.VALIDATION,
+                "Agent installation requires values that are unavailable in non-interactive mode.",
+                operation="Pull agent",
+                resource=qualified_name,
+                remediation="Use interactive table mode to enter credentials securely.",
+                result={"needs_input": True, "inputs": missing_inputs},
+            )
 
         from observal_cli.lockfile import local_registry_name
 
@@ -894,19 +1504,19 @@ def register_pull(app: typer.Typer):
             )
         options["local_name"] = local_name
 
-        lock_components = [
+        planned_components = [
             {
                 "type": link.get("component_type", "unknown"),
                 "name": link.get("component_name", ""),
                 "id": str(link.get("component_id", "")),
                 "version": link.get("version_ref"),
             }
-            for link in agent_detail.get("component_links", [])
+            for link in plan.get("component_links", [])
         ]
         conflict_warnings = _component_conflicts(
             harness,
             agent_name=agent_detail.get("name", resolved),
-            components=lock_components,
+            components=planned_components,
         )
 
         with _progress(output, f"Pulling {harness} config for agent {resolved[:8]}..."):
@@ -919,10 +1529,48 @@ def register_pull(app: typer.Typer):
             }
             if version:
                 install_body["version"] = version
-            result = client.post(
+            if strict:
+                install_body["strict"] = True
+            result = client.post_public(
                 f"/api/v1/agents/{resolved}/install",
                 install_body,
             )
+
+        if strict and not isinstance(result.get("lock"), dict):
+            # A server that predates component locks ignores the strict flag, so
+            # nothing was checked. Refuse before any file is written.
+            fail(
+                ErrorCategory.VERSION,
+                "This Observal server does not report component locks, so --strict cannot be enforced.",
+                operation="Pull agent",
+                resource="agent installation",
+                remediation="Upgrade the Observal server, or pull without --strict (or with OBSERVAL_STRICT unset).",
+            )
+
+        # Record what the server installed, not what the agent's latest version lists.
+        installed_version = result.get("version") or version or agent_detail.get("version")
+        lock = result.get("lock") or {}
+        lock_components = _installed_components(lock, planned_components)
+        lock_warnings: list[str] = []
+        if (
+            resolved_from == "project-lock"
+            and locked_entry.get("lock_digest")
+            and lock.get("digest")
+            and locked_entry["lock_digest"] != lock["digest"]
+        ):
+            mismatch = (
+                f"Agent {qualified_name} {installed_version} no longer matches the lock digest recorded in "
+                f"{PROJECT_LOCK_FILE}."
+            )
+            if strict:
+                fail(
+                    ErrorCategory.CONFLICT,
+                    mismatch,
+                    operation="Pull agent",
+                    resource=str(target_dir / PROJECT_LOCK_FILE),
+                    remediation="Ask the agent author or a reviewer to investigate before installing.",
+                )
+            lock_warnings.append(mismatch)
 
         snippet = result.get("config_snippet", {})
         if not snippet:
@@ -934,179 +1582,17 @@ def register_pull(app: typer.Typer):
                 remediation="Check server compatibility and the agent's harness support.",
             )
 
-        written: list[tuple[str, str]] = []  # (path, status)
-
-        # ── mcp_config with path key (Cursor/VSCode/Gemini) ─
-        mcp_cfg = snippet.get("mcp_config")
-        if mcp_cfg and isinstance(mcp_cfg, dict) and "path" in mcp_cfg:
-            p = _resolve_path(mcp_cfg["path"], target_dir, allow_home=is_user_scope)
-            if dry_run:
-                written.append((str(p), "would write"))
-            else:
-                status = _write_file_checked(p, mcp_cfg["content"], merge_mcp=True)
-                written.append((str(p), status))
-
-        # ── hooks_config (Cursor/VSCode/Copilot/OpenCode/Gemini) ─
-        hooks_cfg = snippet.get("hooks_config")
-        if hooks_cfg and isinstance(hooks_cfg, dict) and "path" in hooks_cfg:
-            p = _resolve_path(hooks_cfg["path"], target_dir, allow_home=is_user_scope)
-            content = hooks_cfg["content"]
-            if isinstance(content, str):
-                content = _resolve_hook_paths(content)
-            elif isinstance(content, dict):
-                # Resolve hook paths inside JSON content (command fields)
-                raw = json.dumps(content)
-                raw = _resolve_hook_paths(raw)
-                import re
-
-                raw = re.sub(
-                    r"(?<!/)python3? -m observal_cli\.",
-                    f"{sys.executable} -m observal_cli.",
-                    raw,
-                )
-                content = json.loads(raw)
-                content = adapter.rewrite_hooks(content, agent_id=str(agent_detail.get("id", resolved)))
-            if dry_run:
-                written.append((str(p), "would write"))
-            else:
-                status = _write_file_checked(p, content, merge_mcp=hooks_cfg.get("merge", False))
-                written.append((str(p), status))
-
-        # ── agent_profile (Kiro, Cursor) ────────────────────────
-        agent_profile = snippet.get("agent_profile")
-        if agent_profile:
-            # Rewrite hook commands to use the current Python interpreter
-            # so they work regardless of which directory Kiro is launched from.
-            if isinstance(agent_profile.get("content"), dict):
-                agent_profile["content"] = adapter.rewrite_agent_profile(
-                    agent_profile["content"], agent_id=str(agent_detail.get("id", resolved))
-                )
-            elif isinstance(agent_profile.get("content"), str):
-                agent_profile["content"] = _resolve_hook_paths(agent_profile["content"])
-            agent_profile_allow_home = adapter.allow_home_agent_profile(is_user_scope)
-            p = _resolve_path(agent_profile["path"], target_dir, allow_home=agent_profile_allow_home)
-            if dry_run:
-                written.append((str(p), "would write"))
-            else:
-                status = _write_file_checked(p, agent_profile["content"])
-                written.append((str(p), status))
-
-        # ── steering_file (Kiro) ───────────────────────────
-        steering_file = snippet.get("steering_file")
-        if steering_file:
-            p = _resolve_path(steering_file["path"], target_dir, allow_home=is_user_scope)
-            if dry_run:
-                written.append((str(p), "would write"))
-            else:
-                status = _write_file_checked(p, steering_file["content"])
-                written.append((str(p), status))
-
-        # ── hook_files (script files from hook components) ─────
-        hook_files = snippet.get("hook_files") or []
-        for hf in hook_files:
-            p = _resolve_path(hf["path"], target_dir, allow_home=is_user_scope)
-            if dry_run:
-                written.append((str(p), "would write"))
-            else:
-                existed = p.exists()
-                _write_file_checked(p, hf["content"])
-                if hf.get("executable"):
-                    import os
-
-                    try:
-                        os.chmod(p, 0o755)
-                    except OSError as error:
-                        fail(
-                            ErrorCategory.UNAVAILABLE,
-                            f"Could not mark generated hook executable: {p}.",
-                            operation="Pull agent",
-                            resource=str(p),
-                            remediation="Check file ownership and permissions.",
-                            detail=repr(error),
-                        )
-                written.append((str(p), "updated" if existed else "created"))
-
-        # ── prompt_files (native Copilot .github/prompts/*.prompt.md) ─
-        for pf in snippet.get("prompt_files") or []:
-            p = _resolve_path(pf["path"], target_dir, allow_home=is_user_scope)
-            if dry_run:
-                written.append((str(p), "would write"))
-            else:
-                existed = p.exists()
-                _write_file_checked(p, pf["content"])
-                written.append((str(p), "updated" if existed else "created"))
-
-        # ── Direct skill files ─────────────────────────
-        for sf in snippet.get("skills") or []:
-            p = _resolve_path(sf["path"], target_dir, allow_home=is_user_scope)
-            if dry_run:
-                written.append((str(p), "would write"))
-            else:
-                status = _write_file_checked(p, sf["content"])
-                written.append((str(p), status))
-
-        # ── Skills ────────────────────────────────────
-        # Two install modes:
-        #   1. git_url present → clone full skill directory from git
-        #   2. skill_md_content present (registry_direct) → write SKILL.md + optional script
-        from observal_cli.cmd_skill import _sanitize_name, install_skill_from_git, install_skill_registry_direct
-
-        skill_components = snippet.get("skill_components") or []
-        failed_skills: list[str] = []
-        scope_str = "user" if is_user_scope else "project"
-        for sc in skill_components:
-            sc_name = _sanitize_name(sc.get("name", "skill"))
-            git_url = sc.get("git_url")
-            skill_dest = None
-            if sc.get("path"):
-                skill_dest = _resolve_path(sc["path"], target_dir, allow_home=is_user_scope).parent
-
-            if dry_run:
-                mode = "would clone" if git_url else "would write"
-                written.append((str(skill_dest) if skill_dest else f"<skill:{sc_name}>", mode))
-                continue
-
-            if git_url:
-                with redirect_stdout(StringIO()) if output == "json" else nullcontext():
-                    result_path = install_skill_from_git(
-                        name=sc.get("name", "skill"),
-                        git_url=git_url,
-                        skill_path=sc.get("skill_path", "/"),
-                        git_ref=sc.get("git_ref", "main"),
-                        harness=harness,
-                        scope=scope_str,
-                        skill_md_content=sc.get("skill_md_content"),
-                        cwd=target_dir,
-                        dest=skill_dest,
-                    )
-                if result_path:
-                    written.append((str(result_path), "cloned"))
-                else:
-                    failed_skills.append(sc_name)
-                    if output != "json":
-                        rprint(
-                            f"[red]\u2717 Failed to install skill '{esc(sc_name)}'.[/red] "
-                            f"Clone from {esc(git_url)} failed."
-                        )
-            else:
-                # Registry direct: SKILL.md content + optional script
-                with redirect_stdout(StringIO()) if output == "json" else nullcontext():
-                    result_path = install_skill_registry_direct(
-                        name=sc.get("name", "skill"),
-                        skill_md_content=sc.get("skill_md_content"),
-                        script_content=sc.get("script_content"),
-                        script_filename=sc.get("script_filename"),
-                        harness=harness,
-                        scope=scope_str,
-                        cwd=target_dir,
-                        dest=skill_dest,
-                    )
-                if result_path:
-                    written.append((str(result_path), "installed"))
-                else:
-                    failed_skills.append(sc_name)
-                    if output != "json":
-                        rprint(f"[red]\u2717 Failed to install skill '{esc(sc_name)}'.[/red] No content available.")
+        snippet = rewrite_observal_interpreter(snippet)
+        written, failed_skills = write_install_snippet(
+            snippet,
+            harness=harness,
+            adapter=adapter,
+            target_dir=target_dir,
+            agent_id=str(agent_detail.get("id", resolved)),
+            is_user_scope=is_user_scope,
+            dry_run=dry_run,
+            quiet=output == "json",
+        )
 
         if failed_skills:
             fail(
@@ -1116,6 +1602,12 @@ def register_pull(app: typer.Typer):
                 resource="agent skills",
                 remediation="Check skill source access and content, then retry.",
                 detail=", ".join(failed_skills),
+                result=_pull_failure_result(
+                    written,
+                    "install_skills",
+                    failed_skills=failed_skills,
+                    installation_tracked=False,
+                ),
             )
 
         if not written:
@@ -1127,7 +1619,9 @@ def register_pull(app: typer.Typer):
                 remediation="Check agent contents and harness support, then retry.",
             )
 
-        warnings_list = conflict_warnings + list(result.get("warnings") or []) + (snippet.get("_warnings") or [])
+        warnings_list = (
+            lock_warnings + conflict_warnings + list(result.get("warnings") or []) + (snippet.get("_warnings") or [])
+        )
 
         # Run required harness registration before recording the pull as installed.
         setup_results: list[dict] = []
@@ -1135,18 +1629,35 @@ def register_pull(app: typer.Typer):
         setup_cmds = snippet.get("mcp_setup_commands") or []
         if setup_cmds and not dry_run:
             for command in setup_cmds:
+                if not _valid_setup_command(command):
+                    setup_results.append({"command": [], "status": "failed", "return_code": None})
+                    setup_failures.append("invalid setup command")
+                    continue
                 try:
-                    process = subprocess.run(command, capture_output=True, text=True)
+                    process = subprocess.run(command, capture_output=True, text=True, timeout=60)
                 except FileNotFoundError:
                     setup_results.append({"command": command, "status": "failed", "return_code": None})
                     setup_failures.append(f"{command[0]} not found")
+                    continue
+                except subprocess.TimeoutExpired:
+                    setup_results.append({"command": command, "status": "failed", "return_code": None})
+                    setup_failures.append(f"{command[0]} timed out")
+                    continue
+                except OSError:
+                    setup_results.append({"command": command, "status": "failed", "return_code": None})
+                    setup_failures.append(f"{command[0]} could not start")
                     continue
                 status = "completed" if process.returncode == 0 else "failed"
                 setup_results.append({"command": command, "status": status, "return_code": process.returncode})
                 if process.returncode != 0:
                     setup_failures.append(f"{command[0]} exited with code {process.returncode}")
         elif setup_cmds:
-            setup_results = [{"command": command, "status": "would_run", "return_code": None} for command in setup_cmds]
+            for command in setup_cmds:
+                if not _valid_setup_command(command):
+                    setup_results.append({"command": [], "status": "failed", "return_code": None})
+                    setup_failures.append("invalid setup command")
+                else:
+                    setup_results.append({"command": command, "status": "would_run", "return_code": None})
 
         if setup_failures:
             fail(
@@ -1156,12 +1667,19 @@ def register_pull(app: typer.Typer):
                 resource="harness MCP registration",
                 remediation="Fix the reported command and pull the agent again.",
                 detail="; ".join(setup_failures),
+                result=_pull_failure_result(
+                    written,
+                    "run_setup_commands",
+                    setup_results=setup_results,
+                    dry_run=dry_run,
+                    installation_tracked=False,
+                ),
             )
 
         # Record installation state only after files and setup commands succeed.
+        project_lock_path: Path | None = None
         if not dry_run:
-            agent_uuid = agent_detail.get("id", resolved)
-            agent_version = agent_detail.get("version") or agent_detail.get("latest_version")
+            agent_version = installed_version
 
             from observal_cli.lockfile import upsert_agent
 
@@ -1177,6 +1695,8 @@ def register_pull(app: typer.Typer):
                     namespace=agent_detail.get("namespace"),
                     slug=agent_detail.get("slug"),
                     local_name=local_name,
+                    lock_digest=lock.get("digest"),
+                    lock_status=lock.get("status"),
                 )
             except (OSError, RuntimeError) as error:
                 fail(
@@ -1186,7 +1706,45 @@ def register_pull(app: typer.Typer):
                     resource="Observal lockfile",
                     remediation="Repair the local lockfile and pull the agent again.",
                     detail=repr(error),
+                    result=_pull_failure_result(
+                        written,
+                        "update_lockfile",
+                        setup_results=setup_results,
+                        installation_tracked=False,
+                        active_agent_persisted=False,
+                    ),
                 )
+
+            if not is_user_scope:
+                from observal_cli import project_lock
+
+                try:
+                    project_lock_path = project_lock.record_agent(
+                        target_dir,
+                        qualified_name,
+                        project_lock.agent_entry(
+                            agent_id=str(agent_uuid),
+                            version=installed_version,
+                            lock_digest=lock.get("digest"),
+                            components=lock_components,
+                        ),
+                    )
+                except (OSError, project_lock.ProjectLockError) as error:
+                    fail(
+                        ErrorCategory.UNAVAILABLE,
+                        f"Agent files were written, but {PROJECT_LOCK_FILE} could not be updated.",
+                        operation="Pull agent",
+                        resource=str(target_dir / PROJECT_LOCK_FILE),
+                        remediation="Check the file's permissions and contents, then pull again.",
+                        detail=repr(error),
+                        result=_pull_failure_result(
+                            written,
+                            "update_project_lock",
+                            setup_results=setup_results,
+                            installation_tracked=True,
+                            active_agent_persisted=False,
+                        ),
+                    )
 
             try:
                 from observal_cli.layer import ensure_local_snapshot
@@ -1205,6 +1763,13 @@ def register_pull(app: typer.Typer):
                     resource=f"{harness} active-agent state",
                     remediation="Fix harness configuration permissions and pull the agent again.",
                     detail=repr(error),
+                    result=_pull_failure_result(
+                        written,
+                        "persist_active_agent",
+                        setup_results=setup_results,
+                        installation_tracked=True,
+                        active_agent_persisted=False,
+                    ),
                 )
 
             from observal_cli.audit import emit_cli_audit
@@ -1225,8 +1790,17 @@ def register_pull(app: typer.Typer):
                         "id": str(agent_detail.get("id", resolved)),
                         "qualified_name": agent_detail.get("qualified_name")
                         or (f"{namespace}/{slug}" if namespace else slug),
-                        "version": agent_detail.get("version") or agent_detail.get("latest_version"),
+                        "version": installed_version,
+                        "latest_version": agent_detail.get("version"),
+                        "resolved_from": resolved_from,
                         "local_name": local_name,
+                    },
+                    "project_lock": str(project_lock_path) if project_lock_path else None,
+                    "lock": {
+                        "status": lock.get("status"),
+                        "digest": lock.get("digest"),
+                        "components": lock_components,
+                        "problems": list(lock.get("problems") or []),
                     },
                     "harness": harness,
                     "scope": options.get("scope", "project"),
@@ -1249,6 +1823,42 @@ def register_pull(app: typer.Typer):
         for path, status in written:
             style = "dim" if dry_run else "green"
             rprint(f"  [{style}]{esc(status)}[/{style}]  {esc(path)}")
+        latest_version = agent_detail.get("version")
+        source_label = {
+            "requested": "requested with --version",
+            "upgrade": "latest approved, --upgrade",
+            "project-lock": f"locked in {PROJECT_LOCK_FILE}",
+            "installed": "already installed here",
+            "latest": "latest approved",
+        }[resolved_from]
+        rprint(
+            f"\n[bold]Agent[/bold] {esc(qualified_name)} [cyan]v{esc(installed_version or '?')}[/cyan] ({source_label})"
+        )
+        if project_lock_path:
+            rprint(
+                f"  [dim]Recorded in {esc(str(project_lock_path))}; commit it so everyone installs this version.[/dim]"
+            )
+        if (
+            latest_version
+            and installed_version
+            and latest_version != installed_version
+            and resolved_from
+            in (
+                "project-lock",
+                "installed",
+            )
+        ):
+            rprint(f"  [dim]v{esc(latest_version)} is available; pull with --upgrade to move to it.[/dim]")
+        if lock_components:
+            label = {"locked": "[green]locked[/green]", "partial": "[yellow]partially locked[/yellow]"}.get(
+                lock.get("status"), "[yellow]unlocked[/yellow]"
+            )
+            rprint(f"\n[bold]Components[/bold] ({label}, agent v{esc(installed_version or '?')}):")
+            for component in lock_components:
+                rprint(
+                    f"  [dim]{esc(component['type'])}[/dim] {esc(component.get('qualified_name') or component['name'])}"
+                    f" [cyan]v{esc(component.get('version') or '?')}[/cyan]"
+                )
         if warnings_list:
             rprint("")
             for warning in warnings_list:

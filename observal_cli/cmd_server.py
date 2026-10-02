@@ -48,6 +48,52 @@ def _is_json(output: OutputMode) -> bool:
     return output == "json"
 
 
+def _verified_service_states(orchestrator, *, running: bool, operation: str) -> list[dict[str, str]]:
+    """Read final embedded-service state and fail when it contradicts the requested lifecycle action."""
+    try:
+        statuses = orchestrator.status()
+    except Exception as error:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            "The final embedded service state could not be verified.",
+            operation=operation,
+            resource="embedded services",
+            remediation="Run `observal server status --output json` and inspect the server logs.",
+            detail=repr(error),
+        )
+    expected = "running" if running else "stopped"
+    expected_services = {"postgres", "clickhouse", "redis", "api"}
+    states = (
+        [{"service": service, "status": status} for service, status in statuses.items()]
+        if isinstance(statuses, dict)
+        else []
+    )
+    if not isinstance(statuses, dict) or not expected_services.issubset(statuses):
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            "The embedded service status response was incomplete.",
+            operation=operation,
+            resource="embedded services",
+            remediation="Run `observal server status --output json` and inspect the server logs.",
+            result={"expected": expected, "services": states},
+        )
+    verified = bool(statuses) and (
+        all(status == "running" for status in statuses.values())
+        if running
+        else not any(status == "running" for status in statuses.values())
+    )
+    if not verified:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            f"Embedded services did not reach the expected {expected} state.",
+            operation=operation,
+            resource="embedded services",
+            remediation="Inspect the returned service states and server logs, then retry.",
+            result={"expected": expected, "services": states},
+        )
+    return states
+
+
 @contextmanager
 def _quiet_output(output: OutputMode):
     """Suppress nested human progress while a command builds its JSON result."""
@@ -146,6 +192,9 @@ def start(
             detail=repr(error),
         )
 
+    services = (
+        _verified_service_states(orchestrator, running=True, operation="Start embedded server") if background else []
+    )
     if _is_json(output):
         output_json(
             {
@@ -155,6 +204,7 @@ def start(
                 "port": port,
                 "background": True,
                 "used_fallback_port": port != requested_port,
+                "services": services,
             }
         )
 
@@ -171,12 +221,24 @@ def stop(
         observal server stop
         observal server stop --output json
     """
-    from observal_cli.server.orchestrator import Orchestrator
+    from observal_cli.server.orchestrator import Orchestrator, ServiceError
 
-    with _quiet_output(output):
-        Orchestrator().stop_all()
+    orchestrator = Orchestrator()
+    try:
+        with _quiet_output(output):
+            orchestrator.stop_all()
+    except (ServiceError, RuntimeError, OSError) as error:
+        fail(
+            ErrorCategory.UNAVAILABLE,
+            "The embedded server could not stop cleanly.",
+            operation="Stop embedded server",
+            resource="embedded services",
+            remediation="Inspect server status and logs, then retry.",
+            detail=repr(error),
+        )
+    services = _verified_service_states(orchestrator, running=False, operation="Stop embedded server")
     if _is_json(output):
-        output_json({"status": "stopped", "mode": "embedded"})
+        output_json({"status": "stopped", "mode": "embedded", "services": services})
 
 
 @server_app.command()
@@ -221,8 +283,20 @@ def restart(
             remediation="Check local dependencies and server logs, then retry.",
             detail=repr(error),
         )
+    services = (
+        _verified_service_states(orchestrator, running=True, operation="Restart embedded server") if background else []
+    )
     if _is_json(output):
-        output_json({"status": "restarted", "mode": "embedded", "host": host, "port": port, "background": True})
+        output_json(
+            {
+                "status": "restarted",
+                "mode": "embedded",
+                "host": host,
+                "port": port,
+                "background": True,
+                "services": services,
+            }
+        )
 
 
 @server_app.command()

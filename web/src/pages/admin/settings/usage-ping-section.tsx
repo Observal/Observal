@@ -91,15 +91,22 @@ export function UsagePingSection({ settings, onChanged }: { settings: AdminSetti
           <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Enable usage reporting" />
         </div>
 
-        <div className="grid gap-3 border-t border-border pt-4 md:grid-cols-[minmax(0,1fr)_minmax(12rem,0.5fr)_auto] md:items-end">
-          <label className="space-y-1.5">
-            <span className="text-xs font-medium">Company name</span>
-            <Input value={companyName} onChange={(event) => setCompanyName(event.target.value)} maxLength={160} placeholder="Acme Engineering" />
-          </label>
+        <div className="grid gap-3 border-t border-border pt-4 md:grid-cols-[minmax(0,1fr)_minmax(12rem,0.5fr)_auto] md:items-start">
           <div className="space-y-1.5">
-            <label htmlFor="usage-reporting-frequency" className="text-xs font-medium">Reporting frequency</label>
+            <label htmlFor="usage-reporting-company" className="block text-xs font-medium leading-4">Company name</label>
+            <Input
+              id="usage-reporting-company"
+              value={companyName}
+              onChange={(event) => setCompanyName(event.target.value)}
+              maxLength={160}
+              placeholder="Enter your company name"
+              className="h-9"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label htmlFor="usage-reporting-frequency" className="block text-xs font-medium leading-4">Reporting frequency</label>
             <Select value={frequency} onValueChange={(value) => setFrequency(value as UsagePingFrequency)}>
-              <SelectTrigger id="usage-reporting-frequency">
+              <SelectTrigger id="usage-reporting-frequency" className="h-9">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -112,7 +119,7 @@ export function UsagePingSection({ settings, onChanged }: { settings: AdminSetti
               {FREQUENCY_OPTIONS.find((option) => option.value === frequency)?.detail}
             </p>
           </div>
-          <Button onClick={save} disabled={saving}>
+          <Button className="md:mt-[22px]" onClick={save} disabled={saving}>
             {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <ShieldCheck className="mr-1.5 h-4 w-4" />}
             Save consent
           </Button>

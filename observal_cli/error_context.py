@@ -1,4 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Observal Contributors
+# SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Human error context for CLI API operations."""
@@ -23,6 +25,8 @@ OPERATION_LABELS = {
     "_install_impl": "Install MCP server",
     "_list_co_authors": "List co-authors",
     "_list_impl": "List MCP servers",
+    "_locked_version_detail": "Read locked agent version",
+    "_mcp_spec": "Read MCP install requirements",
     "_owner": "Resolve bulk component owner",
     "_rate_delete": "Delete registry feedback",
     "_rate_impl": "Submit registry feedback",
@@ -35,6 +39,7 @@ OPERATION_LABELS = {
     "_resolve_agent_id": "Resolve insight agent",
     "_resolve_listing_id": "Resolve registry item",
     "_resolve_report_for_show": "Resolve insight report",
+    "_search": "Search discoverable resources",
     "_show_impl": "Show MCP server",
     "_submit_impl": "Submit MCP server",
     "_top_impl": "List top registry items",
@@ -57,6 +62,7 @@ OPERATION_LABELS = {
     "admin_scim_tokens": "List SCIM tokens",
     "admin_security_events": "List security events",
     "admin_set": "Update server setting",
+    "admin_recommend": "Update recommendation",
     "admin_set_role": "Update user role",
     "admin_settings": "List server settings",
     "admin_trace_privacy": "Read trace privacy setting",
@@ -68,10 +74,14 @@ OPERATION_LABELS = {
     "agent_install": "Generate agent installation",
     "agent_list": "List agents",
     "agent_my": "List owned agents",
+    "agent_outdated": "Check agent component pins",
     "agent_publish": "Publish agent",
     "agent_release": "Release agent version",
     "agent_show": "Show agent",
     "agent_unarchive": "Restore agent",
+    "discover_inspect": "Inspect discoverable resource",
+    "discover_search": "Search discoverable resources",
+    "discover_use": "Use discoverable resource",
     "agent_versions": "List agent versions",
     "approve_join_request": "Approve teamspace join request",
     "api_request": "Call Observal API",
@@ -81,6 +91,7 @@ OPERATION_LABELS = {
     "change_password": "Change password",
     "claim_personal_teamspace": "Claim personal teamspace",
     "create_invite": "Create teamspace invite",
+    "create_share": "Create Agent share",
     "create_team": "Create teamspace",
     "delete_invite": "Delete teamspace invite",
     "delete_team": "Delete teamspace",
@@ -104,6 +115,7 @@ OPERATION_LABELS = {
     "list_teams": "List teamspaces",
     "list_visibility_requests": "List teamspace visibility requests",
     "mcp_my": "List owned MCP servers",
+    "open_share": "Open Agent share",
     "outdated": "Check installed versions",
     "plan_lockfile_reconciliation": "Reconcile installed registry state",
     "prompt_edit": "Edit prompt",
@@ -125,6 +137,7 @@ OPERATION_LABELS = {
     "review_reject": "Reject review",
     "review_show": "Show review",
     "revoke_invite": "Revoke teamspace invite",
+    "revoke_share": "Revoke Agent share",
     "sandbox_edit": "Edit sandbox",
     "sandbox_list": "List sandboxes",
     "sandbox_show": "Show sandbox",
@@ -133,6 +146,10 @@ OPERATION_LABELS = {
     "set_visibility": "Update teamspace visibility",
     "show_team": "Show teamspace",
     "skill_edit": "Edit skill",
+    "a2a_list": "List A2A agents",
+    "a2a_remove": "Remove A2A agent",
+    "a2a_review": "Review A2A agent",
+    "a2a_submit": "Register A2A agent",
     "skill_install": "Install skill",
     "skill_list": "List skills",
     "skill_my": "List owned skills",
@@ -148,6 +165,7 @@ OPERATION_LABELS = {
 }
 
 RESOURCE_LABELS = {
+    "cmd_a2a.py": "A2A agents",
     "cmd_agent.py": "agent registry",
     "cmd_api.py": "Observal API",
     "cmd_archive.py": "registry component",
@@ -155,6 +173,7 @@ RESOURCE_LABELS = {
     "cmd_auth.py": "user account",
     "cmd_co_authors.py": "registry co-authors",
     "cmd_component.py": "component versions",
+    "cmd_discover.py": "discoverable resources",
     "cmd_hook.py": "hook registry",
     "cmd_inbox.py": "user inbox",
     "cmd_insights.py": "agent insights",
@@ -168,6 +187,7 @@ RESOURCE_LABELS = {
     "cmd_recommend.py": "registry recommendations",
     "cmd_sandbox.py": "sandbox registry",
     "cmd_server.py": "server administration",
+    "cmd_share.py": "Agent shares",
     "cmd_support.py": "support bundle",
     "cmd_skill.py": "skill registry",
     "cmd_team.py": "teamspaces",

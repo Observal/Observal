@@ -26,7 +26,7 @@ A single `terraform apply` creates:
 * **SSM Parameter Store**: generated DB / ClickHouse / SECRET\_KEY / optional Grafana passwords, plus pre-built connection URLs injected into ECS tasks
 * **SSM Session Manager**: shell access to the data host, no SSH
 
-ClickHouse runs on EC2 because AWS does not offer a managed ClickHouse service. The data volume keeps it durable across instance replacements. For real ClickHouse HA, set `clickhouse_mode = "cloud"` and point at ClickHouse Cloud.
+ClickHouse runs on EC2. The data volume keeps it durable across instance replacements; ClickHouse HA is out of scope for this module.
 
 ## Prerequisites
 
@@ -147,18 +147,7 @@ db_instance_class    = "db.t4g.small"
 redis_node_type      = "cache.t4g.micro"
 ```
 
-For high-throughput installs (>100 trace events/sec sustained), bump `data_instance_type` to `m6i.xlarge` and `db_instance_class` to `db.m6g.large`, or move ClickHouse to ClickHouse Cloud (see below).
-
-### ClickHouse Cloud instead of EC2
-
-```hcl
-clickhouse_mode           = "cloud"
-clickhouse_cloud_url      = "https://abc123.us-east-1.aws.clickhouse.cloud:8443"
-clickhouse_cloud_user     = "default"
-clickhouse_cloud_password = "..."
-```
-
-The EC2 data host, EBS volume, internal DNS records, and bundled observability are all skipped. You become responsible for monitoring and dashboards yourself, typically AWS Managed Grafana or Grafana Cloud.
+For high-throughput installs (>100 trace events/sec sustained), bump `data_instance_type` to `m6i.xlarge` and `db_instance_class` to `db.m6g.large`.
 
 ### Application options
 
@@ -360,7 +349,6 @@ The defaults are safe but conservative. Before pointing real traffic at this:
 * [ ] Add CloudWatch alarms on RDS `CPUUtilization`, `FreeableMemory`, ECS service CPU, ALB `HTTPCode_Target_5XX_Count`
 * [ ] Attach AWS WAF to the ALB
 * [ ] Set `transit_encryption_enabled = true` on the ElastiCache replication group and switch `REDIS_URL` to `rediss://...`
-* [ ] Move ClickHouse to ClickHouse Cloud (`clickhouse_mode = "cloud"`) for actual HA
 * [ ] Configure Observal SSO. See [Authentication and SSO](authentication.md)
 * [ ] Test the [backup and restore](backup-and-restore.md) procedure end-to-end
 * [ ] Replace the GitHub tarball download in `user-data.sh.tftpl` with an artifact URL you control

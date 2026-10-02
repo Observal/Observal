@@ -150,7 +150,7 @@ function PromptConfigSection({ detail }: { detail: ReviewItem }) {
 						Template
 					</dt>
 					<dd className="mt-0.5">
-						<pre className="max-h-60 overflow-auto rounded bg-muted p-2 text-[11px] font-mono leading-relaxed break-words">
+						<pre className="max-h-60 overflow-auto rounded bg-muted p-2 text-2xs font-mono leading-relaxed break-words">
 							{detail.template}
 						</pre>
 					</dd>
@@ -188,7 +188,7 @@ function AgentConfigSection({ detail }: { detail: ReviewItem }) {
 				<div className="col-span-full">
 					<dt className="text-xs font-medium text-muted-foreground">Prompt</dt>
 					<dd className="mt-0.5">
-						<pre className="max-h-60 overflow-auto rounded bg-muted p-2 text-[11px] font-mono leading-relaxed break-words whitespace-pre-wrap">
+						<pre className="max-h-60 overflow-auto rounded bg-muted p-2 text-2xs font-mono leading-relaxed break-words whitespace-pre-wrap">
 							{detail.prompt}
 						</pre>
 					</dd>
@@ -199,12 +199,12 @@ function AgentConfigSection({ detail }: { detail: ReviewItem }) {
 					<dt className="text-xs font-medium text-muted-foreground">Success Criteria</dt>
 					<dd className="mt-0.5 space-y-2 text-sm">
 						<div>
-							<span className="text-[10px] font-medium text-muted-foreground uppercase">Purpose</span>
+							<span className="text-2xs font-medium text-muted-foreground uppercase">Purpose</span>
 							<p className="text-xs whitespace-pre-wrap">{detail.success_criteria.intended_purpose}</p>
 						</div>
 						{(detail.success_criteria.success_metrics?.length ?? 0) > 0 && (
 							<div>
-								<span className="text-[10px] font-medium text-muted-foreground uppercase">Metrics</span>
+								<span className="text-2xs font-medium text-muted-foreground uppercase">Metrics</span>
 								<div className="mt-1 space-y-1">
 									{detail.success_criteria.success_metrics.map((m, i) => (
 										<div key={i} className="flex flex-wrap gap-x-2 text-xs rounded bg-muted/50 px-2 py-1">
@@ -218,7 +218,7 @@ function AgentConfigSection({ detail }: { detail: ReviewItem }) {
 						)}
 						{detail.success_criteria.evaluation_notes && (
 							<div>
-								<span className="text-[10px] font-medium text-muted-foreground uppercase">Evaluation Notes</span>
+								<span className="text-2xs font-medium text-muted-foreground uppercase">Evaluation Notes</span>
 								<p className="text-xs whitespace-pre-wrap">{detail.success_criteria.evaluation_notes}</p>
 							</div>
 						)}
@@ -240,21 +240,21 @@ function AgentConfigSection({ detail }: { detail: ReviewItem }) {
 							return (
 								<div key={i} className="rounded border border-border overflow-hidden">
 									<div className="flex items-center gap-2 px-3 py-2 bg-muted/50">
-										<Badge variant="outline" className="text-[10px] shrink-0">
+										<Badge variant="outline" className="text-2xs shrink-0">
 											{c.component_type as string}
 										</Badge>
 										<span className="text-xs font-medium">{name}</span>
 									</div>
 									{description && (
-										<p className="px-3 py-1.5 text-[11px] text-muted-foreground border-b border-border/50">{description}</p>
+										<p className="px-3 py-1.5 text-2xs text-muted-foreground border-b border-border/50">{description}</p>
 									)}
 									{contentEntries.length > 0 && (
 										<details open className="group">
-											<summary className="cursor-pointer select-none px-3 py-1.5 text-[10px] font-medium text-muted-foreground hover:text-foreground list-none flex items-center gap-1">
+											<summary className="cursor-pointer select-none px-3 py-1.5 text-2xs font-medium text-muted-foreground hover:text-foreground list-none flex items-center gap-1">
 												<span className="group-open:rotate-90 transition-transform inline-block">▶</span>
 												Content
 											</summary>
-											<pre className="px-3 py-2 text-[11px] font-mono leading-relaxed overflow-auto max-h-80 bg-background border-t border-border/50 break-words">
+											<pre className="px-3 py-2 text-2xs font-mono leading-relaxed overflow-auto max-h-80 bg-background border-t border-border/50 break-words">
 												{toYaml(Object.fromEntries(contentEntries))}
 											</pre>
 										</details>
@@ -465,7 +465,7 @@ function SheetBody({
 			<SheetHeader>
 				<div className="flex items-center gap-2 flex-wrap">
 					{merged.type && (
-						<Badge variant="outline" className="text-[10px]">
+						<Badge variant="outline" className="text-2xs">
 							{merged.type}
 						</Badge>
 					)}

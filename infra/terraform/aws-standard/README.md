@@ -58,7 +58,7 @@ Set `domain_name`, `route53_zone_id`, and `enable_tls = true` to provision an AC
 | Compute | ECS on EC2 (1 instance) | ECS Fargate (auto-scaling) |
 | Database | Postgres on EC2 | RDS Postgres (managed) |
 | Cache | Redis on EC2 | ElastiCache Redis (managed) |
-| ClickHouse | EC2 (same host) | EC2 or ClickHouse Cloud |
+| ClickHouse | EC2 (same host) | Dedicated EC2 host |
 | HA | Single-AZ data tier | Multi-AZ managed services |
 | Cost | ~$120-155/mo | ~$300-800/mo |
 | BYO Security Groups | No | Yes |
