@@ -757,7 +757,13 @@ def _installed_components(lock: dict, planned: list[dict]) -> list[dict]:
 
 
 def _record_hook_bindings(
-    snippet: dict, lock_components: list[dict], target_dir: Path, is_user_scope: bool
+    snippet: dict,
+    lock_components: list[dict],
+    target_dir: Path,
+    is_user_scope: bool,
+    *,
+    gated: dict | None = None,
+    settings_display: str = "",
 ) -> list[str]:
     """Record where each pinned hook was written, so a later snapshot can verify it.
 
@@ -765,9 +771,15 @@ def _record_hook_bindings(
     (the harness records the command verbatim when the hook runs). The agent
     file and script are stored as layer display paths; ``hook_integrity`` is the
     written script's fingerprint, or the command's when there is no script.
+
+    ``gated`` (component local name -> ``agent_hooks.AgentHook``) marks hooks
+    placed in ``settings_display`` behind the agent gate: their recorded command
+    is the gated command (what Claude Code records), with the original kept so
+    verification can require that the agent file no longer carries it.
     """
     import hashlib
 
+    from observal_cli.agent_hooks import GATED_PLACEMENT
     from observal_cli.layer import skill_file_fingerprint
 
     bindings = {b.get("name"): b for b in snippet.get("hook_bindings") or [] if isinstance(b, dict)}
@@ -795,6 +807,8 @@ def _record_hook_bindings(
                 continue
         else:
             fingerprint = f"sha256-{hashlib.sha256(binding['command'].encode()).hexdigest()}"
+        for key in [key for key in component if key.startswith("hook_")]:
+            del component[key]  # a stale placement from an earlier pull must not survive
         component.update(
             hook_event=binding["event"],
             hook_command=binding["command"],
@@ -803,6 +817,18 @@ def _record_hook_bindings(
             hook_script=f"project:{script}" if script else "",
             hook_integrity=fingerprint,
         )
+        hook = (gated or {}).get(component["local_name"])
+        if hook is not None:
+            if hook.event != binding["event"] or hook.command != binding["command"]:
+                raise ValueError("gated hook does not match its binding")
+            component.update(
+                hook_command=hook.gated,
+                hook_config=settings_display,
+                hook_placement=GATED_PLACEMENT,
+                hook_original_command=hook.command,
+                hook_agent_profile=config,
+                hook_gate_python=sys.executable,
+            )
     return warnings
 
 
@@ -1526,6 +1552,353 @@ def write_install_snippet(
     return written, failed_skills
 
 
+def _validate_hook_flags(harness: str, hooks: str | None, on_unknown: str | None, force_hooks: bool) -> None:
+    """Reject agent-hook placement flags that do not apply, before any network call."""
+    from observal_cli.agent_hooks import ON_UNKNOWN, PLACEMENTS
+
+    if hooks is not None and hooks not in PLACEMENTS:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Unknown hook placement: {hooks}.",
+            operation="Pull agent",
+            resource="--hooks",
+            remediation="Use --hooks=frontmatter or --hooks=settings.",
+        )
+    if on_unknown is not None and on_unknown not in ON_UNKNOWN:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Unknown --on-unknown policy: {on_unknown}.",
+            operation="Pull agent",
+            resource="--on-unknown",
+            remediation="Use --on-unknown=skip or --on-unknown=run.",
+        )
+    if (hooks is not None or on_unknown is not None or force_hooks) and harness != "claude-code":
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Harness {harness} does not support agent hook placement.",
+            operation="Pull agent",
+            resource="agent hook placement",
+            remediation="Remove --hooks, --on-unknown and --force-hooks, or select claude-code.",
+        )
+    if on_unknown is not None and hooks == "frontmatter":
+        fail(
+            ErrorCategory.VALIDATION,
+            "--on-unknown applies only to hooks placed in settings.json.",
+            operation="Pull agent",
+            resource="--on-unknown",
+            remediation="Remove --on-unknown, or use --hooks=settings.",
+        )
+
+
+def _resolve_hook_placement(
+    harness: str,
+    hooks: str | None,
+    on_unknown: str | None,
+    installed: dict | None,
+    existing: str | None = None,
+) -> tuple[str, str, list[str]]:
+    """(placement, on-unknown policy, warnings) for this pull; an earlier choice is kept.
+
+    The choice is remembered in the local lockfile (``installed``), and also
+    found in settings.json itself (``existing``: the policy of gated hooks this
+    agent already owns there), so a teammate's committed settings or a failed
+    lockfile write never silently moves the hooks back. The opt-in is offered
+    only on POSIX and on tested Claude Code versions. A pull that keeps an
+    earlier opt-in only warns after an untested upgrade, so an installed agent
+    can still be re-pulled.
+    """
+    from observal_cli import agent_hooks
+
+    if harness != "claude-code":
+        return "frontmatter", "skip", []
+    previous = installed if isinstance(installed, dict) else {}
+    recorded = previous.get("hook_placement") == "settings"
+    remembered = recorded or existing is not None
+    placement = hooks or ("settings" if remembered else "frontmatter")
+    if placement != "settings":
+        if on_unknown is not None:
+            fail(
+                ErrorCategory.VALIDATION,
+                "--on-unknown applies only to hooks placed in settings.json.",
+                operation="Pull agent",
+                resource="--on-unknown",
+                remediation="Add --hooks=settings, or remove --on-unknown.",
+            )
+        return "frontmatter", "skip", []
+    remembered_policy = previous.get("hook_on_unknown") if recorded else existing
+    policy = on_unknown or (remembered_policy if remembered_policy in agent_hooks.ON_UNKNOWN else "skip")
+    found: list[str] = []
+    if hooks is None and not recorded:
+        found.append(
+            "Found this agent's gated hooks in settings.json; keeping them there. "
+            "Pull with --hooks=frontmatter to move them back to the agent file."
+        )
+    if sys.platform == "win32":
+        fail(
+            ErrorCategory.VALIDATION,
+            "Agent hooks in settings.json are not supported on Windows.",
+            operation="Pull agent",
+            resource="agent hook placement",
+            remediation="Pull with --hooks=frontmatter.",
+        )
+    version = agent_hooks.claude_code_version()
+    if agent_hooks.is_tested_version(version):
+        return "settings", policy, found
+    seen = f"Claude Code {version}" if version else "no Claude Code version (is `claude` on PATH?)"
+    if hooks == "settings":
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Agent hooks in settings.json are offered only on tested Claude Code versions "
+            f"({agent_hooks.tested_range()}); found {seen}.",
+            operation="Pull agent",
+            resource="agent hook placement",
+            remediation="Pull without --hooks=settings, or use a tested Claude Code version.",
+        )
+    return (
+        "settings",
+        policy,
+        [
+            *found,
+            f"Gated agent hooks were tested only with Claude Code {agent_hooks.tested_range()}; found {seen}. "
+            "They may not run as expected; pull with --hooks=frontmatter to move them back.",
+        ],
+    )
+
+
+def _agent_hook_request(
+    snippet: dict,
+    lock_components: list[dict],
+    *,
+    placement: str,
+    on_unknown: str,
+    scope: str,
+    target_dir: Path,
+    installed: dict | None,
+    force: bool,
+):
+    """The settings.json agent-hook request for a Claude Code pull, or None when there is nothing to manage.
+
+    In frontmatter placement the request is empty, so a reconcile only removes
+    groups this agent owned from an earlier ``--hooks=settings`` pull.
+    """
+    from observal_cli import agent_hooks
+
+    profile = snippet.get("agent_profile") or {}
+    profile_path = profile.get("path") if isinstance(profile, dict) else None
+    agent = Path(profile_path).stem if isinstance(profile_path, str) and profile_path.endswith(".md") else ""
+    previous = installed if isinstance(installed, dict) else {}
+    remembered = previous.get("hook_placement") == "settings"
+    owners = tuple(
+        name
+        for name in (previous.get("hook_gate_agent") if remembered else None,)
+        if agent_hooks.valid_agent_name(name) and name != agent
+    )
+    path, display = agent_hooks.settings_location(scope, target_dir)
+    hooks: list = []
+    if placement == "settings":
+        if snippet.get("hook_placement") != "settings":
+            fail(
+                ErrorCategory.VERSION,
+                "This Observal server does not support placing agent hooks in settings.json.",
+                operation="Pull agent",
+                resource="agent hook placement",
+                remediation="Upgrade the Observal server, or pull with --hooks=frontmatter.",
+            )
+        bindings = [b for b in snippet.get("hook_bindings") or [] if isinstance(b, dict)]
+        if not agent_hooks.valid_agent_name(agent) or any(b.get("agent") != agent for b in bindings):
+            fail(
+                ErrorCategory.VALIDATION,
+                "The agent's hooks cannot be tied to its Claude Code agent name.",
+                operation="Pull agent",
+                resource="agent hook placement",
+                remediation="Pull with --hooks=frontmatter.",
+            )
+        try:
+            hooks = agent_hooks.build_agent_hooks(agent, bindings, lock_components, on_unknown)
+        except ValueError as error:
+            fail(
+                ErrorCategory.VALIDATION,
+                str(error),
+                operation="Pull agent",
+                resource="agent hook placement",
+                remediation="Pull with --hooks=frontmatter, and report the agent to its publisher.",
+            )
+    elif not agent_hooks.valid_agent_name(agent):
+        return None
+    return agent_hooks.AgentHookRequest(
+        placement=placement,
+        on_unknown=on_unknown,
+        path=path,
+        display=display,
+        agent=agent,
+        hooks=tuple(hooks),
+        owners=owners,
+        force=force,
+    )
+
+
+def _plan_agent_hooks(request, *, remembered: bool, dry_run: bool):
+    """Plan before writing anything; refuse invalid settings and (outside a dry run) conflicts."""
+    from observal_cli import agent_hooks
+
+    try:
+        plan = request.plan()
+    except agent_hooks.SettingsError as error:
+        if request.placement != "settings" and not remembered:
+            return None  # nothing of this agent's can be there; leave the file alone
+        fail(
+            ErrorCategory.CONFLICT,
+            f"{request.path}: {error}",
+            operation="Pull agent",
+            resource=str(request.path),
+            remediation="Fix settings.json (it must be a JSON object), then pull again. Nothing was written.",
+        )
+    if plan.conflicts and not dry_run:
+        _fail_agent_hook_conflicts(request, plan)
+    return plan
+
+
+def _fail_agent_hook_conflicts(request, plan, result: dict | None = None) -> None:
+    edited = ", ".join(f"{item['event']} ({item['component_id'] or 'unknown component'})" for item in plan.conflicts)
+    fail(
+        ErrorCategory.CONFLICT,
+        f"{len(plan.conflicts)} Observal-owned agent hook(s) in {request.path} were edited locally.",
+        operation="Pull agent",
+        resource=str(request.path),
+        remediation=(
+            'Pass --force-hooks to replace them with the agent\'s hooks, or delete their "_observal" key '
+            "to keep them as your own hooks."
+        ),
+        detail=f"Edited: {edited}",
+        result=result,
+    )
+
+
+def _apply_agent_hooks(request, written: list[tuple[str, str]], setup_results: list[dict]):
+    """Re-plan from a fresh read and write settings.json atomically, before the lockfile.
+
+    If the lockfile write then fails, the next pull recovers ownership from the
+    groups' ``_observal`` metadata.
+    """
+    from observal_cli import agent_hooks
+
+    def failure(stage: str) -> dict:
+        return _pull_failure_result(written, stage, setup_results=setup_results, installation_tracked=False)
+
+    try:
+        plan = request.plan()
+    except agent_hooks.SettingsError as error:
+        fail(
+            ErrorCategory.CONFLICT,
+            f"{request.path}: {error}",
+            operation="Pull agent",
+            resource=str(request.path),
+            remediation="Fix settings.json (it must be a JSON object), then pull again.",
+            result=failure("write_agent_hooks"),
+        )
+    if plan.conflicts:
+        _fail_agent_hook_conflicts(request, plan, failure("write_agent_hooks"))
+    if plan.changed:
+        try:
+            agent_hooks.write_settings(request.path, plan.data)
+        except OSError as error:
+            fail(
+                ErrorCategory.UNAVAILABLE,
+                f"Could not write {request.path}.",
+                operation="Pull agent",
+                resource=str(request.path),
+                remediation="Check the file's permissions, then pull again.",
+                detail=repr(error),
+                result=failure("write_agent_hooks"),
+            )
+        written.append((str(request.path), "created" if plan.original is None else "updated"))
+    return plan
+
+
+def _agent_hooks_relevant(request, plan) -> bool:
+    """Whether this pull placed, moved or found agent hooks in settings.json worth reporting."""
+    if request is None or plan is None:
+        return False
+    return request.placement == "settings" or bool(plan.removed or plan.conflicts)
+
+
+def _agent_hooks_output(request, plan, startup_ms: float | None) -> dict:
+    from observal_cli.agent_hooks import BLOCKING_EVENTS
+
+    return {
+        "placement": request.placement,
+        "on_unknown": request.on_unknown if request.placement == "settings" else None,
+        **plan.summary(),
+        "hooks": [
+            {
+                "name": hook.name,
+                "event": hook.event,
+                "component_id": hook.component_id,
+                "command": hook.gated,
+                "timeout": "unchanged (Claude Code default)",
+                "can_block": hook.event in BLOCKING_EVENTS,
+            }
+            for hook in request.hooks
+        ],
+        "gate_startup_ms": startup_ms,
+    }
+
+
+def _render_agent_hooks(request, plan, startup_ms: float | None, *, dry_run: bool, http_hooks: int) -> None:
+    """Human-readable plan: the settings.json diff, cost and caveats."""
+    from observal_cli.agent_hooks import BLOCKING_EVENTS
+
+    if request.placement != "settings" and not (plan.removed or plan.conflicts):
+        return
+    title = (
+        "Agent hooks in settings.json" if request.placement == "settings" else "Agent hooks restored to the agent file"
+    )
+    rprint(f"\n[bold]{title}[/bold] ({esc(str(request.path))}):")
+    names = {hook.component_id: hook.name for hook in request.hooks}
+    verb = ("would add", "would remove") if dry_run else ("added", "removed")
+    for item in plan.added:
+        rprint(f"  [green]+ {verb[0]}[/green] {esc(item['event'])}: {esc(item['name'])}")
+    for item in plan.removed:
+        label = names.get(item["component_id"]) or item["component_id"] or "unknown component"
+        suffix = " (edited, replaced with --force-hooks)" if item.get("edited") else ""
+        rprint(f"  [red]- {verb[1]}[/red] {esc(item['event'])}: {esc(label)}{esc(suffix)}")
+    for item in plan.kept:
+        rprint(f"  [dim]= unchanged {esc(item['event'])}: {esc(item['name'])}[/dim]")
+    for item in plan.conflicts:
+        label = names.get(item["component_id"]) or item["component_id"] or "unknown component"
+        rprint(
+            f"  [yellow]! edited locally[/yellow] {esc(item['event'])}: {esc(label)} "
+            "[dim](kept; --force-hooks replaces it)[/dim]"
+        )
+    if request.placement != "settings":
+        return
+    if request.hooks:
+        cost = f"{startup_ms:g} ms" if startup_ms is not None else "not measured"
+        rprint(f"  Gate startup on this machine: {esc(cost)} per hook, on every matching event, even when")
+        rprint("  the agent is not active. Hooks on one event run in parallel. Timeouts are unchanged:")
+        per_event: dict[str, int] = {}
+        for hook in request.hooks:
+            per_event[hook.event] = per_event.get(hook.event, 0) + 1
+        for event, count in sorted(per_event.items()):
+            rprint(f"    {esc(event)}: {count} gated hook{'s' if count != 1 else ''}, timeout Claude Code default")
+        blocking = sorted({hook.name for hook in request.hooks if hook.event in BLOCKING_EVENTS})
+        if blocking and request.on_unknown == "skip":
+            rprint(
+                f"  [yellow]⚠[/yellow]  {esc(', '.join(blocking))} can block an action. If Claude Code ever sends hook "
+                "input the gate does not recognize, the hook is skipped (--on-unknown skip) and cannot block; "
+                "--on-unknown run runs it instead, in every session."
+            )
+    rprint(
+        "  [yellow]⚠[/yellow]  The agent file no longer lists these hooks; scripts that read its hooks: "
+        "section will not find them. Pull with --hooks=frontmatter to move them back."
+    )
+    if http_hooks:
+        rprint(
+            f"  [dim]{http_hooks} HTTP hook(s) have no command to gate and stay in the agent file "
+            "(interactive sessions only).[/dim]"
+        )
+
+
 def register_pull(app: typer.Typer):
     @app.command("pull")
     def pull(
@@ -1576,6 +1949,28 @@ def register_pull(app: typer.Typer):
                 "Defaults to the OBSERVAL_STRICT environment variable."
             ),
         ),
+        hooks: str | None = typer.Option(
+            None,
+            "--hooks",
+            help=(
+                "Claude Code only: where the agent's hooks go. 'frontmatter' (default) keeps them in the agent "
+                "file, where Claude Code runs them only in interactive sessions; 'settings' moves them into "
+                "settings.json behind an agent gate so they also run headless. Remembered for later pulls."
+            ),
+        ),
+        on_unknown: str | None = typer.Option(
+            None,
+            "--on-unknown",
+            help=(
+                "With --hooks=settings: what a gated hook does when Claude Code's hook input is unrecognized, "
+                "'skip' (default, keeps agent isolation) or 'run'."
+            ),
+        ),
+        force_hooks: bool = typer.Option(
+            False,
+            "--force-hooks",
+            help="Replace or remove Observal-owned agent hooks in settings.json that were edited locally.",
+        ),
         output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
     ):
         """Fetch agent config and write harness files to disk.
@@ -1600,12 +1995,20 @@ def register_pull(app: typer.Typer):
         credentials, omit --no-prompt and enter values interactively. When
         --no-prompt is set, prompts are skipped and only flag values are used.
 
+        Claude Code runs hooks from an agent file only in interactive
+        sessions. --hooks=settings moves the agent's command hooks into
+        settings.json, each wrapped by a gate that runs it only while that
+        agent is active, headless included (POSIX, tested Claude Code versions
+        only). Preview with --dry-run first; --hooks=frontmatter moves them back.
+
         Examples:
           observal agent pull my-agent --harness claude-code --no-prompt
           observal agent pull my-agent --harness claude-code --no-prompt --upgrade
           observal agent pull my-agent --harness cursor --version 1.2.0 --strict
+          observal agent pull my-agent --harness claude-code --hooks=settings --dry-run
         """
         harness, scope, version = _validate_pull_inputs(harness, scope, version)
+        _validate_hook_flags(harness, hooks, on_unknown, force_hooks)
         if output == "json" and not no_prompt:
             fail(
                 ErrorCategory.VALIDATION,
@@ -1701,11 +2104,12 @@ def register_pull(app: typer.Typer):
         )
         agent_uuid = str(agent_detail.get("id", resolved))
         locked_entry = None if is_user_scope else _project_locked_agent(target_dir, qualified_name, agent_uuid)
+        installed_entry = _installed_agent(harness, agent_uuid, options, target_dir)
         version, resolved_from = _target_version(
             requested=version,
             upgrade=upgrade,
             project_locked=locked_entry,
-            installed=_installed_agent(harness, agent_uuid, options, target_dir),
+            installed=installed_entry,
         )
 
         # MCP env vars and headers come from the versions that will be installed
@@ -1776,6 +2180,20 @@ def register_pull(app: typer.Typer):
                 detail=repr(error),
             )
         options["local_name"] = local_name
+
+        existing_hooks = None
+        if harness == "claude-code" and hooks is None:
+            from observal_cli.agent_hooks import existing_placement, expected_agent_name, settings_location
+
+            existing_hooks = existing_placement(
+                settings_location(options.get("scope", "project"), target_dir)[0],
+                expected_agent_name(local_name),
+            )
+        hook_placement, hook_on_unknown, hook_warnings = _resolve_hook_placement(
+            harness, hooks, on_unknown, installed_entry, existing_hooks
+        )
+        if hook_placement == "settings":
+            options["hook_placement"] = "settings"
 
         planned_components = [
             {
@@ -1892,6 +2310,34 @@ def register_pull(app: typer.Typer):
             )
 
         snippet = rewrite_observal_interpreter(snippet)
+
+        # Agent hooks in settings.json (Claude Code): planned before any file is written,
+        # so invalid settings or locally edited Observal groups refuse the pull cleanly.
+        hook_request = None
+        hook_plan = None
+        if harness == "claude-code":
+            hook_request = _agent_hook_request(
+                snippet,
+                lock_components,
+                placement=hook_placement,
+                on_unknown=hook_on_unknown,
+                scope=options.get("scope", "project"),
+                target_dir=target_dir,
+                installed=installed_entry,
+                force=force_hooks,
+            )
+        remembered_settings = existing_hooks is not None or (
+            isinstance(installed_entry, dict) and installed_entry.get("hook_placement") == "settings"
+        )
+        if hook_request is not None:
+            hook_plan = _plan_agent_hooks(hook_request, remembered=remembered_settings, dry_run=dry_run)
+        gated_hooks = {hook.name: hook for hook in hook_request.hooks} if hook_request is not None else {}
+        gate_startup_ms = None
+        if dry_run and hook_request is not None and hook_request.hooks:
+            from observal_cli.agent_hooks import measure_gate_startup
+
+            gate_startup_ms = measure_gate_startup()
+
         written, failed_skills = write_install_snippet(
             snippet,
             harness=harness,
@@ -1902,6 +2348,8 @@ def register_pull(app: typer.Typer):
             dry_run=dry_run,
             quiet=output == "json",
         )
+        if dry_run and hook_plan is not None and hook_plan.changed:
+            written.append((str(hook_request.path), "would write"))
 
         if failed_skills:
             fail(
@@ -1929,7 +2377,11 @@ def register_pull(app: typer.Typer):
             )
 
         warnings_list = (
-            lock_warnings + conflict_warnings + list(result.get("warnings") or []) + (snippet.get("_warnings") or [])
+            lock_warnings
+            + conflict_warnings
+            + hook_warnings
+            + list(result.get("warnings") or [])
+            + (snippet.get("_warnings") or [])
         )
 
         # Run required harness registration before recording the pull as installed.
@@ -2005,8 +2457,20 @@ def register_pull(app: typer.Typer):
             agent_version = installed_version
             from observal_cli.layer import verify_installed_mcp
 
+            if hook_request is not None and hook_plan is not None:
+                hook_plan = _apply_agent_hooks(hook_request, written, setup_results)
+
             warnings_list.extend(_fingerprint_written_skills(snippet, lock_components, target_dir, is_user_scope))
-            warnings_list.extend(_record_hook_bindings(snippet, lock_components, target_dir, is_user_scope))
+            warnings_list.extend(
+                _record_hook_bindings(
+                    snippet,
+                    lock_components,
+                    target_dir,
+                    is_user_scope,
+                    gated=gated_hooks if hook_plan is not None else None,
+                    settings_display=hook_request.display if hook_request is not None else "",
+                )
+            )
 
             # The MCP file this pull wrote (a Pi profile's mcp.json, for example).
             mcp_cfg = snippet.get("mcp_config")
@@ -2046,6 +2510,15 @@ def register_pull(app: typer.Typer):
                     local_name=local_name,
                     lock_digest=lock.get("digest"),
                     lock_status=lock.get("status"),
+                    **(
+                        {
+                            "hook_placement": "settings",
+                            "hook_on_unknown": hook_on_unknown,
+                            "hook_gate_agent": hook_request.agent,
+                        }
+                        if hook_placement == "settings" and hook_request is not None and hook_plan is not None
+                        else {}
+                    ),
                 )
             except (OSError, RuntimeError) as error:
                 fail(
@@ -2158,6 +2631,11 @@ def register_pull(app: typer.Typer):
                     "files": [{"path": path, "status": status} for path, status in written],
                     "warnings": warnings_list,
                     "setup_commands": setup_results,
+                    **(
+                        {"agent_hooks": _agent_hooks_output(hook_request, hook_plan, gate_startup_ms)}
+                        if _agent_hooks_relevant(hook_request, hook_plan)
+                        else {}
+                    ),
                 }
             )
             return
@@ -2208,6 +2686,19 @@ def register_pull(app: typer.Typer):
                     f"  [dim]{esc(component['type'])}[/dim] {esc(component.get('qualified_name') or component['name'])}"
                     f" [cyan]v{esc(component.get('version') or '?')}[/cyan]"
                 )
+        if _agent_hooks_relevant(hook_request, hook_plan):
+            gated_names = {hook.name for hook in hook_request.hooks}
+            _render_agent_hooks(
+                hook_request,
+                hook_plan,
+                gate_startup_ms,
+                dry_run=dry_run,
+                http_hooks=sum(
+                    1
+                    for component in lock_components
+                    if component.get("type") == "hook" and component.get("local_name") not in gated_names
+                ),
+            )
         if warnings_list:
             rprint("")
             for warning in warnings_list:
