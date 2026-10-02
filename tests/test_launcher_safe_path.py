@@ -593,3 +593,37 @@ def test_no_cli_source_launches_observal_cli_with_a_bare_interpreter():
             ):
                 offenders.append(f"{path.relative_to(root.parent)}:{node.lineno}")
     assert not offenders, offenders
+
+
+def _venv(path: Path, *, with_package: bool) -> str:
+    subprocess.run([sys.executable, "-m", "venv", "--without-pip", str(path)], check=True)
+    python = str(path / "bin" / "python")
+    if with_package:
+        site = subprocess.run(
+            [python, "-c", "import sysconfig; print(sysconfig.get_paths()['purelib'])"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        (Path(site) / "observal_cli_source.pth").write_text(launcher.package_root() + "\n")
+    return python
+
+
+@pytest.mark.parametrize("installed", [True, False])
+def test_every_generated_launcher_works_with_spaces_in_its_paths(tmp_path, monkeypatch, installed):
+    """Regression: four hook specs wrote the interpreter and PYTHONPATH unquoted, so a path
+    with a space split into several shell words and the hook never ran."""
+    python = _venv(tmp_path / "py dir" / "venv", with_package=installed)
+    root = tmp_path / "Observal Flare"
+    root.symlink_to(launcher.package_root(), target_is_directory=True)
+    monkeypatch.setattr(launcher, "importable_in_isolation", lambda: installed)
+    monkeypatch.setattr(launcher, "package_root", lambda: str(root))
+    monkeypatch.setattr(sys, "executable", python)
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    for name, command in _generated_commands().items():
+        assert " dir/venv" in command, (name, command)
+        result = subprocess.run(
+            ["/bin/sh", "-c", _probe(command)], cwd=outside, env=_clean_env(outside), capture_output=True, check=False
+        )
+        assert _genuine(result), (name, command, result.stderr[-300:])

@@ -29,13 +29,14 @@ def _python_cmd() -> str:
     """Return python command with PYTHONPATH set if needed."""
     # Checked in an isolated interpreter: the CLI's own process may import
     # observal_cli only through its working directory or PYTHONPATH.
-    from observal_cli.shared.launcher import importable_in_isolation
+    from observal_cli.shared.launcher import importable_in_isolation, posix_prefix
 
-    if importable_in_isolation():
-        return sys.executable
     if sys.platform == "win32":
+        if importable_in_isolation():
+            return sys.executable
         return f'set "PYTHONPATH={_PKG_ROOT}" && {sys.executable}'
-    return f"PYTHONPATH={_PKG_ROOT} {sys.executable}"
+    # Shell-quoted, so an interpreter or package root containing spaces stays one word.
+    return posix_prefix()
 
 
 def build_codex_hooks() -> dict:
