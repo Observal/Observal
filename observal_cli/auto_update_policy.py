@@ -130,6 +130,12 @@ def _write_policy(data: dict) -> None:
             os.fsync(handle.fileno())
         os.replace(temporary, POLICY_PATH)
         temporary = None
+        if os.name != "nt":
+            fd = os.open(POLICY_PATH.parent, os.O_RDONLY)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
     finally:
         if temporary is not None:
             Path(temporary).unlink(missing_ok=True)

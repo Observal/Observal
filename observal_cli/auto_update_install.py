@@ -164,6 +164,15 @@ def _same_components(release: dict, lock: dict) -> None:
         raise InstallSkipError("The generated install lock does not match the approved release pins.")
 
 
+def _sync_directory(directory: Path) -> None:
+    if os.name != "nt":
+        fd = os.open(directory, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+
 def _stage(planned: dict[Path, bytes], profile_root: Path) -> tuple[dict[Path, Path], dict[Path, Path]]:
     """Keep temporary files outside tracked skill directories, on the same filesystem."""
     staged: dict[Path, Path] = {}
@@ -174,12 +183,16 @@ def _stage(planned: dict[Path, bytes], profile_root: Path) -> tuple[dict[Path, P
             mode = stat.S_IMODE(target.stat().st_mode)
             backup = stage_dir / f"{index}.before"
             next_file = stage_dir / f"{index}.next"
-            backup.write_bytes(target.read_bytes())
-            next_file.write_bytes(content)
-            os.chmod(backup, mode)
-            os.chmod(next_file, mode)
+            for path, data in ((backup, target.read_bytes()), (next_file, content)):
+                with path.open("wb") as handle:
+                    handle.write(data)
+                    os.chmod(path, mode)
+                    handle.flush()
+                    os.fsync(handle.fileno())
             backups[target] = backup
             staged[target] = next_file
+        _sync_directory(stage_dir)
+        _sync_directory(profile_root)  # Persist the newly created recovery directory.
         return staged, backups
     except BaseException:
         for entry in stage_dir.iterdir():
@@ -215,7 +228,10 @@ def _restore(
             restore_file = backup.with_suffix(".restore")
             shutil.copyfile(backup, restore_file)
             shutil.copymode(backup, restore_file)
+            with restore_file.open("rb") as handle:
+                os.fsync(handle.fileno())
             os.replace(restore_file, target)
+            _sync_directory(target.parent)
         except (OSError, ValueError, install_baseline.BaselineError):
             ok = False
     if metadata:
@@ -279,6 +295,7 @@ def apply_pi_agent(
     account: str,
     deadline: float,
     shutdown_requested: Callable[[], bool] = lambda: False,
+    reserve_recovery: Callable[[dict[Path, Path]], None] | None = None,
 ) -> dict:
     """Install only an independently revalidated, previously owned Pi profile.
 
@@ -369,6 +386,12 @@ def apply_pi_agent(
             try:
                 profile_root = next(iter(planned)).parent
                 staged, backups = _stage(planned, profile_root)
+                # The write-ahead journal must identify durable backup bytes
+                # before the first replacement. A failed reservation aborts
+                # without mutating managed files.
+                if reserve_recovery is None:
+                    raise InstallSkipError("A durable recovery journal is required before installation.")
+                reserve_recovery(backups)
                 # Staging is outside captured paths; an external edit in the
                 # meantime is still refused before the first replacement.
                 install_baseline.verified_files(
@@ -394,6 +417,7 @@ def apply_pi_agent(
                     # os.replace may commit even if a wrapper raises afterward.
                     committed.append(target)
                     os.replace(prepared, target)
+                    _sync_directory(target.parent)
                 metadata_attempted = True
                 lockfile.upsert_agent(
                     "pi",

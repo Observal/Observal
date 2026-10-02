@@ -110,7 +110,13 @@ def managed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
 
 
 def apply(managed: dict) -> dict:
-    return installer.apply_pi_agent(managed["item"], registry=REGISTRY, account="alice", deadline=time.monotonic() + 90)
+    return installer.apply_pi_agent(
+        managed["item"],
+        registry=REGISTRY,
+        account="alice",
+        deadline=time.monotonic() + 90,
+        reserve_recovery=lambda _backups: None,
+    )
 
 
 def assert_old(managed: dict) -> None:
@@ -157,6 +163,28 @@ def test_verifies_installed_files_lock_and_next_session_state(managed: dict) -> 
     assert managed["post"].call_args.args[1]["strict"] is True
 
 
+def test_missing_or_failed_recovery_journal_never_mutates(managed: dict) -> None:
+    with pytest.raises(installer.InstallSkipError, match="prepared install"):
+        installer.apply_pi_agent(managed["item"], registry=REGISTRY, account="alice", deadline=time.monotonic() + 90)
+    assert_old(managed)
+    assert not list(managed["profile"].parent.glob(".observal-update-*"))
+
+    def cannot_record(backups: dict[Path, Path]) -> None:
+        assert next(iter(backups.values())).read_text() == "old profile"
+        raise OSError("journal disk full")
+
+    with pytest.raises(installer.InstallSkipError, match="prepared install"):
+        installer.apply_pi_agent(
+            managed["item"],
+            registry=REGISTRY,
+            account="alice",
+            deadline=time.monotonic() + 90,
+            reserve_recovery=cannot_record,
+        )
+    assert_old(managed)
+    assert not list(managed["profile"].parent.glob(".observal-update-*"))
+
+
 def test_shutdown_before_admission_does_not_fetch_or_write(managed: dict) -> None:
     with pytest.raises(installer.InstallSkipError, match="session ended"):
         installer.apply_pi_agent(
@@ -188,6 +216,7 @@ def test_shutdown_after_staging_skips_without_mutation(managed: dict, monkeypatc
             account="alice",
             deadline=time.monotonic() + 90,
             shutdown_requested=lambda: stopped,
+            reserve_recovery=lambda _backups: None,
         )
     assert_old(managed)
     assert list(managed["profile"].parent.glob(".observal-update-*")) == []
@@ -213,6 +242,7 @@ def test_shutdown_racing_after_last_check_can_still_commit(managed: dict) -> Non
         account="alice",
         deadline=time.monotonic() + 90,
         shutdown_requested=shutdown_requested,
+        reserve_recovery=lambda _backups: None,
     )
     assert stopped and checks == 3 and result["status"] == "updated"
     assert managed["profile"].read_text() == "new profile"
@@ -235,6 +265,7 @@ def test_shutdown_during_commit_finishes_verified_install(managed: dict, monkeyp
         account="alice",
         deadline=time.monotonic() + 90,
         shutdown_requested=lambda: stopped,
+        reserve_recovery=lambda _backups: None,
     )
     assert stopped and result["status"] == "updated"
     assert managed["profile"].read_text() == "new profile"

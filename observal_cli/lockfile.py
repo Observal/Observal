@@ -19,6 +19,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -144,7 +145,15 @@ def _write_lockfile_unlocked(data: dict) -> None:
     tmp_path = LOCKFILE_PATH.with_suffix(".tmp")
     try:
         tmp_path.write_text(json.dumps(data, indent=2) + "\n")
+        with tmp_path.open("rb") as handle:
+            os.fsync(handle.fileno())
         tmp_path.replace(LOCKFILE_PATH)
+        if os.name != "nt":
+            fd = os.open(LOCKFILE_PATH.parent, os.O_RDONLY)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
     finally:
         if tmp_path.exists():
             tmp_path.unlink(missing_ok=True)

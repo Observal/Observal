@@ -144,6 +144,8 @@ def _apply_pi_serialized(
     complete_path = check.NOTICE_DIR / f"{notice_key}.complete"
     journal_active = False
     unresolved_pending = False
+    uncertain = False
+    recovery_reserved = False
     payload: dict = {
         "schema": 1,
         "registry": registry,
@@ -198,7 +200,7 @@ def _apply_pi_serialized(
                     if len(current) != 1:
                         msg["status"] = "skipped"
                         msg["reason"] = "The installed agent changed or is ambiguous; update manually."
-                    elif unresolved_pending:
+                    elif unresolved_pending or uncertain:
                         msg["status"] = "skipped"
                         msg["reason"] = "An earlier update outcome is unresolved; inspect local managed files."
                     elif _ended(notice_key) or time.monotonic() + RECOVERY_RESERVE_SECONDS >= deadline:
@@ -227,6 +229,24 @@ def _apply_pi_serialized(
                             )
                             payload["items"].append(msg)
                             break
+                        recovery_reserved = False
+
+                        def reserve_recovery(backups: dict[Path, Path]) -> None:
+                            nonlocal recovery_reserved
+                            directory = next(iter(backups.values())).parent
+                            record = {
+                                **pending,  # noqa: B023 - callback runs synchronously before this iteration ends
+                                "recovery": {
+                                    "recovery_dir": str(directory),
+                                    "recovery_files": [
+                                        {"target": str(target), "backup": str(backup)}
+                                        for target, backup in backups.items()
+                                    ],
+                                },
+                            }
+                            check._write_json(pending_path, record, check.MAX_NOTICE_BYTES)
+                            recovery_reserved = True
+
                         try:
                             result = auto_update_install.apply_pi_agent(
                                 {**current[0], "latest_version": item["latest_version"]},
@@ -234,6 +254,7 @@ def _apply_pi_serialized(
                                 account=account,
                                 deadline=deadline,
                                 shutdown_requested=lambda: _ended(notice_key),
+                                reserve_recovery=reserve_recovery,
                             )
                             msg["status"] = "updated" if result.get("status") == "updated" else "failed"
                             msg["reason"] = (
@@ -256,6 +277,7 @@ def _apply_pi_serialized(
                                 else "Installation failed; original files were restored."
                             )
                             if error.partial:
+                                uncertain = True  # Manual reconciliation, not a sealed final outcome.
                                 # Keep the spool bounded even for an agent with
                                 # many owned skills. Every original backup stays
                                 # in recovery_dir for manual inspection.
@@ -266,21 +288,28 @@ def _apply_pi_serialized(
                                 )
                                 msg["recovery"] = recovery
                         except (CliError, OSError, ValueError, TypeError):
-                            msg["status"] = "skipped"
-                            msg["reason"] = "Automatic installation could not be verified; update manually."
+                            uncertain = uncertain or recovery_reserved
+                            msg["status"] = "failed" if recovery_reserved else "skipped"
+                            msg["reason"] = (
+                                "Installation outcome is uncertain; inspect local backups."
+                                if recovery_reserved
+                                else ("Automatic installation could not be verified; update manually.")
+                            )
                         except Exception:
+                            uncertain = uncertain or recovery_reserved
                             # An unexpected installer error must never be reported
                             # as success, even if a separate repair is needed.
                             msg["status"] = "failed"
                             msg["reason"] = "Installation stopped unexpectedly; inspect local files before re-pulling."
                 payload["items"].append(msg)
     except (CliError, OSError, ValueError, TypeError):
+        uncertain = uncertain or recovery_reserved
         payload["warning"] = "Update worker could not complete; inspect managed installs and run `observal outdated`."
     finally:
         # Even if a mutation succeeded before an unexpected exception, never
         # forge a success: the installed-state verifier is the only authority.
         # Only this worker's completed result can resolve its own journal.
-        payload["outcome_final"] = not unresolved_pending
+        payload["outcome_final"] = not unresolved_pending and not uncertain
         payload["journaled"] = journal_active
         notice = check.NOTICE_DIR / f"{notice_key}.json"
         # Never replace a previous unresolved outcome for this same session.
@@ -331,7 +360,7 @@ def _apply_pi_serialized(
                         if item.get("recovery", {}).get("partial")
                     ]
                     check._write_json(notice, minimal, check.MAX_NOTICE_BYTES)
-            if journal_active:
+            if journal_active and not uncertain:
                 # A durable completion seal proves the final notice reached disk.
                 # Without it, an os.replace followed by a failed directory fsync
                 # must not let the Pi bridge erase the pending record.

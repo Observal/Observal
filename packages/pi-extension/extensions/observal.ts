@@ -403,6 +403,14 @@ export default function (pi: ExtensionAPI) {
           + (previous ? `Earlier items in this worker: ${previous}${completed.length > 8 ? ", and more in the record" : ""}. ` : "")
           + "Files may have changed; inspect managed profiles and installed locks before trying again. "
           + `Unresolved local record: ${safeNotice(file, 1200)}`, "warning");
+        if (record.recovery?.recovery_dir) {
+          ctx.ui.notify(`Original managed bytes may be in: ${safeNotice(record.recovery.recovery_dir, 1200)}`, "warning");
+          const backups = Array.isArray(record.recovery.recovery_files) ? record.recovery.recovery_files : [];
+          for (const entry of backups.slice(0, 20)) {
+            ctx.ui.notify(`Inspect ${safeNotice(entry.target, 1200)} and backup ${safeNotice(entry.backup, 1200)}.`, "warning");
+          }
+          if (backups.length > 20) ctx.ui.notify(`${backups.length - 20} more original files remain in the recovery directory.`, "warning");
+        }
         pendingWarningsShown.add(shownKey);
       }
       const pending = files.filter((name) => /^[0-9a-f]{64}\.json$/.test(name)).slice(0, 50);

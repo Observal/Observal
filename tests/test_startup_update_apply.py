@@ -309,18 +309,48 @@ def test_frozen_is_notice_only(setup: dict, monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_partial_failure_preserves_local_recovery_reference(setup: dict) -> None:
     recovery = setup["tmp"] / "original.before"
-    setup["apply"].side_effect = auto_update_install.InstallFailedError(
-        "secret must not leak",
-        partial=True,
-        recovery_dir=setup["tmp"],
-        recovery_files={setup["tmp"] / "AGENTS.md": recovery},
-    )
+    recovery.write_text("original bytes")
+
+    def fail_with_partial(*_args: object, **kwargs: object) -> dict:
+        kwargs["reserve_recovery"]({setup["tmp"] / "AGENTS.md": recovery})
+        raise auto_update_install.InstallFailedError(
+            "secret must not leak",
+            partial=True,
+            recovery_dir=setup["tmp"],
+            recovery_files={setup["tmp"] / "AGENTS.md": recovery},
+        )
+
+    setup["apply"].side_effect = fail_with_partial
     worker.apply_pi(str(setup["tmp"]), "session-a", KEY)
     text = (check.NOTICE_DIR / f"{KEY}.json").read_text()
     assert "secret" not in text
     item = result()["items"][0]
     assert item["status"] == "failed" and item["recovery"]["partial"]
     assert item["recovery"]["recovery_files"][0]["backup"] == str(recovery)
+    assert result()["outcome_final"] is False
+    assert not (check.NOTICE_DIR / f"{KEY}.complete").exists()
+    pending = json.loads((check.NOTICE_DIR / f"{KEY}.pending").read_text())
+    assert pending["recovery"]["recovery_files"][0]["backup"] == str(recovery)
+    later = worker.expected_notice_key(REGISTRY, "alice", "session-later")
+    worker.apply_pi(str(setup["tmp"]), "session-later", later)
+    setup["apply"].assert_called_once()
+    assert "unresolved" in json.loads((check.NOTICE_DIR / f"{later}.json").read_text())["warning"]
+
+
+def test_unexpected_error_after_recovery_reservation_stays_unsealed(setup: dict) -> None:
+    backup = setup["tmp"] / "original.before"
+    backup.write_text("original bytes")
+
+    def unknown(*_args: object, **kwargs: object) -> dict:
+        kwargs["reserve_recovery"]({setup["tmp"] / "AGENTS.md": backup})
+        raise RuntimeError("unverified worker error")
+
+    setup["apply"].side_effect = unknown
+    worker.apply_pi(str(setup["tmp"]), "session-a", KEY)
+    assert result()["items"][0]["status"] == "failed"
+    assert result()["outcome_final"] is False
+    assert (check.NOTICE_DIR / f"{KEY}.pending").exists()
+    assert not (check.NOTICE_DIR / f"{KEY}.complete").exists()
 
 
 def test_oversized_partial_result_retains_recovery_directory(setup: dict, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -355,6 +385,8 @@ def test_oversized_partial_result_retains_recovery_directory(setup: dict, monkey
     assert notice["items"][0]["status"] == "failed"
     assert notice["items"][0]["recovery"]["recovery_dir"] == str(setup["tmp"])
     assert "too large" in notice["warning"]
+    assert (check.NOTICE_DIR / f"{KEY}.pending").exists()
+    assert not (check.NOTICE_DIR / f"{KEY}.complete").exists()
 
 
 def test_expired_admission_never_calls_installer(setup: dict, monkeypatch: pytest.MonkeyPatch) -> None:

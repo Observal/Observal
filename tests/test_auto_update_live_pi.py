@@ -39,6 +39,7 @@ class Registry(str):
         result.unsafe = False
         result.retry_after = False
         result.install_calls = 0
+        result.snapshots = []
         result.started = threading.Event()
         result.release = threading.Event()
         return result
@@ -86,6 +87,11 @@ def registry() -> Iterator[Registry]:
             self.send({}, 404)
 
         def do_POST(self) -> None:
+            if self.path == "/api/v1/layer-snapshots":
+                snapshot = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                if control is not None:
+                    control.snapshots.append(snapshot)
+                return self.send({"hash": snapshot["hash"]})
             if self.path == f"/api/v1/agents/{AGENT}/install":
                 content = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 assert content["version"] == "2.0.0" and content["strict"] is True
@@ -185,7 +191,80 @@ def _tui_notice(home: Path, env: dict, *, expected: str) -> None:
         os.close(master)
 
 
-def _rpc_session(home: Path, env: dict, *, expected: str) -> list[str]:
+def _tui_reselect(home: Path, env: dict) -> bytes:
+    """Use the real Pi terminal command/confirm flow after a saved-profile update."""
+    import fcntl
+    import pty
+    import struct
+    import termios
+
+    pi = shutil.which("pi")
+    assert pi
+    master, slave = pty.openpty()
+    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
+    proc = subprocess.Popen(
+        [
+            pi,
+            "--offline",
+            "--no-skills",
+            "--no-context-files",
+            "--no-extensions",
+            "--extension",
+            str(EXTENSION),
+            "--tui-mode",
+            "regular",
+        ],
+        cwd=home,
+        env={**env, "TERM": "xterm-256color", "OBSERVAL_PI_AUTO_APPLY": "0"},
+        stdin=slave,
+        stdout=slave,
+        stderr=slave,
+        start_new_session=True,
+    )
+    os.close(slave)
+    output = bytearray()
+
+    def until_text(expected: bytes, seconds: float = 12, start: int = 0) -> None:
+        until = time.monotonic() + seconds
+        while time.monotonic() < until:
+            ready, _, _ = select.select([master], [], [], 0.2)
+            if ready:
+                try:
+                    output.extend(os.read(master, 65536))
+                except OSError:
+                    break
+                if expected in output[start:]:
+                    return
+        pytest.fail(f"Pi TUI did not show {expected!r}: {bytes(output[-1200:])!r}")
+
+    try:
+        until_text(b"observal")  # Wait for Pi's initialized Observal status.
+        time.sleep(0.5)
+        os.write(master, b"/agent reviewer\r")
+        until_text(b"Reload session now?")
+        start = len(output)
+        os.write(master, b"\r")  # Confirm's default selection is Yes; it is not a y/n text prompt.
+        until_text(b"Reloaded keybindings", seconds=8, start=start)
+        return bytes(output)
+    finally:
+        if proc.poll() is None:
+            try:
+                os.write(master, b"\x03")
+            except OSError:
+                pass
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=5)
+        os.close(master)
+
+
+def _rpc_session(home: Path, env: dict, *, expected: str, also_expected: str | None = None) -> list[str]:
     pi = shutil.which("pi")
     assert pi
     proc = subprocess.Popen(
@@ -226,7 +305,9 @@ def _rpc_session(home: Path, env: dict, *, expected: str) -> list[str]:
                 continue
             if record.get("type") == "extension_ui_request" and record.get("method") == "notify":
                 messages.append(record["message"])
-                if expected in record["message"]:
+                if any(expected in message for message in messages) and (
+                    also_expected is None or any(also_expected in message for message in messages)
+                ):
                     break
         else:
             pytest.fail(f"Pi RPC did not deliver {expected!r}: {messages!r}")
@@ -409,8 +490,90 @@ install_baseline.capture(registry={registry!r}, harness='pi', agent_id={AGENT!r}
             == "1.0.0"
         )
         journals[0].unlink()  # Test-only manual reconciliation after verifying bytes and installed version.
+
+        # Crash the real worker *after* its first file replacement, not just
+        # during the registry request. The journal must already reference
+        # durable original bytes so the next session can diagnose and block.
+        injection = home / "crash-injection"
+        injection.mkdir()
+        (injection / "sitecustomize.py").write_text(
+            "import os, signal, sys\n"
+            "if '_startup-apply' in sys.argv:\n"
+            "    original = os.replace\n"
+            "    def crash_after_replace(src, dst):\n"
+            "        original(src, dst)\n"
+            "        if str(src).endswith('.next') and str(dst).endswith('/AGENTS.md'):\n"
+            "            os.kill(os.getpid(), signal.SIGKILL)\n"
+            "    os.replace = crash_after_replace\n"
+        )
+        env["PYTHONPATH"] = f"{injection}{os.pathsep}{env['PYTHONPATH']}"
+        _rpc_session(home, env, expected="Update worker stopped unexpectedly")
+        env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
+        journals = list(notices.glob("*.pending"))
+        assert len(journals) == 1 and profile.read_text() == "new profile"
+        record = json.loads(journals[0].read_text())
+        backup = Path(record["recovery"]["recovery_files"][0]["backup"])
+        assert record["recovery"]["recovery_files"][0]["target"] == str(profile)
+        assert backup.read_text() == "old profile"
+        state = json.loads((home / ".observal/lockfile.json").read_text())
+        assert state["registries"][registry]["harnesses"]["pi"]["agents"][0]["version"] == "1.0.0"
+        calls = registry.install_calls
+        messages = _rpc_session(home, env, expected="outcome pending from a Pi session", also_expected=str(backup))
+        assert any(str(backup) in message for message in messages), "original recovery bytes must be discoverable"
+        assert registry.install_calls == calls, "mid-commit crash must block another install"
+        profile.write_bytes(backup.read_bytes())  # Explicit test-only manual recovery.
+        assert profile.read_text() == "old profile"
+        journals[0].unlink()  # After inspecting the original metadata and bytes.
+        shutil.rmtree(backup.parent)
+
+        # Also force an ordinary exception after replacement and another one
+        # during rollback. This exercises the *real* installer's partial path,
+        # not only the journal's SIGKILL and mocked partial-error unit tests.
+        (injection / "sitecustomize.py").write_text(
+            "import os, sys\n"
+            "if '_startup-apply' in sys.argv:\n"
+            "    original = os.replace\n"
+            "    def partial_rollback(src, dst):\n"
+            "        if str(src).endswith('.restore') and str(dst).endswith('/AGENTS.md'):\n"
+            "            raise OSError('injected rollback failure')\n"
+            "        original(src, dst)\n"
+            "        if str(src).endswith('.next') and str(dst).endswith('/AGENTS.md'):\n"
+            "            raise OSError('injected post-commit failure')\n"
+            "    os.replace = partial_rollback\n"
+        )
+        env["PYTHONPATH"] = f"{injection}{os.pathsep}{env['PYTHONPATH']}"
+        _rpc_session(home, env, expected="outcome pending from a Pi session")
+        env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
+        journals = list(notices.glob("*.pending"))
+        assert len(journals) == 1 and profile.read_text() == "new profile"
+        pending = json.loads(journals[0].read_text())
+        backup = Path(pending["recovery"]["recovery_files"][0]["backup"])
+        assert backup.read_text() == "old profile"
+        assert not (notices / f"{journals[0].stem}.complete").exists()
+        calls = registry.install_calls
+        _rpc_session(home, env, expected="outcome pending from a Pi session", also_expected=str(backup))
+        assert registry.install_calls == calls, "partial rollback must block another install"
+        profile.write_bytes(backup.read_bytes())
+        assert profile.read_text() == "old profile"
+        state = json.loads((home / ".observal/lockfile.json").read_text())
+        assert state["registries"][registry]["harnesses"]["pi"]["agents"][0]["version"] == "1.0.0"
+        journals[0].unlink()
+        shutil.rmtree(backup.parent)
+    active = home / ".pi/agent/AGENTS.md"
+    active.write_text("old profile")  # Saved update must not silently replace the active copy.
     messages = _rpc_session(home, env, expected="installed on disk")
     assert "Re-select" in "\n".join(messages) or "re-select" in "\n".join(messages)
     assert profile.read_text() == "new profile"
     state = json.loads((home / ".observal/lockfile.json").read_text())
     assert state["registries"][registry]["harnesses"]["pi"]["agents"][0]["version"] == "2.0.0"
+    assert active.read_text() == "old profile", "saved-profile update is not active until /agent re-selection"
+    if os.name != "nt":
+        _tui_reselect(home, env)
+        assert active.read_text() == "new profile"
+        selected = json.loads(config.read_text())["active_agent"]
+        assert selected["id"] == AGENT and selected["version"] == "2.0.0"
+        assert any(
+            item["path"] == "user:AGENTS.md" and item.get("content") == "new profile"
+            for snapshot in registry.snapshots
+            for item in snapshot["harnesses"]["pi"]
+        ), "the re-selected active layer must reflect the new profile"

@@ -116,11 +116,16 @@ const pendingKey = "f".repeat(64);
 const pendingFile = path.join(dir, "update-notices", `${pendingKey}.pending`);
 const pendingIdentity = {registry: "http://localhost:8000", account_id: "alice", session_id: "session-a"};
 fs.writeFileSync(pendingFile, JSON.stringify({schema: 1, state: "pending", ...pendingIdentity,
-  checked_at: Math.floor(Date.now() / 1000), item: {name: "alice/code", current_version: "1.0", latest_version: "2.0"}}),
+  checked_at: Math.floor(Date.now() / 1000), item: {name: "alice/code", current_version: "1.0", latest_version: "2.0"},
+  recovery: {recovery_dir: "/tmp/private-backups", recovery_files: [
+    {target: "/tmp/profile/AGENTS.md", backup: "/tmp/private-backups/0.before"}]}}),
 {mode: 0o600});
+const beforePending = messages.length;
 await handlers.get("session_start")!({ reason: "resume" }, context("session-b", true));
-assert.match(messages.at(-1)!, /outcome pending from a Pi session/);
-assert.match(messages.at(-1)!, /Files may have changed/);
+assert.match(messages[beforePending]!, /outcome pending from a Pi session/);
+assert.match(messages[beforePending]!, /Files may have changed/);
+assert.ok(messages.slice(beforePending).some((message) => message.includes("/tmp/private-backups/0.before")),
+  "unsealed mid-commit crash must show recoverable original bytes");
 assert.ok(fs.existsSync(pendingFile), "unresolved journal must never be deleted on notification");
 const unsealed = path.join(dir, "update-notices", `${pendingKey}.json`);
 fs.writeFileSync(unsealed, JSON.stringify({schema: 1, ...pendingIdentity, journaled: true,

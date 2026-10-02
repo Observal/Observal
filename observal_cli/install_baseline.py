@@ -136,6 +136,12 @@ def capture(
             os.fsync(handle.fileno())
         os.replace(temporary, target)
         temporary = None
+        if os.name != "nt":
+            fd = os.open(target.parent, os.O_RDONLY)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
     finally:
         if temporary is not None:
             Path(temporary).unlink(missing_ok=True)
