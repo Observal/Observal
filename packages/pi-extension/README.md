@@ -37,6 +37,7 @@ The two modes are mutually exclusive. With the npm package registered, Observal 
 - **Final push:** On session exit, sends remaining lines and a SHA-256 audit manifest; mismatches replay from the requested range
 - **Crash recovery:** Retries durable pending batches and rebuilds missing/corrupt cursors from the authenticated server checkpoint
 - **Status indicator:** Shows `● observal` in the footer with line count
+- **Installed-item notices (Pi pilot):** Interactive/RPC startup normally launches a non-blocking, check-only `observal _startup-check` worker (10-second timeout). Verified newer versions and author release notes are shown via Pi notifications; late results remain under `~/.observal/update-notices/` for the next UI-capable session. Print/JSON modes do not launch a worker. **Automatic installation remains off by default**, even with `observal unfreeze`. For isolated pilot verification only, set `OBSERVAL_PI_AUTO_APPLY=1` *and* grant `observal unfreeze` on the locally authenticated account. This starts `_startup-apply` for eligible UI sessions; only clean, explicitly managed Pi user-agent profiles with approved releases can be modified. Do not enable it on a production profile until the pilot is complete. The worker must not be killed during commit; Pi shutdown may precede the notice, which is replayed later. A private write-ahead `.pending` notice is persisted before mutation; if the final result cannot be sealed, the next UI session warns that files may have changed and further automatic installs for that account/registry are blocked until the local state is inspected. Updated saved profiles are **not** active in the current session or automatically copied into an active profile: select the agent again with `/agent` and reload. Use `observal outdated` for an explicit fresh check.
 
 ## Commands
 
@@ -50,7 +51,7 @@ The two modes are mutually exclusive. With the npm package registered, Observal 
 
 - **Zero dependencies**: only `node:*` built-ins
 - **Fail-open**: never throws, never crashes pi. If the server is unreachable, pi continues normally
-- **5s timeout**: all HTTP calls abort after 5 seconds
+- **5s timeout**: telemetry HTTP calls abort after 5 seconds; the separate startup version-check worker has a 10-second wall-clock limit
 - **Chunked uploads**: batches of 500 lines max per request
 - **Retry-safe**: pending batches retain stable source indexes and are retried until acknowledged
 

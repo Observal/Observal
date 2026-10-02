@@ -14,9 +14,11 @@ Every command available in the installed CLI. This block is generated from the T
 **Root commands**
 
 - `observal api`: Call an authenticated Observal JSON API endpoint.
+- `observal freeze`: Turn off automatic registry updates; does not affect manual upgrades.
 - `observal outdated`: Show installed agents and standalone components with their registry status.
 - `observal reconcile`: Backfill local session records missed by automatic hook delivery
 - `observal scan`: Show a read-only inventory of your local harness setup.
+- `observal unfreeze`: Opt in to automatic updates of eligible managed installations.
 
 **`observal admin`**: Core administration and submission review commands
 

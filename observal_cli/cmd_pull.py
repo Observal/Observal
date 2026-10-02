@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tomllib
 from contextlib import nullcontext, redirect_stdout
+from functools import wraps
 from io import StringIO
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -1462,8 +1463,26 @@ def write_install_snippet(
     return written, failed_skills
 
 
+def _serialize_pi_pull(callback):
+    """Coordinate manual Pi pulls with guarded installs across processes."""
+
+    @wraps(callback)
+    def wrapped(*args, **kwargs):
+        harness = kwargs.get("harness", args[1] if len(args) > 1 else None)
+        if harness != "pi":
+            return callback(*args, **kwargs)
+        from observal_cli.auto_update_policy import pi_install_lock
+        from observal_cli.lockfile import current_registry_url
+
+        with pi_install_lock(current_registry_url()):
+            return callback(*args, **kwargs)
+
+    return wrapped
+
+
 def register_pull(app: typer.Typer):
     @app.command("pull")
+    @_serialize_pi_pull
     def pull(
         agent_id: str = typer.Argument(..., help="Agent ID, name, row number, or @alias"),
         harness: str = typer.Option(
@@ -2028,6 +2047,32 @@ def register_pull(app: typer.Typer):
                         reports_sessions=reports_sessions,
                     ),
                 )
+
+            # Only a completed explicit pull may establish the local file
+            # ownership baseline. Legacy installations stay notice-only until
+            # manually re-pulled; automatic installers must not adopt files.
+            import os
+
+            if os.environ.get("OBSERVAL_AUTO_UPDATE_INSTALL") != "1":
+                try:
+                    from observal_cli.install_baseline import BaselineError, capture
+                    from observal_cli.lockfile import current_registry_url
+
+                    capture(
+                        registry=current_registry_url(),
+                        harness=harness,
+                        agent_id=str(agent_uuid),
+                        scope=options.get("scope", "project"),
+                        root=str(target_dir),
+                        version=str(installed_version),
+                        lock_digest=str(lock.get("digest") or ""),
+                        written_paths=[path for path, _status in written],
+                    )
+                except (OSError, ValueError, BaselineError):
+                    warnings_list.append(
+                        "Ownership evidence could not be recorded; automatic updates remain unavailable "
+                        "until the agent is manually re-pulled."
+                    )
 
             from observal_cli.audit import emit_cli_audit
 
