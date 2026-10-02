@@ -12,6 +12,7 @@ import json
 import os
 import queue
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -35,6 +36,7 @@ class Registry(str):
         result = str.__new__(cls, value)
         result.pause = False
         result.unsafe = False
+        result.install_calls = 0
         result.started = threading.Event()
         result.release = threading.Event()
         return result
@@ -79,6 +81,8 @@ def registry() -> Iterator[Registry]:
             if self.path == f"/api/v1/agents/{AGENT}/install":
                 content = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 assert content["version"] == "2.0.0" and content["strict"] is True
+                if control is not None:
+                    control.install_calls += 1
                 if control is not None and control.pause:
                     control.started.set()
                     control.release.wait(timeout=10)
@@ -261,10 +265,72 @@ install_baseline.capture(registry={registry!r}, harness='pi', agent_id={AGENT!r}
 
     registry.unsafe = True
     messages = _rpc_session(home, env, expected="automatic update skipped")
+    assert any("previous Pi session" in message and "automatic update skipped" in message for message in messages)
     assert profile.read_text() == "old profile", "unsafe install payload cannot change profile files"
     registry.unsafe = False
+    if os.name != "nt":
+        # Kill a real apply worker after it has reserved its journal but before
+        # the delayed install response. The next session must replay uncertainty
+        # and refuse another install until the journal is manually reconciled.
+        pidfile = home / "worker-pid"
+        wrapper = home / "test-worker"
+        wrapper.write_text(f"#!/bin/sh\necho $$ > '{pidfile}'\nexec '{CLI}' \"$@\"\n")
+        wrapper.chmod(0o700)
+        env["OBSERVAL_CLI_BIN"] = str(wrapper)
+        registry.started.clear()
+        registry.release.clear()
+        registry.pause = True
+        crashed = subprocess.Popen(
+            [
+                pi,
+                "--mode",
+                "rpc",
+                "--no-session",
+                "--offline",
+                "--no-skills",
+                "--no-context-files",
+                "--no-extensions",
+                "--extension",
+                str(EXTENSION),
+            ],
+            cwd=home,
+            env=env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        try:
+            assert registry.started.wait(10), "apply worker did not reach delayed response"
+            until = time.monotonic() + 5
+            while not pidfile.exists() and time.monotonic() < until:
+                time.sleep(0.05)
+            assert pidfile.exists()
+            os.kill(int(pidfile.read_text().strip()), signal.SIGKILL)
+            assert crashed.stdin
+            crashed.stdin.close()
+            assert crashed.wait(timeout=5) == 0
+        finally:
+            registry.release.set()
+            registry.pause = False
+            if crashed.poll() is None:
+                crashed.kill()
+                crashed.wait(timeout=5)
+            env["OBSERVAL_CLI_BIN"] = str(CLI)
+        journals = list(notices.glob("*.pending"))
+        assert len(journals) == 1 and profile.read_text() == "old profile"
+        calls = registry.install_calls
+        messages = _rpc_session(home, env, expected="automatic update skipped")
+        assert any("outcome pending from a Pi session" in message for message in messages)
+        assert registry.install_calls == calls, "unresolved outcome must block later Pi installs"
+        assert profile.read_text() == "old profile"
+        assert (
+            json.loads((home / ".observal/lockfile.json").read_text())["registries"][registry]["harnesses"]["pi"][
+                "agents"
+            ][0]["version"]
+            == "1.0.0"
+        )
+        journals[0].unlink()  # Test-only manual reconciliation after verifying bytes and installed version.
     messages = _rpc_session(home, env, expected="installed on disk")
-    assert any("previous Pi session" in message and "automatic update skipped" in message for message in messages)
     assert "Re-select" in "\n".join(messages) or "re-select" in "\n".join(messages)
     assert profile.read_text() == "new profile"
     state = json.loads((home / ".observal/lockfile.json").read_text())
