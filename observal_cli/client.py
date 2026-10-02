@@ -7,6 +7,8 @@
 
 import logging
 import math
+import signal
+import threading
 import time
 import uuid
 from collections.abc import Iterator
@@ -42,14 +44,50 @@ def bounded_requests(cutoff: float) -> Iterator[None]:
     """Limit only this worker's registry calls/retry waits before commit admission.
 
     The cutoff is monotonic and excludes the reserved mutation/recovery window.
-    Ordinary CLI requests are unchanged. This is a pre-commit budget, never a
-    signal or process kill once file replacement begins.
+    Ordinary CLI requests are unchanged. A scoped alarm may interrupt a
+    pre-commit HTTP call, never the mutation or rollback phase.
     """
     token = _NETWORK_CUTOFF.set(cutoff)
     try:
         yield
     finally:
         _NETWORK_CUTOFF.reset(token)
+
+
+@contextmanager
+def _request_wall_budget(cutoff: float | None) -> Iterator[None]:
+    """Bound one startup HTTP call, including a peer that never stops streaming.
+
+    The apply worker runs synchronously in a fresh main-thread process. POSIX
+    SIGALRM interrupts a blocking httpx read without ever killing the worker;
+    it is disarmed before staging or replacing a local file. On unsupported
+    platforms or with another alarm owner, refuse the experimental install.
+    """
+    if cutoff is None:
+        yield
+        return
+    remaining = cutoff - time.monotonic()
+    if remaining <= 0:
+        raise httpx.ReadTimeout("Startup update network admission window expired")
+    if not hasattr(signal, "setitimer") or threading.current_thread() is not threading.main_thread():
+        raise httpx.ReadTimeout("Startup update wall-clock network guard is unavailable")
+    if signal.getitimer(signal.ITIMER_REAL)[0] > 0:
+        raise httpx.ReadTimeout("Startup update cannot replace another process alarm")
+
+    previous_handler = signal.getsignal(signal.SIGALRM)
+
+    def expired(_signum: int, _frame: object) -> None:
+        raise httpx.ReadTimeout("Startup update network admission window expired")
+
+    signal.signal(signal.SIGALRM, expired)
+    try:
+        signal.setitimer(signal.ITIMER_REAL, remaining)
+        try:
+            yield
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+    finally:
+        signal.signal(signal.SIGALRM, previous_handler)
 
 
 def _get_cli_version() -> str:
@@ -94,7 +132,8 @@ def _enforce_version_once(server_url: str) -> None:
 
     from observal_cli.version_check import check_version_compatibility
 
-    check_version_compatibility(server_url)
+    with _request_wall_budget(_NETWORK_CUTOFF.get()):
+        check_version_compatibility(server_url)
 
 
 def _request_id(response: httpx.Response) -> str | None:
@@ -265,11 +304,12 @@ def _try_refresh_token() -> bool:
         return False
 
     try:
-        r = httpx.post(
-            f"{server_url}/api/v1/auth/token/refresh",
-            json={"refresh_token": refresh_token},
-            timeout=10,
-        )
+        with _request_wall_budget(_NETWORK_CUTOFF.get()):
+            r = httpx.post(
+                f"{server_url}/api/v1/auth/token/refresh",
+                json={"refresh_token": refresh_token},
+                timeout=10,
+            )
         if r.status_code != 200:
             return False
         data = r.json()
@@ -329,7 +369,8 @@ def _request_with_retry(
             if remaining <= 0:
                 raise httpx.ReadTimeout("Startup update network admission window expired")
             kwargs["timeout"] = min(timeout, remaining)
-        r = func(url, **kwargs)
+        with _request_wall_budget(cutoff):
+            r = func(url, **kwargs)
 
         # Auto-refresh on 401
         if r.status_code == 401 and attempt == 0 and _try_refresh_token():

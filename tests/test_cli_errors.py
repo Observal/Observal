@@ -11,7 +11,11 @@ import ast
 import importlib.metadata
 import json
 import os
+import signal
 import sys
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -37,6 +41,7 @@ from observal_cli.errors import (
 from observal_cli.main import app
 
 _MISSING = object()
+_REAL_HTTPX_GET = httpx.get
 
 
 def _response(
@@ -859,6 +864,100 @@ def test_startup_network_budget_refuses_unbounded_retry_wait(monkeypatch, retry_
         client._request_with_retry("get", "https://registry.example.test/api/v1/items", {})
     get.assert_called_once()
     sleep.assert_not_called()
+
+
+@pytest.mark.skipif(not hasattr(signal, "setitimer"), reason="POSIX wall-clock guard")
+def test_startup_wall_budget_interrupts_slow_stream_and_restores_signal(monkeypatch):
+    class TricklingRegistry(BaseHTTPRequestHandler):
+        def log_message(self, *_args: object) -> None:
+            pass
+
+        def do_GET(self) -> None:
+            self.send_response(200)
+            self.send_header("Content-Length", "4096")
+            self.end_headers()
+            try:
+                for _ in range(200):
+                    self.wfile.write(b"x")
+                    self.wfile.flush()
+                    time.sleep(0.04)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), TricklingRegistry)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    monkeypatch.setattr(client, "time", time)
+    monkeypatch.setattr(client.httpx, "get", _REAL_HTTPX_GET)
+    prior = signal.getsignal(signal.SIGALRM)
+    started = time.monotonic()
+    try:
+        with client.bounded_requests(started + 0.4), pytest.raises(httpx.ReadTimeout):
+            client._request_with_retry("get", f"http://127.0.0.1:{server.server_port}/slow", {})
+        assert time.monotonic() - started < 1.5
+        assert signal.getsignal(signal.SIGALRM) is prior
+        assert signal.getitimer(signal.ITIMER_REAL)[0] == 0
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+@pytest.mark.skipif(not hasattr(signal, "setitimer"), reason="POSIX wall-clock guard")
+def test_startup_wall_budget_refuses_foreign_alarm_or_non_main_thread(monkeypatch):
+    get = MagicMock()
+    monkeypatch.setattr(client.httpx, "get", get)
+    monkeypatch.setattr(client, "time", time)
+    with monkeypatch.context() as patcher:
+        patcher.setattr(client.signal, "getitimer", lambda _kind: (3.0, 0.0))
+        with (
+            client.bounded_requests(time.monotonic() + 2),
+            pytest.raises(httpx.ReadTimeout, match="another process alarm"),
+        ):
+            client._request_with_retry("get", "https://registry.example.test/api/v1/items", {})
+    get.assert_not_called()
+
+    errors = []
+
+    def from_thread() -> None:
+        try:
+            with client.bounded_requests(time.monotonic() + 2):
+                client._request_with_retry("get", "https://registry.example.test/api/v1/items", {})
+        except httpx.ReadTimeout as error:
+            errors.append(str(error))
+
+    thread = threading.Thread(target=from_thread)
+    thread.start()
+    thread.join(timeout=2)
+    assert not thread.is_alive() and errors == ["Startup update wall-clock network guard is unavailable"]
+    get.assert_not_called()
+
+
+@pytest.mark.skipif(not hasattr(signal, "setitimer"), reason="POSIX wall-clock guard")
+def test_startup_budget_covers_direct_version_and_refresh_requests(monkeypatch):
+    from observal_cli import version_check
+
+    monkeypatch.setattr(client, "time", time)
+    monkeypatch.setattr(version_check, "check_version_compatibility", lambda _url: time.sleep(2))
+    monkeypatch.setattr(
+        client.config,
+        "load",
+        lambda: {
+            "refresh_token": "test-refresh",
+            "server_url": "https://registry.example.test",
+        },
+    )
+    monkeypatch.setattr(client.httpx, "post", lambda *_args, **_kwargs: time.sleep(2))
+    started = time.monotonic()
+    with client.bounded_requests(started + 0.25), pytest.raises(httpx.ReadTimeout):
+        client._enforce_version_once("https://registry.example.test")
+    assert time.monotonic() - started < 1.0
+    started = time.monotonic()
+    with client.bounded_requests(started + 0.25):
+        assert client._try_refresh_token() is False
+    assert time.monotonic() - started < 1.0
+    assert signal.getitimer(signal.ITIMER_REAL)[0] == 0
 
 
 def test_startup_budget_timeout_has_actionable_worker_remediation(monkeypatch):

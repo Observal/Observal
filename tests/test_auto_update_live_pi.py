@@ -38,6 +38,7 @@ class Registry(str):
         result.pause = False
         result.unsafe = False
         result.retry_after = False
+        result.trickle = False
         result.install_calls = 0
         result.snapshots = []
         result.started = threading.Event()
@@ -65,6 +66,19 @@ def registry() -> Iterator[Registry]:
             if self.path == "/api/v1/config/version":
                 return self.send({"server_version": "dev"})
             if self.path == f"/api/v1/agents/{AGENT}":
+                if control is not None and control.trickle:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", "1000")
+                    self.end_headers()
+                    try:
+                        for _ in range(200):
+                            self.wfile.write(b" ")
+                            self.wfile.flush()
+                            time.sleep(0.12)
+                    except (BrokenPipeError, ConnectionResetError):
+                        pass
+                    return
                 if control is not None and control.retry_after:
                     self.send_response(503)
                     self.send_header("Retry-After", "3600")
@@ -118,6 +132,7 @@ def registry() -> Iterator[Registry]:
             self.send({}, 404)
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.daemon_threads = True
     control = Registry(f"http://127.0.0.1:{server.server_port}")
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -375,6 +390,30 @@ install_baseline.capture(registry={registry!r}, harness='pi', agent_id={AGENT!r}
     assert time.monotonic() - started < 10, "a long Retry-After must not park the apply worker"
     assert profile.read_text() == "old profile"
     registry.retry_after = False
+    if os.name != "nt":
+        # A peer can drip body bytes faster than httpx's inactivity timeout.
+        # Shrink only this isolated worker's admission budget through a
+        # sitecustomize test hook; ordinary users cannot alter the cutoff.
+        injection = home / "short-budget"
+        injection.mkdir()
+        (injection / "sitecustomize.py").write_text(
+            "import sys\n"
+            "if '_startup-apply' in sys.argv:\n"
+            "    from observal_cli import startup_update_apply as worker\n"
+            "    worker.APPLY_SECONDS = 2.5\n"
+            "    worker.RECOVERY_RESERVE_SECONDS = 1.0\n"
+        )
+        env["PYTHONPATH"] = f"{injection}{os.pathsep}{env['PYTHONPATH']}"
+        registry.trickle = True
+        calls = registry.install_calls
+        started = time.monotonic()
+        try:
+            _rpc_session(home, env, expected="automatic update skipped")
+        finally:
+            registry.trickle = False
+            env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
+        assert time.monotonic() - started < 8, "trickling registry must not hold the apply gate indefinitely"
+        assert registry.install_calls == calls and profile.read_text() == "old profile"
 
     # Pause the real registry's install response, close Pi while the worker is
     # waiting, then release it. Pi must exit without killing the worker; the
