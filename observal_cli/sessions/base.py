@@ -911,10 +911,15 @@ def _maybe_upload_layer_snapshot(
         # POST to server
         import httpx
 
+        from observal_cli.client import _get_cli_version
+
         url = f"{server_url.rstrip('/')}/api/v1/layer-snapshots"
+        # The server's CLI/server parity check answers 426 to authenticated CLI requests
+        # without this header; unlike ingest, this path is not exempt.
         headers = {
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json",
+            "X-Observal-CLI-Version": _get_cli_version(),
         }
 
         with httpx.Client(timeout=10.0) as client:
@@ -925,7 +930,7 @@ def _maybe_upload_layer_snapshot(
                 set_last_uploaded_hash(payload["hash"], server_url, user_id)
                 optic.debug("layer snapshot uploaded and saved locally: hash={}", payload["hash"])
             else:
-                optic.debug("layer snapshot upload failed: status={}", resp.status_code)
+                optic.warning("layer snapshot upload failed: status={}", resp.status_code)
     except Exception as e:
         optic.debug("layer snapshot upload skipped: {}", e)
 
