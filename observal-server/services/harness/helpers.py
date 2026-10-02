@@ -166,7 +166,7 @@ def _yaml_double_quoted(value: str) -> str:
     text = yaml.safe_dump(value, default_style='"', allow_unicode=True, width=float("inf"))
     text = text.removesuffix("\n")
     if "\n" in text or yaml.safe_load(text) != value:
-        raise ValueError("hook command cannot be written as one YAML scalar")
+        raise ValueError("value cannot be written as one YAML scalar")
     return text
 
 
