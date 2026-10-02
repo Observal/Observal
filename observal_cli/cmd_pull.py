@@ -1320,6 +1320,51 @@ def rewrite_observal_interpreter(value):
     return value
 
 
+def _localize_hooks_content(content, adapter, agent_id: str):
+    """A hooks config with resolved hook script paths and launchers on this CLI's interpreter."""
+    if isinstance(content, str):
+        return _resolve_hook_paths(content)
+    if isinstance(content, dict):
+        # Resolve hook paths inside JSON content (command fields)
+        raw = _resolve_hook_paths(json.dumps(content))
+        # Launchers are rewritten in the parsed strings, so no interpreter path can break the JSON.
+        return adapter.rewrite_hooks(rewrite_launchers_in_strings(json.loads(raw)), agent_id=agent_id)
+    return content
+
+
+def _localize_agent_profile(agent_profile: dict, adapter, agent_id: str) -> None:
+    """Point an agent profile's Observal launchers at this CLI's interpreter, in place."""
+    if isinstance(agent_profile.get("content"), dict):
+        agent_profile["content"] = adapter.rewrite_agent_profile(agent_profile["content"], agent_id=agent_id)
+    elif isinstance(agent_profile.get("content"), str):
+        agent_profile["content"] = rewrite_frontmatter_hook_launchers(_resolve_hook_paths(agent_profile["content"]))
+
+
+def localize_install_snippet(snippet: dict, *, adapter, agent_id: str) -> dict:
+    """An agent install snippet as ``agent pull`` would write it, without writing anything.
+
+    The server cannot know which interpreter has ``observal_cli`` installed, so
+    it names a bare ``python3`` (``python`` on Windows) in telemetry hooks and
+    in the sandbox and delegation MCP servers. A snippet printed for the user
+    to copy (``observal agent install``) gets the same rewrites a pull applies:
+    this CLI's interpreter with its isolation flag, resolved hook script paths
+    and the harness adapter's hook and profile rewrites. The input is not
+    modified.
+    """
+    import copy
+
+    if not isinstance(snippet, dict):
+        return snippet
+    localized = rewrite_observal_interpreter(copy.deepcopy(snippet))
+    hooks_cfg = localized.get("hooks_config")
+    if isinstance(hooks_cfg, dict) and "content" in hooks_cfg:
+        hooks_cfg["content"] = _localize_hooks_content(hooks_cfg["content"], adapter, agent_id)
+    agent_profile = localized.get("agent_profile")
+    if isinstance(agent_profile, dict):
+        _localize_agent_profile(agent_profile, adapter, agent_id)
+    return localized
+
+
 def write_install_snippet(
     snippet: dict,
     *,
@@ -1394,16 +1439,7 @@ def write_install_snippet(
     hooks_cfg = snippet.get("hooks_config")
     if hooks_cfg and isinstance(hooks_cfg, dict) and "path" in hooks_cfg:
         p = _resolve_path(hooks_cfg["path"], target_dir, allow_home=is_user_scope)
-        content = hooks_cfg["content"]
-        if isinstance(content, str):
-            content = _resolve_hook_paths(content)
-        elif isinstance(content, dict):
-            # Resolve hook paths inside JSON content (command fields)
-            raw = json.dumps(content)
-            raw = _resolve_hook_paths(raw)
-            # Launchers are rewritten in the parsed strings, so no interpreter path can break the JSON.
-            content = rewrite_launchers_in_strings(json.loads(raw))
-            content = adapter.rewrite_hooks(content, agent_id=agent_id)
+        content = _localize_hooks_content(hooks_cfg["content"], adapter, agent_id)
         if dry_run:
             written.append((str(p), "would write"))
         else:
@@ -1415,10 +1451,7 @@ def write_install_snippet(
     if agent_profile:
         # Rewrite hook commands to use the current Python interpreter
         # so they work regardless of which directory Kiro is launched from.
-        if isinstance(agent_profile.get("content"), dict):
-            agent_profile["content"] = adapter.rewrite_agent_profile(agent_profile["content"], agent_id=agent_id)
-        elif isinstance(agent_profile.get("content"), str):
-            agent_profile["content"] = rewrite_frontmatter_hook_launchers(_resolve_hook_paths(agent_profile["content"]))
+        _localize_agent_profile(agent_profile, adapter, agent_id)
         agent_profile_allow_home = adapter.allow_home_agent_profile(is_user_scope)
         p = _resolve_path(agent_profile["path"], target_dir, allow_home=agent_profile_allow_home)
         if dry_run:
