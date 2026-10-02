@@ -685,6 +685,32 @@ def drain_session_source(
 # ---------------------------------------------------------------------------
 
 
+def _recorded_cwd(lines: list[str], session_jsonl: Path | None, scan_lines: int = 200) -> str:
+    """The absolute, existing project directory a transcript's records name, else ``""``."""
+    import json
+    import os
+
+    def first_cwd(raw_lines) -> str:
+        for raw in raw_lines:
+            try:
+                record = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+            value = record.get("cwd") if isinstance(record, dict) else None
+            if isinstance(value, str) and os.path.isabs(value) and os.path.isdir(value):
+                return value
+        return ""
+
+    found = first_cwd(lines)
+    if found or session_jsonl is None:
+        return found
+    try:
+        with open(session_jsonl, encoding="utf-8", errors="replace") as handle:
+            return first_cwd(line for _, line in zip(range(scan_lines), handle, strict=False))
+    except OSError:
+        return ""
+
+
 def build_payload(
     session_id: str,
     lines: list[str],
@@ -702,10 +728,16 @@ def build_payload(
     Defaults harness telemetry to ``claude-code``; callers override ``payload["harness"]``
     for other harnesses.
     """
+    recovered_without_cwd = hook_event == "CrashRecovery" and not cwd
+    if recovered_without_cwd:
+        # Recovery rebuilds sources from disk with no cwd. Hashing "no project"
+        # would describe only user-scope components, so use the project the
+        # transcript records, or send no hash (unknown coverage) rather than a wrong one.
+        cwd = _recorded_cwd(lines, session_jsonl)
     agent_id, agent_version = _resolve_agent(
         cwd, lines, session_jsonl, harness=harness, session_ids=(session_id, parent_session_id)
     )
-    layer_hash = _get_cached_layer_hash(session_id, cwd)
+    layer_hash = None if recovered_without_cwd and not cwd else _get_cached_layer_hash(session_id, cwd)
     payload: dict = {
         "session_id": session_id,
         "harness": "claude-code",

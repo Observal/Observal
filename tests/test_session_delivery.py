@@ -1103,3 +1103,29 @@ def test_layer_snapshot_upload_passes_the_servers_cli_version_check(monkeypatch)
 
     base._maybe_upload_layer_snapshot("https://server.example", "token", "layer-hash", "claude-code", "/repo")
     assert saved == [{"hash": "layer-hash"}], "the server accepted the upload"
+
+
+def test_recovered_sessions_hash_the_recorded_project_or_send_no_layer_hash(tmp_path, monkeypatch):
+    """Regression: recovery rebuilt Claude Code sources with no cwd, so the payload carried a
+    user-scope-only layer hash (and the hook uploaded an empty snapshot) for a project session."""
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setattr(base, "_compute_layer_hash_safe", lambda cwd, harness: f"hash-of:{cwd}")
+    monkeypatch.setattr(base, "_resolve_agent", lambda *args, **kwargs: (None, None))
+    monkeypatch.setattr(base, "_capabilities_for_session", lambda *args, **kwargs: None)
+
+    recorded = [json.dumps({"type": "user", "cwd": str(project), "message": {"content": "hi"}})]
+    payload = base.build_payload("s1", recorded, 0, "CrashRecovery", 0, cwd="")
+    assert payload["layer_hash"] == f"hash-of:{project}"
+
+    transcript = tmp_path / "s2.jsonl"
+    transcript.write_text("\n".join(recorded) + "\n")
+    later_chunk = [json.dumps({"type": "assistant", "message": {"content": "ok"}})]
+    payload = base.build_payload("s2", later_chunk, 5, "CrashRecovery", 5, cwd="", session_jsonl=transcript)
+    assert payload["layer_hash"] == f"hash-of:{project}", "found in the transcript's earlier records"
+
+    unknown = [json.dumps({"type": "user", "cwd": str(tmp_path / "gone")})]
+    assert base.build_payload("s3", unknown, 0, "CrashRecovery", 0, cwd="")["layer_hash"] is None
+
+    live = base.build_payload("s4", later_chunk, 0, "UserPromptSubmit", 0, cwd="")
+    assert live["layer_hash"] == "hash-of:", "live hook paths are unchanged"
