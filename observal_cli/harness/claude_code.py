@@ -31,6 +31,7 @@ from observal_cli.shared.utils import (
     extract_body,
     extract_mcp_servers,
     first_content_line,
+    is_observal_agent_hook_group,
     parse_frontmatter_field,
 )
 
@@ -269,6 +270,10 @@ class ClaudeCodeAdapter(BaseAdapter):
             return "drifted"
         if entries[event, command] > 1:
             return "unverified"  # duplicated in the same file: a recorded run names neither copy
+        if component.get("hook_placement") == "gated_settings":
+            gated = self._gated_hook_state(directory, config, component)
+            if gated != "verified":
+                return gated
         script = component.get("hook_script") or ""
         if script:
             path = self._hook_file(script, directory)
@@ -282,6 +287,48 @@ class ClaudeCodeAdapter(BaseAdapter):
                 continue
             found = self._hook_entries(other)
             if found is None or found[event, command]:
+                return "unverified"
+        return "verified"
+
+    def _gated_hook_state(self, directory: str | None, config: Path, component: dict) -> str:
+        """Extra checks for an agent hook placed in settings.json behind its agent gate.
+
+        Its Observal-owned group must be there exactly once and unedited (any change
+        to matcher, timeout or options is drift), and the agent file must no longer
+        carry the original hook: a copy there would run as well in interactive
+        sessions, and its runs would name a different command.
+        """
+        from observal_cli.agent_hooks import agent_hook_metadata, is_edited
+
+        event, command = component["hook_event"], component["hook_command"]
+        original = component.get("hook_original_command")
+        agent = component.get("hook_agent")
+        profile = self._hook_file(str(component.get("hook_agent_profile") or ""), directory)
+        if not isinstance(original, str) or not original or not agent or profile is None:
+            return "unverified"
+        try:
+            data = json.loads(config.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, ValueError):
+            return "unverified"
+        hooks = data.get("hooks") if isinstance(data, dict) else None
+        owned = [
+            group
+            for group in (hooks.get(event) if isinstance(hooks, dict) else None) or []
+            if (meta := agent_hook_metadata(group)) is not None
+            and meta.get("agent") == agent
+            and meta.get("component_id") == component.get("id")
+        ]
+        if not owned:
+            return "unverified"  # the group was handed to the user (no _observal key) or moved
+        if len(owned) > 1:
+            return "unverified"
+        if is_edited(event, owned[0]):
+            return "drifted"
+        if not any(isinstance(hook, dict) and hook.get("command") == command for hook in owned[0].get("hooks") or []):
+            return "drifted"
+        if profile.exists():
+            entries = self._hook_entries(profile)
+            if entries is None or entries[event, original]:
                 return "unverified"
         return "verified"
 
@@ -394,6 +441,8 @@ class ClaudeCodeAdapter(BaseAdapter):
             if not isinstance(groups, list):
                 continue
             for g in groups:
+                if is_observal_agent_hook_group(g):
+                    continue  # an agent's gated hook, not telemetry
                 for h in g.get("hooks", []):
                     cmd = h.get("command", "")
                     url = h.get("url", "")
