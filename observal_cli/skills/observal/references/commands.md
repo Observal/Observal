@@ -59,6 +59,7 @@ Every command available in the installed CLI. This block is generated from the T
 - `observal agent bulk-create`: Bulk-create agents from a JSON file.
 - `observal agent create`: Create a new agent (interactive wizard, from file, or via flags).
 - `observal agent delete`: Archive an agent. Prefer the archive command.
+- `observal agent fork`: Fork an approved agent release into your own editable draft.
 - `observal agent init`: Scaffold an observal-agent.yaml definition file.
 - `observal agent install`: Get install config for an agent.
 - `observal agent list`: List active agents (paginated).
@@ -157,6 +158,7 @@ Every command available in the installed CLI. This block is generated from the T
     - `observal registry hook co-authors remove`: Remove a co-author.
   - `observal registry hook archive`: Archive this component.
   - `observal registry hook edit`: Edit a draft, rejected, or pending hook submission.
+  - `observal registry hook fork`: Fork an approved hook release into your own editable draft.
   - `observal registry hook install`: Install a hook for a specific harness.
   - `observal registry hook list`: List approved hooks from the registry.
   - `observal registry hook show`: Show detailed information for a single hook.
@@ -173,6 +175,7 @@ Every command available in the installed CLI. This block is generated from the T
   - `observal registry mcp install`: Generate an install config snippet for an MCP server.
   - `observal registry mcp archive`: Archive this component.
   - `observal registry mcp edit`: Edit an MCP server submission.
+  - `observal registry mcp fork`: Fork an approved mcp release into your own editable draft.
   - `observal registry mcp list`: List approved MCP servers in the registry.
   - `observal registry mcp my`: List your own MCP servers across all statuses.
   - `observal registry mcp transfer-owner`: Transfer ownership to another username.
@@ -186,6 +189,7 @@ Every command available in the installed CLI. This block is generated from the T
     - `observal registry prompt co-authors remove`: Remove a co-author.
   - `observal registry prompt archive`: Archive this component.
   - `observal registry prompt edit`: Edit a draft, rejected, or pending prompt submission.
+  - `observal registry prompt fork`: Fork an approved prompt release into your own editable draft.
   - `observal registry prompt list`: List approved prompts in the registry.
   - `observal registry prompt my`: List your own prompts across all statuses.
   - `observal registry prompt render`: Render a prompt template with variable substitution.
@@ -203,6 +207,7 @@ Every command available in the installed CLI. This block is generated from the T
     - `observal registry sandbox co-authors remove`: Remove a co-author.
   - `observal registry sandbox archive`: Archive this component.
   - `observal registry sandbox edit`: Edit a draft, rejected, or pending sandbox submission.
+  - `observal registry sandbox fork`: Fork an approved sandbox release into your own editable draft.
   - `observal registry sandbox list`: List approved sandboxes in the registry.
   - `observal registry sandbox show`: Show detailed information about a sandbox.
   - `observal registry sandbox submit`: Submit a new sandbox environment for review.
@@ -215,6 +220,7 @@ Every command available in the installed CLI. This block is generated from the T
     - `observal registry skill co-authors remove`: Remove a co-author.
   - `observal registry skill archive`: Archive this component.
   - `observal registry skill edit`: Edit a draft, rejected, or pending skill submission.
+  - `observal registry skill fork`: Fork an approved skill release into your own editable draft.
   - `observal registry skill install`: Install a skill by fetching the full skill directory from git.
   - `observal registry skill list`: List approved skills in the registry.
   - `observal registry skill my`: List your own skills across all statuses.

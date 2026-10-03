@@ -26,7 +26,10 @@ _TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 
 share_app = typer.Typer(
     name="share",
-    help="Share version-pinned Agents installed in the current repository.",
+    help=(
+        "Share version-pinned Agents installed in the current repository.\n\n"
+        "Examples:\n  observal share candidates\n  observal share create --all --output json"
+    ),
     invoke_without_command=True,
     no_args_is_help=False,
 )
@@ -148,7 +151,12 @@ def candidates(
     directory: str = typer.Option(".", "--dir", help="Repository directory."),
     output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ) -> None:
-    """List shareable Agent versions tracked in the current repository."""
+    """List shareable Agent versions tracked in the current repository.
+
+    Examples:
+      observal share candidates
+      observal share candidates --output json
+    """
     try:
         root, items = discover_repository_agents(directory)
     except (OSError, RuntimeError, ValueError) as error:
@@ -182,7 +190,12 @@ def create_share(
     title: str | None = typer.Option(None, "--title", help="Optional share title."),
     output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ) -> None:
-    """Select repository Agents and create an opaque, expiring share link."""
+    """Select repository Agents and create an opaque, expiring share link.
+
+    Examples:
+      observal share create --all --output json
+      observal share create --agent acme/reviewer --output json
+    """
     if all_agents and agent:
         fail(
             ErrorCategory.VALIDATION,
@@ -290,7 +303,12 @@ def open_share(
     yes: bool = typer.Option(False, "--yes", "-y", help="Pull all accessible Agents without confirmation."),
     output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ) -> None:
-    """Open a share and, after confirmation, pull its accessible Agents."""
+    """Open a share and, after confirmation, pull its accessible Agents.
+
+    Examples:
+      observal share open SHARE_TOKEN --no-pull --output json
+      observal share open SHARE_TOKEN --harness pi --yes
+    """
     try:
         token = parse_share_token(share)
     except ValueError as error:
@@ -373,7 +391,11 @@ def revoke_share(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation."),
     output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ) -> None:
-    """Revoke a share link immediately."""
+    """Revoke a share link immediately.
+
+    Examples:
+      observal share revoke SHARE_TOKEN --yes --output json
+    """
     try:
         token = parse_share_token(share)
     except ValueError as error:

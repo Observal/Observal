@@ -6,6 +6,7 @@
 ## Contents
 
 - Read owned state
+- Fork an approved component
 - Edit
 - Publish a version
 - Archive and restore
@@ -25,6 +26,20 @@ observal registry mcp show NAMESPACE/SLUG --output json
 ```
 
 Use returned UUIDs or `qualified_name` values in later commands.
+
+## Fork an approved component
+
+When the user wants an independently owned copy rather than a new version of the original, inspect its approved status and fork once. Only approved source versions may be selected. Provide a new name and target explicitly when requested; use canonical names or UUIDs rather than bare names.
+
+```bash
+observal registry mcp fork NAMESPACE/SLUG --name my-mcp --output json
+observal registry skill fork NAMESPACE/SLUG --version 1.2.0 --new-version 0.1.0 --output json
+observal registry hook fork NAMESPACE/SLUG --team platform --visibility team --output json
+observal registry prompt fork NAMESPACE/SLUG --name my-prompt --output json
+observal registry sandbox fork NAMESPACE/SLUG --name my-sandbox --output json
+```
+
+All five commands return the new independent draft object with an `id`, `qualified_name`, `status`, and visibility-filtered `forked_from`. Never display or infer a source identity when `forked_from.available` is false. A private source must remain in its own private teamspace. A draft and a team-private fork do not increase public fork counts. After creation, edit using the new UUID (`observal registry TYPE edit FORK_UUID ... --output json`) and submit using the relevant type's draft submission command; verify the resulting review status. If a request's outcome is uncertain, inspect `registry TYPE my --output json` (or show by UUID where `my` is unavailable) before any retry.
 
 ## Edit
 
