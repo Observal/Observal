@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from observal_cli.harness.protocol import (
     METHOD_FEATURE_MAP,
@@ -66,6 +66,10 @@ def _check_headless(harness_name: str) -> None:
 
     if not HARNESS_REGISTRY.get(harness_name, {}).get("headless_run"):
         raise NotSupportedError(harness_name, "headless_command")
+
+
+if TYPE_CHECKING:
+    from observal_cli.discovery.models import AdapterDiscoveryResult
 
 
 def _get_features(harness_name: str) -> set[str]:
@@ -168,6 +172,18 @@ class BaseAdapter:
     def scan_project(self, project_dir: Path) -> ScanResult:
         _check_feature(self.harness_name, "scan_project")
         return ScanResult()
+
+    def discover_home(self, home: Path | None = None) -> AdapterDiscoveryResult:
+        """No fallback to unbounded legacy scanning in local inventory."""
+        from observal_cli.discovery.models import AdapterDiscoveryResult
+
+        return AdapterDiscoveryResult()
+
+    def discover_project(self, project_dir: Path) -> AdapterDiscoveryResult:
+        """Adapters explicitly opt in to bounded local inventory."""
+        from observal_cli.discovery.models import AdapterDiscoveryResult
+
+        return AdapterDiscoveryResult()
 
     def get_hook_spec(self) -> HookSpec:
         _check_feature(self.harness_name, "get_hook_spec")

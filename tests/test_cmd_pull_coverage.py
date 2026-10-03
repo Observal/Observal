@@ -211,6 +211,371 @@ def test_component_conflicts_report_only_other_agent_versions(monkeypatch: pytes
     assert error.value.exit_code == 9
 
 
+def test_pin_hook_interpreter_is_idempotent_and_json_safe(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cmd_pull.sys, "executable", r"C:\Users\ada\observal\python.exe")
+    source = json.dumps({"command": "python3 -m observal_cli.hooks.session_push --harness cursor"})
+
+    once = cmd_pull._pin_hook_interpreter(source)
+
+    # Backslashes in the interpreter must neither break re.sub nor the JSON string.
+    assert (
+        json.loads(once)["command"]
+        == "C:/Users/ada/observal/python.exe -m observal_cli.hooks.session_push --harness cursor"
+    )
+    assert cmd_pull._pin_hook_interpreter(once) == once
+    assert (
+        cmd_pull._pin_hook_interpreter("/opt/venv/bin/python3 -m observal_cli.x")
+        == "/opt/venv/bin/python3 -m observal_cli.x"
+    )
+    # The same holds for a Windows path, in raw text and inside a JSON string.
+    windows = r"C:\Python312\python3 -m observal_cli.x"
+    assert cmd_pull._pin_hook_interpreter(windows) == windows
+    assert cmd_pull._pin_hook_interpreter(json.dumps(windows)) == json.dumps(windows)
+
+
+def test_pin_hook_interpreter_quotes_paths_with_spaces(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cmd_pull.sys, "executable", "/tmp/Observal Tools/bin/python3")
+    source = json.dumps({"command": "python3 -m observal_cli.hooks.session_push --harness cursor"})
+    result = cmd_pull._pin_hook_interpreter(source)
+    command = json.loads(result)["command"]
+    assert command == "'/tmp/Observal Tools/bin/python3' -m observal_cli.hooks.session_push --harness cursor"
+    assert cmd_pull._pin_hook_interpreter(result) == result
+
+
+def test_pin_hook_interpreter_windows_path_with_spaces(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cmd_pull.sys, "platform", "win32")
+    monkeypatch.setattr(cmd_pull.sys, "executable", r"C:\Program Files\Observal\python.exe")
+    source = json.dumps({"command": "python3 -m observal_cli.hooks.session_push"})
+    command = json.loads(cmd_pull._pin_hook_interpreter(source))["command"]
+    assert command == '"C:/Program Files/Observal/python.exe" -m observal_cli.hooks.session_push'
+    profile = 'command: "python3 -m observal_cli.hooks.session_push"'
+    rewritten = cmd_pull._pin_hook_interpreter(profile)
+    assert rewritten == 'command: "\\"C:/Program Files/Observal/python.exe\\" -m observal_cli.hooks.session_push"'
+    assert yaml.safe_load(rewritten)["command"] == command
+
+
+def test_pin_hook_interpreter_keeps_shell_and_frontmatter_valid_with_apostrophe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    path = "/tmp/Your App's/bin/python3"
+    monkeypatch.setattr(cmd_pull.sys, "executable", path)
+    profile = 'hooks:\n  Stop:\n    - hooks:\n        - command: "python3 -m observal_cli.hooks.session_push"\n'
+    rendered = cmd_pull._pin_hook_interpreter(profile)
+    command = yaml.safe_load(rendered)["hooks"]["Stop"][0]["hooks"][0]["command"]
+    assert shlex.split(command) == [path, "-m", "observal_cli.hooks.session_push"]
+    assert cmd_pull._pin_hook_interpreter(rendered) == rendered
+
+
+@pytest.mark.parametrize("path", ["/tmp/Observal Tools/bin/python3", "/tmp/Your App's/bin/python3"])
+@pytest.mark.parametrize("style", ["single", "bare"])
+def test_pin_hook_interpreter_preserves_yaml_commands(monkeypatch: pytest.MonkeyPatch, path: str, style: str) -> None:
+    monkeypatch.setattr(cmd_pull.sys, "executable", path)
+    original = "python3 -m observal_cli.hooks.session_push"
+    if style == "single":
+        original = f"'{original}'"
+    profile = (
+        "---\nname: test\nhooks:\n  Stop:\n    - hooks:\n"
+        f"        - command: {original}\n"
+        "---\nRun python3 -m observal_cli.hooks.session_push to test.\n"
+    )
+
+    rewritten = cmd_pull._pin_agent_profile_hooks(profile)
+    frontmatter, body = rewritten.split("\n---\n", 1)
+    command = yaml.safe_load(frontmatter[4:])["hooks"]["Stop"][0]["hooks"][0]["command"]
+    assert shlex.split(command) == [path, "-m", "observal_cli.hooks.session_push"]
+    assert body == "Run python3 -m observal_cli.hooks.session_push to test.\n"
+    assert cmd_pull._pin_agent_profile_hooks(rewritten) == rewritten
+
+
+@pytest.mark.parametrize("indicator", ["|", "|-", ">-"])
+def test_pin_hook_interpreter_rewrites_yaml_block_command(monkeypatch: pytest.MonkeyPatch, indicator: str) -> None:
+    path = "/tmp/Your App's/bin/python3"
+    monkeypatch.setattr(cmd_pull.sys, "executable", path)
+    profile = (
+        "---\nname: test\nhooks:\n  Stop:\n    - hooks:\n"
+        f"        - command: {indicator}\n"
+        "            python3 -m observal_cli.hooks.session_push --harness claude-code\n"
+        "          timeoutSec: 5\n"
+        "description: Run python3 -m observal_cli.hooks.session_push manually\n"
+        "---\nRun python3 -m observal_cli.hooks.session_push to test.\n"
+    )
+
+    rewritten = cmd_pull._pin_agent_profile_hooks(profile)
+    frontmatter, body = rewritten.split("\n---\n", 1)
+    data = yaml.safe_load(frontmatter[4:])
+    command = data["hooks"]["Stop"][0]["hooks"][0]["command"]
+    assert shlex.split(command) == [path, "-m", "observal_cli.hooks.session_push", "--harness", "claude-code"]
+    assert data["description"] == "Run python3 -m observal_cli.hooks.session_push manually"
+    assert body == "Run python3 -m observal_cli.hooks.session_push to test.\n"
+    assert cmd_pull._pin_agent_profile_hooks(rewritten) == rewritten
+
+
+def test_pin_hook_interpreter_preserves_block_script_comments_and_siblings(monkeypatch: pytest.MonkeyPatch) -> None:
+    path = "/tmp/Your App's/bin/python3"
+    monkeypatch.setattr(cmd_pull.sys, "executable", path)
+    profile = (
+        "---\nhooks:\n  Stop:\n    - hooks:\n"
+        "        - command: |2- # shell script\n"
+        "            # To debug: python3 -m observal_cli.hooks.session_push\n"
+        "            OBSERVAL_AGENT_ID=abc exec python3 -m observal_cli.hooks.session_push\n"
+        "            echo python3 -m observal_cli.hooks.session_push\n"
+        "          timeoutSec: 5\n"
+        "        - command: 'python3 -m observal_cli.hooks.kiro_hook'\n"
+        "---\nPlain prose python3 -m observal_cli.hooks.session_push\n"
+    )
+
+    rewritten = cmd_pull._pin_agent_profile_hooks(profile)
+    frontmatter, body = rewritten.split("\n---\n", 1)
+    hooks = yaml.safe_load(frontmatter[4:])["hooks"]["Stop"][0]["hooks"]
+    script = hooks[0]["command"].splitlines()
+    assert script[0] == "# To debug: python3 -m observal_cli.hooks.session_push"
+    assert shlex.split(script[1]) == ["OBSERVAL_AGENT_ID=abc", "exec", path, "-m", "observal_cli.hooks.session_push"]
+    assert script[2] == "echo python3 -m observal_cli.hooks.session_push"
+    assert hooks[0]["timeoutSec"] == 5
+    assert shlex.split(hooks[1]["command"]) == [path, "-m", "observal_cli.hooks.kiro_hook"]
+    assert body == "Plain prose python3 -m observal_cli.hooks.session_push\n"
+    assert cmd_pull._pin_agent_profile_hooks(rewritten) == rewritten
+
+
+def test_write_profile_pins_block_hook_and_preserves_body(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    path = "/tmp/Your App's/bin/python3"
+    monkeypatch.setattr(cmd_pull.sys, "executable", path)
+    profile = (
+        "---\nhooks:\n  Stop:\n    - command: |-\n"
+        "        python3 -m observal_cli.hooks.session_push\n"
+        "---\nTo debug, run python3 -m observal_cli.hooks.session_push\n"
+    )
+    adapter = MagicMock()
+    adapter.allow_home_agent_profile.return_value = False
+
+    written, failed = cmd_pull.write_install_snippet(
+        {"agent_profile": {"path": "agent.md", "content": profile}},
+        harness="claude-code",
+        adapter=adapter,
+        target_dir=tmp_path,
+        agent_id="agent-uuid",
+        is_user_scope=False,
+    )
+
+    assert failed == []
+    assert written == [(str(tmp_path / "agent.md"), "created")]
+    saved = (tmp_path / "agent.md").read_text()
+    frontmatter, body = saved[4:].split("\n---\n", 1)
+    command = yaml.safe_load(frontmatter)["hooks"]["Stop"][0]["command"]
+    assert shlex.split(command) == [path, "-m", "observal_cli.hooks.session_push"]
+    assert body == "To debug, run python3 -m observal_cli.hooks.session_push\n"
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX shell invocation")
+def test_single_quoted_yaml_hook_launches_interpreter_with_special_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    interpreter = tmp_path / "Your App's $Tools" / "python3"
+    interpreter.parent.mkdir()
+    interpreter.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+    interpreter.chmod(0o755)
+    monkeypatch.setattr(cmd_pull.sys, "executable", str(interpreter))
+    profile = "---\nhooks:\n  Stop:\n    - command: 'python3 -m observal_cli.hooks.session_push'\n---\n"
+
+    rendered = cmd_pull._pin_agent_profile_hooks(profile)
+    command = yaml.safe_load(rendered[4:].split("\n---", 1)[0])["hooks"]["Stop"][0]["command"]
+    result = subprocess.run(["/bin/sh", "-c", command], capture_output=True, text=True, check=True)
+    assert result.stdout.splitlines() == ["-m", "observal_cli.hooks.session_push"]
+
+
+def test_profile_rewrite_only_touches_frontmatter_hook_commands(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cmd_pull.sys, "executable", "/tmp/Your App's/bin/python3")
+    mention = "For troubleshooting, run python3 -m observal_cli.hooks.session_push"
+    toml_profile = "developer_instructions = " + json.dumps(mention) + "\n"
+    assert cmd_pull._pin_agent_profile_hooks(toml_profile) == toml_profile
+    assert tomllib.loads(cmd_pull._pin_agent_profile_hooks(toml_profile))["developer_instructions"] == mention
+
+    markdown = (
+        "---\n"
+        "name: reviewer\n"
+        "hooks:\n"
+        "  Stop:\n"
+        "    - hooks:\n"
+        '        - command: "python3 -m observal_cli.hooks.session_push"\n'
+        "---\n"
+        "To debug, run python3 -m observal_cli.hooks.session_push\n"
+    )
+    rewritten = cmd_pull._pin_agent_profile_hooks(markdown)
+    frontmatter, body = rewritten.split("\n---\n", 1)
+    command = yaml.safe_load(frontmatter[4:])["hooks"]["Stop"][0]["hooks"][0]["command"]
+    assert shlex.split(command) == ["/tmp/Your App's/bin/python3", "-m", "observal_cli.hooks.session_push"]
+    assert body == "To debug, run python3 -m observal_cli.hooks.session_push\n"
+    assert cmd_pull._pin_agent_profile_hooks(rewritten) == rewritten
+
+
+def test_write_codex_profile_preserves_quoted_instructions(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(cmd_pull.sys, "executable", "/tmp/Your App's/bin/python3")
+    instruction = "For troubleshooting, run python3 -m observal_cli.hooks.session_push"
+    content = "developer_instructions = " + json.dumps(instruction) + "\n"
+    adapter = MagicMock()
+    adapter.allow_home_agent_profile.return_value = False
+    cmd_pull.write_install_snippet(
+        {"agent_profile": {"path": "agent.toml", "content": content}},
+        harness="codex",
+        adapter=adapter,
+        target_dir=tmp_path,
+        agent_id="agent-uuid",
+        is_user_scope=False,
+    )
+    assert tomllib.loads((tmp_path / "agent.toml").read_text())["developer_instructions"] == instruction
+
+
+@pytest.mark.parametrize(
+    ("snippet", "expected"),
+    [
+        (
+            {
+                "agent_profile": {
+                    "content": '---\nhooks:\n  Stop:\n    - hooks:\n        - command: "python3 -m observal_cli.hooks.session_push"\n---\n'
+                }
+            },
+            True,
+        ),
+        ({"hooks_config": {"content": {"hooks": {"stop": [{"command": "x -m observal_cli.hooks.kiro_hook"}]}}}}, True),
+        (
+            {
+                "agent_profile": {
+                    "content": {"hooks": {"stop": [{"command": "python3 -m observal_cli.hooks.session_push"}]}}
+                }
+            },
+            True,
+        ),
+        ({"agent_profile": {"content": "---\nname: plain\n---\n"}, "mcp_config": {"a": {"command": "npx"}}}, False),
+        # These mention the module but install no executable session hook.
+        ({"agent_profile": {"content": "Explains how python3 -m observal_cli.hooks.session_push runs."}}, False),
+        (
+            {"agent_profile": {"content": "---\nname: plain\n---\nRun python3 -m observal_cli.hooks.session_push"}},
+            False,
+        ),
+        (
+            {"agent_profile": {"content": "---\ndescription: 'Run python3 -m observal_cli.hooks.session_push'\n---\n"}},
+            False,
+        ),
+        (
+            {
+                "hooks_config": {
+                    "content": {
+                        "hooks": {
+                            "stop": [
+                                {"description": "python3 -m observal_cli.hooks.session_push", "command": "echo ok"}
+                            ]
+                        }
+                    }
+                }
+            },
+            False,
+        ),
+        ({"agent_profile": {"content": "---\nhooks: &hooks\n  Stop: [*hooks]\n---\n"}}, False),
+    ],
+)
+def test_reports_sessions_detects_telemetry_hooks_anywhere(snippet: dict, expected: bool) -> None:
+    assert cmd_pull._reports_sessions(snippet) is expected
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_reports_sessions_uses_effective_merged_hooks(tmp_path: Path, dry_run: bool) -> None:
+    path = tmp_path / "hooks.json"
+    path.write_text(json.dumps({"hooks": {"retained": [{"command": "python3 -m observal_cli.hooks.session_push"}]}}))
+    snippet = {
+        "hooks_config": {
+            "path": "hooks.json",
+            "content": {"hooks": {"new": [{"command": "echo ok"}]}},
+            "merge": True,
+        }
+    }
+    if not dry_run:
+        cmd_pull._write_file(path, snippet["hooks_config"]["content"], merge_mcp=True)
+    assert cmd_pull._reports_sessions(snippet, target_dir=tmp_path, dry_run=dry_run)
+
+    # Replacing the same event with a non-telemetry command removes that hook.
+    snippet["hooks_config"]["content"]["hooks"] = {"retained": [{"command": "echo ok"}]}
+    if not dry_run:
+        cmd_pull._write_file(path, snippet["hooks_config"]["content"], merge_mcp=True)
+    assert not cmd_pull._reports_sessions(snippet, target_dir=tmp_path, dry_run=dry_run)
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_pull_json_reports_retained_telemetry_hook(
+    pull_app: typer.Typer, boundaries: SimpleNamespace, tmp_path: Path, dry_run: bool
+) -> None:
+    target = tmp_path / "project"
+    target.mkdir()
+    path = target / "hooks.json"
+    original = {"hooks": {"retained": [{"command": "python3 -m observal_cli.hooks.session_push"}]}}
+    path.write_text(json.dumps(original))
+    boundaries.post.return_value = {
+        "config_snippet": {
+            "agent_profile": {"path": "agent.md", "content": "No hooks in this profile"},
+            "hooks_config": {
+                "path": "hooks.json",
+                "content": {"hooks": {"new": [{"command": "echo hello"}]}},
+                "merge": True,
+            },
+        }
+    }
+    result = _invoke(pull_app, target, "--output", "json", *(["--dry-run"] if dry_run else []))
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.stdout)["reports_sessions"] is True
+    if dry_run:
+        assert json.loads(path.read_text()) == original
+    else:
+        assert "new" in json.loads(path.read_text())["hooks"]
+
+
+def test_reports_written_sessions_recognizes_yaml_hooks_but_not_prose(tmp_path: Path) -> None:
+    hooks = tmp_path / "hooks.yaml"
+    hooks.write_text("hooks:\n  stop:\n    - command: python3 -m observal_cli.hooks.session_push\n")
+    prose = tmp_path / "notes.md"
+    prose.write_text("Use python3 -m observal_cli.hooks.session_push to install hooks.\n")
+    assert cmd_pull._reports_written_sessions([str(prose), str(hooks)])
+    assert not cmd_pull._reports_written_sessions([str(prose)])
+
+
+def test_dry_run_reports_string_hook_replacement_not_a_merge(tmp_path: Path) -> None:
+    path = tmp_path / "hooks.json"
+    path.write_text(json.dumps({"hooks": {"stop": [{"command": "python3 -m observal_cli.hooks.session_push"}]}}))
+    replacement = json.dumps({"hooks": {"onStart": [{"command": "echo ok"}]}})
+    snippet = {"hooks_config": {"path": "hooks.json", "content": replacement, "merge": True}}
+
+    assert not cmd_pull._reports_sessions(snippet, target_dir=tmp_path, dry_run=True)
+    cmd_pull._write_file(path, replacement, merge_mcp=True)
+    assert not cmd_pull._reports_sessions(snippet, target_dir=tmp_path)
+
+
+def test_pull_dry_run_string_hook_replacement_matches_real_pull(
+    pull_app: typer.Typer, boundaries: SimpleNamespace, tmp_path: Path
+) -> None:
+    target = tmp_path / "project"
+    target.mkdir()
+    path = target / "hooks.json"
+    original = {"hooks": {"retained": [{"command": "python3 -m observal_cli.hooks.session_push"}]}}
+    path.write_text(json.dumps(original))
+    boundaries.post.return_value = {
+        "config_snippet": {
+            "hooks_config": {
+                "path": "hooks.json",
+                "content": json.dumps({"hooks": {"new": [{"command": "echo hello"}]}}),
+                "merge": True,
+            }
+        }
+    }
+
+    preview = _invoke(pull_app, target, "--output", "json", "--dry-run")
+    assert preview.exit_code == 0, preview.output
+    assert json.loads(preview.stdout)["reports_sessions"] is False
+    assert json.loads(path.read_text()) == original
+
+    installed = _invoke(pull_app, target, "--output", "json")
+    assert installed.exit_code == 0, installed.output
+    assert json.loads(installed.stdout)["reports_sessions"] is False
+    assert json.loads(path.read_text())["hooks"] == {"new": [{"command": "echo hello"}]}
+
+
 def test_resolve_hook_paths_uses_path_fallback_only_in_quoted_commands(monkeypatch: pytest.MonkeyPatch) -> None:
     import shutil
 
@@ -1506,9 +1871,173 @@ def test_pull_json_setup_failure_reports_secret_free_partial_state(
     assert partial["stage"] == "run_setup_commands"
     assert partial["files"] == [{"path": str(target / "agent.md"), "status": "created"}]
     assert partial["setup_commands"] == [{"executable": "broken", "status": "failed", "return_code": 2}]
+    assert partial["reports_sessions"] is False
     assert "secret-value" not in result.stderr
     assert "private stderr" not in result.stderr
     boundaries.upsert.assert_not_called()
+
+
+@pytest.mark.parametrize("failure_stage", ["run_setup_commands", "install_skills"])
+@pytest.mark.parametrize("hook_source", ["hooks_config", "agent_profile"])
+def test_partial_pull_discloses_session_hooks_on_failure(
+    pull_app_boundary: typer.Typer,
+    pull_app: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_stage: str,
+    hook_source: str,
+) -> None:
+    hook_command = "python3 -m observal_cli.hooks.session_push"
+    if hook_source == "hooks_config":
+        hook_path = "hooks.json"
+        snippet = {"hooks_config": {"path": hook_path, "content": {"hooks": {"stop": [{"command": hook_command}]}}}}
+    else:
+        hook_path = "agent.md"
+        snippet = {
+            "agent_profile": {
+                "path": hook_path,
+                "content": f"---\nhooks:\n  stop:\n    - command: {hook_command}\n---\nAgent profile\n",
+            }
+        }
+    if failure_stage == "run_setup_commands":
+        snippet["mcp_setup_commands"] = [["broken", "--token", "secret-value"]]
+        monkeypatch.setattr(
+            cmd_pull.subprocess,
+            "run",
+            MagicMock(return_value=subprocess.CompletedProcess(["broken"], 2, "", "private stderr")),
+        )
+    else:
+        snippet["skill_components"] = [{"name": "broken-skill", "skill_md_content": "content"}]
+        boundaries.direct_install.side_effect = OSError("private filesystem detail")
+    boundaries.post.return_value = {"config_snippet": snippet}
+    target = tmp_path / "json-project"
+
+    json_result = _invoke(pull_app_boundary, target, "--output", "json")
+    assert json_result.exit_code == 9
+    error = json.loads(json_result.stderr)["error"]
+    assert error["result"]["stage"] == failure_stage
+    assert error["result"]["reports_sessions"] is True
+    assert (target / hook_path).is_file()
+    assert "secret-value" not in json_result.stderr
+    assert "private stderr" not in json_result.stderr
+
+    human_result = _invoke(pull_app, tmp_path / "human-project")
+    assert human_result.exit_code == 9
+    assert "Telemetry:" in human_result.output
+    assert "session hooks are present" in human_result.output
+    assert "may send prompts" in human_result.output
+    assert (tmp_path / "human-project" / hook_path).is_file()
+
+
+def test_partial_pull_does_not_claim_unwritten_profile_hooks(
+    pull_app_boundary: typer.Typer, boundaries: SimpleNamespace, tmp_path: Path
+) -> None:
+    target = tmp_path / "project"
+    target.mkdir()
+    (target / "hooks.json").write_text("not valid JSON")
+    boundaries.post.return_value = {
+        "config_snippet": {
+            "mcp_config": {"path": "mcp.json", "content": {"mcpServers": {"example": {"command": "echo"}}}},
+            "hooks_config": {"path": "hooks.json", "content": {"hooks": {}}, "merge": True},
+            "agent_profile": {
+                "path": "agent.md",
+                "content": "---\nhooks:\n  stop:\n    - command: python3 -m observal_cli.hooks.session_push\n---\n",
+            },
+        }
+    }
+
+    result = _invoke(pull_app_boundary, target, "--output", "json")
+    assert result.exit_code == 6
+    partial = json.loads(result.stderr)["error"]["result"]
+    assert partial["stage"] == "write_files"
+    assert partial["reports_sessions"] is False
+    assert (target / "mcp.json").is_file()
+    assert not (target / "agent.md").exists()
+
+
+def test_earlier_mcp_write_failure_still_reports_existing_session_hooks(
+    pull_app_boundary: typer.Typer, pull_app: typer.Typer, boundaries: SimpleNamespace, tmp_path: Path
+) -> None:
+    command = "python3 -m observal_cli.hooks.session_push"
+    snippet = {
+        "mcp_config": {"path": "mcp.json", "content": {"mcpServers": {"example": {"command": "echo"}}}, "merge": True},
+        "hooks_config": {"path": "hooks.json", "content": {"hooks": {"start": [{"command": "echo ok"}]}}},
+    }
+    boundaries.post.return_value = {"config_snippet": snippet}
+
+    def project(name: str) -> Path:
+        target = tmp_path / name
+        target.mkdir()
+        (target / "mcp.json").write_text("not valid JSON")
+        (target / "hooks.json").write_text(json.dumps({"hooks": {"stop": [{"command": command}]}}))
+        return target
+
+    result = _invoke(pull_app_boundary, project("json-project"), "--output", "json")
+    assert result.exit_code != 0
+    partial = json.loads(result.stderr)["error"]["result"]
+    assert partial["reports_sessions"] is True
+    assert not any(item["path"].endswith("hooks.json") for item in partial["files"])
+
+    human = _invoke(pull_app, project("human-project"))
+    assert human.exit_code != 0
+    assert "Telemetry:" in human.output
+
+
+@pytest.mark.parametrize("existing_hook", [True, False])
+@pytest.mark.parametrize("preceding_file", [True, False])
+def test_failed_hook_write_reports_only_existing_session_hooks(
+    pull_app_boundary: typer.Typer,
+    pull_app: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    existing_hook: bool,
+    preceding_file: bool,
+) -> None:
+    target = tmp_path / "project"
+    target.mkdir()
+    command = "python3 -m observal_cli.hooks.session_push"
+    original = {"hooks": {"stop": [{"command": command if existing_hook else "echo ok"}]}}
+    hook_path = target / "hooks.json"
+    hook_path.write_text(json.dumps(original))
+    snippet = {
+        "hooks_config": {
+            "path": "hooks.json",
+            "content": {"hooks": {"start": [{"command": "echo ok" if existing_hook else command}]}},
+            "merge": True,
+        }
+    }
+    if preceding_file:
+        snippet["mcp_config"] = {"path": "mcp.json", "content": {"mcpServers": {"example": {"command": "echo"}}}}
+    boundaries.post.return_value = {"config_snippet": snippet}
+    atomic_write = cmd_pull._atomic_write_text
+
+    def fail_hook_write(path: Path, content: str) -> None:
+        if path.name == "hooks.json":
+            raise OSError("synthetic write failure")
+        atomic_write(path, content)
+
+    monkeypatch.setattr(cmd_pull, "_atomic_write_text", fail_hook_write)
+
+    result = _invoke(pull_app_boundary, target, "--output", "json")
+    assert result.exit_code == 9
+    partial = json.loads(result.stderr)["error"]["result"]
+    assert partial["stage"] == "write_files"
+    assert partial["partial"] is preceding_file
+    assert partial["failed_path"] == str(hook_path)
+    expected_files = [{"path": str(target / "mcp.json"), "status": "created"}] if preceding_file else []
+    assert partial["files"] == expected_files
+    assert partial["reports_sessions"] is existing_hook
+    assert json.loads(hook_path.read_text()) == original
+    assert "synthetic write failure" not in result.stderr
+
+    human_target = tmp_path / "human-project"
+    human_target.mkdir()
+    (human_target / "hooks.json").write_text(json.dumps(original))
+    human = _invoke(pull_app, human_target)
+    assert human.exit_code == 9
+    assert ("Telemetry:" in human.output) is existing_hook
 
 
 def test_pull_lockfile_failure_is_not_reported_as_success(

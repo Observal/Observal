@@ -69,8 +69,10 @@ def build_copilot_cli_hooks(agent_id: str = "") -> dict:
         bash_cmd = f"{_python_cmd()} {isolation_flag()} -m {module} --harness copilot-cli"
         if agent_id:
             bash_cmd = f"OBSERVAL_AGENT_ID={agent_id} {bash_cmd}"
-    # PowerShell command uses bare 'python' which must be on Windows PATH
-    ps_cmd = f"python -m {module} --harness copilot-cli"
+    # A PowerShell single-quoted literal does not expand $ or subexpressions;
+    # double apostrophes so even unusual interpreter paths stay literal.
+    ps_path = sys.executable.replace("'", "''")
+    ps_cmd = f"& '{ps_path}' -m {module} --harness copilot-cli"
 
     if agent_id:
         # PowerShell (used on Windows) sets the env var in-process for the child.
