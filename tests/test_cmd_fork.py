@@ -8,6 +8,7 @@ from unittest.mock import Mock
 
 import httpx
 import pytest
+from click.utils import strip_ansi
 from typer.main import get_command
 from typer.testing import CliRunner
 
@@ -27,11 +28,11 @@ def _local_cli(monkeypatch):
 
 @pytest.mark.parametrize("kind", KINDS)
 def test_component_fork_help_and_json_contract(monkeypatch, kind):
-    path = ("registry", kind, "fork")
+    path = ("registry", kind, cmd_fork.FORK_COMMANDS.get(kind, "fork"))
     help_result = runner.invoke(app, [*path, "--help"])
     assert help_result.exit_code == 0, help_result.output
-    assert f"observal registry {kind} fork" in help_result.output
-    assert "--new-version" in help_result.output
+    assert f"observal registry {kind} {cmd_fork.FORK_COMMANDS.get(kind, 'fork')}" in help_result.output
+    assert "--new-version" in strip_ansi(help_result.output)
     resolve = Mock(return_value="source-uuid")
     post = Mock(
         return_value={
@@ -116,7 +117,10 @@ def test_show_table_and_json_include_only_visibility_checked_provenance(monkeypa
 
 
 def test_six_fork_help_screens_have_parsable_canonical_examples():
-    targets = {"observal agent fork", *(f"observal registry {kind} fork" for kind in KINDS)}
+    targets = {
+        "observal agent fork",
+        *(f"observal registry {kind} {cmd_fork.FORK_COMMANDS.get(kind, 'fork')}" for kind in KINDS),
+    }
     for path, command in _command_tree(get_command(app)):
         if path not in targets:
             continue
@@ -149,7 +153,7 @@ def test_api_failures_keep_context_request_id_and_clean_json_stdout(monkeypatch,
     )
     error = httpx.HTTPStatusError("request rejected", request=request, response=response)
     monkeypatch.setattr(cmd_fork.client, "_request_with_retry", Mock(side_effect=error))
-    result = runner.invoke(app, ["registry", "skill", "fork", "acme/original", "--output", "json"])
+    result = runner.invoke(app, ["registry", "skill", "fork-listing", "acme/original", "--output", "json"])
     assert result.exit_code == exit_code
     assert result.stdout == ""
     payload = json.loads(result.stderr)["error"]
@@ -163,6 +167,6 @@ def test_api_failures_keep_context_request_id_and_clean_json_stdout(monkeypatch,
 def test_invalid_output_is_usage_error_without_post(monkeypatch):
     post = Mock()
     monkeypatch.setattr(cmd_fork.client, "post", post)
-    result = runner.invoke(app, ["registry", "skill", "fork", "a/b", "--output", "xml"])
+    result = runner.invoke(app, ["registry", "skill", "fork-listing", "a/b", "--output", "xml"])
     assert result.exit_code == 2
     post.assert_not_called()
