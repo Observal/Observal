@@ -21,7 +21,7 @@ export function ForkDiffPanel({ type, id, version }: { type: RegistryType; id: s
       {open && (
         <div id={regionId} role="region" aria-label="Upstream diff" className="space-y-2">
           {isLoading && <p role="status" className="text-sm text-muted-foreground">Comparing versions…</p>}
-          {error && <p role="alert" className="text-sm text-destructive">Upstream comparison unavailable. The source may no longer be visible.</p>}
+          {error && <p role="alert" className="text-sm text-destructive">Upstream comparison unavailable: {error.message}</p>}
           {data?.unchanged && <p className="text-sm text-muted-foreground">Unchanged from upstream</p>}
           {data && !data.unchanged && (
             <div className="h-72 overflow-hidden rounded-md border border-border">
