@@ -182,19 +182,20 @@ Successful JSON output has this shape:
     }
   ],
   "warnings": [],
-  "setup_commands": []
+  "setup_commands": [],
+  "reports_sessions": true
 }
 ```
 
 File statuses include `created`, `updated`, `merged`, `installed`, `cloned`, `would write`, and `would clone`.
 
-`agent.version` is the version that was installed and `agent.resolved_from` says why: `requested`, `upgrade`, `project-lock`, `installed`, or `latest`. `lock.status` is `locked`, `partial`, or `unlocked`; each component's `source` is `lock`, `version` (matched by its recorded version string), or `fallback-latest`. `lock.problems` lists what strict mode would refuse. `project_lock` is null for user-scope installs and dry runs.
+`agent.version` is the version that was installed and `agent.resolved_from` says why: `requested`, `upgrade`, `project-lock`, `installed`, or `latest`. `lock.status` is `locked`, `partial`, or `unlocked`; each component's `source` is `lock`, `version` (matched by its recorded version string), or `fallback-latest`. `lock.problems` lists what strict mode would refuse. `project_lock` is null for user-scope installs and dry runs. `reports_sessions` is true when written hook files contain Observal session push commands, including hooks retained during a merge. These hooks can report prompts, tool calls, and tool output to the configured server when they run, whether or not `observal doctor patch` was run. It does not guarantee successful delivery. On a failed pull, check `error.result.reports_sessions` when available: a hook file may already be on disk and active even when this pull wrote no files and the Agent was not recorded as installed.
 
-Dry-run returns the same shape with `dry_run: true`, planned statuses, and `would_run` setup actions. It does not write files, execute setup commands, update the lockfile or `observal.lock`, persist an active Agent, or emit a pull audit event.
+Dry-run returns the same shape with `dry_run: true`, planned statuses, and `would_run` setup actions. In dry-run, `reports_sessions` predicts whether session hooks **would** be present after applying the plan; it does not mean the preview installed them. Dry-run does not write files, execute setup commands, update the lockfile or `observal.lock`, persist an active Agent, or emit a pull audit event.
 
 ## Human output
 
-Human mode lists every created, updated, merged, installed, cloned, or planned path. Component version conflicts, server warnings, snapshot warnings, and setup commands are printed explicitly.
+Human mode lists every created, updated, merged, installed, cloned, or planned path. Component version conflicts, server warnings, snapshot warnings, and setup commands are printed explicitly. When session push hooks are configured, a telemetry line names the server they can report to.
 
 ## Exit codes
 

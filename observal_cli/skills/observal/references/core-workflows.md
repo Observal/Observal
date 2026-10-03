@@ -23,10 +23,13 @@ Do not run an authentication probe before every command. Execute the requested r
 observal auth whoami --output json
 observal auth login
 observal auth login --sso --output json
+observal auth login --sso --provider google --output json
 observal auth logout --output json
 observal auth status --output json
 observal auth set-username new-handle --output json
 ```
+
+`--provider` accepts `oidc`, `saml`, `google` or `github`. In JSON mode or any other non-interactive run, pass it whenever the server enables more than one SSO provider, because a bare `--sso` then goes to the server's OIDC default, where Google or GitHub users have no account.
 
 For noninteractive password authentication, keep passwords out of arguments:
 
@@ -58,7 +61,8 @@ Only use keys accepted by `config set`. Authentication fields are managed by `au
 
 ```bash
 observal scan --output json
-observal scan --harness kiro --output json
+observal scan --inventory --output json  # local-only; no Registry request or submission
+observal scan --harness kiro --inventory --output json
 observal outdated --output json
 observal outdated --harness claude-code --no-report --output json
 ```

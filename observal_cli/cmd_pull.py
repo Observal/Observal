@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import subprocess
 import sys
 import tomllib
@@ -24,11 +25,12 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 import typer
+import yaml
 from loguru import logger as optic
 from packaging.version import InvalidVersion, Version
 from rich import print as rprint
 
-from observal_cli import client
+from observal_cli import client, config
 from observal_cli.constants import VALID_HARNESSES
 from observal_cli.errors import CliError, ErrorCategory, fail
 from observal_cli.harness import ensure_loaded, get_adapter
@@ -119,6 +121,108 @@ def _resolve_hook_paths(content: str) -> str:
         replacement = f'"{path}'
         content = re.sub(pattern, replacement, content)
     return content
+
+
+def _pin_hook_interpreter(content: str) -> str:
+    """Point bare ``python3 -m observal_cli.`` hook commands at this CLI's interpreter.
+
+    The server cannot know how the CLI was installed, so it emits bare python3.
+    Under ``uv tool install`` or pipx the system interpreter cannot import
+    observal_cli and every hook fails. Windows accepts forward slashes, and a
+    path without backslashes is safe inside JSON strings and YAML double-quoted
+    frontmatter alike. Quote paths with spaces so the shell treats the
+    interpreter as one executable. The function replacement keeps re.sub from
+    reading the path as a template.
+    """
+    path = sys.executable.replace("\\", "/")
+    interpreter = subprocess.list2cmdline([path]) if sys.platform == "win32" else shlex.quote(path)
+    pattern = r"(?<![/\\\w.-])python3? -m observal_cli\."
+
+    def rewrite(text: str, *, yaml_frontmatter: bool = False) -> str:
+        def replace(match: re.Match[str]) -> str:
+            command = f"{interpreter} -m observal_cli."
+            if yaml_frontmatter:
+                # Preserve the scalar's YAML quoting while adding shell quoting.
+                # shlex.quote may introduce apostrophes even when the path has none.
+                line_start = text.rfind("\n", 0, match.start()) + 1
+                prefix = text[line_start : match.start()]
+                if re.match(r"^[ \t]*(?:-[ \t]+)?command:[ \t]*'", prefix):
+                    command = command.replace("'", "''")
+                elif re.match(r'^[ \t]*(?:-[ \t]+)?command:[ \t]*"', prefix):
+                    command = command.replace('"', r"\"")
+            return command
+
+        return re.sub(pattern, replace, text)
+
+    # Rewrite decoded JSON values, not serialized JSON: a quoted Windows path
+    # would otherwise introduce unescaped quotes into the JSON document.
+    try:
+        parsed = json.loads(content)
+    except (ValueError, TypeError):
+        return rewrite(content, yaml_frontmatter=True)
+
+    def rewrite_value(value):
+        if isinstance(value, str):
+            return rewrite(value)
+        if isinstance(value, dict):
+            return {key: rewrite_value(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [rewrite_value(item) for item in value]
+        return value
+
+    return json.dumps(rewrite_value(parsed))
+
+
+def _pin_agent_profile_hooks(content: str) -> str:
+    """Pin executable commands in agent frontmatter without rewriting the agent's prose.
+
+    Codex profiles are TOML, and other profiles can contain free-form instructions.
+    Rewriting a command mentioned in quoted instructions can corrupt that file.
+    """
+    if not content.startswith("---\n"):
+        return content
+    frontmatter, separator, body = content.partition("\n---")
+    if not separator:
+        return content
+    lines = frontmatter.splitlines(keepends=True)
+    in_hooks = False
+    block_indent: int | None = None
+    content_indent: int | None = None
+    for index, line in enumerate(lines):
+        indent = len(line) - len(line.lstrip(" "))
+        if block_indent is not None:
+            if line.strip():
+                if indent <= block_indent or (content_indent is not None and indent < content_indent):
+                    block_indent = None
+                    content_indent = None
+                else:
+                    content_indent = indent if content_indent is None else content_indent
+            if block_indent is not None:
+                # Block scalar contents are shell script lines, not YAML quoted
+                # scalars. Rewrite executable invocations, not comments or prose.
+                if re.match(r"^[ \t]*(?:(?:[A-Za-z_]\w*=[^ \t]+|exec)[ \t]+)*python3? -m observal_cli\.", line):
+                    lines[index] = _pin_hook_interpreter(line)
+                continue
+        if line.startswith("hooks:"):
+            in_hooks = True
+        elif line and not line[0].isspace():
+            in_hooks = False
+        command_field = re.match(r"^(\s+(?:-\s+)?command:[ \t]*)", line) if in_hooks else None
+        if command_field:
+            indicator = line[command_field.end() :].split("#", 1)[0].strip()
+            if re.fullmatch(r"[|>](?:[+-]?[1-9]?|[1-9][+-]?)", indicator):
+                block_indent = indent
+                content_indent = None
+                continue
+            rewritten = _pin_hook_interpreter(line)
+            if rewritten != line and not line[command_field.end() :].startswith(("'", '"')):
+                # A shell-quoted path at the start of a bare YAML scalar is
+                # parsed as a whole scalar; the following -m then breaks YAML.
+                value = rewritten[command_field.end() :].rstrip("\r\n")
+                newline = rewritten[command_field.end() + len(value) :]
+                rewritten = rewritten[: command_field.end()] + json.dumps(value) + newline
+            lines[index] = rewritten
+    return "".join(lines) + separator + body
 
 
 def _mcp_components(agent_detail: dict) -> list[tuple[str, str, str | None]]:
@@ -602,6 +706,117 @@ def _rewrite_copilot_cli_hooks(content: dict, agent_id: str | None = None) -> di
 
     content["hooks"] = hooks
     return content
+
+
+_SESSION_HOOK_INVOCATION = re.compile(r"-m\s+observal_cli\.hooks\.")
+
+
+def _has_session_hook(hooks: object) -> bool:
+    """Inspect executable fields inside hook entries, not descriptions or agent instructions."""
+    pending = [hooks]
+    seen: set[int] = set()
+    while pending:
+        node = pending.pop()
+        if not isinstance(node, (dict, list)) or id(node) in seen:
+            continue
+        seen.add(id(node))
+        if isinstance(node, list):
+            pending.extend(node)
+            continue
+        for key, value in node.items():
+            if key in {"command", "bash", "powershell"} and isinstance(value, str):
+                if _SESSION_HOOK_INVOCATION.search(value):
+                    return True
+            elif isinstance(value, (dict, list)):
+                pending.append(value)
+    return False
+
+
+def _hook_section(content: object) -> object:
+    """Extract real hook entries from generated JSON/YAML or Markdown frontmatter."""
+    if isinstance(content, dict):
+        return content.get("hooks")
+    if not isinstance(content, str):
+        return None
+    try:
+        if content.startswith("---\n"):
+            frontmatter, separator, _body = content[4:].partition("\n---")
+            parsed = yaml.safe_load(frontmatter) if separator else None
+        else:
+            try:
+                parsed = json.loads(content)
+            except ValueError:
+                parsed = yaml.safe_load(content)
+    except (ValueError, yaml.YAMLError):
+        return None
+    return parsed.get("hooks") if isinstance(parsed, dict) else None
+
+
+def _reports_sessions(
+    snippet: dict, *, target_dir: Path | None = None, is_user_scope: bool = False, dry_run: bool = False
+) -> bool:
+    """Report configured telemetry from actual hook fields, including hooks retained by a merge."""
+    profile = snippet.get("agent_profile") or {}
+    if _has_session_hook(_hook_section(profile.get("content"))):
+        return True
+
+    hooks_cfg = snippet.get("hooks_config") or {}
+    incoming = _hook_section(hooks_cfg.get("content"))
+    # _write_file merges only mappings; string content replaces the entire file
+    # even when the snippet requests a merge.
+    if (
+        target_dir is None
+        or not hooks_cfg.get("merge")
+        or "path" not in hooks_cfg
+        or not isinstance(hooks_cfg.get("content"), dict)
+    ):
+        return _has_session_hook(incoming)
+
+    path = _resolve_path(hooks_cfg["path"], target_dir, allow_home=is_user_scope)
+    if not dry_run:
+        try:
+            return _has_session_hook(_hook_section(path.read_text(encoding="utf-8")))
+        except (OSError, UnicodeError):
+            return _has_session_hook(incoming)
+
+    # Dry runs do not write files. Project the same shallow hooks merge used by
+    # _write_file: incoming event keys replace those events, others survive.
+    try:
+        existing = _hook_section(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError):
+        existing = None
+    if isinstance(existing, dict) and isinstance(incoming, dict):
+        return _has_session_hook({**existing, **incoming})
+    return _has_session_hook(incoming)
+
+
+def _reports_written_sessions(paths: list[str]) -> bool:
+    """Inspect hook files actually left on disk, including a partial install."""
+    for raw_path in paths:
+        try:
+            if _has_session_hook(_hook_section(Path(raw_path).read_text(encoding="utf-8"))):
+                return True
+        except (OSError, UnicodeError):
+            continue
+    return False
+
+
+def _hook_destinations(snippet: dict, *, adapter, target_dir: Path, is_user_scope: bool) -> list[str]:
+    """Resolved hook-config and agent-profile destinations; unsafe paths are skipped."""
+    destinations: list[str] = []
+    for key, allow_home in (
+        ("hooks_config", is_user_scope),
+        ("agent_profile", adapter.allow_home_agent_profile(is_user_scope)),
+    ):
+        entry = snippet.get(key)
+        if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
+            continue
+        try:
+            destinations.append(str(_resolve_path(entry["path"], target_dir, allow_home=allow_home)))
+        except CliError:
+            # An escaping path is rejected by the write itself and never touched.
+            continue
+    return destinations
 
 
 def _resolve_path(raw_path: str, target_dir: Path, *, allow_home: bool = False) -> Path:
@@ -1095,18 +1310,11 @@ def write_install_snippet(
         p = _resolve_path(hooks_cfg["path"], target_dir, allow_home=is_user_scope)
         content = hooks_cfg["content"]
         if isinstance(content, str):
-            content = _resolve_hook_paths(content)
+            content = _pin_hook_interpreter(_resolve_hook_paths(content))
         elif isinstance(content, dict):
             # Resolve hook paths inside JSON content (command fields)
             raw = json.dumps(content)
-            raw = _resolve_hook_paths(raw)
-            import re
-
-            raw = re.sub(
-                r"(?<!/)python3? -m observal_cli\.",
-                f"{sys.executable} -m observal_cli.",
-                raw,
-            )
+            raw = _pin_hook_interpreter(_resolve_hook_paths(raw))
             content = json.loads(raw)
             content = adapter.rewrite_hooks(content, agent_id=agent_id)
         if dry_run:
@@ -1123,7 +1331,8 @@ def write_install_snippet(
         if isinstance(agent_profile.get("content"), dict):
             agent_profile["content"] = adapter.rewrite_agent_profile(agent_profile["content"], agent_id=agent_id)
         elif isinstance(agent_profile.get("content"), str):
-            agent_profile["content"] = _resolve_hook_paths(agent_profile["content"])
+            # Claude Code and other markdown agents carry their hooks in frontmatter.
+            agent_profile["content"] = _pin_agent_profile_hooks(_resolve_hook_paths(agent_profile["content"]))
         agent_profile_allow_home = adapter.allow_home_agent_profile(is_user_scope)
         p = _resolve_path(agent_profile["path"], target_dir, allow_home=agent_profile_allow_home)
         if dry_run:
@@ -1583,16 +1792,59 @@ def register_pull(app: typer.Typer):
             )
 
         snippet = rewrite_observal_interpreter(snippet)
-        written, failed_skills = write_install_snippet(
-            snippet,
-            harness=harness,
-            adapter=adapter,
-            target_dir=target_dir,
-            agent_id=str(agent_detail.get("id", resolved)),
-            is_user_scope=is_user_scope,
-            dry_run=dry_run,
-            quiet=output == "json",
+
+        def disclose_telemetry() -> None:
+            if output != "json" and not dry_run:
+                server_url = config.load().get("server_url") or "the Observal server"
+                rprint(
+                    "\n  [yellow]Telemetry:[/yellow] session hooks are present and may send prompts, "
+                    f"tool calls and tool output to {esc(server_url)} when this agent is used."
+                )
+
+        try:
+            written, failed_skills = write_install_snippet(
+                snippet,
+                harness=harness,
+                adapter=adapter,
+                target_dir=target_dir,
+                agent_id=str(agent_detail.get("id", resolved)),
+                is_user_scope=is_user_scope,
+                dry_run=dry_run,
+                quiet=output == "json",
+            )
+        except CliError as error:
+            # A failed write can also leave a pre-existing hook active when
+            # this pull wrote no files at all. Inspect only files on disk, not
+            # the proposed snippet, before describing session collection.
+            if isinstance(error.result, dict) and not dry_run:
+                paths = [item["path"] for item in error.result.get("files", []) if isinstance(item, dict)]
+                # A failed replacement leaves the old hook file active even
+                # though that path was never added to the written-files list.
+                failed_path = error.result.get("failed_path")
+                if isinstance(failed_path, str):
+                    paths.append(failed_path)
+                # An earlier write (for example an MCP config) can fail before the
+                # hook or profile destinations are reached; inspect those too.
+                paths.extend(
+                    _hook_destinations(
+                        snippet,
+                        adapter=adapter,
+                        target_dir=target_dir,
+                        is_user_scope=is_user_scope,
+                    )
+                )
+                error.result["reports_sessions"] = _reports_written_sessions(paths)
+                if error.result["reports_sessions"]:
+                    disclose_telemetry()
+            raise
+
+        reports_sessions = (
+            _reports_sessions(snippet, target_dir=target_dir, is_user_scope=is_user_scope, dry_run=True)
+            if dry_run
+            else _reports_written_sessions([path for path, _status in written])
         )
+        if reports_sessions:
+            disclose_telemetry()
 
         if failed_skills:
             fail(
@@ -1607,6 +1859,7 @@ def register_pull(app: typer.Typer):
                     "install_skills",
                     failed_skills=failed_skills,
                     installation_tracked=False,
+                    reports_sessions=reports_sessions,
                 ),
             )
 
@@ -1673,6 +1926,7 @@ def register_pull(app: typer.Typer):
                     setup_results=setup_results,
                     dry_run=dry_run,
                     installation_tracked=False,
+                    reports_sessions=reports_sessions,
                 ),
             )
 
@@ -1712,6 +1966,7 @@ def register_pull(app: typer.Typer):
                         setup_results=setup_results,
                         installation_tracked=False,
                         active_agent_persisted=False,
+                        reports_sessions=reports_sessions,
                     ),
                 )
 
@@ -1743,6 +1998,7 @@ def register_pull(app: typer.Typer):
                             setup_results=setup_results,
                             installation_tracked=True,
                             active_agent_persisted=False,
+                            reports_sessions=reports_sessions,
                         ),
                     )
 
@@ -1769,6 +2025,7 @@ def register_pull(app: typer.Typer):
                         setup_results=setup_results,
                         installation_tracked=True,
                         active_agent_persisted=False,
+                        reports_sessions=reports_sessions,
                     ),
                 )
 
@@ -1809,6 +2066,7 @@ def register_pull(app: typer.Typer):
                     "files": [{"path": path, "status": status} for path, status in written],
                     "warnings": warnings_list,
                     "setup_commands": setup_results,
+                    "reports_sessions": reports_sessions,
                 }
             )
             return
@@ -1823,6 +2081,12 @@ def register_pull(app: typer.Typer):
         for path, status in written:
             style = "dim" if dry_run else "green"
             rprint(f"  [{style}]{esc(status)}[/{style}]  {esc(path)}")
+        if reports_sessions and dry_run:
+            server_url = config.load().get("server_url") or "the Observal server"
+            rprint(
+                "\n  [yellow]Telemetry:[/yellow] session hooks would be present after this pull and may send prompts, "
+                f"tool calls and tool output to {esc(server_url)} when this agent is used."
+            )
         latest_version = agent_detail.get("version")
         source_label = {
             "requested": "requested with --version",
