@@ -34,6 +34,7 @@ import type {
 	ReviewItem,
 	RegistryItem,
 	ForkRequest,
+	ForkDiff,
 	ForksResponse,
 	LeaderboardItem,
 	LeaderboardWindow,
@@ -453,6 +454,8 @@ export const registry = {
 		return get<RegistryItem[]>(`/${type}${qs}`);
 	},
 	get: (type: RegistryType, id: string) => get<RegistryItem>(`/${type}/${id}`),
+	forkDiff: (type: RegistryType, id: string, version: string) =>
+		get<ForkDiff>(`/${type}/${id}/fork-diff?${new URLSearchParams({ version })}`),
 	fork: (type: RegistryType, id: string, body: ForkRequest) =>
 		post<RegistryItem>(`/${type}/${encodeURIComponent(id)}/fork`, body),
 	forks: (type: RegistryType, id: string, page = 1, pageSize = 12) =>

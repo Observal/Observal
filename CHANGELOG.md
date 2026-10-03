@@ -12,6 +12,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Features
+
+- Fork approved agents and registry components into independently owned drafts with visibility-safe provenance, public fork lists, CLI and web workflows.
+- Compare fork versions against their approved upstream in the detail and review UI; expose public-only ARD fork links and a `obs:forksOf` search facet.
+
 ## [1.13.1] - 2026-09-05
 
 ### Features

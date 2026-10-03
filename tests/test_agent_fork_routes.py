@@ -153,6 +153,7 @@ async def test_feature_flag_blocks_source_lookup_and_forks_list(monkeypatch):
             "unknown", ForkRequest(), db=MagicMock(), current_user=SimpleNamespace(id=uuid.uuid4())
         ),
         routes.list_agent_forks("unknown", limit=10, offset=0, db=MagicMock(), current_user=None),
+        routes.agent_fork_diff("unknown", version=None, db=MagicMock(), current_user=None),
     ):
         with pytest.raises(HTTPException) as error:
             await operation
@@ -197,6 +198,14 @@ async def test_post_and_public_forks_list_over_asgi_with_real_database(monkeypat
                 assert payload["forked_from"]["version"] == "1.2.3"
                 before = await client.get(f"/api/v1/agents/{source.id}/forks")
                 assert before.json()["total"] == 0
+                unchanged = await client.get(f"/api/v1/agents/{payload['id']}/fork-diff")
+                assert unchanged.status_code == 200, unchanged.text
+                assert unchanged.json()["unchanged"] is True
+                assert unchanged.json()["diff"] == ""
+                outsider = SimpleNamespace(id=uuid.uuid4(), role=UserRole.user)
+                app.dependency_overrides[get_registry_user] = lambda: outsider
+                assert (await client.get(f"/api/v1/agents/{payload['id']}/fork-diff")).status_code == 404
+                app.dependency_overrides[get_registry_user] = lambda: user
                 child = await db.get(Agent, uuid.UUID(payload["id"]))
                 child.latest_version.status = AgentStatus.approved
                 await db.commit()
@@ -205,6 +214,19 @@ async def test_post_and_public_forks_list_over_asgi_with_real_database(monkeypat
                 assert after.json()["total"] == 1
                 assert len(after.json()["items"]) == 1
                 assert (await client.get(f"/api/v1/agents/{source.id}")).json()["fork_count"] == 1
+                child.latest_version.prompt = "An edited fork prompt"
+                child.latest_version.yaml_snapshot = None
+                await db.commit()
+                changed = await client.get(f"/api/v1/agents/{child.id}/fork-diff?version=1.2.3")
+                assert changed.status_code == 200, changed.text
+                assert "+prompt: An edited fork prompt" in changed.json()["diff"]
+                assert changed.json()["unchanged"] is False
+                source.is_private = True
+                await db.commit()
+                hidden = await client.get(f"/api/v1/agents/{child.id}/fork-diff")
+                assert hidden.status_code == 404
+                assert "alice/source" not in hidden.text
+                source.is_private = False
                 child.is_private = True
                 await db.commit()
                 assert (await client.get(f"/api/v1/agents/{source.id}/forks")).json()["total"] == 0

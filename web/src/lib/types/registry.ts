@@ -29,6 +29,13 @@ export interface ForkProvenance {
 	forked_at?: string | null;
 }
 
+export interface ForkDiff {
+	version: string;
+	base_version: string;
+	diff: string;
+	unchanged: boolean;
+}
+
 export interface ForkRequest {
 	name: string;
 	version: string;

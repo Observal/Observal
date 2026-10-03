@@ -25,6 +25,7 @@ from schemas.prompt import PromptListingResponse, PromptListingSummary
 from schemas.sandbox import SandboxListingResponse, SandboxListingSummary
 from schemas.skill import SkillListingResponse, SkillListingSummary
 from services import dynamic_settings
+from services.fork_diff import fork_version_diff
 from services.registry_fork import (
     ForkRequestSpec,
     component_fork_counts,
@@ -115,6 +116,20 @@ def create_fork_router(component_type: str, listing_model, version_model) -> API
         response.user_permission = get_effective_component_permission(fork, current_user)
         response.warnings = result.warnings
         return response
+
+    @router.get("/{listing_id}/fork-diff")
+    async def component_fork_diff(
+        listing_id: str,
+        version: str | None = Query(None, max_length=50),
+        db: AsyncSession = Depends(get_db),
+        current_user: User | None = Depends(get_registry_user),
+    ):
+        if not await dynamic_settings.get_bool("registry.fork.enabled"):
+            raise HTTPException(status_code=403, detail="Forking is disabled by your administrator")
+        fork = await resolve_visible_listing(listing_model, listing_id, db, current_user)
+        if fork is None:
+            raise HTTPException(status_code=404, detail="Listing not found")
+        return await fork_version_diff(db, fork, component_type, current_user, version)
 
     @router.get("/{listing_id}/forks")
     async def list_component_forks(

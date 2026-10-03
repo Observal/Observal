@@ -104,6 +104,7 @@ async def test_five_component_forks_from_approved_releases(monkeypatch):
                     component_forks.dynamic_settings.get_bool.return_value = False
                     assert (await client.post(url + "/fork", json={})).status_code == 403
                     assert (await client.get(url + "/forks")).status_code == 403
+                    assert (await client.get(url + "/fork-diff")).status_code == 403
                     component_forks.dynamic_settings.get_bool.return_value = True
                     missing_version = await client.post(url + "/fork", json={"name": "Other", "version": "9.9.9"})
                     assert missing_version.status_code == 404, (kind, missing_version.text)
@@ -120,6 +121,18 @@ async def test_five_component_forks_from_approved_releases(monkeypatch):
                     fork = await db.get(listing_model, uuid.UUID(data["id"]))
                     draft = await db.get(version_model, fork.latest_version_id)
                     assert content_digest(kind, base) == content_digest(kind, draft)
+                    same = await client.get(f"/api/v1/{path}/{fork.id}/fork-diff")
+                    assert same.status_code == 200, (kind, same.text)
+                    assert same.json()["unchanged"] is True and same.json()["diff"] == ""
+                    if kind == "skill":
+                        draft.script_content = "private-script-not-for-public-diff"
+                        await db.commit()
+                        script_change = await client.get(f"/api/v1/skills/{fork.id}/fork-diff")
+                        assert script_change.status_code == 200 and script_change.json()["unchanged"] is False
+                        assert "additional_install_content_digest" in script_change.json()["diff"]
+                        assert "private-script-not-for-public-diff" not in script_change.text
+                        draft.script_content = None
+                        await db.commit()
                     own = await client.get(f"/api/v1/{path}/my")
                     assert own.status_code == 200 and any(row["id"] == data["id"] for row in own.json())
                     assert next(row for row in own.json() if row["id"] == data["id"])["forked_from"]["id"] == str(
@@ -131,6 +144,9 @@ async def test_five_component_forks_from_approved_releases(monkeypatch):
                         )
                         assert edited.status_code == 200, edited.text
                         assert edited.json()["forked_from"]["id"] == str(source.id)
+                        changed = await client.get(f"/api/v1/skills/{fork.id}/fork-diff?version=2.0.0")
+                        assert changed.status_code == 200 and changed.json()["unchanged"] is False
+                        assert "Fork customized" in changed.json()["diff"]
                         monkeypatch.setattr(skill, "publish_auto_approves_for_entity", AsyncMock(return_value=False))
                         monkeypatch.setattr(skill.inbox, "on_publish", AsyncMock())
                         submitted = await client.post(f"/api/v1/skills/{fork.id}/submit")
@@ -210,6 +226,9 @@ async def test_five_component_forks_from_approved_releases(monkeypatch):
                         "forked_at": redacted.json()["forked_from"]["forked_at"],
                     }
                     assert "forked_from_ref" not in redacted.text
+                    private_diff = await client.get(f"/api/v1/{path}/{fork.id}/fork-diff")
+                    assert private_diff.status_code == 404
+                    assert "bob/source" not in private_diff.text
                     assert (await client.get(url)).status_code == 404
                     app.dependency_overrides[get_registry_user] = lambda: actor
     finally:

@@ -24,6 +24,15 @@ import type { ForkRequest } from "@/lib/types";
 
 // ── Component Draft/Submit (generic) ──────────────────────────────
 
+export function useForkDiff(type: RegistryType, id: string, version: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ["registry", type, id, "fork-diff", version],
+    queryFn: () => registry.forkDiff(type, id, version!),
+    enabled: enabled && !!id && !!version,
+    retry: false,
+  });
+}
+
 export function useForkComponent(type: RegistryType) {
   const qc = useQueryClient();
   return useMutation({
