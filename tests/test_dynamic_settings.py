@@ -599,6 +599,20 @@ def test_settings_schema_labels_restart_and_external_metadata():
     assert all("keys" in section and "settings" in section for section in schema)
 
 
+def test_registry_fork_settings_have_defaults_and_appear_in_admin_schema():
+    expected = {
+        "registry.fork.enabled": "true",
+        "registry.fork.max_per_user_per_hour": "30",
+        "registry.fork.notify_source_owner": "false",
+    }
+    registry = next(section for section in ds.settings_schema() if section["id"] == "registry")
+    settings = {setting["key"]: setting for setting in registry["settings"]}
+    for key, default in expected.items():
+        assert ds.DEFAULTS[key] == default
+        assert settings[key]["default"] == default
+        assert settings[key]["restart_required"] is False
+
+
 def test_mask_value_only_reveals_sensitive_suffix():
     assert ds.mask_value("deployment.public_url", "https://example.test") == "https://example.test"
     assert ds.mask_value("oauth.client_secret", "") == "••••••••"

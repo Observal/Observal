@@ -33,6 +33,7 @@ from services.cache import invalidate_namespace
 from services.editing_lock import is_actively_editing
 from services.inbox import sources as inbox
 from services.redis import publish as redis_publish
+from services.registry_fork import provenance_for
 from services.security_events import EventType, SecurityEvent, Severity, emit_security_event
 from services.teamspace import ReviewScope, can_review, review_scope
 
@@ -181,7 +182,9 @@ async def _check_agent_components_ready(components, db: AsyncSession) -> tuple[b
     return len(blocking) == 0, blocking
 
 
-async def _query_pending_agents(db: AsyncSession, scope: ReviewScope, team_id: uuid.UUID | None = None) -> list[dict]:
+async def _query_pending_agents(
+    db: AsyncSession, scope: ReviewScope, team_id: uuid.UUID | None = None, current_user: User | None = None
+) -> list[dict]:
     # Find agents that have ANY pending version (not just latest_version_id).
     # This ensures version updates appear in the review queue after the first
     # version is approved.
@@ -237,6 +240,7 @@ async def _query_pending_agents(db: AsyncSession, scope: ReviewScope, team_id: u
                 "components_ready": components_ready,
                 "blocking_components": blocking,
                 "gaming_flags": pending_ver.gaming_flags,
+                "forked_from": await provenance_for(a, current_user, db) if getattr(a, "is_fork", False) else None,
             }
         )
     return items
@@ -362,7 +366,7 @@ async def list_pending(
     _check_team_filter(team_id, scope)
 
     if tab == "agents":
-        result = await _query_pending_agents(db, scope, team_id)
+        result = await _query_pending_agents(db, scope, team_id, current_user)
         return result
 
     if tab == "components":
@@ -370,7 +374,7 @@ async def list_pending(
         return result
 
     # Default: return both agents and components
-    agents = await _query_pending_agents(db, scope, team_id)
+    agents = await _query_pending_agents(db, scope, team_id, current_user)
     components = await _query_pending_components(db, scope, type, team_id)
 
     # Merge and sort by created_at (most recent first)
@@ -585,6 +589,10 @@ async def get_review(
                 for c in ver_components
             ],
         }
+
+        result["forked_from"] = (
+            await provenance_for(agent, current_user, db) if getattr(agent, "is_fork", False) else None
+        )
 
         # Expand component details with resolved listing content
         expanded_components = []

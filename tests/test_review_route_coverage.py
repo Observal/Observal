@@ -697,6 +697,7 @@ async def test_pending_agent_queue_groups_newest_hides_locks_and_resolves_author
             "components_ready": False,
             "blocking_components": [{"name": "waiting"}],
             "gaming_flags": {"score": 1},
+            "forked_from": None,
         }
     ]
     readiness.assert_awaited_once_with([component], db)
@@ -730,7 +731,7 @@ async def test_list_pending_tabs_default_order_and_team_denial(monkeypatch):
     assert await review.list_pending(type="skill", tab="agents", team_id=None, db=db, current_user=actor) == [
         {"name": "agent", "created_at": "2026-03-01T10:00:00+00:00"}
     ]
-    agents.assert_awaited_once_with(db, ADMIN_SCOPE, None)
+    agents.assert_awaited_once_with(db, ADMIN_SCOPE, None, actor)
     components.assert_not_awaited()
 
     agents.reset_mock()
@@ -743,7 +744,7 @@ async def test_list_pending_tabs_default_order_and_team_denial(monkeypatch):
     components.reset_mock()
     result = await review.list_pending(type=None, tab="unexpected", team_id=None, db=db, current_user=actor)
     assert [item["name"] for item in result] == ["component", "agent"]
-    agents.assert_awaited_once_with(db, ADMIN_SCOPE, None)
+    agents.assert_awaited_once_with(db, ADMIN_SCOPE, None, actor)
     components.assert_awaited_once_with(db, ADMIN_SCOPE, None, None)
 
     scope.return_value = TEAM_SCOPE
@@ -954,6 +955,7 @@ async def test_get_review_agent_serializes_pending_release_and_expands_component
         "component_blockers": [{"name": "blocked"}],
         "gaming_flags": {"score": 1},
         "success_criteria": {"purpose": "review"},
+        "forked_from": None,
         "components": [
             {
                 "component_type": "mcp",
@@ -1960,5 +1962,5 @@ async def test_review_scope_dependency_runs_before_queue_database_failure(monkey
         await review.list_pending(type=None, tab=None, team_id=None, db=db, current_user=actor)
 
     scope.assert_awaited_once_with(db, actor)
-    agents.assert_awaited_once_with(db, ADMIN_SCOPE, None)
+    agents.assert_awaited_once_with(db, ADMIN_SCOPE, None, actor)
     components.assert_not_awaited()
