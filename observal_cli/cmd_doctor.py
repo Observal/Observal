@@ -38,6 +38,7 @@ from observal_cli.harness_specs.claude_code_hooks_spec import (
 from observal_cli.render import OutputMode, esc, output_json
 from observal_cli.shared.utils import (
     atomic_write,
+    quote_shell_arg,
 )
 from observal_cli.shared.utils import (
     is_observal_hook_entry as _is_observal_hook_entry,
@@ -1379,7 +1380,7 @@ def _patch_cursor(dry_run: bool) -> bool:
 
     # Use the current interpreter (from the observal CLI's venv) so that
     # httpx and other dependencies are available when Cursor fires the hook.
-    cmd = f"{sys.executable} -m observal_cli.hooks.session_push --harness cursor"
+    cmd = f"{quote_shell_arg(sys.executable)} -m observal_cli.hooks.session_push --harness cursor"
 
     desired = {
         "version": 1,
@@ -1394,13 +1395,14 @@ def _patch_cursor(dry_run: bool) -> bool:
     if hooks_path.exists():
         existing = _read_json_object(hooks_path)
 
-    # Check if already patched
+    # Check if already patched. Match the whole command, not just the module,
+    # so an older entry with an unquoted or stale interpreter gets replaced.
     existing_hooks = existing.get("hooks", {})
     needs_update = False
 
     for event in ("beforeSubmitPrompt", "stop"):
         entries = existing_hooks.get(event, [])
-        has_observal = any("hooks.session_push --harness cursor" in e.get("command", "") for e in entries)
+        has_observal = any(e.get("command") == cmd for e in entries)
         if not has_observal:
             needs_update = True
             break
@@ -1453,7 +1455,8 @@ def _patch_antigravity(dry_run: bool) -> bool:
     if hooks_path.exists():
         existing = _read_json_object(hooks_path)
 
-    if _OBSERVAL_HOOK_NAME in existing:
+    # Compare the whole entry so an older unquoted or stale interpreter is replaced.
+    if existing.get(_OBSERVAL_HOOK_NAME) == desired[_OBSERVAL_HOOK_NAME]:
         rprint("  [dim]Already up to date[/dim]")
         return False
 
@@ -1533,14 +1536,16 @@ def _patch_codex(dry_run: bool) -> bool:
     if hooks_path.exists():
         existing = _read_json_object(hooks_path)
 
-    # Check if already patched
+    # Check if already patched. Match the whole command, not just the module,
+    # so an older entry with an unquoted or stale interpreter gets replaced.
     existing_hooks = existing.get("hooks", {})
     needs_update = False
+    cmd = desired["hooks"]["Stop"][0]["hooks"][0]["command"]
 
     for event in ("UserPromptSubmit", "Stop"):
         groups = existing_hooks.get(event, [])
         has_observal = any(
-            "hooks.session_push --harness codex" in h.get("command", "")
+            h.get("command") == cmd
             for g in groups
             if isinstance(g, dict)
             for h in g.get("hooks", [])
