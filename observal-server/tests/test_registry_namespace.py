@@ -22,6 +22,7 @@ from services.registry_namespace import (
     identity_for_user,
     slugify,
     validate_namespace,
+    validate_slug,
 )
 
 
@@ -34,6 +35,15 @@ def test_identity_validation_and_formatting():
         validate_namespace("admin")
     with pytest.raises(ValueError, match="reserved"):
         slugify("install")
+
+
+@pytest.mark.parametrize("slug", ["fork", "forks"])
+def test_fork_route_slugs_are_reserved_for_new_identities_but_parse_for_existing_ones(slug):
+    with pytest.raises(ValueError, match="reserved"):
+        validate_slug(slug)
+    with pytest.raises(ValueError, match="reserved"):
+        slugify(slug)
+    assert _namespace_slug_parts(f"alice/{slug}") == ("alice", slug)
 
 
 def test_migration_numbers_colliding_slugs_per_namespace():

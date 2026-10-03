@@ -33,6 +33,7 @@ from services.cache import invalidate_namespace
 from services.editing_lock import is_actively_editing
 from services.inbox import sources as inbox
 from services.redis import publish as redis_publish
+from services.registry_fork import provenance_for, provenance_for_many
 from services.security_events import EventType, SecurityEvent, Severity, emit_security_event
 from services.teamspace import ReviewScope, can_review, review_scope
 
@@ -181,7 +182,9 @@ async def _check_agent_components_ready(components, db: AsyncSession) -> tuple[b
     return len(blocking) == 0, blocking
 
 
-async def _query_pending_agents(db: AsyncSession, scope: ReviewScope, team_id: uuid.UUID | None = None) -> list[dict]:
+async def _query_pending_agents(
+    db: AsyncSession, scope: ReviewScope, team_id: uuid.UUID | None = None, current_user: User | None = None
+) -> list[dict]:
     # Find agents that have ANY pending version (not just latest_version_id).
     # This ensures version updates appear in the review queue after the first
     # version is approved.
@@ -215,6 +218,7 @@ async def _query_pending_agents(db: AsyncSession, scope: ReviewScope, team_id: u
         rows = await db.execute(select(User.id, User.username).where(User.id.in_(user_ids)))
         user_map = {r[0]: (r[1] or "") for r in rows.all()}
 
+    provenance = await provenance_for_many(list(agents_map.values()), current_user, db)
     items = []
     for agent_id, pending_ver in seen_agents.items():
         a = agents_map.get(agent_id)
@@ -237,6 +241,7 @@ async def _query_pending_agents(db: AsyncSession, scope: ReviewScope, team_id: u
                 "components_ready": components_ready,
                 "blocking_components": blocking,
                 "gaming_flags": pending_ver.gaming_flags,
+                "forked_from": provenance.get(a.id),
             }
         )
     return items
@@ -247,6 +252,7 @@ async def _query_pending_components(
     scope: ReviewScope,
     type_filter: str | None = None,
     team_id: uuid.UUID | None = None,
+    current_user: User | None = None,
 ) -> list[dict]:
     optic.trace("type_filter={}", type_filter)
     models_to_query = (
@@ -282,6 +288,7 @@ async def _query_pending_components(
         listings_result = await db.execute(select(model).where(model.id.in_(list(seen_listings.keys()))))
         listings_map = {r.id: r for r in listings_result.scalars().all() if _in_scope(r, scope, team_id)}
 
+        provenance = await provenance_for_many(list(listings_map.values()), current_user, db)
         for listing_id, pv in seen_listings.items():
             r = listings_map.get(listing_id)
             if not r:
@@ -301,6 +308,7 @@ async def _query_pending_components(
                 else r.created_at.isoformat(),
                 "bundle_id": str(r.bundle_id) if isinstance(getattr(r, "bundle_id", None), uuid.UUID) else None,
             }
+            item["forked_from"] = provenance.get(r.id)
             # Include validation results for MCP listings
             if listing_type == "mcp" and hasattr(r, "validation_results"):
                 item["mcp_validated"] = getattr(r, "mcp_validated", False)
@@ -362,16 +370,16 @@ async def list_pending(
     _check_team_filter(team_id, scope)
 
     if tab == "agents":
-        result = await _query_pending_agents(db, scope, team_id)
+        result = await _query_pending_agents(db, scope, team_id, current_user)
         return result
 
     if tab == "components":
-        result = await _query_pending_components(db, scope, type, team_id)
+        result = await _query_pending_components(db, scope, type, team_id, current_user)
         return result
 
     # Default: return both agents and components
-    agents = await _query_pending_agents(db, scope, team_id)
-    components = await _query_pending_components(db, scope, type, team_id)
+    agents = await _query_pending_agents(db, scope, team_id, current_user)
+    components = await _query_pending_components(db, scope, type, team_id, current_user)
 
     # Merge and sort by created_at (most recent first)
     all_items = agents + components
@@ -536,6 +544,7 @@ async def get_review(
         if not can_review(listing, scope):
             raise HTTPException(status_code=404, detail="Listing not found")
         result = _serialize_listing_detail(listing_type, listing)
+        result["forked_from"] = await provenance_for(listing, current_user, db)
     else:
         # Fallback: check Agent table
         try:
@@ -585,6 +594,10 @@ async def get_review(
                 for c in ver_components
             ],
         }
+
+        result["forked_from"] = (
+            await provenance_for(agent, current_user, db) if getattr(agent, "is_fork", False) else None
+        )
 
         # Expand component details with resolved listing content
         expanded_components = []

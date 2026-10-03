@@ -45,6 +45,18 @@ All `{id}` parameters accept a UUID or a name.
 
 `POST /{type}/{id}/install` accepts `version` for agents, MCP servers, skills, and hooks. The response reports the `version` that was installed; component installs also return its `version_id` and content `digest`.
 
+### Registry forks
+
+Only authenticated users can fork an approved listing and an approved base release. The result is an independently owned **draft**; no source content or counts are changed. For component endpoints, `{type}` is one of `mcps`, `skills`, `hooks`, `prompts`, or `sandboxes`.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `POST` | `/agents/{id}/fork` or `/{type}/{id}/fork` | Create a draft fork; optional body fields: `name`, `version`, `new_version`, `team_id`, `visibility` |
+| `GET` | `/agents/{id}/forks` or `/{type}/{id}/forks` | Paginated, public approved direct forks only; `limit` and `offset` query parameters |
+| `GET` | `/agents/{id}/fork-diff?version=…` or `/{type}/{id}/fork-diff?version=…` | Unified `diff` and `unchanged` relative to the fork's approved base; defaults to the latest fork version visible to the caller |
+
+Diff access follows normal fork-version permissions. If the upstream is no longer visible or its approved base is gone, comparison returns `404`, never a saved source reference. Component diffs omit secret environment/header values and use a digest marker for install content excluded from public version responses. [Fork and customize](../use-cases/fork-and-customize.md) describes the workflow.
+
 ### Agent versions and locks
 
 Each agent version pins exact component versions. Installs generate every component from its pinned version. Agent versions released before pinning can have unlocked components: those install at their latest approved release, are reported with `source: fallback-latest` in the install `lock`, and are refused by a `strict` install.
@@ -91,13 +103,18 @@ ARD envelope `{"errorCode": "INVALID_ARGUMENT", "message": "..."}`. See
 | `GET` | `/.well-known/ai-catalog.json` | Predecessor path, same document |
 | `POST` | `/api/v1/ard/search` | ARD Search. `score` is relevance only; `obs:approval`, `obs:availability`, `obs:supportedHarnesses`, `obs:delegable` carry the rest; remote A2A results add `obs:provider` from the card |
 | `GET` | `/api/v1/ard/agents` | ARD List: deterministic browse with `filter`, `orderBy`, `pageSize`, `pageToken` |
-| `POST` | `/api/v1/ard/explore` | ARD Explore: `501` until facets ship |
+| `POST` | `/api/v1/ard/explore` | ARD Explore: not implemented (`501`) |
 | `GET` | `/api/v1/ard/entries/{identifier}` | One complete entry by `urn:air:` identifier (Observal-specific) |
 | `GET` | `/api/v1/artifacts/{kind}/{uuid}/{version}` | Permanent versioned artifact; `Digest` and `X-Artifact-Digest` headers |
 
 Search request body follows the spec: `{"query": {"text": "...", "filter": {...}}, "federation": "none", "pageSize": 5}`.
 Supported filter terms: `type`, `tags`, `capabilities`, `publisher`, `version`,
-`obs:kind`, `obs:supportedHarnesses`, `obs:lifecycle`, `obs:activatable`.
+`obs:kind`, `obs:supportedHarnesses`, `obs:lifecycle`, `obs:activatable`,
+`obs:forksOf`. The last filter takes one upstream `urn:air:` identifier and
+returns only currently **public approved** direct forks. Search, List, entry,
+and manifest serialization add `obs:forkedFrom` only while both fork and source
+are currently public and approved; private lineage is never projected from a
+saved reference.
 
 ### Remote A2A agents
 

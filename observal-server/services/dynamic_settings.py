@@ -344,6 +344,9 @@ DEFAULTS: dict[str, str] = {
     "security.trace_privacy": "false",
     # Registry policy
     "registry.registered_agents_only": "false",
+    # Registry forking: kill switch and per-user hourly creation limit.
+    "registry.fork.enabled": "true",
+    "registry.fork.max_per_user_per_hour": "30",
     # Application retention policy, separate from the ClickHouse TTL below
     "retention.enabled": "false",
     "retention.trace_days": "",

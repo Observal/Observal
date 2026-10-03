@@ -13,17 +13,29 @@ Publish and manage registry components. The registry has five component types: M
 observal registry <type> <action> [args]
 ```
 
-| Type | Submit | List | My | Show | Install | Render | Edit |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `mcp` | yes | yes | yes | yes | yes | no | yes |
-| `skill` | yes | yes | yes | yes | yes | no | yes |
-| `hook` | yes | yes | no | yes | yes | no | yes |
-| `prompt` | yes | yes | yes | yes | no | yes | yes |
-| `sandbox` | yes | yes | no | yes | no | no | yes |
+| Type | Submit | List | My | Show | Install | Render | Edit | Fork |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `mcp` | yes | yes | yes | yes | yes | no | yes | yes |
+| `skill` | yes | yes | yes | yes | yes | no | yes | yes |
+| `hook` | yes | yes | no | yes | yes | no | yes | yes |
+| `prompt` | yes | yes | yes | yes | no | yes | yes | yes |
+| `sandbox` | yes | yes | no | yes | no | no | yes | yes |
 
 Every component type also supports archive, unarchive, ownership transfer, and co-author management. Registry also contains the `models`, `version`, `recommend`, and mixed `bulk` groups.
 
 All registry references accept a UUID, canonical `namespace/slug`, a unique legacy bare name, a row number from the latest human list output for the same component type, or an `@alias`. Agents and scripts must use returned UUIDs or `qualified_name` values, never row numbers. If the same bare slug exists in multiple namespaces, qualify it, for example `alice/search` instead of `search`.
+
+### Fork an approved component
+
+```bash
+observal registry skill fork acme/review-skill --name my-review-skill --output json
+observal registry mcp fork acme/github --version 1.2.0 --new-version 0.1.0 --output json
+observal registry hook fork acme/audit --team platform --visibility team --output json
+observal registry prompt fork acme/review --output json
+observal registry sandbox fork acme/python --output json
+```
+
+The five `fork` commands accept `SOURCE [--name NAME] [--version BASE] [--new-version V] [--team HANDLE|UUID] [--visibility public|team] [--output table|json]`. Only currently approved sources and approved base versions are eligible. The fork is a separate editable **draft**, not a new release of the original; it has its own namespace, owner, reviews, and installation identity. Team-private sources can only be forked within their teamspace. JSON returns the direct server draft object. Edit using `observal registry <type> edit FORK_UUID ...` and submit through that type's draft workflow. `show` prints visible fork provenance and the count of public approved direct forks. If source access is lost, it displays **Source unavailable** rather than the saved source reference. A private or unpublished fork never increases the public count.
 
 ### Shared lifecycle and collaboration commands
 

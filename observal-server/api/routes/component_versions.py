@@ -12,7 +12,6 @@ Usage in each type's route file::
 from __future__ import annotations
 
 import re
-from copy import deepcopy
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -33,28 +32,11 @@ from models.user import User, UserRole
 from schemas.component_version import VersionPublishRequest, VersionReviewRequest  # noqa: TC001
 from services.component_version_extras import ALLOWED_FIELDS, REQUIRED_FIELDS, validate_and_extract
 from services.inbox import sources as inbox
+from services.registry_fork import VERSION_MANAGED_FIELDS as _VERSION_MANAGED_FIELDS
+from services.registry_fork import _copy_version_columns
 
 # Semver pattern: X.Y.Z or X.Y.Z-prerelease
 SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$")
-
-_VERSION_MANAGED_FIELDS = {
-    "id",
-    "listing_id",
-    "version",
-    "description",
-    "changelog",
-    "status",
-    "rejection_reason",
-    "download_count",
-    "released_by",
-    "released_at",
-    "reviewed_by",
-    "reviewed_at",
-    "created_at",
-    "is_editing",
-    "editing_since",
-    "editing_by",
-}
 
 
 async def audit(*_args, **_kwargs):
@@ -208,13 +190,7 @@ async def _publish_version(
     now = datetime.now(UTC)
     current_version = listing.latest_version
     snapshot = (
-        {
-            column.name: deepcopy(getattr(current_version, column.name))
-            for column in version_model.__table__.columns
-            if column.name not in _VERSION_MANAGED_FIELDS
-        }
-        if current_version
-        else {}
+        _copy_version_columns(version_model, current_version, skip=_VERSION_MANAGED_FIELDS) if current_version else {}
     )
     if "supported_harnesses" in req.model_fields_set:
         snapshot["supported_harnesses"] = req.supported_harnesses

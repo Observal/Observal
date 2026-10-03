@@ -47,6 +47,8 @@ def _mock_db(membership=None):
     # A bare AsyncMock returns a truthy sentinel, which would make every caller
     # look like a team member, so the membership row is always explicit here.
     db.scalar = AsyncMock(return_value=membership)
+    # Fork-count reads use a grouped execute; this fixture has no fork rows.
+    db.execute.return_value.all = MagicMock(return_value=[])
     return db
 
 
@@ -74,6 +76,8 @@ def _listing_mock(status=ListingStatus.approved, submitted_by=None, is_private=F
     m.owner = "testowner"
     m.status = status
     m.rejection_reason = None
+    m.forked_from = None
+    m.is_fork = False
     m.submitted_by = submitted_by or uuid.uuid4()
     m.co_authors = []
     # Privacy is a separate axis from status: set it explicitly so these tests

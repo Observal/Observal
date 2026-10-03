@@ -568,8 +568,12 @@ async def test_pending_component_queue_serializes_bundle_validation_submitter_an
         raise AssertionError(sql)
 
     db.execute.side_effect = execute
-
-    items = await review._query_pending_components(db, GLOBAL_SCOPE, "mcp")
+    listing.is_fork = True
+    provenance = AsyncMock(return_value={listing.id: {"available": True, "id": uuid.UUID(int=90)}})
+    monkeypatch.setattr(review, "provenance_for_many", provenance)
+    actor = _actor()
+    items = await review._query_pending_components(db, GLOBAL_SCOPE, "mcp", current_user=actor)
+    provenance.assert_awaited_once_with([listing], actor, db)
 
     assert items == [
         {
@@ -586,6 +590,7 @@ async def test_pending_component_queue_serializes_bundle_validation_submitter_an
             "mcp_validated": True,
             "validation_results": [{"stage": "manifest", "passed": True, "details": "ok", "run_at": NOW.isoformat()}],
             "bundle_name": "review bundle",
+            "forked_from": {"available": True, "id": uuid.UUID(int=90)},
         }
     ]
     assert "ORDER BY mcp_versions.released_at DESC" in _sql(statements[0])
@@ -697,6 +702,7 @@ async def test_pending_agent_queue_groups_newest_hides_locks_and_resolves_author
             "components_ready": False,
             "blocking_components": [{"name": "waiting"}],
             "gaming_flags": {"score": 1},
+            "forked_from": None,
         }
     ]
     readiness.assert_awaited_once_with([component], db)
@@ -730,21 +736,21 @@ async def test_list_pending_tabs_default_order_and_team_denial(monkeypatch):
     assert await review.list_pending(type="skill", tab="agents", team_id=None, db=db, current_user=actor) == [
         {"name": "agent", "created_at": "2026-03-01T10:00:00+00:00"}
     ]
-    agents.assert_awaited_once_with(db, ADMIN_SCOPE, None)
+    agents.assert_awaited_once_with(db, ADMIN_SCOPE, None, actor)
     components.assert_not_awaited()
 
     agents.reset_mock()
     assert await review.list_pending(type="skill", tab="components", team_id=TEAM_ID, db=db, current_user=actor) == [
         {"name": "component", "created_at": "2026-03-01T11:00:00+00:00"}
     ]
-    components.assert_awaited_once_with(db, ADMIN_SCOPE, "skill", TEAM_ID)
+    components.assert_awaited_once_with(db, ADMIN_SCOPE, "skill", TEAM_ID, actor)
     agents.assert_not_awaited()
 
     components.reset_mock()
     result = await review.list_pending(type=None, tab="unexpected", team_id=None, db=db, current_user=actor)
     assert [item["name"] for item in result] == ["component", "agent"]
-    agents.assert_awaited_once_with(db, ADMIN_SCOPE, None)
-    components.assert_awaited_once_with(db, ADMIN_SCOPE, None, None)
+    agents.assert_awaited_once_with(db, ADMIN_SCOPE, None, actor)
+    components.assert_awaited_once_with(db, ADMIN_SCOPE, None, None, actor)
 
     scope.return_value = TEAM_SCOPE
     agents.reset_mock()
@@ -860,6 +866,8 @@ async def test_get_review_component_authorizes_serializes_and_resolves_submitter
     )
     monkeypatch.setattr(review, "_require_review_scope", AsyncMock(return_value=GLOBAL_SCOPE))
     monkeypatch.setattr(review, "_find_listing", AsyncMock(return_value=("mcp", listing)))
+    provenance = AsyncMock(return_value={"available": False})
+    monkeypatch.setattr(review, "provenance_for", provenance)
     db.execute.return_value = _result(
         scalar=SimpleNamespace(id=SUBMITTER_ID, username="component-author", email="author@example.test")
     )
@@ -867,6 +875,8 @@ async def test_get_review_component_authorizes_serializes_and_resolves_submitter
     result = await review.get_review(str(listing.id), db, actor)
 
     assert result["name"] == "component detail"
+    assert result["forked_from"] == {"available": False}
+    provenance.assert_awaited_once_with(listing, actor, db)
     assert result["submitted_by"] == "component-author"
     statement = db.execute.await_args.args[0]
     assert "FROM users" in _sql(statement)
@@ -954,6 +964,7 @@ async def test_get_review_agent_serializes_pending_release_and_expands_component
         "component_blockers": [{"name": "blocked"}],
         "gaming_flags": {"score": 1},
         "success_criteria": {"purpose": "review"},
+        "forked_from": None,
         "components": [
             {
                 "component_type": "mcp",
@@ -1960,5 +1971,5 @@ async def test_review_scope_dependency_runs_before_queue_database_failure(monkey
         await review.list_pending(type=None, tab=None, team_id=None, db=db, current_user=actor)
 
     scope.assert_awaited_once_with(db, actor)
-    agents.assert_awaited_once_with(db, ADMIN_SCOPE, None)
+    agents.assert_awaited_once_with(db, ADMIN_SCOPE, None, actor)
     components.assert_not_awaited()

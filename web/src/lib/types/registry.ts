@@ -18,7 +18,41 @@ export interface RegistryResolution {
 	qualified_name: string;
 }
 
+export interface ForkProvenance {
+	available: boolean;
+	id?: string | null;
+	type?: string | null;
+	namespace?: string | null;
+	slug?: string | null;
+	qualified_name?: string | null;
+	version?: string | null;
+	forked_at?: string | null;
+}
+
+export interface ForkDiff {
+	version: string;
+	base_version: string;
+	diff: string;
+	unchanged: boolean;
+}
+
+export interface ForkRequest {
+	name: string;
+	version: string;
+	team_id?: string | null;
+	visibility?: "public" | "team";
+}
+
+export interface ForksResponse<T> {
+	items: T[];
+	total: number;
+	page: number;
+	page_size: number;
+}
+
 export interface RegistryItem {
+	forked_from?: ForkProvenance | null;
+	fork_count?: number;
 	id: string;
 	name: string;
 	namespace?: string;
@@ -333,6 +367,7 @@ export interface ReviewItem {
 	bundle_id?: string;
 	bundle_name?: string;
 	rejection_reason?: string;
+	forked_from?: ForkProvenance | null;
 
 	// Common detail fields
 	git_url?: string;

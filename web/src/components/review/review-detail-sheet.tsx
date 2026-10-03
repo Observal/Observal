@@ -20,6 +20,8 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ForkedFromChip } from "@/components/registry/fork-provenance";
+import { ForkDiffPanel } from "@/components/registry/fork-diff-panel";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DetailSkeleton, TableSkeleton } from "@/components/shared/skeleton-layouts";
@@ -479,6 +481,10 @@ function SheetBody({
 				<SheetTitle className="text-lg font-[family-name:var(--font-display)]">
 					{merged.name ?? "Unnamed"}
 				</SheetTitle>
+				<ForkedFromChip provenance={merged.forked_from} />
+				{merged.forked_from?.available && merged.version && merged.type && (
+					<ForkDiffPanel type={(merged.type === "agent" ? "agents" : `${merged.type}s`) as import("@/lib/api").RegistryType} id={merged.id} version={merged.version} />
+				)}
 				{merged.description && (
 					<SheetDescription>{merged.description}</SheetDescription>
 				)}
