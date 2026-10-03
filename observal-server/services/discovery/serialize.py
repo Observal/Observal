@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Shape discovery entries into the JSON the ARD endpoints return."""
@@ -42,7 +43,7 @@ def availability(entry: DiscoveryEntry, harness: str | None = None) -> str:
         return AVAILABILITY_DELEGATE
     if harness and entry.supported_harnesses and harness not in entry.supported_harnesses:
         return AVAILABILITY_UNSUPPORTED
-    if entry.kind == DiscoveryKind.hook:
+    if entry.kind == DiscoveryKind.hook or (entry.kind == DiscoveryKind.skill and not entry.activatable):
         return AVAILABILITY_EXPLICIT
     if entry.kind in _NOW_KINDS:
         return AVAILABILITY_NOW

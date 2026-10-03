@@ -97,6 +97,27 @@ export function useReviewDetail(id: string | undefined) {
   });
 }
 
+export function useSkillVersionReview(id: string | undefined, versionId: string | undefined) {
+  return useQuery({
+    queryKey: ["review", "skill", id, versionId],
+    enabled: !!id && !!versionId,
+    queryFn: () => review.getSkillVersion(id!, versionId!),
+  });
+}
+
+export function useSkillVersionDecision() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { id: string; versionId: string; revision: string; action: "approve" | "reject"; reason?: string }) =>
+      review.decideSkillVersion(vars.id, vars.versionId, vars.action, vars.revision, vars.reason),
+    onSuccess: (_data, vars) => {
+      qc.invalidateQueries({ queryKey: ["review"] });
+      toast.success(vars.action === "approve" ? "Skill version approved" : "Skill version rejected");
+    },
+    onError: (err: Error) => toast.error(err.message || "Skill version changed; refresh before review"),
+  });
+}
+
 export function useRelatedSkills(id: string | undefined) {
   return useQuery({
     queryKey: ["review", "related-skills", id],

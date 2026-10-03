@@ -81,7 +81,7 @@ function qualifiedHandle(item: ReviewItem): string {
 }
 
 /** Stable key readers for `useSelected`. */
-const itemKey = (item: ReviewItem) => item.id;
+const itemKey = (item: ReviewItem) => item.review_key ?? item.id;
 const teamKey = (team: TeamVisibilityRequest) => team.team_id;
 
 function plural(n: number, noun: string): string {
@@ -273,8 +273,8 @@ function ReviewQueuePanel({
     <Card asChild interactive selected={selected}>
       <button
         type="button"
-        data-review-item={item.id}
-        onClick={() => onSelect(item.id)}
+        data-review-item={itemKey(item)}
+        onClick={() => onSelect(itemKey(item))}
         className={cn("block", dense ? "p-2.5" : "p-3.5")}
       >
         {dense ? (
@@ -640,9 +640,9 @@ function AgentQueuePanels({
   const panels = (list: ReviewItem[]) =>
     list.map((item) => (
       <ReviewQueuePanel
-        key={item.id}
+        key={itemKey(item)}
         item={item}
-        selected={item.id === selectedId}
+        selected={itemKey(item) === selectedId}
         dense={view === "list"}
         onSelect={onSelect}
       />
@@ -875,16 +875,16 @@ export default function ReviewPage() {
               queueLabel: "Pending components",
               detail: selectedComponent && (
                 <ReviewDetailPanel
-                  key={selectedComponent.id}
+                  key={itemKey(selectedComponent)}
                   item={selectedComponent}
                   onViewDiff={handleViewDiff}
                 />
               ),
               queue: componentList.map((item) => (
                 <ReviewQueuePanel
-                  key={item.id}
+                  key={itemKey(item)}
                   item={item}
-                  selected={item.id === selectedComponent?.id}
+                  selected={itemKey(item) === (selectedComponent ? itemKey(selectedComponent) : null)}
                   dense={view === "list"}
                   onSelect={setSelectedComponentId}
                 />

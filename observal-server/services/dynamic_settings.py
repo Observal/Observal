@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Dynamic settings service: DB-backed runtime configuration with Redis cache.
@@ -344,6 +345,10 @@ DEFAULTS: dict[str, str] = {
     "security.trace_privacy": "false",
     # Registry policy
     "registry.registered_agents_only": "false",
+    # Must be enabled only after all old API/worker processes are drained and
+    # complete-folder installers have been deployed. A new worker cannot make
+    # an old worker enforce skill review and delivery markers.
+    "registry.skill_folder_delivery_enabled": "false",
     # Application retention policy, separate from the ClickHouse TTL below
     "retention.enabled": "false",
     "retention.trace_days": "",

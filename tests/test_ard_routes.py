@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
+# SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """ARD endpoints, artifact endpoint, and conformance against the vendored spec tool."""
@@ -19,6 +20,7 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.pool import NullPool
 
 import services.dynamic_settings as ds
@@ -27,7 +29,9 @@ from api.ratelimit import limiter
 from api.routes import ard, artifacts
 from models.discovery_entry import DiscoveryKind
 from models.mcp import ListingStatus
-from services.discovery.projection import reproject_all
+from models.skill import SkillListing, SkillVersion
+from services.discovery.projection import project_entity, reproject_all
+from services.discovery.serialize import availability
 from tests import discovery_support as fx
 
 VENDOR = Path(__file__).resolve().parents[1] / "observal-server" / "vendor" / "ard"
@@ -428,6 +432,55 @@ async def test_artifact_serves_bytes_with_digest(sessions, settings):
     assert resp.headers["X-Artifact-Digest"].startswith("sha256:")
     assert resp.headers["Cache-Control"] == "private, no-store"
     assert "Look for auth bugs" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_bundled_skill_artifact_is_not_activatable_as_partial_skill(sessions, settings):
+    owner, stranger, skill = await _seed(sessions)
+    async with sessions() as db:
+        version = (await db.execute(select(SkillVersion).where(SkillVersion.listing_id == skill.id))).scalar_one()
+        version.extra_files = [{"path": "scripts/run.sh", "content": "echo complete", "executable": True}]
+        entry = await project_entity(db, DiscoveryKind.skill, skill.id, ctx=fx.CTX)
+        await db.commit()
+        assert entry.activatable is False
+        assert entry.raw_entry["obs:artifactScope"] == "preview"
+        assert availability(entry) == "explicit-install"
+    for viewer in (owner, stranger):
+        async with _client(_app(sessions, viewer)) as client:
+            result = await client.get(f"/api/v1/artifacts/skill/{skill.id}/1.2.0")
+            assert result.status_code == 409
+            assert result.json()["errorCode"] == "COMPLETE_FOLDER_REQUIRED"
+            assert "echo complete" not in result.text
+
+
+@pytest.mark.asyncio
+async def test_stale_public_skill_discovery_entry_cannot_expose_privatized_release(sessions, settings):
+    owner, stranger, skill = await _seed(sessions)
+    async with sessions() as db:
+        listing = await db.get(SkillListing, skill.id)
+        listing.is_private = True  # Discovery projection has not caught up yet.
+        await db.commit()
+    async with _client(_app(sessions, stranger)) as client:
+        assert (await client.get(f"/api/v1/artifacts/skill/{skill.id}/1.2.0")).status_code == 404
+    async with _client(_app(sessions, owner)) as client:
+        allowed = await client.get(f"/api/v1/artifacts/skill/{skill.id}/1.2.0")
+        assert allowed.status_code == 200
+        assert allowed.headers["Cache-Control"].startswith("private")
+
+
+@pytest.mark.asyncio
+async def test_stale_approved_artifact_cannot_bypass_global_re_review(sessions, settings):
+    owner, stranger, skill = await _seed(sessions)
+    async with sessions() as db:
+        version = (await db.execute(select(SkillVersion).where(SkillVersion.listing_id == skill.id))).scalar_one()
+        version.requires_global_review = True
+        await db.commit()
+    async with _client(_app(sessions, stranger)) as client:
+        assert (await client.get(f"/api/v1/artifacts/skill/{skill.id}/1.2.0")).status_code == 404
+    async with _client(_app(sessions, owner)) as client:
+        result = await client.get(f"/api/v1/artifacts/skill/{skill.id}/1.2.0")
+        assert result.status_code == 200
+        assert result.headers["Cache-Control"].startswith("private")
 
 
 @pytest.mark.asyncio

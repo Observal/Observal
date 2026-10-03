@@ -1,8 +1,10 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
+// SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
+import type { ReactElement } from "react";
 import { Link } from "@tanstack/react-router";
 import {
 	CheckCircle2,
@@ -10,6 +12,10 @@ import {
 	ExternalLink,
 	GitBranch,
 	AlertCircle,
+	File,
+	Folder,
+	ChevronRight,
+	ChevronDown,
 } from "lucide-react";
 import {
 	Sheet,
@@ -36,8 +42,12 @@ import {
 } from "./validation-badges";
 import {
 	useReviewDetail,
+	useSkillVersionReview,
+	useSkillVersionDecision,
 	useRelatedSkills,
 	useApproveWithSkills,
+	useSkillVersionManifest,
+	useSkillFileContent,
 } from "@/hooks/use-api";
 import yaml from "js-yaml";
 import type { ReviewItem } from "@/lib/types";
@@ -106,17 +116,147 @@ function McpConfigSection({ detail }: { detail: ReviewItem }) {
 	);
 }
 
-function SkillConfigSection({ detail }: { detail: ReviewItem }) {
+function SkillFilesSection({ listingId, versionId }: { listingId: string; versionId: string }) {
+	const { data: manifest, isLoading } = useSkillVersionManifest(listingId, versionId);
+	const [selectedFile, setSelectedFile] = useState<string | null>(null);
+	const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set());
+	const { data: fileContent, isLoading: isLoadingContent } = useSkillFileContent(
+		listingId,
+		versionId,
+		selectedFile
+	);
+	const binaryBlob = fileContent?.encoding === "binary" ? fileContent.content : null;
+	const binaryUrl = useMemo(() => binaryBlob ? URL.createObjectURL(binaryBlob) : null, [binaryBlob]);
+	useEffect(() => () => { if (binaryUrl) URL.revokeObjectURL(binaryUrl); }, [binaryUrl]);
+
+	if (isLoading) {
+		return <div className="text-sm text-muted-foreground">Loading files...</div>;
+	}
+
+	if (!manifest?.files?.length) {
+		return null;
+	}
+
+	// Build tree structure from flat file paths
+	type TreeNode = { name: string; path: string; isDir: boolean; size?: number; mode?: string; children: TreeNode[] };
+	const root: TreeNode = { name: "", path: "", isDir: true, children: [] };
+
+	for (const file of manifest.files) {
+		const parts = file.path.split("/");
+		let current = root;
+		let pathSoFar = "";
+		for (let i = 0; i < parts.length; i++) {
+			const part = parts[i];
+			pathSoFar = pathSoFar ? `${pathSoFar}/${part}` : part;
+			const isLast = i === parts.length - 1;
+			let child = current.children.find((c) => c.name === part);
+			if (!child) {
+				child = {
+					name: part,
+					path: pathSoFar,
+					isDir: !isLast,
+					size: isLast ? file.size : undefined,
+					mode: isLast ? file.mode : undefined,
+					children: [],
+				};
+				current.children.push(child);
+			}
+			current = child;
+		}
+	}
+
+	const toggleDir = (path: string) => {
+		setExpandedDirs((prev) => {
+			const next = new Set(prev);
+			if (next.has(path)) next.delete(path);
+			else next.add(path);
+			return next;
+		});
+	};
+
+	const renderNode = (node: TreeNode, depth: number): ReactElement | null => {
+		if (!node.name) {
+			return <>{node.children.map((c) => renderNode(c, 0))}</>;
+		}
+		const isExpanded = expandedDirs.has(node.path);
+		const isSelected = selectedFile === node.path;
+
+		return (
+			<div key={node.path}>
+				<div
+					className={`flex items-center gap-1 py-0.5 px-1 rounded text-sm cursor-pointer hover:bg-muted/50 ${isSelected ? "bg-primary/10" : ""}`}
+					style={{ paddingLeft: `${depth * 12 + 4}px` }}
+					onClick={() => node.isDir ? toggleDir(node.path) : setSelectedFile(node.path)}
+				>
+					{node.isDir ? (
+						isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />
+					) : (
+						<File className="h-3 w-3 text-muted-foreground" />
+					)}
+					{node.isDir && <Folder className="h-3 w-3 text-blue-500" />}
+					<span className="truncate">{node.name}</span>
+					{node.mode === "0755" && <span className="text-[10px] text-green-600 ml-1">exec</span>}
+					{node.size !== undefined && <span className="text-[10px] text-muted-foreground ml-auto">{formatBytes(node.size)}</span>}
+				</div>
+				{node.isDir && isExpanded && node.children.map((c) => renderNode(c, depth + 1))}
+			</div>
+		);
+	};
+
+	const formatBytes = (bytes: number) => {
+		if (bytes < 1024) return `${bytes} B`;
+		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+	};
+
 	return (
-		<dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
-			<DetailField label="Task Type" value={detail.task_type} />
-			<DetailField label="Slash Command" value={detail.slash_command} />
-			<DetailField label="Skill Path" value={detail.skill_path} />
-			<DetailField label="Git URL" value={detail.git_url} />
-			<DetailField label="Git Ref" value={detail.git_ref} />
-			<DetailField label="Validated" value={detail.validated} />
-			<DetailField label="Target Agents" value={detail.target_agents} />
-		</dl>
+		<div className="space-y-2">
+			<div className="text-xs font-medium text-muted-foreground">Files ({manifest.files.length})</div>
+			<div className="border rounded-md p-2 max-h-48 overflow-auto">
+				{renderNode(root, 0)}
+			</div>
+			{selectedFile && (
+				<div className="space-y-1">
+					<div className="flex items-center justify-between">
+						<span className="text-xs font-mono text-muted-foreground">{selectedFile}</span>
+						<Button variant="ghost" size="sm" className="h-5 px-1" onClick={() => setSelectedFile(null)}>
+							<X className="h-3 w-3" />
+						</Button>
+					</div>
+					{isLoadingContent ? (
+						<div className="text-sm text-muted-foreground">Loading...</div>
+					) : binaryUrl ? (
+						<a href={binaryUrl} download={selectedFile.split("/").at(-1)} className="text-sm underline">Download binary file ({binaryBlob?.size} bytes)</a>
+					) : (
+						<pre className="max-h-60 overflow-auto rounded bg-muted p-2 text-xs font-mono whitespace-pre-wrap">
+							{fileContent?.encoding === "utf-8" ? fileContent.content : "File preview unavailable"}
+						</pre>
+					)}
+				</div>
+			)}
+		</div>
+	);
+}
+
+function SkillConfigSection({ detail }: { detail: ReviewItem }) {
+	// Check if this skill has a pending version with files
+	const hasVersionFiles = detail.version_id && detail.files && detail.files.length > 0;
+
+	return (
+		<div className="space-y-4">
+			<dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+				<DetailField label="Task Type" value={detail.task_type} />
+				<DetailField label="Slash Command" value={detail.slash_command} />
+				<DetailField label="Skill Path" value={detail.skill_path} />
+				<DetailField label="Git URL" value={detail.git_url} />
+				<DetailField label="Git Ref" value={detail.git_ref} />
+				<DetailField label="Validated" value={detail.validated} />
+				<DetailField label="Target Agents" value={detail.target_agents} />
+			</dl>
+			{hasVersionFiles && (
+				<SkillFilesSection listingId={detail.id} versionId={detail.version_id!} />
+			)}
+		</div>
 	);
 }
 
@@ -383,7 +523,7 @@ export function ReviewDetailSheet({
 			<SheetContent side="right" className="sm:max-w-2xl overflow-y-auto">
 				{item ? (
 					<SheetBody
-						key={item.id}
+						key={item.review_key ?? item.id}
 						item={item}
 						open={open}
 						onOpenChange={onOpenChange}
@@ -413,17 +553,23 @@ function SheetBody({
 	onApprove: (id: string, type?: string, category?: string) => void;
 	onReject: (id: string, reason: string, type?: string) => void;
 }) {
+	const versionId = item.type === "skill" ? item.version_id : undefined;
 	const { data: detail, isLoading } = useReviewDetail(
-		open ? item.id : undefined,
+		open && !versionId ? item.id : undefined,
 	);
+	const { data: selectedReview, isLoading: isLoadingVersion } = useSkillVersionReview(
+		open && versionId ? item.id : undefined, versionId,
+	);
+	const skillDecision = useSkillVersionDecision();
 	const approveWithSkills = useApproveWithSkills();
 	const [showRejectInput, setShowRejectInput] = useState(false);
 	const [rejectReason, setRejectReason] = useState("");
 
 	const merged = useMemo<ReviewItem>(() => {
+		if (selectedReview) return { ...item, ...selectedReview };
 		if (detail) return { ...item, ...detail };
 		return item;
-	}, [item, detail]);
+	}, [item, detail, selectedReview]);
 
 	const handleReject = useCallback(() => {
 		if (!showRejectInput) {
@@ -431,20 +577,28 @@ function SheetBody({
 			return;
 		}
 		if (!rejectReason.trim()) return;
-		if (merged) {
-			onReject(merged.id, rejectReason, merged.type);
-			setShowRejectInput(false);
-			setRejectReason("");
-			onOpenChange(false);
+		if (versionId) {
+			if (!selectedReview?.revision) return;
+			skillDecision.mutate({ id: item.id, versionId, revision: selectedReview.revision, action: "reject", reason: rejectReason },
+				{ onSuccess: () => onOpenChange(false) });
+			return;
 		}
-	}, [showRejectInput, rejectReason, merged, onReject, onOpenChange]);
+		onReject(merged.id, rejectReason, merged.type);
+		setShowRejectInput(false);
+		setRejectReason("");
+		onOpenChange(false);
+	}, [showRejectInput, rejectReason, merged, onReject, onOpenChange, versionId, selectedReview, skillDecision, item.id]);
 
 	const handleApprove = useCallback(() => {
-		if (merged) {
-			onApprove(merged.id, merged.type);
-			onOpenChange(false);
+		if (versionId) {
+			if (!selectedReview?.revision) return;
+			skillDecision.mutate({ id: item.id, versionId, revision: selectedReview.revision, action: "approve" },
+				{ onSuccess: () => onOpenChange(false) });
+			return;
 		}
-	}, [merged, onApprove, onOpenChange]);
+		onApprove(merged.id, merged.type);
+		onOpenChange(false);
+	}, [merged, onApprove, onOpenChange, versionId, selectedReview, skillDecision, item.id]);
 
 	const handleApproveWithSkills = useCallback(
 		(mcpId: string, skillIds: string[]) => {
@@ -457,7 +611,8 @@ function SheetBody({
 	);
 
 	const disableApprove =
-		merged.type === "agent" && merged.components_ready === false;
+		(merged.type === "agent" && merged.components_ready === false) ||
+		(merged.type === "skill" && (!!versionId && (isLoadingVersion || !selectedReview?.revision)));
 
 	return (
 		<div className="flex flex-col gap-6">

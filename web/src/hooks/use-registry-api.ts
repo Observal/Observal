@@ -16,12 +16,18 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { toast } from "sonner";
+import type { SkillFolderDraftRequest } from "@/lib/types";
 import {
   registry,
   type RegistryType,
 } from "@/lib/api";
 
 // ── Component Draft/Submit (generic) ──────────────────────────────
+
+function isSkillFolderDraft(type: RegistryType, body: unknown): body is SkillFolderDraftRequest {
+  return type === "skills" && body !== null && typeof body === "object" &&
+    "extra_files" in body && Array.isArray(body.extra_files);
+}
 
 export function useMyComponents(type: RegistryType, enabled = true) {
   return useQuery({
@@ -48,11 +54,11 @@ export function useUpdateRegistryVisibility() {
 export function useComponentSubmit(type: RegistryType) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: unknown) => registry.submit(type, body),
-    onSuccess: () => {
+    mutationFn: async (body: unknown) => isSkillFolderDraft(type, body) ? await registry.folderDraft(body) : await registry.submit(type, body),
+    onSuccess: (_data, body) => {
       qc.invalidateQueries({ queryKey: ["registry", type] });
       qc.invalidateQueries({ queryKey: ["review"] });
-      toast.success("Submitted for review");
+      toast.success(isSkillFolderDraft(type, body) ? "Folder draft saved; submit after delivery is enabled" : "Submitted for review");
     },
     onError: (err: Error) => {
       toast.error(err.message || "Failed to submit");
@@ -63,7 +69,7 @@ export function useComponentSubmit(type: RegistryType) {
 export function useComponentSaveDraft(type: RegistryType) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: unknown) => registry.draft(body, type),
+    mutationFn: async (body: unknown) => isSkillFolderDraft(type, body) ? await registry.folderDraft(body) : await registry.draft(body, type),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["registry", type] });
       toast.success("Draft saved");
@@ -197,5 +203,23 @@ export function useComponentVersionSuggestions(type: RegistryType | undefined, l
     queryKey: ["component-version-suggestions", type, listingId],
     enabled: !!type && !!listingId,
     queryFn: () => registry.componentVersionSuggestions(type!, listingId!),
+  });
+}
+
+// ── Skill Folder Version APIs ──────────────────────────────────────
+
+export function useSkillVersionManifest(listingId: string | undefined, versionId: string | undefined) {
+  return useQuery({
+    queryKey: ["skill-version-manifest", listingId, versionId],
+    enabled: !!listingId && !!versionId,
+    queryFn: () => registry.getSkillVersionManifest(listingId!, versionId!),
+  });
+}
+
+export function useSkillFileContent(listingId: string | undefined, versionId: string | undefined, filePath: string | null) {
+  return useQuery({
+    queryKey: ["skill-file-content", listingId, versionId, filePath],
+    enabled: !!listingId && !!versionId && !!filePath,
+    queryFn: () => registry.getSkillFileContent(listingId!, versionId!, filePath!),
   });
 }

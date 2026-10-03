@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Observal Contributors
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 from __future__ import annotations
@@ -690,6 +691,7 @@ def test_install_command_registry_direct_tracks_project_metadata(monkeypatch):
             "harness": "pi",
             "scope": "project",
             "local_name": "alice-review-skill",
+            "supported_features": ["skill_extra_files_v1"],
             "version": "2.0.0",
         },
     )

@@ -2,6 +2,7 @@
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Observal CLI Command Reference
@@ -215,13 +216,17 @@ Every command available in the installed CLI. This block is generated from the T
     - `observal registry skill co-authors remove`: Remove a co-author.
   - `observal registry skill archive`: Archive this component.
   - `observal registry skill edit`: Edit a draft, rejected, or pending skill submission.
+  - `observal registry skill export`: Export a skill version to a local directory.
   - `observal registry skill install`: Install a skill by fetching the full skill directory from git.
   - `observal registry skill list`: List approved skills in the registry.
   - `observal registry skill my`: List your own skills across all statuses.
+  - `observal registry skill rebase`: Rebase a draft skill version on the current approved version.
+  - `observal registry skill replace-files`: Replace all files in a skill version with contents from a directory.
   - `observal registry skill show`: Show detailed information about a skill.
   - `observal registry skill submit`: Submit a new skill for review.
   - `observal registry skill transfer-owner`: Transfer ownership to another username.
   - `observal registry skill unarchive`: Restore an archived component.
+  - `observal registry skill withdraw`: Withdraw a pending skill version from review.
 - `observal registry version`: Manage component versions
   - `observal registry version list`: List version history for a registry component.
   - `observal registry version publish`: Publish a new version for a registry component.

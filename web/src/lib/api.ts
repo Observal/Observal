@@ -32,6 +32,10 @@ import type {
 	SessionErrorEvent,
 	TelemetryStatus,
 	ReviewItem,
+	SkillFolderDraftRequest,
+	SkillVersionManifest,
+	SkillFileContents,
+	SkillBinaryContents,
 	RegistryItem,
 	LeaderboardItem,
 	LeaderboardWindow,
@@ -232,10 +236,18 @@ export async function refreshAccessTokenWithReason(): Promise<RefreshResult> {
 	return _tryRefreshToken();
 }
 
+async function decodeResponse<T>(response: Response, fileResponse: boolean): Promise<T> {
+	if (fileResponse && response.headers.get("content-type")?.includes("application/octet-stream")) {
+		return { encoding: "binary", content: await response.blob() } as T;
+	}
+	return response.json() as Promise<T>;
+}
+
 async function request<T = unknown>(
 	method: string,
 	path: string,
 	body?: unknown,
+	fileResponse = false,
 ): Promise<T> {
 	const headers: Record<string, string> = {
 		"Content-Type": "application/json",
@@ -280,7 +292,7 @@ async function request<T = unknown>(
 				});
 				if (retryRes.ok) {
 					if (retryRes.status === 204) return undefined as T;
-					return retryRes.json() as Promise<T>;
+					return decodeResponse<T>(retryRes, fileResponse);
 				}
 				const retryText = await retryRes.text().catch(() => "Request failed");
 				const retryErr = new Error(retryText);
@@ -345,7 +357,7 @@ async function request<T = unknown>(
 
 	if (response.status === 204) return undefined as T;
 
-	return response.json() as Promise<T>;
+	return decodeResponse<T>(response, fileResponse);
 }
 
 function get<T = unknown>(path: string) {
@@ -497,6 +509,19 @@ export const registry = {
 	unarchiveComponent: (type: RegistryType, id: string) => patch(`/${type}/${id}/unarchive`),
 	draft: (body: unknown, type?: RegistryType) =>
 		post<RegistryItem>(`/${type ?? "agents"}/draft`, body),
+	folderDraft: (body: SkillFolderDraftRequest) =>
+		post<SkillVersionManifest>("/skills/folder-drafts", {
+			name: body.name,
+			version: body.version,
+			description: body.description,
+			owner: body.owner,
+			task_type: body.task_type,
+			skill_md_content: body.skill_md_content,
+			extra_files: body.extra_files,
+			team_id: body.team_id,
+			visibility: body.visibility,
+			supported_harnesses: body.supported_harnesses,
+		}),
 	updateDraft: (id: string, body: unknown, type?: RegistryType) =>
 		put<RegistryItem>(`/${type ?? "agents"}/${id}/draft`, body),
 	updateAgent: (id: string, body: unknown) =>
@@ -547,6 +572,12 @@ export const registry = {
 	) => post<ComponentVersionDetail>(`/${type}/${listingId}/versions`, body),
 	componentVersionSuggestions: (type: RegistryType, listingId: string) =>
 		get<VersionSuggestions>(`/${type}/${listingId}/version-suggestions`),
+	getSkillVersionManifest: (listingId: string, versionId: string) =>
+		get<SkillVersionManifest>(`/skills/${listingId}/versions/${versionId}/manifest`),
+	getSkillFileContent: (listingId: string, versionId: string, filePath: string) =>
+		request<SkillFileContents | SkillBinaryContents>(
+			"GET", `/skills/${listingId}/versions/${versionId}/files/${encodeURIComponent(filePath)}`, undefined, true
+		),
 	startEdit: (id: string, type?: RegistryType) =>
 		post<{ status: string }>(`/${type ?? "agents"}/${id}/start-edit`),
 	cancelEdit: (id: string, type?: RegistryType) =>
@@ -568,6 +599,9 @@ export const review = {
 	listForTeam: (teamId: string, params?: Record<string, string>) =>
 		get<ReviewItem[]>(`/review?${new URLSearchParams({ ...params, team_id: teamId })}`),
 	get: (id: string) => get<ReviewItem>(`/review/${id}`),
+	getSkillVersion: (id: string, versionId: string) => get<ReviewItem>(`/review/skills/${id}/versions/${versionId}`),
+	decideSkillVersion: (id: string, versionId: string, action: "approve" | "reject", observedRevision: string, reason?: string) =>
+		post(`/review/skills/${id}/versions/${versionId}/decision`, { action, observed_revision: observedRevision, reason }),
 	approve: (id: string) => post(`/review/${id}/approve`),
 	reject: (id: string, body: { reason: string }) =>
 		post(`/review/${id}/reject`, body),

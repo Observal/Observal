@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Shreem Seth <shreemseth26@gmail.com>
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Focused boundary and behavior coverage for the agent pull command."""
@@ -1329,6 +1330,7 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
                 "local_name": "local-reviewer",
             },
             "platform": sys.platform,
+            "supported_features": ["skill_extra_files_v1"],
             "version": "1.4.0",
         },
     )

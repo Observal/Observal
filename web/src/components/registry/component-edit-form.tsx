@@ -1,11 +1,13 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 // SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
 // SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+// SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { ArrowRight, Loader2, RotateCcw, Construction } from "lucide-react";
+import { toast } from "sonner";
+import { ArrowRight, Loader2, RotateCcw, Construction, Upload, FolderUp, File, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -80,6 +82,12 @@ interface HookFieldState {
 	script_filename: string;
 }
 
+interface SkillExtraFile {
+	path: string;
+	content: string;
+	executable?: boolean;
+}
+
 interface SkillFieldState {
 	task_type: string;
 	skill_path: string;
@@ -89,6 +97,7 @@ interface SkillFieldState {
 	skill_md_content: string;
 	script_content: string;
 	script_filename: string;
+	extra_files: SkillExtraFile[];
 }
 
 interface PromptFieldState {
@@ -759,7 +768,8 @@ function SkillFields({
 }) {
 	const scriptLanguage = codeLanguageFromFilename(state.script_filename);
 	const scriptLanguageName = codeLanguageLabel(scriptLanguage);
-	const defaultTab = state.git_url ? "git" : "paste";
+	const [selectedFilePath, setSelectedFilePath] = useState<string | null>(null);
+	const defaultTab = state.extra_files?.length > 0 ? "upload" : state.git_url ? "git" : "paste";
 
 	return (
 		<div className="space-y-4">
@@ -790,9 +800,10 @@ function SkillFields({
 			</div>
 
 			<Tabs defaultValue={defaultTab} className="w-full">
-				<TabsList>
-					<TabsTrigger value="git">Git source</TabsTrigger>
-					<TabsTrigger value="paste">Pasted files</TabsTrigger>
+				<TabsList className="grid w-full grid-cols-3">
+					<TabsTrigger value="git">Git</TabsTrigger>
+					<TabsTrigger value="paste">Paste</TabsTrigger>
+					<TabsTrigger value="upload">Upload</TabsTrigger>
 				</TabsList>
 
 				<TabsContent value="git" className="space-y-4 pt-4">
@@ -878,6 +889,209 @@ function SkillFields({
 							Detected from filename. Use .sh for Bash, .py for Python, or .mjs/.js for JavaScript.
 						</p>
 					</div>
+				</TabsContent>
+
+				<TabsContent value="upload" className="space-y-4 pt-4">
+					{/* Hidden file inputs */}
+					<input
+						type="file"
+						id="skill-edit-file-upload"
+						className="hidden"
+						multiple
+						onChange={(e) => {
+							const files = e.target.files;
+							if (!files) return;
+							Array.from(files).forEach((file) => {
+								const reader = new FileReader();
+								reader.onload = () => {
+									const content = reader.result as string;
+									if (file.name === "SKILL.md") {
+										onChange({ skill_md_content: content });
+									} else {
+										const existing = state.extra_files?.find((f) => f.path === file.name);
+										if (existing) {
+											onChange({ extra_files: state.extra_files?.map((f) => f.path === file.name ? { ...f, content } : f) });
+										} else {
+											onChange({ extra_files: [...(state.extra_files || []), { path: file.name, content }] });
+										}
+									}
+								};
+								reader.readAsText(file);
+							});
+							e.target.value = "";
+						}}
+					/>
+					<input
+						type="file"
+						id="skill-edit-folder-upload"
+						className="hidden"
+						{...({ webkitdirectory: "" } as React.InputHTMLAttributes<HTMLInputElement>)}
+						onChange={(e) => {
+							const files = e.target.files;
+							if (!files) return;
+							Array.from(files).forEach((file) => {
+								const path = file.webkitRelativePath || file.name;
+								if (path.includes("/.git/") || path.includes("/node_modules/") || path.includes("/.venv/") || path.startsWith(".")) return;
+								const parts = path.split("/");
+								const relativePath = parts.slice(1).join("/") || parts[0];
+								if (!relativePath) return;
+								const reader = new FileReader();
+								reader.onload = () => {
+									const content = reader.result as string;
+									if (relativePath === "SKILL.md") {
+										onChange({ skill_md_content: content });
+									} else {
+										const existing = state.extra_files?.find((f) => f.path === relativePath);
+										if (existing) {
+											onChange({ extra_files: state.extra_files?.map((f) => f.path === relativePath ? { ...f, content } : f) });
+										} else {
+											onChange({ extra_files: [...(state.extra_files || []), { path: relativePath, content }] });
+										}
+									}
+								};
+								reader.readAsText(file);
+							});
+							e.target.value = "";
+						}}
+					/>
+
+					{/* Upload buttons */}
+					<div className="flex gap-2">
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							onClick={() => document.getElementById("skill-edit-file-upload")?.click()}
+						>
+							<Upload className="h-4 w-4 mr-1" />
+							Upload Files
+						</Button>
+						<Button
+							type="button"
+							variant="outline"
+							size="sm"
+							onClick={() => document.getElementById("skill-edit-folder-upload")?.click()}
+						>
+							<FolderUp className="h-4 w-4 mr-1" />
+							Upload Folder
+						</Button>
+						{(state.skill_md_content || (state.extra_files?.length ?? 0) > 0) && (
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								onClick={() => {
+									onChange({ skill_md_content: "", extra_files: [] });
+									setSelectedFilePath(null);
+								}}
+							>
+								<Trash2 className="h-4 w-4 mr-1" />
+								Clear All
+							</Button>
+						)}
+					</div>
+
+					{/* File tree */}
+					{(state.skill_md_content || (state.extra_files?.length ?? 0) > 0) && (
+						<div className="border rounded-md divide-y max-h-40 overflow-auto">
+							{state.skill_md_content && (
+								<div
+									className={`flex items-center justify-between px-3 py-1.5 text-sm cursor-pointer hover:bg-muted/50 ${selectedFilePath === "SKILL.md" ? "bg-primary/10" : ""}`}
+									onClick={() => setSelectedFilePath("SKILL.md")}
+								>
+									<span className="flex items-center gap-2">
+										<File className="h-4 w-4 text-muted-foreground" />
+										<span className="font-[family-name:var(--font-mono)] text-xs">SKILL.md</span>
+									</span>
+									<span className="text-xs text-muted-foreground">{(new Blob([state.skill_md_content]).size / 1024).toFixed(1)} KB</span>
+								</div>
+							)}
+							{state.extra_files?.map((file, idx) => (
+								<div
+									key={file.path}
+									className={`flex items-center justify-between px-3 py-1.5 text-sm cursor-pointer hover:bg-muted/50 ${selectedFilePath === file.path ? "bg-primary/10" : ""}`}
+									onClick={() => setSelectedFilePath(file.path)}
+								>
+									<span className="flex items-center gap-2">
+										<File className="h-4 w-4 text-muted-foreground" />
+										<span className="font-[family-name:var(--font-mono)] text-xs truncate">{file.path}</span>
+										{file.executable && <span className="text-[10px] text-green-600 font-medium">exec</span>}
+									</span>
+									<div className="flex items-center gap-2">
+										<span className="text-xs text-muted-foreground">{(new Blob([file.content]).size / 1024).toFixed(1)} KB</span>
+										<Button
+											type="button"
+											variant="ghost"
+											size="icon"
+											className="h-5 w-5"
+											onClick={(e) => {
+												e.stopPropagation();
+												onChange({ extra_files: state.extra_files?.filter((_, i) => i !== idx) });
+												if (selectedFilePath === file.path) setSelectedFilePath(null);
+											}}
+										>
+											<X className="h-3 w-3" />
+										</Button>
+									</div>
+								</div>
+							))}
+						</div>
+					)}
+
+					{/* File editor */}
+					{selectedFilePath && (
+						<div className="space-y-2">
+							<div className="flex items-center justify-between">
+								<Label className="font-[family-name:var(--font-mono)] text-xs">{selectedFilePath}</Label>
+								{selectedFilePath !== "SKILL.md" && (
+									<label className="flex items-center gap-1 text-xs cursor-pointer">
+										<input
+											type="checkbox"
+											checked={state.extra_files?.find((f) => f.path === selectedFilePath)?.executable || false}
+											onChange={(e) => onChange({
+												extra_files: state.extra_files?.map((f) =>
+													f.path === selectedFilePath ? { ...f, executable: e.target.checked } : f
+												),
+											})}
+										/>
+										Executable
+									</label>
+								)}
+							</div>
+							<Textarea
+								value={
+									selectedFilePath === "SKILL.md"
+										? state.skill_md_content
+										: state.extra_files?.find((f) => f.path === selectedFilePath)?.content || ""
+								}
+								onChange={(e) => {
+									if (selectedFilePath === "SKILL.md") {
+										onChange({ skill_md_content: e.target.value });
+									} else {
+										onChange({
+											extra_files: state.extra_files?.map((f) =>
+												f.path === selectedFilePath ? { ...f, content: e.target.value } : f
+											),
+										});
+									}
+								}}
+								rows={8}
+								className="resize-y font-[family-name:var(--font-mono)] text-xs leading-relaxed"
+								placeholder="File content..."
+							/>
+						</div>
+					)}
+
+					{!state.skill_md_content && (state.extra_files?.length ?? 0) === 0 && (
+						<div className="border-2 border-dashed rounded-md p-6 text-center text-muted-foreground">
+							<FolderUp className="h-8 w-8 mx-auto mb-2 opacity-50" />
+							<p className="text-sm">Upload files or a folder containing SKILL.md</p>
+							<p className="text-xs mt-1">Supports scripts, templates, and assets</p>
+						</div>
+					)}
+					<p className="text-xs text-muted-foreground">
+						This release form cannot save folder file changes yet. Use version-bound CLI replace-files; edits here are refused rather than silently dropped.
+					</p>
 				</TabsContent>
 			</Tabs>
 		</div>
@@ -1038,6 +1252,7 @@ function EditFormInner({
 		skill_md_content: (item.skill_md_content as string) ?? "",
 		script_content: (item.script_content as string) ?? "",
 		script_filename: (item.script_filename as string) ?? "",
+		extra_files: (item.extra_files as SkillExtraFile[]) ?? [],
 	};
 	const initialPrompt: PromptFieldState = {
 		category: (item.category as string) ?? "",
@@ -1154,6 +1369,10 @@ function EditFormInner({
 	// ── Handlers ─────────────────────────────────────────────────
 
 	async function handleRelease(selectedVersion: string) {
+		if (singularType === "skill" && skillState.extra_files.length > 0) {
+			toast.error("Folder files require the version-bound editor; this release form cannot save them. Use CLI replace-files.");
+			return;
+		}
 		setPublishing(true);
 		try {
 			const body = buildBody(selectedVersion);

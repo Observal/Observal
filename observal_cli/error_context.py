@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Observal Contributors
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Human error context for CLI API operations."""
@@ -41,6 +42,7 @@ OPERATION_LABELS = {
     "_resolve_report_for_show": "Resolve insight report",
     "_search": "Search discoverable resources",
     "_show_impl": "Show MCP server",
+    "_submit_folder_draft": "Save skill folder draft",
     "_submit_impl": "Submit MCP server",
     "_top_impl": "List top registry items",
     "_traces_impl": "List traces",
@@ -146,6 +148,10 @@ OPERATION_LABELS = {
     "set_visibility": "Update teamspace visibility",
     "show_team": "Show teamspace",
     "skill_edit": "Edit skill",
+    "skill_export": "Export skill version",
+    "skill_rebase": "Rebase skill draft",
+    "skill_replace_files": "Replace skill draft files",
+    "skill_withdraw": "Withdraw skill version",
     "a2a_list": "List A2A agents",
     "a2a_remove": "Remove A2A agent",
     "a2a_review": "Review A2A agent",

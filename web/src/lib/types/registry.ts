@@ -360,6 +360,12 @@ export interface ReviewItem {
 	target_agents?: string[];
 	task_type?: string;
 	slash_command?: string;
+	version_id?: string;
+	review_key?: string;
+	revision?: string;
+	files?: SkillManifestFile[];
+	pending_version_id?: string;
+	has_extra_files?: boolean;
 
 	// Hook-specific
 	event?: string;
@@ -402,6 +408,83 @@ export interface ReviewItem {
 	component_count?: number;
 	components?: { component_type: string; component_id: string }[];
 	success_criteria?: SuccessCriteria | null;
+}
+
+// ── Skill Folder Resources ───────────────────────────────────────────
+
+/** A file resource in a skill folder (for authoring). */
+export interface SkillResource {
+	path: string;
+	content: string;
+	executable?: boolean;
+	/** Only present for binary files */
+	encoding?: "base64";
+}
+
+/** A file in a skill version manifest (from server). */
+export interface SkillManifestFile {
+	path: string;
+	size: number;
+	sha256: string;
+	mode: "0644" | "0755";
+}
+
+/** Manifest for a skill version's files. */
+export interface SkillVersionManifest {
+	listing_id: string;
+	version_id: string;
+	revision: string;
+	files: SkillManifestFile[];
+}
+
+/** Request body for creating a folder draft. */
+export interface SkillFolderDraftRequest {
+	name: string;
+	version: string;
+	description: string;
+	owner: string;
+	task_type?: string;
+	skill_md_content: string;
+	extra_files: SkillResource[];
+	supported_harnesses?: string[];
+	team_id?: string;
+	visibility?: "public" | "team";
+}
+
+/** Request body for replacing all files in a skill version. */
+export interface SkillFilesReplaceRequest {
+	observed_revision: string;
+	skill_md_content: string;
+	extra_files?: SkillResource[];
+}
+
+/** A single file operation for PATCH. */
+export interface SkillFileOperation {
+	action: "put" | "delete" | "rename";
+	path?: string;
+	new_path?: string;
+	file?: SkillResource;
+}
+
+/** Request body for patching files in a skill version. */
+export interface SkillFilesPatchRequest {
+	observed_revision: string;
+	operations: SkillFileOperation[];
+}
+
+/** Response from file read endpoint (text files). */
+export interface SkillFileContents {
+	version_id: string;
+	revision: string;
+	file: SkillManifestFile;
+	content: string;
+	encoding: "utf-8";
+}
+
+/** Binary previews are octet-stream attachments, never JSON. */
+export interface SkillBinaryContents {
+	encoding: "binary";
+	content: Blob;
 }
 
 // ── Scores ──────────────────────────────────────────────────────────
