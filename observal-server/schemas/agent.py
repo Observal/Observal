@@ -18,8 +18,8 @@ from pydantic import BaseModel, field_validator, model_serializer
 
 from models.agent import AgentStatus
 from schemas.constants import AGENT_NAME_REGEX, RecommendedFlag, Visibility, make_name_validator
-from schemas.skill_resources import SkillInstallFolder
 from schemas.fork import ForkProvenance
+from schemas.skill_resources import SkillInstallFolder
 from services.versioning import validate_semver
 
 VALID_COMPONENT_TYPES = {"mcp", "skill", "hook", "prompt", "sandbox"}

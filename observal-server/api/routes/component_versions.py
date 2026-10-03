@@ -13,6 +13,7 @@ Usage in each type's route file::
 from __future__ import annotations
 
 import re
+from copy import deepcopy
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -45,13 +46,13 @@ from services.agent_lock import INSTALLABLE_STATUSES
 from services.component_version_extras import ALLOWED_FIELDS, REQUIRED_FIELDS, validate_and_extract
 from services.editing_lock import is_actively_editing
 from services.inbox import sources as inbox
+from services.registry_fork import VERSION_MANAGED_FIELDS as _VERSION_MANAGED_FIELDS
+from services.registry_fork import _copy_version_columns
 from services.skill_bundle import declared_skill_folder_name, needs_bundle_delivery, validate_skill_bundle
 from services.skill_revisions import skill_content_revision, verified_skill_revision
 from services.skill_validator import SkillValidationError
 from services.teamspace import can_review, review_scope
 from services.versioning import parse_semver
-from services.registry_fork import VERSION_MANAGED_FIELDS as _VERSION_MANAGED_FIELDS
-from services.registry_fork import _copy_version_columns
 
 # Semver pattern: X.Y.Z or X.Y.Z-prerelease
 SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$")
