@@ -56,6 +56,58 @@ def test_no_adoption_and_manual_capture_of_file_and_directory(tmp_path: Path) ->
         install_baseline.verified_files(**kwargs(root))
 
 
+def test_chmod_of_owned_file_is_detected_even_when_bytes_are_unchanged(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    root.mkdir()
+    profile = root / "AGENTS.md"
+    profile.write_text("managed")
+    profile.chmod(0o644)
+    install_baseline.capture(**kwargs(root), written_paths=[str(profile)])
+    manifest = json.loads(install_baseline._path(REGISTRY, "pi", ID, "user", str(root)).read_text())
+    assert manifest["schema"] == 3 and manifest["modes"] == {str(profile): 0o644}
+    profile.chmod(0o777)
+    with pytest.raises(install_baseline.BaselineError, match="mode has changed"):
+        install_baseline.verified_files(**kwargs(root))
+    assert profile.read_text() == "managed" and profile.stat().st_mode & 0o777 == 0o777
+
+
+def test_old_or_incomplete_mode_evidence_requires_manual_repull(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    root.mkdir()
+    profile = root / "AGENTS.md"
+    profile.write_text("managed")
+    install_baseline.capture(**kwargs(root), written_paths=[str(profile)])
+    target = install_baseline._path(REGISTRY, "pi", ID, "user", str(root))
+    manifest = json.loads(target.read_text())
+    legacy = {key: value for key, value in manifest.items() if key != "modes"}
+    legacy["schema"] = 2
+    target.write_text(json.dumps(legacy))
+    with pytest.raises(install_baseline.BaselineError, match="no mode evidence"):
+        install_baseline.verified_files(**kwargs(root))
+    assert json.loads(target.read_text()) == legacy, "legacy evidence must not be silently adopted"
+    manifest["modes"] = {str(profile): True}
+    target.write_text(json.dumps(manifest))
+    with pytest.raises(install_baseline.BaselineError, match="no valid file modes"):
+        install_baseline.verified_files(**kwargs(root))
+    manifest["modes"] = {}
+    target.write_text(json.dumps(manifest))
+    with pytest.raises(install_baseline.BaselineError, match="no valid file modes"):
+        install_baseline.verified_files(**kwargs(root))
+
+
+def test_user_agent_in_other_harness_records_modes_without_enabling_apply(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    root.mkdir()
+    profile = root / "goose.md"
+    profile.write_text("managed")
+    options = {**kwargs(root), "harness": "goose"}
+    install_baseline.capture(**options, written_paths=[str(profile)])
+    assert len(install_baseline.verified_files(**options)) == 1
+    profile.chmod(0o700)
+    with pytest.raises(install_baseline.BaselineError, match="mode has changed"):
+        install_baseline.verified_files(**options)
+
+
 def test_shared_file_claim_is_not_silently_adopted(tmp_path: Path) -> None:
     root = tmp_path / "project"
     root.mkdir()
