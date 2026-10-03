@@ -23,12 +23,34 @@ import {
   type RegistryType,
 } from "@/lib/api";
 import type { McpWebhookSyncRequest } from "@/lib/types";
+import type { ForkRequest } from "@/lib/types";
 
 // ── Component Draft/Submit (generic) ──────────────────────────────
 
 function isSkillFolderDraft(type: RegistryType, body: unknown): body is SkillFolderDraftRequest {
   return type === "skills" && body !== null && typeof body === "object" &&
     "extra_files" in body && Array.isArray(body.extra_files);
+}
+
+export function useForkComponent(type: RegistryType) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: ForkRequest }) => registry.fork(type, id, body),
+    onSuccess: (_fork, { id }) => {
+      qc.invalidateQueries({ queryKey: ["registry", type] });
+      qc.invalidateQueries({ queryKey: ["registry", type, "my"] });
+      qc.invalidateQueries({ queryKey: ["registry", type, id] });
+      toast.success("Component fork created as a draft");
+    },
+  });
+}
+
+export function useComponentForks(type: RegistryType, id: string, page: number, enabled = true) {
+  return useQuery({
+    queryKey: ["registry", type, id, "forks", page],
+    queryFn: () => registry.forks(type, id, page),
+    enabled: enabled && !!id,
+  });
 }
 
 export function useMyComponents(type: RegistryType, enabled = true) {

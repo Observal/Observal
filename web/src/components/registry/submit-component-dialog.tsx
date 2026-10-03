@@ -1745,10 +1745,6 @@ export function SubmitComponentDialog({
 													toast.error(err);
 													return;
 												}
-												onUpdateDraft?.(
-													(editItem as Record<string, unknown>).id as string,
-													buildBody(),
-												);
 												onSubmit(buildBody());
 											}}
 											disabled={busy || !!submitError}

@@ -56,6 +56,7 @@ import { ErrorState } from "@/components/shared/error-state";
 import { EmptyState } from "@/components/shared/empty-state";
 import { StatusBadge } from "@/components/registry/status-badge";
 import { RecommendedBadge } from "@/components/registry/recommended-badge";
+import { ForkMarkers } from "@/components/registry/fork-provenance";
 import { EntityGlyph, toEntityKind } from "@/components/registry/entity-glyph";
 import { RegistryName } from "@/components/registry/registry-name";
 import { registryItemPath, canonicalRouteParts } from "@/lib/registry-name";
@@ -157,6 +158,7 @@ function ComponentCatalogCard({
         <EntityGlyph type={glyphKind} size="sm" labelled />
         <div className="flex items-center gap-1.5">
           {item.is_recommended && <RecommendedBadge />}
+          <ForkMarkers provenance={item.forked_from} count={item.fork_count} />
           <StatusBadge status={status} />
         </div>
       </div>
@@ -250,6 +252,7 @@ function ComponentListRow({
       {/* Status */}
       <div className="flex items-center gap-1.5">
         {item.is_recommended && <RecommendedBadge />}
+        <ForkMarkers provenance={item.forked_from} count={item.fork_count} />
         <StatusBadge status={status} />
       </div>
     </div>
@@ -880,9 +883,14 @@ export default function ComponentsPage(): React.JSX.Element {
                 onSuccess: () => { setSubmitOpen(false); setEditItem(null); },
               });
             } else {
-              submitDraftMutation.mutate(editItem.id, {
-                onSuccess: () => { setSubmitOpen(false); setEditItem(null); },
-              });
+              void (async () => {
+                try {
+                  await updateDraftMutation.mutateAsync({ id: editItem.id, body });
+                  await submitDraftMutation.mutateAsync(editItem.id);
+                  setSubmitOpen(false);
+                  setEditItem(null);
+                } catch { /* mutation hooks show the error; leave the editor open */ }
+              })();
             }
           } else {
             submitMutation.mutate(body, {

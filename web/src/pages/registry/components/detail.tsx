@@ -8,7 +8,7 @@
 
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { Star, ArrowLeft, History, Loader2, ArrowDownToLine, Archive, ArchiveRestore, AlertTriangle } from "lucide-react";
+import { Star, ArrowLeft, History, Loader2, ArrowDownToLine, Archive, ArchiveRestore, AlertTriangle, GitFork } from "lucide-react";
 import { toast } from "sonner";
 import {
   useRegistryItem,
@@ -28,6 +28,10 @@ import {
   useUpdateRegistryVisibility,
   useWhoami,
   useMcpSyncWatcher,
+  useForkComponent,
+  useComponentForks,
+  useComponentUpdateDraft,
+  useComponentSubmitDraft,
 } from "@/hooks/use-api";
 import { getUserRole } from "@/lib/api";
 import { useOptionalAuth } from "@/hooks/use-auth";
@@ -44,12 +48,16 @@ import remarkGfm from "remark-gfm";
 import { ReviewForm } from "@/components/registry/review-form";
 import { VersionDropdown } from "@/components/registry/version-dropdown";
 import { ComponentEditForm } from "@/components/registry/component-edit-form";
+import { SubmitComponentDialog } from "@/components/registry/submit-component-dialog";
 import { ComponentInstallCommand } from "@/components/registry/component-install-command";
 import { McpWebhookSyncPanel } from "@/components/registry/mcp-webhook-sync-panel";
 import { SkillVersionFiles } from "@/components/registry/skill-version-files";
 import { SkillSuccessorDialog } from "@/components/registry/skill-successor-dialog";
 import { RegistryName } from "@/components/registry/registry-name";
 import { ShareLinkButton } from "@/components/registry/share-link-button";
+import { ForkDialog } from "@/components/registry/fork-dialog";
+import { ForkedFromChip } from "@/components/registry/fork-provenance";
+import { ForksList } from "@/components/registry/forks-list";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -148,7 +156,7 @@ export default function ComponentDetailPage({
   // /components/$componentId route supplies the id as a path param and the
   // type as a query param.
   const params = useParams({ strict: false }) as { componentId?: string };
-  const search = useSearch({ strict: false }) as { type?: string };
+  const search = useSearch({ strict: false }) as { type?: string; tab?: string };
   const id = componentId ?? params.componentId ?? "";
   const type = (componentType ?? search.type ?? "mcps") as RegistryType;
   const navigate = useNavigate();
@@ -181,9 +189,22 @@ export default function ComponentDetailPage({
   const updateVisibility = useUpdateRegistryVisibility();
   const withdrawFolderVersion = useWithdrawSkillFolderVersion();
   const submitFolderDraft = useSubmitSkillFolderDraft();
+  const [forkOpen, setForkOpen] = useState(false);
+  const [forkPage, setForkPage] = useState(1);
+  const [activeTab, setActiveTab] = useState(search.tab === "edit" ? "edit" : "overview");
+  useEffect(() => { if (search.tab === "edit") setActiveTab("edit"); }, [id, search.tab]);
+  const forkComponent = useForkComponent(type);
+  const updateDraft = useComponentUpdateDraft(type);
+  const submitDraft = useComponentSubmitDraft(type);
+  const [draftEditOpen, setDraftEditOpen] = useState(false);
+  const { data: publicForks, isLoading: forksLoading, error: forksError } = useComponentForks(type, id, forkPage, activeTab === "forks");
   const canEdit = isAuthenticated && (item?.user_permission === "owner");
   // Only owners can read sync status, so only their open page follows GitHub syncs.
   useMcpSyncWatcher(item ? String(item.id) : undefined, canEdit && type === "mcps" && !!item?.git_url);
+  const isEditableDraft = item?.status === "draft" || item?.status === "rejected";
+  useEffect(() => {
+    if (search.tab === "edit" && isEditableDraft) setDraftEditOpen(true);
+  }, [id, search.tab, isEditableDraft]);
   const isAdmin = isAuthenticated && hasMinRole(getUserRole(), "admin");
   const owningTeam = item?.team_id ? teams.find((team) => team.id === String(item.team_id)) : undefined;
   const personalTeam = teams.find((team) => team.is_personal && team.visibility === "private");
@@ -372,11 +393,12 @@ export default function ComponentDetailPage({
           </Button>
         }
         actionButtonsRight={
-          item ? (
-            <ShareLinkButton
-              path={canonicalComponentPath ?? `/components/${id}?type=${type}`}
-            />
-          ) : undefined
+          item ? <div className="flex items-center gap-2">
+            {isAuthenticated && item.status === "approved" && latestApprovedVersion && (
+              <Button size="sm" variant="outline" onClick={() => setForkOpen(true)}><GitFork className="h-4 w-4" /> Fork</Button>
+            )}
+            <ShareLinkButton path={canonicalComponentPath ?? `/components/${id}?type=${type}`} />
+          </div> : undefined
         }
       />
       <div className="page-body w-full max-w-[1440px] mx-auto space-y-5">
@@ -413,6 +435,7 @@ export default function ComponentDetailPage({
                   </Badge>
                 )}
                 {item.is_recommended && showSkillFeedback && <RecommendedBadge />}
+                {!!item.fork_count && item.fork_count > 0 && <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><GitFork className="h-3.5 w-3.5" />{item.fork_count} public forks</span>}
                 {showVisibilityControl && (
                   <PickerSelect
                     value={currentVisibility}
@@ -446,6 +469,7 @@ export default function ComponentDetailPage({
                   <Badge variant="secondary" className="text-xs">v{effectiveVersion}</Badge>
                 ) : null}
               </div>
+              <ForkedFromChip provenance={item.forked_from} />
               {effectiveItem?.description && (
                 <p className="text-sm text-foreground/80 leading-relaxed max-w-2xl">{effectiveItem.description as string}</p>
               )}
@@ -522,7 +546,7 @@ export default function ComponentDetailPage({
             {/* Grid: Main + Sidebar */}
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-8 items-start">
             {/* Tabs */}
-            <Tabs defaultValue="overview" className="min-w-0">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="min-w-0">
               <TabsList>
                 <TabsTrigger value="overview">Overview</TabsTrigger>
                 {showSkillFeedback && <TabsTrigger value="reviews">
@@ -541,6 +565,7 @@ export default function ComponentDetailPage({
                     </span>
                   )}
                 </TabsTrigger>
+                <TabsTrigger value="forks">Forks{item.fork_count ? ` (${item.fork_count})` : ""}</TabsTrigger>
                 {canEdit && <TabsTrigger value="edit">Edit</TabsTrigger>}
                 {canEdit && singularType === "mcp" && <TabsTrigger value="sync">Sync</TabsTrigger>}
               </TabsList>
@@ -695,6 +720,9 @@ export default function ComponentDetailPage({
                 </div>
               </TabsContent>
 
+              <TabsContent value="forks" className="mt-6">
+                <ForksList type={type} result={publicForks} page={forkPage} onPage={setForkPage} isLoading={forksLoading} error={forksError} />
+              </TabsContent>
               {canEdit && (
                 <TabsContent value="edit" forceMount className="mt-6 data-[state=inactive]:hidden">
                   <div className="w-full min-h-[400px]">
@@ -718,6 +746,12 @@ export default function ComponentDetailPage({
                           folderVersionId: editableSkillFolderDraft.id, folderVersion: editableSkillFolderDraft.version }}>
                           Edit draft v{editableSkillFolderDraft.version}
                         </Link></Button>
+                      </div>
+                    ) : isEditableDraft ? (
+                      <div className="space-y-3 rounded-md border border-border p-5">
+                        <h2 className="text-sm font-semibold">Finish your draft</h2>
+                        <p className="text-sm text-muted-foreground">Edit the forked configuration, then submit it for review. It will not appear in public Forks until approved.</p>
+                        <Button onClick={() => setDraftEditOpen(true)}>Edit draft</Button>
                       </div>
                     ) : <ComponentEditForm
                       listingId={id}
@@ -863,6 +897,51 @@ export default function ComponentDetailPage({
         )}
       </div>
 
+      {draftEditOpen && item && isEditableDraft && canEdit && (
+        <SubmitComponentDialog
+          key={id}
+          open={draftEditOpen}
+          onOpenChange={setDraftEditOpen}
+          type={type}
+          editItem={item}
+          onSubmit={(body) => {
+            void (async () => {
+              try {
+                await updateDraft.mutateAsync({ id, body });
+                await submitDraft.mutateAsync(id);
+                setDraftEditOpen(false);
+                await refetch();
+              } catch { /* mutation hooks show the error; keep the draft open */ }
+            })();
+          }}
+          onSaveDraft={(body) => {
+            updateDraft.mutate({ id, body }, { onSuccess: () => { setDraftEditOpen(false); void refetch(); } });
+          }}
+          onUpdateDraft={(draftId, body) => {
+            updateDraft.mutate({ id: draftId, body }, { onSuccess: () => { setDraftEditOpen(false); void refetch(); } });
+          }}
+          isSubmitting={updateDraft.isPending || submitDraft.isPending}
+          isSavingDraft={updateDraft.isPending}
+        />
+      )}
+      {forkOpen && item && (
+        <ForkDialog
+          open={forkOpen}
+          onOpenChange={setForkOpen}
+          kind={singularType}
+          sourceName={item.name}
+          sourceIsPrivate={!!item.is_private}
+          sourceTeamId={item.team_id}
+          versions={versions}
+          initialVersion={versions.find((v) => v.version === effectiveVersion)?.status === "approved" ? effectiveVersion : latestApprovedVersion}
+          teams={teams}
+          username={whoami?.username}
+          onFork={async (body) => {
+            const fork = await forkComponent.mutateAsync({ id, body });
+            await navigate({ to: "/components/$componentId", params: { componentId: fork.id }, search: { type, tab: "edit" } });
+          }}
+        />
+      )}
       <AlertDialog open={confirmPublicOpen} onOpenChange={setConfirmPublicOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

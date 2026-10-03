@@ -54,6 +54,7 @@ export function useReviewAction() {
     },
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ["review"] });
+      qc.invalidateQueries({ queryKey: ["registry"] });
       toast.success(vars.action === "approve" ? "Submission approved" : "Submission rejected");
     },
     onError: (err: Error) => {
@@ -72,6 +73,7 @@ export function useBundleReviewAction() {
         : review.rejectBundle(vars.id, { reason: vars.reason ?? "" }),
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: ["review"] });
+      qc.invalidateQueries({ queryKey: ["registry"] });
       toast.success(vars.action === "approve" ? "Bundle approved" : "Bundle rejected");
     },
     onError: (err: Error) => {
