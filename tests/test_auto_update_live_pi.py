@@ -198,7 +198,7 @@ def _tui_notice(home: Path, env: dict, *, expected: str) -> None:
             "regular",
         ],
         cwd=home,
-        env={**env, "TERM": "xterm-256color", "OBSERVAL_PI_AUTO_APPLY": "0"},
+        env={**env, "TERM": "xterm-256color"},
         stdin=slave,
         stdout=slave,
         stderr=slave,
@@ -260,7 +260,7 @@ def _tui_reselect(home: Path, env: dict, *, name: str = "reviewer") -> bytes:
             "regular",
         ],
         cwd=home,
-        env={**env, "TERM": "xterm-256color", "OBSERVAL_PI_AUTO_APPLY": "0"},
+        env={**env, "TERM": "xterm-256color"},
         stdin=slave,
         stdout=slave,
         stderr=slave,
@@ -425,10 +425,9 @@ def test_frozen_then_real_apply_in_isolated_pi_rpc(tmp_path: Path, registry: Reg
     assert baseline["entry"]["pin_known"] is True and not baseline["entry"].get("requested_version")
     assert str(profile) in baseline["files"]
     registry.latest = "2.0.0"
-    # Real Pi RPC bridge invokes the isolated apply worker only in pilot mode;
-    # the worker still requires account-scoped `observal unfreeze`.
+    # Real Pi RPC bridge starts a detached worker; only account-scoped
+    # `observal unfreeze` authorizes it to change files.
     env["OBSERVAL_CLI_BIN"] = str(CLI)
-    env["OBSERVAL_PI_AUTO_APPLY"] = "1"
 
     messages = _rpc_session(home, env, expected="update available")
     assert "Author release notes" in "\n".join(messages)
@@ -436,15 +435,12 @@ def test_frozen_then_real_apply_in_isolated_pi_rpc(tmp_path: Path, registry: Reg
     if os.name != "nt":
         _tui_notice(home, env, expected="Author release notes")
         assert profile.read_text() == "old profile", "TUI notice must not install while frozen"
-    subprocess.run([str(CLI), "unfreeze"], cwd=home, env=env, check=True, capture_output=True)
-    # Consent alone cannot enable Pi apply without the explicit pilot gate.
-    check_only = _rpc_session(home, {**env, "OBSERVAL_PI_AUTO_APPLY": "0"}, expected="update available")
-    assert check_only and profile.read_text() == "old profile"
     # An explicit same-version manual pull records a pin. The real Pi bridge
     # must notice, but never replace, the pinned installed version.
     pinned = [arg for arg in pull if arg != "--upgrade"] + ["--version", "1.0.0"]
     pin_result = subprocess.run(pinned, cwd=root, env=env, capture_output=True, text=True)
     assert pin_result.returncode == 0, pin_result.stdout + pin_result.stderr
+    subprocess.run([str(CLI), "unfreeze"], cwd=home, env=env, check=True, capture_output=True)
     calls = registry.install_calls
     pinned_messages = _rpc_session(home, env, expected="automatic update skipped")
     assert any("pin" in message.lower() for message in pinned_messages), pinned_messages

@@ -108,9 +108,9 @@ def register_freeze(app: typer.Typer) -> None:
         elif enabled:
             rprint("[green]Consent saved for future updates of eligible user-scoped installations.[/green]")
             rprint(
-                "[dim]Pi's experimental user-agent installer also requires `OBSERVAL_PI_AUTO_APPLY=1`; "
-                "startup is otherwise check-only. Project installs are not implemented yet, and future "
-                "project support will require a separate `observal unfreeze --project` opt-in.[/dim]"
+                "[dim]Eligible, clean user-scoped Pi agents can now be updated at interactive startup. "
+                "Run `observal freeze` to return to notices only. Project installs are not implemented; "
+                "future project support requires a separate `observal unfreeze --project` opt-in.[/dim]"
             )
         else:
             rprint("[yellow]Automatic updates frozen. Manual upgrades and update checks remain available.[/yellow]")

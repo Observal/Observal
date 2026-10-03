@@ -26,7 +26,7 @@ setTimeout(() => {
   fs.writeFileSync(path.join(root, key + '.json'), JSON.stringify({schema: 1,
     registry: 'http://localhost:8000', account_id: 'alice', session_id: session,
     checked_at: Math.floor(Date.now()/1000), items: [{name: 'alice/code', type: 'agent',
-      scope: 'user', status: args[0] === '_startup-apply' ? 'updated' : 'available', current_version: '1.0', latest_version: '2.0',
+      scope: 'user', status: session === 'pilot-session' ? 'updated' : 'available', current_version: '1.0', latest_version: '2.0',
       description: 'Fixed bugs', manual_command: 'observal agent pull alice/code --upgrade'}]}), {mode: 0o600});
 }, 200);
 `, { mode: 0o700 });
@@ -77,7 +77,7 @@ await waitUntil(() => updateMessages().length === 2);
 assert.equal(updateMessages().length, 2, "live result delivered once after child exits");
 assert.equal(fs.readdirSync(path.join(dir, "update-notices")).length, 0);
 assert.deepEqual(fs.readFileSync(path.join(home, "worker-starts"), "utf-8").trim().split("\n"),
-  ["_startup-check:session-a", "_startup-check:session-b"], "start once per Pi session");
+  ["_startup-apply:session-a", "_startup-apply:session-b"], "start once per Pi session");
 fs.writeFileSync(path.join(dir, "update-notices", `${"c".repeat(64)}.json`), JSON.stringify({
   schema: 1, registry: "http://localhost:8000", account_id: "alice", session_id: "session-a",
   checked_at: Math.floor(Date.now() / 1000), items: [{ name: "alice/code", type: "agent",
@@ -110,7 +110,6 @@ await handlers.get("session_start")!({ reason: "resume" }, context("session-b", 
 assert.ok(messages.some((message) => message.includes("update failure from a previous Pi session")));
 assert.ok(messages.some((message) => message.includes("inspect managed files before retrying")),
   "failure notices must explain manual inspection even with long release notes");
-assert.ok(messages.every((message) => !message.includes("backup")), "no rollback backups exist");
 assert.equal(fs.existsSync(recoveryFile), false);
 const pendingKey = "f".repeat(64);
 const pendingFile = path.join(dir, "update-notices", `${pendingKey}.pending`);
@@ -145,7 +144,6 @@ assert.match(messages.at(-1)!, /installed on disk/);
 assert.ok(!fs.existsSync(pendingFile) && !fs.existsSync(unsealed) && !fs.existsSync(sealFile));
 await handlers.get("session_shutdown")!({}, context("session-b", true));
 
-process.env.OBSERVAL_PI_AUTO_APPLY = "1";
 await handlers.get("session_start")!({ reason: "startup" }, context("pilot-no-ui", false));
 await sleep(100);
 assert.equal(fs.readFileSync(path.join(home, "worker-starts"), "utf-8").trim().split("\n").length, 2,
@@ -154,7 +152,6 @@ await handlers.get("session_start")!({ reason: "startup" }, context("pilot-sessi
 await waitUntil(() => messages.some((message) => message.includes("installed on disk") && message.includes("Fixed bugs")));
 assert.match(fs.readFileSync(path.join(home, "worker-starts"), "utf-8"), /_startup-apply:pilot-session/);
 await handlers.get("session_shutdown")!({}, context("pilot-session", true));
-delete process.env.OBSERVAL_PI_AUTO_APPLY;
 
 fs.rmSync(home, { recursive: true, force: true });
 console.log("startup update notices ok");

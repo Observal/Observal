@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
-"""Freeze/unfreeze policy contracts; Pi apply is available only behind its pilot gate."""
+"""Freeze/unfreeze policy contracts; account consent gates Pi apply."""
 
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ def test_default_frozen_and_independent_registries(isolated_policy: Path, cli: t
     assert policy.policy_status("https://elsewhere.test")["effective"] is False
     assert call(cli, "unfreeze") == (0, enabled)  # idempotent
     text = CliRunner().invoke(cli, ["unfreeze"]).output
-    assert "OBSERVAL_PI_AUTO_APPLY=1" in text and "otherwise check-only" in text
+    assert "Pi agents can now be updated" in text and "observal freeze" in text
     code, frozen = call(cli, "freeze")
     assert code == 0
     assert frozen["effective"] is False

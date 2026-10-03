@@ -93,7 +93,6 @@ const LOCKFILE_PATH = path.join(OBSERVAL_DIR, "lockfile.json");
 const OUTBOX_DIR = path.join(OBSERVAL_DIR, "pi_session_outbox");
 const UPDATE_NOTICE_DIR = path.join(OBSERVAL_DIR, "update-notices");
 const UPDATE_SHUTDOWN_DIR = path.join(OBSERVAL_DIR, "update-shutdown");
-const UPDATE_CHECK_TIMEOUT_MS = 10_000;
 const UPDATE_NOTICE_MAX_BYTES = 64 * 1024;
 const UPDATE_NOTICE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 // Written by `observal discover use` and the install commands; read here so the
@@ -332,7 +331,7 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // ─── Startup update notices and isolated Pi apply pilot ────────────────
+  // ─── Startup update notices and user-consented Pi apply ────────────────
 
   function registryKey(config: ObservalConfig): string {
     const url = new URL(config.server_url);
@@ -499,35 +498,18 @@ export default function (pi: ExtensionAPI) {
       } catch { /* no startup failure for an unwritable spool */ }
     };
     const command = process.env.OBSERVAL_CLI_BIN || "observal";
-    // Temporary rollout gate in addition to account-scoped `observal unfreeze`.
-    // The Python worker alone authorizes each exact release and file mutation.
-    const applyPilot = process.env.OBSERVAL_PI_AUTO_APPLY === "1";
+    // Frozen accounts get notices only; the Python worker checks consent and
+    // exact ownership before it can launch any installer. Never kill a worker
+    // that may have started writing, even after Pi exits.
     try {
-      const child = spawn(command, [applyPilot ? "_startup-apply" : "_startup-check", "--cwd", ctx.cwd,
+      const child = spawn(command, ["_startup-apply", "--cwd", ctx.cwd,
         "--session-id", sessionId, "--notice-key", key], { stdio: "ignore", shell: false });
-      if (applyPilot) child.unref(); // Pi exit cannot kill or wait for an in-flight install.
-      let finished = false;
-      let timedOut = false;
-      // Only the check-only worker can be interrupted. Apply enforces its own
-      // admission deadline and may finish safely after the session exits.
-      const timeout = applyPilot ? undefined : setTimeout(() => {
-        if (!finished) {
-          timedOut = true;
-          child.kill();
-        }
-      }, UPDATE_CHECK_TIMEOUT_MS);
+      child.unref();
       child.once("error", () => {
-        finished = true;
-        if (timeout) clearTimeout(timeout);
         diagnostic("Update worker could not start; run `observal outdated` manually.");
       });
       child.once("close", (code) => {
-        finished = true;
-        if (timeout) clearTimeout(timeout);
-        if (code !== 0) diagnostic(applyPilot
-          ? "Update worker stopped unexpectedly; inspect managed files before trying again."
-          : timedOut ? "Update check timed out; run `observal outdated` later."
-            : "Update check failed; run `observal outdated` later.");
+        if (code !== 0) diagnostic("Update worker stopped unexpectedly; inspect managed files before trying again.");
         if (updateCheckSession === sessionId) deliverPendingUpdateNotices(config, ctx);
       });
     } catch {
