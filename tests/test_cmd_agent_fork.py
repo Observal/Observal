@@ -10,6 +10,7 @@ from unittest.mock import Mock
 import httpx
 import pytest
 import yaml
+from click.utils import strip_ansi
 from typer.testing import CliRunner
 
 import observal_cli.cmd_agent as agent
@@ -57,7 +58,8 @@ def _no_spinner(monkeypatch):
 def test_help_table_and_json_yaml_round_trip(tmp_path, monkeypatch):
     help_result = runner.invoke(agent.agent_app, ["fork", "--help"])
     assert help_result.exit_code == 0 and "observal agent fork" in help_result.output
-    assert "--new-version" in help_result.output and "--dir" in help_result.output
+    help_text = strip_ansi(help_result.output)
+    assert "--new-version" in help_text and "--dir" in help_text
     resolve = Mock(return_value="source-uuid")
     post = Mock(return_value=_forked())
     monkeypatch.setattr(agent.client, "resolve_registry_reference", resolve)

@@ -8,6 +8,7 @@ from unittest.mock import Mock
 
 import httpx
 import pytest
+from click.utils import strip_ansi
 from typer.main import get_command
 from typer.testing import CliRunner
 
@@ -31,7 +32,7 @@ def test_component_fork_help_and_json_contract(monkeypatch, kind):
     help_result = runner.invoke(app, [*path, "--help"])
     assert help_result.exit_code == 0, help_result.output
     assert f"observal registry {kind} fork" in help_result.output
-    assert "--new-version" in help_result.output
+    assert "--new-version" in strip_ansi(help_result.output)
     resolve = Mock(return_value="source-uuid")
     post = Mock(
         return_value={
