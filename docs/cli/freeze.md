@@ -4,7 +4,7 @@
 
 Control local consent for automatic **registry agent/component** updates. These commands never install or update an item themselves and do not affect `observal self` (CLI upgrades). Update checks and manual upgrades still work while frozen. Auto-updating defaults to **frozen** for everyone.
 
-> **Rollout status:** Local consent, the concurrency gate, and ownership-baseline capture on successful explicit agent pulls are connected. Pi startup is check-only by default. An experimental Pi user-agent installer runs only when `OBSERVAL_PI_AUTO_APPLY=1` is explicitly set **and** this locally authenticated account has granted `observal unfreeze`; clean managed files and an approved target release are also required. This pilot is not yet recommended for production profiles. `unfreeze` alone never starts an installation.
+> **Rollout status:** Local consent, the concurrency gate, and ownership-baseline capture on successful explicit agent pulls are connected. Pi startup is check-only by default. The experimental Pi user-agent apply worker runs the existing `agent pull` installer only when `OBSERVAL_PI_AUTO_APPLY=1` is explicitly set **and** this locally authenticated account has granted `observal unfreeze`; an unpinned install with recorded pin intent, clean owned files and an approved target release are also required. A failed automatic Pi pull restores verified original bytes when the old metadata and planned writes can still be proved; ambiguous changes retain a private backup and pending notice for manual repair. This pilot is not yet recommended for production profiles. `unfreeze` alone never starts an installation.
 
 ```bash
 observal unfreeze                          # Opt in for eligible personal installs

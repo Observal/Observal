@@ -2,8 +2,8 @@
 
 """Bounded, check-only Pi startup worker; writes durable user-facing results.
 
-This is deliberately separate from the automatic installer. The extension
-never invokes `agent pull` and a failed check cannot alter harness files.
+This is deliberately separate from the apply worker. A failed check cannot
+invoke an installer or alter harness files.
 """
 
 from __future__ import annotations

@@ -2,9 +2,9 @@
 
 """Local, registry-scoped auto-update consent and the shared install/policy gate.
 
-The guarded Pi installer holds ``registry_gate`` through mutation and takes
-``pi_install_lock`` inside it. Pi startup invokes it only in the explicit
-apply pilot, under the outer registry/account worker gate.
+The Pi startup runner holds ``registry_gate`` while its normal agent-pull
+subprocess takes ``pi_install_lock``. It runs only in the explicit apply pilot,
+under the outer registry/account worker gate.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ else:
 POLICY_VERSION = 2
 POLICY_PATH = config.CONFIG_DIR / "auto-update-policy.json"
 GATE_DIR = config.CONFIG_DIR / "auto-update-gates"
-GATE_TIMEOUT_SECONDS = 90.0  # bounded by the proposed maximum installation duration
+GATE_TIMEOUT_SECONDS = 90.0  # bounds lock acquisition, not an in-progress installer
 
 
 class PolicyError(ValueError):

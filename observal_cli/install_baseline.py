@@ -147,10 +147,10 @@ def capture(
             Path(temporary).unlink(missing_ok=True)
 
 
-def verified_files(
+def verified_manifest(
     *, registry: str, harness: str, agent_id: str, scope: str, root: str, version: str, lock_digest: str
-) -> dict[str, str]:
-    """Return verified paths or refuse any missing, dirty, or legacy install."""
+) -> tuple[dict[str, str], list[str]]:
+    """Return verified file hashes and original paths from the same manifest read."""
     try:
         raw = json.loads(_path(registry, harness, agent_id, scope, root).read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
@@ -191,4 +191,20 @@ def verified_files(
         raise BaselineError("An installed file or ownership manifest could not be read; update manually") from error
     if current != files:
         raise BaselineError("An installed file has changed since the last manual pull")
+    return files, paths
+
+
+def verified_files(
+    *, registry: str, harness: str, agent_id: str, scope: str, root: str, version: str, lock_digest: str
+) -> dict[str, str]:
+    """Return verified file hashes or refuse missing, dirty, or legacy installs."""
+    files, _paths = verified_manifest(
+        registry=registry,
+        harness=harness,
+        agent_id=agent_id,
+        scope=scope,
+        root=root,
+        version=version,
+        lock_digest=lock_digest,
+    )
     return files

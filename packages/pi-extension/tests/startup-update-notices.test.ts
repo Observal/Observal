@@ -104,28 +104,31 @@ fs.writeFileSync(recoveryFile, JSON.stringify({
   schema: 1, registry: "http://localhost:8000", account_id: "alice", session_id: "session-a",
   checked_at: Math.floor(Date.now() / 1000), items: [{name: "alice/code", scope: "user", status: "failed",
     current_version: "1.0", latest_version: "2.0", description: "x".repeat(3900),
-    recovery: {partial: true, recovery_dir: "/tmp/backup", recovery_files: [
-      {target: "/tmp/profile/AGENTS.md", backup: "/tmp/backup/0.before"}]}}],
+    reason: "Installer failed after admission; inspect managed files before retrying."}],
 }), { mode: 0o600 });
 await handlers.get("session_start")!({ reason: "resume" }, context("session-b", true));
 assert.ok(messages.some((message) => message.includes("update failure from a previous Pi session")));
-assert.ok(messages.some((message) => message.includes("/tmp/backup/0.before")),
-  "partial recovery references must not be lost to the main notice truncation");
+assert.ok(messages.some((message) => message.includes("inspect managed files before retrying")),
+  "failure notices must explain manual inspection even with long release notes");
+assert.ok(messages.every((message) => !message.includes("backup")), "no rollback backups exist");
 assert.equal(fs.existsSync(recoveryFile), false);
 const pendingKey = "f".repeat(64);
 const pendingFile = path.join(dir, "update-notices", `${pendingKey}.pending`);
+const backupDir = path.join(dir, "update-backups", pendingKey);
+fs.mkdirSync(backupDir, {recursive: true, mode: 0o700});
+fs.writeFileSync(path.join(backupDir, "manifest.json"), JSON.stringify({schema: 1}));
 const pendingIdentity = {registry: "http://localhost:8000", account_id: "alice", session_id: "session-a"};
-fs.writeFileSync(pendingFile, JSON.stringify({schema: 1, state: "pending", ...pendingIdentity,
-  checked_at: Math.floor(Date.now() / 1000), item: {name: "alice/code", current_version: "1.0", latest_version: "2.0"},
-  recovery: {recovery_dir: "/tmp/private-backups", recovery_files: [
-    {target: "/tmp/profile/AGENTS.md", backup: "/tmp/private-backups/0.before"}]}}),
+fs.writeFileSync(pendingFile, JSON.stringify({schema: 1, state: "pending", ...pendingIdentity, backup_dir: backupDir,
+  checked_at: Math.floor(Date.now() / 1000), item: {name: "alice/code", current_version: "1.0", latest_version: "2.0"}}),
 {mode: 0o600});
 const beforePending = messages.length;
 await handlers.get("session_start")!({ reason: "resume" }, context("session-b", true));
 assert.match(messages[beforePending]!, /outcome pending from a Pi session/);
 assert.match(messages[beforePending]!, /Files may have changed/);
-assert.ok(messages.slice(beforePending).some((message) => message.includes("/tmp/private-backups/0.before")),
-  "unsealed mid-commit crash must show recoverable original bytes");
+assert.ok(messages.slice(beforePending).some((message) => message.includes("inspect managed profiles and installed locks")),
+  "unsealed mid-write crash must require manual inspection");
+assert.ok(messages.slice(beforePending).some((message) => message.includes(backupDir)),
+  "unresolved outcome must surface its private backup when available");
 assert.ok(fs.existsSync(pendingFile), "unresolved journal must never be deleted on notification");
 const unsealed = path.join(dir, "update-notices", `${pendingKey}.json`);
 fs.writeFileSync(unsealed, JSON.stringify({schema: 1, ...pendingIdentity, journaled: true,

@@ -19,6 +19,7 @@ Every command available in the installed CLI. This block is generated from the T
 - `observal reconcile`: Backfill local session records missed by automatic hook delivery
 - `observal scan`: Show a read-only inventory of your local harness setup.
 - `observal unfreeze`: Opt in to automatic updates of eligible managed installations.
+- `observal update`: Preview or explicitly run tracked updates using existing installers.
 
 **`observal admin`**: Core administration and submission review commands
 

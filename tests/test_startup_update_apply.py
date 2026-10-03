@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
-"""Apply worker lifetime and notice contract (startup remains check-only)."""
+"""Gated Pi apply worker lifetime and durable notice contract."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from observal_cli import auto_update_install, auto_update_policy, client, installed_updates
+from observal_cli import auto_update_policy, client, cmd_update, installed_updates
 from observal_cli import startup_update_apply as worker
 from observal_cli import startup_update_check as check
 
@@ -50,8 +50,8 @@ def setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
     }
     monkeypatch.setattr(installed_updates, "inventory_for_context", lambda *args: [entry])
     monkeypatch.setattr(installed_updates, "compare", lambda *args, **kwargs: [finding])
-    apply = MagicMock(return_value={"status": "updated"})
-    monkeypatch.setattr(auto_update_install, "apply_pi_agent", apply)
+    apply = MagicMock(return_value={"status": "updated", "reason": "Saved profile updated."})
+    monkeypatch.setattr(cmd_update, "apply_startup_pi_agent", apply)
     return {"tmp": tmp_path, "apply": apply}
 
 
@@ -307,42 +307,25 @@ def test_frozen_is_notice_only(setup: dict, monkeypatch: pytest.MonkeyPatch) -> 
     assert "frozen" in result()["items"][0]["reason"]
 
 
-def test_partial_failure_preserves_local_recovery_reference(setup: dict) -> None:
-    recovery = setup["tmp"] / "original.before"
-    recovery.write_text("original bytes")
-
-    def fail_with_partial(*_args: object, **kwargs: object) -> dict:
-        kwargs["reserve_recovery"]({setup["tmp"] / "AGENTS.md": recovery})
-        raise auto_update_install.InstallFailedError(
-            "secret must not leak",
-            partial=True,
-            recovery_dir=setup["tmp"],
-            recovery_files={setup["tmp"] / "AGENTS.md": recovery},
-        )
-
-    setup["apply"].side_effect = fail_with_partial
+def test_failed_installer_keeps_pending_record_without_claiming_rollback(setup: dict) -> None:
+    setup["apply"].return_value = {"status": "failed", "reason": "Install may have changed managed files."}
     worker.apply_pi(str(setup["tmp"]), "session-a", KEY)
     text = (check.NOTICE_DIR / f"{KEY}.json").read_text()
     assert "secret" not in text
     item = result()["items"][0]
-    assert item["status"] == "failed" and item["recovery"]["partial"]
-    assert item["recovery"]["recovery_files"][0]["backup"] == str(recovery)
+    assert item["status"] == "failed" and "may have changed" in item["reason"]
     assert result()["outcome_final"] is False
     assert not (check.NOTICE_DIR / f"{KEY}.complete").exists()
     pending = json.loads((check.NOTICE_DIR / f"{KEY}.pending").read_text())
-    assert pending["recovery"]["recovery_files"][0]["backup"] == str(recovery)
+    assert pending["item"]["latest_version"] == "2.0"
     later = worker.expected_notice_key(REGISTRY, "alice", "session-later")
     worker.apply_pi(str(setup["tmp"]), "session-later", later)
     setup["apply"].assert_called_once()
     assert "unresolved" in json.loads((check.NOTICE_DIR / f"{later}.json").read_text())["warning"]
 
 
-def test_unexpected_error_after_recovery_reservation_stays_unsealed(setup: dict) -> None:
-    backup = setup["tmp"] / "original.before"
-    backup.write_text("original bytes")
-
-    def unknown(*_args: object, **kwargs: object) -> dict:
-        kwargs["reserve_recovery"]({setup["tmp"] / "AGENTS.md": backup})
+def test_unexpected_error_after_admission_stays_unsealed(setup: dict) -> None:
+    def unknown(*_args: object, **_kwargs: object) -> dict:
         raise RuntimeError("unverified worker error")
 
     setup["apply"].side_effect = unknown
@@ -353,7 +336,7 @@ def test_unexpected_error_after_recovery_reservation_stays_unsealed(setup: dict)
     assert not (check.NOTICE_DIR / f"{KEY}.complete").exists()
 
 
-def test_oversized_partial_result_retains_recovery_directory(setup: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_oversized_failed_result_retains_pending_record(setup: dict, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(check, "MAX_NOTICE_BYTES", 900)
     monkeypatch.setattr(
         check,
@@ -374,17 +357,12 @@ def test_oversized_partial_result_retains_recovery_directory(setup: dict, monkey
             }
         ],
     )
-    setup["apply"].side_effect = auto_update_install.InstallFailedError(
-        "failed",
-        partial=True,
-        recovery_dir=setup["tmp"],
-        recovery_files={setup["tmp"] / "AGENTS.md": setup["tmp"] / "0.before"},
-    )
+    setup["apply"].return_value = {"status": "failed", "reason": "Install may have changed managed files."}
     worker.apply_pi(str(setup["tmp"]), "session-a", KEY)
     notice = result()
     assert notice["items"][0]["status"] == "failed"
-    assert notice["items"][0]["recovery"]["recovery_dir"] == str(setup["tmp"])
-    assert "too large" in notice["warning"]
+    assert notice["items"][0]["status"] == "failed"
+    assert "notice limit" in notice["warning"]
     assert (check.NOTICE_DIR / f"{KEY}.pending").exists()
     assert not (check.NOTICE_DIR / f"{KEY}.complete").exists()
 

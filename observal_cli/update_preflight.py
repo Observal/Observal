@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
-"""Fail-closed eligibility checks for guarded Pi user-agent updates.
+"""Fail-closed eligibility checks for normal Pi pulls launched at startup.
 
 This module never installs; it is kept separate from the explicit `outdated`
 contract, which lists older versions regardless of auto-update eligibility.
@@ -42,11 +42,38 @@ def _identities(components: object, *, installed: bool) -> set[tuple[str, str]]:
     return identities
 
 
+def require_generated_release_lock(release: object, lock: object, *, version: str, harness: str) -> None:
+    """Reject a server /install lock that differs from the exact approved release.
+
+    Call this inside the normal pull's Pi install lock, before *any* file write.
+    The response's fallback/planned component list is not evidence: only the
+    actual generated lock can prove the identities and pinned versions.
+    """
+    if (
+        not isinstance(release, dict)
+        or release.get("version") != version
+        or release.get("status") != "approved"
+        or not isinstance(release.get("supported_harnesses"), list)
+        or harness not in release["supported_harnesses"]
+    ):
+        raise PreflightSkipError("The exact agent release is not approved for this harness.")
+    if not isinstance(lock, dict) or lock.get("status") != "locked" or not lock.get("digest"):
+        raise PreflightSkipError("The generated agent lock is incomplete.")
+    expected = release.get("components")
+    actual = lock.get("components")
+    _identities(expected, installed=False)
+    _identities(actual, installed=True)
+    wanted = {(row["component_type"], row["component_id"]): row["resolved_version"] for row in expected}
+    found = {(row["type"], row["id"]): row["version"] for row in actual}
+    if wanted != found:
+        raise PreflightSkipError("The generated component pins differ from the approved release.")
+
+
 def pi_user_agent_candidate(item: dict, *, registry: str) -> dict[str, str]:
     """Validate one verified comparison result without changing any files.
 
-    The guarded installer repeats this under the policy/install gates,
-    revalidates the target from the registry, then compares target file paths.
+    The shared runner repeats the release check under the policy gate;
+    normal agent pull revalidates owned files and target paths under Pi's lock.
     A positive preflight result alone is NOT install authorization.
     """
     if item.get("type") != "agent" or item.get("harness") != "pi" or item.get("scope") != "user":
@@ -60,6 +87,10 @@ def pi_user_agent_candidate(item: dict, *, registry: str) -> dict[str, str]:
         raise PreflightSkipError(item.get("reason") or "No verified approved update is available.")
     if not auto_update_policy.policy_status(registry)["effective"]:
         raise PreflightSkipError("Automatic updates are frozen; run `observal unfreeze` to opt in.")
+    if item.get("pin_known") is not True:
+        raise PreflightSkipError("The user agent's pin intent is unknown; manually re-pull it before auto-updating.")
+    if item.get("requested_version"):
+        raise PreflightSkipError("The user explicitly pinned this agent version; update it manually.")
     if item.get("lock_status") != "locked" or not item.get("lock_digest"):
         raise PreflightSkipError("The installed agent does not have a complete component lock; update manually.")
     current = item.get("current_version")

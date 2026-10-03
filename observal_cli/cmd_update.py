@@ -1,0 +1,448 @@
+# SPDX-License-Identifier: Apache-2.0
+
+"""Manual batch updates and Pi's opt-in startup runner using normal installers.
+
+The manual path is explicit and broader; the Pi startup path additionally
+requires consent, verified owned files, exact component pins and a journal.
+"""
+
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import typer
+from rich import print as rprint
+
+from observal_cli import (
+    auto_update_policy,
+    install_baseline,
+    install_recovery,
+    installed_updates,
+    lockfile,
+    update_preflight,
+)
+from observal_cli.constants import VALID_HARNESSES
+from observal_cli.errors import CliError, ErrorCategory, fail
+from observal_cli.render import OutputMode, esc, output_json
+
+
+def _entries(harness: str | None) -> list[dict]:
+    return [
+        installed_updates.prepare_entry(entry, str(lockfile.LOCKFILE_PATH))
+        for entry in lockfile.get_all_entries(harness=harness)
+    ]
+
+
+def _context(item: dict, *, project: Path | None) -> bool:
+    if project is None:
+        return item["scope"] == "user"
+    return (
+        item["scope"] == "project"
+        and isinstance(item["directory"], str)
+        and Path(item["directory"]).resolve() == project
+    )
+
+
+def _plan(item: dict, *, project: Path | None) -> tuple[list[str] | None, str | None, Path | None]:
+    """Only local item identity and verified version become argv; no shell or secrets."""
+    if not _context(item, project=project):
+        return None, "The installation is outside this exact update scope.", None
+    if not item.get("release_verified") or not item.get("latest_version"):
+        return None, item.get("reason") or "The exact approved release could not be verified.", None
+    if item.get("requested_version"):
+        return None, "This version was explicitly pinned; use the manual install command to change the pin.", None
+    if item["type"] == "mcp":
+        return None, "MCP install generates a snippet; it does not write or track a managed installation.", None
+    if item["type"] == "agent" and project is not None:
+        return (
+            None,
+            "Project agent versions are pinned in observal.lock; review and pull with --upgrade manually.",
+            None,
+        )
+    root = Path(item["directory"]).resolve() if item.get("directory") else None
+    if item["type"] == "agent" and (root is None or not root.is_dir()):
+        return None, "The original agent installation directory is unavailable.", None
+    if project is not None:
+        root = project
+    if item["type"] == "skill" and project is None:
+        root = Path.cwd()
+    argv = [sys.executable, "-m", "observal_cli"]
+    if item["type"] == "agent":
+        argv += [
+            "agent",
+            "pull",
+            item["id"],
+            "--harness",
+            item["harness"],
+            "--scope",
+            "user",
+            "--dir",
+            str(root),
+            "--version",
+            item["latest_version"],
+            "--strict",
+            "--no-prompt",
+            "--output",
+            "json",
+        ]
+    elif item["type"] in {"skill", "hook"}:
+        argv += [
+            "registry",
+            item["type"],
+            "install",
+            item["id"],
+            "--harness",
+            item["harness"],
+            "--version",
+            item["latest_version"],
+            "--output",
+            "json",
+        ]
+        if item["type"] == "skill":
+            argv += ["--scope", item["scope"]]
+        else:
+            if project is None:
+                return None, "Hooks require an explicit project root.", None
+            argv += ["--dir", str(project)]
+    else:
+        return None, "This item type has no managed install command.", None
+    return argv, None, root
+
+
+def _same_install(before: dict, after: dict) -> bool:
+    return all(
+        after.get(key) == before.get(key) for key in ("id", "type", "harness", "scope", "directory", "current_version")
+    )
+
+
+def _verify(item: dict) -> bool:
+    """Exit zero alone is not installation evidence; read a fresh lock snapshot."""
+    expected = {**item, "current_version": item["latest_version"]}
+    matches = [entry for entry in _entries(item["harness"]) if _same_install(expected, entry)]
+    if len(matches) != 1:
+        return False
+    if matches[0].get("requested_version") is not None:
+        return False
+    if item["type"] != "agent":
+        return True
+    installed = matches[0]
+    if installed.get("lock_status") != "locked" or not installed.get("lock_digest"):
+        return False
+    try:
+        release_components = item["release"]["components"]
+        installed_components = installed["components"]
+        update_preflight._identities(release_components, installed=False)
+        update_preflight._identities(installed_components, installed=True)
+        wanted = {
+            (component["component_type"], component["component_id"]): component["resolved_version"]
+            for component in release_components
+        }
+        observed = {(component["type"], component["id"]): component["version"] for component in installed_components}
+    except (KeyError, TypeError, ValueError):
+        return False
+    return wanted == observed
+
+
+def apply_startup_pi_agent(
+    item: dict,
+    *,
+    registry: str,
+    account: str,
+    deadline: float,
+    shutdown_requested: object,
+    marker: Path,
+) -> dict:
+    """Use the normal agent installer under the existing startup worker's journal.
+
+    The caller owns the per-session pending record; an unsuccessful child may
+    have partially written files and must leave that record unresolved.
+    """
+    import time
+
+    if not callable(shutdown_requested):
+        raise ValueError("A shutdown check is required")
+    with auto_update_policy.registry_gate(registry, timeout=max(0, min(2, deadline - time.monotonic()))):
+        if (
+            shutdown_requested()
+            or time.monotonic() + 15 >= deadline
+            or auto_update_policy.active_registry() != registry
+            or auto_update_policy.active_account() != account
+            or not auto_update_policy.policy_status(registry)["effective"]
+        ):
+            return {"status": "skipped", "reason": "Pi closed, consent changed, or the install window expired."}
+        try:
+            current = [
+                row
+                for row in _entries("pi")
+                if row["type"] == "agent"
+                and row["scope"] == "user"
+                and row["id"] == item["id"]
+                and row["directory"] == item["directory"]
+                and row["current_version"] == item["current_version"]
+                and row["lock_digest"] == item["lock_digest"]
+            ]
+        except (CliError, OSError, ValueError, TypeError):
+            return {"status": "skipped", "reason": "The installed state could not be checked; no installer started."}
+        if len(current) != 1:
+            return {"status": "skipped", "reason": "The managed agent changed during the check."}
+        try:
+            verified = installed_updates.compare(current, verify_releases=True)[0]
+        except (CliError, OSError, ValueError, TypeError):
+            return {"status": "skipped", "reason": "The approved release could not be checked; no installer started."}
+        if verified.get("latest_version") != item["latest_version"]:
+            return {"status": "skipped", "reason": "The approved target changed during the check."}
+        argv, reason, root = _plan(verified, project=None)
+        if reason or not argv or root is None:
+            return {"status": "skipped", "reason": reason or "No applicable agent installer."}
+        try:
+            update_preflight.pi_user_agent_candidate(verified, registry=registry)
+        except (update_preflight.PreflightSkipError, auto_update_policy.PolicyError) as error:
+            return {"status": "skipped", "reason": str(error)}
+        backup = install_recovery.path_for(marker)
+        env = os.environ.copy()
+        env.update(
+            {
+                "OBSERVAL_AUTO_UPDATE_RECOVERY_DIR": str(backup),
+                "OBSERVAL_AUTO_UPDATE_INSTALL": "1",
+                "OBSERVAL_AUTO_UPDATE_EXPECTED_VERSION": item["current_version"],
+                "OBSERVAL_AUTO_UPDATE_NETWORK_CUTOFF": str(deadline - 15),
+                "OBSERVAL_AUTO_UPDATE_SHUTDOWN_MARKER": str(marker),
+            }
+        )
+        # Never kill a child once admitted: it may be inside a file write.
+        try:
+            completed = subprocess.run(
+                argv,
+                cwd=root,
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except (OSError, RuntimeError, ValueError):
+            return {"status": "failed", "reason": "The installer may have changed files; inspect them before retrying."}
+
+        def restore_originals() -> bool:
+            try:
+                # The child is finished. Serialize with *manual* Pi pulls too;
+                # never restore across an unrecognized edit or changed lock.
+                with auto_update_policy.pi_install_lock(registry, timeout=2):
+                    if not install_recovery.restore_if_safe(backup):
+                        return False
+                    install_baseline.verified_files(
+                        registry=registry,
+                        harness="pi",
+                        agent_id=item["id"],
+                        scope="user",
+                        root=item["directory"],
+                        version=item["current_version"],
+                        lock_digest=item["lock_digest"],
+                    )
+                    install_recovery.discard(backup)
+                    return True
+            except (auto_update_policy.GateBusyError, install_baseline.BaselineError, OSError, ValueError):
+                return False  # Retain backup and pending notice for manual inspection.
+
+        if completed.returncode != 0:
+            # An installer that stopped before touching owned files is a skip,
+            # not an unresolved partial write. Only the original baseline AND
+            # original installed record together prove that conclusion.
+            try:
+                unchanged = [
+                    row
+                    for row in _entries("pi")
+                    if _same_install(verified, row) and row.get("lock_digest") == item["lock_digest"]
+                ]
+                if len(unchanged) == 1:
+                    install_baseline.verified_files(
+                        registry=registry,
+                        harness="pi",
+                        agent_id=item["id"],
+                        scope="user",
+                        root=item["directory"],
+                        version=item["current_version"],
+                        lock_digest=item["lock_digest"],
+                    )
+                    if backup.exists():
+                        install_recovery.discard(backup)
+                    if unchanged[0].get("requested_version"):
+                        return {
+                            "status": "skipped",
+                            "reason": "A manual version pin was set while the startup installer waited; it was preserved.",
+                        }
+                    return {
+                        "status": "skipped",
+                        "reason": "The installer stopped before changing managed files; update manually.",
+                    }
+            except (CliError, install_baseline.BaselineError, OSError, ValueError, KeyError, TypeError):
+                pass
+            if restore_originals():
+                return {
+                    "status": "skipped",
+                    "reason": "The installer failed; verified original managed files were restored. Update manually.",
+                }
+        if completed.returncode == 0 and _verify(verified):
+            installed = [
+                row
+                for row in _entries("pi")
+                if row["type"] == "agent"
+                and row["id"] == item["id"]
+                and row["scope"] == "user"
+                and row["directory"] == item["directory"]
+                and row["current_version"] == verified["latest_version"]
+            ]
+            if len(installed) == 1:
+                try:
+                    install_baseline.verified_files(
+                        registry=registry,
+                        harness="pi",
+                        agent_id=item["id"],
+                        scope="user",
+                        root=item["directory"],
+                        version=verified["latest_version"],
+                        lock_digest=installed[0]["lock_digest"],
+                    )
+                except (install_baseline.BaselineError, OSError, KeyError, TypeError):
+                    pass
+                else:
+                    try:
+                        install_recovery.discard(backup)
+                    except OSError:
+                        pass  # A leftover private backup does not negate verified success.
+                    return {
+                        "status": "updated",
+                        "reason": "Saved Pi profile updated; re-select it with `/agent` and reload.",
+                    }
+        if completed.returncode == 0 and restore_originals():
+            return {
+                "status": "skipped",
+                "reason": "The installed result could not be verified; verified original files were restored. Update manually.",
+            }
+        return {
+            "status": "failed",
+            "reason": "The installer failed or its file/lock result could not be verified; inspect files and the private backup.",
+        }
+
+
+def run_updates(*, harness: str | None, project: Path | None, apply: bool) -> list[dict]:
+    results: list[dict] = []
+    entries = [item for item in _entries(harness) if _context(item, project=project)]
+    for item in installed_updates.compare(entries, verify_releases=True):
+        if not item.get("outdated"):
+            continue
+        argv, reason, root = _plan(item, project=project)
+        result = {
+            "id": item["id"],
+            "name": item["qualified_name"],
+            "type": item["type"],
+            "harness": item["harness"],
+            "scope": item["scope"],
+            "current_version": item["current_version"],
+            "target_version": item["latest_version"],
+            "status": "skipped" if reason else "available",
+            "reason": reason,
+            "description": (item.get("release") or {}).get("description") if item.get("release_verified") else None,
+            "changelog": (item.get("release") or {}).get("changelog") if item.get("release_verified") else None,
+            "effective_in_current_session": "no" if apply else "unknown",
+        }
+        if argv and apply:
+            # A changed local record cannot authorize writing to a different
+            # installation. This is best effort, not a lock against editors.
+            if sum(_same_install(item, row) for row in _entries(item["harness"])) != 1:
+                result.update(status="skipped", reason="The installed version or scope changed during the check.")
+            else:
+                env = os.environ.copy()
+                # --version selects the exact batch target; it must not turn
+                # an unpinned install into an explicit user version pin.
+                env["OBSERVAL_UPDATE_EXACT_TARGET"] = "1"
+                try:
+                    completed = subprocess.run(
+                        argv,
+                        cwd=root,
+                        env=env,
+                        stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        check=False,
+                    )
+                    if completed.returncode == 0 and _verify(item):
+                        result.update(
+                            status="updated", reason="Installed and recorded; reload the harness to activate it."
+                        )
+                    else:
+                        result.update(
+                            status="failed",
+                            reason="Install failed or the exact target could not be verified; inspect local files before retrying.",
+                        )
+                except (OSError, RuntimeError, ValueError):
+                    result.update(
+                        status="failed",
+                        reason="The installer or installed-state verification failed; inspect local files.",
+                    )
+        results.append(result)
+    return results
+
+
+def register_update(app: typer.Typer) -> None:
+    @app.command("update")
+    def update(
+        all_items: bool = typer.Option(False, "--all", help="Consider all tracked items in the selected scope"),
+        yes: bool = typer.Option(False, "--yes", "-y", help="Run eligible existing installers without prompts"),
+        harness: str | None = typer.Option(None, "--harness", "-i", help="Filter by harness"),
+        project: bool = typer.Option(
+            False, "--project", help="Select exactly one project root instead of user installs"
+        ),
+        directory: str | None = typer.Option(None, "--dir", help="Project root (requires --project)"),
+        output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
+    ) -> None:
+        """Preview or explicitly run tracked updates using existing installers.
+
+        This is an interactive user's explicit batch command, not an automatic
+        startup installer. Frozen policy does not prevent manual updates.
+        """
+        if not all_items or (directory and not project) or (harness and harness not in VALID_HARNESSES):
+            fail(
+                ErrorCategory.VALIDATION,
+                "Specify --all, a valid harness, and --project when using --dir.",
+                operation="Update tracked items",
+                remediation="Run `observal update --all` to preview.",
+            )
+        try:
+            root = Path(directory or ".").resolve(strict=True) if project else None
+            if root is not None and not root.is_dir():
+                raise ValueError("Project root is not a directory")
+            items = run_updates(harness=harness, project=root, apply=yes)
+        except (OSError, ValueError, RuntimeError) as error:
+            fail(
+                ErrorCategory.VALIDATION,
+                "The update inventory or project root is unavailable.",
+                operation="Update tracked items",
+                remediation="Check the active registry, lockfile, and project root.",
+                detail=repr(error),
+            )
+        payload = {
+            "applied": yes,
+            "items": items,
+            "summary": {
+                status: sum(item["status"] == status for item in items)
+                for status in ("available", "updated", "skipped", "failed")
+            },
+        }
+        if output == "json":
+            output_json(payload)
+            return
+        if not items:
+            rprint("[dim]No newer tracked items in this scope.[/dim]")
+        for item in items:
+            rprint(
+                f"{esc(item['name'])} {esc(str(item['current_version']))} → "
+                f"{esc(str(item['target_version']))}: {esc(item['status'])}"
+            )
+            if item["reason"]:
+                rprint(f"  {esc(item['reason'])}")
+        if not yes and items:
+            rprint("[dim]Run `observal update --all --yes` to attempt eligible updates.[/dim]")

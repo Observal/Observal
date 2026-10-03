@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json as _json
+import os
 import re
 import subprocess
 import tempfile
@@ -748,7 +749,7 @@ def skill_install(
                 local_name=local_name,
                 version_id=str(result["version_id"]) if result.get("version_id") else None,
                 digest=result.get("digest"),
-                requested_version=version,
+                requested_version=None if os.environ.get("OBSERVAL_UPDATE_EXACT_TARGET") == "1" else version,
             )
         except PermissionError as error:
             fail(

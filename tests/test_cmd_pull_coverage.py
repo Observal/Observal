@@ -1052,6 +1052,8 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
         local_name="local-reviewer",
         lock_digest="sha256:" + "a" * 64,
         lock_status="locked",
+        requested_version=None,
+        pin_known=False,
     )
     boundaries.snapshot.assert_called_once_with(project_dir=str(target.resolve()))
     boundaries.adapter.persist_active_agent.assert_called_once_with("agent-uuid", "reviewer", "1.4.0")
