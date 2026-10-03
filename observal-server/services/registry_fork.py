@@ -12,7 +12,9 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from fastapi import HTTPException
+from loguru import logger as optic
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from api.deps import check_listing_visibility_async
 from models.agent import Agent, AgentStatus, AgentVersion
@@ -98,17 +100,40 @@ def _valid_version(value: str) -> None:
         raise HTTPException(status_code=422, detail=f"Invalid semver string: {value!r}")
 
 
+_ORDERABLE_VERSION = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$")
+
+
 def _version_key(value: str) -> tuple:
-    _valid_version(value)
-    release, _, prerelease = value.partition("-")
-    # SemVer: numeric prerelease segments compare numerically and before text.
-    suffix = tuple((0, int(part)) if part.isdigit() else (1, part) for part in prerelease.split("."))
-    return (*map(int, release.split(".")), suffix)
+    """SemVer precedence for stored versions; never raises on legacy strings.
+
+    New input is validated strictly by ``_valid_version``. Existing approved
+    rows may predate that rule, so an unparseable one sorts lowest instead of
+    making the whole listing unforkable. A release outranks its prereleases,
+    and numeric prerelease identifiers compare numerically, before text.
+    """
+    match = _ORDERABLE_VERSION.fullmatch(value or "")
+    if match is None:
+        return (0, 0, 0, 0, 0, ())
+    major, minor, patch, prerelease = match.groups()
+    identifiers = tuple(
+        (0, int(part), "") if part.isdigit() else (1, 0, part) for part in (prerelease or "").split(".") if part
+    )
+    return (1, int(major), int(minor), int(patch), 0 if prerelease else 1, identifiers)
+
+
+def _is_stable(version) -> bool:
+    return not getattr(version, "is_prerelease", False) and "-" not in version.version
+
+
+def _highest_approved(approved: list):
+    """Highest stable approved release, else the highest approved prerelease."""
+    stable = [v for v in approved if _is_stable(v)]
+    return max(stable or approved, key=lambda v: _version_key(v.version))
 
 
 def _select_base_version(versions: list, requested: str | None):
     if requested is not None:
-        _valid_version(requested)
+        # An exact lookup: legacy approved version strings stay addressable.
         row = next((v for v in versions if v.version == requested and v.status == AgentStatus.approved), None)
         if row is None:
             raise HTTPException(status_code=404, detail="Version not found")
@@ -116,8 +141,19 @@ def _select_base_version(versions: list, requested: str | None):
     approved = [v for v in versions if v.status == AgentStatus.approved]
     if not approved:
         raise HTTPException(status_code=409, detail="Agent has no approved version to fork")
-    stable = [v for v in approved if not getattr(v, "is_prerelease", False) and "-" not in v.version]
-    return max(stable or approved, key=lambda v: _version_key(v.version))
+    return _highest_approved(approved)
+
+
+def _fork_version_string(base, new_version: str | None) -> str:
+    if new_version is not None:
+        _valid_version(new_version)
+        return new_version
+    if not _FORK_SEMVER.fullmatch(base.version) or len(base.version) > 50:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Base version {base.version!r} is not valid SemVer; choose a new_version for the fork",
+        )
+    return base.version
 
 
 async def _check_rate_limit(user_id: uuid.UUID) -> None:
@@ -127,13 +163,49 @@ async def _check_rate_limit(user_id: uuid.UUID) -> None:
     if limit <= 0:
         raise HTTPException(status_code=429, detail="Fork limit reached; retry in one hour")
     # One atomic operation: the first hit starts the one-hour window, even under concurrency.
-    count = await get_redis().eval(
-        "local n = redis.call('INCR', KEYS[1]); if n == 1 then redis.call('EXPIRE', KEYS[1], 3600) end; return n",
-        1,
-        f"fork:rate:{user_id}",
-    )
+    try:
+        count = await get_redis().eval(
+            "local n = redis.call('INCR', KEYS[1]); if n == 1 then redis.call('EXPIRE', KEYS[1], 3600) end; return n",
+            1,
+            f"fork:rate:{user_id}",
+        )
+    except Exception as exc:
+        # The limit is a safety control: fail closed, but as a clear retryable 503.
+        optic.warning("fork rate limiter unavailable: {}", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Forking is temporarily unavailable; retry shortly") from exc
     if count > limit:
         raise HTTPException(status_code=429, detail="Fork limit reached; retry in one hour")
+
+
+async def _release_fork_slot(user_id: uuid.UUID) -> None:
+    """Return a reserved slot when the fork was not created; never fail the request."""
+    try:
+        await get_redis().eval(
+            "if redis.call('GET', KEYS[1]) and tonumber(redis.call('GET', KEYS[1])) > 0 then "
+            "return redis.call('DECR', KEYS[1]) end; return 0",
+            1,
+            f"fork:rate:{user_id}",
+        )
+    except Exception as exc:
+        optic.warning("fork rate slot release failed: {}", type(exc).__name__)
+
+
+async def _flush_new_identity(db: AsyncSession, label: str, target) -> None:
+    """Map a concurrent namespace/slug insert to 409 at the flush that detects it.
+
+    The pre-check cannot close the race; the unique index fails here, before
+    the route's ``commit_or_name_conflict`` could translate it.
+    """
+    try:
+        await db.flush()
+    except IntegrityError as exc:
+        await db.rollback()
+        detail = str(exc.orig).lower()
+        if ("namespace" in detail or "slug" in detail) and ("unique" in detail or "duplicate" in detail):
+            raise HTTPException(
+                status_code=409, detail=f"{label} '{target.namespace}/{target.slug}' already exists"
+            ) from exc
+        raise
 
 
 async def _enforce_private_source_policy(source: Agent, target, user, db: AsyncSession) -> None:
@@ -156,12 +228,10 @@ async def _enforce_private_source_policy(source: Agent, target, user, db: AsyncS
 
 
 async def fork_agent(db: AsyncSession, source: Agent, spec: ForkRequestSpec, *, current_user) -> ForkResult:
-    await _check_rate_limit(current_user.id)
     if source.deleted_at is not None or source.status != AgentStatus.approved:
         raise HTTPException(status_code=409, detail="Source is not approved")
     base = _select_base_version(source.versions, spec.version)
-    version_string = spec.new_version or base.version
-    _valid_version(version_string)
+    version_string = _fork_version_string(base, spec.new_version)
     name = spec.name or source.name
     try:
         target = await resolve_publish_target(db, current_user, name, team_id=spec.team_id, visibility=spec.visibility)
@@ -186,7 +256,7 @@ async def fork_agent(db: AsyncSession, source: Agent, spec: ForkRequestSpec, *, 
                 raise HTTPException(
                     status_code=409, detail=f"{pin.component_type} {pin.component_id} has no approved version"
                 )
-            row = max(approved, key=lambda v: _version_key(v.version))
+            row = _highest_approved(approved)
             warnings.append(f"Re-pinned {pin.component_type} {pin.component_id} to approved {row.version}")
         refs.append(
             {
@@ -211,62 +281,69 @@ async def fork_agent(db: AsyncSession, source: Agent, spec: ForkRequestSpec, *, 
             detail="Components unavailable for fork target: "
             + ", ".join(f"{e.component_type} {e.component_id}" for e in errors),
         )
-    agent = Agent(
-        name=name,
-        namespace=target.namespace,
-        slug=target.slug,
-        owner=target.owner,
-        team_id=target.team_id,
-        is_private=target.visibility == "team",
-        created_by=current_user.id,
-        category=source.category,
-        co_authors=[],
-        is_recommended=False,
-        forked_from_id=source.id,
-        forked_from_version_id=base.id,
-        forked_from_ref=f"{source.qualified_name}@{base.version}",
-        forked_at=datetime.now(UTC),
-    )
-    db.add(agent)
-    await db.flush()
-    version = AgentVersion(
-        agent_id=agent.id,
-        version=version_string,
-        description=base.description,
-        prompt=base.prompt,
-        model_name=base.model_name,
-        model_config_json=deepcopy(base.model_config_json or {}),
-        models_by_harness=deepcopy(base.models_by_harness or {}),
-        external_mcps=deepcopy(base.external_mcps or []),
-        supported_harnesses=deepcopy(base.supported_harnesses or []),
-        success_criteria=deepcopy(base.success_criteria),
-        status=AgentStatus.draft,
-        is_prerelease="-" in version_string,
-        released_by=current_user.id,
-    )
-    db.add(version)
-    await db.flush()
-    agent.latest_version_id = version.id
-    await attach_pinned_components(db, version.id, refs, require_approved=True, current_user=current_user)
-    skill_ids = [ref["component_id"] for ref in refs if ref["component_type"] == "skill"]
-    skills = {}
-    if skill_ids:
-        rows = (await db.execute(select(SkillListing).where(SkillListing.id.in_(skill_ids)))).scalars().all()
-        skills = {row.id: row for row in rows}
+    # Reserve quota only after every validation passed, so a rejected request
+    # (conflict, bad version, wrong target) never consumes the user's limit.
+    await _check_rate_limit(current_user.id)
+    try:
+        agent = Agent(
+            name=name,
+            namespace=target.namespace,
+            slug=target.slug,
+            owner=target.owner,
+            team_id=target.team_id,
+            is_private=target.visibility == "team",
+            created_by=current_user.id,
+            category=source.category,
+            co_authors=[],
+            is_recommended=False,
+            forked_from_id=source.id,
+            forked_from_version_id=base.id,
+            forked_from_ref=f"{source.qualified_name}@{base.version}",
+            forked_at=datetime.now(UTC),
+        )
+        db.add(agent)
+        await _flush_new_identity(db, "Agent", target)
+        version = AgentVersion(
+            agent_id=agent.id,
+            version=version_string,
+            description=base.description,
+            prompt=base.prompt,
+            model_name=base.model_name,
+            model_config_json=deepcopy(base.model_config_json or {}),
+            models_by_harness=deepcopy(base.models_by_harness or {}),
+            external_mcps=deepcopy(base.external_mcps or []),
+            supported_harnesses=deepcopy(base.supported_harnesses or []),
+            success_criteria=deepcopy(base.success_criteria),
+            status=AgentStatus.draft,
+            is_prerelease="-" in version_string,
+            released_by=current_user.id,
+        )
+        db.add(version)
+        await db.flush()
+        agent.latest_version_id = version.id
+        await attach_pinned_components(db, version.id, refs, require_approved=True, current_user=current_user)
+        skill_ids = [ref["component_id"] for ref in refs if ref["component_type"] == "skill"]
+        skills = {}
+        if skill_ids:
+            rows = (await db.execute(select(SkillListing).where(SkillListing.id.in_(skill_ids)))).scalars().all()
+            skills = {row.id: row for row in rows}
 
-    class _Proxy:
-        components = [
-            type("_Ref", (), {"component_type": ref["component_type"], "component_id": ref["component_id"]})()
-            for ref in refs
-        ]
-        external_mcps = version.external_mcps
+        class _Proxy:
+            components = [
+                type("_Ref", (), {"component_type": ref["component_type"], "component_id": ref["component_id"]})()
+                for ref in refs
+            ]
+            external_mcps = version.external_mcps
 
-    version.required_capabilities = infer_required_features(_Proxy(), skill_listings=skills)
-    version.inferred_supported_harnesses = compute_supported_harnesses(version.required_capabilities)
-    await db.flush()
-    await lock_agent_version(db, agent, version)
-    version.yaml_snapshot = await build_yaml_snapshot(version, db)
-    return ForkResult(agent, version, warnings)
+        version.required_capabilities = infer_required_features(_Proxy(), skill_listings=skills)
+        version.inferred_supported_harnesses = compute_supported_harnesses(version.required_capabilities)
+        await db.flush()
+        await lock_agent_version(db, agent, version)
+        version.yaml_snapshot = await build_yaml_snapshot(version, db)
+        return ForkResult(agent, version, warnings)
+    except BaseException:
+        await _release_fork_slot(current_user.id)
+        raise
 
 
 async def fork_component(
@@ -274,12 +351,10 @@ async def fork_component(
 ) -> ForkResult:
     """Copy only an approved component release into an independent draft listing."""
     listing_model, version_model = COMPONENT_MODELS[component_type]
-    await _check_rate_limit(current_user.id)
     if source.status != ListingStatus.approved:
         raise HTTPException(status_code=409, detail="Source is not approved")
     base = _select_base_version(source.versions, spec.version)
-    version_string = spec.new_version or base.version
-    _valid_version(version_string)
+    version_string = _fork_version_string(base, spec.new_version)
     name = spec.name or source.name
     try:
         target = await resolve_publish_target(db, current_user, name, team_id=spec.team_id, visibility=spec.visibility)
@@ -291,47 +366,52 @@ async def fork_component(
             status_code=409, detail=f"{component_type} '{target.namespace}/{target.slug}' already exists"
         )
 
-    listing = listing_model(
-        **({"category": source.category} if component_type == "mcp" else {}),
-        name=name,
-        namespace=target.namespace,
-        slug=target.slug,
-        owner=target.owner,
-        team_id=target.team_id,
-        is_private=target.visibility == "team",
-        submitted_by=current_user.id,
-        co_authors=[],
-        bundle_id=None,
-        unique_agents=0,
-        is_recommended=False,
-        forked_from_id=source.id,
-        forked_from_version_id=base.id,
-        forked_from_ref=f"{source.qualified_name}@{base.version}",
-        forked_at=datetime.now(UTC),
-    )
-    db.add(listing)
-    await db.flush()
-    content = _copy_version_columns(version_model, base)
-    content.update(
-        listing_id=listing.id,
-        version=version_string,
-        description=base.description,
-        changelog=None,
-        status=ListingStatus.draft,
-        released_by=current_user.id,
-        released_at=datetime.now(UTC),
-    )
-    if component_type == "mcp":
-        content["mcp_validated"] = False
-    elif component_type == "skill":
-        content["validated"] = False
-    elif component_type == "sandbox":
-        content["validated_at"] = None
-    version = version_model(**content)
-    db.add(version)
-    await db.flush()
-    listing.latest_version_id = version.id
-    return ForkResult(listing, version, [])
+    await _check_rate_limit(current_user.id)
+    try:
+        listing = listing_model(
+            **({"category": source.category} if component_type == "mcp" else {}),
+            name=name,
+            namespace=target.namespace,
+            slug=target.slug,
+            owner=target.owner,
+            team_id=target.team_id,
+            is_private=target.visibility == "team",
+            submitted_by=current_user.id,
+            co_authors=[],
+            bundle_id=None,
+            unique_agents=0,
+            is_recommended=False,
+            forked_from_id=source.id,
+            forked_from_version_id=base.id,
+            forked_from_ref=f"{source.qualified_name}@{base.version}",
+            forked_at=datetime.now(UTC),
+        )
+        db.add(listing)
+        await _flush_new_identity(db, component_type, target)
+        content = _copy_version_columns(version_model, base)
+        content.update(
+            listing_id=listing.id,
+            version=version_string,
+            description=base.description,
+            changelog=None,
+            status=ListingStatus.draft,
+            released_by=current_user.id,
+            released_at=datetime.now(UTC),
+        )
+        if component_type == "mcp":
+            content["mcp_validated"] = False
+        elif component_type == "skill":
+            content["validated"] = False
+        elif component_type == "sandbox":
+            content["validated_at"] = None
+        version = version_model(**content)
+        db.add(version)
+        await db.flush()
+        listing.latest_version_id = version.id
+        return ForkResult(listing, version, [])
+    except BaseException:
+        await _release_fork_slot(current_user.id)
+        raise
 
 
 async def provenance_for(entity: Agent, current_user, db: AsyncSession) -> dict | None:

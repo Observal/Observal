@@ -110,3 +110,52 @@ async def test_component_fork_rejects_pending_source_even_with_approved_older_ve
             MagicMock(), kind, source, forks.ForkRequestSpec(), current_user=SimpleNamespace(id=uuid.uuid4())
         )
     assert error.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_concurrent_identity_insert_maps_to_conflict_not_server_error(monkeypatch):
+    """The unique index, not the pre-check, decides a same-name race; it must surface as 409."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from models.base import Base
+
+    listing_model, version_model = forks.COMPONENT_MODELS["skill"]
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    try:
+        async with async_sessionmaker(engine, expire_on_commit=False)() as db:
+            user = SimpleNamespace(id=uuid.uuid4(), username="alice")
+            source = listing_model(
+                name="Original", namespace="bob", slug="original", owner="bob", submitted_by=uuid.uuid4()
+            )
+            winner = listing_model(name="Copy", namespace="alice", slug="copy", owner="alice", submitted_by=user.id)
+            db.add_all([source, winner])
+            await db.flush()
+            base = version_model(
+                listing_id=source.id,
+                version="2.0.0",
+                status=ListingStatus.approved,
+                description="Documentation",
+                released_by=source.submitted_by,
+                released_at=datetime.now(UTC),
+                supported_harnesses=["kiro"],
+                **CONTENT["skill"],
+            )
+            db.add(base)
+            await db.commit()
+            await db.refresh(source, ["versions", "latest_version"])
+            source.latest_version_id = base.id
+            await db.commit()
+            await db.refresh(source, ["versions", "latest_version"])
+            monkeypatch.setattr(forks, "_check_rate_limit", AsyncMock())
+            # Simulate the other request committing after this request's pre-check.
+            monkeypatch.setattr(forks, "identity_exists", AsyncMock(return_value=False))
+            target = SimpleNamespace(namespace="alice", slug="copy", owner="alice", team_id=None, visibility="public")
+            monkeypatch.setattr(forks, "resolve_publish_target", AsyncMock(return_value=target))
+            with pytest.raises(HTTPException) as error:
+                await forks.fork_component(db, "skill", source, forks.ForkRequestSpec(name="Copy"), current_user=user)
+            assert error.value.status_code == 409
+            assert "alice/copy" in error.value.detail
+    finally:
+        await engine.dispose()

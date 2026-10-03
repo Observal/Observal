@@ -418,3 +418,88 @@ async def test_fork_round_trip_with_real_database_and_snapshot(monkeypatch):
             assert await forks.agent_fork_counts(db, [source.id]) == {}
     finally:
         await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_rejected_fork_never_consumes_rate_limit(monkeypatch):
+    """Name conflicts and bad versions are retried by design; they must not burn quota."""
+    source, _, owner = _source()
+    reserve = AsyncMock()
+    monkeypatch.setattr(forks, "_check_rate_limit", reserve)
+    monkeypatch.setattr(
+        forks,
+        "resolve_publish_target",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                namespace="alice", slug="taken", owner="alice", team_id=None, visibility="public"
+            )
+        ),
+    )
+    monkeypatch.setattr(forks, "identity_exists", AsyncMock(return_value=True))
+    with pytest.raises(HTTPException) as error:
+        await forks.fork_agent(MagicMock(), source, forks.ForkRequestSpec(name="Taken"), current_user=owner)
+    assert error.value.status_code == 409
+    with pytest.raises(HTTPException) as error:
+        await forks.fork_agent(MagicMock(), source, forks.ForkRequestSpec(version="9.9.9"), current_user=owner)
+    assert error.value.status_code == 404
+    reserve.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_failure_after_reservation_returns_the_slot(monkeypatch):
+    source, _, owner = _source()
+    monkeypatch.setattr(forks, "_check_rate_limit", AsyncMock())
+    release = AsyncMock()
+    monkeypatch.setattr(forks, "_release_fork_slot", release)
+    monkeypatch.setattr(
+        forks,
+        "resolve_publish_target",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                namespace="alice", slug="copy", owner="alice", team_id=None, visibility="public"
+            )
+        ),
+    )
+    monkeypatch.setattr(forks, "identity_exists", AsyncMock(return_value=False))
+    monkeypatch.setattr(forks, "validate_component_ids", AsyncMock(return_value=[]))
+    db = MagicMock()
+    db.flush = AsyncMock(side_effect=HTTPException(status_code=409, detail="race"))
+    with pytest.raises(HTTPException):
+        await forks.fork_agent(db, source, forks.ForkRequestSpec(name="Copy"), current_user=owner)
+    release.assert_awaited_once_with(owner.id)
+
+
+@pytest.mark.asyncio
+async def test_rate_limiter_outage_is_a_clear_retryable_error(monkeypatch):
+    monkeypatch.setattr(forks.dynamic_settings, "get_bool", AsyncMock(return_value=True))
+    monkeypatch.setattr(forks.dynamic_settings, "get_int", AsyncMock(return_value=30))
+    redis = MagicMock()
+    redis.eval = AsyncMock(side_effect=ConnectionError("down"))
+    monkeypatch.setattr(forks, "get_redis", lambda: redis)
+    with pytest.raises(HTTPException) as error:
+        await forks._check_rate_limit(uuid.uuid4())
+    assert error.value.status_code == 503
+
+
+def test_semver_precedence_prefers_release_over_its_prereleases():
+    assert forks._version_key("1.0.0") > forks._version_key("1.0.0-rc.1")
+    assert forks._version_key("1.0.0-rc.10") > forks._version_key("1.0.0-rc.2")
+    assert forks._version_key("1.0.0-rc.1") > forks._version_key("1.0.0-1")
+    assert forks._version_key("1.0.0-alpha.1") > forks._version_key("1.0.0-alpha")
+
+
+def test_legacy_approved_version_string_does_not_block_default_fork():
+    versions = [_version("01.0.0"), _version("1.2.0"), _version("v0.9")]
+    assert forks._select_base_version(versions, None).version == "1.2.0"
+    # Still addressable exactly, but the copied version must then be replaced.
+    legacy = forks._select_base_version(versions, "01.0.0")
+    with pytest.raises(HTTPException) as error:
+        forks._fork_version_string(legacy, None)
+    assert error.value.status_code == 422 and "new_version" in error.value.detail
+    assert forks._fork_version_string(legacy, "1.0.1") == "1.0.1"
+
+
+def test_repin_prefers_highest_stable_release_over_newer_prerelease():
+    rows = [_version("1.0.0"), _version("1.0.0-rc.1"), _version("2.0.0-beta")]
+    assert forks._highest_approved(rows).version == "1.0.0"
+    assert forks._highest_approved(rows[1:]).version == "2.0.0-beta"

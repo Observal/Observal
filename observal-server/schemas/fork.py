@@ -12,8 +12,8 @@ from pydantic import BaseModel, Field
 
 class ForkRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
-    version: str | None = None
-    new_version: str | None = None
+    version: str | None = Field(default=None, min_length=1, max_length=50)
+    new_version: str | None = Field(default=None, min_length=1, max_length=50)
     team_id: uuid.UUID | None = None
     visibility: Literal["public", "team"] | None = None
 
