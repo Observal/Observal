@@ -201,6 +201,7 @@ from observal_cli.cmd_component import version_app
 from observal_cli.cmd_delegate import delegate_app
 from observal_cli.cmd_discover import discover_app
 from observal_cli.cmd_doctor import doctor_app
+from observal_cli.cmd_fork import add_fork_command
 from observal_cli.cmd_hook import hook_app
 from observal_cli.cmd_inbox import inbox_app
 from observal_cli.cmd_insights import insights_app
@@ -267,6 +268,14 @@ add_transfer_owner_command(hook_app, "hooks")
 add_transfer_owner_command(prompt_app, "prompts")
 add_transfer_owner_command(sandbox_app, "sandboxes")
 add_transfer_owner_command(agent_app, "agents")
+for _kind, _app in (
+    ("mcp", mcp_app),
+    ("skill", skill_app),
+    ("hook", hook_app),
+    ("prompt", prompt_app),
+    ("sandbox", sandbox_app),
+):
+    add_fork_command(_app, _kind)
 add_archive_commands(mcp_app, "mcps")
 add_archive_commands(skill_app, "skills")
 add_archive_commands(hook_app, "hooks")

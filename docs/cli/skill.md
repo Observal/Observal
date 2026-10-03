@@ -13,7 +13,8 @@ Submit, browse, review, install, and safely update versioned skill folders, as w
 | `submit` | Submit a Git-backed or registry-direct skill |
 | `list` | List approved visible skills |
 | `my` | List your skills across all statuses |
-| `show` | Show one skill |
+| `show` | Show one skill, visible source provenance, and public fork count |
+| `fork-listing` | Copy an approved skill release into a separate, independently owned draft |
 | `install` | Write a skill into a supported harness |
 | `edit` | Edit a draft, pending, or rejected skill |
 | `fork` | Create a new draft from the exact reviewed direct release |
@@ -65,6 +66,17 @@ observal registry skill show acme/review-skill --output json
 ```
 
 Row numbers are scoped to the latest Skill list. Empty lists clear previous Skill row references.
+
+## Fork
+
+```bash
+observal registry skill fork-listing acme/review-skill --name my-review-skill --output json
+observal registry skill fork-listing acme/review-skill --team platform --visibility team --output json
+observal registry skill edit FORK_UUID --description 'Customized review' --output json
+observal registry skill submit --submit FORK_UUID --output json
+```
+
+The source listing and selected version must be approved; the copy begins as an independent draft. Inline `registry_direct` content is copied, but its validation flag resets for the normal submission path. Use the returned UUID to edit and submit without affecting the source. Only publicly approved forks appear in fork counts; private provenance is never exposed to viewers who lack source access.
 
 ## Install
 
