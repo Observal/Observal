@@ -57,6 +57,7 @@ import { RegistryName } from "@/components/registry/registry-name";
 import { ShareLinkButton } from "@/components/registry/share-link-button";
 import { ForkDialog } from "@/components/registry/fork-dialog";
 import { ForkedFromChip } from "@/components/registry/fork-provenance";
+import { ForkDiffPanel } from "@/components/registry/fork-diff-panel";
 import { ForksList } from "@/components/registry/forks-list";
 import {
   AlertDialog,
@@ -470,6 +471,9 @@ export default function ComponentDetailPage({
                 ) : null}
               </div>
               <ForkedFromChip provenance={item.forked_from} />
+              {item.forked_from?.available && effectiveVersion && (
+                <ForkDiffPanel type={type} id={id} version={effectiveVersion} />
+              )}
               {effectiveItem?.description && (
                 <p className="text-sm text-foreground/80 leading-relaxed max-w-2xl">{effectiveItem.description as string}</p>
               )}
@@ -897,7 +901,7 @@ export default function ComponentDetailPage({
         )}
       </div>
 
-      {draftEditOpen && item && isEditableDraft && canEdit && (
+      {draftEditOpen && item && isEditableDraft && !editableSkillFolderDraft && canEdit && (
         <SubmitComponentDialog
           key={id}
           open={draftEditOpen}

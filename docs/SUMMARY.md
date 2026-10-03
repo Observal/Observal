@@ -27,6 +27,7 @@
 * [Share agent configs across harnesses](use-cases/share-agent-configs.md)
 * [Debug agent failures](use-cases/debug-agent-failures.md)
 * [Run a team-wide agent registry](use-cases/team-registry.md)
+* [Fork and customize](use-cases/fork-and-customize.md)
 * [Teamspaces](use-cases/teamspaces.md)
 * [Sync an MCP server from GitHub or GitLab](use-cases/mcp-repo-sync.md)
 

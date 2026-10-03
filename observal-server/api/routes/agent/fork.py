@@ -20,6 +20,7 @@ from models.user import User, UserRole
 from schemas.agent import AgentResponse, AgentSummary
 from schemas.fork import ForkRequest
 from services import dynamic_settings
+from services.fork_diff import fork_version_diff
 from services.registry_fork import (
     ForkRequestSpec,
     agent_fork_counts,
@@ -72,6 +73,21 @@ async def create_agent_fork(
         forked_from=await provenance_for(fork, current_user, db),
         warnings=result.warnings,
     )
+
+
+@router.get("/{agent_id}/fork-diff")
+async def agent_fork_diff(
+    agent_id: str,
+    version: str | None = Query(None, max_length=50),
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_registry_user),
+):
+    if not await dynamic_settings.get_bool("registry.fork.enabled"):
+        raise HTTPException(status_code=403, detail="Forking is disabled by your administrator")
+    fork = await _load_agent(db, agent_id, current_user=current_user)
+    if fork is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return await fork_version_diff(db, fork, "agent", current_user, version)
 
 
 @router.get("/{agent_id}/forks")

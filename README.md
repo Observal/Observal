@@ -199,6 +199,17 @@ Real usage data flows back as reports: what's helping, what's getting in the way
 
 ![Component registry showing MCP servers](docs/img/component_registry.png)
 
+### Fork an approved release
+
+Fork an agent or component into an independent draft in your personal namespace or an eligible teamspace. The source stays unchanged; agent forks retain pinned component references rather than copying components. Reviewers can compare the draft with its approved upstream using **Diff vs upstream**. Public approved direct forks appear on the source's **Forks** tab; private forks and unpublished drafts do not. [Fork and customize guide](docs/use-cases/fork-and-customize.md).
+
+| Registry fork API | Action |
+| --- | --- |
+| `POST /api/v1/agents/{id}/fork` | Create an agent draft from an approved release |
+| `POST /api/v1/{type}/{id}/fork` | Create a component draft (`type`: `mcps`, `skills`, `hooks`, `prompts`, `sandboxes`) |
+| `GET /api/v1/agents/{id}/forks`, `GET /api/v1/{type}/{id}/forks` | List public approved direct forks |
+| `GET /api/v1/agents/{id}/fork-diff?version=…`, `GET /api/v1/{type}/{id}/fork-diff?version=…` | Compare a visible fork version to its approved, accessible base |
+
 ---
 
 ## Discovery and Delegation (ARD + A2A)

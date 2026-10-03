@@ -32,6 +32,15 @@ function isSkillFolderDraft(type: RegistryType, body: unknown): body is SkillFol
     "extra_files" in body && Array.isArray(body.extra_files);
 }
 
+export function useForkDiff(type: RegistryType, id: string, version: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ["registry", type, id, "fork-diff", version],
+    queryFn: () => registry.forkDiff(type, id, version!),
+    enabled: enabled && !!id && !!version,
+    retry: false,
+  });
+}
+
 export function useForkComponent(type: RegistryType) {
   const qc = useQueryClient();
   return useMutation({

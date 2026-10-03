@@ -121,6 +121,58 @@ def _client(app):
 
 
 @pytest.mark.asyncio
+async def test_public_fork_links_and_search_facet_follow_live_visibility(sessions, settings):
+    owner, _, source = await _seed(sessions)
+    settings["public"] = True
+    async with sessions() as db:
+        fork = await fx.skill(db, owner, name="Forked Review", slug="forked-review")
+        fork.forked_from_id = source.id
+        fork.forked_from_version_id = source.latest_version_id
+        fork.forked_from_ref = "do-not-serialize/secret@9.9.9"
+        await db.flush()
+        await reproject_all(db, ctx=fx.CTX)
+        fork_id, source_id = fork.id, source.id
+    urn = f"urn:air:observal.example.com:skill:{source_id}"
+    fork_urn = f"urn:air:observal.example.com:skill:{fork_id}"
+    search_body = {"query": {"text": "review", "filter": {"obs:forksOf": urn}}}
+    async with _client(_app(sessions)) as client:
+        found = await client.post("/api/v1/ard/search", json=search_body)
+        assert found.status_code == 200, found.text
+        assert [row["identifier"] for row in found.json()["results"]] == [fork_urn]
+        assert found.json()["results"][0]["obs:forkedFrom"] == urn
+        invalid = await client.post(
+            "/api/v1/ard/search",
+            json={"query": {"text": "review", "filter": {"obs:forksOf": [urn, urn]}}},
+        )
+        assert invalid.status_code == 400 and invalid.json()["errorCode"] == "INVALID_ARGUMENT"
+        assert (await client.get(f"/api/v1/ard/entries/{fork_urn}")).json()["obs:forkedFrom"] == urn
+        listing = await client.get("/api/v1/ard/agents")
+        assert next(row for row in listing.json()["items"] if row["identifier"] == fork_urn)["obs:forkedFrom"] == urn
+        manifest = await client.get("/.well-known/ard.json")
+        assert next(row for row in manifest.json()["entries"] if row["identifier"] == fork_urn)["obs:forkedFrom"] == urn
+        assert "do-not-serialize" not in str((found.json(), listing.json(), manifest.json()))
+
+        # No reprojection: the native row must win over a stale public ARD entry.
+        async with sessions() as db:
+            native = await db.get(type(source), source_id)
+            native.is_private = True
+            await db.commit()
+        assert (await client.post("/api/v1/ard/search", json=search_body)).json()["results"] == []
+        detail = await client.get(f"/api/v1/ard/entries/{fork_urn}")
+        assert "obs:forkedFrom" not in detail.json()
+        assert "do-not-serialize" not in detail.text
+
+        async with sessions() as db:
+            native = await db.get(type(source), source_id)
+            native.is_private = False
+            native_fork = await db.get(type(source), fork_id)
+            native_fork.is_private = True
+            await db.commit()
+        assert (await client.post("/api/v1/ard/search", json=search_body)).json()["results"] == []
+        assert "obs:forkedFrom" not in (await client.get(f"/api/v1/ard/entries/{fork_urn}")).json()
+
+
+@pytest.mark.asyncio
 async def test_search_response_shape(sessions, settings):
     owner, _, skill = await _seed(sessions)
     async with _client(_app(sessions, owner)) as client:

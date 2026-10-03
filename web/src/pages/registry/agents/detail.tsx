@@ -67,6 +67,7 @@ import { RegistryName } from "@/components/registry/registry-name";
 import { ShareLinkButton } from "@/components/registry/share-link-button";
 import { ForkDialog } from "@/components/registry/fork-dialog";
 import { ForkedFromChip } from "@/components/registry/fork-provenance";
+import { ForkDiffPanel } from "@/components/registry/fork-diff-panel";
 import { ForksList } from "@/components/registry/forks-list";
 import { canonicalRouteParts, registryIdentity, registryItemPath, type QualifiedIdentity } from "@/lib/registry-name";
 import { VersionDropdown } from "@/components/registry/version-dropdown";
@@ -933,6 +934,9 @@ export default function AgentDetailPage({ agentId }: { agentId?: string } = {}) 
                 </div>
 
                 <ForkedFromChip provenance={a.forked_from} />
+                {a.forked_from?.available && (selectedVersion ?? a.version) && (
+                  <ForkDiffPanel type="agents" id={id} version={String(selectedVersion ?? a.version)} />
+                )}
                 {a.owner && (
                   <p className="text-sm text-muted-foreground">{a.owner}</p>
                 )}

@@ -155,7 +155,7 @@ Let an owner link a GitHub or GitLab repository to an external skill or MCP. A v
 
 #### Independent fork drafts, P1
 
-**Status:** In progress. Agent fork API and provenance are implemented; component forks and client workflows follow.
+**Status:** Completed on `feat/agent-forking` (Phases 0–5). PR link to be added when a human opens the PR.
 
 Fork a selected agent or component version into a provenance-linked draft in a personal or team namespace. Agent forks retain existing component references and never recursively fork components; each component fork is a separate explicit action.
 
