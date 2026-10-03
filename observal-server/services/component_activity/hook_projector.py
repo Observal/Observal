@@ -31,6 +31,8 @@ from .projector import _params, _query
 # session has a handful; more is not a session this lookup can read safely.
 _MAX_LINK_ROWS = 64
 _MAX_SPAWN_CALLS = 8
+# Subagent sessions re-projected when their parent session arrives (``jobs.activity``).
+MAX_SUBAGENT_SESSIONS = 256
 
 
 async def _rows_mentioning(
@@ -79,6 +81,20 @@ async def resolve_subagent(
         optic.debug("subagent hook context unresolved: rows={} results={}", len(result_rows or ()), len(results))
         return extraction
     return dataclasses.replace(extraction, session=dataclasses.replace(session, subagent_agent=agent))
+
+
+async def subagent_sessions(project_id: str, user_id: str, harness: str, session_id: str) -> list[str]:
+    """Scoped sessions ingested as subagents of ``session_id`` (bounded)."""
+    rows = await _query(
+        """SELECT DISTINCT session_id
+        FROM session_events
+        WHERE project_id = {project_id:String} AND user_id = {user_id:String}
+          AND harness = {harness:String} AND parent_session_id = {session_id:String}
+          AND session_id != {session_id:String} AND is_source_record = 1
+        ORDER BY session_id LIMIT {limit:UInt16} FORMAT JSON""",
+        _params(project_id, user_id, harness, session_id) | {"param_limit": MAX_SUBAGENT_SESSIONS},
+    )
+    return [row["session_id"] for row in rows if isinstance(row.get("session_id"), str) and row["session_id"]]
 
 
 HOOK_SPEC = EvidenceSpec(
