@@ -16,7 +16,11 @@ from sqlalchemy import func, select
 
 from api.deps import check_listing_visibility_async
 from models.agent import Agent, AgentStatus, AgentVersion
-from models.skill import SkillListing
+from models.hook import HookListing, HookVersion
+from models.mcp import ListingStatus, McpListing, McpVersion
+from models.prompt import PromptListing, PromptVersion
+from models.sandbox import SandboxListing, SandboxVersion
+from models.skill import SkillListing, SkillVersion
 from models.team import Team
 from services import dynamic_settings
 from services.agent_lock import _pinned_row, _versions_for, attach_pinned_components, lock_agent_version
@@ -33,6 +37,14 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 _FORK_SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*)?$")
+
+COMPONENT_MODELS = {
+    "mcp": (McpListing, McpVersion),
+    "skill": (SkillListing, SkillVersion),
+    "hook": (HookListing, HookVersion),
+    "prompt": (PromptListing, PromptVersion),
+    "sandbox": (SandboxListing, SandboxVersion),
+}
 
 VERSION_MANAGED_FIELDS = frozenset(
     {
@@ -130,7 +142,11 @@ async def _enforce_private_source_policy(source: Agent, target, user, db: AsyncS
     if source.team_id is None:
         # Legacy private personal listings may only move to this creator's private
         # personal teamspace. A public personal target would leak their content.
-        if source.created_by == user.id and target.team_id and target.visibility == "team":
+        if (
+            getattr(source, "created_by", getattr(source, "submitted_by", None)) == user.id
+            and target.team_id
+            and target.visibility == "team"
+        ):
             team = await db.get(Team, target.team_id)
             if team and team.is_personal and team.is_private and team.created_by == user.id:
                 return
@@ -253,29 +269,106 @@ async def fork_agent(db: AsyncSession, source: Agent, spec: ForkRequestSpec, *, 
     return ForkResult(agent, version, warnings)
 
 
+async def fork_component(
+    db: AsyncSession, component_type: str, source, spec: ForkRequestSpec, *, current_user
+) -> ForkResult:
+    """Copy only an approved component release into an independent draft listing."""
+    listing_model, version_model = COMPONENT_MODELS[component_type]
+    await _check_rate_limit(current_user.id)
+    if source.status != ListingStatus.approved:
+        raise HTTPException(status_code=409, detail="Source is not approved")
+    base = _select_base_version(source.versions, spec.version)
+    version_string = spec.new_version or base.version
+    _valid_version(version_string)
+    name = spec.name or source.name
+    try:
+        target = await resolve_publish_target(db, current_user, name, team_id=spec.team_id, visibility=spec.visibility)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await _enforce_private_source_policy(source, target, current_user, db)
+    if await identity_exists(db, listing_model, target.namespace, target.slug):
+        raise HTTPException(
+            status_code=409, detail=f"{component_type} '{target.namespace}/{target.slug}' already exists"
+        )
+
+    listing = listing_model(
+        **({"category": source.category} if component_type == "mcp" else {}),
+        name=name,
+        namespace=target.namespace,
+        slug=target.slug,
+        owner=target.owner,
+        team_id=target.team_id,
+        is_private=target.visibility == "team",
+        submitted_by=current_user.id,
+        co_authors=[],
+        bundle_id=None,
+        unique_agents=0,
+        is_recommended=False,
+        forked_from_id=source.id,
+        forked_from_version_id=base.id,
+        forked_from_ref=f"{source.qualified_name}@{base.version}",
+        forked_at=datetime.now(UTC),
+    )
+    db.add(listing)
+    await db.flush()
+    content = _copy_version_columns(version_model, base)
+    content.update(
+        listing_id=listing.id,
+        version=version_string,
+        description=base.description,
+        changelog=None,
+        status=ListingStatus.draft,
+        released_by=current_user.id,
+        released_at=datetime.now(UTC),
+    )
+    if component_type == "mcp":
+        content["mcp_validated"] = False
+    elif component_type == "skill":
+        content["validated"] = False
+    elif component_type == "sandbox":
+        content["validated_at"] = None
+    version = version_model(**content)
+    db.add(version)
+    await db.flush()
+    listing.latest_version_id = version.id
+    return ForkResult(listing, version, [])
+
+
 async def provenance_for(entity: Agent, current_user, db: AsyncSession) -> dict | None:
-    if not entity.is_fork:
+    if getattr(entity, "is_fork", False) is not True:
         return None
     unavailable = {"available": False, "forked_at": entity.forked_at}
     if entity.forked_from_id is None:
         return unavailable
-    source = await db.get(Agent, entity.forked_from_id)
-    if source is None or source.deleted_at is not None:
+    listing_model = type(entity)
+    version_model = (
+        AgentVersion
+        if listing_model is Agent
+        else next(version for listing, version in COMPONENT_MODELS.values() if listing is listing_model)
+    )
+    source = await db.get(listing_model, entity.forked_from_id)
+    if source is None or getattr(source, "deleted_at", None) is not None:
         return unavailable
     if not await check_listing_visibility_async(source, current_user, db):
         return unavailable
-    if source.status != AgentStatus.approved and source.created_by != getattr(current_user, "id", None):
+    if source.status.value != "approved" and getattr(
+        source, "created_by", getattr(source, "submitted_by", None)
+    ) != getattr(current_user, "id", None):
         return unavailable
-    base = await db.get(AgentVersion, entity.forked_from_version_id) if entity.forked_from_version_id else None
+    base = await db.get(version_model, entity.forked_from_version_id) if entity.forked_from_version_id else None
     return {
         "available": True,
         "id": source.id,
-        "type": "agent",
+        "type": "agent"
+        if listing_model is Agent
+        else next(key for key, models in COMPONENT_MODELS.items() if models[0] is listing_model),
         "namespace": source.namespace,
         "slug": source.slug,
         "qualified_name": source.qualified_name,
         "version": base.version
-        if base is not None and base.agent_id == source.id and base.status == AgentStatus.approved
+        if base is not None
+        and (base.agent_id if listing_model is Agent else base.listing_id) == source.id
+        and base.status.value == "approved"
         else None,
         "forked_at": entity.forked_at,
     }
@@ -289,6 +382,28 @@ def public_agent_fork_condition():
         & (Agent.latest_version_id == AgentVersion.id)
         & (AgentVersion.status == AgentStatus.approved)
     )
+
+
+def public_component_fork_condition(listing_model, version_model):
+    return (
+        listing_model.is_private.is_(False)
+        & (listing_model.latest_version_id == version_model.id)
+        & (version_model.status == ListingStatus.approved)
+    )
+
+
+async def component_fork_counts(
+    db: AsyncSession, listing_model, version_model, ids: list[uuid.UUID]
+) -> dict[uuid.UUID, int]:
+    if not ids:
+        return {}
+    rows = await db.execute(
+        select(listing_model.forked_from_id, func.count(listing_model.id))
+        .join(version_model, listing_model.latest_version_id == version_model.id)
+        .where(public_component_fork_condition(listing_model, version_model), listing_model.forked_from_id.in_(ids))
+        .group_by(listing_model.forked_from_id)
+    )
+    return {source_id: count for source_id, count in rows.all()}
 
 
 async def agent_fork_counts(db: AsyncSession, ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:

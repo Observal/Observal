@@ -349,6 +349,9 @@ class TestSubmitSkill:
             "download_count": 0,
             "user_permission": None,
             "is_recommended": False,
+            "forked_from": None,
+            "fork_count": 0,
+            "warnings": [],
         }
         assert events == [
             "add:SkillListing",
@@ -524,6 +527,17 @@ class TestSubmitSkill:
 
 
 class TestListAndDetail:
+    @pytest.fixture(autouse=True)
+    def _stub_fork_enrichment(self, monkeypatch):
+        # Query-shape tests isolate fork metadata; HTTP fork tests cover its SQL.
+        from api.routes.component_forks import RESPONSE_MODELS, SUMMARY_MODELS
+
+        async def serialize(items, kind, _user, _db, *, summary=True):
+            schema = SUMMARY_MODELS[kind] if summary else RESPONSE_MODELS[kind]
+            return [schema.model_validate(item) for item in items]
+
+        monkeypatch.setattr(skill, "component_responses", serialize)
+
     @pytest.mark.asyncio
     async def test_list_builds_all_filters_count_order_and_pagination(self, monkeypatch):
         db = _db()

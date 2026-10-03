@@ -251,6 +251,7 @@ async def _query_pending_components(
     scope: ReviewScope,
     type_filter: str | None = None,
     team_id: uuid.UUID | None = None,
+    current_user: User | None = None,
 ) -> list[dict]:
     optic.trace("type_filter={}", type_filter)
     models_to_query = (
@@ -305,6 +306,7 @@ async def _query_pending_components(
                 else r.created_at.isoformat(),
                 "bundle_id": str(r.bundle_id) if isinstance(getattr(r, "bundle_id", None), uuid.UUID) else None,
             }
+            item["forked_from"] = await provenance_for(r, current_user, db)
             # Include validation results for MCP listings
             if listing_type == "mcp" and hasattr(r, "validation_results"):
                 item["mcp_validated"] = getattr(r, "mcp_validated", False)
@@ -370,12 +372,12 @@ async def list_pending(
         return result
 
     if tab == "components":
-        result = await _query_pending_components(db, scope, type, team_id)
+        result = await _query_pending_components(db, scope, type, team_id, current_user)
         return result
 
     # Default: return both agents and components
     agents = await _query_pending_agents(db, scope, team_id, current_user)
-    components = await _query_pending_components(db, scope, type, team_id)
+    components = await _query_pending_components(db, scope, type, team_id, current_user)
 
     # Merge and sort by created_at (most recent first)
     all_items = agents + components
@@ -540,6 +542,7 @@ async def get_review(
         if not can_review(listing, scope):
             raise HTTPException(status_code=404, detail="Listing not found")
         result = _serialize_listing_detail(listing_type, listing)
+        result["forked_from"] = await provenance_for(listing, current_user, db)
     else:
         # Fallback: check Agent table
         try:

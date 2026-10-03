@@ -17,6 +17,7 @@ from schemas.constants import (
     make_harness_list_validator,
     make_option_validator,
 )
+from schemas.fork import ForkProvenance
 from schemas.skill_commands import normalize_slash_command
 
 
@@ -101,6 +102,9 @@ class SkillUpdateRequest(BaseModel):
 
 
 class SkillListingResponse(BaseModel):
+    forked_from: ForkProvenance | None = None
+    fork_count: int = 0
+    warnings: list[str] = []
     id: uuid.UUID
     name: str
     namespace: str
@@ -142,6 +146,8 @@ class SkillListingResponse(BaseModel):
 
 
 class SkillListingSummary(BaseModel):
+    forked_from: ForkProvenance | None = None
+    fork_count: int = 0
     id: uuid.UUID
     name: str
     namespace: str

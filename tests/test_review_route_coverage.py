@@ -568,8 +568,12 @@ async def test_pending_component_queue_serializes_bundle_validation_submitter_an
         raise AssertionError(sql)
 
     db.execute.side_effect = execute
-
-    items = await review._query_pending_components(db, GLOBAL_SCOPE, "mcp")
+    listing.is_fork = True
+    provenance = AsyncMock(return_value={"available": True, "id": uuid.UUID(int=90)})
+    monkeypatch.setattr(review, "provenance_for", provenance)
+    actor = _actor()
+    items = await review._query_pending_components(db, GLOBAL_SCOPE, "mcp", current_user=actor)
+    provenance.assert_awaited_once_with(listing, actor, db)
 
     assert items == [
         {
@@ -586,6 +590,7 @@ async def test_pending_component_queue_serializes_bundle_validation_submitter_an
             "mcp_validated": True,
             "validation_results": [{"stage": "manifest", "passed": True, "details": "ok", "run_at": NOW.isoformat()}],
             "bundle_name": "review bundle",
+            "forked_from": {"available": True, "id": uuid.UUID(int=90)},
         }
     ]
     assert "ORDER BY mcp_versions.released_at DESC" in _sql(statements[0])
@@ -738,14 +743,14 @@ async def test_list_pending_tabs_default_order_and_team_denial(monkeypatch):
     assert await review.list_pending(type="skill", tab="components", team_id=TEAM_ID, db=db, current_user=actor) == [
         {"name": "component", "created_at": "2026-03-01T11:00:00+00:00"}
     ]
-    components.assert_awaited_once_with(db, ADMIN_SCOPE, "skill", TEAM_ID)
+    components.assert_awaited_once_with(db, ADMIN_SCOPE, "skill", TEAM_ID, actor)
     agents.assert_not_awaited()
 
     components.reset_mock()
     result = await review.list_pending(type=None, tab="unexpected", team_id=None, db=db, current_user=actor)
     assert [item["name"] for item in result] == ["component", "agent"]
     agents.assert_awaited_once_with(db, ADMIN_SCOPE, None, actor)
-    components.assert_awaited_once_with(db, ADMIN_SCOPE, None, None)
+    components.assert_awaited_once_with(db, ADMIN_SCOPE, None, None, actor)
 
     scope.return_value = TEAM_SCOPE
     agents.reset_mock()
@@ -861,6 +866,8 @@ async def test_get_review_component_authorizes_serializes_and_resolves_submitter
     )
     monkeypatch.setattr(review, "_require_review_scope", AsyncMock(return_value=GLOBAL_SCOPE))
     monkeypatch.setattr(review, "_find_listing", AsyncMock(return_value=("mcp", listing)))
+    provenance = AsyncMock(return_value={"available": False})
+    monkeypatch.setattr(review, "provenance_for", provenance)
     db.execute.return_value = _result(
         scalar=SimpleNamespace(id=SUBMITTER_ID, username="component-author", email="author@example.test")
     )
@@ -868,6 +875,8 @@ async def test_get_review_component_authorizes_serializes_and_resolves_submitter
     result = await review.get_review(str(listing.id), db, actor)
 
     assert result["name"] == "component detail"
+    assert result["forked_from"] == {"available": False}
+    provenance.assert_awaited_once_with(listing, actor, db)
     assert result["submitted_by"] == "component-author"
     statement = db.execute.await_args.args[0]
     assert "FROM users" in _sql(statement)
