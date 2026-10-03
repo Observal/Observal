@@ -20,6 +20,7 @@ from __future__ import annotations
 import json as _json
 import re
 import shutil
+import sys
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Annotated, NoReturn
@@ -73,6 +74,30 @@ _PASSWORD_REQUIREMENTS = [
     ("One number", lambda p: bool(re.search(r"[0-9]", p))),
     ("One special character", lambda p: bool(re.search(r"[^A-Za-z0-9]", p))),
 ]
+
+
+# SSO provider -> (public config flag, menu label). The order is the order the
+# login menus list them in, so existing menu numbers stay put when a server
+# only enables OIDC and SAML.
+_SSO_PROVIDERS: dict[str, tuple[str, str]] = {
+    "oidc": ("sso_enabled", "OIDC SSO"),
+    "google": ("google_sso_enabled", "Google"),
+    "github": ("github_sso_enabled", "GitHub"),
+    "saml": ("saml_enabled", "SAML SSO"),
+}
+
+
+def _choose_sso_provider(providers: list[str]) -> str:
+    """Ask which provider to use when the server enables more than one.
+
+    Without this, a bare --sso goes to the server's OIDC default, which leaves
+    people who sign in with Google or GitHub on the web at an IdP where they
+    have no account.
+    """
+    for index, key in enumerate(providers, start=1):
+        rprint(f"  [{index}] {_SSO_PROVIDERS[key][1]}")
+    choice = quick_choice("SSO provider", [str(i) for i in range(1, len(providers) + 1)])
+    return providers[int(choice) - 1]
 
 
 def _validate_password(password: str) -> list[str]:
@@ -261,12 +286,18 @@ def login(
     email: str = typer.Option(None, "--email", "-e", help="Email or username"),
     password: str = typer.Option(None, "--password", "-p", help="Password"),
     name: str = typer.Option(None, "--name", "-n", help="Your name (used for admin setup)"),
-    sso: bool = typer.Option(False, "--sso", help="Authenticate via browser SSO"),
+    sso: bool = typer.Option(
+        False, "--sso", help="Authenticate via browser SSO; asks which provider when the server enables several"
+    ),
     saml: bool = typer.Option(False, "--saml", help="Authenticate via browser SAML SSO"),
     output: Annotated[
         OutputMode, typer.Option("--output", "-o", help="Output format: table or json")
     ] = OutputMode.table,
     no_setup: Annotated[bool, typer.Option("--no-setup", help="Skip post-login skill installation and doctor")] = False,
+    provider: Annotated[
+        str | None,
+        typer.Option("--provider", help="SSO provider: oidc, saml, google or github (implies --sso)"),
+    ] = None,
 ):
     """Connect to Observal.
 
@@ -281,6 +312,7 @@ def login(
         observal auth login
         observal auth login --server https://observal.example.com --email alice --output json --no-setup
         observal auth login --sso --output json
+        observal auth login --sso --provider google
     """
     json_mode = _is_json(output)
     if not json_mode:
@@ -463,28 +495,41 @@ def login(
     if not json_mode:
         rprint("[green]Connected.[/green]")
 
-    sso_mode = bool(sso or saml)
+    if saml and provider and provider.lower() != "saml":
+        fail(
+            ErrorCategory.VALIDATION,
+            f"--saml and --provider {provider} name different providers.",
+            operation="Authenticate with SSO",
+            resource=resource,
+            remediation="Pass either --saml or --provider, not both.",
+        )
+    sso_provider: str | None = "saml" if saml else (provider.lower() if provider else None)
+    if sso_provider is not None and sso_provider not in _SSO_PROVIDERS:
+        fail(
+            ErrorCategory.VALIDATION,
+            f"Unknown SSO provider: {provider}.",
+            operation="Authenticate with SSO",
+            resource=resource,
+            remediation=f"Use one of: {', '.join(_SSO_PROVIDERS)}.",
+        )
+    sso_mode = bool(sso or sso_provider)
     direct_sso = sso_mode
-    sso_provider: str | None = "saml" if saml else None
     sso_only = False
-    sso_available = False
-    oidc_available = False
-    saml_available = False
+    enabled_providers: list[str] = []
     try:
         public_response = httpx.get(f"{server_url}/api/v1/config/public", timeout=5)
         if public_response.status_code == 200:
             public = public_response.json()
             sso_only = bool(public.get("sso_only"))
-            oidc_available = bool(public.get("sso_enabled"))
-            saml_available = bool(public.get("saml_enabled"))
-            sso_available = oidc_available or saml_available
-            if saml and not saml_available:
+            enabled_providers = [key for key, (flag, _label) in _SSO_PROVIDERS.items() if public.get(flag)]
+            if sso_provider and sso_provider not in enabled_providers:
+                label = _SSO_PROVIDERS[sso_provider][1]
                 fail(
                     ErrorCategory.VALIDATION,
-                    "SAML SSO is not configured on this server.",
-                    operation="Authenticate with SAML SSO",
+                    f"{label} is not configured on this server.",
+                    operation=f"Authenticate with {label}",
                     resource=resource,
-                    remediation="Use an enabled authentication method or ask an administrator to configure SAML.",
+                    remediation=f"Use an enabled authentication method or ask an administrator to configure {label}.",
                 )
             if sso_only:
                 sso_mode = True
@@ -494,7 +539,17 @@ def login(
     except (httpx.HTTPError, ValueError, TypeError):
         pass
 
-    if json_mode and not (sso or saml) and not (email and supplied_password):
+    # A bare --sso (or an SSO-only server) names no provider. With one enabled,
+    # use it; with several, ask in a terminal. JSON mode and non-interactive
+    # stdin never prompt, so they keep the server's default (OIDC, then SAML)
+    # for existing scripts.
+    if direct_sso and sso_provider is None:
+        if len(enabled_providers) == 1:
+            sso_provider = enabled_providers[0]
+        elif len(enabled_providers) > 1 and not json_mode and sys.stdin.isatty():
+            sso_provider = _choose_sso_provider(enabled_providers)
+
+    if json_mode and not (sso or saml or provider) and not (email and supplied_password):
         fail(
             ErrorCategory.VALIDATION,
             "JSON login requires complete credentials or an explicit SSO option.",
@@ -504,42 +559,17 @@ def login(
         )
 
     if not json_mode and not sso_mode and not (email or supplied_password):
-        if sso_only:
-            if oidc_available and saml_available:
-                rprint("  [1] OIDC SSO")
-                rprint("  [2] SAML SSO")
-                choice = quick_choice("Login method", ["1", "2"])
-                sso_provider = "saml" if choice == "2" else "oidc"
-            else:
-                rprint(f"  [1] {'SAML SSO' if saml_available else 'SSO'}")
-                quick_choice("Login method", ["1"])
-                sso_provider = "saml" if saml_available else None
+        rprint("  [1] CLI email/username + password")
+        rprint("  [2] Web sign-in")
+        for index, key in enumerate(enabled_providers, start=3):
+            rprint(f"  [{index}] {_SSO_PROVIDERS[key][1]}")
+        choice = quick_choice("Login method", [str(i) for i in range(1, 3 + len(enabled_providers))])
+        if choice == "2":
+            sso_mode = True
+        elif choice != "1":
             sso_mode = True
             direct_sso = True
-        else:
-            rprint("  [1] CLI email/username + password")
-            rprint("  [2] Web sign-in")
-            valid = ["1", "2"]
-            if oidc_available:
-                rprint("  [3] OIDC SSO")
-                valid.append("3")
-            elif saml_available:
-                rprint("  [3] SAML SSO")
-                valid.append("3")
-            if oidc_available and saml_available:
-                rprint("  [4] SAML SSO")
-                valid.append("4")
-            choice = quick_choice("Login method", valid)
-            if choice == "2":
-                sso_mode = True
-            elif choice == "3" and sso_available:
-                sso_mode = True
-                direct_sso = True
-                sso_provider = "oidc" if oidc_available else "saml"
-            elif choice == "4" and saml_available:
-                sso_mode = True
-                direct_sso = True
-                sso_provider = "saml"
+            sso_provider = enabled_providers[int(choice) - 3]
 
     if sso_mode:
         _do_device_flow_login(

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import subprocess
 import sys
 from contextlib import contextmanager
@@ -320,6 +321,97 @@ class TestPullClaudeCode:
         assert (tmp_path / ".claude" / "agents" / "my-agent.md").exists()
         # No .claude/mcp.json should exist — Claude Code uses setup commands instead
         assert not (tmp_path / ".claude" / "mcp.json").exists()
+
+    def test_rewrites_frontmatter_hook_python_path(self, tmp_path: Path, monkeypatch):
+        """Frontmatter hooks must use this CLI's interpreter, including paths with spaces."""
+        monkeypatch.setattr(sys, "executable", "/tmp/Observal Tools/bin/python3")
+        snippet = _claude_code_snippet()
+        snippet["config_snippet"]["agent_profile"]["content"] = (
+            "---\n"
+            "name: my-agent\n"
+            "hooks:\n"
+            "  UserPromptSubmit:\n"
+            "    - hooks:\n"
+            "        - type: command\n"
+            '          command: "python3 -m observal_cli.hooks.session_push"\n'
+            "  Stop:\n"
+            "    - hooks:\n"
+            "        - type: command\n"
+            '          command: "python3 -m observal_cli.hooks.session_push"\n'
+            "---\n"
+        )
+        with _patch_config(), _patch_get_agent(), _patch_post(snippet):
+            result = runner.invoke(
+                cli_app, ["agent", "pull", "abc123", "--harness", "claude-code", "--dir", str(tmp_path), "--no-prompt"]
+            )
+
+        assert result.exit_code == 0, result.output
+        content = (tmp_path / ".claude" / "agents" / "my-agent.md").read_text()
+        assert '"python3 -m' not in content
+        frontmatter, _, _body = content[4:].partition("\n---")
+        hooks = yaml.safe_load(frontmatter)["hooks"]
+        from observal_cli.shared import launcher
+
+        module = "observal_cli.hooks.session_push"
+        for event in ("UserPromptSubmit", "Stop"):
+            command = hooks[event][0]["hooks"][0]["command"]
+            if sys.platform == "win32":
+                assert command == launcher.windows_module_command(module)
+                continue
+            # This CLI's interpreter as one shell word, isolated from the project directory.
+            argv = shlex.split(command)
+            assert argv[argv.index(sys.executable) :] == [sys.executable, launcher.isolation_flag(), "-m", module]
+            assert command == launcher.posix_module_command(module)
+
+    def test_says_when_agent_reports_sessions(self, tmp_path: Path):
+        snippet = _claude_code_snippet()
+        snippet["config_snippet"]["agent_profile"]["content"] = (
+            "---\n"
+            "name: my-agent\n"
+            "hooks:\n"
+            "  Stop:\n"
+            "    - hooks:\n"
+            "        - type: command\n"
+            '          command: "python3 -m observal_cli.hooks.session_push"\n'
+            "---\n"
+        )
+        with _patch_config(), _patch_get_agent(), _patch_post(snippet):
+            result = runner.invoke(
+                cli_app, ["agent", "pull", "abc123", "--harness", "claude-code", "--dir", str(tmp_path), "--no-prompt"]
+            )
+
+        assert result.exit_code == 0, result.output
+        output = _plain(result.output)
+        assert "Telemetry:" in output
+        assert "session hooks are present" in output
+        assert "http://localhost:8000" in output
+
+        with _patch_config(), _patch_get_agent(), _patch_post(snippet):
+            dry_run = runner.invoke(
+                cli_app,
+                [
+                    "agent",
+                    "pull",
+                    "abc123",
+                    "--harness",
+                    "claude-code",
+                    "--dir",
+                    str(tmp_path),
+                    "--dry-run",
+                    "--no-prompt",
+                ],
+            )
+        assert dry_run.exit_code == 0, dry_run.output
+        assert "session hooks would be present after this pull" in _plain(dry_run.output)
+
+    def test_no_telemetry_line_without_session_hooks(self, tmp_path: Path):
+        with _patch_config(), _patch_get_agent(), _patch_post(_claude_code_snippet()):
+            result = runner.invoke(
+                cli_app, ["agent", "pull", "abc123", "--harness", "claude-code", "--dir", str(tmp_path), "--no-prompt"]
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "Telemetry:" not in _plain(result.output)
 
 
 # ═══════════════════════════════════════════════════════════════
