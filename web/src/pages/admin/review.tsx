@@ -24,6 +24,7 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EntityGlyph } from "@/components/registry/entity-glyph";
 import { StatusBadge } from "@/components/registry/status-badge";
+import { ForkedFromChip } from "@/components/registry/fork-provenance";
 import { Tabs, TabsContent, TabsList, TabsTrigger, tabsTriggerVariants } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -399,6 +400,7 @@ function ReviewDetailPanel({
       <div className="p-5">
         <PanelTitle>Release summary</PanelTitle>
         <p className="mt-1.5 text-sm text-muted-foreground">{summary}</p>
+        {item.forked_from && <div className="mt-2"><ForkedFromChip provenance={item.forked_from} /></div>}
 
         {/* .validation-grid — a hairline strip of three raised cells */}
         <div className="my-4 grid grid-cols-1 gap-px overflow-hidden rounded-xl bg-border sm:grid-cols-3">

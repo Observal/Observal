@@ -20,8 +20,30 @@ import {
   registry,
   type RegistryType,
 } from "@/lib/api";
+import type { ForkRequest } from "@/lib/types";
 
 // ── Component Draft/Submit (generic) ──────────────────────────────
+
+export function useForkComponent(type: RegistryType) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: ForkRequest }) => registry.fork(type, id, body),
+    onSuccess: (_fork, { id }) => {
+      qc.invalidateQueries({ queryKey: ["registry", type] });
+      qc.invalidateQueries({ queryKey: ["registry", type, "my"] });
+      qc.invalidateQueries({ queryKey: ["registry", type, id] });
+      toast.success("Component fork created as a draft");
+    },
+  });
+}
+
+export function useComponentForks(type: RegistryType, id: string, page: number, enabled = true) {
+  return useQuery({
+    queryKey: ["registry", type, id, "forks", page],
+    queryFn: () => registry.forks(type, id, page),
+    enabled: enabled && !!id,
+  });
+}
 
 export function useMyComponents(type: RegistryType, enabled = true) {
   return useQuery({

@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { ForkedFromChip } from "@/components/registry/fork-provenance";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DetailSkeleton, TableSkeleton } from "@/components/shared/skeleton-layouts";
@@ -479,6 +480,7 @@ function SheetBody({
 				<SheetTitle className="text-lg font-[family-name:var(--font-display)]">
 					{merged.name ?? "Unnamed"}
 				</SheetTitle>
+				<ForkedFromChip provenance={merged.forked_from} />
 				{merged.description && (
 					<SheetDescription>{merged.description}</SheetDescription>
 				)}
