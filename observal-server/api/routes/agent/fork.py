@@ -28,6 +28,7 @@ from services.registry_fork import (
     agent_fork_counts,
     fork_agent,
     provenance_for,
+    provenance_for_many,
     public_agent_fork_condition,
 )
 from services.registry_telemetry import emit_registry_event
@@ -131,11 +132,12 @@ async def list_agent_forks(
     )
     forks = rows.scalars().all()
     counts = await agent_fork_counts(db, [fork.id for fork in forks])
+    provenance = await provenance_for_many(forks, current_user, db)
     items = []
     for fork in forks:
         response = _agent_to_response(
             fork,
-            forked_from=await provenance_for(fork, current_user, db),
+            forked_from=provenance[fork.id],
             fork_count=counts.get(fork.id, 0),
         )
         items.append(AgentSummary.model_validate(response.model_dump()))

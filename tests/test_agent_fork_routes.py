@@ -131,7 +131,7 @@ async def test_public_forks_list_and_count_share_approval_predicate(monkeypatch)
     db.execute = AsyncMock(return_value=result)
     monkeypatch.setattr(routes, "_load_agent", AsyncMock(return_value=source))
     monkeypatch.setattr(routes, "agent_fork_counts", AsyncMock(return_value={child.id: 0}))
-    monkeypatch.setattr(routes, "provenance_for", AsyncMock(return_value={"available": False}))
+    monkeypatch.setattr(routes, "provenance_for_many", AsyncMock(return_value={child.id: {"available": False}}))
 
     response = await routes.list_agent_forks(str(source.id), limit=10, offset=0, db=db, current_user=None)
     assert response["total"] == len(response["items"]) == 1

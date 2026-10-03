@@ -16,14 +16,14 @@ from loguru import logger as optic
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
-from api.deps import check_listing_visibility_async
+from api.deps import can_see_private_listings
 from models.agent import Agent, AgentStatus, AgentVersion
 from models.hook import HookListing, HookVersion
 from models.mcp import ListingStatus, McpListing, McpVersion
 from models.prompt import PromptListing, PromptVersion
 from models.sandbox import SandboxListing, SandboxVersion
 from models.skill import SkillListing, SkillVersion
-from models.team import Team
+from models.team import Team, TeamMembership
 from services import dynamic_settings
 from services.agent_lock import _pinned_row, _versions_for, attach_pinned_components, lock_agent_version
 from services.agent_resolver import validate_component_ids
@@ -31,6 +31,9 @@ from services.agent_snapshot import build_yaml_snapshot
 from services.harness_capability_inference import compute_supported_harnesses, infer_required_features
 from services.redis import get_redis
 from services.registry_namespace import identity_exists
+from services.skill_bundle import needs_bundle_delivery
+from services.skill_revisions import skill_content_revision
+from services.skill_validator import SkillValidationError
 from services.teamspace import resolve_publish_target
 
 if TYPE_CHECKING:
@@ -198,7 +201,7 @@ async def _release_fork_slot(user_id: uuid.UUID) -> None:
         optic.warning("fork rate slot release failed: {}", type(exc).__name__)
 
 
-async def _flush_new_identity(db: AsyncSession, label: str, target) -> None:
+async def _flush_new_identity(db: AsyncSession, label: str, target, actor) -> None:
     """Map a concurrent namespace/slug insert to 409 at the flush that detects it.
 
     The pre-check cannot close the race; the unique index fails here, before
@@ -208,6 +211,9 @@ async def _flush_new_identity(db: AsyncSession, label: str, target) -> None:
         await db.flush()
     except IntegrityError as exc:
         await db.rollback()
+        # Rollback expires every loaded instance. Later middleware (audit) reads
+        # the actor's attributes outside the async greenlet, so reload it now.
+        await db.refresh(actor)
         detail = str(exc.orig).lower()
         if ("namespace" in detail or "slug" in detail) and ("unique" in detail or "duplicate" in detail):
             raise HTTPException(
@@ -291,7 +297,8 @@ async def fork_agent(db: AsyncSession, source: Agent, spec: ForkRequestSpec, *, 
         )
     # Reserve quota only after every validation passed, so a rejected request
     # (conflict, bad version, wrong target) never consumes the user's limit.
-    await _check_rate_limit(current_user.id)
+    user_id = current_user.id  # a rollback expires current_user; keep a plain scalar
+    await _check_rate_limit(user_id)
     try:
         agent = Agent(
             name=name,
@@ -310,7 +317,7 @@ async def fork_agent(db: AsyncSession, source: Agent, spec: ForkRequestSpec, *, 
             forked_at=datetime.now(UTC),
         )
         db.add(agent)
-        await _flush_new_identity(db, "Agent", target)
+        await _flush_new_identity(db, "Agent", target, current_user)
         version = AgentVersion(
             agent_id=agent.id,
             version=version_string,
@@ -350,7 +357,7 @@ async def fork_agent(db: AsyncSession, source: Agent, spec: ForkRequestSpec, *, 
         version.yaml_snapshot = await build_yaml_snapshot(version, db)
         return ForkResult(agent, version, warnings)
     except BaseException:
-        await _release_fork_slot(current_user.id)
+        await _release_fork_slot(user_id)
         raise
 
 
@@ -374,7 +381,8 @@ async def fork_component(
             status_code=409, detail=f"{component_type} '{target.namespace}/{target.slug}' already exists"
         )
 
-    await _check_rate_limit(current_user.id)
+    user_id = current_user.id  # a rollback expires current_user; keep a plain scalar
+    await _check_rate_limit(user_id)
     try:
         listing = listing_model(
             **({"category": source.category} if component_type == "mcp" else {}),
@@ -395,7 +403,7 @@ async def fork_component(
             forked_at=datetime.now(UTC),
         )
         db.add(listing)
-        await _flush_new_identity(db, component_type, target)
+        await _flush_new_identity(db, component_type, target, current_user)
         content = _copy_version_columns(version_model, base)
         content.update(
             listing_id=listing.id,
@@ -415,51 +423,108 @@ async def fork_component(
         version = version_model(**content)
         db.add(version)
         await db.flush()
+        if component_type == "skill" and needs_bundle_delivery(version):
+            # Copied folder files are reviewable only with their own exact revision
+            # (same rule as skill draft creation); base_revision and approval state
+            # stay reset as managed fields. Inline skills stay on the plain draft path.
+            try:
+                version.content_revision = skill_content_revision(listing, version)
+            except SkillValidationError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
         listing.latest_version_id = version.id
         return ForkResult(listing, version, [])
     except BaseException:
-        await _release_fork_slot(current_user.id)
+        await _release_fork_slot(user_id)
         raise
 
 
 async def provenance_for(entity: Agent, current_user, db: AsyncSession) -> dict | None:
-    if getattr(entity, "is_fork", False) is not True:
-        return None
-    unavailable = {"available": False, "forked_at": entity.forked_at}
-    if entity.forked_from_id is None:
-        return unavailable
-    listing_model = type(entity)
-    version_model = (
-        AgentVersion
-        if listing_model is Agent
-        else next(version for listing, version in COMPONENT_MODELS.values() if listing is listing_model)
+    return (await provenance_for_many([entity], current_user, db)).get(entity.id)
+
+
+def _models_for(listing_model) -> tuple[str, type]:
+    if listing_model is Agent:
+        return "agent", AgentVersion
+    return next((key, version) for key, (listing, version) in COMPONENT_MODELS.items() if listing is listing_model)
+
+
+async def _visible_private_teams(db: AsyncSession, current_user, team_ids: set) -> set:
+    """Batched twin of ``check_listing_visibility_async`` membership lookups."""
+    if current_user is None or not team_ids:
+        return set()
+    rows = await db.execute(
+        select(TeamMembership.team_id).where(
+            TeamMembership.user_id == current_user.id, TeamMembership.team_id.in_(team_ids)
+        )
     )
-    source = await db.get(listing_model, entity.forked_from_id)
-    if source is None or getattr(source, "deleted_at", None) is not None:
-        return unavailable
-    if not await check_listing_visibility_async(source, current_user, db):
-        return unavailable
-    if source.status.value != "approved" and getattr(
-        source, "created_by", getattr(source, "submitted_by", None)
-    ) != getattr(current_user, "id", None):
-        return unavailable
-    base = await db.get(version_model, entity.forked_from_version_id) if entity.forked_from_version_id else None
-    return {
-        "available": True,
-        "id": source.id,
-        "type": "agent"
-        if listing_model is Agent
-        else next(key for key, models in COMPONENT_MODELS.items() if models[0] is listing_model),
-        "namespace": source.namespace,
-        "slug": source.slug,
-        "qualified_name": source.qualified_name,
-        "version": base.version
-        if base is not None
-        and (base.agent_id if listing_model is Agent else base.listing_id) == source.id
-        and base.status.value == "approved"
-        else None,
-        "forked_at": entity.forked_at,
-    }
+    return set(rows.scalars().all())
+
+
+async def provenance_for_many(entities: list, current_user, db: AsyncSession) -> dict:
+    """Visibility-safe provenance for many rows with a fixed number of queries.
+
+    Same rules as the single-row form: an inaccessible, deleted, or (for anyone
+    but its creator) unapproved source yields only ``available=False``, never
+    the saved reference, identity or base version. Rows that are not forks map
+    to ``None``.
+    """
+    result: dict = {}
+    forks_by_model: dict[type, list] = {}
+    for entity in entities:
+        if getattr(entity, "is_fork", False) is not True:
+            result[entity.id] = None
+        else:
+            forks_by_model.setdefault(type(entity), []).append(entity)
+    caller_id = getattr(current_user, "id", None)
+    for listing_model, forks in forks_by_model.items():
+        kind, version_model = _models_for(listing_model)
+        source_ids = {f.forked_from_id for f in forks if f.forked_from_id is not None}
+        base_ids = {f.forked_from_version_id for f in forks if f.forked_from_version_id is not None}
+        sources = {}
+        if source_ids:
+            rows = await db.execute(select(listing_model).where(listing_model.id.in_(source_ids)))
+            sources = {row.id: row for row in rows.scalars().all()}
+        bases = {}
+        if base_ids:
+            rows = await db.execute(select(version_model).where(version_model.id.in_(base_ids)))
+            bases = {row.id: row for row in rows.scalars().all()}
+        private_team_ids = {s.team_id for s in sources.values() if s.is_private and s.team_id is not None}
+        member_of = (
+            private_team_ids
+            if can_see_private_listings(current_user)
+            else await _visible_private_teams(db, current_user, private_team_ids)
+        )
+        for fork in forks:
+            unavailable = {"available": False, "forked_at": fork.forked_at}
+            source = sources.get(fork.forked_from_id)
+            if source is None or getattr(source, "deleted_at", None) is not None:
+                result[fork.id] = unavailable
+                continue
+            creator = getattr(source, "created_by", None) or getattr(source, "submitted_by", None)
+            if source.is_private and not can_see_private_listings(current_user):
+                if source.team_id is not None:
+                    visible = source.team_id in member_of
+                else:  # A private personal listing: only its creator sees it.
+                    visible = caller_id is not None and creator == caller_id
+                if current_user is None or not visible:
+                    result[fork.id] = unavailable
+                    continue
+            if source.status.value != "approved" and creator != caller_id:
+                result[fork.id] = unavailable
+                continue
+            base = bases.get(fork.forked_from_version_id)
+            parent = None if base is None else (base.agent_id if kind == "agent" else base.listing_id)
+            result[fork.id] = {
+                "available": True,
+                "id": source.id,
+                "type": kind,
+                "namespace": source.namespace,
+                "slug": source.slug,
+                "qualified_name": source.qualified_name,
+                "version": base.version if parent == source.id and base.status.value == "approved" else None,
+                "forked_at": fork.forked_at,
+            }
+    return result
 
 
 def public_agent_fork_condition():

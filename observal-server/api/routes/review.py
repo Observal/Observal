@@ -39,7 +39,7 @@ from services.cache import invalidate_namespace
 from services.editing_lock import is_actively_editing
 from services.inbox import sources as inbox
 from services.redis import publish as redis_publish
-from services.registry_fork import provenance_for
+from services.registry_fork import provenance_for, provenance_for_many
 from services.security_events import EventType, SecurityEvent, Severity, emit_security_event
 from services.skill_bundle import needs_bundle_delivery
 from services.skill_revisions import skill_content_revision
@@ -275,6 +275,7 @@ async def _query_pending_agents(
         rows = await db.execute(select(User.id, User.username).where(User.id.in_(user_ids)))
         user_map = {r[0]: (r[1] or "") for r in rows.all()}
 
+    provenance = await provenance_for_many(list(agents_map.values()), current_user, db)
     items = []
     for agent_id, pending_ver in seen_agents.items():
         a = agents_map.get(agent_id)
@@ -297,7 +298,7 @@ async def _query_pending_agents(
                 "components_ready": components_ready,
                 "blocking_components": blocking,
                 "gaming_flags": pending_ver.gaming_flags,
-                "forked_from": await provenance_for(a, current_user, db) if getattr(a, "is_fork", False) else None,
+                "forked_from": provenance.get(a.id),
             }
         )
     return items
@@ -370,6 +371,7 @@ async def _query_pending_components(
         listings_result = await db.execute(listing_stmt)
         listings_map = {r.id: r for r in listings_result.scalars().all() if _in_scope(r, scope, team_id)}
 
+        provenance = await provenance_for_many(list(listings_map.values()), current_user, db)
         for pv in pending_targets:
             r = listings_map.get(pv.listing_id)
             if not r or (
@@ -396,7 +398,7 @@ async def _query_pending_components(
             if listing_type == "skill":
                 item["version_id"] = str(pv.id)
                 item["review_key"] = f"skill:{pv.id}"
-            item["forked_from"] = await provenance_for(r, current_user, db)
+            item["forked_from"] = provenance.get(r.id)
             # Include validation results for MCP listings
             if listing_type == "mcp" and hasattr(r, "validation_results"):
                 item["mcp_validated"] = getattr(r, "mcp_validated", False)
