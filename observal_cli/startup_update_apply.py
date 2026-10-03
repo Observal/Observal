@@ -171,9 +171,18 @@ def _apply_pi_serialized(
             payload["warning"] = "An earlier installation outcome is unresolved; inspect managed files before retrying."
         installed = installed_updates.inventory_for_context("pi", cwd)
         if installed:
-            findings = check._cached_or_compare(registry, account, cwd, installed)
             policy = auto_update_policy.policy_status(registry)
             enabled = policy["effective"] and not policy.get("warning")
+            # The 24-hour cache is for notice-only startups. An opted-in apply
+            # must discover newly approved releases even if the previous Pi
+            # session cached an up-to-date result before they were published.
+            # The normal installer still re-fetches and verifies the exact
+            # target under its lock before writing any managed files.
+            findings = (
+                installed_updates.compare(installed, verify_releases=True)
+                if enabled
+                else check._cached_or_compare(registry, account, cwd, installed)
+            )
             if policy.get("warning"):
                 payload["warning"] = "Auto-update policy is unreadable; automatic installs are disabled."
             for item in findings[: check.MAX_ITEMS]:
@@ -269,7 +278,11 @@ def _apply_pi_serialized(
                 payload["items"].append(msg)
     except (CliError, OSError, ValueError, TypeError):
         uncertain = uncertain or journal_active
-        payload["warning"] = "Update worker could not complete; inspect managed installs and run `observal outdated`."
+        payload["warning"] = (
+            "Update worker could not complete; inspect managed installs and run `observal outdated`."
+            if journal_active or unresolved_pending
+            else "automatic update skipped: the registry check could not complete; run `observal outdated` later."
+        )
     finally:
         # Even if a mutation succeeded before an unexpected exception, never
         # forge a success: installed-state and file-baseline verification decide.

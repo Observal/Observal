@@ -300,6 +300,53 @@ def test_prior_session_uncertain_outcome_blocks_new_auto_installs(setup: dict) -
     assert result()["outcome_final"] is False
 
 
+def test_opted_in_apply_ignores_a_pre_release_check_only_cache(setup: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    entry = installed_updates.inventory_for_context("pi", str(setup["tmp"]))[0]
+    latest = "1.0"
+    calls: list[bool] = []
+
+    def compare(entries: list[dict], *, verify_releases: bool = False) -> list[dict]:
+        assert entries == [entry]
+        calls.append(verify_releases)
+        if latest == "1.0":
+            return [{**entry, "latest_version": latest, "outdated": False, "status": "current"}]
+        return [
+            {
+                **entry,
+                "qualified_name": "alice/code",
+                "latest_version": latest,
+                "outdated": True,
+                "release_verified": True,
+                "status": "outdated",
+                "release": {"description": "newly approved"},
+            }
+        ]
+
+    monkeypatch.setattr(installed_updates, "compare", compare)
+    check.check_pi(str(setup["tmp"]), "session-before-release", "a" * 64)
+    cache = next(check.CACHE_DIR.glob("*.json"))
+    assert json.loads(cache.read_text())[0]["latest_version"] == "1.0"
+
+    latest = "2.0"  # The registry approves a new release after that cached check.
+    worker.apply_pi(str(setup["tmp"]), "session-a", KEY)
+    assert calls == [True, True], "apply must fetch live instead of using the stale check-only cache"
+    setup["apply"].assert_called_once()
+    assert setup["apply"].call_args.args[0]["latest_version"] == "2.0"
+    assert result()["items"][0]["status"] == "updated"
+    assert json.loads(cache.read_text())[0]["latest_version"] == "1.0", "apply need not modify notice-only cache"
+
+
+def test_failed_fresh_check_never_uses_stale_cache_for_install(setup: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    check.check_pi(str(setup["tmp"]), "before-outage", "a" * 64)
+    assert next(check.CACHE_DIR.glob("*.json")).exists()
+    monkeypatch.setattr(installed_updates, "compare", lambda *_, **__: (_ for _ in ()).throw(ValueError("secret")))
+    worker.apply_pi(str(setup["tmp"]), "session-a", KEY)
+    setup["apply"].assert_not_called()
+    assert "automatic update skipped" in result()["warning"]
+    assert "secret" not in json.dumps(result())
+    assert not list(check.NOTICE_DIR.glob("*.pending"))
+
+
 def test_frozen_is_notice_only(setup: dict, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(auto_update_policy, "policy_status", lambda _: {"effective": False})
     worker.apply_pi(str(setup["tmp"]), "session-a", KEY)
@@ -339,9 +386,9 @@ def test_unexpected_error_after_admission_stays_unsealed(setup: dict) -> None:
 def test_oversized_failed_result_retains_pending_record(setup: dict, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(check, "MAX_NOTICE_BYTES", 900)
     monkeypatch.setattr(
-        check,
-        "_cached_or_compare",
-        lambda *_: [
+        installed_updates,
+        "compare",
+        lambda *_, **__: [
             {
                 "id": "agent-id",
                 "type": "agent",

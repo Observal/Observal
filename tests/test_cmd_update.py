@@ -286,7 +286,12 @@ def test_real_cli_reinstalls_unpinned_skill_in_isolated_home(tmp_path: Path) -> 
         **os.environ,
         "HOME": str(home),
         "XDG_CONFIG_HOME": str(home / ".config"),
-        "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
+        "PYTHONPATH": os.pathsep.join(
+            [
+                str(Path(__file__).resolve().parents[1]),
+                str(Path(__file__).resolve().parents[1] / "packages/observal-shared"),
+            ]
+        ),
     }
     bootstrap = (
         "from observal_cli import lockfile; "

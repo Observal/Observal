@@ -8,6 +8,7 @@ No Docker, cloud credentials, provider key, or real user home is touched.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import queue
@@ -379,11 +380,13 @@ def test_frozen_then_real_apply_in_isolated_pi_rpc(tmp_path: Path, registry: Reg
     config = home / ".observal/config.json"
     config.parent.mkdir()
     config.write_text(json.dumps({"server_url": registry, "access_token": "local-token", "user_id": "alice"}))
+    repo = Path(__file__).resolve().parents[1]
+    python_path = os.pathsep.join([str(repo), str(repo / "packages/observal-shared")])
     env = {
         **os.environ,
         "HOME": str(home),
         "XDG_CONFIG_HOME": str(home / ".config"),
-        "PYTHONPATH": str(Path(__file__).resolve().parents[1]),
+        "PYTHONPATH": python_path,
     }
     # Seed the disposable profile through a real manual CLI pull, not a
     # fabricated lock/baseline. --upgrade selects the approved v1 unpinned.
@@ -485,7 +488,7 @@ def test_frozen_then_real_apply_in_isolated_pi_rpc(tmp_path: Path, registry: Reg
             _rpc_session(home, env, expected="automatic update skipped")
         finally:
             registry.trickle = False
-            env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
+            env["PYTHONPATH"] = python_path
         assert time.monotonic() - started < 8, "trickling registry must not hold the apply gate indefinitely"
         assert registry.install_calls == calls and profile.read_text() == "old profile"
 
@@ -642,7 +645,7 @@ def test_frozen_then_real_apply_in_isolated_pi_rpc(tmp_path: Path, registry: Reg
             "    os.replace = edit_after_replace\n"
         )
         _rpc_session(home, env, expected="outcome pending from a Pi session")
-        env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1])
+        env["PYTHONPATH"] = python_path
         journals = list(notices.glob("*.pending"))
         assert len(journals) == 1 and profile.read_text() == "foreign edit"
         pending = json.loads(journals[0].read_text())
@@ -661,6 +664,25 @@ def test_frozen_then_real_apply_in_isolated_pi_rpc(tmp_path: Path, registry: Reg
         shutil.rmtree(backup)
     active = home / ".pi/agent/AGENTS.md"
     active.write_text("old profile")  # Saved update must not silently replace the active copy.
+    # Pre-release Pi check caches "current" for 24h. The next opted-in
+    # startup must still discover and apply a newly approved release without
+    # asking the user to run `outdated` to invalidate that check-only cache.
+    cache_dir = home / ".observal/update-check-cache"
+    for cached in cache_dir.glob("*.json"):
+        cached.unlink()
+    registry.latest = "1.0.0"
+    session_before_release = "check-before-new-release"
+    key = hashlib.sha256(f"{registry}\0alice\0{session_before_release}".encode()).hexdigest()
+    seeded_check = subprocess.run(
+        [str(CLI), "_startup-check", "--cwd", str(root), "--session-id", session_before_release, "--notice-key", key],
+        cwd=root,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert seeded_check.returncode == 0, seeded_check.stdout + seeded_check.stderr
+    assert json.loads(next(cache_dir.glob("*.json")).read_text())[0]["latest_version"] == "1.0.0"
+    registry.latest = "2.0.0"
     messages = _rpc_session(home, env, expected="installed on disk")
     assert "Re-select" in "\n".join(messages) or "re-select" in "\n".join(messages)
     assert profile.read_text() == "new profile"
