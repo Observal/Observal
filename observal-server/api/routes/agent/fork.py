@@ -3,6 +3,8 @@
 
 """Fork an approved agent into a provenance-linked independent draft."""
 
+import uuid
+
 from fastapi import Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -84,7 +86,16 @@ async def agent_fork_diff(
 ):
     if not await dynamic_settings.get_bool("registry.fork.enabled"):
         raise HTTPException(status_code=403, detail="Forking is disabled by your administrator")
-    fork = await _load_agent(db, agent_id, current_user=current_user)
+    # Privacy is enforced here; version-state access (owner, reviewer in scope,
+    # or approved only) is decided by fork_version_diff with a uniform 404.
+    # Only exact UUIDs widen the status scope: a name lookup could otherwise
+    # list other users' unapproved agents in an ambiguity error.
+    try:
+        uuid.UUID(agent_id)
+        by_id = True
+    except ValueError:
+        by_id = False
+    fork = await _load_agent(db, agent_id, current_user=current_user, include_all_statuses=by_id)
     if fork is None:
         raise HTTPException(status_code=404, detail="Agent not found")
     return await fork_version_diff(db, fork, "agent", current_user, version)

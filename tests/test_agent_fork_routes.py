@@ -198,6 +198,9 @@ async def test_post_and_public_forks_list_over_asgi_with_real_database(monkeypat
                 assert payload["forked_from"]["version"] == "1.2.3"
                 before = await client.get(f"/api/v1/agents/{source.id}/forks")
                 assert before.json()["total"] == 0
+                # A snapshot frozen by an older builder must not read as an edit.
+                source.latest_version.yaml_snapshot = "# legacy\nversion: 1.2.3\nprompt: Prompt\n"
+                await db.commit()
                 unchanged = await client.get(f"/api/v1/agents/{payload['id']}/fork-diff")
                 assert unchanged.status_code == 200, unchanged.text
                 assert unchanged.json()["unchanged"] is True
