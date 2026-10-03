@@ -31,6 +31,7 @@ from services.registry_fork import (
     component_fork_counts,
     fork_component,
     provenance_for,
+    provenance_for_many,
     public_component_fork_condition,
 )
 from services.registry_telemetry import emit_registry_event
@@ -51,10 +52,16 @@ SUMMARY_MODELS = {
 }
 
 
-async def component_response(listing, kind: str, current_user, db, *, count: int = 0, summary: bool = False):
+_UNRESOLVED = object()
+
+
+async def component_response(
+    listing, kind: str, current_user, db, *, count: int = 0, summary: bool = False, provenance=_UNRESOLVED
+):
     model = SUMMARY_MODELS[kind] if summary else RESPONSE_MODELS[kind]
     response = model.model_validate(listing)
-    provenance = await provenance_for(listing, current_user, db)
+    if provenance is _UNRESOLVED:
+        provenance = await provenance_for(listing, current_user, db)
     response.forked_from = ForkProvenance.model_validate(provenance) if provenance else None
     response.fork_count = count
     return response
@@ -65,8 +72,11 @@ async def component_responses(listings, kind: str, current_user, db, *, summary:
 
     listing_model, version_model = COMPONENT_MODELS[kind]
     counts = await component_fork_counts(db, listing_model, version_model, [item.id for item in listings])
+    provenance = await provenance_for_many(listings, current_user, db)
     return [
-        await component_response(item, kind, current_user, db, count=counts.get(item.id, 0), summary=summary)
+        await component_response(
+            item, kind, current_user, db, count=counts.get(item.id, 0), summary=summary, provenance=provenance[item.id]
+        )
         for item in listings
     ]
 

@@ -88,10 +88,10 @@ through existing `my` views, not through the public Forks list.
 Reserve `fork` and `forks` for new registry slugs on the server and mirror the
 restriction in CLI bulk agent creation. Existing listings with those slugs
 remain readable. Add registry dynamic-setting defaults: `registry.fork.enabled`
-(`true`), `registry.fork.max_per_user_per_hour` (`30`), and
-`registry.fork.notify_source_owner` (`false`). The settings are exposed in the
-existing admin Registry section; routes, rate enforcement and notification
-arrive in later phases. The canonical CLI command will be `agent fork` (and
+(`true`) and `registry.fork.max_per_user_per_hour` (`30`), exposed in the
+existing admin Registry section. Forking does not notify the source owner: a
+notice would disclose drafts and team-private forks the owner cannot otherwise
+see, so no setting for it exists until a privacy-safe design is agreed. The canonical CLI command will be `agent fork` (and
 `registry <type> fork`), not a second `agent create --from` path.
 
 ## Consequences and deferred decisions

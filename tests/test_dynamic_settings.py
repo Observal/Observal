@@ -603,7 +603,6 @@ def test_registry_fork_settings_have_defaults_and_appear_in_admin_schema():
     expected = {
         "registry.fork.enabled": "true",
         "registry.fork.max_per_user_per_hour": "30",
-        "registry.fork.notify_source_owner": "false",
     }
     registry = next(section for section in ds.settings_schema() if section["id"] == "registry")
     settings = {setting["key"]: setting for setting in registry["settings"]}
@@ -611,6 +610,9 @@ def test_registry_fork_settings_have_defaults_and_appear_in_admin_schema():
         assert ds.DEFAULTS[key] == default
         assert settings[key]["default"] == default
         assert settings[key]["restart_required"] is False
+    # Source-owner fork notices are not implemented; no inert admin control is offered.
+    assert "registry.fork.notify_source_owner" not in ds.DEFAULTS
+    assert "registry.fork.notify_source_owner" not in settings
 
 
 def test_mask_value_only_reveals_sensitive_suffix():

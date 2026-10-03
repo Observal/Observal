@@ -569,11 +569,11 @@ async def test_pending_component_queue_serializes_bundle_validation_submitter_an
 
     db.execute.side_effect = execute
     listing.is_fork = True
-    provenance = AsyncMock(return_value={"available": True, "id": uuid.UUID(int=90)})
-    monkeypatch.setattr(review, "provenance_for", provenance)
+    provenance = AsyncMock(return_value={listing.id: {"available": True, "id": uuid.UUID(int=90)}})
+    monkeypatch.setattr(review, "provenance_for_many", provenance)
     actor = _actor()
     items = await review._query_pending_components(db, GLOBAL_SCOPE, "mcp", current_user=actor)
-    provenance.assert_awaited_once_with(listing, actor, db)
+    provenance.assert_awaited_once_with([listing], actor, db)
 
     assert items == [
         {

@@ -161,29 +161,113 @@ async def test_private_personal_source_never_becomes_public():
 
 
 @pytest.mark.asyncio
-async def test_inaccessible_source_never_falls_back_to_saved_identity(monkeypatch):
-    source, base, _ = _source()
-    fork = Agent(
-        id=uuid.uuid4(),
-        name="Fork",
-        namespace="bob",
-        slug="forked",
-        owner="bob",
-        created_by=uuid.uuid4(),
-        forked_from_id=source.id,
-        forked_from_version_id=base.id,
-        forked_from_ref="alice/source@2.3.0",
-        forked_at=datetime.now(UTC),
-    )
-    db = MagicMock()
-    db.get = AsyncMock(return_value=source)
-    monkeypatch.setattr(forks, "check_listing_visibility_async", AsyncMock(return_value=False))
-    assert await forks.provenance_for(fork, SimpleNamespace(id=uuid.uuid4()), db) == {
-        "available": False,
-        "forked_at": fork.forked_at,
-    }
-    fork.forked_from_id = None
-    assert await forks.provenance_for(fork, None, db) == {"available": False, "forked_at": fork.forked_at}
+async def test_inaccessible_source_never_falls_back_to_saved_identity():
+    """Batched provenance keeps the row-level visibility rules, in a constant number of queries."""
+    from sqlalchemy import event
+
+    from models.team import Team, TeamMembership, TeamRole
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    try:
+        async with async_sessionmaker(engine, expire_on_commit=False)() as db:
+            owner_id, member_id, outsider_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+            team = Team(id=uuid.uuid4(), name="T", handle="t", is_private=True, created_by=owner_id)
+            db.add(team)
+            await db.flush()
+            db.add(TeamMembership(team_id=team.id, user_id=member_id, role=TeamRole.member))
+            source = SkillListing(
+                id=uuid.uuid4(),
+                name="S",
+                namespace="t",
+                slug="s",
+                owner="t",
+                submitted_by=owner_id,
+                team_id=team.id,
+                is_private=True,
+                co_authors=[],
+            )
+            db.add(source)
+            await db.flush()
+            base = SkillVersion(
+                id=uuid.uuid4(),
+                listing_id=source.id,
+                version="2.0.0",
+                status=ListingStatus.approved,
+                description="d",
+                task_type="review",
+                released_by=owner_id,
+                released_at=datetime.now(UTC),
+            )
+            db.add(base)
+            await db.flush()
+            source.latest_version_id = base.id
+            forks_rows = []
+            for index in range(5):
+                fork = SkillListing(
+                    id=uuid.uuid4(),
+                    name=f"F{index}",
+                    namespace="t",
+                    slug=f"f{index}",
+                    owner="t",
+                    submitted_by=member_id,
+                    team_id=team.id,
+                    is_private=False,
+                    co_authors=[],
+                    forked_from_id=source.id,
+                    forked_from_version_id=base.id,
+                    forked_from_ref="t/s@2.0.0",
+                    forked_at=datetime.now(UTC),
+                )
+                db.add(fork)
+                forks_rows.append(fork)
+            orphan = SkillListing(
+                id=uuid.uuid4(),
+                name="O",
+                namespace="t",
+                slug="o",
+                owner="t",
+                submitted_by=member_id,
+                is_private=False,
+                co_authors=[],
+                forked_from_ref="gone/source@1.0.0",
+                forked_at=datetime.now(UTC),
+            )
+            db.add(orphan)
+            await db.commit()
+
+            statements = []
+
+            def count(*_args):
+                statements.append(1)
+
+            event.listen(engine.sync_engine, "before_cursor_execute", count)
+            outsider = SimpleNamespace(id=outsider_id, role=UserRole.user)
+
+            async def queries_for(ids):
+                async with async_sessionmaker(engine, expire_on_commit=False)() as fresh:
+                    rows = (await fresh.execute(select(SkillListing).where(SkillListing.id.in_(ids)))).scalars().all()
+                    statements.clear()
+                    await forks.provenance_for_many(rows, outsider, fresh)
+                    return len(statements)
+
+            # The query count does not grow with the number of forks.
+            assert await queries_for([forks_rows[0].id]) == await queries_for([row.id for row in forks_rows])
+            hidden = await forks.provenance_for_many([*forks_rows, orphan], outsider, db)
+            unavailable = [{"available": False, "forked_at": row.forked_at} for row in [*forks_rows, orphan]]
+            assert [hidden[row.id] for row in [*forks_rows, orphan]] == unavailable
+            assert "t/s" not in str(hidden) and "2.0.0" not in str(hidden)
+
+            member = SimpleNamespace(id=member_id, role=UserRole.user)
+            visible = await forks.provenance_for(forks_rows[0], member, db)
+            assert visible["available"] is True and visible["qualified_name"] == "t/s" and visible["version"] == "2.0.0"
+            admin = SimpleNamespace(id=uuid.uuid4(), role=UserRole.admin)
+            assert (await forks.provenance_for(forks_rows[0], admin, db))["available"] is True
+            assert await forks.provenance_for(forks_rows[0], None, db) == unavailable[0]
+            event.remove(engine.sync_engine, "before_cursor_execute", count)
+    finally:
+        await engine.dispose()
 
 
 @pytest.mark.asyncio

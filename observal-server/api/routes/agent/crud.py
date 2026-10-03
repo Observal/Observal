@@ -40,7 +40,7 @@ from schemas.agent import (
 from services.cache import invalidate_namespace
 from services.config_generator import validate_mcp_command
 from services.harness_capability_inference import compute_supported_harnesses, infer_required_features
-from services.registry_fork import agent_fork_counts, provenance_for
+from services.registry_fork import agent_fork_counts, provenance_for, provenance_for_many
 from services.registry_namespace import identity_exists, slugify
 from services.registry_telemetry import emit_registry_event
 from services.teamspace import resolve_publish_target
@@ -331,7 +331,7 @@ async def list_agents(
         rating_map = {r[0]: round(float(r[1]), 2) for r in rows.all()}
 
     fork_counts = await agent_fork_counts(db, agent_ids)
-    provenance = {a.id: await provenance_for(a, current_user, db) for a in agents if a.is_fork}
+    provenance = await provenance_for_many(agents, current_user, db)
 
     # Batch-fetch creator emails and usernames
     user_ids = {a.created_by for a in agents}
@@ -403,7 +403,7 @@ async def my_agents(
         rating_map = {r[0]: round(float(r[1]), 2) for r in rows.all()}
 
     fork_counts = await agent_fork_counts(db, agent_ids)
-    provenance = {a.id: await provenance_for(a, current_user, db) for a in agents if a.is_fork}
+    provenance = await provenance_for_many(agents, current_user, db)
     return [
         AgentSummary(
             id=a.id,
