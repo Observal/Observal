@@ -349,6 +349,10 @@ DEFAULTS: dict[str, str] = {
     # complete-folder installers have been deployed. A new worker cannot make
     # an old worker enforce skill review and delivery markers.
     "registry.skill_folder_delivery_enabled": "false",
+    # Registry forking (routes and enforcement arrive in later phases).
+    "registry.fork.enabled": "true",
+    "registry.fork.max_per_user_per_hour": "30",
+    "registry.fork.notify_source_owner": "false",
     # Application retention policy, separate from the ClickHouse TTL below
     "retention.enabled": "false",
     "retention.trace_days": "",

@@ -49,7 +49,18 @@ from observal_cli.render import (
 # ── Agent authoring constants ──────────────────────────────
 YAML_FILE = "observal-agent.yaml"
 VALID_COMPONENT_TYPES = {"mcp", "skill", "hook", "prompt", "sandbox"}
-_RESERVED_AGENT_SLUGS = {"archive", "draft", "install", "resolve", "restore", "submit", "unarchive", "versions"}
+_RESERVED_AGENT_SLUGS = {
+    "archive",
+    "draft",
+    "fork",
+    "forks",
+    "install",
+    "resolve",
+    "restore",
+    "submit",
+    "unarchive",
+    "versions",
+}
 
 # Common model choices for the interactive wizard
 _MODEL_CHOICES = [

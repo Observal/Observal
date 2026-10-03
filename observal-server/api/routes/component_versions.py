@@ -13,7 +13,6 @@ Usage in each type's route file::
 from __future__ import annotations
 
 import re
-from copy import deepcopy
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -51,36 +50,11 @@ from services.skill_revisions import skill_content_revision, verified_skill_revi
 from services.skill_validator import SkillValidationError
 from services.teamspace import can_review, review_scope
 from services.versioning import parse_semver
+from services.registry_fork import VERSION_MANAGED_FIELDS as _VERSION_MANAGED_FIELDS
+from services.registry_fork import _copy_version_columns
 
 # Semver pattern: X.Y.Z or X.Y.Z-prerelease
 SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$")
-
-_VERSION_MANAGED_FIELDS = {
-    "id",
-    "listing_id",
-    "version",
-    "description",
-    "changelog",
-    "status",
-    "rejection_reason",
-    "download_count",
-    "released_by",
-    "released_at",
-    "reviewed_by",
-    "reviewed_at",
-    "created_at",
-    "is_editing",
-    "editing_since",
-    "editing_by",
-    "base_version_id",
-    "base_revision",
-    "content_revision",
-    "review_epoch",
-    "requires_global_review",
-    "pre_public_status",
-    "pre_public_reviewed_by",
-    "pre_public_reviewed_at",
-}
 
 
 async def audit(*_args, **_kwargs):
@@ -348,13 +322,7 @@ async def _publish_version(
     extra_fields = validate_and_extract(component_type, effective_extra)
     now = datetime.now(UTC)
     snapshot = (
-        {
-            column.name: deepcopy(getattr(current_version, column.name))
-            for column in version_model.__table__.columns
-            if column.name not in _VERSION_MANAGED_FIELDS
-        }
-        if current_version
-        else {}
+        _copy_version_columns(version_model, current_version, skip=_VERSION_MANAGED_FIELDS) if current_version else {}
     )
     if component_type == "skill" and snapshot.get("extra_files") is None:
         snapshot["extra_files"] = []

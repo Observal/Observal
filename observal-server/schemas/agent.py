@@ -19,6 +19,7 @@ from pydantic import BaseModel, field_validator, model_serializer
 from models.agent import AgentStatus
 from schemas.constants import AGENT_NAME_REGEX, RecommendedFlag, Visibility, make_name_validator
 from schemas.skill_resources import SkillInstallFolder
+from schemas.fork import ForkProvenance
 from services.versioning import validate_semver
 
 VALID_COMPONENT_TYPES = {"mcp", "skill", "hook", "prompt", "sandbox"}
@@ -243,6 +244,9 @@ class AgentResponse(BaseModel):
     latest_approved_version: str | None = None
     latest_version: str | None = None
     is_recommended: RecommendedFlag = False
+    forked_from: ForkProvenance | None = None
+    fork_count: int = 0
+    warnings: list[str] = []
 
     model_config = {"from_attributes": True}
 
@@ -277,6 +281,8 @@ class AgentSummary(BaseModel):
     components_ready: bool = True
     blocking_components: list = []
     is_recommended: RecommendedFlag = False
+    forked_from: ForkProvenance | None = None
+    fork_count: int = 0
 
     model_config = {"from_attributes": True}
 
