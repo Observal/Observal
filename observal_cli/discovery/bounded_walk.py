@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import os
+import stat
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -209,22 +210,83 @@ class BoundedWalker:
         resolved = self._inspect(path)
         if resolved is None:
             return None
+        fd = -1
         try:
-            size = resolved.stat().st_size
-            if size > self.limits.max_file_bytes:
+            # O_NONBLOCK keeps open() from hanging on a FIFO; the fstat check then rejects it.
+            fd = os.open(resolved, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode):
+                self.diagnostic(
+                    DiagnosticCode.METADATA_MALFORMED, "discovery metadata is not a regular file", source=path
+                )
+                return None
+            with os.fdopen(fd, "rb") as handle:
+                fd = -1
+                data = handle.read(self.limits.max_file_bytes + 1)
+            if len(data) > self.limits.max_file_bytes:
                 self.diagnostic(
                     DiagnosticCode.METADATA_TOO_LARGE,
                     f"metadata file exceeds {self.limits.max_file_bytes} byte limit",
                     source=path,
                 )
                 return None
-            return resolved.read_text(encoding="utf-8")
+            return data.decode("utf-8")
         except UnicodeError:
             self.diagnostic(DiagnosticCode.METADATA_MALFORMED, "discovery metadata is not valid UTF-8", source=path)
             return None
         except OSError:
             self.diagnostic(DiagnosticCode.PERMISSION_DENIED, "unable to read discovery metadata", source=path)
             return None
+        finally:
+            if fd >= 0:
+                os.close(fd)
+
+    def child_directories(self, directory: Path) -> list[Path] | None:
+        """List immediate non-symlink subdirectories, charging entries to the budgets.
+
+        Returns None when the directory cannot be listed in full within the
+        deadline and entry limits (a limit diagnostic is emitted).
+        """
+        if not self._deadline_ok():
+            return None
+        try:
+            resolved = directory.resolve(strict=True)
+        except (OSError, RuntimeError):
+            self.diagnostic(DiagnosticCode.PERMISSION_DENIED, "unable to resolve discovery directory", source=directory)
+            return None
+        if not self._within_root(resolved):
+            self.diagnostic(
+                DiagnosticCode.PATH_OUTSIDE_ROOT, "discovery directory is outside its approved root", source=directory
+            )
+            return None
+        remaining_root = max(0, self.limits.max_entries_per_root - self._root_entries)
+        remaining_total = max(0, self.budget.max_entries - self.budget.entries)
+        allowance = min(remaining_root, remaining_total)
+        try:
+            with os.scandir(resolved) as listing:
+                entries = list(islice(listing, allowance + 1))
+        except OSError:
+            self.diagnostic(DiagnosticCode.PERMISSION_DENIED, "unable to inspect discovery directory", source=directory)
+            return None
+        if len(entries) > allowance:
+            if remaining_total <= remaining_root:
+                self.limit(DiagnosticCode.COLLECTION_ENTRY_LIMIT_REACHED, "aggregate discovery entry limit reached")
+            else:
+                self.limit(DiagnosticCode.ITEM_LIMIT_REACHED, "approved root entry limit reached", source=self.root)
+            self.halt()
+            return None
+        self._root_entries += len(entries)
+        self.budget.entries += len(entries)
+        found: list[Path] = []
+        for entry in entries:
+            try:
+                if entry.is_dir(follow_symlinks=False):
+                    found.append(Path(entry.path))
+            except OSError:
+                self.diagnostic(
+                    DiagnosticCode.PERMISSION_DENIED, "unable to inspect discovery path", source=Path(entry.path)
+                )
+        return found
 
     def files(self, directory: Path, *, name: str | None = None, suffix: str | None = None) -> Iterator[Path]:
         """Yield matching files in stable order, bounded by depth and counters."""

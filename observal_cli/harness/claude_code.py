@@ -567,8 +567,10 @@ class ClaudeCodeAdapter(BaseAdapter):
         )
         if not market_dir.is_dir():
             return None
+        versions = scanner.walker.child_directories(market_dir)
+        if not versions:
+            return None
         try:
-            versions = [path for path in market_dir.iterdir() if path.is_dir() and not path.is_symlink()]
             versions.sort(key=lambda path: (-path.stat().st_mtime, path.name.casefold()))
         except OSError:
             scanner.diagnostic(
@@ -577,13 +579,6 @@ class ClaudeCodeAdapter(BaseAdapter):
                 "unable to inspect Claude plugin cache metadata",
             )
             return None
-        if len(versions) > scanner.walker.limits.max_files_per_root:
-            scanner.diagnostic(
-                DiagnosticCode.ITEM_LIMIT_REACHED,
-                market_dir,
-                "Claude plugin cache version limit reached",
-            )
-            versions = versions[: scanner.walker.limits.max_files_per_root]
         return versions[0].resolve(strict=False) if versions else None
 
     def _discover_claude_plugin(

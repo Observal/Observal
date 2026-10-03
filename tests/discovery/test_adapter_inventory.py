@@ -213,3 +213,14 @@ def test_claude_plugin_uses_only_approved_roots(tmp_path: Path) -> None:
     assert output["inventory"][names.index("plugin-server")]["launch"]["url"] == "https://example.test/mcp"
     assert "PRIVATE_CREDENTIAL" not in json.dumps(output)
     assert str(tmp_path) not in json.dumps(output)
+
+
+@pytest.mark.parametrize("value", ["[]", '"x"', "null"])
+def test_wrongly_typed_mcp_servers_reports_diagnostic(tmp_path: Path, value: str) -> None:
+    ensure_loaded()
+    project = tmp_path / "project"
+    _write(project / ".cursor/mcp.json", f'{{"mcpServers": {value}}}')
+    result = get_adapter("cursor").discover_project(project)
+    output = inventory_to_dict(result.evidence, result.diagnostics, home=tmp_path / "home", project_dir=project)
+    assert not output["inventory"]
+    assert any(item["code"] == "metadata_malformed" for item in output["diagnostics"])

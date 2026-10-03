@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import os
 from contextlib import nullcontext
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from observal_cli.discovery.adapter_support import RichAdapterScanner
@@ -11,8 +13,6 @@ from observal_cli.discovery.bounded_walk import AggregateDiscoveryBudget, Bounde
 from observal_cli.discovery.models import DiagnosticCode, DiscoveryScope
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     import pytest
 
 
@@ -94,14 +94,14 @@ def test_read_diagnostic_does_not_embed_absolute_exception_path(
     root.mkdir()
     metadata = root / "private.json"
     metadata.write_text("{}")
-    original_read_text = type(metadata).read_text
+    original_open = os.open
 
-    def fail_for_metadata(path: Path, *args, **kwargs):
-        if path == metadata.resolve():
+    def fail_for_metadata(path, *args, **kwargs):
+        if Path(path) == metadata.resolve():
             raise PermissionError(13, "permission denied", str(path))
-        return original_read_text(path, *args, **kwargs)
+        return original_open(path, *args, **kwargs)
 
-    monkeypatch.setattr(type(metadata), "read_text", fail_for_metadata)
+    monkeypatch.setattr(os, "open", fail_for_metadata)
     walker = BoundedWalker(root, provider="test")
 
     assert walker.read_text(metadata) is None
@@ -258,3 +258,44 @@ def test_deadline_stops_traversal_with_diagnostic(tmp_path: Path) -> None:
 
     assert list(walker.files(root)) == []
     assert _codes(walker) == [DiagnosticCode.ADAPTER_DEADLINE_EXCEEDED]
+
+
+def test_read_text_rejects_fifo_without_blocking(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    fifo = root / "mcp.json"
+    os.mkfifo(fifo)
+    walker = BoundedWalker(root, provider="test")
+
+    assert walker.read_text(fifo) is None
+    assert DiagnosticCode.METADATA_MALFORMED in _codes(walker)
+
+
+def test_read_text_caps_actual_bytes_read(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "big.json").write_text("x" * 20)
+    walker = BoundedWalker(root, provider="test", limits=WalkLimits(max_file_bytes=10))
+
+    assert walker.read_text(root / "big.json") is None
+    assert DiagnosticCode.METADATA_TOO_LARGE in _codes(walker)
+
+
+def test_child_directories_charges_entry_budget(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    for name in ("a", "b", "c", "d"):
+        (root / name).mkdir(parents=True)
+    walker = BoundedWalker(root, provider="test", budget=AggregateDiscoveryBudget(max_entries=1))
+
+    assert walker.child_directories(root) is None
+    assert DiagnosticCode.COLLECTION_ENTRY_LIMIT_REACHED in _codes(walker)
+    assert walker.budget.entries == 0
+
+
+def test_child_directories_honors_deadline(tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    (root / "a").mkdir(parents=True)
+    walker = BoundedWalker(root, provider="test", clock=lambda: 10.0, deadline=1.0)
+
+    assert walker.child_directories(root) is None
+    assert DiagnosticCode.ADAPTER_DEADLINE_EXCEEDED in _codes(walker)

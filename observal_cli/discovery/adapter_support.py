@@ -112,7 +112,8 @@ class RichAdapterScanner:
         if data is None:
             return
         try:
-            servers = extract_mcp_servers(dict(data))
+            # An explicit mcpServers value is passed through so add_mcps reports a wrong type.
+            servers = data["mcpServers"] if "mcpServers" in data else extract_mcp_servers(dict(data))
         except (AttributeError, TypeError):
             self.diagnostic(DiagnosticCode.METADATA_MALFORMED, path, "MCP configuration has an unsupported shape")
             return
