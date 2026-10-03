@@ -3,6 +3,7 @@
 <!-- SPDX-FileCopyrightText: 2026 Nithin-Bhargav-07 <gaddamnithinbhargav@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Table of contents
@@ -26,6 +27,7 @@
 * [Debug agent failures](use-cases/debug-agent-failures.md)
 * [Run a team-wide agent registry](use-cases/team-registry.md)
 * [Teamspaces](use-cases/teamspaces.md)
+* [Sync an MCP server from GitHub](use-cases/mcp-github-sync.md)
 
 ## CLI Reference
 

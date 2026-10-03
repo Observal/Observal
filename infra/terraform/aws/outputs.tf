@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 output "app_url" {
@@ -9,6 +10,16 @@ output "app_url" {
 output "alb_dns_name" {
   description = "ALB DNS name (use this to set your CNAME if you skipped Route53 here)."
   value       = aws_lb.app.dns_name
+}
+
+output "webhook_public_url" {
+  description = "Public base URL GitHub uses for webhook deliveries (empty unless enable_github_webhook_ingress is true). The MCP Sync tab shows full Payload URLs under it."
+  value       = local.webhook_public_url
+}
+
+output "webhook_ingress_cidrs" {
+  description = "Source ranges allowed through the webhook load balancer. Re-apply when GitHub publishes new webhook ranges."
+  value       = local.webhook_ingress_cidrs
 }
 
 output "ecs_cluster_name" {

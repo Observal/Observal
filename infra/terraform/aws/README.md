@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Observal on AWS - Terraform
@@ -308,11 +309,16 @@ alb.tf                     # ALB, target groups, listeners, listener rules, ACM
 s3.tf                      # backups bucket with lifecycle and TLS-only policy
 logs.tf                    # CloudWatch log groups
 dns.tf                     # public Route 53 record (alias to ALB)
+webhook-ingress.tf         # optional public ALB for GitHub webhooks on private installs
 outputs.tf                 # app_url, ecs cluster/services, log groups, ...
 user-data.sh.tftpl         # cloud-init for the data host
 terraform.tfvars.example
 examples/minimal/          # ready-to-apply module-call example
 ```
+
+## GitHub webhooks on a private install
+
+With `alb_scheme = "internal"` or a restricted `alb_ingress_cidrs`, github.com cannot deliver the webhooks that MCP GitHub sync relies on. Set `enable_github_webhook_ingress = true` and `webhook_domain_name` to add a second, public ALB that accepts only `POST /api/v1/webhooks/github/*` over HTTPS from GitHub's webhook IP ranges, and answers `404` to everything else. See [GitHub webhooks on a private install](../../../docs/self-hosting/aws-terraform.md#github-webhooks-on-a-private-install).
 
 ## Troubleshooting
 

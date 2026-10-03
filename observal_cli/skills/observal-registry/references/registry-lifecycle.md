@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Observal Contributors -->
+<!-- SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Registry lifecycle
@@ -8,6 +9,7 @@
 - Read owned state
 - Edit
 - Publish a version
+- Sync an MCP from GitHub
 - Archive and restore
 - Transfer ownership
 - Co-authors
@@ -55,6 +57,20 @@ observal registry version list mcp NAMESPACE/SLUG --output json
 ```
 
 Report review status separately from version creation.
+
+## Sync an MCP from GitHub
+
+An MCP listing with a git URL can publish versions automatically from GitHub pushes, releases, or both. Synced versions skip review, so confirm with the user before enabling it.
+
+```bash
+observal registry mcp sync enable NAMESPACE/SLUG --output json
+observal registry mcp sync enable NAMESPACE/SLUG --release --no-push --output json
+observal registry mcp sync status NAMESPACE/SLUG --output json
+observal registry mcp sync run NAMESPACE/SLUG --output json
+observal registry mcp sync disable NAMESPACE/SLUG --yes --output json
+```
+
+The first `enable` returns `webhook_url` and a one-time `secret`. Tell the user to add them in the repository under Settings > Webhooks with content type `application/json`. Never echo the secret into files or logs.
 
 ## Archive and restore
 

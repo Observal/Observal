@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Observal
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 # ECS services using EC2 capacity provider strategy.
@@ -31,12 +32,22 @@ resource "aws_ecs_service" "api" {
     container_port   = 8000
   }
 
+  dynamic "load_balancer" {
+    for_each = aws_lb_target_group.api_webhook
+    content {
+      target_group_arn = load_balancer.value.arn
+      container_name   = "api"
+      container_port   = 8000
+    }
+  }
+
   lifecycle {
     ignore_changes = [desired_count]
   }
 
   depends_on = [
     aws_lb_listener.http,
+    aws_lb_listener_rule.webhook_github,
     null_resource.run_init,
   ]
 

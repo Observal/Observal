@@ -219,6 +219,33 @@ export interface ComponentVersionsResponse {
 
 export type ComponentVersionDetail = ComponentVersionSummary;
 
+export type McpWebhookSyncStatus = "queued" | "syncing" | "success" | "skipped" | "failed";
+
+export interface McpWebhookSync {
+	enabled: boolean;
+	id?: string | null;
+	webhook_url?: string | null;
+	/** Present only right after sync is first turned on or the secret is rotated. */
+	secret?: string | null;
+	sync_on_push: boolean;
+	sync_on_release: boolean;
+	branch?: string | null;
+	last_delivery_at?: string | null;
+	last_event?: string | null;
+	last_sync_status?: McpWebhookSyncStatus | null;
+	last_sync_error?: string | null;
+	last_synced_at?: string | null;
+	last_synced_sha?: string | null;
+	last_version?: string | null;
+	created_at?: string | null;
+}
+
+export interface McpWebhookSyncRequest {
+	sync_on_push: boolean;
+	sync_on_release: boolean;
+	branch: string | null;
+}
+
 export interface BulkResultItem {
 	name: string;
 	status: "created" | "skipped" | "error";

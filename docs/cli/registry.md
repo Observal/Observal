@@ -1,6 +1,7 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com> -->
 <!-- SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # observal registry
@@ -313,6 +314,40 @@ Transfer ownership to another username. You stop being the owner immediately.
 
 ```bash
 observal registry mcp transfer-owner my-server @alice -y
+```
+
+---
+
+### `observal registry mcp sync`
+
+Publish a new MCP version automatically when the listing's GitHub repository changes. See [Sync an MCP server from GitHub](../use-cases/mcp-github-sync.md) for the full setup.
+
+| Command | Description |
+| --- | --- |
+| `enable <id-or-name>` | Turn on sync, or change its triggers. Prints the webhook URL, and the secret on first enable |
+| `status <id-or-name>` | Show the triggers, tracked branch, and last sync result |
+| `run <id-or-name>` | Sync the tracked branch now |
+| `rotate-secret <id-or-name>` | Issue a new webhook secret |
+| `disable <id-or-name>` | Turn off sync. Published versions are kept |
+
+| `enable` option | Short | Description |
+| --- | --- | --- |
+| `--push / --no-push` | | Publish a version on each push to the tracked branch (on by default) |
+| `--release / --no-release` | | Publish a version when a GitHub release is published (off by default) |
+| `--branch` | `-b` | Branch to track. Defaults to the repository's default branch |
+| `--output` | `-o` | Output format: `table` or `json` |
+
+On an existing setup, `enable` keeps any setting you do not pass.
+
+```bash
+# Push sync on the default branch
+observal registry mcp sync enable alice/weather-mcp
+
+# Releases only
+observal registry mcp sync enable alice/weather-mcp --release --no-push
+
+# Check the last result
+observal registry mcp sync status alice/weather-mcp --output json
 ```
 
 ---

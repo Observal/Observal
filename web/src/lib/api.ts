@@ -40,6 +40,8 @@ import type {
 	AgentVersionDetail,
 	AgentVersionsResponse,
 	ComponentVersionsResponse,
+	McpWebhookSync,
+	McpWebhookSyncRequest,
 	ComponentVersionDetail,
 	VersionDiff,
 	AgentVersionOutdated,
@@ -526,6 +528,13 @@ export const registry = {
 		get<AgentVersionOutdated>(`/agents/${agentId}/versions/${version}/outdated`),
 
 	// Component versions
+	mcpWebhookSync: (listingId: string) => get<McpWebhookSync>(`/mcps/${listingId}/webhook-sync`),
+	configureMcpWebhookSync: (listingId: string, body: McpWebhookSyncRequest) =>
+		put<McpWebhookSync>(`/mcps/${listingId}/webhook-sync`, body),
+	rotateMcpWebhookSecret: (listingId: string) =>
+		post<McpWebhookSync>(`/mcps/${listingId}/webhook-sync/rotate-secret`),
+	runMcpWebhookSync: (listingId: string) => post<McpWebhookSync>(`/mcps/${listingId}/webhook-sync/run`),
+	disableMcpWebhookSync: (listingId: string) => del(`/mcps/${listingId}/webhook-sync`),
 	listComponentVersions: (
 		type: RegistryType,
 		listingId: string,

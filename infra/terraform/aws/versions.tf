@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.21@gmail.com>
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 terraform {
@@ -9,6 +10,7 @@ terraform {
     random = { source = "hashicorp/random", version = "~> 3.6" }
     tls    = { source = "hashicorp/tls", version = "~> 4.0" }
     null   = { source = "hashicorp/null", version = "~> 3.2" }
+    http   = { source = "hashicorp/http", version = "~> 3.4" }
   }
 
   # Uncomment and configure once an S3 bucket + DynamoDB lock table exist.

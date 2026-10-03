@@ -168,6 +168,12 @@ Every command available in the installed CLI. This block is generated from the T
     - `observal registry mcp co-authors add`: Add a co-author.
     - `observal registry mcp co-authors list`: List co-authors.
     - `observal registry mcp co-authors remove`: Remove a co-author.
+  - `observal registry mcp sync`: Publish a new MCP version automatically when its GitHub repository changes
+    - `observal registry mcp sync disable`: Turn off webhook sync. Published versions are kept.
+    - `observal registry mcp sync enable`: Turn on GitHub webhook sync, or change which events trigger it.
+    - `observal registry mcp sync rotate-secret`: Issue a new webhook secret. Update it in GitHub, or deliveries will be rejected.
+    - `observal registry mcp sync run`: Sync the tracked branch now, without waiting for a push.
+    - `observal registry mcp sync status`: Show webhook sync settings and the result of the last sync.
   - `observal registry mcp submit`: Submit an MCP server to the registry.
   - `observal registry mcp show`: Show full details of an MCP server.
   - `observal registry mcp install`: Generate an install config snippet for an MCP server.

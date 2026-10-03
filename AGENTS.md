@@ -147,7 +147,7 @@ observal
 ├── auth                     # login, logout, whoami, status, change-password, set-username
 ├── config                   # show, set, path, alias, aliases
 ├── registry                 # component parent group
-│   ├── mcp                  #   submit, list, show, install, edit, delete, co-authors
+│   ├── mcp                  #   submit, list, show, install, edit, delete, co-authors, sync
 │   ├── skill                #   submit, list, show, install, edit, delete, co-authors
 │   ├── hook                 #   submit, list, show, install, edit, delete, co-authors
 │   ├── prompt               #   submit, list, show, edit, render, delete, co-authors

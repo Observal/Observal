@@ -206,6 +206,7 @@ from observal_cli.cmd_inbox import inbox_app
 from observal_cli.cmd_insights import insights_app
 from observal_cli.cmd_logs import logs_app
 from observal_cli.cmd_mcp import mcp_app
+from observal_cli.cmd_mcp_sync import mcp_sync_app
 from observal_cli.cmd_migrate import migrate_app
 from observal_cli.cmd_models import models_app
 from observal_cli.cmd_ops import (
@@ -242,6 +243,7 @@ registry_app = typer.Typer(
 )
 
 registry_app.add_typer(mcp_app, name="mcp")
+mcp_app.add_typer(mcp_sync_app, name="sync")
 registry_app.add_typer(skill_app, name="skill")
 registry_app.add_typer(hook_app, name="hook")
 registry_app.add_typer(prompt_app, name="prompt")

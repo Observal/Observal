@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Observal
+# SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 variable "region" {
@@ -210,6 +211,35 @@ variable "alb_scheme" {
     condition     = contains(["internet-facing", "internal"], var.alb_scheme)
     error_message = "alb_scheme must be 'internet-facing' or 'internal'."
   }
+}
+
+# ── GitHub webhook ingress (optional) ─────────────────────────────────────────
+# For private installs (alb_scheme = "internal" or a restricted
+# alb_ingress_cidrs) that use MCP GitHub sync. Adds a separate internet-facing
+# ALB that only accepts GitHub webhook deliveries. See webhook-ingress.tf.
+
+variable "enable_github_webhook_ingress" {
+  description = "Create a public HTTPS load balancer that only forwards GitHub webhook deliveries (POST /api/v1/webhooks/github/*) from GitHub's IP ranges, so MCP GitHub sync works on a private install."
+  type        = bool
+  default     = false
+}
+
+variable "webhook_domain_name" {
+  description = "Public hostname for the webhook load balancer (e.g. hooks.observal.example.com). Required when enable_github_webhook_ingress is true."
+  type        = string
+  default     = ""
+}
+
+variable "webhook_route53_zone_id" {
+  description = "Public Route 53 hosted zone for webhook_domain_name (DNS record and certificate validation). Defaults to route53_zone_id."
+  type        = string
+  default     = ""
+}
+
+variable "webhook_ingress_cidrs" {
+  description = "IPv4 CIDRs allowed to reach the webhook load balancer. Empty means GitHub's published webhook ranges from https://api.github.com/meta, read at plan time. Set this for GitHub Enterprise Cloud with data residency (*.ghe.com) or a self-hosted git server."
+  type        = list(string)
+  default     = []
 }
 
 # ── Application ───────────────────────────────────────────────────────────────

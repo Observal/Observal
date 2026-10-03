@@ -45,6 +45,19 @@ All `{id}` parameters accept a UUID or a name.
 
 `POST /{type}/{id}/install` accepts `version` for agents, MCP servers, skills, and hooks. The response reports the `version` that was installed; component installs also return its `version_id` and content `digest`.
 
+### MCP webhook sync
+
+Owner routes manage GitHub webhook sync for one MCP listing. See [Sync an MCP server from GitHub](../use-cases/mcp-github-sync.md).
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/mcps/{id}/webhook-sync` | Sync settings and last result. `enabled` is false when sync is off |
+| `PUT` | `/mcps/{id}/webhook-sync` | Turn on or update sync: `sync_on_push`, `sync_on_release`, `branch`. Returns `secret` only on first enable |
+| `POST` | `/mcps/{id}/webhook-sync/rotate-secret` | Issue a new secret, returned once |
+| `POST` | `/mcps/{id}/webhook-sync/run` | Queue a sync of the tracked branch (`202`) |
+| `DELETE` | `/mcps/{id}/webhook-sync` | Turn off sync |
+| `POST` | `/webhooks/github/mcp/{sync_id}` | GitHub delivery receiver. No user token: authenticated by `X-Hub-Signature-256`. Returns `202` with `status` `queued` or `ignored` |
+
 ### Agent versions and locks
 
 Each agent version pins exact component versions. Installs generate every component from its pinned version. Agent versions released before pinning can have unlocked components: those install at their latest approved release, are reported with `source: fallback-latest` in the install `lock`, and are refused by a `strict` install.

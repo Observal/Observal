@@ -10,6 +10,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 
+import { useEffect, useRef } from "react";
 import {
   useQuery,
   useMutation,
@@ -20,6 +21,7 @@ import {
   registry,
   type RegistryType,
 } from "@/lib/api";
+import type { McpWebhookSyncRequest } from "@/lib/types";
 
 // ── Component Draft/Submit (generic) ──────────────────────────────
 
@@ -198,4 +200,103 @@ export function useComponentVersionSuggestions(type: RegistryType | undefined, l
     enabled: !!type && !!listingId,
     queryFn: () => registry.componentVersionSuggestions(type!, listingId!),
   });
+}
+
+// ── MCP GitHub webhook sync ────────────────────────────────────────
+
+// A push can land at any time, so an open page keeps checking while sync is on.
+// Polling pauses while the browser tab is hidden (TanStack Query's default).
+const SYNC_WATCH_MS = 10_000;
+const SYNC_RUNNING_MS = 3_000;
+
+export function useMcpWebhookSync(listingId: string | undefined, enabled = true) {
+  return useQuery({
+    queryKey: ["mcp-webhook-sync", listingId],
+    enabled: enabled && !!listingId,
+    queryFn: () => registry.mcpWebhookSync(listingId!),
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data?.enabled) return false;
+      return data.last_sync_status === "queued" || data.last_sync_status === "syncing"
+        ? SYNC_RUNNING_MS
+        : SYNC_WATCH_MS;
+    },
+  });
+}
+
+/** Refresh an open MCP page when a GitHub sync publishes a new version. */
+export function useMcpSyncWatcher(listingId: string | undefined, enabled: boolean) {
+  const qc = useQueryClient();
+  const { data } = useMcpWebhookSync(listingId, enabled);
+  // Version strings are unique per listing, so a new last_version means a new publish.
+  const seen = useRef<string | null | undefined>(undefined);
+  const lastVersion = data?.enabled ? (data.last_version ?? null) : undefined;
+
+  useEffect(() => {
+    if (lastVersion === undefined) return;
+    if (seen.current === undefined) {
+      seen.current = lastVersion;
+      return;
+    }
+    if (lastVersion && lastVersion !== seen.current) {
+      seen.current = lastVersion;
+      qc.invalidateQueries({ queryKey: ["registry", "mcps", listingId] });
+      qc.invalidateQueries({ queryKey: ["component-versions", "mcps", listingId] });
+      toast.success(`Version ${lastVersion} synced from GitHub`);
+    }
+  }, [lastVersion, listingId, qc]);
+}
+
+function useMcpWebhookSyncMutation<TVars, TData>(
+  listingId: string,
+  mutationFn: (vars: TVars) => Promise<TData>,
+  success: string,
+  failure: string,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["mcp-webhook-sync", listingId] });
+      qc.invalidateQueries({ queryKey: ["component-versions", "mcps", listingId] });
+      toast.success(success);
+    },
+    onError: (err: Error) => toast.error(err.message || failure),
+  });
+}
+
+export function useConfigureMcpWebhookSync(listingId: string) {
+  return useMcpWebhookSyncMutation(
+    listingId,
+    (body: McpWebhookSyncRequest) => registry.configureMcpWebhookSync(listingId, body),
+    "Webhook sync saved",
+    "Failed to save webhook sync",
+  );
+}
+
+export function useRotateMcpWebhookSecret(listingId: string) {
+  return useMcpWebhookSyncMutation(
+    listingId,
+    () => registry.rotateMcpWebhookSecret(listingId),
+    "New secret issued. Update it in GitHub.",
+    "Failed to rotate the secret",
+  );
+}
+
+export function useRunMcpWebhookSync(listingId: string) {
+  return useMcpWebhookSyncMutation(
+    listingId,
+    () => registry.runMcpWebhookSync(listingId),
+    "Sync queued",
+    "Failed to queue a sync",
+  );
+}
+
+export function useDisableMcpWebhookSync(listingId: string) {
+  return useMcpWebhookSyncMutation(
+    listingId,
+    () => registry.disableMcpWebhookSync(listingId),
+    "Webhook sync turned off",
+    "Failed to turn off webhook sync",
+  );
 }
