@@ -118,6 +118,53 @@ class BaseAdapter:
         """
         return None
 
+    def prepare_mcp_setup_command(self, command: list[str], scope: str) -> list[str]:
+        """Return the harness-native setup command with its requested install scope."""
+        return command
+
+    def mcp_manifest_path(self, scope: str) -> str | None:
+        """Return the safe file-manifest location needed to verify this MCP scope."""
+        return None
+
+    def skill_manifest_path(self, scope: str, alias: str) -> str | None:
+        """Manifest display path of the ACTIVE skill file this harness loads, if verifiable."""
+        return None
+
+    def skill_shadow_paths(self, scope: str, directory: str | None, alias: str) -> list[Path]:
+        """Unhashed locations where a same-named skill could be loaded instead."""
+        return []
+
+    def standalone_hook_binding(
+        self, config_path: str, config_snippet: dict, written: list[tuple[Path, Path]]
+    ) -> dict | None:
+        """Where a standalone hook install wrote its one command hook, if this harness can verify it.
+
+        ``written`` pairs each script's absolute path with its project-relative path.
+        """
+        return None
+
+    def verify_hook_binding(self, directory: str | None, component: dict) -> str:
+        """``verified``, ``drifted`` or ``unverified`` for a pinned hook's recorded binding (fail closed)."""
+        return "unverified"
+
+    def skill_location(self, scope: str, directory: str | None, alias: str) -> str | None:
+        """Absolute path of the active skill file, as the harness records it in sessions."""
+        return None
+
+    def redact_layer_content(self, display_path: str) -> bool:
+        """Whether the manifest may carry hashes but must not upload file bytes."""
+        return False
+
+    def read_installed_mcp(self, scope: str, directory: str | None, alias: str) -> tuple[str, dict | None]:
+        """Return (verified|missing|unverified, entry); unsupported harnesses are unverified."""
+        return "unverified", None
+
+    def read_pulled_mcp(
+        self, scope: str, directory: str | None, alias: str, written_config: Path
+    ) -> tuple[str, dict | None]:
+        """Read the entry a pull wrote; by default the pull output is the installed config."""
+        return self.read_installed_mcp(scope, directory, alias)
+
     def scan_home(self, home: Path | None = None) -> ScanResult:
         _check_feature(self.harness_name, "scan_home")
         return ScanResult()

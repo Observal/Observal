@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import TYPE_CHECKING
 
+import yaml
 from loguru import logger as optic
 
 from observal_shared.harness_registry import HARNESS_REGISTRY
@@ -130,6 +131,45 @@ def _claude_code_hooks_frontmatter_lines(
     return lines
 
 
+def _claude_code_hook_command(hook: dict) -> str:
+    """The exact command string a custom command hook is written with (Claude Code records it verbatim)."""
+    command = (hook.get("handler_config") or {}).get("command", "")
+    # Rewrite bare script filenames to the harness hooks directory path
+    script_filename = hook.get("script_filename")
+    if script_filename and command == script_filename:
+        command = f".claude/hooks/{script_filename}"
+    return command
+
+
+def _claude_code_hook_bindings(hook_configs: list[dict]) -> list[dict]:
+    """Where each custom command hook was written, so the CLI can verify it later.
+
+    HTTP hooks have no command and are not bound (they stay unverified).
+    """
+    bindings = []
+    for hook in hook_configs:
+        command = _claude_code_hook_command(hook) if hook.get("handler_type", "command") != "http" else ""
+        if hook.get("event") and command and hook.get("name"):
+            script = f".claude/hooks/{hook['script_filename']}" if hook.get("script_filename") else None
+            bindings.append({"name": hook["name"], "event": hook["event"], "command": command, "script": script})
+    return bindings
+
+
+def _yaml_double_quoted(value: str) -> str:
+    """``value`` as a one-line YAML double-quoted scalar that parses back to exactly ``value``.
+
+    Written by the YAML emitter, not JSON: JSON's surrogate-pair escapes for astral
+    characters (an emoji) do not round-trip through a YAML reader, and a raw Unicode
+    line separator would be folded. The emitter escapes those (``\\U0001F642``,
+    ``\\L``, ``\\P``), so Claude Code reads back the command the hook binding records.
+    """
+    text = yaml.safe_dump(value, default_style='"', allow_unicode=True, width=float("inf"))
+    text = text.removesuffix("\n")
+    if "\n" in text or yaml.safe_load(text) != value:
+        raise ValueError("value cannot be written as one YAML scalar")
+    return text
+
+
 def _custom_hook_matcher_lines(hook: dict) -> list[str]:
     """Build YAML lines for a single custom hook matcher group."""
     handler_type = hook.get("handler_type", "command")
@@ -145,12 +185,12 @@ def _custom_hook_matcher_lines(hook: dict) -> list[str]:
             f"          timeout: {timeout}",
         ]
     else:
-        command = handler_config.get("command", "")
-        # Rewrite bare script filenames to the harness hooks directory path
-        script_filename = hook.get("script_filename")
-        if script_filename and command == script_filename:
-            command = f".claude/hooks/{script_filename}"
-        lines = ["    - hooks:", "        - type: command", f'          command: "{command}"'] if command else []
+        command = _claude_code_hook_command(hook)
+        lines = (
+            ["    - hooks:", "        - type: command", f"          command: {_yaml_double_quoted(command)}"]
+            if command
+            else []
+        )
     return lines
 
 
@@ -394,6 +434,7 @@ def _build_mcp_configs(
     mcp_listings: dict | None = None,
     env_values: dict | None = None,
     header_values: dict | None = None,
+    component_aliases: dict[str, str] | None = None,
 ) -> dict:
     """Build MCP server configs from registry components + external MCPs.
 
@@ -440,7 +481,11 @@ def _build_mcp_configs(
         )
         entry = adapter.agent_mcp_entry(ctx)
         if entry is not None:
+            if ctx.name in mcp_configs:
+                raise ValueError("MCP aliases collide after final sanitization")
             mcp_configs[ctx.name] = entry
+            if component_aliases is not None:
+                component_aliases[str(comp.component_id)] = ctx.name
 
     for ext in agent.external_mcps or []:
         name = _sanitize_name(ext.get("name", ""))
@@ -451,6 +496,8 @@ def _build_mcp_configs(
         if isinstance(args, str):
             args = args.split()
         env = ext.get("env", {})
+        if name in mcp_configs:
+            raise ValueError("External MCP alias collides with registry component")
         mcp_configs[name] = {"command": cmd, "args": args, "env": env}
 
     _inject_agent_id(mcp_configs, str(agent.id))

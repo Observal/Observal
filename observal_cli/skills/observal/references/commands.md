@@ -127,7 +127,7 @@ Every command available in the installed CLI. This block is generated from the T
 
 **`observal ops`**: Observability and operational commands (sessions, telemetry, rankings, feedback, insights)
 
-- `observal ops insights`: Agent insight reports
+- `observal ops insights`: Agent, MCP, skill and hook component insight reports
   - `observal ops insights generate`: Trigger generation of a new insight report.
   - `observal ops insights list`: List insight reports for an agent.
   - `observal ops insights show`: Show an insight report with pretty-printed narrative.
@@ -170,7 +170,7 @@ Every command available in the installed CLI. This block is generated from the T
     - `observal registry mcp co-authors remove`: Remove a co-author.
   - `observal registry mcp submit`: Submit an MCP server to the registry.
   - `observal registry mcp show`: Show full details of an MCP server.
-  - `observal registry mcp install`: Generate an install config snippet for an MCP server.
+  - `observal registry mcp install`: Generate a snippet, or with --apply configure and track a Claude Code MCP.
   - `observal registry mcp archive`: Archive this component.
   - `observal registry mcp edit`: Edit an MCP server submission.
   - `observal registry mcp list`: List approved MCP servers in the registry.

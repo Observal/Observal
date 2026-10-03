@@ -550,13 +550,17 @@ def drain_session_source(
             )
             payload["harness"] = source.harness
             if extra_fields:
-                payload.update(extra_fields)
+                payload.update({key: value for key, value in extra_fields.items() if key != "layer_hash"})
             if final:
                 payload["final"] = True
                 payload["total_line_count"] = line_count
                 payload["total_offset"] = byte_offset
                 payload["session_hash"] = session_hash
                 payload["hashed_line_count"] = hashed_line_count
+            if not spool_only and post is None and payload.get("layer_hash") and config.get("access_token"):
+                _maybe_upload_layer_snapshot(
+                    destination, str(config["access_token"]), payload["layer_hash"], source.harness, source.cwd, config
+                )
             telemetry_buffer.enqueue(
                 payload,
                 destination=destination,
@@ -633,7 +637,11 @@ def drain_session_source(
             payload.pop("total_line_count", None)
             payload.pop("total_offset", None)
         if extra_fields:
-            payload.update(extra_fields)
+            payload.update({key: value for key, value in extra_fields.items() if key != "layer_hash"})
+        if not spool_only and post is None and payload.get("layer_hash") and config.get("access_token"):
+            _maybe_upload_layer_snapshot(
+                destination, str(config["access_token"]), payload["layer_hash"], source.harness, source.cwd, config
+            )
         telemetry_buffer.enqueue(
             payload,
             destination=destination,
@@ -677,6 +685,32 @@ def drain_session_source(
 # ---------------------------------------------------------------------------
 
 
+def _recorded_cwd(lines: list[str], session_jsonl: Path | None, scan_lines: int = 200) -> str:
+    """The absolute, existing project directory a transcript's records name, else ``""``."""
+    import json
+    import os
+
+    def first_cwd(raw_lines) -> str:
+        for raw in raw_lines:
+            try:
+                record = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+            value = record.get("cwd") if isinstance(record, dict) else None
+            if isinstance(value, str) and os.path.isabs(value) and os.path.isdir(value):
+                return value
+        return ""
+
+    found = first_cwd(lines)
+    if found or session_jsonl is None:
+        return found
+    try:
+        with open(session_jsonl, encoding="utf-8", errors="replace") as handle:
+            return first_cwd(line for _, line in zip(range(scan_lines), handle, strict=False))
+    except OSError:
+        return ""
+
+
 def build_payload(
     session_id: str,
     lines: list[str],
@@ -694,10 +728,16 @@ def build_payload(
     Defaults harness telemetry to ``claude-code``; callers override ``payload["harness"]``
     for other harnesses.
     """
+    recovered_without_cwd = hook_event == "CrashRecovery" and not cwd
+    if recovered_without_cwd:
+        # Recovery rebuilds sources from disk with no cwd. Hashing "no project"
+        # would describe only user-scope components, so use the project the
+        # transcript records, or send no hash (unknown coverage) rather than a wrong one.
+        cwd = _recorded_cwd(lines, session_jsonl)
     agent_id, agent_version = _resolve_agent(
         cwd, lines, session_jsonl, harness=harness, session_ids=(session_id, parent_session_id)
     )
-    layer_hash = _get_cached_layer_hash(session_id, cwd)
+    layer_hash = None if recovered_without_cwd and not cwd else _get_cached_layer_hash(session_id, cwd)
     payload: dict = {
         "session_id": session_id,
         "harness": "claude-code",
@@ -720,104 +760,113 @@ def build_payload(
     return payload
 
 
-# How far before a session file first appeared a capability use may still
-# belong to it: a developer often runs `discover use` a moment before the
-# harness creates the transcript.
-_CAPABILITY_LEAD_SECONDS = 15 * 60
-_CAPABILITY_FALLBACK_HOURS = 24
-
-
 _TIMESTAMP_KEYS = ("timestamp", "ts", "time", "created_at", "createdAt", "start_time")
 _MAX_CAPABILITIES_PER_PUSH = 200
 
 
+_START_SCAN_LINES = 20
+
+
 def _first_line_timestamp(session_jsonl: Path):
-    """The earliest timestamp a transcript carries in its first line, if any."""
+    """The earliest timestamp among a transcript's first lines, if any.
+
+    Some harnesses open a transcript with a record that carries no timestamp
+    (a summary or snapshot line), so only the first line is not enough.
+    """
     import json
     from datetime import UTC, datetime
 
+    found = []
     try:
         with session_jsonl.open("r", encoding="utf-8", errors="replace") as handle:
-            first = handle.readline()
-        record = json.loads(first)
-    except (OSError, ValueError):
+            lines = [handle.readline() for _ in range(_START_SCAN_LINES)]
+    except OSError:
         return None
-    if not isinstance(record, dict):
-        return None
-    for key in _TIMESTAMP_KEYS:
-        value = record.get(key)
-        if isinstance(value, int | float) and value > 0:
-            return datetime.fromtimestamp(value / 1000 if value > 1e11 else value, tz=UTC)
-        if isinstance(value, str) and value:
-            try:
-                parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-            except ValueError:
-                continue
-            return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
-    return None
+    for line in lines:
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(record, dict):
+            continue
+        for key in _TIMESTAMP_KEYS:
+            value = record.get(key)
+            if isinstance(value, int | float) and value > 0:
+                found.append(datetime.fromtimestamp(value / 1000 if value > 1e11 else value, tz=UTC))
+                break
+            if isinstance(value, str) and value:
+                try:
+                    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+                found.append(parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC))
+                break
+    return min(found) if found else None
 
 
 def _session_started_at(session_jsonl: Path | None):
-    """When the session began, minus a short lead.
+    """When the session began, or ``None`` when that cannot be established.
 
     Prefer the file's birth time where the platform records one, then the
     transcript's own first timestamp. ``st_ctime`` is deliberately not used:
     on Linux it moves with every write, which would silently drop uses from
-    the start of a long session. Without either signal, fall back to a wide
-    window rather than guess.
+    the start of a long session.
     """
-    from datetime import UTC, datetime, timedelta
+    from datetime import UTC, datetime
 
-    if session_jsonl is not None:
-        started = None
-        try:
-            birth = getattr(session_jsonl.stat(), "st_birthtime", None)
-            if birth:
-                started = datetime.fromtimestamp(birth, tz=UTC)
-        except OSError:
-            pass
-        started = started or _first_line_timestamp(session_jsonl)
-        if started is not None:
-            return started - timedelta(seconds=_CAPABILITY_LEAD_SECONDS)
-    return datetime.now(UTC) - timedelta(hours=_CAPABILITY_FALLBACK_HOURS)
+    if session_jsonl is None:
+        return None
+    try:
+        birth = getattr(session_jsonl.stat(), "st_birthtime", None)
+        if birth:
+            return datetime.fromtimestamp(birth, tz=UTC)
+    except OSError:
+        pass
+    return _first_line_timestamp(session_jsonl)
 
 
 def _capabilities_for_session(session_id: str, cwd: str, harness: str, session_jsonl: Path | None) -> list[dict]:
     """Capability-lock uses that belong to this session, shaped for ingest.
 
-    Matching is harness + directory + time window, or an exact session hint
-    when a hook exposed the harness session id. Best effort: attribution is
-    evidence, so a broken lock file never blocks telemetry.
+    See ``capability_lock.for_session`` for the attribution rules. Best effort:
+    attribution is evidence, so a broken lock file never blocks telemetry.
     """
     try:
         from observal_cli import capability_lock
 
-        uses = capability_lock.matching(
+        matched = capability_lock.for_session(
+            session_id=session_id,
             harness=harness,
             cwd=cwd or None,
-            since=_session_started_at(session_jsonl),
-            session_hint=session_id,
+            started_at=_session_started_at(session_jsonl),
+            has_transcript=session_jsonl is not None,
         )
-        if not uses:
+        if not matched:
             return []
-        confidence = "window" if session_jsonl is not None else "loose"
-        latest = capability_lock.dedupe_latest(uses)
+        confidence = {id(use): level for use, level in matched}
+        latest = capability_lock.dedupe_latest(use for use, _ in matched)
         # The ingest contract caps the list; keep the most recent distinct uses.
         latest = sorted(latest, key=lambda u: u.ts, reverse=True)[:_MAX_CAPABILITIES_PER_PUSH]
-        return capability_lock.to_payload(latest, confidence=confidence)
+        return [
+            payload | {"confidence": confidence[id(use)]}
+            for use, payload in zip(latest, capability_lock.to_payload(latest, confidence="window"), strict=True)
+        ]
     except Exception as exc:
         optic.debug("capability attribution skipped for {}: {}", session_id, exc)
         return []
 
 
-# Per-session layer_hash cache: avoids re-scanning harness dirs on every chunk
+# A detected mid-session transition makes later unattributable intervals unknown.
 _layer_hash_cache: dict[str, str | None] = {}
 
 
 def _get_cached_layer_hash(session_id: str, cwd: str) -> str | None:
-    """Return cached layer_hash for this session, computing once on first call."""
+    """Recheck each push boundary; never apply a later snapshot to earlier calls."""
+    current = _compute_layer_hash_safe(cwd, "claude-code")
     if session_id not in _layer_hash_cache:
-        _layer_hash_cache[session_id] = _compute_layer_hash_safe(cwd, "claude-code")
+        _layer_hash_cache[session_id] = current
+    elif _layer_hash_cache[session_id] != current:
+        _layer_hash_cache[session_id] = None  # Sticky ambiguous transition.
     return _layer_hash_cache[session_id]
 
 
@@ -833,9 +882,9 @@ def _compute_layer_hash_safe(cwd: str, harness: str) -> str | None:
     Returns None on any failure.
     """
     try:
-        from observal_cli.layer import compute_layer_hash
+        from observal_cli.layer import ensure_local_snapshot
 
-        return compute_layer_hash(harness=None, project_dir=cwd or None)
+        return ensure_local_snapshot(harness=None, project_dir=cwd or None)
     except Exception:
         return None
 
@@ -879,21 +928,30 @@ def _maybe_upload_layer_snapshot(
             build_upload_payload,
             needs_upload,
             save_local_snapshot,
+            set_last_uploaded_hash,
+            was_uploaded_for,
         )
 
-        if not needs_upload(layer_hash):
+        # Build first, then compare: a changed pin cannot reuse the old advertised hash.
+        payload = build_upload_payload(project_dir=cwd or None)
+        user_id = str((config or {}).get("user_id") or "")
+        if payload["hash"] != layer_hash or (
+            not needs_upload(layer_hash) and was_uploaded_for(layer_hash, server_url, user_id)
+        ):
             return
-
-        # Build the full manifest with content
-        payload = build_upload_payload(harness, project_dir=cwd or None)
 
         # POST to server
         import httpx
 
+        from observal_cli.client import _get_cli_version
+
         url = f"{server_url.rstrip('/')}/api/v1/layer-snapshots"
+        # The server's CLI/server parity check answers 426 to authenticated CLI requests
+        # without this header; unlike ingest, this path is not exempt.
         headers = {
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json",
+            "X-Observal-CLI-Version": _get_cli_version(),
         }
 
         with httpx.Client(timeout=10.0) as client:
@@ -901,9 +959,10 @@ def _maybe_upload_layer_snapshot(
             if resp.status_code < 300:
                 # Save locally: same content as what server now has
                 save_local_snapshot(payload)
-                optic.debug("layer snapshot uploaded and saved locally: hash={}", layer_hash)
+                set_last_uploaded_hash(payload["hash"], server_url, user_id)
+                optic.debug("layer snapshot uploaded and saved locally: hash={}", payload["hash"])
             else:
-                optic.debug("layer snapshot upload failed: status={}", resp.status_code)
+                optic.warning("layer snapshot upload failed: status={}", resp.status_code)
     except Exception as e:
         optic.debug("layer snapshot upload skipped: {}", e)
 

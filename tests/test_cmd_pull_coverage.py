@@ -78,12 +78,19 @@ def boundaries(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> SimpleNamespa
     import observal_cli.layer as layer
     import observal_cli.lockfile as lockfile
     import observal_cli.model_catalog as model_catalog
+    from observal_cli.shared import launcher
 
+    # Launcher resolution spawns an isolated interpreter; pin it to an installed CLI
+    # so it never runs inside a test's mocked subprocess boundary.
+    monkeypatch.setattr(launcher, "importable_in_isolation", lambda: True)
     adapter = MagicMock(name="adapter")
     adapter.saved_model.return_value = None
     adapter.rewrite_hooks.side_effect = lambda content, agent_id: content
     adapter.rewrite_agent_profile.side_effect = lambda content, agent_id: content
     adapter.allow_home_agent_profile.return_value = False
+    adapter.prepare_mcp_setup_command.side_effect = lambda command, scope: (
+        [*command[:3], "--scope", scope, *command[3:]] if command[:3] == ["claude", "mcp", "add"] else command
+    )
 
     def apply_install_options(options: dict, tools: str | None) -> None:
         if tools:
@@ -1120,6 +1127,80 @@ def test_collect_install_options_no_prompt_uses_registry_default_scope(monkeypat
     picker.assert_not_called()
 
 
+def test_pull_dir_registers_mcp_in_target_and_records_server_selected_alias(
+    pull_app: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = tmp_path / "elsewhere"
+    project.mkdir()
+    caller = tmp_path / "caller"
+    caller.mkdir()
+    monkeypatch.chdir(caller)
+    component_id = "11111111-1111-4111-8111-111111111111"
+    detail = _agent_detail(
+        component_links=[
+            {"component_type": "mcp", "component_id": component_id, "component_name": "display", "version_ref": "old"}
+        ]
+    )
+    boundaries.get.side_effect = lambda path: (
+        detail if "/agents/" in path else {"environment_variables": [], "headers": []}
+    )
+    boundaries.post.return_value = {
+        "version": "1.4.0",
+        "lock": {
+            "status": "locked",
+            "digest": "sha256:" + "a" * 64,
+            "components": [
+                {
+                    "id": component_id,
+                    "type": "mcp",
+                    "version": "2.1.0",
+                    "version_id": "22222222-2222-4222-8222-222222222222",
+                    "digest": "sha256:" + "b" * 64,
+                    "source": "lock",
+                }
+            ],
+        },
+        "selected_version": "1.4.0",
+        "component_pins": [
+            {
+                "id": component_id,
+                "name": "display",
+                "type": "mcp",
+                "version": "2.1.0",
+                "local_name": "installed-mcp",
+                "qualified_name": "first/display",
+            }
+        ],
+        "config_snippet": {
+            "agent_profile": {"path": ".claude/agents/reviewer.md", "content": "agent\n"},
+            "mcp_setup_commands": [["claude", "mcp", "add", "installed-mcp", "--", "inert"]],
+        },
+    }
+    calls = []
+
+    def add_mcp(command, *, cwd, capture_output, text, timeout):
+        calls.append((command, cwd))
+        (cwd / ".mcp.json").write_text(json.dumps({"mcpServers": {"installed-mcp": {"command": "inert"}}}))
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(cmd_pull.subprocess, "run", add_mcp)
+    result = _invoke(pull_app, project, "--scope", "project")
+    assert result.exit_code == 0, result.output
+    assert calls == [(["claude", "mcp", "add", "--scope", "project", "installed-mcp", "--", "inert"], project)]
+    assert not (caller / ".mcp.json").exists()
+    components = boundaries.upsert.call_args.kwargs["components"]
+    assert components[0]["local_name"] == "installed-mcp"
+    assert components[0]["version"] == "2.1.0"
+    assert components[0]["scope"] == "project"
+    assert components[0]["mcp_integrity"].startswith("sha256-")
+    assert components[0]["version_id"] == "22222222-2222-4222-8222-222222222222"
+    assert components[0]["digest"] == "sha256:" + "b" * 64
+    assert components[0]["source"] == "lock"
+
+
 def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
     pull_app: typer.Typer,
     boundaries: SimpleNamespace,
@@ -1344,7 +1425,8 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
     assert json.loads(hooks_path.read_text()) == {
         "hooks": {
             "old": [{"command": "echo user"}],
-            "new": [{"command": f"{sys.executable} -m observal_cli.hooks.session_push"}],
+            # Rewritten to this CLI's interpreter, with -P so the project cannot shadow observal_cli.
+            "new": [{"command": f"{shlex.quote(sys.executable)} -I -m observal_cli.hooks.session_push"}],
             "adapter": [{"agent_id": "agent-uuid"}],
         },
         "keep": True,
@@ -1430,9 +1512,9 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
         sensitivity="high",
     )
     assert run.call_args_list == [
-        call(["good", "mcp", "add", "new"], capture_output=True, text=True, timeout=60),
-        call(["missing", "mcp", "add", "manual"], capture_output=True, text=True, timeout=60),
-        call(["bad", "mcp", "add", "broken"], capture_output=True, text=True, timeout=60),
+        call(["good", "mcp", "add", "new"], cwd=target, capture_output=True, text=True, timeout=60),
+        call(["missing", "mcp", "add", "manual"], cwd=target, capture_output=True, text=True, timeout=60),
+        call(["bad", "mcp", "add", "broken"], cwd=target, capture_output=True, text=True, timeout=60),
     ]
     for visible in (
         "Pulled claude-code config (10 files)",

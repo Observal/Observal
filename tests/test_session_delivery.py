@@ -75,6 +75,27 @@ def test_server_checkpoint_recovers_local_cursor(tmp_path: Path, monkeypatch, lo
     assert base.read_cursor_state("session", home=tmp_path)[2] is False
 
 
+def test_reconcile_spool_cannot_replace_built_layer_hash_with_extra_field(tmp_path: Path, monkeypatch):
+    disable_payload_metadata(monkeypatch)
+    built_hash = "v2_" + "a" * 60
+    monkeypatch.setattr(base, "_get_cached_layer_hash", lambda *_args: built_hash)
+    source_path = tmp_path / "session.jsonl"
+    source_path.write_text('{"n":0}\n')
+    source = SessionSource("claude-code", "fixture-reconcile", source_path, cwd=str(tmp_path))
+    db_path = tmp_path / "outbox.db"
+    assert base.drain_session_source(
+        source,
+        config(),
+        hook_event="Reconcile",
+        spool_only=True,
+        extra_fields={"layer_hash": "unpaired-v1"},
+        home=tmp_path,
+        db_path=db_path,
+    )
+    stored = telemetry_buffer.pending(destination="http://server", user_id="user", db_path=db_path)
+    assert stored[0].payload["layer_hash"] == built_hash
+
+
 def test_server_checkpoint_without_byte_offset_maps_source_line(tmp_path: Path):
     source_path = tmp_path / "session.jsonl"
     source_path.write_text('{"n":0}\n\n{"n":1}\n')
@@ -863,7 +884,7 @@ def test_build_payload_caches_layer_metadata_and_evicts_it_on_stop(monkeypatch):
     assert stopped["total_line_count"] == 5
     assert stopped["total_offset"] == 90
     assert stopped["final"] is True
-    assert hashes == [("/repo", "claude-code")]
+    assert hashes == [("/repo", "claude-code")] * 3
     assert "session" not in base._layer_hash_cache
 
 
@@ -873,13 +894,13 @@ def test_layer_hash_and_canonical_checks_are_fail_soft(monkeypatch):
     hash_calls = []
     monkeypatch.setattr(
         layer,
-        "compute_layer_hash",
+        "ensure_local_snapshot",
         lambda **kwargs: hash_calls.append(kwargs) or "layer-hash",
     )
     assert base._compute_layer_hash_safe("/repo", "cursor") == "layer-hash"
     assert hash_calls == [{"harness": None, "project_dir": "/repo"}]
 
-    monkeypatch.setattr(layer, "compute_layer_hash", lambda **_kwargs: (_ for _ in ()).throw(OSError("broken")))
+    monkeypatch.setattr(layer, "ensure_local_snapshot", lambda **_kwargs: (_ for _ in ()).throw(OSError("broken")))
     assert base._compute_layer_hash_safe("", "cursor") is None
 
     manifests = []
@@ -920,10 +941,12 @@ def test_layer_snapshot_upload_skips_unchanged_and_saves_success(tmp_path: Path,
     saved = []
     requests = []
     monkeypatch.setattr(layer, "needs_upload", lambda layer_hash: next(decisions))
+    monkeypatch.setattr(layer, "was_uploaded_for", lambda *_args: True)
+    monkeypatch.setattr(layer, "set_last_uploaded_hash", lambda *_args: None)
     monkeypatch.setattr(
         layer,
         "build_upload_payload",
-        lambda harness, project_dir: builds.append((harness, project_dir)) or {"hash": "layer-hash"},
+        lambda **kwargs: builds.append(kwargs) or {"hash": "layer-hash"},
     )
     monkeypatch.setattr(layer, "save_local_snapshot", saved.append)
 
@@ -937,11 +960,20 @@ def test_layer_snapshot_upload_skips_unchanged_and_saves_success(tmp_path: Path,
     assert requests == []
 
     base._maybe_upload_layer_snapshot("https://server.example/", "token", "layer-hash", "cursor", "/repo")
-    assert builds == [("cursor", "/repo")]
+    assert builds == [{"project_dir": "/repo"}, {"project_dir": "/repo"}]
     assert saved == [{"hash": "layer-hash"}]
     assert requests[0].url == httpx.URL("https://server.example/api/v1/layer-snapshots")
     assert requests[0].headers["Authorization"] == "Bearer token"
     assert json.loads(requests[0].content) == {"hash": "layer-hash"}
+
+
+def test_layer_snapshot_upload_declines_hash_payload_mismatch(monkeypatch):
+    from observal_cli import layer
+
+    monkeypatch.setattr(layer, "build_upload_payload", lambda **_kwargs: {"hash": "v2_" + "b" * 60})
+    monkeypatch.setattr(layer, "needs_upload", lambda _hash: True)
+    monkeypatch.setattr(layer, "save_local_snapshot", lambda _payload: pytest.fail("mismatch saved"))
+    base._maybe_upload_layer_snapshot("https://server.example", "token", "v2_" + "a" * 60, "claude-code", "/repo")
 
 
 @pytest.mark.parametrize("failure", ["rejected", "offline"])
@@ -1033,3 +1065,67 @@ def test_log_error_uses_default_home_and_never_masks_the_original_failure(tmp_pa
     not_a_directory = tmp_path / "file"
     not_a_directory.write_text("content")
     base.log_error("ignored", home=not_a_directory)
+
+
+def test_layer_snapshot_upload_passes_the_servers_cli_version_check(monkeypatch):
+    """Regression: the hook's snapshot upload sent no X-Observal-CLI-Version, so the server's
+    parity middleware answered 426 and presence was never published from real sessions."""
+    import sys
+
+    import httpx
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "observal-server"))
+    import version as server_version
+    from middleware import configure_version_middleware
+    from observal_cli import client as cli_client
+    from observal_cli import layer
+
+    monkeypatch.setattr(server_version, "get_server_version", lambda: "1.13.1")
+    monkeypatch.setattr(cli_client, "_get_cli_version", lambda: "1.13.1")
+    app = FastAPI()
+    configure_version_middleware(app)
+    app.post("/api/v1/layer-snapshots", status_code=201)(lambda: {"stored": True})
+    server = TestClient(app)
+
+    def handler(request):
+        # A python-httpx user agent and a bearer token: exactly what the middleware checks.
+        response = server.post(request.url.path, headers=dict(request.headers), content=request.content)
+        return httpx.Response(response.status_code, content=response.content)
+
+    saved = []
+    monkeypatch.setattr(layer, "needs_upload", lambda _hash: True)
+    monkeypatch.setattr(layer, "build_upload_payload", lambda **_kwargs: {"hash": "layer-hash"})
+    monkeypatch.setattr(layer, "save_local_snapshot", saved.append)
+    monkeypatch.setattr(layer, "set_last_uploaded_hash", lambda *_args: None)
+    _install_http_transport(monkeypatch, handler)
+
+    base._maybe_upload_layer_snapshot("https://server.example", "token", "layer-hash", "claude-code", "/repo")
+    assert saved == [{"hash": "layer-hash"}], "the server accepted the upload"
+
+
+def test_recovered_sessions_hash_the_recorded_project_or_send_no_layer_hash(tmp_path, monkeypatch):
+    """Regression: recovery rebuilt Claude Code sources with no cwd, so the payload carried a
+    user-scope-only layer hash (and the hook uploaded an empty snapshot) for a project session."""
+    project = tmp_path / "project"
+    project.mkdir()
+    monkeypatch.setattr(base, "_compute_layer_hash_safe", lambda cwd, harness: f"hash-of:{cwd}")
+    monkeypatch.setattr(base, "_resolve_agent", lambda *args, **kwargs: (None, None))
+    monkeypatch.setattr(base, "_capabilities_for_session", lambda *args, **kwargs: None)
+
+    recorded = [json.dumps({"type": "user", "cwd": str(project), "message": {"content": "hi"}})]
+    payload = base.build_payload("s1", recorded, 0, "CrashRecovery", 0, cwd="")
+    assert payload["layer_hash"] == f"hash-of:{project}"
+
+    transcript = tmp_path / "s2.jsonl"
+    transcript.write_text("\n".join(recorded) + "\n")
+    later_chunk = [json.dumps({"type": "assistant", "message": {"content": "ok"}})]
+    payload = base.build_payload("s2", later_chunk, 5, "CrashRecovery", 5, cwd="", session_jsonl=transcript)
+    assert payload["layer_hash"] == f"hash-of:{project}", "found in the transcript's earlier records"
+
+    unknown = [json.dumps({"type": "user", "cwd": str(tmp_path / "gone")})]
+    assert base.build_payload("s3", unknown, 0, "CrashRecovery", 0, cwd="")["layer_hash"] is None
+
+    live = base.build_payload("s4", later_chunk, 0, "UserPromptSubmit", 0, cwd="")
+    assert live["layer_hash"] == "hash-of:", "live hook paths are unchanged"
