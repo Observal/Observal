@@ -140,19 +140,6 @@ def apply_pi(cwd: str, session_id: str, notice_key: str) -> None:
         client.bounded_requests(deadline - RECOVERY_RESERVE_SECONDS),
     ):
         _apply_serialized(cwd, session_id, notice_key, registry=registry, account=account, deadline=deadline)
-        _refresh_extension(registry)
-
-
-def _refresh_extension(registry: str) -> None:
-    """Refresh Observal's own Pi extension for the next load; consent-gated, best effort."""
-    from observal_cli import pi_extension
-
-    try:
-        with auto_update_policy.registry_gate(registry, timeout=2):
-            if auto_update_policy.policy_status(registry)["effective"]:
-                pi_extension.refresh_unedited()
-    except Exception:
-        pass  # A bundled-extension refresh must never fail the update worker.
 
 
 def apply_claude(cwd: str, session_id: str, notice_key: str) -> None:
@@ -178,29 +165,39 @@ def apply_claude(cwd: str, session_id: str, notice_key: str) -> None:
 
 
 def _refresh_claude_hooks(registry: str) -> None:
-    """Keep Observal's own settings hooks current; consent-gated, best effort, reports once."""
+    """Keep Observal's own settings hooks current; consent-gated, reported once, never silent.
+
+    The settings write is atomic and abandoned if Claude changed the file, so a
+    failure leaves the file as it was. An unexpected error is reported as a
+    manual step instead of being swallowed.
+    """
     import hashlib
     import json
     import os
 
     from observal_cli import settings_reconciler
+    from observal_cli.harness_specs.claude_code_hooks_spec import HOOKS_SPEC_VERSION
     from observal_cli.hooks import claude_updates
 
     try:
         with auto_update_policy.registry_gate(registry, timeout=2):
             if not auto_update_policy.policy_status(registry)["effective"]:
                 return
-            status, reason = settings_reconciler.refresh_unedited()
+            try:
+                status, reason = settings_reconciler.refresh_unedited()
+            except Exception:
+                status, reason = (
+                    "manual",
+                    "Updating Observal's Claude Code hooks failed unexpectedly; run "
+                    "`observal doctor patch --harness claude-code`.",
+                )
         if status == "current":
             return
         # Say each outcome once per spec version, not at every session start.
-        from observal_cli.harness_specs.claude_code_hooks_spec import HOOKS_SPEC_VERSION
-
         seen = claude_updates.HOOKS_NOTICE.with_suffix(".seen")
         digest = hashlib.sha256(f"{status}\0{reason}\0{HOOKS_SPEC_VERSION}".encode()).hexdigest()
         if seen.exists() and seen.read_text() == digest:
             return
-        seen.write_text(digest)
         target = claude_updates.HOOKS_NOTICE
         target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         temporary = target.with_suffix(".tmp")
@@ -208,8 +205,9 @@ def _refresh_claude_hooks(registry: str) -> None:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump({"schema": 1, "status": status, "reason": reason[:200] if status == "manual" else ""}, handle)
         os.replace(temporary, target)
-    except Exception:
-        pass  # Refreshing our own hooks must never fail the update worker.
+        seen.write_text(digest)  # Only after the message is safely queued.
+    except (auto_update_policy.GateBusyError, OSError, ValueError):
+        pass  # Could not reach the notice store; the next session tries again.
 
 
 def _apply_serialized(
@@ -341,7 +339,11 @@ def _apply_serialized(
                             msg["reason"] = result["reason"]
                             specific = auto_update_policy.read_skip_reason(reason_file)
                             if specific and msg["status"] == "skipped":
-                                msg["reason"] = f"{specific} (update manually)"
+                                # Keep the recovery fact: the cause alone must not hide that files were put back.
+                                restored = (
+                                    " The original was restored." if "restored" in result["reason"].lower() else ""
+                                )
+                                msg["reason"] = f"{specific}{restored} (update manually)"
                             reason_file.unlink(missing_ok=True)
                             if msg["status"] == "updated":
                                 msg["reason"] = (

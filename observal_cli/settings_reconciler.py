@@ -272,6 +272,12 @@ def refresh_unedited() -> tuple[str, str]:
     found = {e: h for e, h in _observal_hashes(current).items() if e in desired}
     if any(set(found.get(event, [])) - set(recorded.get(event, [])) for event in found):
         return "manual", "Observal's Claude Code hook entries were edited or added by hand; " + _RECORD_HINT + "."
+    if any(set(recorded.get(event, [])) - set(found.get(event, [])) for event in recorded if event in desired):
+        # A deliberately removed managed group is a local change, not drift to repair.
+        return (
+            "manual",
+            "An Observal Claude Code hook entry was removed from your settings; " + _RECORD_HINT + " to restore it.",
+        )
     settings["hooks"] = merged
     updated = (json.dumps(settings, indent=2) + "\n").encode("utf-8")
     if len(updated) > MAX_SETTINGS_BYTES:

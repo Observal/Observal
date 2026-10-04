@@ -187,3 +187,34 @@ def test_refused_refresh_says_why_once_per_spec_version(env: Path, worker) -> No
     apply._refresh_claude_hooks("https://registry.test")
     assert not notice.exists(), "the same refusal is not repeated every session"
     assert env.read_bytes() == edited
+
+
+@pytest.mark.parametrize("removal", ["event deleted", "event emptied"])
+def test_a_deliberately_removed_managed_group_is_not_reinstalled(env: Path, removal: str) -> None:
+    """Remove just Stop while the other Observal groups stay installed."""
+    _install_old(env)
+    data = json.loads(env.read_text())
+    if removal == "event deleted":
+        del data["hooks"]["Stop"]
+    else:
+        data["hooks"]["Stop"] = []
+    env.write_text(json.dumps(data, indent=2) + "\n")
+    before = env.read_bytes()
+    status, reason = rec.refresh_unedited()
+    assert status == "manual" and "removed" in reason and "doctor patch" in reason
+    assert env.read_bytes() == before
+    assert "Stop" not in json.loads(env.read_text())["hooks"] or json.loads(env.read_text())["hooks"]["Stop"] == []
+
+
+def test_an_unexpected_refresh_error_is_reported_not_swallowed(
+    env: Path, worker, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    apply, bridge, _notice, _state = worker
+
+    def boom() -> tuple[str, str]:
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(rec, "refresh_unedited", boom)
+    apply._refresh_claude_hooks("https://registry.test")
+    (message,) = bridge._hooks_notice(None)
+    assert "could not update" in message and "doctor patch" in message

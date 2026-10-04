@@ -96,6 +96,12 @@ def _save_record(registry: str, component_id: str, name: str, entry: dict) -> No
         handle.flush()
         os.fsync(handle.fileno())
     os.replace(temporary, path)
+    if os.name != "nt":
+        directory = os.open(RECORD_DIR, os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
 
 
 def _run(*argv: str) -> None:
@@ -161,12 +167,17 @@ def install(
     else:
         if record["name"] != local_name or current != record["entry"]:
             raise ClaudeMcpError("The Claude Code MCP entry changed since Observal installed it; update manually.")
-        if automatic:
-            _guard_automatic(registry, component_id)
+        old_row = _guard_automatic(registry, component_id) if automatic else None
         if current != entry:
-            if automatic:
+            if automatic and old_row is not None:
                 _save_recovery(
-                    Path(os.environ["OBSERVAL_AUTO_UPDATE_RECOVERY_DIR"]), local_name, record["entry"], entry
+                    Path(os.environ["OBSERVAL_AUTO_UPDATE_RECOVERY_DIR"]),
+                    registry=registry,
+                    component_id=component_id,
+                    name=local_name,
+                    old=record["entry"],
+                    new=entry,
+                    old_row=old_row,
                 )
             _run("remove", "-s", "user", local_name)
             try:
@@ -197,7 +208,7 @@ def install(
     return str(config_path())
 
 
-def _guard_automatic(registry: str, component_id: str) -> None:
+def _guard_automatic(registry: str, component_id: str) -> dict:
     marker = os.environ.get("OBSERVAL_AUTO_UPDATE_SHUTDOWN_MARKER")
     cutoff = float(os.environ.get("OBSERVAL_AUTO_UPDATE_NETWORK_CUTOFF", "inf"))
     rows = [
@@ -217,27 +228,124 @@ def _guard_automatic(registry: str, component_id: str) -> None:
     ):
         raise ClaudeMcpError("Consent, pin intent, session or installed version changed.")
     client.end_startup_network_budget()
+    return rows[0]
 
 
-def _save_recovery(root: Path, name: str, old: dict, new: dict) -> None:
+_ROW_FIELDS = (
+    "id",
+    "name",
+    "namespace",
+    "slug",
+    "local_name",
+    "version",
+    "version_id",
+    "digest",
+    "requested_version",
+    "pin_known",
+)
+
+
+def _save_recovery(
+    root: Path, *, registry: str, component_id: str, name: str, old: dict, new: dict, old_row: dict
+) -> None:
+    """Durably save everything a stopped update could leave inconsistent: the entry,
+    our ownership record and the installed-lock row. Never any other config."""
     from observal_cli import install_recovery
 
     if root.parent != install_recovery.BACKUP_DIR or root.exists() or root.is_symlink():
         raise ClaudeMcpError("No fresh private MCP recovery location is available.")
+    if install_recovery.BACKUP_DIR.exists() and (
+        install_recovery.BACKUP_DIR.is_symlink() or install_recovery.BACKUP_DIR.stat().st_mode & 0o077
+    ):
+        raise ClaudeMcpError("Recovery storage is not private.")
+    body = json.dumps(
+        {
+            "schema": 2,
+            "registry": registry,
+            "component_id": component_id,
+            "name": name,
+            "old": old,
+            "new": new,
+            "old_row": {key: old_row.get(key) for key in _ROW_FIELDS},
+        }
+    ).encode()
     install_recovery.BACKUP_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
-    root.mkdir(mode=0o700)
-    body = json.dumps({"schema": 1, "name": name, "old": old, "new": new}).encode()
-    fd = os.open(root / RECOVERY_FILE, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, "wb") as handle:
-        handle.write(body)
-        handle.flush()
-        os.fsync(handle.fileno())
+    try:
+        root.mkdir(mode=0o700)
+        install_recovery._write(root / RECOVERY_FILE, body)  # fsyncs the file and the directory
+        install_recovery._sync(install_recovery.BACKUP_DIR)
+    except BaseException:
+        shutil.rmtree(root, ignore_errors=True)
+        raise
+
+
+def _load_recovery(root: Path) -> dict | None:
+    try:
+        record = json.loads((root / RECOVERY_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    ok = (
+        isinstance(record, dict)
+        and record.get("schema") == 2
+        and all(isinstance(record.get(key), str) for key in ("registry", "component_id", "name"))
+        and isinstance(record.get("old"), dict)
+        and isinstance(record.get("new"), dict)
+        and isinstance(record.get("old_row"), dict)
+    )
+    return record if ok else None
+
+
+def _lock_row(component_id: str) -> dict | None:
+    rows = [
+        row
+        for row in lockfile.get_all_entries(harness="claude-code")
+        if row.get("type") == "mcp" and row.get("scope") == "user" and row.get("id") == component_id
+    ]
+    return rows[0] if len(rows) == 1 else None
+
+
+def bookkeeping_is_original(record: dict) -> bool:
+    """Is our ownership record and the installed-lock row exactly what they were before?"""
+    try:
+        saved = load_record(record["registry"], record["component_id"])
+        row = _lock_row(record["component_id"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+    return (
+        saved is not None
+        and saved["name"] == record["name"]
+        and saved["entry"] == record["old"]
+        and row is not None
+        and all(row.get(key) == record["old_row"].get(key) for key in _ROW_FIELDS)
+    )
+
+
+def _restore_bookkeeping(record: dict) -> None:
+    row = record["old_row"]
+    _save_record(record["registry"], record["component_id"], record["name"], record["old"])
+    lockfile.upsert_standalone(
+        "claude-code",
+        component_type="mcp",
+        name=row["name"],
+        component_id=row["id"],
+        version=row["version"],
+        scope="user",
+        namespace=row.get("namespace"),
+        slug=row.get("slug"),
+        local_name=row.get("local_name"),
+        version_id=row.get("version_id"),
+        digest=row.get("digest"),
+        requested_version=row.get("requested_version"),
+        pin_known=row.get("pin_known") is True,
+    )
 
 
 def recovery_state(root: Path) -> tuple[str, dict] | None:
     """Classify the entry against the saved plan: old, new, missing or foreign."""
+    record = _load_recovery(root)
+    if record is None:
+        return None
     try:
-        record = json.loads((root / RECOVERY_FILE).read_text(encoding="utf-8"))
         current = read_entry(record["name"])
     except (OSError, ValueError, KeyError, TypeError):
         return None
@@ -248,8 +356,19 @@ def recovery_state(root: Path) -> tuple[str, dict] | None:
     return ("missing" if current is None else "foreign"), record
 
 
+def fully_original(root: Path) -> bool:
+    """True only if the entry, ownership record and installed lock are all untouched."""
+    state = recovery_state(root)
+    return state is not None and state[0] == "old" and bookkeeping_is_original(state[1])
+
+
 def restore_if_safe(root: Path) -> bool:
-    """Re-add the original only if the entry is absent or already the planned new one."""
+    """Put back our entry, our ownership record and our lock row; touch nothing else.
+
+    Only an entry that is absent or exactly the planned new one is replaced; an
+    edited (foreign) entry is never touched. Returns True only after all three
+    are verified to be the originals.
+    """
     state = recovery_state(root)
     if state is None or state[0] == "foreign":
         return False
@@ -259,6 +378,9 @@ def restore_if_safe(root: Path) -> bool:
             _run("remove", "-s", "user", record["name"])
         if kind in {"new", "missing"}:
             _add(record["name"], record["old"])
-        return read_entry(record["name"]) == record["old"]
-    except (ClaudeMcpError, subprocess.SubprocessError, OSError, ValueError):
+        if read_entry(record["name"]) != record["old"]:
+            return False
+        _restore_bookkeeping(record)
+        return bookkeeping_is_original(record)
+    except (ClaudeMcpError, subprocess.SubprocessError, OSError, ValueError, TypeError, KeyError):
         return False

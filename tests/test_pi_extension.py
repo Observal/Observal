@@ -332,7 +332,6 @@ class TestInstallOrRefresh:
         assert read_json(pi_extension.manifest_path(tmp_path)) == {
             "managed": True,
             "version": CLI_VERSION,
-            "sha256": pi_extension._digest(pi_extension.extension_path(tmp_path)),
         }
 
     def test_dry_run_reports_without_writing(self, tmp_path: Path):
@@ -648,22 +647,3 @@ class TestIsNpmConfigured:
         settings = tmp_path / "settings.json"
         settings.write_text("{ not json", encoding="utf-8")
         assert pi_extension.is_npm_configured(tmp_path) is False
-
-
-def test_refresh_unedited_requires_recorded_hash(tmp_path, monkeypatch):
-    import json
-
-    from observal_cli import pi_extension as pe
-
-    monkeypatch.setattr(pe, "get_current_version", lambda: "1.0.0")
-    (tmp_path / ".pi/agent/extensions").mkdir(parents=True)
-    ext, manifest = pe.extension_path(tmp_path), pe.manifest_path(tmp_path)
-    ext.write_text("old " + pe._SIGNATURE)
-    manifest.write_text(json.dumps({"managed": True, "version": "0.9.0"}))
-    assert pe.refresh_unedited(tmp_path) is False  # legacy manifest: no hash
-    manifest.write_text(json.dumps({"managed": True, "version": "0.9.0", "sha256": "0" * 64}))
-    assert pe.refresh_unedited(tmp_path) is False  # edited bytes
-    manifest.write_text(json.dumps({"managed": True, "version": "0.9.0", "sha256": pe._digest(ext)}))
-    assert pe.refresh_unedited(tmp_path) is True
-    assert ext.read_text() == pe.extension_source()
-    assert json.loads(manifest.read_text())["sha256"] == pe._digest(ext)

@@ -26,7 +26,6 @@ automatic post-login install in cmd_auth.py.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shutil
@@ -384,37 +383,9 @@ def install_or_refresh(
         atomic_write(extension_path(home), extension_source())
     atomic_write(
         manifest_path(home),
-        json.dumps(
-            {"managed": True, "version": get_current_version(), "sha256": _digest(extension_path(home))}, indent=2
-        )
-        + "\n",
+        json.dumps({"managed": True, "version": get_current_version()}, indent=2) + "\n",
     )
     return PiExtensionResult(True, status.action, backup)
-
-
-def _digest(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def refresh_unedited(home: Path | None = None) -> bool:
-    """Startup-safe refresh: only a tracked file whose bytes still match its recorded hash.
-
-    Manifests written by older CLIs carry no hash, so they remain manual
-    (`observal doctor patch`). Never adopts, migrates, restores or dedupes.
-    """
-    status = check_status(home)
-    manifest = _read_manifest(home)
-    path = extension_path(home)
-    if (
-        status.action != "refresh"
-        or manifest is None
-        or manifest.get("managed") is not True
-        or not isinstance(manifest.get("sha256"), str)
-        or path.is_symlink()
-        or _digest(path) != manifest["sha256"]
-    ):
-        return False
-    return install_or_refresh(dry_run=False, home=home, status=status).changed
 
 
 def remove(*, dry_run: bool, home: Path | None = None) -> bool:

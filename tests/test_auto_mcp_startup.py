@@ -406,3 +406,90 @@ def test_managed_pi_credentials_are_only_carried_forward() -> None:
             plan.check_credentials(
                 None, {"env": {"KEY": blank}}, required={"KEY"}, required_headers=set(), automatic=False
             )
+
+
+def _record_entry(home: Path) -> dict:
+    (path,) = list((home / ".observal/managed-claude-mcp").glob("*.json"))
+    return json.loads(path.read_text())["entry"]
+
+
+def _lock_version(home: Path) -> str:
+    data = json.loads((home / ".observal/lockfile.json").read_text())
+    rows = [
+        row
+        for registry in data["registries"].values()
+        for row in registry["harnesses"]["claude-code"].get("standalone", [])
+        if row["type"] == "mcp"
+    ]
+    (row,) = rows
+    return row["version"]
+
+
+@pytest.mark.parametrize("stop", ["before-lock-write", "after-lock-write"])
+def test_claude_mcp_stopped_before_the_lock_finishes_restores_entry_record_and_lock(claude_instance, stop: str) -> None:
+    """The ownership record and installed lock must never claim a version the entry does not have."""
+    state, home, cli, apply, env = claude_instance
+    config = home / ".claude.json"
+    cli("registry", "mcp", "install", MCPS[0], "--harness", "claude-code", "--managed")
+    name = next(iter(json.loads(config.read_text())["mcpServers"]))
+    original = json.loads(config.read_text())["mcpServers"][name]
+    state["latest"] = "2.0.0"
+    cli("unfreeze")
+    injection = home / "injection"
+    injection.mkdir()
+    (injection / "sitecustomize.py").write_text(
+        "import os\n"
+        "from observal_cli import lockfile\n"
+        "_real = lockfile.upsert_standalone\n"
+        "def stopped(*args, **kwargs):\n"
+        "    if os.environ.get('STOP') and kwargs.get('version') == '2.0.0':\n"
+        "        if os.environ['STOP'] == 'after-lock-write':\n"
+        "            _real(*args, **kwargs)\n"
+        "        raise OSError('injected stop')\n"
+        "    return _real(*args, **kwargs)\n"
+        "lockfile.upsert_standalone = stopped\n"
+    )
+    env["PYTHONPATH"] = os.pathsep.join([str(injection), env["PYTHONPATH"]])
+    env["STOP"] = stop
+    notice = apply("stopped")
+    item = notice["items"][0]
+    assert item["status"] == "skipped" and "restored" in item["reason"], item
+    # All three are the originals again, so the notice is true.
+    assert json.loads(config.read_text())["mcpServers"][name] == original
+    assert _record_entry(home)["command"] == "/bin/0-1.0.0"
+    assert _lock_version(home) == "1.0.0"
+    assert not list((home / ".observal/update-backups").glob("*/*"))
+    # And the next, uninterrupted attempt succeeds: the record was not left lying.
+    env.pop("STOP")
+    assert apply("retry")["items"][0]["status"] == "updated"
+    assert json.loads(config.read_text())["mcpServers"][name]["command"] == "/bin/0-2.0.0"
+    assert _record_entry(home)["command"] == "/bin/0-2.0.0" and _lock_version(home) == "2.0.0"
+
+
+def test_claude_mcp_recovery_is_not_claimed_over_an_edited_entry(claude_instance) -> None:
+    state, home, cli, apply, env = claude_instance
+    config = home / ".claude.json"
+    cli("registry", "mcp", "install", MCPS[0], "--harness", "claude-code", "--managed")
+    name = next(iter(json.loads(config.read_text())["mcpServers"]))
+    state["latest"] = "2.0.0"
+    cli("unfreeze")
+    injection = home / "injection"
+    injection.mkdir()
+    (injection / "sitecustomize.py").write_text(
+        "import json, os\n"
+        "from pathlib import Path\n"
+        "from observal_cli import lockfile\n"
+        "def stopped(*args, **kwargs):\n"
+        "    f = Path.home() / '.claude.json'\n"
+        "    d = json.loads(f.read_text())\n"
+        "    for key in d['mcpServers']:\n"
+        "        d['mcpServers'][key]['command'] = '/my/own'\n"
+        "    f.write_text(json.dumps(d))\n"
+        "    raise OSError('injected stop')\n"
+        "lockfile.upsert_standalone = stopped\n"
+    )
+    env["PYTHONPATH"] = os.pathsep.join([str(injection), env["PYTHONPATH"]])
+    item = apply("edited")["items"][0]
+    assert item["status"] == "failed", item
+    assert json.loads(config.read_text())["mcpServers"][name]["command"] == "/my/own"
+    assert list((home / ".observal/update-backups").glob("*/*")), "the private recovery file must stay"

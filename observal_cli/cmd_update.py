@@ -727,7 +727,7 @@ def apply_startup_claude_mcp(
                 pass
         if state is None and completed.returncode != 0 and not backup.exists():
             return {"status": "skipped", "reason": "The installer refused the update without changing the MCP entry."}
-        if state is not None and state[0] == "old" and completed.returncode != 0:
+        if state is not None and completed.returncode != 0 and claude_mcp.fully_original(backup):
             install_recovery.discard(backup)
             return {"status": "skipped", "reason": "The installer stopped without changing the MCP entry."}
         if state is not None and state[0] != "foreign" and restore():
