@@ -1121,10 +1121,16 @@ def _install_impl(
         spec = client.get(f"/api/v1/mcps/{resolved}/versions/{version}") if version else listing
     env_var_list = _install_input_definitions(spec, "environment_variables", "environment_variable")
     header_list = _install_input_definitions(spec, "headers", "header")
-    if managed and (env_var_list or header_list or env_overrides or header_overrides or env_file):
+    if managed and harness == "claude-code" and (env_var_list or header_list or env_overrides or header_overrides):
+        from observal_cli.auto_update_policy import record_skip_reason
+
+        record_skip_reason(
+            "Claude Code's generated MCP command cannot carry credentials Observal can verify; "
+            "install and update this MCP manually."
+        )
         fail(
             ErrorCategory.CONFLICT,
-            "Managed Pi MCP installs cannot retain credential inputs yet.",
+            "Managed Claude Code MCP installs cannot retain credential inputs.",
             operation="Install MCP server",
             resource=mcp_id,
             remediation="Use the printed snippet and update it manually for MCPs requiring credentials.",
@@ -1151,6 +1157,19 @@ def _install_impl(
                         _env_from_flags[k] = v
 
     _header_from_flags: dict[str, str] = dict(header_overrides) if header_overrides else {}
+    if managed and harness == "pi" and os.environ.get("OBSERVAL_AUTO_UPDATE_INSTALL") == "1":
+        from observal_cli import automatic_mcp_plan
+        from observal_cli.lockfile import local_registry_name as _local_name
+
+        saved_env, saved_headers = automatic_mcp_plan.saved_inputs(
+            _local_name(harness, "mcp", listing["namespace"], listing["slug"])
+        )
+        for ev in env_var_list:
+            if ev["name"] in saved_env:
+                _env_from_flags.setdefault(ev["name"], saved_env[ev["name"]])
+        for header in header_list:
+            if header["name"] in saved_headers:
+                _header_from_flags.setdefault(header["name"], saved_headers[header["name"]])
     skip_prompts = machine_output or no_prompt
 
     env_values: dict[str, str] = {}
@@ -1166,6 +1185,13 @@ def _install_impl(
             if header.get("required", True) and not _header_from_flags.get(header["name"])
         )
         if missing_inputs:
+            if os.environ.get("OBSERVAL_AUTO_UPDATE_INSTALL") == "1":
+                from observal_cli.auto_update_policy import record_skip_reason
+
+                record_skip_reason(
+                    "The release needs a credential or value that was not saved; "
+                    "run `observal registry mcp install` manually to provide it."
+                )
             fail(
                 ErrorCategory.VALIDATION,
                 "MCP installation requires values that are unavailable in non-interactive mode.",
@@ -1205,7 +1231,7 @@ def _install_impl(
         for ev in env_var_list:
             if ev["name"] in _env_from_flags:
                 env_values[ev["name"]] = _env_from_flags[ev["name"]]
-            else:
+            elif not managed:
                 env_values[ev["name"]] = f"<{ev['name']}>"
 
     # Prompt for headers (SSE/HTTP servers with auth)
@@ -1238,7 +1264,7 @@ def _install_impl(
         for h in header_list:
             if h["name"] in _header_from_flags:
                 header_values[h["name"]] = _header_from_flags[h["name"]]
-            else:
+            elif not managed:
                 header_values[h["name"]] = f"<{h['name']}>"
 
     from observal_cli.lockfile import local_registry_name
@@ -1339,8 +1365,6 @@ def _install_impl(
                 or not isinstance(snippet["mcpServers"], dict)
                 or set(snippet["mcpServers"]) != {local_name}
                 or not isinstance(snippet["mcpServers"][local_name], dict)
-                or snippet["mcpServers"][local_name].get("env") not in (None, {})
-                or snippet["mcpServers"][local_name].get("headers") not in (None, {})
                 or listing.get("id") != resolved
                 or (release.get("id") and str(release["id"]) != str(result.get("version_id")))
                 or result.get("warnings")
@@ -1359,6 +1383,8 @@ def _install_impl(
                 digest_value=result.get("digest"),
                 requested_version=None if os.environ.get("OBSERVAL_UPDATE_EXACT_TARGET") == "1" else version,
                 entry=snippet["mcpServers"][local_name],
+                required={ev["name"] for ev in env_var_list if ev.get("required", True)},
+                required_headers={h["name"] for h in header_list if h.get("required", True)},
             )
         except (OSError, ValueError, TypeError, KeyError) as error:
             if isinstance(error, ValueError) and not isinstance(error, OSError):

@@ -35,6 +35,41 @@ def _safe_path(raw: str, root: Path, directory: Path, *, may_create: bool = Fals
     return target
 
 
+def _credential_free(entry: object, agent_id: object) -> bool:
+    """A plain local stdio server. The only env value is the agent's own public id."""
+    env = entry.get("env", {}) if isinstance(entry, dict) else None
+    return (
+        isinstance(entry, dict)
+        and set(entry) <= {"command", "args", "type", "env"}
+        and isinstance(env, dict)
+        and (not env or (isinstance(agent_id, str) and agent_id and env == {"OBSERVAL_AGENT_ID": agent_id}))
+        and entry.get("type") in (None, "stdio")
+        and isinstance(entry.get("command"), str)
+        and bool(entry["command"])
+        and isinstance(entry.get("args", []), list)
+        and all(isinstance(arg, str) and "${" not in arg and "$" not in arg for arg in entry.get("args", []))
+    )
+
+
+def _same_credentials(key: str, old: object, new: object, agent_id: object) -> None:
+    """A kept MCP may only carry forward the secrets the user already saved."""
+    if not isinstance(old, dict) or not isinstance(new, dict):
+        raise InstallSkipError(f"The MCP '{key}' has an unsupported saved entry; update manually.")
+    for field in ("env", "headers"):
+        previous, current = old.get(field) or {}, new.get(field) or {}
+        if not isinstance(previous, dict) or not isinstance(current, dict):
+            raise InstallSkipError(f"The MCP '{key}' has an unsupported {field} block; update manually.")
+        for name, value in current.items():
+            if field == "env" and name == "OBSERVAL_AGENT_ID":
+                if value != agent_id:
+                    raise InstallSkipError(f"The MCP '{key}' names a different agent; update manually.")
+            elif value != "" and previous.get(name) != value:
+                raise InstallSkipError(
+                    f"The release changes a saved value or adds a new one for MCP '{key}' ({field} '{name}'); "
+                    "run `observal agent pull` manually to review it."
+                )
+
+
 def plan_pi_files(snippet: object, item: dict, old_files: dict[str, str]) -> dict[Path, bytes]:
     """Compute the complete *file* plan before any mutation.
 
@@ -60,36 +95,48 @@ def plan_pi_files(snippet: object, item: dict, old_files: dict[str, str]) -> dic
         raise InstallSkipError("The Pi release changes its agent profile path.")
     planned: dict[Path, bytes] = {profile_path: profile["content"].encode()}
     mcp = snippet.get("mcp_config")
+    mcp_file = root / "mcp.json"
     if mcp is not None:
         if not isinstance(mcp, dict) or not isinstance(mcp.get("content"), dict):
             raise InstallSkipError("The Pi release has an unsupported MCP config.")
-        mcp_path = _safe_path(mcp.get("path"), root, directory)
-        if mcp_path != root / "mcp.json" or str(mcp_path) not in old_files:
-            raise InstallSkipError("The Pi release changes or creates an MCP config.")
-        try:
-            previous_mcp = mcp_path.read_bytes()
-            current_mcp = json.loads(previous_mcp)
-        except (OSError, UnicodeError, ValueError) as error:
-            raise InstallSkipError("The managed Pi MCP config cannot be checked.") from error
+        mcp_path = _safe_path(mcp.get("path"), root, directory, may_create=True)
+        wanted = mcp["content"].get("mcpServers")
         if (
-            hashlib.sha256(previous_mcp).hexdigest() != old_files[str(mcp_path)]
-            or not isinstance(current_mcp, dict)
-            or set(current_mcp) != {"mcpServers"}
-            or not isinstance(current_mcp["mcpServers"], dict)
-            or not isinstance(mcp["content"].get("mcpServers"), dict)
+            mcp_path != mcp_file
             or set(mcp["content"]) != {"mcpServers"}
-            or set(current_mcp["mcpServers"]) != set(mcp["content"]["mcpServers"])
-            or not current_mcp["mcpServers"]
+            or not isinstance(wanted, dict)
+            or not wanted
+            or any(not isinstance(key, str) or not key for key in wanted)
         ):
-            raise InstallSkipError("The Pi release changes MCP ownership or its file set; update manually.")
-        # _write_file merges incoming entries into the existing JSON and then
-        # atomically writes indent=2 plus a newline. Keep an exact plan for
-        # that normal writer; an identical config remains a no-op at apply.
-        if current_mcp == mcp["content"]:
-            planned[mcp_path] = previous_mcp
-        else:
-            current_mcp["mcpServers"].update(mcp["content"]["mcpServers"])
-            planned[mcp_path] = (json.dumps(current_mcp, indent=2) + "\n").encode("utf-8")
+            raise InstallSkipError("The Pi release changes its MCP config path or shape; update manually.")
+        current: dict = {}
+        if str(mcp_path) in old_files:
+            try:
+                previous_mcp = mcp_path.read_bytes()
+                current_mcp = json.loads(previous_mcp)
+            except (OSError, UnicodeError, ValueError) as error:
+                raise InstallSkipError("The managed Pi MCP config cannot be checked.") from error
+            if (
+                hashlib.sha256(previous_mcp).hexdigest() != old_files[str(mcp_path)]
+                or not isinstance(current_mcp, dict)
+                or set(current_mcp) != {"mcpServers"}
+                or not isinstance(current_mcp["mcpServers"], dict)
+            ):
+                raise InstallSkipError("The Pi MCP config was edited since Observal wrote it; update manually.")
+            current = current_mcp["mcpServers"]
+        for key in set(wanted) & set(current):
+            _same_credentials(key, current[key], wanted[key], item.get("id"))
+        for key in set(wanted) - set(current):
+            if not _credential_free(wanted[key], item.get("id")):
+                raise InstallSkipError(
+                    f"The release adds MCP '{key}', which needs credentials or a remote URL; add it manually."
+                )
+        # The normal writer only merges and cannot drop an MCP. The exact
+        # target is the release's own set of servers; apply rewrites the file
+        # to these bytes if the merge left a dropped entry behind.
+        raw = (json.dumps({"mcpServers": wanted}, indent=2) + "\n").encode("utf-8")
+        unchanged = str(mcp_path) in old_files and current == wanted
+        planned[mcp_path] = previous_mcp if unchanged else raw
     skills = snippet.get("skill_components", [])
     if not isinstance(skills, list):
         raise InstallSkipError("The release has invalid skill components.")
@@ -121,8 +168,17 @@ def plan_pi_files(snippet: object, item: dict, old_files: dict[str, str]) -> dic
             planned[script_path] = script.encode()
     skills_root = root / "skills"
     kept = {str(path) for path in planned}
-    if any(name not in kept and not Path(name).is_relative_to(skills_root) for name in old_files):
-        raise InstallSkipError("The release would remove a profile or MCP file; update manually.")
+    if any(
+        name not in kept and not Path(name).is_relative_to(skills_root) and Path(name) != mcp_file for name in old_files
+    ):
+        raise InstallSkipError("The release would remove the agent profile; update manually.")
+    if str(mcp_file) in old_files and mcp is None:
+        # Every MCP was dropped. Only an unedited, Observal-written file goes.
+        try:
+            if hashlib.sha256(mcp_file.read_bytes()).hexdigest() != old_files[str(mcp_file)]:
+                raise InstallSkipError("The Pi MCP config was edited since Observal wrote it; update manually.")
+        except OSError as error:
+            raise InstallSkipError("The managed Pi MCP config cannot be checked.") from error
     if sum((path.stat().st_size if path.exists() else 0) + len(data) for path, data in planned.items()) > MAX_BYTES:
         raise InstallSkipError("The automatic installation exceeds its file-size limit.")
     return planned

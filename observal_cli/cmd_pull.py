@@ -287,6 +287,62 @@ def _component_input_definitions(listing: dict, field: str, kind: str, component
     return definitions
 
 
+def _saved_pi_mcp_inputs(
+    agent_detail: dict, agent_uuid: str, target_dir: Path, spec_cache: dict
+) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, str]]]:
+    """Credentials the user already saved in this Pi agent's own mcp.json, per MCP.
+
+    Only used by the startup updater to re-supply values to the normal install
+    request. The plan later proves every credential in the result is unchanged.
+    """
+    from observal_cli import installed_updates
+    from observal_cli.install_recovery import _regular
+    from observal_cli.shared.utils import sanitize_name
+
+    rows = [
+        row
+        for row in installed_updates.inventory_for_context("pi", str(target_dir))
+        if row["type"] == "agent"
+        and row["scope"] == "user"
+        and row["id"] == agent_uuid
+        and row["directory"] == str(target_dir)
+    ]
+    local = rows[0].get("local_name") if len(rows) == 1 else None
+    if not isinstance(local, str) or not local or Path(local).name != local:
+        return {}, {}
+    path = Path.home() / ".pi" / "agent" / "agents" / local / "mcp.json"
+    try:
+        _regular(path)
+        if path.stat().st_size > 1024 * 1024:
+            return {}, {}
+        servers = json.loads(path.read_text(encoding="utf-8")).get("mcpServers", {})
+    except (OSError, ValueError, AttributeError):
+        return {}, {}
+    if not isinstance(servers, dict):
+        return {}, {}
+    env_saved: dict[str, dict[str, str]] = {}
+    header_saved: dict[str, dict[str, str]] = {}
+    for listing_id, _display, _pinned in _mcp_components(agent_detail):
+        spec = _mcp_spec(listing_id, None, spec_cache)  # The listing, which carries slug and namespace.
+        slug = spec.get("slug") or spec.get("name")
+        if not isinstance(slug, str) or not slug:
+            continue
+        namespace = str(spec.get("namespace") or "").replace(".", "-")
+        keys = {sanitize_name(slug), sanitize_name(f"{namespace}-{slug}")} & set(servers)
+        if len(keys) != 1:
+            continue  # Ambiguous or absent: nothing is carried; the plan refuses.
+        entry = servers[next(iter(keys))]
+        if not isinstance(entry, dict):
+            continue
+        env = entry.get("env") if isinstance(entry.get("env"), dict) else {}
+        headers = entry.get("headers") if isinstance(entry.get("headers"), dict) else {}
+        env_saved[listing_id] = {
+            k: v for k, v in env.items() if isinstance(k, str) and isinstance(v, str) and v and k != "OBSERVAL_AGENT_ID"
+        }
+        header_saved[listing_id] = {k: v for k, v in headers.items() if isinstance(k, str) and isinstance(v, str) and v}
+    return env_saved, header_saved
+
+
 def _collect_mcp_env_vars(
     agent_detail: dict,
     *,
@@ -294,6 +350,7 @@ def _collect_mcp_env_vars(
     env_overrides: dict[str, str] | None = None,
     spec_cache: dict | None = None,
     missing_inputs: list[dict[str, str]] | None = None,
+    saved: dict[str, dict[str, str]] | None = None,
 ) -> dict[str, dict[str, str]]:
     """Discover MCP env vars from agent components and prompt the user for values.
 
@@ -333,6 +390,8 @@ def _collect_mcp_env_vars(
             for ev in required + optional:
                 if ev["name"] in _overrides:
                     mcp_env[ev["name"]] = _overrides[ev["name"]]
+                elif ev["name"] in (saved or {}).get(listing_id, {}):
+                    mcp_env[ev["name"]] = saved[listing_id][ev["name"]]  # type: ignore[index]
                 elif ev.get("required", True) and missing_inputs is not None:
                     missing_inputs.append({"kind": "environment_variable", "name": ev["name"], "component": mcp_name})
         else:
@@ -373,6 +432,7 @@ def _collect_mcp_headers(
     header_overrides: dict[str, str] | None = None,
     spec_cache: dict | None = None,
     missing_inputs: list[dict[str, str]] | None = None,
+    saved: dict[str, dict[str, str]] | None = None,
 ) -> dict[str, dict[str, str]]:
     """Discover MCP headers from agent components and prompt the user for values.
 
@@ -404,6 +464,8 @@ def _collect_mcp_headers(
             for h in required + optional:
                 if h["name"] in _overrides:
                     mcp_hdrs[h["name"]] = _overrides[h["name"]]
+                elif h["name"] in (saved or {}).get(listing_id, {}):
+                    mcp_hdrs[h["name"]] = saved[listing_id][h["name"]]  # type: ignore[index]
                 elif h.get("required", True) and missing_inputs is not None:
                     missing_inputs.append({"kind": "header", "name": h["name"], "component": mcp_name})
         else:
@@ -1692,12 +1754,17 @@ def register_pull(app: typer.Typer):
 
         spec_cache: dict = {}
         missing_inputs: list[dict[str, str]] = []
+        saved_env: dict[str, dict[str, str]] = {}
+        saved_headers: dict[str, dict[str, str]] = {}
+        if os.environ.get("OBSERVAL_AUTO_UPDATE_INSTALL") == "1" and harness == "pi" and is_user_scope:
+            saved_env, saved_headers = _saved_pi_mcp_inputs(plan, str(agent_uuid), target_dir, spec_cache)
         env_values = _collect_mcp_env_vars(
             plan,
             no_prompt=no_prompt,
             env_overrides=env_overrides or None,
             spec_cache=spec_cache,
             missing_inputs=missing_inputs,
+            saved=saved_env or None,
         )
         header_values = _collect_mcp_headers(
             plan,
@@ -1705,8 +1772,15 @@ def register_pull(app: typer.Typer):
             header_overrides=header_overrides or None,
             spec_cache=spec_cache,
             missing_inputs=missing_inputs,
+            saved=saved_headers or None,
         )
         if missing_inputs:
+            from observal_cli.auto_update_policy import record_skip_reason
+
+            record_skip_reason(
+                "The release needs credentials or other values only you can enter; "
+                "run `observal agent pull` manually to provide them."
+            )
             fail(
                 ErrorCategory.VALIDATION,
                 "Agent installation requires values that are unavailable in non-interactive mode.",
@@ -2071,6 +2145,12 @@ def register_pull(app: typer.Typer):
                 # exact planned file set before recording new ownership.
                 for gone in removed_files:
                     gone.unlink(missing_ok=True)
+                if harness == "pi":
+                    # The normal writer merges MCP entries and never drops one.
+                    # The plan holds the release's exact server set.
+                    for path, raw in planned.items():
+                        if path.name == "mcp.json" and path.read_bytes() != raw:
+                            _atomic_write_text(path, raw.decode("utf-8"))
                 automatic_paths = [str(path) for path in planned]
                 if set(_files(automatic_paths)) != set(automatic_paths):
                     raise BaselineError("The managed path set changed during installation")

@@ -103,10 +103,17 @@ def _user_agent_candidate(item: dict, *, registry: str, harness: str) -> dict[st
     installed = _identities(item.get("components"), installed=True)
     target = _identities(item["release"].get("components"), installed=False)
     changed_types = {kind for kind, _id in installed ^ target}
-    if changed_types - {"skill", "hook"}:
+    if harness == "claude-code" and "mcp" in changed_types:
         raise PreflightSkipError(
-            "The release adds or removes a component type that needs manual review (only skills and hooks "
-            "can be added or removed automatically)."
+            "The release adds or removes an MCP. Claude Code registers an agent's MCPs per project "
+            "directory, which is not updated automatically; run `observal agent pull` manually."
+        )
+    allowed_types = {"skill", "hook", "mcp"} if harness == "pi" else {"skill", "hook"}
+    if changed_types - allowed_types:
+        raise PreflightSkipError(
+            "The release adds or removes a component type that needs manual review (only "
+            + ("skills, hooks and credential-free MCPs" if harness == "pi" else "skills and hooks")
+            + " can be added or removed automatically)."
         )
     root = item.get("directory")
     if not isinstance(root, str) or not root:

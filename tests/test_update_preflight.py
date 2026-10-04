@@ -99,7 +99,7 @@ def test_candidate_requires_verified_existing_files_and_same_components(candidat
 
 def test_component_add_remove_unknown_and_duplicate_are_notice_only(candidate: dict) -> None:
     extra = {
-        "component_type": "mcp",
+        "component_type": "prompt",
         "component_id": "33333333-3333-4333-8333-333333333333",
         "resolved_version": "1.0.0",
     }
@@ -108,9 +108,12 @@ def test_component_add_remove_unknown_and_duplicate_are_notice_only(candidate: d
         update_preflight.pi_user_agent_candidate(candidate, registry=REGISTRY)
     candidate["release"]["components"] = []
     # Dropping a skill is allowed at preflight (its files are checked by the plan);
-    # dropping an MCP is not.
+    # dropping a prompt is not. Pi may also add or drop MCPs; Claude may not.
     assert update_preflight.pi_user_agent_candidate(candidate, registry=REGISTRY)["target_version"]
     candidate["components"].append({"type": "mcp", "id": "44444444-4444-4444-8444-444444444444", "version": "1.0.0"})
+    assert update_preflight.pi_user_agent_candidate(candidate, registry=REGISTRY)["target_version"]
+    candidate["components"].pop()
+    candidate["components"].append({"type": "prompt", "id": "44444444-4444-4444-8444-444444444444", "version": "1.0.0"})
     with pytest.raises(update_preflight.PreflightSkipError, match="adds or removes"):
         update_preflight.pi_user_agent_candidate(candidate, registry=REGISTRY)
     candidate["components"].pop()

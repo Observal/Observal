@@ -373,3 +373,25 @@ def test_claude_mcp_add_failure_after_remove_restores_the_original(claude_instan
     notice = apply("add-fails")
     assert notice["items"][0]["status"] != "updated", notice
     assert json.loads(config.read_text())["mcpServers"][name]["command"] == "/bin/0-1.0.0"
+
+
+def test_managed_pi_credentials_are_only_carried_forward() -> None:
+    from observal_cli import automatic_mcp_plan as plan
+
+    old = {"command": "x", "env": {"KEY": "s3cret"}, "headers": {"Authorization": "Bearer t"}}
+    ok = {"command": "y", "env": {"KEY": "s3cret", "OPT": ""}, "headers": {"Authorization": "Bearer t"}}
+    plan.check_credentials(old, ok, required={"KEY"}, required_headers={"Authorization"}, automatic=True)
+    for new in (
+        {"command": "y", "env": {"KEY": "other"}, "headers": old["headers"]},
+        {"command": "y", "env": {"KEY": "s3cret", "NEW": "v"}, "headers": old["headers"]},
+        {"command": "y", "env": old["env"], "headers": {"Authorization": "Bearer changed"}},
+    ):
+        with pytest.raises(plan.McpPlanError, match="saved value"):
+            plan.check_credentials(old, new, required=set(), required_headers=set(), automatic=True)
+    # A fresh or manual install may use any value the user typed, but a required one cannot be blank.
+    plan.check_credentials(None, {"env": {"KEY": "typed"}}, required={"KEY"}, required_headers=set(), automatic=False)
+    for blank in ("", "<KEY>"):
+        with pytest.raises(plan.McpPlanError, match="requires a value"):
+            plan.check_credentials(
+                None, {"env": {"KEY": blank}}, required={"KEY"}, required_headers=set(), automatic=False
+            )
