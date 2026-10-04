@@ -138,8 +138,10 @@ def _message(item: dict, *, enabled: bool) -> dict | None:
         command = f"observal agent pull {target} --harness claude-code --scope user --dir {shlex.quote(root)} --upgrade"
     elif item.get("type") == "skill" and item.get("scope") == "user" and item.get("harness") == "pi":
         command = f"observal registry skill install {target} --harness pi --scope user"
+    elif item.get("type") == "mcp" and item.get("scope") == "user" and item.get("harness") == "pi":
+        command = f"observal registry mcp install {target} --harness pi --managed"
     else:
-        command = None  # MCP install only prints a snippet; hooks/projects need separate instructions.
+        command = None  # Unmanaged snippets and project installs need separate instructions.
     return {
         "name": name,
         "type": item.get("type"),

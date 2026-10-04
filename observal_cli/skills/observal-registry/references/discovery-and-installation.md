@@ -78,6 +78,7 @@ Choose the exact harness and scope before writing files.
 ```bash
 observal registry mcp install NAMESPACE/SLUG --harness kiro --no-prompt --output json
 observal registry mcp install NAMESPACE/SLUG --harness cursor --version 2.1.0 --no-prompt --output json
+observal registry mcp install NAMESPACE/SLUG --harness pi --managed --output json
 observal registry skill install NAMESPACE/SLUG --harness claude-code --scope project --output json
 observal registry skill install NAMESPACE/SLUG --harness kiro --scope user --version 1.2.0 --output json
 observal registry hook install NAMESPACE/SLUG --harness kiro --output json
@@ -91,7 +92,7 @@ Use raw output only when the user explicitly asks for a config snippet or raw re
 observal registry mcp install NAMESPACE/SLUG --harness claude-code --raw
 ```
 
-Never combine raw and JSON modes. JSON MCP installation requires `--no-prompt`; missing required values return a nonzero `error.result.needs_input` response before install generation. Raw mode is the only template workflow that may intentionally contain placeholders. Never print supplied environment or header values.
+Without `--managed`, MCP install still prints a snippet and writes nothing. `--managed` is only for credential-free Pi user installs: it creates and tracks an Observal-owned `~/.pi/agent/mcp.json`, or updates another entry in that already-owned file. It refuses existing pasted configs, credential inputs, setup warnings, renamed keys and foreign edits. After `observal unfreeze`, an unpinned managed entry can be updated at Pi startup; reload Pi to use the saved reference. Do not infer ownership for pasted snippets. Never combine raw and JSON modes. JSON snippet generation requires `--no-prompt`; missing required values return a nonzero `error.result.needs_input` response before install generation. Raw mode is the only template workflow that may intentionally contain placeholders. Never print supplied environment or header values.
 
 ## Verification
 

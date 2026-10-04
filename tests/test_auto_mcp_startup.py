@@ -1,0 +1,261 @@
+# SPDX-FileCopyrightText: 2026 Observal Contributors
+# SPDX-License-Identifier: Apache-2.0
+
+"""Disposable Pi managed MCP references: explicit ownership and gated startup."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+import pytest
+
+MCPS = ("22222222-2222-4222-8222-222222222222", "33333333-3333-4333-8333-333333333333")
+
+
+@pytest.fixture()
+def instance(tmp_path: Path):
+    state = {"latest": "1.0.0", "credentials": False, "changed_key": False}
+
+    class Registry(BaseHTTPRequestHandler):
+        def log_message(self, *_args: object) -> None:
+            pass
+
+        def respond(self, data: dict) -> None:
+            raw = json.dumps(data).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def do_GET(self) -> None:
+            if self.path == "/api/v1/config/version":
+                return self.respond({"server_version": "dev"})
+            for index, mcp_id in enumerate(MCPS):
+                name = ("search", "browse")[index]
+                if self.path == f"/api/v1/mcps/{mcp_id}":
+                    return self.respond(
+                        {
+                            "id": mcp_id,
+                            "namespace": "alice",
+                            "slug": name,
+                            "name": name,
+                            "version": state["latest"],
+                            "environment_variables": (
+                                [{"name": "TOKEN", "required": True}] if state["credentials"] else []
+                            ),
+                            "headers": [],
+                        }
+                    )
+                if self.path in (f"/api/v1/mcps/{mcp_id}/versions/1.0.0", f"/api/v1/mcps/{mcp_id}/versions/2.0.0"):
+                    version = self.path.rsplit("/", 1)[-1]
+                    return self.respond(
+                        {
+                            "id": "44444444-4444-4444-8444-444444444444",
+                            "version": version,
+                            "status": "approved",
+                            "supported_harnesses": ["pi"],
+                            "environment_variables": [],
+                            "headers": [],
+                        }
+                    )
+            self.send_error(404)
+
+        def do_POST(self) -> None:
+            for index, mcp_id in enumerate(MCPS):
+                if self.path == f"/api/v1/mcps/{mcp_id}/install":
+                    request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                    version = request.get("version") or state["latest"]
+                    name = request["local_name"]
+                    if state["changed_key"] and version == "2.0.0":
+                        name += "-other"
+                    return self.respond(
+                        {
+                            "listing_id": mcp_id,
+                            "harness": "pi",
+                            "version": version,
+                            "version_id": "44444444-4444-4444-8444-444444444444",
+                            "digest": f"digest-{version}",
+                            "config_snippet": {
+                                "mcpServers": {name: {"command": f"/bin/{index}-{version}", "args": []}}
+                            },
+                        }
+                    )
+            self.send_error(404)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Registry)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    url = f"http://127.0.0.1:{server.server_port}"
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".observal").mkdir()
+    (home / ".observal/config.json").write_text(
+        json.dumps({"server_url": url, "user_id": "alice", "access_token": "test-token"})
+    )
+    repo = Path(__file__).resolve().parents[1]
+    env = {
+        **os.environ,
+        "HOME": str(home),
+        "XDG_CONFIG_HOME": str(home / ".config"),
+        "PYTHONPATH": os.pathsep.join([str(repo), str(repo / "packages/observal-shared")]),
+    }
+
+    def cli(*argv: str, success: bool = True) -> subprocess.CompletedProcess[str]:
+        proc = subprocess.run(
+            [sys.executable, "-m", "observal_cli", *argv],
+            cwd=tmp_path,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=25,
+        )
+        if success:
+            assert proc.returncode == 0, proc.stdout + proc.stderr
+        return proc
+
+    def apply(session: str) -> dict:
+        key = hashlib.sha256(f"{url}\0alice\0{session}".encode()).hexdigest()
+        cli("_startup-apply", "--cwd", str(tmp_path), "--session-id", session, "--notice-key", key)
+        return json.loads((home / ".observal/update-notices" / f"{key}.json").read_text())
+
+    try:
+        yield state, home, cli, apply, env
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
+
+
+def test_managed_pi_mcp_install_and_update_respects_frozen_and_other_entries(instance) -> None:
+    state, home, cli, apply, _env = instance
+    path = home / ".pi/agent/mcp.json"
+    cli("registry", "mcp", "install", MCPS[0], "--harness", "pi", "--no-prompt", "--output", "json")
+    assert not path.exists(), "The legacy snippet command must not write"
+    for mcp_id in MCPS:
+        cli("registry", "mcp", "install", mcp_id, "--harness", "pi", "--managed", "--output", "json")
+    before = json.loads(path.read_text())["mcpServers"]
+    assert len(before) == 2
+    state["latest"] = "2.0.0"
+    assert all(row["status"] != "updated" for row in apply("frozen")["items"])
+    assert json.loads(path.read_text())["mcpServers"] == before
+    cli("unfreeze")
+    notice = apply("opted-in")
+    assert [row["status"] for row in notice["items"]] == ["updated", "updated"], notice
+    after = json.loads(path.read_text())["mcpServers"]
+    assert set(after) == set(before)
+    assert all(row["command"].endswith("2.0.0") for row in after.values())
+    assert path.stat().st_mode & 0o777 == 0o600
+
+
+@pytest.mark.skipif(os.getenv("OBSERVAL_RUN_LIVE_PI") != "1", reason="explicit live Pi/RPC opt-in")
+def test_pi_rpc_bridge_updates_owned_mcp_after_unfreeze(instance) -> None:
+    """Exercise the installed extension and detached worker in a disposable home."""
+    import shutil
+
+    from tests.test_auto_update_live_pi import CLI, _rpc_session
+
+    if not shutil.which("pi") or not CLI.exists():
+        pytest.skip("Requires installed Pi and editable Observal CLI")
+    state, home, cli, _apply, env = instance
+    path = home / ".pi/agent/mcp.json"
+    cli("registry", "mcp", "install", MCPS[0], "--harness", "pi", "--managed")
+    before = path.read_bytes()
+    state["latest"] = "2.0.0"
+    env["OBSERVAL_CLI_BIN"] = str(CLI)
+    assert _rpc_session(home, env, expected="update available")
+    assert path.read_bytes() == before
+    cli("unfreeze")
+    assert _rpc_session(home, env, expected="installed on disk")
+    assert b"2.0.0" in path.read_bytes()
+
+
+def test_existing_pasted_file_or_credentials_cannot_be_adopted(instance) -> None:
+    state, home, cli, _apply, _env = instance
+    path = home / ".pi/agent/mcp.json"
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"mcpServers": {"mine": {"command": "mine"}}}))
+    original = path.read_bytes()
+    assert cli("registry", "mcp", "install", MCPS[0], "--harness", "pi", "--managed", success=False).returncode != 0
+    assert path.read_bytes() == original
+    path.unlink()
+    state["credentials"] = True
+    assert cli("registry", "mcp", "install", MCPS[0], "--harness", "pi", "--managed", success=False).returncode != 0
+    assert not path.exists()
+
+
+def test_pinned_mcp_and_changed_server_key_stay_manual(instance) -> None:
+    state, home, cli, apply, _env = instance
+    path = home / ".pi/agent/mcp.json"
+    cli("registry", "mcp", "install", MCPS[0], "--harness", "pi", "--managed", "--version", "1.0.0")
+    state["latest"] = "2.0.0"
+    original = path.read_bytes()
+    cli("unfreeze")
+    assert apply("pinned")["items"][0]["status"] != "updated"
+    assert path.read_bytes() == original
+    # A separate explicit unpinned install clears the pin, without adopting
+    # the changed destination key returned by a later release.
+    state["latest"] = "1.0.0"
+    cli("registry", "mcp", "install", MCPS[0], "--harness", "pi", "--managed")
+    state["latest"] = "2.0.0"
+    state["changed_key"] = True
+    assert apply("renamed")["items"][0]["status"] != "updated"
+    assert path.read_bytes() == original
+
+
+@pytest.mark.parametrize("foreign", [False, True])
+def test_stopped_mcp_install_restores_only_verified_original(instance, foreign: bool) -> None:
+    state, home, cli, apply, env = instance
+    path = home / ".pi/agent/mcp.json"
+    cli("registry", "mcp", "install", MCPS[0], "--harness", "pi", "--managed")
+    old = path.read_bytes()
+    cli("unfreeze")
+    state["latest"] = "2.0.0"
+    # Simulate a failure after the normal writer but before metadata advances.
+    # The shared recovery helper can prove and restore the old whole-file bytes.
+    injection = home / "injection"
+    injection.mkdir()
+    (injection / "sitecustomize.py").write_text(
+        "import os\n"
+        "from pathlib import Path\n"
+        "from observal_cli import lockfile\n"
+        "def stopped(*args, **kwargs):\n"
+        "    if os.environ.get('FOREIGN_EDIT') == '1':\n"
+        "        (Path.home() / '.pi/agent/mcp.json').write_text('{\\\"mcpServers\\\":{\\\"mine\\\":{}}}')\n"
+        "    raise OSError('stopped before lock commit')\n"
+        "lockfile.upsert_standalone = stopped\n"
+    )
+    env["PYTHONPATH"] = os.pathsep.join([str(injection), env["PYTHONPATH"]])
+    env["FOREIGN_EDIT"] = "1" if foreign else "0"
+    notice = apply(f"stopped-{foreign}")
+    backups = list((home / ".observal/update-backups").glob("*/manifest.json"))
+    if foreign:
+        assert notice["items"][0]["status"] == "failed", notice
+        assert notice["outcome_final"] is False
+        assert backups and path.read_bytes() != old
+        assert apply("retry-after-foreign")["items"][0]["status"] == "skipped"
+    else:
+        assert notice["items"][0]["status"] == "skipped", notice
+        assert path.read_bytes() == old
+        assert not backups
+
+
+def test_foreign_edit_or_added_key_blocks_managed_mcp_update(instance) -> None:
+    state, home, cli, apply, _env = instance
+    path = home / ".pi/agent/mcp.json"
+    cli("registry", "mcp", "install", MCPS[0], "--harness", "pi", "--managed")
+    cli("unfreeze")
+    state["latest"] = "2.0.0"
+    config = json.loads(path.read_text())
+    config["mcpServers"]["mine"] = {"command": "mine"}
+    path.write_text(json.dumps(config))
+    original = path.read_bytes()
+    assert apply("foreign")["items"][0]["status"] != "updated"
+    assert path.read_bytes() == original

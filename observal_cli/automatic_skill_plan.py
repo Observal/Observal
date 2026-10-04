@@ -1,10 +1,10 @@
 # SPDX-FileCopyrightText: 2026 Observal Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Exact owned-file plan for a single registry-direct, user-scoped Pi skill.
+"""Exact owned-file plan for a registry-direct, user-scoped Pi skill.
 
-The normal skill installer remains the only writer. This module supplies its
-pre-write evidence; Git trees, scripts and ambiguous destinations have no plan.
+The normal skill installer remains the only writer. Git trees and unknown
+file sets have no plan; an existing single registry script can be owned too.
 """
 
 from __future__ import annotations
@@ -33,16 +33,24 @@ def destination(name: str) -> Path:
     return Path.home() / ".pi" / "agent" / "skills" / sanitize_name(name)
 
 
-def single_file(root: Path) -> Path:
-    """Reject any directory content not covered by the single-file writer."""
+def owned_files(root: Path) -> list[Path]:
+    """Only SKILL.md and, optionally, one existing direct registry script."""
     if not root.is_absolute() or any(part.is_symlink() for part in (root, *root.parents)) or not root.is_dir():
         raise SkillPlanError("The Pi skill destination is missing or crosses a link; update manually.")
-    if {p.name for p in root.iterdir()} != {"SKILL.md"} or not (root / "SKILL.md").is_file():
-        raise SkillPlanError("The Pi skill has extra or missing files; update manually.")
     file = root / "SKILL.md"
-    if file.is_symlink():
-        raise SkillPlanError("The Pi skill file is linked; update manually.")
-    return file
+    contents = {p.name for p in root.iterdir()}
+    if not file.is_file() or file.is_symlink() or contents not in ({"SKILL.md"}, {"SKILL.md", "scripts"}):
+        raise SkillPlanError("The Pi skill has extra or missing files; update manually.")
+    paths = [file]
+    if "scripts" in contents:
+        scripts = root / "scripts"
+        if scripts.is_symlink() or not scripts.is_dir():
+            raise SkillPlanError("The skill script directory is unsafe; update manually.")
+        entries = list(scripts.iterdir())
+        if len(entries) != 1 or not entries[0].is_file() or entries[0].is_symlink():
+            raise SkillPlanError("The Pi skill does not own exactly one script; update manually.")
+        paths.extend(entries)
+    return paths
 
 
 def unshared(registry: str, component_id: str, name: str) -> None:
@@ -82,7 +90,7 @@ def verified_path(item: dict, *, registry: str) -> Path:
         raise SkillPlanError("The installed skill destination is ambiguous; update manually.")
     unshared(registry, item["id"], name)
     root = destination(name)
-    file = single_file(root)
+    owned = owned_files(root)
     files, paths = install_baseline.verified_manifest(
         registry=registry,
         harness="pi",
@@ -92,13 +100,13 @@ def verified_path(item: dict, *, registry: str) -> Path:
         version=item["current_version"],
         lock_digest=release_key(item["current_version"], item.get("digest"), item.get("version_id")),
     )
-    if paths != [str(file)] or set(files) != {str(file)}:
+    if paths != sorted(map(str, owned)) or set(files) != set(map(str, owned)):
         raise SkillPlanError("The skill ownership plan contains other files; update manually.")
-    return file
+    return root / "SKILL.md"
 
 
-def target(item: dict, skill: dict, file: Path) -> bytes:
-    """Check the install response against the normal writer's exact output."""
+def target(item: dict, skill: dict, file: Path) -> tuple[dict[Path, bytes], dict[Path, int]]:
+    """Check the normal writer's complete existing file set and target modes."""
     content = skill.get("skill_md_content")
     name = skill.get("name")
     if (
@@ -108,12 +116,30 @@ def target(item: dict, skill: dict, file: Path) -> bytes:
         or not isinstance(name, str)
         or sanitize_name(name) != item.get("local_name")
         or file != destination(name) / "SKILL.md"
-        or skill.get("script_content")
-        or skill.get("script_filename")
         or skill.get("git_url")
     ):
-        raise SkillPlanError("The release changes the skill path, source or file set; update manually.")
-    raw = content.encode("utf-8")
-    if len(raw) + file.stat().st_size > 2 * 1024 * 1024:
+        raise SkillPlanError("The release changes the skill path or source; update manually.")
+    planned = {file: content.encode("utf-8")}
+    scripts = skill.get("script_content")
+    filename = skill.get("script_filename")
+    if scripts is not None or filename is not None:
+        if (
+            not isinstance(scripts, str)
+            or not scripts
+            or not isinstance(filename, str)
+            or filename in {"", ".", ".."}
+            or Path(filename).name != filename
+        ):
+            raise SkillPlanError("The release has an incomplete or unsafe script; update manually.")
+        script = file.parent / "scripts" / filename
+        planned[script] = scripts.encode("utf-8")
+    owned = owned_files(file.parent)
+    if set(planned) != set(owned):
+        raise SkillPlanError("The skill release changes its owned file set; update manually.")
+    if sum(path.stat().st_size + len(raw) for path, raw in planned.items()) > 2 * 1024 * 1024:
         raise SkillPlanError("The skill exceeds the recovery size limit; update manually.")
-    return raw
+    modes = {
+        path: (0o755 if path != file and path.suffix in {".sh", ".bash", ".py", ".rb"} else path.stat().st_mode & 0o777)
+        for path in planned
+    }
+    return planned, modes

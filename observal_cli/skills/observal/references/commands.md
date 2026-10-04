@@ -173,7 +173,7 @@ Every command available in the installed CLI. This block is generated from the T
     - `observal registry mcp co-authors remove`: Remove a co-author.
   - `observal registry mcp submit`: Submit an MCP server to the registry.
   - `observal registry mcp show`: Show full details of an MCP server.
-  - `observal registry mcp install`: Generate an install config snippet for an MCP server.
+  - `observal registry mcp install`: Generate an MCP snippet, or install a managed Pi user MCP reference.
   - `observal registry mcp archive`: Archive this component.
   - `observal registry mcp edit`: Edit an MCP server submission.
   - `observal registry mcp list`: List approved MCP servers in the registry.

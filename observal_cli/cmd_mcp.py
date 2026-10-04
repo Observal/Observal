@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from contextlib import nullcontext, redirect_stdout
@@ -1105,6 +1106,7 @@ def _install_impl(
     env_file: str | None = None,
     no_prompt: bool = False,
     output: OutputMode = OutputMode.table,
+    managed: bool = False,
 ):
     optic.trace("mcp_id={}, harness={}, version={}", mcp_id, harness, version)
     import json as _json
@@ -1119,6 +1121,14 @@ def _install_impl(
         spec = client.get(f"/api/v1/mcps/{resolved}/versions/{version}") if version else listing
     env_var_list = _install_input_definitions(spec, "environment_variables", "environment_variable")
     header_list = _install_input_definitions(spec, "headers", "header")
+    if managed and (env_var_list or header_list or env_overrides or header_overrides or env_file):
+        fail(
+            ErrorCategory.CONFLICT,
+            "Managed Pi MCP installs cannot retain credential inputs yet.",
+            operation="Install MCP server",
+            resource=mcp_id,
+            remediation="Use the printed snippet and update it manually for MCPs requiring credentials.",
+        )
 
     # Build env overrides from --env flags and --env-file
     _env_from_flags: dict[str, str] = dict(env_overrides) if env_overrides else {}
@@ -1250,6 +1260,65 @@ def _install_impl(
         )
 
     snippet = result.get("config_snippet", {})
+    if managed:
+        from observal_cli import automatic_mcp_plan
+        from observal_cli.lockfile import current_registry_url
+
+        try:
+            release_version = result["version"]
+            if not isinstance(release_version, str) or (version and release_version != version):
+                raise automatic_mcp_plan.McpPlanError("The server did not return the requested MCP version.")
+            release = client.get(f"/api/v1/mcps/{resolved}/versions/{release_version}")
+            if (
+                not isinstance(release, dict)
+                or release.get("version") != release_version
+                or release.get("status") != "approved"
+                or "pi" not in release.get("supported_harnesses", [])
+                or result.get("harness") != "pi"
+                or str(result.get("listing_id")) != resolved
+                or not result.get("version_id")
+                or not isinstance(result.get("digest"), str)
+                or not result["digest"]
+                or not isinstance(snippet, dict)
+                or set(snippet) != {"mcpServers"}
+                or not isinstance(snippet["mcpServers"], dict)
+                or set(snippet["mcpServers"]) != {local_name}
+                or not isinstance(snippet["mcpServers"][local_name], dict)
+                or snippet["mcpServers"][local_name].get("env") not in (None, {})
+                or snippet["mcpServers"][local_name].get("headers") not in (None, {})
+                or listing.get("id") != resolved
+                or (release.get("id") and str(release["id"]) != str(result.get("version_id")))
+                or result.get("warnings")
+            ):
+                raise automatic_mcp_plan.McpPlanError("No exact approved single-entry Pi MCP reference was returned.")
+            registry = current_registry_url()
+            path = automatic_mcp_plan.install(
+                registry=registry,
+                component_id=resolved,
+                name=listing.get("name", local_name),
+                namespace=listing.get("namespace"),
+                slug=listing.get("slug"),
+                local_name=local_name,
+                version=release_version,
+                version_id=result.get("version_id"),
+                digest_value=result.get("digest"),
+                requested_version=None if os.environ.get("OBSERVAL_UPDATE_EXACT_TARGET") == "1" else version,
+                entry=snippet["mcpServers"][local_name],
+            )
+        except (OSError, ValueError, TypeError, KeyError) as error:
+            fail(
+                ErrorCategory.CONFLICT,
+                "The Pi MCP reference cannot be installed automatically or as managed config.",
+                operation="Install MCP server",
+                resource=mcp_id,
+                remediation="Inspect the local Pi MCP config and update manually.",
+                detail=str(error),
+            )
+        if output == "json":
+            output_json({"id": resolved, "version": release_version, "managed_path": str(path)})
+        else:
+            rprint(f"[green]✓ Managed Pi MCP reference installed:[/green] {esc(path)}")
+        return
     if raw:
         print(_json.dumps(snippet, indent=2))
         return
@@ -1512,12 +1581,16 @@ def install(
     env_file: str | None = typer.Option(None, "--env-file", help="Path to .env file for environment variables"),
     no_prompt: bool = typer.Option(False, "--no-prompt", "-y", help="Skip interactive prompts"),
     output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
+    managed: bool = typer.Option(False, "--managed", help="Write and track a credential-free Pi user MCP entry"),
 ):
-    """Generate an install config snippet for an MCP server.
+    """Generate an MCP snippet, or install a managed Pi user MCP reference.
 
-    Produces harness-specific configuration that you paste into your editor's
-    MCP settings file. Prompts for required environment variables and
-    headers interactively (unless --raw or --no-prompt is used).
+    By default, prints harness-specific configuration to paste into your
+    editor. With --harness pi --managed, writes a credential-free user MCP
+    reference only when Observal can own the entire global Pi MCP file.
+    Existing pasted config is never adopted automatically. Other installs
+    prompt for required environment variables and headers unless --raw or
+    --no-prompt is used.
 
     Use --env KEY=VALUE to pass environment variables non-interactively
     (repeatable). Use --header KEY=VALUE for headers. Use --env-file to
@@ -1530,6 +1603,7 @@ def install(
         observal registry mcp install my-server --harness claude-code
         observal registry mcp install my-server --harness claude-code --env-file .env --no-prompt
         observal registry mcp install my-server --harness cursor --raw > .cursor/mcp.json
+        observal registry mcp install my-server --harness pi --managed
     """
     optic.trace("mcp_id={}, harness={}", mcp_id, harness)
     if raw and output == "json":
@@ -1562,7 +1636,7 @@ def install(
             )
     env_overrides = _parse_assignments(env, "environment variable")
     header_overrides = _parse_assignments(header, "header")
-    if output == "json" and not no_prompt:
+    if output == "json" and not no_prompt and not managed:
         fail(
             ErrorCategory.VALIDATION,
             "JSON mode cannot prompt for MCP installation values.",
@@ -1570,6 +1644,38 @@ def install(
             resource="MCP installation",
             remediation="Add --no-prompt and provide every required value, or use interactive table mode.",
         )
+    if managed and (harness != "pi" or raw):
+        fail(
+            ErrorCategory.VALIDATION,
+            "Managed MCP installation is currently limited to Pi user scope and cannot use --raw.",
+            operation="Install MCP server",
+            resource=mcp_id,
+            remediation="Use --harness pi --managed, or omit --managed to print a snippet.",
+        )
+    if managed:
+        from observal_cli.auto_update_policy import pi_install_lock
+        from observal_cli.lockfile import current_registry_url
+
+        cutoff = os.environ.get("OBSERVAL_AUTO_UPDATE_NETWORK_CUTOFF")
+        requests = (
+            client.bounded_requests(float(cutoff))
+            if os.environ.get("OBSERVAL_AUTO_UPDATE_INSTALL") == "1" and cutoff
+            else nullcontext()
+        )
+        with pi_install_lock(current_registry_url()), requests:
+            _install_impl(
+                mcp_id,
+                harness,
+                raw,
+                version=version,
+                env_overrides=env_overrides or None,
+                header_overrides=header_overrides or None,
+                env_file=env_file,
+                no_prompt=no_prompt,
+                output=output,
+                managed=True,
+            )
+        return
     _install_impl(
         mcp_id,
         harness,

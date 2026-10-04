@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Observal Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Non-mutating Pi file-plan check shared by the normal agent pull startup mode."""
+"""Non-mutating exact Pi file plan for the normal agent pull startup mode."""
 
 from __future__ import annotations
 
@@ -76,20 +76,26 @@ def plan_pi_files(snippet: object, item: dict, old_files: dict[str, str]) -> dic
             or not isinstance(current_mcp, dict)
             or set(current_mcp) != {"mcpServers"}
             or not isinstance(current_mcp["mcpServers"], dict)
-            or set(current_mcp["mcpServers"]) != {"observal-agents"}
-            or current_mcp != mcp["content"]
+            or not isinstance(mcp["content"].get("mcpServers"), dict)
+            or set(mcp["content"]) != {"mcpServers"}
+            or set(current_mcp["mcpServers"]) != set(mcp["content"]["mcpServers"])
+            or not current_mcp["mcpServers"]
         ):
-            raise InstallSkipError("The Pi release changes an MCP config; update manually.")
-        # The normal installer would merge and replace this file even though
-        # its content is identical. Keep it in the verified ownership set but
-        # remove it from the snippet before invoking the shared writer.
-        planned[mcp_path] = previous_mcp
+            raise InstallSkipError("The Pi release changes MCP ownership or its file set; update manually.")
+        # _write_file merges incoming entries into the existing JSON and then
+        # atomically writes indent=2 plus a newline. Keep an exact plan for
+        # that normal writer; an identical config remains a no-op at apply.
+        if current_mcp == mcp["content"]:
+            planned[mcp_path] = previous_mcp
+        else:
+            current_mcp["mcpServers"].update(mcp["content"]["mcpServers"])
+            planned[mcp_path] = (json.dumps(current_mcp, indent=2) + "\n").encode("utf-8")
     skills = snippet.get("skill_components", [])
     if not isinstance(skills, list):
         raise InstallSkipError("The release has invalid skill components.")
     for component in skills:
-        if not isinstance(component, dict) or component.get("git_url") or component.get("script_content"):
-            raise InstallSkipError("Git or executable skill installs require a manual pull.")
+        if not isinstance(component, dict) or component.get("git_url"):
+            raise InstallSkipError("Git skills require a manual pull.")
         content = component.get("skill_md_content")
         name = component.get("name")
         if not isinstance(content, str) or not content or not isinstance(name, str):
@@ -98,6 +104,21 @@ def plan_pi_files(snippet: object, item: dict, old_files: dict[str, str]) -> dic
         if target != root / "skills" / sanitize_name(name) / "SKILL.md" or target in planned:
             raise InstallSkipError("The release changes or duplicates a managed skill path.")
         planned[target] = content.encode()
+        script = component.get("script_content")
+        filename = component.get("script_filename")
+        if script is not None or filename is not None:
+            if (
+                not isinstance(script, str)
+                or not script
+                or not isinstance(filename, str)
+                or filename in {"", ".", ".."}
+                or Path(filename).name != filename
+            ):
+                raise InstallSkipError("The skill's registry script is incomplete or unsafe.")
+            script_path = _safe_path(str(target.parent / "scripts" / filename), root, directory)
+            if script_path in planned:
+                raise InstallSkipError("The release duplicates a managed script path.")
+            planned[script_path] = script.encode()
     if set(map(str, planned)) != set(old_files):
         raise InstallSkipError("The target file plan differs from the manual pull's ownership baseline.")
     if sum(path.stat().st_size + len(data) for path, data in planned.items()) > MAX_BYTES:

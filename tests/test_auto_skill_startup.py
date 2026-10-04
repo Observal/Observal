@@ -20,7 +20,7 @@ ID = "22222222-2222-4222-8222-222222222222"
 
 @pytest.fixture()
 def instance(tmp_path: Path):
-    state = {"latest": "1.0.0", "script": False, "mismatch": False}
+    state = {"latest": "1.0.0", "script": False, "script_v1": False, "mismatch": False}
 
     class Registry(BaseHTTPRequestHandler):
         def log_message(self, *_args: object) -> None:
@@ -43,14 +43,15 @@ def instance(tmp_path: Path):
                 )
             if self.path in (f"/api/v1/skills/{ID}/versions/1.0.0", f"/api/v1/skills/{ID}/versions/2.0.0"):
                 version = self.path.rsplit("/", 1)[-1]
-                return self.respond(
-                    {
-                        "version": version,
-                        "status": "approved",
-                        "supported_harnesses": ["pi"],
-                        "skill_md_content": f"# {'different' if state['mismatch'] else 'review'} {version}\n",
-                    }
-                )
+                release = {
+                    "version": version,
+                    "status": "approved",
+                    "supported_harnesses": ["pi"],
+                    "skill_md_content": f"# {'different' if state['mismatch'] else 'review'} {version}\n",
+                }
+                if (version == "1.0.0" and state["script_v1"]) or (version == "2.0.0" and state["script"]):
+                    release.update(script_content=f"echo {version}\n", script_filename="run.sh")
+                return self.respond(release)
             self.send_error(404)
 
         def do_POST(self) -> None:
@@ -63,8 +64,8 @@ def instance(tmp_path: Path):
                     "delivery_mode": "registry_direct",
                     "skill_md_content": f"# review {version}\n",
                 }
-                if state["script"] and version == "2.0.0":
-                    skill.update(script_content="echo hi", script_filename="run.sh")
+                if (version == "1.0.0" and state["script_v1"]) or (version == "2.0.0" and state["script"]):
+                    skill.update(script_content=f"echo {version}\n", script_filename="run.sh")
                 return self.respond(
                     {"version": version, "digest": f"sha256:{version}", "config_snippet": {"skill": skill}}
                 )
@@ -152,6 +153,41 @@ def test_frozen_then_unfrozen_skill_uses_normal_installer(instance) -> None:
     assert not list((home / ".observal/update-backups").glob("*/manifest.json"))
 
 
+def test_existing_owned_pi_script_is_updated_without_executing_it(instance) -> None:
+    state, home, cli, apply, _env, _url = instance
+    state["script_v1"] = state["script"] = True
+    cli("registry", "skill", "install", ID, "--harness", "pi", "--output", "json")
+    file = home / ".pi/agent/skills/review/SKILL.md"
+    script = file.parent / "scripts/run.sh"
+    assert script.read_text() == "echo 1.0.0\n"
+    baseline = next((home / ".observal/install-baselines").glob("*.json"))
+    assert set(json.loads(baseline.read_text())["files"]) == {str(file), str(script)}
+    state["latest"] = "2.0.0"
+    cli("unfreeze")
+    assert apply("script-owned")["items"][0]["status"] == "updated"
+    assert script.read_text() == "echo 2.0.0\n"
+    assert script.stat().st_mode & 0o777 == 0o755
+
+
+@pytest.mark.parametrize("change", ["edit", "chmod", "extra"])
+def test_existing_script_with_foreign_changes_is_not_overwritten(instance, change: str) -> None:
+    state, home, cli, apply, _env, _url = instance
+    state["script_v1"] = state["script"] = True
+    cli("registry", "skill", "install", ID, "--harness", "pi", "--output", "json")
+    script = home / ".pi/agent/skills/review/scripts/run.sh"
+    if change == "edit":
+        script.write_text("# local edit\n")
+    elif change == "chmod":
+        script.chmod(0o600)
+    else:
+        (script.parent / "my-script.sh").write_text("# mine\n")
+    previous = (script.read_bytes(), script.stat().st_mode & 0o777)
+    cli("unfreeze")
+    state["latest"] = "2.0.0"
+    assert apply(f"script-{change}")["items"][0]["status"] != "updated"
+    assert (script.read_bytes(), script.stat().st_mode & 0o777) == previous
+
+
 @pytest.mark.parametrize(
     "change", ["edit", "chmod", "script", "mismatch", "extra", "pin", "missing-baseline", "shared", "shared-local-name"]
 )
@@ -197,10 +233,13 @@ def test_unsafe_skill_remains_notice_only(instance, change: str) -> None:
 
 
 @pytest.mark.parametrize("foreign", [False, True])
-def test_stopped_skill_install_restores_only_attributable_bytes(instance, foreign: bool) -> None:
+@pytest.mark.parametrize("with_script", [False, True])
+def test_stopped_skill_install_restores_only_attributable_bytes(instance, foreign: bool, with_script: bool) -> None:
     state, home, cli, apply, env, _url = instance
+    state["script_v1"] = state["script"] = with_script
     cli("registry", "skill", "install", ID, "--harness", "pi", "--output", "json")
     file = home / ".pi/agent/skills/review/SKILL.md"
+    script = file.parent / "scripts/run.sh" if with_script else None
     original_mode = file.stat().st_mode & 0o777
     state["latest"] = "2.0.0"
     cli("unfreeze")
@@ -232,6 +271,8 @@ def test_stopped_skill_install_restores_only_attributable_bytes(instance, foreig
         assert backups
         assert file.read_text() == "# foreign edit\n"
         assert file.stat().st_mode & 0o777 == 0o777
+        if script:
+            assert script.read_text() == "echo 2.0.0\n"
         # An unresolved result must block the next automatic attempt.
         later = apply("retry-after-foreign")
         assert later["items"][0]["status"] == "skipped"
@@ -242,6 +283,9 @@ def test_stopped_skill_install_restores_only_attributable_bytes(instance, foreig
         assert not backups
         assert file.read_text() == "# review 1.0.0\n"
         assert file.stat().st_mode & 0o777 == original_mode
+        if script:
+            assert script.read_text() == "echo 1.0.0\n"
+            assert script.stat().st_mode & 0o777 == 0o755
 
 
 def test_foreign_bytes_adopted_by_new_baseline_do_not_count_as_success(instance) -> None:
@@ -292,7 +336,8 @@ def test_advanced_lock_without_baseline_is_unresolved(instance) -> None:
 
 
 @pytest.mark.skipif(os.getenv("OBSERVAL_RUN_LIVE_PI") != "1", reason="explicit live Pi/RPC opt-in")
-def test_real_pi_rpc_bridge_updates_skill_only_after_unfreeze(instance) -> None:
+@pytest.mark.parametrize("with_script", [False, True])
+def test_real_pi_rpc_bridge_updates_skill_only_after_unfreeze(instance, with_script: bool) -> None:
     """Launch the actual Pi extension and worker, not just `_startup-apply`."""
     import shutil
 
@@ -301,15 +346,21 @@ def test_real_pi_rpc_bridge_updates_skill_only_after_unfreeze(instance) -> None:
     if not shutil.which("pi") or not CLI.exists():
         pytest.skip("Requires installed Pi and editable Observal CLI")
     state, home, cli, _apply, env, _url = instance
+    state["script_v1"] = state["script"] = with_script
     cli("registry", "skill", "install", ID, "--harness", "pi", "--output", "json")
     file = home / ".pi/agent/skills/review/SKILL.md"
+    script = file.parent / "scripts/run.sh" if with_script else None
     state["latest"] = "2.0.0"
     env["OBSERVAL_CLI_BIN"] = str(CLI)
     frozen = _rpc_session(home, env, expected="update available")
     assert any("review" in message for message in frozen)
     assert file.read_text() == "# review 1.0.0\n"
+    if script:
+        assert script.read_text() == "echo 1.0.0\n"
     cli("unfreeze")
     updated = _rpc_session(home, env, expected="installed on disk")
     assert any("review" in message and "installed on disk" in message for message in updated)
     assert any("reload Pi" in message for message in updated)
     assert file.read_text() == "# review 2.0.0\n"
+    if script:
+        assert script.read_text() == "echo 2.0.0\n"

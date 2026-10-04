@@ -14,10 +14,13 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import pytest
+
 AGENT = "11111111-1111-4111-8111-111111111111"
 
 
-def test_normal_pull_startup_guard_uses_existing_owned_files(tmp_path: Path) -> None:
+@pytest.mark.parametrize("changed_mcp", [False, True])
+def test_normal_pull_startup_guard_uses_existing_owned_files(tmp_path: Path, changed_mcp: bool) -> None:
     release_components: list[dict] = []
     generated_components: list[dict] = []
     manual_started = threading.Event()
@@ -83,7 +86,16 @@ def test_normal_pull_startup_guard_uses_existing_owned_files(tmp_path: Path) -> 
                             },
                             "mcp_config": {
                                 "path": "~/.pi/agent/agents/reviewer/mcp.json",
-                                "content": {"mcpServers": {"observal-agents": {"command": "/tmp/python", "args": []}}},
+                                "content": {
+                                    "mcpServers": {
+                                        "observal-agents": {
+                                            "command": "/tmp/updated"
+                                            if changed_mcp and request["version"] == "2.0.0"
+                                            else "/tmp/python",
+                                            "args": [],
+                                        }
+                                    }
+                                },
                             },
                         },
                         "lock": {
@@ -163,6 +175,12 @@ install_baseline.capture(registry={registry!r}, harness='pi', agent_id={AGENT!r}
         refused = subprocess.run(argv, cwd=project, env=env, capture_output=True, text=True)
         assert refused.returncode != 0 and profile.read_text() == "local edit", refused.stdout
         profile.write_text("old profile")
+        original_mcp = mcp.read_bytes()
+        mcp.write_text('{"mcpServers":{"observal-agents":{"command":"foreign"}}}\n')
+        refused_mcp = subprocess.run(argv, cwd=project, env=env, capture_output=True, text=True)
+        assert refused_mcp.returncode != 0 and mcp.read_text().endswith('"foreign"}}}\n')
+        assert profile.read_text() == "old profile"
+        mcp.write_bytes(original_mcp)
         # Keep the *same* component identity as the approved target. This is
         # eligible at parent preflight; only the generated /install lock drifts.
         seed_identity = f"""
@@ -300,7 +318,11 @@ lockfile.upsert_agent('pi', name='reviewer', agent_id={AGENT!r}, version='1.0.0'
         assert installed.returncode == 0, installed.stdout + installed.stderr
         assert json.loads(installed.stdout)["status"] == "updated", installed.stdout + installed.stderr
         assert profile.read_text() == "new profile"
-        assert mcp.stat().st_ino == mcp_inode, "automatic pull rewrote an unchanged delegation MCP config"
+        if changed_mcp:
+            assert json.loads(mcp.read_text())["mcpServers"]["observal-agents"]["command"] == "/tmp/updated"
+            assert mcp.stat().st_ino != mcp_inode, "the changed owned reference was not replaced"
+        else:
+            assert mcp.stat().st_ino == mcp_inode, "automatic pull rewrote an unchanged delegation MCP config"
         proof = f"""
 from observal_cli import install_baseline
 import json

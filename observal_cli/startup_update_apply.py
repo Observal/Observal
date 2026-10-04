@@ -220,7 +220,7 @@ def _apply_serialized(
                     msg["reason"] = "This item requires a manual update in the startup pilot."
                 if (
                     enabled
-                    and item.get("type") in ({"agent", "skill"} if harness == "pi" else {"agent"})
+                    and item.get("type") in ({"agent", "skill", "mcp"} if harness == "pi" else {"agent"})
                     and item.get("scope") == "user"
                     and item.get("release_verified")
                 ):
@@ -268,11 +268,11 @@ def _apply_serialized(
                             payload["items"].append(msg)
                             break
                         try:
-                            runner = (
-                                cmd_update.apply_startup_pi_agent
-                                if item["type"] == "agent"
-                                else cmd_update.apply_startup_pi_skill
-                            )
+                            runner = {
+                                "agent": cmd_update.apply_startup_pi_agent,
+                                "skill": cmd_update.apply_startup_pi_skill,
+                                "mcp": cmd_update.apply_startup_pi_mcp,
+                            }[item["type"]]
                             kwargs = {"harness": harness} if harness == "claude-code" else {}
                             result = runner(
                                 {**current[0], "latest_version": item["latest_version"]},
@@ -292,6 +292,8 @@ def _apply_serialized(
                                     "to activate it."
                                     if item["type"] == "agent" and harness == "pi"
                                     else "Saved Pi skill updated and verified; reload Pi to use the new version."
+                                    if harness == "pi" and item["type"] == "skill"
+                                    else "Saved Pi MCP reference updated and verified; reload Pi to use the new version."
                                     if harness == "pi"
                                     else "Saved Claude Code profile updated and verified. Start a new session and select the agent to load it."
                                 )

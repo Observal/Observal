@@ -1922,7 +1922,13 @@ def register_pull(app: typer.Typer):
                 client.end_startup_network_budget()  # No alarm may interrupt a disk write.
                 expected_modes = {
                     path: install_recovery.atomic_text_mode(path.parent)
-                    if path.name == "AGENTS.md" or harness == "claude-code"
+                    if path.name == "AGENTS.md"
+                    or harness == "claude-code"
+                    or (harness == "pi" and path.name == "mcp.json" and planned[path] != path.read_bytes())
+                    else 0o755
+                    if harness == "pi"
+                    and path.parent.name == "scripts"
+                    and path.suffix in {".sh", ".bash", ".py", ".rb"}
                     else path.lstat().st_mode & 0o777
                     for path in planned
                 }
@@ -1936,10 +1942,12 @@ def register_pull(app: typer.Typer):
                     ],
                     expected_modes=expected_modes,
                 )
-                # A fully owned, identical delegation-only config is a no-op:
-                # the normal writer must not merge/replace it during startup.
-                if harness == "pi":
-                    snippet.pop("mcp_config", None)
+                # Do not let the normal merge rewrite an identical owned MCP
+                # file. A changed, exactly planned config stays in the snippet.
+                if harness == "pi" and snippet.get("mcp_config"):
+                    mcp_path = next((path for path in planned if path.name == "mcp.json"), None)
+                    if mcp_path is not None and planned[mcp_path] == mcp_path.read_bytes():
+                        snippet.pop("mcp_config", None)
                 elif snippet.get("mcp_config"):
                     # The exact existing project-local delegation registration
                     # was proved above. Never run its setup command or write a

@@ -763,7 +763,9 @@ def skill_install(
                 or not isinstance(release.get("skill_md_content"), str)
                 or release["skill_md_content"] != skill_info.get("skill_md_content")
                 or release.get("git_url")
-                or release.get("has_scripts") is True
+                or release.get("script_content") != skill_info.get("script_content")
+                or release.get("script_filename") != skill_info.get("script_filename")
+                or (release.get("has_scripts") is True and not release.get("script_content"))
                 or (release.get("id") and str(release["id"]) != str(result.get("version_id")))
             ):
                 raise automatic_skill_plan.SkillPlanError("The exact approved skill release was not returned.")
@@ -774,7 +776,7 @@ def skill_install(
             file = automatic_skill_plan.verified_path(previous, registry=registry)
             if str(skill_info.get("id")) != resolved:
                 raise automatic_skill_plan.SkillPlanError("The install response changed the skill identity.")
-            planned = automatic_skill_plan.target(previous, skill_info, file)
+            planned, modes = automatic_skill_plan.target(previous, skill_info, file)
             cutoff = float(os.environ.get("OBSERVAL_AUTO_UPDATE_NETWORK_CUTOFF", "inf"))
             marker = os.environ.get("OBSERVAL_AUTO_UPDATE_SHUTDOWN_MARKER")
             if time.monotonic() + 15 >= cutoff or (marker and Path(marker).exists()):
@@ -796,7 +798,7 @@ def skill_install(
             )
             install_recovery.save(
                 Path(recovery),
-                {file: planned},
+                planned,
                 old_files,
                 [
                     LOCKFILE_PATH,
@@ -804,7 +806,7 @@ def skill_install(
                         registry, "pi", automatic_skill_plan.identity(resolved), "user", str(file.parent)
                     ),
                 ],
-                expected_modes={file: file.stat().st_mode & 0o777},
+                expected_modes=modes,
             )
         except (OSError, ValueError, KeyError, TypeError) as error:
             fail(
@@ -884,27 +886,31 @@ def skill_install(
                 remediation="Check local storage and retry.",
                 detail=repr(error),
             )
-        # Record ownership only for the complete single-file Pi shape. A
-        # manual install may succeed without making it eligible for startup.
+        # Record ownership only for a complete registry-direct Pi file set.
+        # A manual install may succeed without making it eligible for startup.
         if harness == "pi" and scope == "user" and delivery_mode == "registry_direct":
             from observal_cli import automatic_skill_plan, install_baseline
             from observal_cli.lockfile import current_registry_url
 
             try:
                 if (
-                    skill_info.get("script_content")
-                    or skill_info.get("script_filename")
-                    or skill_info.get("git_url")
+                    skill_info.get("git_url")
                     or _sanitize_name(skill_info["name"]) != local_name
                     or installed_path != automatic_skill_plan.destination(skill_info["name"])
                 ):
-                    raise automatic_skill_plan.SkillPlanError("Skill has scripts or an ambiguous destination")
-                file = automatic_skill_plan.single_file(installed_path)
+                    raise automatic_skill_plan.SkillPlanError("Skill has an ambiguous source or destination")
+                file = installed_path / "SKILL.md"
                 automatic_skill_plan.unshared(
                     current_registry_url(), str(skill_info.get("id", resolved)), skill_info["name"]
                 )
-                if file.read_bytes() != skill_info["skill_md_content"].encode("utf-8"):
-                    raise automatic_skill_plan.SkillPlanError("The installed skill bytes differ from the release")
+                planned, modes = automatic_skill_plan.target({"local_name": local_name}, skill_info, file)
+                if any(
+                    path.read_bytes() != raw or path.stat().st_mode & 0o777 != modes[path]
+                    for path, raw in planned.items()
+                ):
+                    raise automatic_skill_plan.SkillPlanError(
+                        "The installed skill bytes or modes differ from the release"
+                    )
                 installed_version = (
                     result.get("version") or version or skill_info.get("version") or listing.get("version")
                 )
@@ -920,7 +926,7 @@ def skill_install(
                         result.get("digest"),
                         str(result["version_id"]) if result.get("version_id") else None,
                     ),
-                    written_paths=[str(file)],
+                    written_paths=list(map(str, planned)),
                 )
             except (OSError, ValueError, KeyError, TypeError) as error:
                 if automatic:
@@ -938,7 +944,7 @@ def skill_install(
         elif automatic:
             fail(
                 ErrorCategory.CONFLICT,
-                "The skill release has no safe single-file plan.",
+                "The skill release has no safe owned-file plan.",
                 operation="Install skill",
                 resource=skill_id,
                 remediation="Update this skill manually.",
