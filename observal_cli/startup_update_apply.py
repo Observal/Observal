@@ -174,6 +174,42 @@ def apply_claude(cwd: str, session_id: str, notice_key: str) -> None:
         _apply_serialized(
             cwd, session_id, notice_key, registry=registry, account=account, deadline=deadline, harness="claude-code"
         )
+    _refresh_claude_hooks(registry)
+
+
+def _refresh_claude_hooks(registry: str) -> None:
+    """Keep Observal's own settings hooks current; consent-gated, best effort, reports once."""
+    import hashlib
+    import json
+    import os
+
+    from observal_cli import settings_reconciler
+    from observal_cli.hooks import claude_updates
+
+    try:
+        with auto_update_policy.registry_gate(registry, timeout=2):
+            if not auto_update_policy.policy_status(registry)["effective"]:
+                return
+            status, reason = settings_reconciler.refresh_unedited()
+        if status == "current":
+            return
+        # Say each outcome once per spec version, not at every session start.
+        from observal_cli.harness_specs.claude_code_hooks_spec import HOOKS_SPEC_VERSION
+
+        seen = claude_updates.HOOKS_NOTICE.with_suffix(".seen")
+        digest = hashlib.sha256(f"{status}\0{reason}\0{HOOKS_SPEC_VERSION}".encode()).hexdigest()
+        if seen.exists() and seen.read_text() == digest:
+            return
+        seen.write_text(digest)
+        target = claude_updates.HOOKS_NOTICE
+        target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        temporary = target.with_suffix(".tmp")
+        fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump({"schema": 1, "status": status, "reason": reason[:200] if status == "manual" else ""}, handle)
+        os.replace(temporary, target)
+    except Exception:
+        pass  # Refreshing our own hooks must never fail the update worker.
 
 
 def _apply_serialized(

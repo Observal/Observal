@@ -144,6 +144,37 @@ def _notices(registry: str, account: str, *, ack: list[Path] | None = None) -> l
     return messages
 
 
+HOOKS_NOTICE = config.CONFIG_DIR / "claude-hooks-notice.json"
+
+
+def _hooks_notice(ack: list[Path] | None) -> list[str]:
+    """One sealed message about Observal's own settings hooks, delivered once."""
+    try:
+        info = HOOKS_NOTICE.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_size > 4096:
+            return []
+        record = json.loads(HOOKS_NOTICE.read_text(encoding="utf-8"))
+        if (
+            not isinstance(record, dict)
+            or record.get("schema") != 1
+            or record.get("status") not in {"updated", "manual"}
+            or time.time() - info.st_mtime > MAX_AGE
+        ):
+            return []
+    except (OSError, ValueError, UnicodeError):
+        return []
+    if ack is None:
+        HOOKS_NOTICE.unlink(missing_ok=True)
+    else:
+        ack.append(HOOKS_NOTICE)
+    if record["status"] == "updated":
+        return ["Observal updated its Claude Code hooks to the current version. Start a new session to load them."]
+    return [
+        "Observal could not update its Claude Code hooks automatically. "
+        f"Reason: {_safe_text(record.get('reason'), 220)}"
+    ]
+
+
 def _launch(cwd: str, session_id: str, key: str) -> None:
     STARTED_DIR.mkdir(parents=True, mode=0o700, exist_ok=True)
     if not _private_directory(STARTED_DIR):
@@ -227,7 +258,7 @@ def handle(event: object, *, ack: list[Path] | None = None) -> dict | None:
     if event["hook_event_name"] == "SessionEnd":
         _mark_shutdown(key)
         return None
-    messages = _notices(registry, account, ack=ack)
+    messages = _notices(registry, account, ack=ack) + _hooks_notice(ack)
     if event["hook_event_name"] == "SessionStart":
         cwd = event.get("cwd")
         if isinstance(cwd, str) and cwd and Path(cwd).is_dir():

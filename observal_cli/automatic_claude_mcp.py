@@ -171,9 +171,11 @@ def install(
             _run("remove", "-s", "user", local_name)
             try:
                 _add(local_name, entry)
-            except (ClaudeMcpError, subprocess.SubprocessError, OSError):
+            except (ClaudeMcpError, subprocess.SubprocessError, OSError) as error:
                 _add(local_name, record["entry"])  # Put the verified original back.
-                raise
+                raise ClaudeMcpError(
+                    "Claude Code refused to add the new MCP entry; the original entry was put back."
+                ) from error
     if read_entry(local_name) != entry:
         raise ClaudeMcpError("Claude Code did not record exactly the requested MCP entry.")
     _save_record(registry, component_id, local_name, entry)
