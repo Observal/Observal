@@ -101,17 +101,16 @@ def register_freeze(app: typer.Typer) -> None:
                     "[yellow]Project opt-in saved, but global updates are frozen. Run `observal unfreeze` to enable them.[/yellow]"
                 )
             elif result["effective"]:
-                rprint(
-                    "[green]Project consent saved for future safe updates. No automatic installers are active yet; review any future project diffs.[/green]"
-                )
+                rprint("[green]Project consent saved. No automatic project installers are active yet.[/green]")
             else:
                 rprint("[yellow]Automatic project updates frozen here. Manual upgrades remain available.[/yellow]")
         elif enabled:
             rprint("[green]Consent saved for future updates of eligible user-scoped installations.[/green]")
             rprint(
-                "[dim]Eligible, clean user-scoped Pi agents can now be updated at interactive startup. "
-                "Run `observal freeze` to return to notices only. Project installs are not implemented; "
-                "future project support requires a separate `observal unfreeze --project` opt-in.[/dim]"
+                "[dim]Eligible, unedited user-scope installs that Observal owns (Pi and Claude Code agents, skills and "
+                "managed MCPs) can now be updated at interactive startup; anything else stays manual and "
+                "says why. Run `observal freeze` to return to notices only. Project installs are not "
+                "updated automatically; that would need a separate `observal unfreeze --project` opt-in.[/dim]"
             )
         else:
             rprint("[yellow]Automatic updates frozen. Manual upgrades and update checks remain available.[/yellow]")
@@ -143,7 +142,7 @@ def register_freeze(app: typer.Typer) -> None:
         """Opt in to automatic updates of eligible managed installations.
 
         Default scope is user installations. Project opt-in also requires
-        global unfreeze; it may update the project's committed observal.lock.
+        global unfreeze; no project installs are updated automatically yet.
 
         Examples:
           observal unfreeze

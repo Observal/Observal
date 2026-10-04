@@ -104,10 +104,10 @@ def main(
     setup_optic(debug=debug, verbose=verbose)
     _check_package_conflict()
 
-    # Pi startup workers must not run CLI startup migrations or rewrite
-    # bundled skills in the harness while a session is starting.
+    # Startup workers (Pi and Claude Code) must not run CLI startup migrations
+    # or rewrite bundled skills in the harness while a session is starting.
     if os.environ.get("OBSERVAL_AUTO_UPDATE_INSTALL") == "1" or any(
-        cmd in sys.argv[1:] for cmd in ("_startup-check", "_startup-apply")
+        cmd in sys.argv[1:] for cmd in ("_startup-check", "_startup-apply", "_startup-apply-claude")
     ):
         return
 

@@ -22,7 +22,7 @@ MCPS = ("22222222-2222-4222-8222-222222222222", "33333333-3333-4333-8333-3333333
 
 @pytest.fixture()
 def instance(tmp_path: Path):
-    state = {"latest": "1.0.0", "credentials": False, "changed_key": False}
+    state = {"latest": "1.0.0", "credentials": False, "changed_key": False, "fixed_command": False}
 
     class Registry(BaseHTTPRequestHandler):
         def log_message(self, *_args: object) -> None:
@@ -84,7 +84,14 @@ def instance(tmp_path: Path):
                                 "version_id": "44444444-4444-4444-8444-444444444444",
                                 "digest": f"digest-{version}",
                                 "config_snippet": {
-                                    "command": ["claude", "mcp", "add", name, "--", f"/bin/{index}-{version}"],
+                                    "command": [
+                                        "claude",
+                                        "mcp",
+                                        "add",
+                                        name,
+                                        "--",
+                                        f"/bin/{index}-{'fixed' if state['fixed_command'] else version}",
+                                    ],
                                     "type": "shell_command",
                                 },
                             }
@@ -493,3 +500,23 @@ def test_claude_mcp_recovery_is_not_claimed_over_an_edited_entry(claude_instance
     assert item["status"] == "failed", item
     assert json.loads(config.read_text())["mcpServers"][name]["command"] == "/my/own"
     assert list((home / ".observal/update-backups").glob("*/*")), "the private recovery file must stay"
+
+
+def test_claude_mcp_release_with_an_identical_entry_still_updates_cleanly(claude_instance) -> None:
+    """A version bump whose generated command is unchanged saves no recovery plan, yet is a success."""
+    state, home, cli, apply, _env = claude_instance
+    state["fixed_command"] = True
+    config = home / ".claude.json"
+    cli("registry", "mcp", "install", MCPS[0], "--harness", "claude-code", "--managed")
+    name = next(iter(json.loads(config.read_text())["mcpServers"]))
+    before = json.loads(config.read_text())["mcpServers"][name]
+    state["latest"] = "2.0.0"
+    cli("unfreeze")
+    notice = apply("identical")
+    assert notice["items"][0]["status"] == "updated", notice["items"][0].get("reason")
+    assert notice.get("outcome_final") is not False
+    assert json.loads(config.read_text())["mcpServers"][name] == before
+    assert _lock_version(home) == "2.0.0"
+    assert not list((home / ".observal/update-notices").glob("*.pending")), "must not block later installs"
+    assert not list((home / ".observal/update-backups").glob("*/*"))
+    assert all(item["status"] != "updated" for item in apply("again")["items"]), "nothing left to update"

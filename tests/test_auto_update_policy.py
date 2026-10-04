@@ -72,7 +72,7 @@ def test_default_frozen_and_independent_registries(isolated_policy: Path, cli: t
     assert policy.policy_status("https://elsewhere.test")["effective"] is False
     assert call(cli, "unfreeze") == (0, enabled)  # idempotent
     text = CliRunner().invoke(cli, ["unfreeze"]).output
-    assert "Pi agents can now be updated" in text and "observal freeze" in text
+    assert "can now be updated at interactive startup" in text and "observal freeze" in text
     code, frozen = call(cli, "freeze")
     assert code == 0
     assert frozen["effective"] is False

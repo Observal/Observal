@@ -706,6 +706,27 @@ def apply_startup_claude_mcp(
                 return False
 
         state = claude_mcp.recovery_state(backup)
+        if completed.returncode == 0 and state is None and not backup.exists():
+            # The release generated the identical entry, so the installer made no
+            # entry change and saved no recovery plan; only the metadata advanced.
+            try:
+                rows = [
+                    row
+                    for row in _entries("claude-code")
+                    if row.get("id") == item["id"] and row.get("type") == "mcp" and row.get("scope") == "user"
+                ]
+                saved = claude_mcp.load_record(registry, item["id"])
+                if (
+                    len(rows) == 1
+                    and rows[0].get("current_version") == item["latest_version"]
+                    and rows[0].get("requested_version") is None
+                    and saved is not None
+                    and saved["name"] == rows[0].get("local_name")
+                    and claude_mcp.read_entry(saved["name"]) == saved["entry"]
+                ):
+                    return {"status": "updated", "reason": "Saved Claude Code MCP entry updated; start a new session."}
+            except (OSError, ValueError, TypeError, KeyError):
+                pass
         if completed.returncode == 0 and state and state[0] == "new":
             try:
                 rows = [
@@ -764,7 +785,7 @@ def apply_startup_pi_skill(
             or auto_update_policy.active_account() != account
             or not auto_update_policy.policy_status(registry)["effective"]
         ):
-            return {"status": "skipped", "reason": "Pi closed, consent changed, or the install window expired."}
+            return {"status": "skipped", "reason": "Session closed, consent changed, or the install window expired."}
         try:
             current = [row for row in _entries(harness) if _same_install(item, row)]
             if len(current) != 1 or any(
@@ -857,7 +878,11 @@ def apply_startup_pi_skill(
                 ):
                     if backup.exists():
                         install_recovery.discard(backup)
-                    return {"status": "updated", "reason": "Saved Pi skill updated and verified; reload to use it."}
+                    host = "Pi" if harness == "pi" else "Claude Code"
+                    return {
+                        "status": "updated",
+                        "reason": f"Saved {host} skill updated and verified; reload to use it.",
+                    }
             except (OSError, ValueError, TypeError, KeyError):
                 pass
             if restore_originals():

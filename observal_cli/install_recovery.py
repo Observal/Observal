@@ -80,10 +80,10 @@ def _write(path: Path, body: bytes, mode: int = 0o600) -> None:
     fd, temporary = tempfile.mkstemp(prefix=".update-recovery-", dir=path.parent)
     try:
         with os.fdopen(fd, "wb") as handle:
-            os.fchmod(handle.fileno(), mode)
             handle.write(body)
             handle.flush()
             os.fsync(handle.fileno())
+        os.chmod(temporary, mode)  # os.fchmod is unavailable on Windows before Python 3.13
         os.replace(temporary, path)
         _sync(path.parent)
     finally:

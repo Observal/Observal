@@ -347,6 +347,24 @@ export default function (pi: ExtensionAPI) {
     ).digest("hex");
   }
 
+  // Claude Code workers share this directory and the same registry/account but
+  // use a different key. A file belongs to this extension only if its name is the
+  // Pi key derived from its own session_id; never consume or delete another host's.
+  function ownsNoticeFile(config: ObservalConfig, fileName: string, record: any): boolean {
+    return typeof record?.session_id === "string" && record.session_id.length > 0
+      && fileName.slice(0, 64) === noticeKey(config, record.session_id);
+  }
+
+  // One unreadable or corrupt spool file must not stop delivery of the others,
+  // and is never deleted because its owner cannot be established.
+  function readSpoolJson(file: string): { value: any; mtimeMs: number } | null {
+    try {
+      const info = fs.lstatSync(file);
+      if (!info.isFile() || info.isSymbolicLink() || info.size > UPDATE_NOTICE_MAX_BYTES) return null;
+      return { value: JSON.parse(fs.readFileSync(file, "utf-8")), mtimeMs: info.mtimeMs };
+    } catch { return null; }
+  }
+
   function safeNotice(value: unknown, limit = 600): string {
     return String(value ?? "").replace(/[\x00-\x1f\x7f-\x9f]/g, " ").slice(0, limit);
   }
@@ -377,18 +395,24 @@ export default function (pi: ExtensionAPI) {
         const key = name.slice(0, 64);
         if (!fs.existsSync(path.join(UPDATE_NOTICE_DIR, `${key}.json`))
           && !fs.existsSync(path.join(UPDATE_NOTICE_DIR, `${key}.pending`))) {
-          fs.unlinkSync(path.join(UPDATE_NOTICE_DIR, name));
+          const sealPath = path.join(UPDATE_NOTICE_DIR, name);
+          const sealInfo = fs.lstatSync(sealPath);
+          if (!sealInfo.isFile() || sealInfo.isSymbolicLink() || sealInfo.size > UPDATE_NOTICE_MAX_BYTES) continue;
+          let seal: any;
+          try { seal = JSON.parse(fs.readFileSync(sealPath, "utf-8")); } catch { continue; }
+          if (seal?.registry === registryKey(config) && seal.account_id === config.user_id
+            && ownsNoticeFile(config, name, seal)) fs.unlinkSync(sealPath);
         }
       }
       // A write-ahead record survives a crash or a full/unwritable spool after
       // mutation. Never consume it as a success, or delete it on delivery.
       for (const name of files.filter((file) => /^[0-9a-f]{64}\.pending$/.test(file)).slice(0, 50)) {
         const file = path.join(UPDATE_NOTICE_DIR, name);
-        const stat = fs.lstatSync(file);
-        if (!stat.isFile() || stat.isSymbolicLink() || stat.size > UPDATE_NOTICE_MAX_BYTES) continue;
-        const record = JSON.parse(fs.readFileSync(file, "utf-8"));
+        const loadedRecord = readSpoolJson(file);
+        if (!loadedRecord) continue;
+        const record = loadedRecord.value;
         if (record?.schema !== 1 || record.state !== "pending" || record.registry !== registryKey(config)
-          || record.account_id !== config.user_id) continue;
+          || record.account_id !== config.user_id || !ownsNoticeFile(config, name, record)) continue;
         if (isSealedOutcome(name.slice(0, 64), record)) continue;
         const shownKey = `${updateCheckSession}:${name}`;
         if (pendingWarningsShown.has(shownKey)) continue;
@@ -411,15 +435,20 @@ export default function (pi: ExtensionAPI) {
       const pending = files.filter((name) => /^[0-9a-f]{64}\.json$/.test(name)).slice(0, 50);
       for (const name of pending) {
         const file = path.join(UPDATE_NOTICE_DIR, name);
-        const stat = fs.lstatSync(file);
-        if (!stat.isFile() || stat.isSymbolicLink() || stat.size > UPDATE_NOTICE_MAX_BYTES) continue;
-        if (Date.now() - stat.mtimeMs > UPDATE_NOTICE_MAX_AGE_MS) {
+        const loadedNotice = readSpoolJson(file);
+        if (!loadedNotice) continue;
+        const notice = loadedNotice.value;
+        const stat = { mtimeMs: loadedNotice.mtimeMs };
+        if (notice?.schema !== 1 || notice.registry !== registryKey(config)
+          || notice.account_id !== config.user_id || !Array.isArray(notice.items)
+          || !ownsNoticeFile(config, name, notice)) continue;
+        // Expire only our own check-only results. A journaled outcome keeps its
+        // pending record alive until it is delivered, so deleting it would make
+        // a verified result look unresolved and block later installs.
+        if (notice.journaled !== true && Date.now() - stat.mtimeMs > UPDATE_NOTICE_MAX_AGE_MS) {
           fs.unlinkSync(file);
           continue;
         }
-        const notice = JSON.parse(fs.readFileSync(file, "utf-8"));
-        if (notice?.schema !== 1 || notice.registry !== registryKey(config)
-          || notice.account_id !== config.user_id || !Array.isArray(notice.items)) continue;
         if (notice.journaled === true && !isSealedOutcome(name.slice(0, 64), notice)) continue;
         const messages: string[] = [];
         if (notice.session_id !== updateCheckSession) {
@@ -466,7 +495,9 @@ export default function (pi: ExtensionAPI) {
         if (notice.journaled === true) {
           const journal = path.join(UPDATE_NOTICE_DIR, `${name.slice(0, 64)}.pending`);
           if (fs.existsSync(journal)) {
-            const pendingRecord = JSON.parse(fs.readFileSync(journal, "utf-8"));
+            const loadedJournal = readSpoolJson(journal);
+            if (!loadedJournal) continue;
+            const pendingRecord = loadedJournal.value;
             if (pendingRecord?.registry !== notice.registry || pendingRecord.account_id !== notice.account_id
               || pendingRecord.session_id !== notice.session_id || pendingRecord.state !== "pending") continue;
             fs.unlinkSync(journal);
