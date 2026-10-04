@@ -46,7 +46,7 @@ def instance(tmp_path: Path):
                 release = {
                     "version": version,
                     "status": "approved",
-                    "supported_harnesses": ["pi"],
+                    "supported_harnesses": ["pi", "claude-code"],
                     "skill_md_content": f"# {'different' if state['mismatch'] else 'review'} {version}\n",
                 }
                 if (version == "1.0.0" and state["script_v1"]) or (version == "2.0.0" and state["script"]):
@@ -364,3 +364,53 @@ def test_real_pi_rpc_bridge_updates_skill_only_after_unfreeze(instance, with_scr
     assert file.read_text() == "# review 2.0.0\n"
     if script:
         assert script.read_text() == "echo 2.0.0\n"
+
+
+def _apply_claude(instance, session: str) -> dict:
+    import hashlib
+
+    _state, home, _cli, _apply, env, url = instance
+    key = hashlib.sha256(f"claude-code\0{url}\0alice\0{session}".encode()).hexdigest()
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "observal_cli",
+            "_startup-apply-claude",
+            "--cwd",
+            str(home),
+            "--session-id",
+            session,
+            "--notice-key",
+            key,
+        ],
+        env=env,
+        cwd=home,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    return json.loads((home / ".observal/update-notices" / f"{key}.json").read_text())
+
+
+@pytest.mark.parametrize("with_script", [False, True])
+def test_claude_code_skill_updates_only_after_unfreeze_and_when_clean(instance, with_script: bool) -> None:
+    state, home, cli, _apply, _env, _url = instance
+    state["script_v1"] = state["script"] = with_script
+    cli("registry", "skill", "install", ID, "--harness", "claude-code", "--output", "json")
+    file = home / ".claude/skills/review/SKILL.md"
+    assert file.read_text() == "# review 1.0.0\n"
+    state["latest"] = "2.0.0"
+    assert _apply_claude(instance, "frozen")["items"][0]["status"] != "updated"
+    assert file.read_text() == "# review 1.0.0\n"
+    cli("unfreeze")
+    file.write_text("# my edit\n")
+    assert _apply_claude(instance, "edited")["items"][0]["status"] != "updated"
+    assert file.read_text() == "# my edit\n"
+    file.write_text("# review 1.0.0\n")
+    notice = _apply_claude(instance, "clean")
+    assert notice["items"][0]["status"] == "updated", notice
+    assert file.read_text() == "# review 2.0.0\n"
+    if with_script:
+        assert (file.parent / "scripts/run.sh").read_text() == "echo 2.0.0\n"

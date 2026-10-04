@@ -1306,6 +1306,10 @@ def _install_impl(
                 entry=snippet["mcpServers"][local_name],
             )
         except (OSError, ValueError, TypeError, KeyError) as error:
+            if isinstance(error, ValueError) and not isinstance(error, OSError):
+                from observal_cli.auto_update_policy import record_skip_reason
+
+                record_skip_reason(str(error))
             fail(
                 ErrorCategory.CONFLICT,
                 "The Pi MCP reference cannot be installed automatically or as managed config.",

@@ -232,3 +232,11 @@ def verified_files(
         lock_digest=lock_digest,
     )
     return files
+
+
+def reject_foreign_creation(paths: list[Path], own_path: Path) -> None:
+    """A file an update would create must not exist or belong to another install."""
+    for path in paths:
+        if path.exists() or path.is_symlink() or any(part.is_symlink() for part in path.parents):
+            raise BaselineError("A file this update would create already exists or crosses a link")
+    _reject_shared_ownership({str(path): "" for path in paths}, own_path)

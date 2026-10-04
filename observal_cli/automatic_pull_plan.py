@@ -18,7 +18,7 @@ class InstallSkipError(ValueError):
     """The release needs explicit manual installation; no managed file was written."""
 
 
-def _safe_path(raw: str, root: Path, directory: Path) -> Path:
+def _safe_path(raw: str, root: Path, directory: Path, *, may_create: bool = False) -> Path:
     if not isinstance(raw, str) or not raw:
         raise InstallSkipError("The server returned an invalid Pi path.")
     if raw.startswith("~/"):
@@ -30,7 +30,7 @@ def _safe_path(raw: str, root: Path, directory: Path) -> Path:
     if not candidate.is_absolute() or any(part.is_symlink() for part in (candidate, *candidate.parents)):
         raise InstallSkipError("A generated Pi path contains a symbolic link.")
     target = candidate.resolve()
-    if not target.is_relative_to(root) or not target.is_file():
+    if not target.is_relative_to(root) or not (target.is_file() or (may_create and not target.exists())):
         raise InstallSkipError("The release changes the managed profile location or creates a file.")
     return target
 
@@ -100,7 +100,7 @@ def plan_pi_files(snippet: object, item: dict, old_files: dict[str, str]) -> dic
         name = component.get("name")
         if not isinstance(content, str) or not content or not isinstance(name, str):
             raise InstallSkipError("The release requires an unsupported skill source.")
-        target = _safe_path(component.get("path"), root, directory)
+        target = _safe_path(component.get("path"), root, directory, may_create=True)
         if target != root / "skills" / sanitize_name(name) / "SKILL.md" or target in planned:
             raise InstallSkipError("The release changes or duplicates a managed skill path.")
         planned[target] = content.encode()
@@ -115,12 +115,14 @@ def plan_pi_files(snippet: object, item: dict, old_files: dict[str, str]) -> dic
                 or Path(filename).name != filename
             ):
                 raise InstallSkipError("The skill's registry script is incomplete or unsafe.")
-            script_path = _safe_path(str(target.parent / "scripts" / filename), root, directory)
+            script_path = _safe_path(str(target.parent / "scripts" / filename), root, directory, may_create=True)
             if script_path in planned:
                 raise InstallSkipError("The release duplicates a managed script path.")
             planned[script_path] = script.encode()
-    if set(map(str, planned)) != set(old_files):
-        raise InstallSkipError("The target file plan differs from the manual pull's ownership baseline.")
-    if sum(path.stat().st_size + len(data) for path, data in planned.items()) > MAX_BYTES:
+    skills_root = root / "skills"
+    kept = {str(path) for path in planned}
+    if any(name not in kept and not Path(name).is_relative_to(skills_root) for name in old_files):
+        raise InstallSkipError("The release would remove a profile or MCP file; update manually.")
+    if sum((path.stat().st_size if path.exists() else 0) + len(data) for path, data in planned.items()) > MAX_BYTES:
         raise InstallSkipError("The automatic installation exceeds its file-size limit.")
     return planned

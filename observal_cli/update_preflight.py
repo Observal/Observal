@@ -102,10 +102,12 @@ def _user_agent_candidate(item: dict, *, registry: str, harness: str) -> dict[st
         raise PreflightSkipError("The installed version is unknown; update manually.")
     installed = _identities(item.get("components"), installed=True)
     target = _identities(item["release"].get("components"), installed=False)
-    if installed != target:
-        raise PreflightSkipError("The release adds or removes components; review and pull it manually.")
-    if harness == "claude-code" and installed:
-        raise PreflightSkipError("Claude Code component installs need manual review; only a plain profile is eligible.")
+    changed_types = {kind for kind, _id in installed ^ target}
+    if changed_types - {"skill", "hook"}:
+        raise PreflightSkipError(
+            "The release adds or removes a component type that needs manual review (only skills and hooks "
+            "can be added or removed automatically)."
+        )
     root = item.get("directory")
     if not isinstance(root, str) or not root:
         raise PreflightSkipError("The installation root is unknown; update manually.")

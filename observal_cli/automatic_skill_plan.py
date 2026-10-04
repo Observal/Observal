@@ -29,8 +29,11 @@ def release_key(version: str, digest: str | None, version_id: str | None) -> str
     return f"skill:{version}:{digest or ''}:{version_id or ''}"
 
 
-def destination(name: str) -> Path:
-    return Path.home() / ".pi" / "agent" / "skills" / sanitize_name(name)
+SKILL_ROOTS = {"pi": (".pi", "agent", "skills"), "claude-code": (".claude", "skills")}
+
+
+def destination(name: str, harness: str = "pi") -> Path:
+    return Path.home().joinpath(*SKILL_ROOTS[harness]) / sanitize_name(name)
 
 
 def owned_files(root: Path) -> list[Path]:
@@ -53,7 +56,7 @@ def owned_files(root: Path) -> list[Path]:
     return paths
 
 
-def unshared(registry: str, component_id: str, name: str) -> None:
+def unshared(registry: str, component_id: str, name: str, harness: str = "pi") -> None:
     """The lockfile may contain another owner even without its own baseline."""
     from observal_cli.lockfile import normalize_server_url
 
@@ -61,7 +64,7 @@ def unshared(registry: str, component_id: str, name: str) -> None:
     try:
         data = lockfile.read_lockfile()
         for url, section in data.get("registries", {}).items():
-            for entry in section.get("harnesses", {}).get("pi", {}).get("standalone", []):
+            for entry in section.get("harnesses", {}).get(harness, {}).get("standalone", []):
                 if entry.get("type") != "skill" or entry.get("scope") != "user":
                     continue
                 # The normal installer writes using the registry-provided
@@ -80,20 +83,21 @@ def unshared(registry: str, component_id: str, name: str) -> None:
 
 
 def verified_path(item: dict, *, registry: str) -> Path:
-    if item.get("type") != "skill" or item.get("harness") != "pi" or item.get("scope") != "user":
-        raise SkillPlanError("Only user-scoped Pi skills can be updated automatically.")
+    if item.get("type") != "skill" or item.get("harness") not in SKILL_ROOTS or item.get("scope") != "user":
+        raise SkillPlanError("Only user-scoped Pi or Claude Code skills can be updated automatically.")
     if item.get("pin_known") is not True or item.get("requested_version"):
         raise SkillPlanError("Skill pin intent is unknown or explicitly pinned; update manually.")
     name = item.get("name")
     local_name = item.get("local_name")
     if not isinstance(name, str) or not isinstance(local_name, str) or sanitize_name(name) != local_name:
         raise SkillPlanError("The installed skill destination is ambiguous; update manually.")
-    unshared(registry, item["id"], name)
-    root = destination(name)
+    harness = item["harness"]
+    unshared(registry, item["id"], name, harness)
+    root = destination(name, harness)
     owned = owned_files(root)
     files, paths = install_baseline.verified_manifest(
         registry=registry,
-        harness="pi",
+        harness=harness,
         agent_id=identity(item["id"]),
         scope="user",
         root=str(root),
@@ -115,7 +119,7 @@ def target(item: dict, skill: dict, file: Path) -> tuple[dict[Path, bytes], dict
         or not content
         or not isinstance(name, str)
         or sanitize_name(name) != item.get("local_name")
-        or file != destination(name) / "SKILL.md"
+        or file != destination(name, item.get("harness", "pi")) / "SKILL.md"
         or skill.get("git_url")
     ):
         raise SkillPlanError("The release changes the skill path or source; update manually.")

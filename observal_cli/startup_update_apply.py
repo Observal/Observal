@@ -140,6 +140,19 @@ def apply_pi(cwd: str, session_id: str, notice_key: str) -> None:
         client.bounded_requests(deadline - RECOVERY_RESERVE_SECONDS),
     ):
         _apply_serialized(cwd, session_id, notice_key, registry=registry, account=account, deadline=deadline)
+        _refresh_extension(registry)
+
+
+def _refresh_extension(registry: str) -> None:
+    """Refresh Observal's own Pi extension for the next load; consent-gated, best effort."""
+    from observal_cli import pi_extension
+
+    try:
+        with auto_update_policy.registry_gate(registry, timeout=2):
+            if auto_update_policy.policy_status(registry)["effective"]:
+                pi_extension.refresh_unedited()
+    except Exception:
+        pass  # A bundled-extension refresh must never fail the update worker.
 
 
 def apply_claude(cwd: str, session_id: str, notice_key: str) -> None:
@@ -220,7 +233,7 @@ def _apply_serialized(
                     msg["reason"] = "This item requires a manual update in the startup pilot."
                 if (
                     enabled
-                    and item.get("type") in ({"agent", "skill", "mcp"} if harness == "pi" else {"agent"})
+                    and item.get("type") in ({"agent", "skill", "mcp"} if harness == "pi" else {"agent", "skill"})
                     and item.get("scope") == "user"
                     and item.get("release_verified")
                 ):
@@ -274,6 +287,9 @@ def _apply_serialized(
                                 "mcp": cmd_update.apply_startup_pi_mcp,
                             }[item["type"]]
                             kwargs = {"harness": harness} if harness == "claude-code" else {}
+                            reason_file = marker.with_suffix(".reason")
+                            reason_file.unlink(missing_ok=True)
+                            os.environ["OBSERVAL_AUTO_UPDATE_REASON_FILE"] = str(reason_file)
                             result = runner(
                                 {**current[0], "latest_version": item["latest_version"]},
                                 registry=registry,
@@ -285,12 +301,18 @@ def _apply_serialized(
                             )
                             msg["status"] = result["status"]
                             msg["reason"] = result["reason"]
+                            specific = auto_update_policy.read_skip_reason(reason_file)
+                            if specific and msg["status"] == "skipped":
+                                msg["reason"] = f"{specific} (update manually)"
+                            reason_file.unlink(missing_ok=True)
                             if msg["status"] == "updated":
                                 msg["reason"] = (
                                     "Saved Pi profile updated and verified; the current session and any copied "
                                     "active profile are unchanged. Re-select the agent with `/agent` and reload "
                                     "to activate it."
                                     if item["type"] == "agent" and harness == "pi"
+                                    else "Saved Claude Code skill updated and verified. Start a new session to load it."
+                                    if harness == "claude-code" and item["type"] == "skill"
                                     else "Saved Pi skill updated and verified; reload Pi to use the new version."
                                     if harness == "pi" and item["type"] == "skill"
                                     else "Saved Pi MCP reference updated and verified; reload Pi to use the new version."

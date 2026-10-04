@@ -505,7 +505,10 @@ class TestPatchFunctions:
         extension = tmp_path / ".pi/agent/extensions/observal.ts"
         manifest = tmp_path / ".pi/agent/extensions/.observal-extension.json"
         assert extension.read_text(encoding="utf-8") == pi_extension.extension_source()
-        assert read_json(manifest) == {"managed": True, "version": CLI_VERSION}
+        assert {k: v for k, v in read_json(manifest).items() if k != "sha256"} == {
+            "managed": True,
+            "version": CLI_VERSION,
+        }
         assert _patch_pi(dry_run=False) is False
 
     def test_patch_pi_skips_local_install_when_npm_is_configured(self, tmp_path: Path):
@@ -541,7 +544,7 @@ class TestPatchFunctions:
         assert extension.read_text(encoding="utf-8") == pi_extension.extension_source()
         assert extension.with_name("observal.ts.bak").read_text(encoding="utf-8") == previous
         manifest = read_json(tmp_path / ".pi/agent/extensions/.observal-extension.json")
-        assert manifest == {"managed": True, "version": CLI_VERSION}
+        assert {k: v for k, v in manifest.items() if k != "sha256"} == {"managed": True, "version": CLI_VERSION}
         assert _patch_pi(dry_run=False) is False
 
     def test_patch_pi_dry_run_migration_writes_nothing(self, tmp_path: Path):
@@ -603,7 +606,7 @@ class TestPatchFunctions:
         assert _patch_pi(dry_run=False) is True
 
         manifest = read_json(tmp_path / ".pi/agent/extensions/.observal-extension.json")
-        assert manifest == {"managed": True, "version": CLI_VERSION}
+        assert {k: v for k, v in manifest.items() if k != "sha256"} == {"managed": True, "version": CLI_VERSION}
         assert _patch_pi(dry_run=False) is False
 
     def test_patch_codex_writes_hooks_and_enables_flag(self, tmp_path: Path):

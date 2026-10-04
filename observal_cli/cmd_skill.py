@@ -608,12 +608,13 @@ def _serialize_pi_skill_install(callback):
     @wraps(callback)
     def wrapped(*args, **kwargs):
         harness = kwargs.get("harness", args[1] if len(args) > 1 else None)
-        if harness != "pi":
+        if harness not in {"pi", "claude-code"}:
             return callback(*args, **kwargs)
         from observal_cli import auto_update_policy
         from observal_cli.lockfile import current_registry_url
 
-        with auto_update_policy.pi_install_lock(current_registry_url()):
+        lock = auto_update_policy.pi_install_lock if harness == "pi" else auto_update_policy.claude_install_lock
+        with lock(current_registry_url()):
             cutoff = os.environ.get("OBSERVAL_AUTO_UPDATE_NETWORK_CUTOFF")
             if os.environ.get("OBSERVAL_AUTO_UPDATE_INSTALL") == "1" and cutoff is not None:
                 with client.bounded_requests(float(cutoff)):
@@ -736,11 +737,18 @@ def skill_install(
         registry = current_registry_url()
         existing = [
             row
-            for row in installed_updates.inventory_for_context("pi", str(Path.cwd()))
+            for row in installed_updates.inventory_for_context(harness, str(Path.cwd()))
             if row["type"] == "skill" and row["scope"] == "user" and row["id"] == resolved
         ]
         try:
-            if harness != "pi" or scope != "user" or raw or no_write or len(existing) != 1 or not version:
+            if (
+                harness not in {"pi", "claude-code"}
+                or scope != "user"
+                or raw
+                or no_write
+                or len(existing) != 1
+                or not version
+            ):
                 raise automatic_skill_plan.SkillPlanError("No unique existing Pi skill installation; update manually.")
             previous = existing[0]
             if previous["current_version"] != os.environ.get("OBSERVAL_AUTO_UPDATE_EXPECTED_VERSION"):
@@ -758,7 +766,7 @@ def skill_install(
                 or release.get("version") != version
                 or release.get("status") != "approved"
                 or not isinstance(release.get("supported_harnesses"), list)
-                or "pi" not in release["supported_harnesses"]
+                or harness not in release["supported_harnesses"]
                 or result.get("version") != version
                 or not isinstance(release.get("skill_md_content"), str)
                 or release["skill_md_content"] != skill_info.get("skill_md_content")
@@ -787,7 +795,7 @@ def skill_install(
             client.end_startup_network_budget()
             old_files = install_baseline.verified_files(
                 registry=registry,
-                harness="pi",
+                harness=harness,
                 agent_id=automatic_skill_plan.identity(resolved),
                 scope="user",
                 root=str(file.parent),
@@ -803,12 +811,16 @@ def skill_install(
                 [
                     LOCKFILE_PATH,
                     install_baseline._path(
-                        registry, "pi", automatic_skill_plan.identity(resolved), "user", str(file.parent)
+                        registry, harness, automatic_skill_plan.identity(resolved), "user", str(file.parent)
                     ),
                 ],
                 expected_modes=modes,
             )
         except (OSError, ValueError, KeyError, TypeError) as error:
+            if isinstance(error, ValueError) and not isinstance(error, OSError):
+                from observal_cli.auto_update_policy import record_skip_reason
+
+                record_skip_reason(str(error))
             fail(
                 ErrorCategory.CONFLICT,
                 "The Pi skill cannot be updated automatically.",
@@ -866,7 +878,7 @@ def skill_install(
                 version_id=str(result["version_id"]) if result.get("version_id") else None,
                 digest=result.get("digest"),
                 requested_version=None if os.environ.get("OBSERVAL_UPDATE_EXACT_TARGET") == "1" else version,
-                **({"pin_known": True} if harness == "pi" and scope == "user" else {}),
+                **({"pin_known": True} if harness in {"pi", "claude-code"} and scope == "user" else {}),
             )
         except PermissionError as error:
             fail(
@@ -888,7 +900,7 @@ def skill_install(
             )
         # Record ownership only for a complete registry-direct Pi file set.
         # A manual install may succeed without making it eligible for startup.
-        if harness == "pi" and scope == "user" and delivery_mode == "registry_direct":
+        if harness in {"pi", "claude-code"} and scope == "user" and delivery_mode == "registry_direct":
             from observal_cli import automatic_skill_plan, install_baseline
             from observal_cli.lockfile import current_registry_url
 
@@ -896,14 +908,16 @@ def skill_install(
                 if (
                     skill_info.get("git_url")
                     or _sanitize_name(skill_info["name"]) != local_name
-                    or installed_path != automatic_skill_plan.destination(skill_info["name"])
+                    or installed_path != automatic_skill_plan.destination(skill_info["name"], harness)
                 ):
                     raise automatic_skill_plan.SkillPlanError("Skill has an ambiguous source or destination")
                 file = installed_path / "SKILL.md"
                 automatic_skill_plan.unshared(
-                    current_registry_url(), str(skill_info.get("id", resolved)), skill_info["name"]
+                    current_registry_url(), str(skill_info.get("id", resolved)), skill_info["name"], harness
                 )
-                planned, modes = automatic_skill_plan.target({"local_name": local_name}, skill_info, file)
+                planned, modes = automatic_skill_plan.target(
+                    {"local_name": local_name, "harness": harness}, skill_info, file
+                )
                 if any(
                     path.read_bytes() != raw or path.stat().st_mode & 0o777 != modes[path]
                     for path, raw in planned.items()
@@ -916,7 +930,7 @@ def skill_install(
                 )
                 install_baseline.capture(
                     registry=current_registry_url(),
-                    harness="pi",
+                    harness=harness,
                     agent_id=automatic_skill_plan.identity(str(skill_info.get("id", resolved))),
                     scope="user",
                     root=str(installed_path),

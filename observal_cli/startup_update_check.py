@@ -136,8 +136,8 @@ def _message(item: dict, *, enabled: bool) -> dict | None:
         and root
     ):
         command = f"observal agent pull {target} --harness claude-code --scope user --dir {shlex.quote(root)} --upgrade"
-    elif item.get("type") == "skill" and item.get("scope") == "user" and item.get("harness") == "pi":
-        command = f"observal registry skill install {target} --harness pi --scope user"
+    elif item.get("type") == "skill" and item.get("scope") == "user" and item.get("harness") in {"pi", "claude-code"}:
+        command = f"observal registry skill install {target} --harness {item['harness']} --scope user"
     elif item.get("type") == "mcp" and item.get("scope") == "user" and item.get("harness") == "pi":
         command = f"observal registry mcp install {target} --harness pi --managed"
     else:

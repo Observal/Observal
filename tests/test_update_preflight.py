@@ -107,8 +107,13 @@ def test_component_add_remove_unknown_and_duplicate_are_notice_only(candidate: d
     with pytest.raises(update_preflight.PreflightSkipError, match="adds or removes"):
         update_preflight.pi_user_agent_candidate(candidate, registry=REGISTRY)
     candidate["release"]["components"] = []
+    # Dropping a skill is allowed at preflight (its files are checked by the plan);
+    # dropping an MCP is not.
+    assert update_preflight.pi_user_agent_candidate(candidate, registry=REGISTRY)["target_version"]
+    candidate["components"].append({"type": "mcp", "id": "44444444-4444-4444-8444-444444444444", "version": "1.0.0"})
     with pytest.raises(update_preflight.PreflightSkipError, match="adds or removes"):
         update_preflight.pi_user_agent_candidate(candidate, registry=REGISTRY)
+    candidate["components"].pop()
     candidate["components"] = [{"type": "skill", "name": "guessed"}]
     with pytest.raises(update_preflight.PreflightSkipError, match="exact type and registry ID"):
         update_preflight.pi_user_agent_candidate(candidate, registry=REGISTRY)

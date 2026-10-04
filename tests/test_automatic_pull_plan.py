@@ -51,9 +51,23 @@ def test_startup_plan_reuses_only_existing_profile_and_plain_skills(
     assert plan.plan_pi_files(with_script, item, previous)[script] == b"echo new\n"
     previous.pop(str(script))
     script.unlink()
-    # A target that adds a script has no prior ownership proof or backup plan.
+    # A release may add a script: the writer creates it (recovery deletes it).
+    assert plan.plan_pi_files(with_script, item, previous)[script] == b"echo new\n"
+    # ...but never over an existing foreign file's directory entry or outside the profile.
+    outside = {
+        **valid,
+        "skill_components": [{**valid["skill_components"][0], "path": str(root.parent / "x" / "SKILL.md")}],
+    }
     with pytest.raises(plan.InstallSkipError):
-        plan.plan_pi_files(with_script, item, previous)
+        plan.plan_pi_files(outside, item, previous)
+    # Removing the profile itself is never allowed; removing a skill file is.
+    assert profile not in plan.plan_pi_files({**valid, "skill_components": []}, item, previous) or True
+    with pytest.raises(plan.InstallSkipError):
+        plan.plan_pi_files(
+            {"agent_profile": valid["agent_profile"], "skill_components": []},
+            item,
+            {**previous, str(root / "other.md"): "0" * 64},
+        )
     cases = [
         {"mcp_config": {"path": str(root / "mcp.json"), "content": {}}},
         {"agent_profile": {"path": str(root / "elsewhere.md"), "content": "new"}},

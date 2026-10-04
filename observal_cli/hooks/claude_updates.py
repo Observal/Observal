@@ -115,9 +115,14 @@ def _notices(registry: str, account: str, *, ack: list[Path] | None = None) -> l
                     if status == "updated"
                     else status
                 )
+                why = (
+                    f" Reason: {_safe_text(item.get('reason'), 220)}"
+                    if status in {"skipped", "failed"} and item.get("reason")
+                    else ""
+                )
                 lines.append(
                     f"{_safe_text(item.get('name'))}: {_safe_text(item.get('current_version'), 40)} → "
-                    f"{_safe_text(item.get('latest_version'), 40)} ({label})."
+                    f"{_safe_text(item.get('latest_version'), 40)} ({label}).{why}"
                 )
             if lines:
                 messages.append(

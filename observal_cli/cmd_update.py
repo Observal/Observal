@@ -608,14 +608,16 @@ def apply_startup_pi_skill(
     deadline: float,
     shutdown_requested: object,
     marker: Path,
+    harness: str = "pi",
 ) -> dict:
     """Launch the guarded normal skill installer; verify disk and metadata after it stops."""
     import time
 
     from observal_cli import automatic_skill_plan
 
-    if not callable(shutdown_requested):
-        raise ValueError("A shutdown check is required")
+    if not callable(shutdown_requested) or harness not in {"pi", "claude-code"}:
+        raise ValueError("A supported harness and shutdown check are required")
+    install_lock = auto_update_policy.pi_install_lock if harness == "pi" else auto_update_policy.claude_install_lock
     with auto_update_policy.registry_gate(registry, timeout=max(0, min(2, deadline - time.monotonic()))):
         if (
             shutdown_requested()
@@ -626,7 +628,7 @@ def apply_startup_pi_skill(
         ):
             return {"status": "skipped", "reason": "Pi closed, consent changed, or the install window expired."}
         try:
-            current = [row for row in _entries("pi") if _same_install(item, row)]
+            current = [row for row in _entries(harness) if _same_install(item, row)]
             if len(current) != 1 or any(
                 current[0].get(key) != item.get(key)
                 for key in ("digest", "version_id", "local_name", "requested_version", "pin_known")
@@ -668,7 +670,7 @@ def apply_startup_pi_skill(
             return {"status": "failed", "reason": "The installer outcome is uncertain; inspect managed files."}
 
         def old_files_verified() -> bool:
-            rows = [row for row in _entries("pi") if _same_install(item, row)]
+            rows = [row for row in _entries(harness) if _same_install(item, row)]
             if len(rows) != 1 or any(
                 rows[0].get(key) != item.get(key)
                 for key in ("digest", "version_id", "local_name", "requested_version", "pin_known")
@@ -679,7 +681,7 @@ def apply_startup_pi_skill(
 
         def restore_originals() -> bool:
             try:
-                with auto_update_policy.pi_install_lock(registry, timeout=2):
+                with install_lock(registry, timeout=2):
                     if not install_recovery.restore_if_safe(backup) or not old_files_verified():
                         return False
                     install_recovery.discard(backup)
@@ -704,7 +706,7 @@ def apply_startup_pi_skill(
             try:
                 installed = [
                     row
-                    for row in _entries("pi")
+                    for row in _entries(harness)
                     if _same_install({**item, "current_version": verified["latest_version"]}, row)
                 ]
                 if (

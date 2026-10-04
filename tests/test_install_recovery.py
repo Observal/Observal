@@ -162,3 +162,71 @@ def test_backup_fails_closed_on_dirty_owned_file_or_existing_record(
             expected_modes={profile: 0o600, mcp: 0o644},
         )
     assert not root.exists()
+
+
+def _create_delete_plan(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(recovery, "BACKUP_DIR", tmp_path / "backups")
+    keep = tmp_path / "keep.md"
+    keep.write_text("old")
+    keep.chmod(0o644)
+    gone = tmp_path / "gone.sh"
+    gone.write_text("old script")
+    gone.chmod(0o755)
+    fresh = tmp_path / "skills" / "new" / "SKILL.md"  # parent does not exist yet
+    metadata = tmp_path / "lockfile.json"
+    metadata.write_text("{}")
+    root = recovery.BACKUP_DIR / ("b" * 64)
+    old = {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in (keep, gone)}
+    recovery.save(
+        root,
+        {keep: b"new", fresh: b"fresh"},
+        old,
+        [metadata],
+        expected_modes={keep: 0o644, fresh: 0o644},
+        deleted=[gone],
+    )
+    return root, keep, gone, fresh
+
+
+def _simulate_install(keep: Path, gone: Path, fresh: Path) -> None:
+    keep.write_text("new")
+    gone.unlink()
+    fresh.parent.mkdir(parents=True)
+    fresh.write_text("fresh")
+    fresh.chmod(0o644)
+
+
+def test_created_and_deleted_files_are_reversed_when_unedited(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root, keep, gone, fresh = _create_delete_plan(tmp_path, monkeypatch)
+    _simulate_install(keep, gone, fresh)
+    assert recovery.planned_matches(root) is True
+    assert recovery.restore_if_safe(root) is True
+    assert keep.read_text() == "old" and not fresh.exists()
+    assert gone.read_text() == "old script" and gone.stat().st_mode & 0o777 == 0o755
+
+
+def test_stopped_before_any_write_is_a_noop_restore(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root, keep, gone, fresh = _create_delete_plan(tmp_path, monkeypatch)
+    assert recovery.restore_if_safe(root) is True
+    assert keep.read_text() == "old" and gone.exists() and not fresh.exists()
+
+
+@pytest.mark.parametrize("which", ["created", "recreated"])
+def test_foreign_content_on_created_or_deleted_path_blocks_restore(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, which: str
+) -> None:
+    root, keep, gone, fresh = _create_delete_plan(tmp_path, monkeypatch)
+    _simulate_install(keep, gone, fresh)
+    (fresh if which == "created" else gone).write_text("someone else's work")
+    assert recovery.restore_if_safe(root) is False
+    assert (fresh if which == "created" else gone).read_text() == "someone else's work"
+
+
+def test_save_refuses_to_create_over_an_existing_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(recovery, "BACKUP_DIR", tmp_path / "backups")
+    meta = tmp_path / "lock.json"
+    meta.write_text("{}")
+    existing = tmp_path / "taken.md"
+    existing.write_text("mine")
+    with pytest.raises(recovery.RecoveryError):
+        recovery.save(recovery.BACKUP_DIR / ("c" * 64), {existing: b"x"}, {}, [meta], expected_modes={existing: 0o644})

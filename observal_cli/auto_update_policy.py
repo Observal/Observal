@@ -222,6 +222,35 @@ def claude_install_lock(registry: str, *, timeout: float = GATE_TIMEOUT_SECONDS)
         yield
 
 
+def record_skip_reason(message: object) -> None:
+    """Child installers leave one short, fixed refusal reason for the startup notice.
+
+    Only our own ValueError messages are passed here (never OSError text, paths
+    or credentials). The first recorded reason wins; best effort, never raises.
+    """
+    name = os.environ.get("OBSERVAL_AUTO_UPDATE_REASON_FILE")
+    if not name or not isinstance(message, str):
+        return
+    text = " ".join("".join(ch if ch.isprintable() else " " for ch in message).split())[:200]
+    try:
+        fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except OSError:
+        return
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(text)
+
+
+def read_skip_reason(name: str | Path) -> str | None:
+    try:
+        path = Path(name)
+        if path.is_symlink() or path.stat().st_size > 400:
+            return None
+        text = path.read_text(encoding="utf-8").strip()
+        return text or None
+    except (OSError, UnicodeError):
+        return None
+
+
 def project_root(directory: str | Path) -> str:
     """Resolve an explicit root; never grant permission to a parent or child."""
     path = Path(directory).expanduser().resolve(strict=True)
