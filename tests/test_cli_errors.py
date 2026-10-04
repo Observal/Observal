@@ -477,8 +477,12 @@ def test_every_leaf_command_exposes_json_machine_output():
             leaves.append(command)
 
     walk(root)
-    assert len(leaves) == 216
-    assert {command.name for command in leaves if command.hidden} == {"_startup-check", "_startup-apply"}
+    assert len(leaves) == 218
+    assert {command.name for command in leaves if command.hidden} == {
+        "_startup-check",
+        "_startup-apply",
+        "_startup-apply-claude",
+    }
     for command in leaves:
         if command.hidden:  # Internal worker protocol, not a user-facing CLI command.
             continue
@@ -730,7 +734,7 @@ def test_root_group_enforces_error_contract_for_all_commands():
                 walk(child)
 
     walk(root)
-    assert len(executable) == 222
+    assert len(executable) == 224
 
 
 @pytest.mark.parametrize(

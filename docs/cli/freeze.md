@@ -1,10 +1,11 @@
+<!-- SPDX-FileCopyrightText: 2026 Observal Contributors -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # `observal freeze` and `observal unfreeze`
 
 Control local consent for automatic **registry agent/component** updates. These commands never install or update an item themselves and do not affect `observal self` (CLI upgrades). Update checks and manual upgrades still work while frozen. Auto-updating defaults to **frozen** for everyone.
 
-> **Rollout status:** Local consent, the concurrency gate, and ownership-baseline capture on successful explicit agent pulls are connected. Pi startup is check-only by default. An experimental Pi user-agent installer runs only when `OBSERVAL_PI_AUTO_APPLY=1` is explicitly set **and** this locally authenticated account has granted `observal unfreeze`; clean managed files and an approved target release are also required. This pilot is not yet recommended for production profiles. `unfreeze` alone never starts an installation.
+> **Rollout status:** Startup is notice-only by default. After `observal unfreeze`, narrowly eligible Pi user agents, simple Pi user skills, and Claude Code user-agent profiles can be updated through their normal installers. Each needs known unpinned intent, an approved exact release, and unchanged, unshared owned files. A stopped install restores original bytes and modes only if metadata and the old or planned file state can still be proved; ambiguous results retain a private backup and pending notice. Project installs and other shapes remain manual. Leave production profiles frozen until this pilot has passed review and supported-environment CI. `unfreeze` is the sole user-level opt-in.
 
 ```bash
 observal unfreeze                          # Opt in for eligible personal installs

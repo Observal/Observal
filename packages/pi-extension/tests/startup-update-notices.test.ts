@@ -1,3 +1,4 @@
+// SPDX-FileCopyrightText: 2026 Observal Contributors
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
@@ -26,7 +27,7 @@ setTimeout(() => {
   fs.writeFileSync(path.join(root, key + '.json'), JSON.stringify({schema: 1,
     registry: 'http://localhost:8000', account_id: 'alice', session_id: session,
     checked_at: Math.floor(Date.now()/1000), items: [{name: 'alice/code', type: 'agent',
-      scope: 'user', status: args[0] === '_startup-apply' ? 'updated' : 'available', current_version: '1.0', latest_version: '2.0',
+      scope: 'user', status: session === 'pilot-session' ? 'updated' : 'available', current_version: '1.0', latest_version: '2.0',
       description: 'Fixed bugs', manual_command: 'observal agent pull alice/code --upgrade'}]}), {mode: 0o600});
 }, 200);
 `, { mode: 0o700 });
@@ -77,7 +78,7 @@ await waitUntil(() => updateMessages().length === 2);
 assert.equal(updateMessages().length, 2, "live result delivered once after child exits");
 assert.equal(fs.readdirSync(path.join(dir, "update-notices")).length, 0);
 assert.deepEqual(fs.readFileSync(path.join(home, "worker-starts"), "utf-8").trim().split("\n"),
-  ["_startup-check:session-a", "_startup-check:session-b"], "start once per Pi session");
+  ["_startup-apply:session-a", "_startup-apply:session-b"], "start once per Pi session");
 fs.writeFileSync(path.join(dir, "update-notices", `${"c".repeat(64)}.json`), JSON.stringify({
   schema: 1, registry: "http://localhost:8000", account_id: "alice", session_id: "session-a",
   checked_at: Math.floor(Date.now() / 1000), items: [{ name: "alice/code", type: "agent",
@@ -104,28 +105,30 @@ fs.writeFileSync(recoveryFile, JSON.stringify({
   schema: 1, registry: "http://localhost:8000", account_id: "alice", session_id: "session-a",
   checked_at: Math.floor(Date.now() / 1000), items: [{name: "alice/code", scope: "user", status: "failed",
     current_version: "1.0", latest_version: "2.0", description: "x".repeat(3900),
-    recovery: {partial: true, recovery_dir: "/tmp/backup", recovery_files: [
-      {target: "/tmp/profile/AGENTS.md", backup: "/tmp/backup/0.before"}]}}],
+    reason: "Installer failed after admission; inspect managed files before retrying."}],
 }), { mode: 0o600 });
 await handlers.get("session_start")!({ reason: "resume" }, context("session-b", true));
 assert.ok(messages.some((message) => message.includes("update failure from a previous Pi session")));
-assert.ok(messages.some((message) => message.includes("/tmp/backup/0.before")),
-  "partial recovery references must not be lost to the main notice truncation");
+assert.ok(messages.some((message) => message.includes("inspect managed files before retrying")),
+  "failure notices must explain manual inspection even with long release notes");
 assert.equal(fs.existsSync(recoveryFile), false);
 const pendingKey = "f".repeat(64);
 const pendingFile = path.join(dir, "update-notices", `${pendingKey}.pending`);
+const backupDir = path.join(dir, "update-backups", pendingKey);
+fs.mkdirSync(backupDir, {recursive: true, mode: 0o700});
+fs.writeFileSync(path.join(backupDir, "manifest.json"), JSON.stringify({schema: 1}));
 const pendingIdentity = {registry: "http://localhost:8000", account_id: "alice", session_id: "session-a"};
-fs.writeFileSync(pendingFile, JSON.stringify({schema: 1, state: "pending", ...pendingIdentity,
-  checked_at: Math.floor(Date.now() / 1000), item: {name: "alice/code", current_version: "1.0", latest_version: "2.0"},
-  recovery: {recovery_dir: "/tmp/private-backups", recovery_files: [
-    {target: "/tmp/profile/AGENTS.md", backup: "/tmp/private-backups/0.before"}]}}),
+fs.writeFileSync(pendingFile, JSON.stringify({schema: 1, state: "pending", ...pendingIdentity, backup_dir: backupDir,
+  checked_at: Math.floor(Date.now() / 1000), item: {name: "alice/code", current_version: "1.0", latest_version: "2.0"}}),
 {mode: 0o600});
 const beforePending = messages.length;
 await handlers.get("session_start")!({ reason: "resume" }, context("session-b", true));
 assert.match(messages[beforePending]!, /outcome pending from a Pi session/);
 assert.match(messages[beforePending]!, /Files may have changed/);
-assert.ok(messages.slice(beforePending).some((message) => message.includes("/tmp/private-backups/0.before")),
-  "unsealed mid-commit crash must show recoverable original bytes");
+assert.ok(messages.slice(beforePending).some((message) => message.includes("inspect managed profiles and installed locks")),
+  "unsealed mid-write crash must require manual inspection");
+assert.ok(messages.slice(beforePending).some((message) => message.includes(backupDir)),
+  "unresolved outcome must surface its private backup when available");
 assert.ok(fs.existsSync(pendingFile), "unresolved journal must never be deleted on notification");
 const unsealed = path.join(dir, "update-notices", `${pendingKey}.json`);
 fs.writeFileSync(unsealed, JSON.stringify({schema: 1, ...pendingIdentity, journaled: true,
@@ -142,7 +145,6 @@ assert.match(messages.at(-1)!, /installed on disk/);
 assert.ok(!fs.existsSync(pendingFile) && !fs.existsSync(unsealed) && !fs.existsSync(sealFile));
 await handlers.get("session_shutdown")!({}, context("session-b", true));
 
-process.env.OBSERVAL_PI_AUTO_APPLY = "1";
 await handlers.get("session_start")!({ reason: "startup" }, context("pilot-no-ui", false));
 await sleep(100);
 assert.equal(fs.readFileSync(path.join(home, "worker-starts"), "utf-8").trim().split("\n").length, 2,
@@ -151,7 +153,6 @@ await handlers.get("session_start")!({ reason: "startup" }, context("pilot-sessi
 await waitUntil(() => messages.some((message) => message.includes("installed on disk") && message.includes("Fixed bugs")));
 assert.match(fs.readFileSync(path.join(home, "worker-starts"), "utf-8"), /_startup-apply:pilot-session/);
 await handlers.get("session_shutdown")!({}, context("pilot-session", true));
-delete process.env.OBSERVAL_PI_AUTO_APPLY;
 
 fs.rmSync(home, { recursive: true, force: true });
 console.log("startup update notices ok");

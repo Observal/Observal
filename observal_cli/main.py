@@ -106,7 +106,9 @@ def main(
 
     # Pi startup workers must not run CLI startup migrations or rewrite
     # bundled skills in the harness while a session is starting.
-    if any(cmd in sys.argv[1:] for cmd in ("_startup-check", "_startup-apply")):
+    if os.environ.get("OBSERVAL_AUTO_UPDATE_INSTALL") == "1" or any(
+        cmd in sys.argv[1:] for cmd in ("_startup-check", "_startup-apply")
+    ):
         return
 
     if debug:
@@ -230,6 +232,7 @@ from observal_cli.cmd_skill import skill_app
 from observal_cli.cmd_support import support_app
 from observal_cli.cmd_team import team_app
 from observal_cli.cmd_transfer import add_transfer_owner_command
+from observal_cli.cmd_update import register_update
 
 # ═══════════════════════════════════════════════════════════
 # registry_app: Component registry parent group
@@ -286,6 +289,7 @@ register_api(app)
 register_scan(app)
 register_outdated(app)
 register_freeze(app)
+register_update(app)
 
 
 @app.command("_startup-check", hidden=True)
@@ -298,6 +302,18 @@ def startup_check(
     from observal_cli.startup_update_check import check_pi
 
     check_pi(cwd, session_id, notice_key)
+
+
+@app.command("_startup-apply-claude", hidden=True)
+def startup_apply_claude(
+    cwd: str = typer.Option(..., "--cwd"),
+    session_id: str = typer.Option(..., "--session-id"),
+    notice_key: str = typer.Option(..., "--notice-key"),
+) -> None:
+    """Guarded Claude Code user-profile update worker."""
+    from observal_cli.startup_update_apply import apply_claude
+
+    apply_claude(cwd, session_id, notice_key)
 
 
 @app.command("_startup-apply", hidden=True)

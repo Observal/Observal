@@ -1,6 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Observal Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Apply worker lifetime and notice contract (startup remains check-only)."""
+"""Gated Pi apply worker lifetime and durable notice contract."""
 
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from observal_cli import auto_update_install, auto_update_policy, client, installed_updates
+from observal_cli import auto_update_policy, client, cmd_update, installed_updates
 from observal_cli import startup_update_apply as worker
 from observal_cli import startup_update_check as check
 
@@ -50,8 +51,8 @@ def setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
     }
     monkeypatch.setattr(installed_updates, "inventory_for_context", lambda *args: [entry])
     monkeypatch.setattr(installed_updates, "compare", lambda *args, **kwargs: [finding])
-    apply = MagicMock(return_value={"status": "updated"})
-    monkeypatch.setattr(auto_update_install, "apply_pi_agent", apply)
+    apply = MagicMock(return_value={"status": "updated", "reason": "Saved profile updated."})
+    monkeypatch.setattr(cmd_update, "apply_startup_pi_agent", apply)
     return {"tmp": tmp_path, "apply": apply}
 
 
@@ -300,6 +301,53 @@ def test_prior_session_uncertain_outcome_blocks_new_auto_installs(setup: dict) -
     assert result()["outcome_final"] is False
 
 
+def test_opted_in_apply_ignores_a_pre_release_check_only_cache(setup: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    entry = installed_updates.inventory_for_context("pi", str(setup["tmp"]))[0]
+    latest = "1.0"
+    calls: list[bool] = []
+
+    def compare(entries: list[dict], *, verify_releases: bool = False) -> list[dict]:
+        assert entries == [entry]
+        calls.append(verify_releases)
+        if latest == "1.0":
+            return [{**entry, "latest_version": latest, "outdated": False, "status": "current"}]
+        return [
+            {
+                **entry,
+                "qualified_name": "alice/code",
+                "latest_version": latest,
+                "outdated": True,
+                "release_verified": True,
+                "status": "outdated",
+                "release": {"description": "newly approved"},
+            }
+        ]
+
+    monkeypatch.setattr(installed_updates, "compare", compare)
+    check.check_pi(str(setup["tmp"]), "session-before-release", "a" * 64)
+    cache = next(check.CACHE_DIR.glob("*.json"))
+    assert json.loads(cache.read_text())[0]["latest_version"] == "1.0"
+
+    latest = "2.0"  # The registry approves a new release after that cached check.
+    worker.apply_pi(str(setup["tmp"]), "session-a", KEY)
+    assert calls == [True, True], "apply must fetch live instead of using the stale check-only cache"
+    setup["apply"].assert_called_once()
+    assert setup["apply"].call_args.args[0]["latest_version"] == "2.0"
+    assert result()["items"][0]["status"] == "updated"
+    assert json.loads(cache.read_text())[0]["latest_version"] == "1.0", "apply need not modify notice-only cache"
+
+
+def test_failed_fresh_check_never_uses_stale_cache_for_install(setup: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    check.check_pi(str(setup["tmp"]), "before-outage", "a" * 64)
+    assert next(check.CACHE_DIR.glob("*.json")).exists()
+    monkeypatch.setattr(installed_updates, "compare", lambda *_, **__: (_ for _ in ()).throw(ValueError("secret")))
+    worker.apply_pi(str(setup["tmp"]), "session-a", KEY)
+    setup["apply"].assert_not_called()
+    assert "automatic update skipped" in result()["warning"]
+    assert "secret" not in json.dumps(result())
+    assert not list(check.NOTICE_DIR.glob("*.pending"))
+
+
 def test_frozen_is_notice_only(setup: dict, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(auto_update_policy, "policy_status", lambda _: {"effective": False})
     worker.apply_pi(str(setup["tmp"]), "session-a", KEY)
@@ -307,42 +355,25 @@ def test_frozen_is_notice_only(setup: dict, monkeypatch: pytest.MonkeyPatch) -> 
     assert "frozen" in result()["items"][0]["reason"]
 
 
-def test_partial_failure_preserves_local_recovery_reference(setup: dict) -> None:
-    recovery = setup["tmp"] / "original.before"
-    recovery.write_text("original bytes")
-
-    def fail_with_partial(*_args: object, **kwargs: object) -> dict:
-        kwargs["reserve_recovery"]({setup["tmp"] / "AGENTS.md": recovery})
-        raise auto_update_install.InstallFailedError(
-            "secret must not leak",
-            partial=True,
-            recovery_dir=setup["tmp"],
-            recovery_files={setup["tmp"] / "AGENTS.md": recovery},
-        )
-
-    setup["apply"].side_effect = fail_with_partial
+def test_failed_installer_keeps_pending_record_without_claiming_rollback(setup: dict) -> None:
+    setup["apply"].return_value = {"status": "failed", "reason": "Install may have changed managed files."}
     worker.apply_pi(str(setup["tmp"]), "session-a", KEY)
     text = (check.NOTICE_DIR / f"{KEY}.json").read_text()
     assert "secret" not in text
     item = result()["items"][0]
-    assert item["status"] == "failed" and item["recovery"]["partial"]
-    assert item["recovery"]["recovery_files"][0]["backup"] == str(recovery)
+    assert item["status"] == "failed" and "may have changed" in item["reason"]
     assert result()["outcome_final"] is False
     assert not (check.NOTICE_DIR / f"{KEY}.complete").exists()
     pending = json.loads((check.NOTICE_DIR / f"{KEY}.pending").read_text())
-    assert pending["recovery"]["recovery_files"][0]["backup"] == str(recovery)
+    assert pending["item"]["latest_version"] == "2.0"
     later = worker.expected_notice_key(REGISTRY, "alice", "session-later")
     worker.apply_pi(str(setup["tmp"]), "session-later", later)
     setup["apply"].assert_called_once()
     assert "unresolved" in json.loads((check.NOTICE_DIR / f"{later}.json").read_text())["warning"]
 
 
-def test_unexpected_error_after_recovery_reservation_stays_unsealed(setup: dict) -> None:
-    backup = setup["tmp"] / "original.before"
-    backup.write_text("original bytes")
-
-    def unknown(*_args: object, **kwargs: object) -> dict:
-        kwargs["reserve_recovery"]({setup["tmp"] / "AGENTS.md": backup})
+def test_unexpected_error_after_admission_stays_unsealed(setup: dict) -> None:
+    def unknown(*_args: object, **_kwargs: object) -> dict:
         raise RuntimeError("unverified worker error")
 
     setup["apply"].side_effect = unknown
@@ -353,12 +384,12 @@ def test_unexpected_error_after_recovery_reservation_stays_unsealed(setup: dict)
     assert not (check.NOTICE_DIR / f"{KEY}.complete").exists()
 
 
-def test_oversized_partial_result_retains_recovery_directory(setup: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_oversized_failed_result_retains_pending_record(setup: dict, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(check, "MAX_NOTICE_BYTES", 900)
     monkeypatch.setattr(
-        check,
-        "_cached_or_compare",
-        lambda *_: [
+        installed_updates,
+        "compare",
+        lambda *_, **__: [
             {
                 "id": "agent-id",
                 "type": "agent",
@@ -374,17 +405,12 @@ def test_oversized_partial_result_retains_recovery_directory(setup: dict, monkey
             }
         ],
     )
-    setup["apply"].side_effect = auto_update_install.InstallFailedError(
-        "failed",
-        partial=True,
-        recovery_dir=setup["tmp"],
-        recovery_files={setup["tmp"] / "AGENTS.md": setup["tmp"] / "0.before"},
-    )
+    setup["apply"].return_value = {"status": "failed", "reason": "Install may have changed managed files."}
     worker.apply_pi(str(setup["tmp"]), "session-a", KEY)
     notice = result()
     assert notice["items"][0]["status"] == "failed"
-    assert notice["items"][0]["recovery"]["recovery_dir"] == str(setup["tmp"])
-    assert "too large" in notice["warning"]
+    assert notice["items"][0]["status"] == "failed"
+    assert "notice limit" in notice["warning"]
     assert (check.NOTICE_DIR / f"{KEY}.pending").exists()
     assert not (check.NOTICE_DIR / f"{KEY}.complete").exists()
 

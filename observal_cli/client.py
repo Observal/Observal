@@ -54,6 +54,15 @@ def bounded_requests(cutoff: float) -> Iterator[None]:
         _NETWORK_CUTOFF.reset(token)
 
 
+def end_startup_network_budget() -> None:
+    """Disarm the auto-install request guard before the first filesystem write.
+
+    A child installer can continue after Pi exits, but a network alarm must
+    never interrupt its file mutation or post-write metadata tracking.
+    """
+    _NETWORK_CUTOFF.set(None)
+
+
 @contextmanager
 def _request_wall_budget(cutoff: float | None) -> Iterator[None]:
     """Bound one startup HTTP call, including a peer that never stops streaming.

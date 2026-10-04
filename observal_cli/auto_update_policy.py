@@ -1,10 +1,11 @@
+# SPDX-FileCopyrightText: 2026 Observal Contributors
 # SPDX-License-Identifier: Apache-2.0
 
 """Local, registry-scoped auto-update consent and the shared install/policy gate.
 
-The guarded Pi installer holds ``registry_gate`` through mutation and takes
-``pi_install_lock`` inside it. Pi startup invokes it only in the explicit
-apply pilot, under the outer registry/account worker gate.
+The Pi startup runner holds ``registry_gate`` while its normal agent-pull
+subprocess takes ``pi_install_lock``. It runs only in the explicit apply pilot,
+under the outer registry/account worker gate.
 """
 
 from __future__ import annotations
@@ -35,7 +36,7 @@ else:
 POLICY_VERSION = 2
 POLICY_PATH = config.CONFIG_DIR / "auto-update-policy.json"
 GATE_DIR = config.CONFIG_DIR / "auto-update-gates"
-GATE_TIMEOUT_SECONDS = 90.0  # bounded by the proposed maximum installation duration
+GATE_TIMEOUT_SECONDS = 90.0  # bounds lock acquisition, not an in-progress installer
 
 
 class PolicyError(ValueError):
@@ -203,12 +204,21 @@ def apply_worker_gate(registry: str, account: str, *, timeout: float = GATE_TIME
 
 @contextmanager
 def pi_install_lock(registry: str, *, timeout: float = GATE_TIMEOUT_SECONDS) -> Iterator[None]:
-    """Serialize all Pi pulls sharing profile files, including manual pulls.
+    """Serialize Pi writes across registries: their local destinations may overlap.
 
     Auto-install lock order: registry gate -> Pi install lock -> lockfile.
-    Manual pulls take only this lock, never the registry gate.
+    Manual pulls and skill installs take only this lock, never the registry gate.
     """
-    with _file_gate(f"pi-install:{normalize_server_url(registry)}", timeout=timeout):
+    normalize_server_url(registry)  # Reject an unknown registry identity.
+    with _file_gate("pi-install:all-registries", timeout=timeout):
+        yield
+
+
+@contextmanager
+def claude_install_lock(registry: str, *, timeout: float = GATE_TIMEOUT_SECONDS) -> Iterator[None]:
+    """Serialize manual and guarded Claude Code profile writes across registries."""
+    normalize_server_url(registry)
+    with _file_gate("claude-install:all-registries", timeout=timeout):
         yield
 
 

@@ -93,7 +93,6 @@ const LOCKFILE_PATH = path.join(OBSERVAL_DIR, "lockfile.json");
 const OUTBOX_DIR = path.join(OBSERVAL_DIR, "pi_session_outbox");
 const UPDATE_NOTICE_DIR = path.join(OBSERVAL_DIR, "update-notices");
 const UPDATE_SHUTDOWN_DIR = path.join(OBSERVAL_DIR, "update-shutdown");
-const UPDATE_CHECK_TIMEOUT_MS = 10_000;
 const UPDATE_NOTICE_MAX_BYTES = 64 * 1024;
 const UPDATE_NOTICE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 // Written by `observal discover use` and the install commands; read here so the
@@ -332,7 +331,7 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  // ─── Startup update notices and isolated Pi apply pilot ────────────────
+  // ─── Startup update notices and user-consented Pi apply ────────────────
 
   function registryKey(config: ObservalConfig): string {
     const url = new URL(config.server_url);
@@ -403,13 +402,9 @@ export default function (pi: ExtensionAPI) {
           + (previous ? `Earlier items in this worker: ${previous}${completed.length > 8 ? ", and more in the record" : ""}. ` : "")
           + "Files may have changed; inspect managed profiles and installed locks before trying again. "
           + `Unresolved local record: ${safeNotice(file, 1200)}`, "warning");
-        if (record.recovery?.recovery_dir) {
-          ctx.ui.notify(`Original managed bytes may be in: ${safeNotice(record.recovery.recovery_dir, 1200)}`, "warning");
-          const backups = Array.isArray(record.recovery.recovery_files) ? record.recovery.recovery_files : [];
-          for (const entry of backups.slice(0, 20)) {
-            ctx.ui.notify(`Inspect ${safeNotice(entry.target, 1200)} and backup ${safeNotice(entry.backup, 1200)}.`, "warning");
-          }
-          if (backups.length > 20) ctx.ui.notify(`${backups.length - 20} more original files remain in the recovery directory.`, "warning");
+        if (typeof record.backup_dir === "string" && fs.existsSync(path.join(record.backup_dir, "manifest.json"))) {
+          ctx.ui.notify(`Verified pre-update bytes are saved at ${safeNotice(record.backup_dir, 1200)}. `
+            + "Do not restore over unrecognized edits; inspect the lock and files first.", "warning");
         }
         pendingWarningsShown.add(shownKey);
       }
@@ -427,7 +422,6 @@ export default function (pi: ExtensionAPI) {
           || notice.account_id !== config.user_id || !Array.isArray(notice.items)) continue;
         if (notice.journaled === true && !isSealedOutcome(name.slice(0, 64), notice)) continue;
         const messages: string[] = [];
-        const recoveryMessages: string[] = [];
         if (notice.session_id !== updateCheckSession) {
           const when = Number.isFinite(notice.checked_at)
             ? new Date(notice.checked_at * 1000).toLocaleString() : "earlier";
@@ -452,15 +446,6 @@ export default function (pi: ExtensionAPI) {
           }
           if (item.reason) messages.push(safeNotice(item.reason));
           if (item.manual_command) messages.push(`To update manually: ${safeNotice(item.manual_command, 400)}`);
-          if (item.status === "failed" && item.recovery?.partial) {
-            recoveryMessages.push(`Local recovery backups (keep these files): ${safeNotice(item.recovery.recovery_dir, 2000)}`);
-            const files = Array.isArray(item.recovery.recovery_files) ? item.recovery.recovery_files : [];
-            for (const entry of files.slice(0, 20)) {
-              recoveryMessages.push(`Inspect ${safeNotice(entry.target, 1200)} and restore from ${safeNotice(entry.backup, 1200)} if needed.`);
-            }
-            const omitted = Math.max(0, Number(item.recovery.recovery_files_omitted) || 0) + Math.max(0, files.length - 20);
-            if (omitted > 0) recoveryMessages.push(`${omitted} more recovery files remain in the private backup directory.`);
-          }
         }
         if (messages.length > 0) {
           messages.push("`observal freeze` disables future auto-updates; manual updates remain available.");
@@ -476,9 +461,6 @@ export default function (pi: ExtensionAPI) {
           }
           if (chunk) ctx.ui.notify(chunk, "info");
         }
-        // Recovery references must not be silently cut off by the general
-        // 4 KiB notice limit. A failed notification leaves the spool intact.
-        for (const recovery of recoveryMessages) ctx.ui.notify(recovery, "warning");
         // Only a *durable verified worker outcome* may resolve its journal;
         // a bridge diagnostic or check-only result must never erase it.
         if (notice.journaled === true) {
@@ -516,35 +498,18 @@ export default function (pi: ExtensionAPI) {
       } catch { /* no startup failure for an unwritable spool */ }
     };
     const command = process.env.OBSERVAL_CLI_BIN || "observal";
-    // Temporary rollout gate in addition to account-scoped `observal unfreeze`.
-    // The Python worker alone authorizes each exact release and file mutation.
-    const applyPilot = process.env.OBSERVAL_PI_AUTO_APPLY === "1";
+    // Frozen accounts get notices only; the Python worker checks consent and
+    // exact ownership before it can launch any installer. Never kill a worker
+    // that may have started writing, even after Pi exits.
     try {
-      const child = spawn(command, [applyPilot ? "_startup-apply" : "_startup-check", "--cwd", ctx.cwd,
+      const child = spawn(command, ["_startup-apply", "--cwd", ctx.cwd,
         "--session-id", sessionId, "--notice-key", key], { stdio: "ignore", shell: false });
-      if (applyPilot) child.unref(); // Pi exit cannot kill or wait for commit/rollback.
-      let finished = false;
-      let timedOut = false;
-      // Only the check-only worker can be interrupted. Apply enforces its own
-      // admission deadline and may finish safely after the session exits.
-      const timeout = applyPilot ? undefined : setTimeout(() => {
-        if (!finished) {
-          timedOut = true;
-          child.kill();
-        }
-      }, UPDATE_CHECK_TIMEOUT_MS);
+      child.unref();
       child.once("error", () => {
-        finished = true;
-        if (timeout) clearTimeout(timeout);
         diagnostic("Update worker could not start; run `observal outdated` manually.");
       });
       child.once("close", (code) => {
-        finished = true;
-        if (timeout) clearTimeout(timeout);
-        if (code !== 0) diagnostic(applyPilot
-          ? "Update worker stopped unexpectedly; inspect managed files before trying again."
-          : timedOut ? "Update check timed out; run `observal outdated` later."
-            : "Update check failed; run `observal outdated` later.");
+        if (code !== 0) diagnostic("Update worker stopped unexpectedly; inspect managed files before trying again.");
         if (updateCheckSession === sessionId) deliverPendingUpdateNotices(config, ctx);
       });
     } catch {

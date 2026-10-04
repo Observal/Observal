@@ -65,13 +65,15 @@ observal scan --inventory --output json  # local-only; no Registry request or su
 observal scan --harness kiro --inventory --output json
 observal outdated --output json
 observal outdated --harness claude-code --no-report --output json
+observal update --all --output json             # preview only
+observal update --all --yes --output json       # explicitly run eligible installers
 observal freeze --output json
 observal unfreeze --output json
 observal unfreeze --project --dir ./repo --output json
 observal freeze --project --dir ./repo --output json
 ```
 
-`freeze`/`unfreeze` change only local consent for *future* automatic registry updates; automatic installers are not yet connected. They require a locally signed-in account but make no network request. Consent is per account and registry; a different login or environment-overridden token never inherits it. Auto-updating defaults to frozen. Global `unfreeze` covers eligible user-scoped installs; project changes additionally require local `unfreeze --project` and may alter the committed `observal.lock` when project auto-updating is implemented. Manual installs remain possible while frozen. Verify `effective` in JSON: a project grant is dormant when global auto-updating is frozen.
+`freeze`/`unfreeze` change only local consent for *future* automatic registry updates; Pi alone currently applies eligible user-scoped agent updates at interactive startup after `observal unfreeze`; other harnesses and standalone components remain notice-only until their file plans and startup bridges are verified. `observal update --all --yes` is a separate explicit manual batch command and is never blocked by `freeze`; it skips pins, unverifiable changes, and MCP snippet-only installs. They require a locally signed-in account but make no network request. Consent is per account and registry; a different login or environment-overridden token never inherits it. Auto-updating defaults to frozen. Global `unfreeze` covers eligible user-scoped installs; project changes additionally require local `unfreeze --project` and may alter the committed `observal.lock` when project auto-updating is implemented. Manual installs remain possible while frozen. Verify `effective` in JSON: a project grant is dormant when global auto-updating is frozen.
 
 For scan results, report detected harnesses, installed components, Agents, and unregistered items. For outdated results, inspect `items`, `summary`, and `report`. `--no-report` suppresses inbox reporting, not the Registry check. An Agent's `upgrade_command` uses `observal agent pull --upgrade`, because a plain pull keeps the version locked in the project's `observal.lock`; run it only after the user agrees. An `unknown` item has no recorded version; its reinstall command records one.
 

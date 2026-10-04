@@ -1,9 +1,10 @@
+# SPDX-FileCopyrightText: 2026 Observal Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Bounded, check-only Pi startup worker; writes durable user-facing results.
+"""Bounded, check-only notice writer for Pi's frozen startup path.
 
-This is deliberately separate from the automatic installer. The extension
-never invokes `agent pull` and a failed check cannot alter harness files.
+A cached check can never authorize a write; the opted-in apply workers
+compare releases fresh under the registry gate.
 """
 
 from __future__ import annotations
@@ -127,7 +128,15 @@ def _message(item: dict, *, enabled: bool) -> dict | None:
         command = f"observal agent pull {target} --harness pi --upgrade --scope {item['scope']}"
         if root and item.get("scope") == "project":
             command += f" --dir {shlex.quote(str(root))}"
-    elif item.get("type") == "skill" and item.get("scope") == "user":
+    elif (
+        item.get("type") == "agent"
+        and item.get("harness") == "claude-code"
+        and item.get("scope") == "user"
+        and isinstance(root, str)
+        and root
+    ):
+        command = f"observal agent pull {target} --harness claude-code --scope user --dir {shlex.quote(root)} --upgrade"
+    elif item.get("type") == "skill" and item.get("scope") == "user" and item.get("harness") == "pi":
         command = f"observal registry skill install {target} --harness pi --scope user"
     else:
         command = None  # MCP install only prints a snippet; hooks/projects need separate instructions.
@@ -183,7 +192,7 @@ def _prune_directory(directory: Path, limit: int) -> None:
 
 
 def check_pi(cwd: str, session_id: str, notice_key: str) -> None:
-    """Write one result, including failures, before exiting the worker."""
+    """Write one cached Pi notice; never use it as install authorization."""
     if len(notice_key) != 64 or any(char not in "0123456789abcdef" for char in notice_key):
         raise ValueError("Invalid startup notice key")
     if len(session_id) > 256 or not session_id:
@@ -195,6 +204,7 @@ def check_pi(cwd: str, session_id: str, notice_key: str) -> None:
         "registry": registry,
         "account_id": account,
         "session_id": session_id,
+        "harness": "pi",
         "checked_at": int(time.time()),
         "items": [],
         "warning": None,

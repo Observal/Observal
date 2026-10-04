@@ -318,6 +318,8 @@ def upsert_agent(
     local_name: str | None = None,
     lock_digest: str | None = None,
     lock_status: str | None = None,
+    requested_version: str | None = None,
+    pin_known: bool = False,
     record_use: bool = True,
 ) -> None:
     """Add or update an agent entry in the lock file.
@@ -351,6 +353,10 @@ def upsert_agent(
         entry["lock_digest"] = lock_digest
     if lock_status:
         entry["lock_status"] = lock_status
+    if requested_version:
+        entry["requested_version"] = requested_version
+    if pin_known:
+        entry["pin_known"] = True
 
     def commit(registry: dict) -> tuple[bool, None]:
         agents = _ensure_harness(registry, harness)["agents"]
@@ -424,6 +430,7 @@ def upsert_standalone(
     version_id: str | None = None,
     digest: str | None = None,
     requested_version: str | None = None,
+    pin_known: bool = False,
 ) -> None:
     """Add or update a standalone component (MCP, skill, hook, etc.) in the lock file.
 
@@ -457,6 +464,8 @@ def upsert_standalone(
         entry["digest"] = digest
     if requested_version:
         entry["requested_version"] = requested_version
+    if pin_known:
+        entry["pin_known"] = True
 
     def commit(registry: dict) -> tuple[bool, None]:
         standalone = _ensure_harness(registry, harness)["standalone"]

@@ -1,10 +1,11 @@
+# SPDX-FileCopyrightText: 2026 Observal Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Pi apply worker, launched only by the explicitly gated startup pilot.
+"""Guarded Pi and Claude Code startup apply workers.
 
 A registry/account worker lock covers comparison through durable outcome
-sealing. The 90-second budget limits *admission*, not the duration of a commit:
-killing a process after it starts replacing files would defeat rollback.
+sealing. The 90-second budget limits *admission*, not the duration of an
+existing installer subprocess: killing it mid-write may leave partial files.
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ import tempfile
 import time
 from typing import TYPE_CHECKING
 
-from observal_cli import auto_update_install, auto_update_policy, client, installed_updates
+from observal_cli import auto_update_policy, client, cmd_update, install_recovery, installed_updates
 from observal_cli import startup_update_check as check
 from observal_cli.errors import CliError
 
@@ -94,7 +95,9 @@ def _unresolved_pending(registry: str, account: str) -> bool:
     return False
 
 
-def _pending_payload(registry: str, account: str, session_id: str, msg: dict, completed: list[dict]) -> dict:
+def _pending_payload(
+    registry: str, account: str, session_id: str, msg: dict, completed: list[dict], *, notice_key: str | None = None
+) -> dict:
     return {
         "schema": 1,
         "state": "pending",
@@ -103,6 +106,9 @@ def _pending_payload(registry: str, account: str, session_id: str, msg: dict, co
         "session_id": session_id,
         "checked_at": int(time.time()),
         "item": {key: msg.get(key) for key in ("name", "current_version", "latest_version")},
+        "backup_dir": str(
+            install_recovery.path_for(shutdown_marker(notice_key or expected_notice_key(registry, account, session_id)))
+        ),
         "completed": [{key: item.get(key) for key in ("name", "status")} for item in completed],
     }
 
@@ -133,11 +139,32 @@ def apply_pi(cwd: str, session_id: str, notice_key: str) -> None:
         auto_update_policy.apply_worker_gate(registry, account, timeout=max(0, deadline - time.monotonic())),
         client.bounded_requests(deadline - RECOVERY_RESERVE_SECONDS),
     ):
-        _apply_pi_serialized(cwd, session_id, notice_key, registry=registry, account=account, deadline=deadline)
+        _apply_serialized(cwd, session_id, notice_key, registry=registry, account=account, deadline=deadline)
 
 
-def _apply_pi_serialized(
-    cwd: str, session_id: str, notice_key: str, *, registry: str, account: str, deadline: float
+def apply_claude(cwd: str, session_id: str, notice_key: str) -> None:
+    """Use the same journal and bounded admission; only the owned-file shape differs."""
+    from observal_cli.hooks.claude_updates import notice_key as expected_key
+
+    shutdown_marker(notice_key)
+    if not session_id or len(session_id) > 256:
+        raise ValueError("Invalid session identifier")
+    registry = auto_update_policy.active_registry()
+    account = auto_update_policy.active_account()
+    if notice_key != expected_key(registry, account, session_id):
+        raise ValueError("Claude Code notice key does not match the authenticated session")
+    deadline = time.monotonic() + APPLY_SECONDS
+    with (
+        auto_update_policy.apply_worker_gate(registry, account, timeout=max(0, deadline - time.monotonic())),
+        client.bounded_requests(deadline - RECOVERY_RESERVE_SECONDS),
+    ):
+        _apply_serialized(
+            cwd, session_id, notice_key, registry=registry, account=account, deadline=deadline, harness="claude-code"
+        )
+
+
+def _apply_serialized(
+    cwd: str, session_id: str, notice_key: str, *, registry: str, account: str, deadline: float, harness: str = "pi"
 ) -> None:
     marker = shutdown_marker(notice_key)
     pending_path = check.NOTICE_DIR / f"{notice_key}.pending"
@@ -145,12 +172,12 @@ def _apply_pi_serialized(
     journal_active = False
     unresolved_pending = False
     uncertain = False
-    recovery_reserved = False
     payload: dict = {
         "schema": 1,
         "registry": registry,
         "account_id": account,
         "session_id": session_id,
+        "harness": harness,
         "checked_at": int(time.time()),
         "items": [],
         "warning": None,
@@ -167,11 +194,20 @@ def _apply_pi_serialized(
         unresolved_pending = _unresolved_pending(registry, account) or complete_path.exists()
         if unresolved_pending:
             payload["warning"] = "An earlier installation outcome is unresolved; inspect managed files before retrying."
-        installed = installed_updates.inventory_for_context("pi", cwd)
+        installed = installed_updates.inventory_for_context(harness, cwd)
         if installed:
-            findings = check._cached_or_compare(registry, account, cwd, installed)
             policy = auto_update_policy.policy_status(registry)
             enabled = policy["effective"] and not policy.get("warning")
+            # The 24-hour cache is for notice-only startups. An opted-in apply
+            # must discover newly approved releases even if the previous Pi
+            # session cached an up-to-date result before they were published.
+            # The normal installer still re-fetches and verifies the exact
+            # target under its lock before writing any managed files.
+            findings = (
+                installed_updates.compare(installed, verify_releases=True)
+                if enabled
+                else check._cached_or_compare(registry, account, cwd, installed)
+            )
             if policy.get("warning"):
                 payload["warning"] = "Auto-update policy is unreadable; automatic installs are disabled."
             for item in findings[: check.MAX_ITEMS]:
@@ -181,10 +217,10 @@ def _apply_pi_serialized(
                 if not enabled:
                     msg["reason"] = "Automatic updates are frozen or unavailable; run `observal unfreeze` to opt in."
                 elif item.get("reason") is None:
-                    msg["reason"] = "This item requires a manual update in the Pi pilot."
+                    msg["reason"] = "This item requires a manual update in the startup pilot."
                 if (
                     enabled
-                    and item.get("type") == "agent"
+                    and item.get("type") in ({"agent", "skill"} if harness == "pi" else {"agent"})
                     and item.get("scope") == "user"
                     and item.get("release_verified")
                 ):
@@ -192,24 +228,26 @@ def _apply_pi_serialized(
                         entry
                         for entry in installed
                         if entry.get("id") == item.get("id")
-                        and entry.get("type") == "agent"
+                        and entry.get("type") == item.get("type")
                         and entry.get("scope") == "user"
                         and entry.get("directory") == item.get("directory")
                         and entry.get("current_version") == item.get("current_version")
                     ]
                     if len(current) != 1:
                         msg["status"] = "skipped"
-                        msg["reason"] = "The installed agent changed or is ambiguous; update manually."
+                        msg["reason"] = "The installed item changed or is ambiguous; update manually."
                     elif unresolved_pending or uncertain:
                         msg["status"] = "skipped"
                         msg["reason"] = "An earlier update outcome is unresolved; inspect local managed files."
                     elif _ended(notice_key) or time.monotonic() + RECOVERY_RESERVE_SECONDS >= deadline:
                         msg["status"] = "skipped"
-                        msg["reason"] = "Pi closed or the install admission window expired; update manually."
+                        msg["reason"] = "Session closed or the install admission window expired; update manually."
                     else:
                         # Persist this exact candidate and prior outcomes before
                         # allowing an installer to mutate any owned bytes.
-                        pending = _pending_payload(registry, account, session_id, msg, payload["items"])
+                        pending = _pending_payload(
+                            registry, account, session_id, msg, payload["items"], notice_key=notice_key
+                        )
                         try:
                             if journal_active:
                                 check._write_json(pending_path, pending, check.MAX_NOTICE_BYTES)
@@ -229,85 +267,63 @@ def _apply_pi_serialized(
                             )
                             payload["items"].append(msg)
                             break
-                        recovery_reserved = False
-
-                        def reserve_recovery(backups: dict[Path, Path]) -> None:
-                            nonlocal recovery_reserved
-                            directory = next(iter(backups.values())).parent
-                            record = {
-                                **pending,  # noqa: B023 - callback runs synchronously before this iteration ends
-                                "recovery": {
-                                    "recovery_dir": str(directory),
-                                    "recovery_files": [
-                                        {"target": str(target), "backup": str(backup)}
-                                        for target, backup in backups.items()
-                                    ],
-                                },
-                            }
-                            check._write_json(pending_path, record, check.MAX_NOTICE_BYTES)
-                            recovery_reserved = True
-
                         try:
-                            result = auto_update_install.apply_pi_agent(
+                            runner = (
+                                cmd_update.apply_startup_pi_agent
+                                if item["type"] == "agent"
+                                else cmd_update.apply_startup_pi_skill
+                            )
+                            kwargs = {"harness": harness} if harness == "claude-code" else {}
+                            result = runner(
                                 {**current[0], "latest_version": item["latest_version"]},
                                 registry=registry,
                                 account=account,
                                 deadline=deadline,
                                 shutdown_requested=lambda: _ended(notice_key),
-                                reserve_recovery=reserve_recovery,
+                                marker=marker,
+                                **kwargs,
                             )
-                            msg["status"] = "updated" if result.get("status") == "updated" else "failed"
-                            msg["reason"] = (
-                                "Saved Pi profile updated and verified; the current session and any copied active "
-                                "profile are unchanged. Re-select the agent with `/agent` and reload to activate it."
-                                if msg["status"] == "updated"
-                                else "Installation could not be verified; inspect the local files."
-                            )
-                            msg["manual_command"] = None if msg["status"] == "updated" else msg["manual_command"]
-                        except auto_update_install.InstallSkipError:
+                            msg["status"] = result["status"]
+                            msg["reason"] = result["reason"]
+                            if msg["status"] == "updated":
+                                msg["reason"] = (
+                                    "Saved Pi profile updated and verified; the current session and any copied "
+                                    "active profile are unchanged. Re-select the agent with `/agent` and reload "
+                                    "to activate it."
+                                    if item["type"] == "agent" and harness == "pi"
+                                    else "Saved Pi skill updated and verified; reload Pi to use the new version."
+                                    if harness == "pi"
+                                    else "Saved Claude Code profile updated and verified. Start a new session and select the agent to load it."
+                                )
+                                msg["manual_command"] = None
+                            elif msg["status"] == "failed":
+                                # A normal installer is not transactional. Its
+                                # failed child may have written a subset of files;
+                                # retain the pending record for manual review.
+                                uncertain = True
+                        except auto_update_policy.GateBusyError:
                             msg["status"] = "skipped"
                             msg["reason"] = (
-                                "Automatic installation was unsafe or interrupted before commit; update manually."
-                            )
-                        except auto_update_install.InstallFailedError as error:
-                            msg["status"] = "failed"
-                            msg["reason"] = (
-                                "Installation may be partial; inspect local recovery backups before re-pulling."
-                                if error.partial
-                                else "Installation failed; original files were restored."
-                            )
-                            if error.partial:
-                                uncertain = True  # Manual reconciliation, not a sealed final outcome.
-                                # Keep the spool bounded even for an agent with
-                                # many owned skills. Every original backup stays
-                                # in recovery_dir for manual inspection.
-                                recovery = error.result.copy()
-                                recovery["recovery_files"] = error.result["recovery_files"][:20]
-                                recovery["recovery_files_omitted"] = len(error.result["recovery_files"]) - len(
-                                    recovery["recovery_files"]
-                                )
-                                msg["recovery"] = recovery
-                        except (CliError, OSError, ValueError, TypeError):
-                            uncertain = uncertain or recovery_reserved
-                            msg["status"] = "failed" if recovery_reserved else "skipped"
-                            msg["reason"] = (
-                                "Installation outcome is uncertain; inspect local backups."
-                                if recovery_reserved
-                                else ("Automatic installation could not be verified; update manually.")
+                                "Another install or policy change holds the update gate; retry next startup."
                             )
                         except Exception:
-                            uncertain = uncertain or recovery_reserved
-                            # An unexpected installer error must never be reported
-                            # as success, even if a separate repair is needed.
+                            from loguru import logger as optic
+
+                            optic.exception("Startup update worker failed before confirming the installer outcome")
+                            uncertain = True
                             msg["status"] = "failed"
-                            msg["reason"] = "Installation stopped unexpectedly; inspect local files before re-pulling."
+                            msg["reason"] = "Installation outcome is uncertain; inspect managed files before retrying."
                 payload["items"].append(msg)
     except (CliError, OSError, ValueError, TypeError):
-        uncertain = uncertain or recovery_reserved
-        payload["warning"] = "Update worker could not complete; inspect managed installs and run `observal outdated`."
+        uncertain = uncertain or journal_active
+        payload["warning"] = (
+            "Update worker could not complete; inspect managed installs and run `observal outdated`."
+            if journal_active or unresolved_pending
+            else "automatic update skipped: the registry check could not complete; run `observal outdated` later."
+        )
     finally:
         # Even if a mutation succeeded before an unexpected exception, never
-        # forge a success: the installed-state verifier is the only authority.
+        # forge a success: installed-state and file-baseline verification decide.
         # Only this worker's completed result can resolve its own journal.
         payload["outcome_final"] = not unresolved_pending and not uncertain
         payload["journaled"] = journal_active
@@ -317,49 +333,30 @@ def _apply_pi_serialized(
             try:
                 check._write_json(notice, payload, check.MAX_NOTICE_BYTES)
             except ValueError:
-                # Do not lose the only recovery pointer to an oversized result.
+                # Limit UI notices, but never drop a failed/uncertain outcome.
                 compact = {
                     **payload,
                     "warning": "Update details exceeded the notice limit; inspect local managed files.",
                 }
-                compact["items"] = []
-                for item in payload["items"]:
-                    reduced = {
-                        key: item.get(key)
-                        for key in ("name", "type", "scope", "status", "current_version", "latest_version", "reason")
+                compact["items"] = [
+                    {
+                        "name": str(item.get("name") or "item")[:100],
+                        "type": item.get("type"),
+                        "scope": item.get("scope"),
+                        "status": item.get("status"),
+                        "current_version": item.get("current_version"),
+                        "latest_version": item.get("latest_version"),
+                        "reason": str(item.get("reason") or "")[:120],
                     }
-                    if item.get("recovery", {}).get("partial"):
-                        recovery = item["recovery"]
-                        reduced["recovery"] = {
-                            "partial": True,
-                            "recovery_dir": recovery.get("recovery_dir"),
-                            "recovery_files": recovery.get("recovery_files", [])[:1],
-                            "recovery_files_omitted": recovery.get("recovery_files_omitted", 0)
-                            + max(0, len(recovery.get("recovery_files", [])) - 1),
-                        }
-                    compact["items"].append(reduced)
+                    for item in payload["items"][: check.MAX_ITEMS]
+                ]
                 try:
                     check._write_json(notice, compact, check.MAX_NOTICE_BYTES)
                 except ValueError:
-                    # Last resort: retain the private backup directory even when
-                    # target-to-backup references do not fit the spool quota.
-                    minimal = {**payload, "warning": "Update result was too large; inspect local recovery backups."}
-                    minimal["items"] = [
-                        {
-                            "status": item["status"],
-                            "name": str(item.get("name") or "agent")[:100],
-                            "reason": "Inspect the local recovery directory; installation state may be partial.",
-                            "recovery": {
-                                "partial": True,
-                                "recovery_dir": item["recovery"]["recovery_dir"],
-                                "recovery_files": [],
-                                "recovery_files_omitted": 1,
-                            },
-                        }
-                        for item in payload["items"]
-                        if item.get("recovery", {}).get("partial")
+                    compact["items"] = [
+                        {"status": item["status"], "name": item["name"]} for item in compact["items"][:5]
                     ]
-                    check._write_json(notice, minimal, check.MAX_NOTICE_BYTES)
+                    check._write_json(notice, compact, check.MAX_NOTICE_BYTES)
             if journal_active and not uncertain:
                 # A durable completion seal proves the final notice reached disk.
                 # Without it, an os.replace followed by a failed directory fsync

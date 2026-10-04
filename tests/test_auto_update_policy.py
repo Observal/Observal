@@ -1,14 +1,18 @@
+# SPDX-FileCopyrightText: 2026 Observal Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Freeze/unfreeze policy contracts; Pi apply is available only behind its pilot gate."""
+"""Freeze/unfreeze policy contracts; account consent gates Pi apply."""
 
 from __future__ import annotations
 
 import json
-import multiprocessing
+import os
+import subprocess
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -68,7 +72,7 @@ def test_default_frozen_and_independent_registries(isolated_policy: Path, cli: t
     assert policy.policy_status("https://elsewhere.test")["effective"] is False
     assert call(cli, "unfreeze") == (0, enabled)  # idempotent
     text = CliRunner().invoke(cli, ["unfreeze"]).output
-    assert "OBSERVAL_PI_AUTO_APPLY=1" in text and "otherwise check-only" in text
+    assert "Pi agents can now be updated" in text and "observal freeze" in text
     code, frozen = call(cli, "freeze")
     assert code == 0
     assert frozen["effective"] is False
@@ -139,36 +143,57 @@ def test_gate_prevents_freeze_from_returning_before_inflight_install(
     assert policy.policy_status(REGISTRY)["effective"] is False
 
 
-def _hold_gate_in_process(gate_dir: str, entered, release) -> None:
-    from pathlib import Path
+_HOLD_GATE = """
+import sys
+import time
+from pathlib import Path
+from observal_cli import auto_update_policy as policy
+policy.GATE_DIR = Path(sys.argv[1])
+entered, release = Path(sys.argv[2]), Path(sys.argv[3])
+gate = policy.apply_worker_gate(sys.argv[4], 'alice') if sys.argv[5] == 'apply' else policy.registry_gate(sys.argv[4])
+with gate:
+    entered.touch()
+    deadline = time.monotonic() + 5
+    while not release.exists() and time.monotonic() < deadline:
+        time.sleep(0.02)
+"""
 
-    from observal_cli import auto_update_policy as worker_policy
 
-    worker_policy.GATE_DIR = Path(gate_dir)
-    with worker_policy.registry_gate(REGISTRY):
-        entered.set()
-        release.wait(timeout=5)
-
-
-def _hold_apply_worker_gate(gate_dir: str, entered, release) -> None:
-    from pathlib import Path
-
-    from observal_cli import auto_update_policy as worker_policy
-
-    worker_policy.GATE_DIR = Path(gate_dir)
-    with worker_policy.apply_worker_gate(REGISTRY, "alice"):
-        entered.set()
-        release.wait(timeout=5)
+@contextmanager
+def _held_process_gate(root: Path, kind: str):
+    # An inline child exercises the real interprocess lock without pickling a
+    # test-module function. CI invokes pytest from observal-server/, where
+    # tests.test_auto_update_policy is not importable by a spawned child.
+    entered, release = root / "entered", root / "release"
+    repo = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, (repo, os.environ.get("PYTHONPATH"))))}
+    child = subprocess.Popen(
+        [sys.executable, "-c", _HOLD_GATE, str(policy.GATE_DIR), str(entered), str(release), REGISTRY, kind],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
+    )
+    try:
+        deadline = time.monotonic() + 5
+        while not entered.exists() and child.poll() is None and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert entered.exists(), child.stderr.read() if child.poll() is not None else "Gate child did not start"
+        yield
+    finally:
+        release.touch()
+        try:
+            child.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            child.terminate()
+            child.wait(timeout=5)
+        assert child.returncode == 0, child.stderr.read()
+        child.stderr.close()
 
 
 def test_apply_worker_gate_is_account_scoped_and_cross_process(isolated_policy: Path) -> None:
-    context = multiprocessing.get_context("spawn")
-    entered = context.Event()
-    release = context.Event()
-    worker = context.Process(target=_hold_apply_worker_gate, args=(str(policy.GATE_DIR), entered, release))
-    worker.start()
-    try:
-        assert entered.wait(timeout=5)
+    with _held_process_gate(isolated_policy, "apply"):
         with pytest.raises(policy.GateBusyError), policy.apply_worker_gate(REGISTRY, "alice", timeout=0.05):
             pytest.fail("two workers for the same account passed the admission gate")
         with policy.apply_worker_gate(REGISTRY, "bob", timeout=0.05):
@@ -177,37 +202,14 @@ def test_apply_worker_gate_is_account_scoped_and_cross_process(isolated_policy: 
         # worker gate (an installer holding both is covered elsewhere).
         with policy.registry_gate(REGISTRY, timeout=0.05):
             pass
-        release.set()
-        worker.join(timeout=5)
-        assert worker.exitcode == 0
-        with policy.apply_worker_gate(REGISTRY, "alice", timeout=0.05):
-            pass
-    finally:
-        release.set()
-        if worker.is_alive():
-            worker.terminate()
-        worker.join(timeout=5)
+    with policy.apply_worker_gate(REGISTRY, "alice", timeout=0.05):
+        pass
 
 
 def test_gate_is_shared_across_processes(isolated_policy: Path) -> None:
-    context = multiprocessing.get_context("spawn")
-    entered = context.Event()
-    release = context.Event()
-    worker = context.Process(target=_hold_gate_in_process, args=(str(policy.GATE_DIR), entered, release))
-    worker.start()
-    try:
-        assert entered.wait(timeout=5)
-        with pytest.raises(policy.GateBusyError):
-            policy.set_policy(REGISTRY, enabled=True, timeout=0.05)
-        release.set()
-        worker.join(timeout=5)
-        assert worker.exitcode == 0
-        assert policy.set_policy(REGISTRY, enabled=True)["effective"] is True
-    finally:
-        release.set()
-        if worker.is_alive():
-            worker.terminate()
-        worker.join(timeout=5)
+    with _held_process_gate(isolated_policy, "registry"), pytest.raises(policy.GateBusyError):
+        policy.set_policy(REGISTRY, enabled=True, timeout=0.05)
+    assert policy.set_policy(REGISTRY, enabled=True)["effective"] is True
 
 
 def test_account_switch_token_override_and_logout_fail_closed(

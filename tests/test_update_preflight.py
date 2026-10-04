@@ -1,3 +1,4 @@
+# SPDX-FileCopyrightText: 2026 Observal Contributors
 # SPDX-License-Identifier: Apache-2.0
 
 """Automatic updates are refused without exact pins, unchanged files and consent."""
@@ -41,6 +42,8 @@ def candidate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
         "status": "outdated",
         "lock_status": "locked",
         "lock_digest": "sha256:example",
+        "pin_known": True,
+        "requested_version": None,
         "components": [{"type": "skill", "id": COMPONENT_ID, "version": "1.0.0"}],
         "release": {
             "description": "Fix",
@@ -59,6 +62,30 @@ def candidate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
         written_paths=[str(file)],
     )
     return item
+
+
+def test_generated_lock_must_match_exact_approved_pins_before_write(candidate: dict) -> None:
+    release = {**candidate["release"], "version": "1.1.0", "status": "approved", "supported_harnesses": ["pi"]}
+    locked = {
+        "status": "locked",
+        "digest": "new-digest",
+        "components": [{"type": "skill", "id": COMPONENT_ID, "version": "1.1.0"}],
+    }
+    update_preflight.require_generated_release_lock(release, locked, version="1.1.0", harness="pi")
+    for changed in (
+        {**locked, "components": [{"type": "skill", "id": COMPONENT_ID, "version": "1.2.0"}]},
+        {**locked, "components": [{"type": "mcp", "id": COMPONENT_ID, "version": "1.1.0"}]},
+        {**locked, "components": []},
+        {**locked, "components": locked["components"] * 2},
+        {**locked, "components": None},
+        {**locked, "status": "partial"},
+    ):
+        with pytest.raises(update_preflight.PreflightSkipError):
+            update_preflight.require_generated_release_lock(release, changed, version="1.1.0", harness="pi")
+    with pytest.raises(update_preflight.PreflightSkipError, match="approved"):
+        update_preflight.require_generated_release_lock(
+            {**release, "status": "pending"}, locked, version="1.1.0", harness="pi"
+        )
 
 
 def test_candidate_requires_verified_existing_files_and_same_components(candidate: dict, tmp_path: Path) -> None:
@@ -102,6 +129,16 @@ def test_unreadable_installed_file_remains_notice_only(
 
     monkeypatch.setattr(Path, "read_bytes", unreadable)
     with pytest.raises(update_preflight.PreflightSkipError, match="could not be read"):
+        update_preflight.pi_user_agent_candidate(candidate, registry=REGISTRY)
+
+
+def test_unknown_or_explicit_agent_pin_is_notice_only(candidate: dict) -> None:
+    candidate["pin_known"] = False
+    with pytest.raises(update_preflight.PreflightSkipError, match="pin intent is unknown"):
+        update_preflight.pi_user_agent_candidate(candidate, registry=REGISTRY)
+    candidate["pin_known"] = True
+    candidate["requested_version"] = "1.0.0"
+    with pytest.raises(update_preflight.PreflightSkipError, match="explicitly pinned"):
         update_preflight.pi_user_agent_candidate(candidate, registry=REGISTRY)
 
 

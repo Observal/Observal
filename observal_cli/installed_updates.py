@@ -1,3 +1,4 @@
+# SPDX-FileCopyrightText: 2026 Observal Contributors
 # SPDX-License-Identifier: Apache-2.0
 
 """Shared installed-state comparison for `outdated` and future startup notices.
@@ -116,6 +117,7 @@ def prepare_entry(entry: object, lockfile_path: str) -> dict:
         "directory": _text(entry.get("directory")),
         "local_name": _text(entry.get("local_name")),
         "requested_version": _text(entry.get("requested_version")),
+        "pin_known": entry.get("pin_known") is True,
         "version_id": _text(entry.get("version_id")),
         "digest": _text(entry.get("digest")),
         "lock_digest": _text(entry.get("lock_digest")),
