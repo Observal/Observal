@@ -753,11 +753,3 @@ jobs:
       target: ${{ needs.preflight.outputs.target }}
       version: ${{ needs.preflight.outputs.version }}
     secrets: inherit
-
-  homebrew:
-    needs: [preflight, promote]
-    if: needs.promote.outputs.promoted == 'true'
-    uses: ./.github/workflows/update-homebrew-tap.yml
-    with:
-      version: ${{ needs.preflight.outputs.version }}
-    secrets: inherit

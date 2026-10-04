@@ -330,12 +330,11 @@ def test_release_workflows_gate_stable_integrations_and_sign_branch_identity():
     assert jobs["promote"]["needs"] == ["preflight", "verify"]
     assert "outputs.channel == 'stable'" in jobs["promote"]["if"]
     assert "version_tags()" in jobs["promote"]["steps"][-1]["run"]
-    for name in ("deploy", "homebrew"):
-        assert jobs[name]["needs"] == ["preflight", "promote"]
-        assert "needs.promote.outputs.promoted == 'true'" in jobs[name]["if"]
-    for filename in ("deploy.yml", "update-homebrew-tap.yml"):
-        trigger = yaml.safe_load((ROOT / ".github/workflows" / filename).read_text())[True]
-        assert set(trigger) == {"workflow_call"}
+    assert "homebrew" not in jobs
+    assert jobs["deploy"]["needs"] == ["preflight", "promote"]
+    assert "needs.promote.outputs.promoted == 'true'" in jobs["deploy"]["if"]
+    trigger = yaml.safe_load((ROOT / ".github/workflows/deploy.yml").read_text())[True]
+    assert set(trigger) == {"workflow_call"}
     deploy = (ROOT / ".github/workflows/deploy.yml").read_text()
     assert 'git checkout --detach "$RELEASE_TARGET"' in deploy
     assert "origin/main" not in deploy

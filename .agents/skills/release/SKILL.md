@@ -18,7 +18,7 @@ Resolve these links from the skill directory. Run commands from the Observal che
 ## Safety and authority
 
 - Obtain approval before remote branch creation, pushes, PR creation, merges, workflow retries, or publishing, unless the current request explicitly authorizes that action. Preparing a PR does not authorize merging it or approving a production environment.
-- Explain before merging a preparation PR that it triggers publication, subject to the workflow approval gate. The newest verified stable release also triggers Homebrew and hosted deployment.
+- Explain before merging a preparation PR that it triggers publication, subject to the workflow approval gate. The newest verified stable release also triggers hosted deployment.
 - Never publish from `main`, merge a release branch back into `main`, rebase a release line onto `main`, force-push published history, or move an existing tag.
 - Land ordinary fixes on `main` first. Each affected release line gets its own reviewed backport PR with `cherry-pick -x` provenance.
 - Never bypass failed checks, reviews, signing, or checksum verification. Never expose tokens, environment files, GitHub App keys, or OIDC material.
@@ -148,7 +148,7 @@ gh release view v1.14.0 --repo Observal/Observal
 
 Follow the [verification guide](../../../docs/security/release-verification.md) for downloaded checksums, provenance, and the signed tag. Download into a fresh directory outside the checkout. Verify the expected Python, npm, Docker, and Helm versions, and smoke-test the downloaded or installed artifact when execution is authorized. Never substitute a source-only test for an artifact check.
 
-Check promotion eligibility and the actual shared aliases after publication. For the newest stable release, report the Homebrew and deployment jobs too; for maintenance or prerelease versions, confirm they did not replace the newer stable release. Production registry credentials and deployments remain unverified by a dummy repository test.
+Check promotion eligibility and the actual shared aliases after publication. For the newest stable release, report the deployment job too; for maintenance or prerelease versions, confirm they did not replace the newer stable release. Production registry credentials and deployments remain unverified by a dummy repository test.
 
 ## Recovery
 

@@ -82,7 +82,7 @@ Python distributes the equivalent PEP 440 versions (`1.14.0a1`, `1.14.0b1`, `1.1
 
 Older prereleases use line-specific aliases such as `next-1.13` or `beta-1.13` when a newer release exists in the same channel. They cannot move the shared prerelease alias backward.
 
-Only the numerically newest stable version across all lines can take over stable discovery. Patching an older line must not change Docker/npm `latest`, GitHub latest, Homebrew, or the hosted deployment. Consumers selecting a prerelease or maintenance line should pin an exact version when reproducibility matters.
+Only the numerically newest stable version across all lines can take over stable discovery. Patching an older line must not change Docker/npm `latest`, GitHub latest, or the hosted deployment. Consumers selecting a prerelease or maintenance line should pin an exact version when reproducibility matters.
 
 ## Backport a fix
 
@@ -111,7 +111,7 @@ A release-branch push is inspected for a single release metadata commit. Branch 
 3. Require the production environment approval.
 4. Create a keyless signed tag tied to the exact release branch, then publish PyPI, npm, Docker, and Helm artifacts.
 5. Publish GitHub assets and verify the registries and installed CLI.
-6. For the newest stable release only, promote GitHub latest and invoke the Homebrew and EC2 workflows. EC2 checks out the validated tagged commit, not `main`.
+6. For the newest stable release only, promote GitHub latest and invoke the EC2 workflow. EC2 checks out the validated tagged commit, not `main`.
 
 The release workflow is globally serialized across lines with GitHub's `queue: max` setting, which keeps up to 100 pending runs rather than replacing an earlier pending release. Publishing jobs recompute alias eligibility from current tags, including on failed-job retries. Signing and attestation verification use `refs/heads/release/X.Y`, not `main` or a wildcard. See [release verification](../security/release-verification.md).
 
