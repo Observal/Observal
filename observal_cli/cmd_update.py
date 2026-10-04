@@ -600,6 +600,144 @@ def apply_startup_pi_mcp(
         }
 
 
+def apply_startup_claude_mcp(
+    item: dict,
+    *,
+    registry: str,
+    account: str,
+    deadline: float,
+    shutdown_requested: object,
+    marker: Path,
+    harness: str = "claude-code",
+) -> dict:
+    """Run the normal managed Claude MCP installer; verify by entry, restore by re-adding."""
+    import time
+
+    from observal_cli import automatic_claude_mcp as claude_mcp
+
+    if not callable(shutdown_requested) or harness != "claude-code":
+        raise ValueError("A shutdown check is required")
+    with auto_update_policy.registry_gate(registry, timeout=max(0, min(2, deadline - time.monotonic()))):
+        if (
+            shutdown_requested()
+            or time.monotonic() + 15 >= deadline
+            or auto_update_policy.active_registry() != registry
+            or auto_update_policy.active_account() != account
+            or not auto_update_policy.policy_status(registry)["effective"]
+        ):
+            return {"status": "skipped", "reason": "Session closed, consent changed, or the install window expired."}
+        try:
+            current = [row for row in _entries("claude-code") if _same_install(item, row)]
+            record = claude_mcp.load_record(registry, item["id"])
+            if (
+                item.get("type") != "mcp"
+                or item.get("scope") != "user"
+                or len(current) != 1
+                or current[0].get("pin_known") is not True
+                or current[0].get("requested_version")
+                or any(current[0].get(key) != item.get(key) for key in ("digest", "version_id", "local_name"))
+                or record is None
+                or record["name"] != current[0].get("local_name")
+            ):
+                raise claude_mcp.ClaudeMcpError("The managed MCP pin, identity or ownership record changed.")
+            if claude_mcp.read_entry(record["name"]) != record["entry"]:
+                raise claude_mcp.ClaudeMcpError(
+                    "The Claude Code MCP entry was edited or removed since Observal installed it."
+                )
+            verified = installed_updates.compare(current, verify_releases=True)[0]
+            if (
+                verified.get("status") != "outdated"
+                or not verified.get("release_verified")
+                or verified.get("latest_version") != item.get("latest_version")
+            ):
+                raise claude_mcp.ClaudeMcpError("The target is not an accessible approved release.")
+        except (CliError, OSError, ValueError, TypeError, KeyError) as error:
+            return {"status": "skipped", "reason": str(error) or "Inspect the managed MCP manually."}
+        backup = install_recovery.path_for(marker)
+        env = os.environ.copy()
+        env.update(
+            {
+                "OBSERVAL_AUTO_UPDATE_RECOVERY_DIR": str(backup),
+                "OBSERVAL_AUTO_UPDATE_INSTALL": "1",
+                "OBSERVAL_UPDATE_EXACT_TARGET": "1",
+                "OBSERVAL_AUTO_UPDATE_EXPECTED_VERSION": item["current_version"],
+                "OBSERVAL_AUTO_UPDATE_NETWORK_CUTOFF": str(deadline - 15),
+                "OBSERVAL_AUTO_UPDATE_SHUTDOWN_MARKER": str(marker),
+            }
+        )
+        argv = [
+            sys.executable,
+            "-m",
+            "observal_cli",
+            "registry",
+            "mcp",
+            "install",
+            item["id"],
+            "--harness",
+            "claude-code",
+            "--managed",
+            "--version",
+            item["latest_version"],
+            "--no-prompt",
+            "--output",
+            "json",
+        ]
+        try:
+            completed = subprocess.run(
+                argv,
+                cwd=Path.cwd(),
+                env=env,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except (OSError, RuntimeError, ValueError):
+            return {"status": "failed", "reason": "The installer outcome is uncertain; inspect the MCP entry."}
+
+        def restore() -> bool:
+            try:
+                with auto_update_policy.claude_install_lock(registry, timeout=2):
+                    if not claude_mcp.restore_if_safe(backup):
+                        return False
+                    install_recovery.discard(backup)
+                    return True
+            except (auto_update_policy.GateBusyError, OSError, ValueError, TypeError, KeyError):
+                return False
+
+        state = claude_mcp.recovery_state(backup)
+        if completed.returncode == 0 and state and state[0] == "new":
+            try:
+                rows = [
+                    row
+                    for row in _entries("claude-code")
+                    if row.get("id") == item["id"] and row.get("type") == "mcp" and row.get("scope") == "user"
+                ]
+                saved = claude_mcp.load_record(registry, item["id"])
+                if (
+                    len(rows) == 1
+                    and rows[0].get("current_version") == item["latest_version"]
+                    and rows[0].get("requested_version") is None
+                    and saved is not None
+                    and saved["entry"] == state[1]["new"]
+                ):
+                    install_recovery.discard(backup)
+                    return {"status": "updated", "reason": "Saved Claude Code MCP entry updated; start a new session."}
+            except (OSError, ValueError, TypeError, KeyError):
+                pass
+        if state is None and completed.returncode != 0 and not backup.exists():
+            return {"status": "skipped", "reason": "The installer refused the update without changing the MCP entry."}
+        if state is not None and state[0] == "old" and completed.returncode != 0:
+            install_recovery.discard(backup)
+            return {"status": "skipped", "reason": "The installer stopped without changing the MCP entry."}
+        if state is not None and state[0] != "foreign" and restore():
+            return {"status": "skipped", "reason": "Verified original MCP entry restored; update manually."}
+        return {
+            "status": "failed",
+            "reason": "MCP outcome is uncertain or the entry was edited; inspect it and the private backup.",
+        }
+
+
 def apply_startup_pi_skill(
     item: dict,
     *,

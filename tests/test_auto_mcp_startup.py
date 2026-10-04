@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -61,7 +62,7 @@ def instance(tmp_path: Path):
                             "id": "44444444-4444-4444-8444-444444444444",
                             "version": version,
                             "status": "approved",
-                            "supported_harnesses": ["pi"],
+                            "supported_harnesses": ["pi", "claude-code"],
                             "environment_variables": [],
                             "headers": [],
                         }
@@ -74,6 +75,20 @@ def instance(tmp_path: Path):
                     request = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                     version = request.get("version") or state["latest"]
                     name = request["local_name"]
+                    if request["harness"] == "claude-code":
+                        return self.respond(
+                            {
+                                "listing_id": mcp_id,
+                                "harness": "claude-code",
+                                "version": version,
+                                "version_id": "44444444-4444-4444-8444-444444444444",
+                                "digest": f"digest-{version}",
+                                "config_snippet": {
+                                    "command": ["claude", "mcp", "add", name, "--", f"/bin/{index}-{version}"],
+                                    "type": "shell_command",
+                                },
+                            }
+                        )
                     if state["changed_key"] and version == "2.0.0":
                         name += "-other"
                     return self.respond(
@@ -259,3 +274,102 @@ def test_foreign_edit_or_added_key_blocks_managed_mcp_update(instance) -> None:
     original = path.read_bytes()
     assert apply("foreign")["items"][0]["status"] != "updated"
     assert path.read_bytes() == original
+
+
+SHIM = """#!{python}
+import json, os, sys
+from pathlib import Path
+path = Path.home() / ".claude.json"
+data = json.loads(path.read_text()) if path.exists() else {{}}
+a = sys.argv[1:]
+assert a[:2] in (["mcp", "add"], ["mcp", "remove"]) and a[2:4] == ["-s", "user"], a
+servers = data.setdefault("mcpServers", {{}})
+if a[1] == "add":
+    name, cmd = a[4], a[6:]
+    if os.environ.get("FAIL_ADD_CONTAINING") and os.environ["FAIL_ADD_CONTAINING"] in " ".join(cmd):
+        sys.exit(3)
+    servers[name] = {{"type": "stdio", "command": cmd[0], "args": cmd[1:], "env": {{}}}}
+else:
+    servers.pop(a[4], None)
+path.write_text(json.dumps(data, indent=2))
+"""
+
+
+@pytest.fixture()
+def claude_instance(instance):
+    state, home, cli, apply, env = instance
+    bin_dir = home / "bin"
+    bin_dir.mkdir()
+    if os.getenv("OBSERVAL_RUN_LIVE_CLAUDE_CLI") == "1":
+        real = shutil.which("claude")  # The real CLI, still confined to the disposable HOME.
+        assert real, "claude is not installed"
+        env["PATH"] = f"{Path(real).parent}{os.pathsep}{env['PATH']}"
+    else:
+        shim = bin_dir / "claude"
+        shim.write_text(SHIM.format(python=sys.executable))
+        shim.chmod(0o755)
+        env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+    url = json.loads((home / ".observal/config.json").read_text())["server_url"]
+
+    def apply_claude(session: str) -> dict:
+        key = hashlib.sha256(f"claude-code\0{url}\0alice\0{session}".encode()).hexdigest()
+        cli("_startup-apply-claude", "--cwd", str(home), "--session-id", session, "--notice-key", key)
+        return json.loads((home / ".observal/update-notices" / f"{key}.json").read_text())
+
+    return state, home, cli, apply_claude, env
+
+
+def _entry(home: Path, name: str = "search"):
+    data = json.loads((home / ".claude.json").read_text())
+    return data.get("mcpServers", {}).get(name)
+
+
+def test_claude_managed_mcp_installs_updates_and_refuses_pasted_entries(claude_instance) -> None:
+    state, home, cli, apply, _env = claude_instance
+    config = home / ".claude.json"
+    config.write_text(json.dumps({"mcpServers": {"search": {"command": "mine", "args": []}}}))
+    refused = cli("registry", "mcp", "install", MCPS[0], "--harness", "claude-code", "--managed", success=False)
+    assert refused.returncode != 0
+    assert _entry(home, "search") == {"command": "mine", "args": []}, "pasted entry must be untouched"
+    config.unlink()
+    cli("registry", "mcp", "install", MCPS[0], "--harness", "claude-code", "--managed")
+    name = next(iter(json.loads(config.read_text())["mcpServers"]))
+    assert json.loads(config.read_text())["mcpServers"][name]["command"] == "/bin/0-1.0.0"
+    state["latest"] = "2.0.0"
+    assert apply("frozen")["items"][0]["status"] != "updated"
+    assert json.loads(config.read_text())["mcpServers"][name]["command"] == "/bin/0-1.0.0"
+    cli("unfreeze")
+    notice = apply("opted-in")
+    assert notice["items"][0]["status"] == "updated", notice["items"][0].get("reason")
+    assert json.loads(config.read_text())["mcpServers"][name]["command"] == "/bin/0-2.0.0"
+    assert not list((home / ".observal/update-backups").glob("*/*"))
+
+
+def test_claude_mcp_edited_by_user_is_not_replaced_and_says_why(claude_instance) -> None:
+    state, home, cli, apply, _env = claude_instance
+    config = home / ".claude.json"
+    cli("registry", "mcp", "install", MCPS[0], "--harness", "claude-code", "--managed")
+    data = json.loads(config.read_text())
+    name = next(iter(data["mcpServers"]))
+    data["mcpServers"][name]["command"] = "/my/own/build"
+    config.write_text(json.dumps(data))
+    state["latest"] = "2.0.0"
+    cli("unfreeze")
+    item = apply("edited")["items"][0]
+    assert item["status"] != "updated"
+    assert "edited" in item["reason"] or "changed" in item["reason"], item
+    assert json.loads(config.read_text())["mcpServers"][name]["command"] == "/my/own/build"
+
+
+@pytest.mark.skipif(os.getenv("OBSERVAL_RUN_LIVE_CLAUDE_CLI") == "1", reason="failure injection needs the shim")
+def test_claude_mcp_add_failure_after_remove_restores_the_original(claude_instance) -> None:
+    state, home, cli, apply, env = claude_instance
+    config = home / ".claude.json"
+    cli("registry", "mcp", "install", MCPS[0], "--harness", "claude-code", "--managed")
+    name = next(iter(json.loads(config.read_text())["mcpServers"]))
+    state["latest"] = "2.0.0"
+    cli("unfreeze")
+    env["FAIL_ADD_CONTAINING"] = "2.0.0"
+    notice = apply("add-fails")
+    assert notice["items"][0]["status"] != "updated", notice
+    assert json.loads(config.read_text())["mcpServers"][name]["command"] == "/bin/0-1.0.0"

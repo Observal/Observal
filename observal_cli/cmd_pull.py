@@ -1910,7 +1910,9 @@ def register_pull(app: typer.Typer):
                     from observal_cli import automatic_claude_plan
 
                     if result.get("warnings") or lock_warnings or conflict_warnings:
-                        raise automatic_claude_plan.ClaudePlanError("The release needs manual review.")
+                        raise automatic_claude_plan.ClaudePlanError(
+                            "Installing this release produced warnings; run `observal agent pull` manually to review them."
+                        )
                     planned, claude_modes = automatic_claude_plan.plan(snippet, previous, old_files)
                 added = [path for path in planned if str(path) not in old_files]
                 if added:

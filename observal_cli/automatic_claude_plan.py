@@ -131,10 +131,10 @@ def plan(snippet: object, item: dict, old_files: dict[str, str]) -> tuple[dict[P
         or not isinstance(agent["content"], str)
     ):
         raise ClaudePlanError("The release changes the profile path or content type; update manually.")
-    from observal_cli.cmd_pull import _resolve_hook_paths
+    from observal_cli.cmd_pull import _pin_agent_profile_hooks, _resolve_hook_paths
     from observal_cli.install_recovery import atomic_text_mode, created_mode
 
-    planned: dict[Path, bytes] = {file: _resolve_hook_paths(agent["content"]).encode("utf-8")}
+    planned: dict[Path, bytes] = {file: _pin_agent_profile_hooks(_resolve_hook_paths(agent["content"])).encode("utf-8")}
     modes: dict[Path, int] = {file: atomic_text_mode(file.parent)}
     claude_home = Path.home() / ".claude"
     for component in snippet.get("skill_components") or []:

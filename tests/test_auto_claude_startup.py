@@ -367,6 +367,27 @@ def test_unsupported_shape_or_dirty_file_stays_manual(instance, change: str) -> 
     assert not list((home / ".observal/update-backups").glob("*/manifest.json"))
 
 
+def test_profile_with_hook_commands_is_planned_exactly_as_the_writer_pins_them(instance) -> None:
+    """Real server profiles carry hook commands; the writer pins the interpreter, and the plan must too."""
+    state, home, root, cli, apply, env = instance
+
+    def hooked(version: str) -> str:
+        return (
+            "---\nname: reviewer\nhooks:\n  Stop:\n    - hooks:\n        - type: command\n"
+            '          command: "python3 -m observal_cli.hooks.session_push"\n---\n\n'
+            f"reviewer {version}\n"
+        )
+
+    state["profile_contents"] = {"1.0.0": hooked("1.0.0"), "2.0.0": hooked("2.0.0")}
+    seed(cli, root)
+    cli("unfreeze")
+    state["latest"] = "2.0.0"
+    notice = apply("hooked")
+    assert notice["items"][0]["status"] == "updated", notice["items"][0].get("reason")
+    assert "reviewer 2.0.0" in (home / ".claude/agents/reviewer.md").read_text()
+    assert not list((home / ".observal/update-backups").glob("*/manifest.json"))
+
+
 @pytest.mark.parametrize("interference", ["none", "content", "mode"])
 def test_stopped_normal_pull_restores_only_planned_bytes(instance, interference: str) -> None:
     state, home, root, cli, apply, env = instance

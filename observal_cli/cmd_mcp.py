@@ -1260,6 +1260,61 @@ def _install_impl(
         )
 
     snippet = result.get("config_snippet", {})
+    if managed and harness == "claude-code":
+        from observal_cli import automatic_claude_mcp as claude_mcp
+        from observal_cli.lockfile import current_registry_url
+
+        try:
+            release_version = result["version"]
+            if not isinstance(release_version, str) or (version and release_version != version):
+                raise claude_mcp.ClaudeMcpError("The server did not return the requested MCP version.")
+            release = client.get(f"/api/v1/mcps/{resolved}/versions/{release_version}")
+            if (
+                not isinstance(release, dict)
+                or release.get("version") != release_version
+                or release.get("status") != "approved"
+                or harness not in release.get("supported_harnesses", [])
+                or result.get("harness") != harness
+                or str(result.get("listing_id")) != resolved
+                or not result.get("version_id")
+                or not isinstance(result.get("digest"), str)
+                or not result["digest"]
+                or listing.get("id") != resolved
+                or (release.get("id") and str(release["id"]) != str(result.get("version_id")))
+                or result.get("warnings")
+            ):
+                raise claude_mcp.ClaudeMcpError("No exact approved Claude Code MCP release was returned.")
+            path = claude_mcp.install(
+                registry=current_registry_url(),
+                component_id=resolved,
+                name=listing.get("name", local_name),
+                namespace=listing.get("namespace"),
+                slug=listing.get("slug"),
+                local_name=local_name,
+                version=release_version,
+                version_id=result.get("version_id"),
+                digest_value=result.get("digest"),
+                requested_version=None if os.environ.get("OBSERVAL_UPDATE_EXACT_TARGET") == "1" else version,
+                entry=claude_mcp.parse_snippet(snippet, local_name),
+            )
+        except (OSError, ValueError, TypeError, KeyError) as error:
+            if isinstance(error, ValueError) and not isinstance(error, OSError):
+                from observal_cli.auto_update_policy import record_skip_reason
+
+                record_skip_reason(str(error))
+            fail(
+                ErrorCategory.CONFLICT,
+                "The Claude Code MCP cannot be installed or updated as managed config.",
+                operation="Install MCP server",
+                resource=mcp_id,
+                remediation="Inspect the Claude Code MCP entry and update manually.",
+                detail=str(error),
+            )
+        if output == "json":
+            output_json({"id": resolved, "version": release_version, "managed_path": path})
+        else:
+            rprint(f"[green]✓ Managed Claude Code MCP entry installed:[/green] {esc(local_name)}")
+        return
     if managed:
         from observal_cli import automatic_mcp_plan
         from observal_cli.lockfile import current_registry_url
@@ -1648,17 +1703,19 @@ def install(
             resource="MCP installation",
             remediation="Add --no-prompt and provide every required value, or use interactive table mode.",
         )
-    if managed and (harness != "pi" or raw):
+    if managed and (harness not in {"pi", "claude-code"} or raw):
         fail(
             ErrorCategory.VALIDATION,
-            "Managed MCP installation is currently limited to Pi user scope and cannot use --raw.",
+            "Managed MCP installation is limited to Pi and Claude Code user scope and cannot use --raw.",
             operation="Install MCP server",
             resource=mcp_id,
-            remediation="Use --harness pi --managed, or omit --managed to print a snippet.",
+            remediation="Use --harness pi or claude-code with --managed, or omit --managed to print a snippet.",
         )
     if managed:
-        from observal_cli.auto_update_policy import pi_install_lock
+        from observal_cli.auto_update_policy import claude_install_lock, pi_install_lock
         from observal_cli.lockfile import current_registry_url
+
+        install_lock = pi_install_lock if harness == "pi" else claude_install_lock
 
         cutoff = os.environ.get("OBSERVAL_AUTO_UPDATE_NETWORK_CUTOFF")
         requests = (
@@ -1666,7 +1723,7 @@ def install(
             if os.environ.get("OBSERVAL_AUTO_UPDATE_INSTALL") == "1" and cutoff
             else nullcontext()
         )
-        with pi_install_lock(current_registry_url()), requests:
+        with install_lock(current_registry_url()), requests:
             _install_impl(
                 mcp_id,
                 harness,
