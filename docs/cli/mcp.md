@@ -32,7 +32,7 @@ observal registry mcp submit --git https://github.com/org/mcp-server --yes
 observal registry mcp submit --submit my-server --output json
 ```
 
-Opens an interactive JSON paste prompt matching your harness's `mcpServers` config block. Pass `--git` to have Observal clone the repository and detect local OCI setup instructions (Dockerfile, Containerfile, or compose build). Only submit servers you created or are the point of contact for — submissions enter a pending review queue unless saved with `--draft`. You can install your own submissions immediately without approval. Environment variables written as `$VAR` or `${VAR}` in args or header values are auto-detected and become install-time prompts. Use `--submit MCP_ID` to submit an existing draft for review.
+Opens an interactive JSON paste prompt matching your harness's `mcpServers` config block. Pass `--git` to have Observal clone the repository and detect local OCI setup instructions (Dockerfile, Containerfile, or compose build). Use `--name` and `--category` to provide those values directly and skip their respective prompts. Use `--team` with a teamspace UUID or handle to associate the submission with a team, and `--visibility` with `public` or `team` to set its visibility. Only submit servers you created or are the point of contact for — submissions enter a pending review queue unless saved with `--draft`. You can install your own submissions immediately without approval. Environment variables written as `$VAR` or `${VAR}` in args or header values are auto-detected and become install-time prompts. Use `--submit MCP_ID` to submit an existing draft for review.
 
 ## List, my, and show
 
