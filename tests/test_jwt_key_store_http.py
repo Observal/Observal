@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient, Response
 from loguru import logger
 
+import services.crypto as crypto
 from services.crypto import KeyManager, init_key_manager
 
 if TYPE_CHECKING:
@@ -161,6 +162,35 @@ async def test_corrupt_required_retired_key_returns_service_unavailable(auth_app
     assert response.status_code == 503
     assert response.json() == {"detail": "Authentication service temporarily unavailable"}
     assert token not in response.text
+
+
+@pytest.mark.asyncio
+async def test_key_directory_listing_failure_returns_service_unavailable(
+    auth_app: AuthApp, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app, manager, key_dir = auth_app
+    token = _access_token(manager)
+    peer = KeyManager(key_dir=str(key_dir))
+    peer.initialize()
+    peer.rotate_key()
+    real_scandir = crypto.os.scandir
+
+    def deny_key_directory_listing(path: str | Path):
+        if Path(path) == key_dir:
+            raise PermissionError("test-only key directory listing failure")
+        return real_scandir(path)
+
+    monkeypatch.setattr(crypto.os, "scandir", deny_key_directory_listing)
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        token_response = await client.get("/api/v1/auth/whoami", headers={"Authorization": f"Bearer {token}"})
+        jwks_response = await client.get("/api/v1/auth/.well-known/jwks.json")
+
+    responses = (token_response, jwks_response)
+    assert [response.status_code for response in responses] == [503, 503]
+    for response in responses:
+        assert response.json() == {"detail": "Authentication service temporarily unavailable"}
 
 
 @pytest.mark.asyncio

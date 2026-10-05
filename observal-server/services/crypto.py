@@ -506,10 +506,19 @@ class KeyManager:
                 raise RuntimeError(f"Conflicting retired JWT key record: {retired_path.name}")
         self._atomic_write(retired_path, pem)
 
+    def _retired_key_paths(self) -> list[Path]:
+        """Enumerate retired keys without suppressing directory I/O errors."""
+        with os.scandir(self._key_dir) as entries:
+            return [
+                self._key_dir / entry.name
+                for entry in entries
+                if entry.name.startswith("retired_") and entry.name.endswith(".pem")
+            ]
+
     def _prune_retired_keys(self) -> None:
         """Only called while holding exclusive coordination (never from a read)."""
         cutoff = time.time() - self._retired_key_retention_seconds
-        for path in self._key_dir.glob("retired_*.pem"):
+        for path in self._retired_key_paths():
             try:
                 if path.stat().st_mtime >= cutoff:
                     continue
@@ -536,7 +545,7 @@ class KeyManager:
         eligible: dict[str, PublicKey] = {}
         observed_paths: set[str] = set()
         required_key_unavailable = False
-        for path in self._key_dir.glob("retired_*.pem"):
+        for path in self._retired_key_paths():
             retired_kid = path.name[len("retired_") : -len(".pem")]
             known_identity = self._retired_key_identities.get(path.name)
             try:

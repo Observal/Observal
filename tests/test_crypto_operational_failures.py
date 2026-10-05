@@ -166,6 +166,27 @@ def test_unreadable_required_retired_key_fails_operationally(
         key_manager.verify_token(token)
 
 
+def test_retired_key_directory_listing_failure_is_operational(
+    key_manager: KeyManager, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    token = key_manager.sign_token({"sub": "retired"})
+    peer = KeyManager(key_dir=str(tmp_path / "keys"))
+    peer.initialize()
+    peer.rotate_key()
+    key_dir = tmp_path / "keys"
+    real_scandir = crypto.os.scandir
+
+    def deny_key_directory_listing(path: str | Path):
+        if Path(path) == key_dir:
+            raise PermissionError("test-only key directory listing failure")
+        return real_scandir(path)
+
+    monkeypatch.setattr(crypto.os, "scandir", deny_key_directory_listing)
+
+    with pytest.raises(KeyStoreUnavailableError):
+        key_manager.verify_token(token)
+
+
 def test_corrupt_retired_key_after_peer_rotation_fails_operationally(key_manager: KeyManager, tmp_path: Path) -> None:
     token = key_manager.sign_token({"sub": "retired"})
     retired_kid = key_manager.get_kid()
