@@ -168,17 +168,31 @@ def install(
         if record["name"] != local_name or current != record["entry"]:
             raise ClaudeMcpError("The Claude Code MCP entry changed since Observal installed it; update manually.")
         old_row = _guard_automatic(registry, component_id) if automatic else None
+        if automatic and old_row is not None:
+            # Always saved, even when the release generates the identical entry, so the
+            # parent can verify success against the same plan recovery would use.
+            _save_recovery(
+                Path(os.environ["OBSERVAL_AUTO_UPDATE_RECOVERY_DIR"]),
+                registry=registry,
+                component_id=component_id,
+                name=local_name,
+                old=record["entry"],
+                new=entry,
+                old_row=old_row,
+                new_row={
+                    "id": component_id,
+                    "name": name,
+                    "namespace": namespace,
+                    "slug": slug,
+                    "local_name": local_name,
+                    "version": version,
+                    "version_id": str(version_id) if version_id else None,
+                    "digest": digest_value,
+                    "requested_version": requested_version,
+                    "pin_known": True,
+                },
+            )
         if current != entry:
-            if automatic and old_row is not None:
-                _save_recovery(
-                    Path(os.environ["OBSERVAL_AUTO_UPDATE_RECOVERY_DIR"]),
-                    registry=registry,
-                    component_id=component_id,
-                    name=local_name,
-                    old=record["entry"],
-                    new=entry,
-                    old_row=old_row,
-                )
             _run("remove", "-s", "user", local_name)
             try:
                 _add(local_name, entry)
@@ -246,7 +260,15 @@ _ROW_FIELDS = (
 
 
 def _save_recovery(
-    root: Path, *, registry: str, component_id: str, name: str, old: dict, new: dict, old_row: dict
+    root: Path,
+    *,
+    registry: str,
+    component_id: str,
+    name: str,
+    old: dict,
+    new: dict,
+    old_row: dict,
+    new_row: dict,
 ) -> None:
     """Durably save everything a stopped update could leave inconsistent: the entry,
     our ownership record and the installed-lock row. Never any other config."""
@@ -260,13 +282,14 @@ def _save_recovery(
         raise ClaudeMcpError("Recovery storage is not private.")
     body = json.dumps(
         {
-            "schema": 2,
+            "schema": 3,
             "registry": registry,
             "component_id": component_id,
             "name": name,
             "old": old,
             "new": new,
             "old_row": {key: old_row.get(key) for key in _ROW_FIELDS},
+            "new_row": {key: new_row.get(key) for key in _ROW_FIELDS},
         }
     ).encode()
     install_recovery.BACKUP_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -286,11 +309,12 @@ def _load_recovery(root: Path) -> dict | None:
         return None
     ok = (
         isinstance(record, dict)
-        and record.get("schema") == 2
+        and record.get("schema") == 3
         and all(isinstance(record.get(key), str) for key in ("registry", "component_id", "name"))
         and isinstance(record.get("old"), dict)
         and isinstance(record.get("new"), dict)
         and isinstance(record.get("old_row"), dict)
+        and isinstance(record.get("new_row"), dict)
     )
     return record if ok else None
 
@@ -304,20 +328,48 @@ def _lock_row(component_id: str) -> dict | None:
     return rows[0] if len(rows) == 1 else None
 
 
-def bookkeeping_is_original(record: dict) -> bool:
-    """Is our ownership record and the installed-lock row exactly what they were before?"""
+def _bookkeeping_kinds(record: dict) -> tuple[str, str]:
+    """Classify our ownership record and lock row as old, new (the planned target) or foreign.
+
+    Anything else, including a missing or unreadable value, is foreign: another
+    writer changed it, so recovery must not overwrite it.
+    """
     try:
         saved = load_record(record["registry"], record["component_id"])
         row = _lock_row(record["component_id"])
     except (OSError, ValueError, KeyError, TypeError):
-        return False
-    return (
-        saved is not None
-        and saved["name"] == record["name"]
-        and saved["entry"] == record["old"]
-        and row is not None
-        and all(row.get(key) == record["old_row"].get(key) for key in _ROW_FIELDS)
-    )
+        return "foreign", "foreign"
+    if saved is None or saved["name"] != record["name"]:
+        record_kind = "foreign"
+    elif saved["entry"] == record["old"]:
+        record_kind = "old"
+    elif saved["entry"] == record["new"]:
+        record_kind = "new"
+    else:
+        record_kind = "foreign"
+    if row is None:
+        row_kind = "foreign"
+    elif all(row.get(key) == record["old_row"].get(key) for key in _ROW_FIELDS):
+        row_kind = "old"
+    elif all(row.get(key) == record["new_row"].get(key) for key in _ROW_FIELDS):
+        row_kind = "new"
+    else:
+        row_kind = "foreign"
+    return record_kind, row_kind
+
+
+def bookkeeping_is_planned(record: dict) -> bool:
+    """Is our ownership record and lock row exactly the planned new values (a verified success)?"""
+    record_kind, row_kind = _bookkeeping_kinds(record)
+    # An identical-entry release makes the old and new ownership record equal, so the
+    # record classifies as "old"; the lock row (its version differs) must still be exactly the plan.
+    record_ok = record_kind == "new" or (record_kind == "old" and record["old"] == record["new"])
+    return record_ok and row_kind == "new"
+
+
+def bookkeeping_is_original(record: dict) -> bool:
+    """Is our ownership record and the installed-lock row exactly what they were before?"""
+    return _bookkeeping_kinds(record) == ("old", "old")
 
 
 def _restore_bookkeeping(record: dict) -> None:
@@ -365,14 +417,20 @@ def fully_original(root: Path) -> bool:
 def restore_if_safe(root: Path) -> bool:
     """Put back our entry, our ownership record and our lock row; touch nothing else.
 
-    Only an entry that is absent or exactly the planned new one is replaced; an
-    edited (foreign) entry is never touched. Returns True only after all three
-    are verified to be the originals.
+    Only an entry that is absent or exactly the planned new one is replaced, and
+    only a record and lock row that are still the old or planned-new values are
+    rewritten; anything foreign is left alone (nothing is changed at all) so the
+    backup stays for manual inspection. Returns True only after all three are
+    verified to be the originals.
     """
     state = recovery_state(root)
     if state is None or state[0] == "foreign":
         return False
     kind, record = state
+    if "foreign" in _bookkeeping_kinds(record):
+        # The record or lock row is neither the original nor our planned value.
+        # Change nothing and keep the backup: the outcome needs manual inspection.
+        return False
     try:
         if kind == "new":
             _run("remove", "-s", "user", record["name"])

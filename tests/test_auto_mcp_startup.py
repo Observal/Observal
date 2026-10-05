@@ -520,3 +520,149 @@ def test_claude_mcp_release_with_an_identical_entry_still_updates_cleanly(claude
     assert not list((home / ".observal/update-notices").glob("*.pending")), "must not block later installs"
     assert not list((home / ".observal/update-backups").glob("*/*"))
     assert all(item["status"] != "updated" for item in apply("again")["items"]), "nothing left to update"
+
+
+@pytest.mark.parametrize("foreign", ["lock-row", "ownership-record"])
+def test_claude_mcp_recovery_never_overwrites_a_foreign_change_to_its_bookkeeping(
+    claude_instance, foreign: str
+) -> None:
+    """Unknown metadata means keep the backup and report an unresolved outcome, not "restored"."""
+    state, home, cli, apply, env = claude_instance
+    config = home / ".claude.json"
+    cli("registry", "mcp", "install", MCPS[0], "--harness", "claude-code", "--managed")
+    name = next(iter(json.loads(config.read_text())["mcpServers"]))
+    state["latest"] = "2.0.0"
+    cli("unfreeze")
+    injection = home / "injection"
+    injection.mkdir()
+    (injection / "sitecustomize.py").write_text(
+        "import json, os\n"
+        "from pathlib import Path\n"
+        "from observal_cli import lockfile\n"
+        "_real = lockfile.upsert_standalone\n"
+        "def stopped(*args, **kwargs):\n"
+        "    if os.environ.get('FOREIGN') and kwargs.get('version') == '2.0.0':\n"
+        "        if os.environ['FOREIGN'] == 'lock-row':\n"
+        "            f = Path.home() / '.observal/lockfile.json'\n"
+        "            d = json.loads(f.read_text())\n"
+        "            for reg in d['registries'].values():\n"
+        "                for row in reg['harnesses']['claude-code'].get('standalone', []):\n"
+        "                    if row.get('type') == 'mcp':\n"
+        "                        row['version'] = 'MANUAL-PIN'\n"
+        "            f.write_text(json.dumps(d))\n"
+        "        else:\n"
+        "            (rec,) = (Path.home() / '.observal/managed-claude-mcp').glob('*.json')\n"
+        "            d = json.loads(rec.read_text())\n"
+        "            d['entry'] = {'command': '/my/recorded', 'args': []}\n"
+        "            rec.write_text(json.dumps(d))\n"
+        "        raise OSError('injected stop')\n"
+        "    return _real(*args, **kwargs)\n"
+        "lockfile.upsert_standalone = stopped\n"
+    )
+    env["PYTHONPATH"] = os.pathsep.join([str(injection), env["PYTHONPATH"]])
+    env["FOREIGN"] = foreign
+    item = apply("foreign-bookkeeping")["items"][0]
+    assert item["status"] == "failed", item
+    assert "restored" not in item["reason"].lower(), item
+    # Nothing was overwritten: the foreign value is still there.
+    if foreign == "lock-row":
+        assert _lock_version(home) == "MANUAL-PIN"
+    else:
+        assert _record_entry(home) == {"command": "/my/recorded", "args": []}
+    # The entry was not touched either, and the private recovery file is kept.
+    assert json.loads(config.read_text())["mcpServers"][name]["command"] == "/bin/0-2.0.0"
+    assert list((home / ".observal/update-backups").glob("*/*"))
+
+
+@pytest.mark.parametrize("fixed_command", [False, True], ids=["changed-entry", "identical-entry"])
+@pytest.mark.parametrize("tamper", ["lock-row", "ownership-record"])
+def test_claude_mcp_success_requires_the_planned_bookkeeping_not_just_a_newer_version(
+    claude_instance, tamper: str, fixed_command: bool
+) -> None:
+    """A child that exits 0 but leaves a foreign lock-row field or record is not a verified success."""
+    state, home, cli, apply, env = claude_instance
+    state["fixed_command"] = fixed_command
+    config = home / ".claude.json"
+    cli("registry", "mcp", "install", MCPS[0], "--harness", "claude-code", "--managed")
+    name = next(iter(json.loads(config.read_text())["mcpServers"]))
+    entry_before = json.loads(config.read_text())["mcpServers"][name]
+    state["latest"] = "2.0.0"
+    cli("unfreeze")
+    injection = home / "injection"
+    injection.mkdir()
+    (injection / "sitecustomize.py").write_text(
+        "import json, os\n"
+        "from pathlib import Path\n"
+        "from observal_cli import lockfile\n"
+        "_real = lockfile.upsert_standalone\n"
+        "def tampered(*args, **kwargs):\n"
+        "    result = _real(*args, **kwargs)\n"
+        "    if os.environ.get('TAMPER') and kwargs.get('version') == '2.0.0':\n"
+        "        if os.environ['TAMPER'] == 'lock-row':\n"
+        "            f = Path.home() / '.observal/lockfile.json'\n"
+        "            d = json.loads(f.read_text())\n"
+        "            for reg in d['registries'].values():\n"
+        "                for row in reg['harnesses']['claude-code'].get('standalone', []):\n"
+        "                    if row.get('type') == 'mcp':\n"
+        "                        row['digest'] = 'tampered'\n"
+        "            f.write_text(json.dumps(d))\n"
+        "        else:\n"
+        "            (rec,) = (Path.home() / '.observal/managed-claude-mcp').glob('*.json')\n"
+        "            d = json.loads(rec.read_text())\n"
+        "            d['entry'] = {'command': '/my/recorded', 'args': []}\n"
+        "            rec.write_text(json.dumps(d))\n"
+        "    return result\n"
+        "lockfile.upsert_standalone = tampered\n"
+    )
+    env["PYTHONPATH"] = os.pathsep.join([str(injection), env["PYTHONPATH"]])
+    env["TAMPER"] = tamper
+    item = apply("tampered-success")["items"][0]
+    assert item["status"] == "failed", item
+    assert "restored" not in item["reason"].lower(), item
+    # Nothing foreign was overwritten, and the private recovery file is kept for inspection.
+    if tamper == "lock-row":
+        data = json.loads((home / ".observal/lockfile.json").read_text())
+        rows = [
+            row
+            for registry in data["registries"].values()
+            for row in registry["harnesses"]["claude-code"].get("standalone", [])
+            if row["type"] == "mcp"
+        ]
+        assert rows[0]["digest"] == "tampered"
+    else:
+        assert _record_entry(home) == {"command": "/my/recorded", "args": []}
+    assert json.loads(config.read_text())["mcpServers"][name] != {"command": "/my/own", "args": []}
+    if fixed_command:
+        assert json.loads(config.read_text())["mcpServers"][name] == entry_before
+    assert list((home / ".observal/update-backups").glob("*/*"))
+
+
+@pytest.mark.parametrize("revoked", ["consent", "session-marker"])
+def test_claude_mcp_identical_entry_release_is_still_admission_checked_in_the_child(
+    claude_instance, revoked: str
+) -> None:
+    """The identical-entry path takes the same guard as a changed entry, so it writes nothing once admission is gone."""
+    state, home, cli, apply, env = claude_instance
+    state["fixed_command"] = True
+    cli("registry", "mcp", "install", MCPS[0], "--harness", "claude-code", "--managed")
+    state["latest"] = "2.0.0"
+    cli("unfreeze")
+    injection = home / "injection"
+    injection.mkdir()
+    (injection / "sitecustomize.py").write_text(
+        "import os\n"
+        "from pathlib import Path\n"
+        "from observal_cli import auto_update_policy\n"
+        "if os.environ.get('OBSERVAL_AUTO_UPDATE_INSTALL') == '1':\n"
+        "    if os.environ.get('REVOKE') == 'consent':\n"
+        "        _real = auto_update_policy.policy_status\n"
+        "        auto_update_policy.policy_status = lambda r: {**_real(r), 'effective': False}\n"
+        "    else:\n"
+        "        Path(os.environ['OBSERVAL_AUTO_UPDATE_SHUTDOWN_MARKER']).write_text('x')\n"
+    )
+    env["PYTHONPATH"] = os.pathsep.join([str(injection), env["PYTHONPATH"]])
+    env["REVOKE"] = "consent" if revoked == "consent" else "marker"
+    item = apply("revoked")["items"][0]
+    assert item["status"] != "updated", item
+    assert _lock_version(home) == "1.0.0", "no metadata may advance once admission is gone"
+    assert not list((home / ".observal/update-backups").glob("*/*"))

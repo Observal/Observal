@@ -706,42 +706,12 @@ def apply_startup_claude_mcp(
                 return False
 
         state = claude_mcp.recovery_state(backup)
-        if completed.returncode == 0 and state is None and not backup.exists():
-            # The release generated the identical entry, so the installer made no
-            # entry change and saved no recovery plan; only the metadata advanced.
+        if completed.returncode == 0 and state is not None:
+            # Success is the saved plan, exactly: the live entry is the planned one, and our ownership
+            # record and installed-lock row are the planned values (not merely "a" newer version).
+            record = state[1]
             try:
-                rows = [
-                    row
-                    for row in _entries("claude-code")
-                    if row.get("id") == item["id"] and row.get("type") == "mcp" and row.get("scope") == "user"
-                ]
-                saved = claude_mcp.load_record(registry, item["id"])
-                if (
-                    len(rows) == 1
-                    and rows[0].get("current_version") == item["latest_version"]
-                    and rows[0].get("requested_version") is None
-                    and saved is not None
-                    and saved["name"] == rows[0].get("local_name")
-                    and claude_mcp.read_entry(saved["name"]) == saved["entry"]
-                ):
-                    return {"status": "updated", "reason": "Saved Claude Code MCP entry updated; start a new session."}
-            except (OSError, ValueError, TypeError, KeyError):
-                pass
-        if completed.returncode == 0 and state and state[0] == "new":
-            try:
-                rows = [
-                    row
-                    for row in _entries("claude-code")
-                    if row.get("id") == item["id"] and row.get("type") == "mcp" and row.get("scope") == "user"
-                ]
-                saved = claude_mcp.load_record(registry, item["id"])
-                if (
-                    len(rows) == 1
-                    and rows[0].get("current_version") == item["latest_version"]
-                    and rows[0].get("requested_version") is None
-                    and saved is not None
-                    and saved["entry"] == state[1]["new"]
-                ):
+                if (record["old"] == record["new"] or state[0] == "new") and claude_mcp.bookkeeping_is_planned(record):
                     install_recovery.discard(backup)
                     return {"status": "updated", "reason": "Saved Claude Code MCP entry updated; start a new session."}
             except (OSError, ValueError, TypeError, KeyError):
