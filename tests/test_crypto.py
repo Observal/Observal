@@ -1322,10 +1322,15 @@ class TestJWKSEndpoint:
 
         response = await jwks_client.get("/api/v1/auth/.well-known/jwks.json")
         assert response.status_code == 200
-        assert [key["kid"] for key in response.json()["keys"]] == [new_kid, previous_kid]
-        assert all("private" not in key and "d" not in key for key in response.json()["keys"])
+        keys = response.json()["keys"]
+        assert [key["kid"] for key in keys] == [new_kid, previous_kid]
+        private_fields = {"private", "d", "p", "q", "dp", "dq", "qi", "oth", "k"}
+        assert all(private_fields.isdisjoint(key) for key in keys)
 
     @pytest.mark.asyncio
     async def test_jwks_endpoint_cache_header(self, jwks_client):
         resp = await jwks_client.get("/api/v1/auth/.well-known/jwks.json")
-        assert "max-age" in resp.headers.get("cache-control", "")
+        directives = {directive.strip().lower() for directive in resp.headers.get("cache-control", "").split(",")}
+        assert "no-cache" in directives
+        assert "must-revalidate" in directives
+        assert "max-age=3600" not in directives
