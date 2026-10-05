@@ -67,10 +67,10 @@ Generates harness-specific config to paste into your editor's MCP settings. By d
 ```bash
 observal registry mcp edit my-server
 observal registry mcp edit my-server -d "New description" -c databases
-observal registry mcp edit my-server --from-file updates.json --output json
+observal registry mcp edit my-server --from-file updates.json --output json --bump patch
 ```
 
-For draft, pending, or rejected listings, `edit` updates the submission in place. For an already-approved listing, it instead publishes a new version with a semver bump — pass `--bump patch|minor|major` to choose non-interactively, or you'll be prompted. With no flags it opens the same interactive JSON paste prompt as `submit`; alternatively pass individual fields (`--name`, `--description`, `--category`, `--version`, `--git-url`, `--command`, `--url`) or load a complete update from a file with `--from-file`. `--changelog` sets the changelog text for a new version without prompting.
+For draft, pending, or rejected listings, `edit` updates the submission in place. For an already-approved listing, it instead publishes a new version with a semver bump — pass `--bump patch|minor|major` to choose non-interactively, or you'll be prompted. With no flags it opens the same interactive JSON paste prompt as `submit`. For draft, pending, or rejected listings, pass individual fields (`--name`, `--description`, `--category`, `--version`, `--git-url`, `--command`, `--url`) or load a complete update from a file with `--from-file`. For approved listings, only `--description`, `--command`, and `--url` are accepted as changes, whether supplied individually or through `--from-file`; `--name` is ignored, and `--category`, `--version`, and `--git-url` are rejected. `--changelog` sets the changelog text for a new version without prompting.
 
 ## Transfer ownership, archive, and restore
 
