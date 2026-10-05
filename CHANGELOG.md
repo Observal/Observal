@@ -22,6 +22,10 @@ All notable changes to this project will be documented in this file.
 
 - correct the live log viewer command to `observal ops logs`
 
+### Security
+
+- coordinate shared JWT key startup across POSIX workers and enforce owner-only key permissions
+
 ### Maintenance
 
 - publish from maintained `release/X.Y` branches with alpha, beta, RC, stable, and backport workflows; deploy and update Homebrew only after verifying the newest stable release

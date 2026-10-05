@@ -9,9 +9,19 @@ from __future__ import annotations
 import base64
 import hashlib
 import os
+import tempfile
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Literal, TypeAlias
+from typing import TYPE_CHECKING, Literal, TypeAlias
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - exercised on Windows
+    fcntl = None
 
 import jwt
 from cryptography.hazmat.primitives import serialization
@@ -83,12 +93,14 @@ class KeyManager:
         key_password: str | None = None,
         algorithm: SigningAlgorithm = "ES256",
         retired_key_retention_days: int = 30,
+        read_only: bool = False,
     ) -> None:
         if algorithm not in SUPPORTED_ALGORITHMS:
             raise ValueError(f"Unsupported JWT signing algorithm: {algorithm}")
         self._key_dir = Path(key_dir).expanduser()
         self._key_password = key_password.encode() if key_password else None
         self._algorithm = algorithm
+        self._read_only = read_only
         self._retired_key_retention_seconds = max(retired_key_retention_days, 1) * 86400
         self._private_key: PrivateKey | None = None
         self._public_key: PublicKey | None = None
@@ -101,22 +113,37 @@ class KeyManager:
 
     def initialize(self) -> None:
         optic.debug("initializing JWT key manager")
-        self._key_dir.mkdir(parents=True, exist_ok=True)
-        try:
-            os.chmod(self._key_dir, 0o700)
-        except OSError:
-            pass
-
         signing_path = self._key_dir / "signing.pem"
-        if signing_path.exists():
-            self._load_private_key(signing_path)
+        if self._read_only:
+            if not self._key_dir.is_dir():
+                raise FileNotFoundError(f"JWT key directory does not exist in read-only mode: {self._key_dir}")
+            try:
+                signing_path.stat()
+            except FileNotFoundError as exc:
+                raise FileNotFoundError(f"JWT signing key does not exist in read-only mode: {signing_path}") from exc
+            self._load_private_key(signing_path, allow_migration=False)
             if _algorithm_for_key(self.get_private_key()) != self._algorithm:
-                optic.info("JWT algorithm changed; retiring current signing key")
-                self._retire_current_key()
-                self._generate_key_pair(signing_path)
+                raise RuntimeError("Configured JWT algorithm does not match the key in the read-only key store")
+            self._load_retired_keys(prune=False)
         else:
-            self._generate_key_pair(signing_path)
-        self._load_retired_keys()
+            self._key_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                os.chmod(self._key_dir, 0o700)
+            except OSError:
+                optic.warning("could not restrict JWT key directory permissions")
+
+            with self._signing_lock():
+                try:
+                    signing_path.lstat()
+                except FileNotFoundError:
+                    self._generate_key_pair(signing_path)
+                else:
+                    self._load_private_key(signing_path)
+                    if _algorithm_for_key(self.get_private_key()) != self._algorithm:
+                        optic.info("JWT algorithm changed; retiring current signing key")
+                        self._retire_current_key()
+                        self._generate_key_pair(signing_path)
+                self._load_retired_keys()
         optic.info("JWT signing key ready (alg={}, kid={})", self._algorithm, self._kid)
 
     def get_private_key(self) -> PrivateKey:
@@ -149,6 +176,8 @@ class KeyManager:
         return {"keys": keys}
 
     def rotate_key(self) -> str:
+        if self._read_only:
+            raise RuntimeError("Cannot rotate JWT signing key in read-only mode")
         optic.info("rotating JWT signing key")
         self._retire_current_key()
         self._generate_key_pair(self._key_dir / "signing.pem")
@@ -183,6 +212,56 @@ class KeyManager:
             raise jwt.InvalidAlgorithmError("Token algorithm does not match its signing key")
         return jwt.decode(token, pub, algorithms=[expected_algorithm])
 
+    @contextmanager
+    def _signing_lock(self) -> Iterator[None]:
+        if fcntl is None:
+            optic.warning("fcntl is unavailable; JWT key initialization is running without cross-process coordination")
+            yield
+            return
+
+        lock_path = self._key_dir / ".signing.lock"
+        descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            try:
+                os.chmod(lock_path, 0o600)
+            except OSError:
+                optic.warning("could not restrict JWT signing lock permissions")
+            fcntl.flock(descriptor, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
+
+    def _atomic_write(self, path: Path, data: bytes) -> None:
+        descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+        temporary_path = Path(temporary_name)
+        try:
+            if hasattr(os, "fchmod"):
+                os.fchmod(descriptor, 0o600)
+            else:  # pragma: no cover - platform-specific fallback
+                os.chmod(temporary_path, 0o600)
+            with os.fdopen(descriptor, "wb") as handle:
+                descriptor = -1
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary_path, path)
+            if os.name == "posix":
+                directory_descriptor = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+                try:
+                    os.fsync(directory_descriptor)
+                finally:
+                    os.close(directory_descriptor)
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+            try:
+                temporary_path.unlink()
+            except FileNotFoundError:
+                pass
+
     def _encryption_args(self) -> serialization.KeySerializationEncryption:
         if self._key_password:
             return serialization.BestAvailableEncryption(self._key_password)
@@ -194,15 +273,7 @@ class KeyManager:
             serialization.PrivateFormat.PKCS8,
             self._encryption_args(),
         )
-        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        try:
-            os.fchmod(descriptor, 0o600)
-            with os.fdopen(descriptor, "wb") as handle:
-                descriptor = -1
-                handle.write(pem)
-        finally:
-            if descriptor >= 0:
-                os.close(descriptor)
+        self._atomic_write(path, pem)
 
     def _generate_key_pair(self, path: Path) -> None:
         optic.debug("generating {} JWT signing key", self._algorithm)
@@ -216,7 +287,24 @@ class KeyManager:
         self._public_key = key.public_key()
         self._kid = _kid_from_public_key(self._public_key)
 
-    def _load_private_key(self, path: Path) -> None:
+    def _ensure_private_key_permissions(self, path: Path, *, read_only: bool) -> None:
+        if os.name != "posix":
+            if read_only:
+                optic.warning("cannot verify JWT signing key permissions on a non-POSIX platform; restrict its ACL")
+            else:
+                try:
+                    os.chmod(path, 0o600)
+                except OSError:
+                    optic.warning("could not restrict JWT signing key permissions")
+            return
+
+        if not read_only:
+            os.chmod(path, 0o600)
+        permissions = path.stat().st_mode & 0o777
+        if permissions & 0o077:
+            raise PermissionError(f"JWT signing key permissions are too permissive: {path}")
+
+    def _load_private_key(self, path: Path, *, allow_migration: bool = True) -> None:
         optic.trace("loading JWT signing key from {}", path.name)
         pem = path.read_bytes()
         encrypt_existing_key = False
@@ -230,14 +318,12 @@ class KeyManager:
         if not isinstance(key, (ec.EllipticCurvePrivateKey, rsa.RSAPrivateKey)):
             raise TypeError(f"Unsupported private key type: {type(key).__name__}")
         _algorithm_for_key(key)
+        self._ensure_private_key_permissions(path, read_only=not allow_migration)
         if encrypt_existing_key:
+            if not allow_migration:
+                raise RuntimeError("Cannot encrypt existing JWT signing key in read-only mode")
             self._write_private_key(path, key)
             optic.info("encrypted existing JWT signing key with configured password")
-        else:
-            try:
-                os.chmod(path, 0o600)
-            except OSError:
-                optic.warning("could not restrict JWT signing key permissions")
         self._private_key = key
         self._public_key = key.public_key()
         self._kid = _kid_from_public_key(self._public_key)
@@ -246,13 +332,11 @@ class KeyManager:
         if self._public_key is None or self._kid is None:
             return
         retired_path = self._key_dir / f"retired_{self._kid}.pem"
-        retired_path.write_bytes(
-            self._public_key.public_bytes(
-                serialization.Encoding.PEM,
-                serialization.PublicFormat.SubjectPublicKeyInfo,
-            )
+        pem = self._public_key.public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
         )
-        os.chmod(retired_path, 0o600)
+        self._atomic_write(retired_path, pem)
         self._retired_keys[self._kid] = self._public_key
 
     def _prune_retired_keys(self) -> None:
@@ -262,14 +346,18 @@ class KeyManager:
                 if path.stat().st_mtime >= cutoff:
                     continue
                 kid = path.stem.removeprefix("retired_")
+                if self._read_only:
+                    self._retired_keys.pop(kid, None)
+                    continue
                 path.unlink()
                 self._retired_keys.pop(kid, None)
                 optic.info("removed expired retired JWT key kid={}", kid)
             except OSError:
                 optic.warning("could not prune retired key file {}", path.name)
 
-    def _load_retired_keys(self) -> None:
-        self._prune_retired_keys()
+    def _load_retired_keys(self, *, prune: bool = True) -> None:
+        if prune:
+            self._prune_retired_keys()
         for path in self._key_dir.glob("retired_*.pem"):
             try:
                 pub = serialization.load_pem_public_key(path.read_bytes())
@@ -295,6 +383,7 @@ def init_key_manager(
     key_password: str | None = None,
     algorithm: SigningAlgorithm = "ES256",
     retired_key_retention_days: int = 30,
+    read_only: bool = False,
 ) -> KeyManager:
     global _key_manager
     manager = KeyManager(
@@ -302,6 +391,7 @@ def init_key_manager(
         key_password=key_password,
         algorithm=algorithm,
         retired_key_retention_days=retired_key_retention_days,
+        read_only=read_only,
     )
     manager.initialize()
     _key_manager = manager
