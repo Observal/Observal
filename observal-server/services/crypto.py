@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import base64
+import errno
 import hashlib
 import os
 import tempfile
@@ -22,11 +23,14 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 try:
-    import fcntl
+    import fcntl as _fcntl
 except ImportError:  # pragma: no cover - exercised on Windows
     fcntl = None
+else:
+    fcntl = _fcntl
 
 import jwt
+from cryptography.exceptions import UnsupportedAlgorithm
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from loguru import logger as optic
@@ -35,6 +39,12 @@ SigningAlgorithm = Literal["ES256", "RS256"]
 PrivateKey: TypeAlias = ec.EllipticCurvePrivateKey | rsa.RSAPrivateKey
 PublicKey: TypeAlias = ec.EllipticCurvePublicKey | rsa.RSAPublicKey
 SUPPORTED_ALGORITHMS = frozenset({"ES256", "RS256"})
+KEY_STORE_LOCK_TIMEOUT_SECONDS = 5.0
+_KEY_STORE_LOCK_RETRY_SECONDS = 0.05
+
+
+class KeyStoreUnavailableError(RuntimeError):
+    """Raised when managed JWT key material is unavailable during normal operation."""
 
 
 def _b64url(data: bytes) -> str:
@@ -180,27 +190,41 @@ class KeyManager:
     def _refresh_active_key(self) -> None:
         """Observe the authoritative private key; never generate or migrate on reads."""
         path = self._key_dir / "signing.pem"
-        if os.name == "posix":
-            self._ensure_private_key_permissions(path, read_only=True)
-        pem = path.read_bytes()
-        if self._active is None or pem != self._active.pem:
-            self._load_private_key(path, allow_migration=False, pem=pem)
+        try:
+            if os.name == "posix":
+                self._ensure_private_key_permissions(path, read_only=True)
+            pem = path.read_bytes()
+            # Read-only deployments adopt externally provisioned keys only after restart.
+            if self._read_only and self._active is not None and pem != self._active.pem:
+                raise KeyStoreUnavailableError("JWT signing-key store is unavailable")
+            if self._active is None or pem != self._active.pem:
+                self._load_private_key(path, allow_migration=False, pem=pem)
+        except KeyStoreUnavailableError:
+            raise
+        except (OSError, TypeError, ValueError, RuntimeError, UnsupportedAlgorithm):
+            raise KeyStoreUnavailableError("JWT signing-key store is unavailable") from None
 
     def _snapshot(
         self, *, kid: str | None = None, include_retired: bool = False
     ) -> tuple[_ActiveKey, dict[str, PublicKey]]:
         with self._state_lock:
             self._require_active()
-            if self._read_only:
-                active = self._require_active()
-                if include_retired or (kid is not None and kid != active.kid):
-                    self._load_retired_keys(prune=False)
-            else:
-                with self._signing_lock(shared=True):
+            try:
+                if self._read_only:
                     self._refresh_active_key()
                     active = self._require_active()
                     if include_retired or (kid is not None and kid != active.kid):
                         self._load_retired_keys(prune=False)
+                else:
+                    with self._signing_lock(shared=True):
+                        self._refresh_active_key()
+                        active = self._require_active()
+                        if include_retired or (kid is not None and kid != active.kid):
+                            self._load_retired_keys(prune=False)
+            except KeyStoreUnavailableError:
+                raise
+            except (OSError, TypeError, ValueError, RuntimeError, UnsupportedAlgorithm):
+                raise KeyStoreUnavailableError("JWT signing-key store is unavailable") from None
             return active, self._retired_keys if include_retired or (kid is not None and kid != active.kid) else {}
 
     def get_private_key(self) -> PrivateKey:
@@ -286,20 +310,54 @@ class KeyManager:
 
         lock_path = self._key_dir / ".signing.lock"
         flags = (os.O_CREAT | os.O_RDWR) if create else (os.O_RDONLY if shared else os.O_RDWR)
-        descriptor = os.open(lock_path, flags, 0o600)
+        try:
+            descriptor = os.open(lock_path, flags, 0o600)
+        except OSError:
+            if create:
+                raise
+            raise KeyStoreUnavailableError("JWT signing-key store is unavailable") from None
+
         try:
             if create:
                 try:
                     os.chmod(lock_path, 0o600)
                 except OSError:
                     optic.warning("could not restrict JWT signing lock permissions")
-            fcntl.flock(descriptor, fcntl.LOCK_SH if shared else fcntl.LOCK_EX)
+
+            operation = fcntl.LOCK_SH if shared else fcntl.LOCK_EX
+            deadline = time.monotonic() + KEY_STORE_LOCK_TIMEOUT_SECONDS
+            while True:
+                try:
+                    fcntl.flock(descriptor, operation | fcntl.LOCK_NB)
+                    break
+                except OSError as exc:
+                    if exc.errno == errno.EINTR:
+                        if time.monotonic() >= deadline:
+                            raise KeyStoreUnavailableError("JWT signing-key store is unavailable") from None
+                        continue
+                    if not isinstance(exc, BlockingIOError) and exc.errno not in {
+                        errno.EACCES,
+                        errno.EAGAIN,
+                        errno.EWOULDBLOCK,
+                    }:
+                        raise KeyStoreUnavailableError("JWT signing-key store is unavailable") from None
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise KeyStoreUnavailableError("JWT signing-key store is unavailable") from None
+                    time.sleep(min(_KEY_STORE_LOCK_RETRY_SECONDS, remaining))
+
             try:
                 yield
             finally:
-                fcntl.flock(descriptor, fcntl.LOCK_UN)
+                try:
+                    fcntl.flock(descriptor, fcntl.LOCK_UN)
+                except OSError:
+                    raise KeyStoreUnavailableError("JWT signing-key store is unavailable") from None
         finally:
-            os.close(descriptor)
+            try:
+                os.close(descriptor)
+            except OSError:
+                raise KeyStoreUnavailableError("JWT signing-key store is unavailable") from None
 
     def _atomic_write(self, path: Path, data: bytes) -> None:
         descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)

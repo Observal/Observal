@@ -27,6 +27,7 @@ All notable changes to this project will be documented in this file.
 - coordinate shared JWT key startup across POSIX workers and enforce owner-only key permissions
 - keep JWT signing and verification consistent through managed key rotation across workers
 - require JWKS revalidation and exclude expired retired keys across workers
+- report runtime JWT key-store failures as service unavailability without regenerating keys
 
 ### Maintenance
 

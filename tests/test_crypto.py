@@ -36,6 +36,7 @@ from httpx import ASGITransport, AsyncClient
 
 from services.crypto import (
     KeyManager,
+    KeyStoreUnavailableError,
     _b64url,
     _b64url_decode,
     _kid_from_public_key,
@@ -1111,11 +1112,11 @@ class TestKeyRotation:
         saved_path = Path(tmp_key_dir) / "saved-signing.pem"
         signing_path.rename(saved_path)
         try:
-            with pytest.raises(FileNotFoundError):
+            with pytest.raises(KeyStoreUnavailableError):
                 manager.sign_token({"sub": "must-not-be-signed"})
-            with pytest.raises(FileNotFoundError):
+            with pytest.raises(KeyStoreUnavailableError):
                 manager.verify_token(token)
-            with pytest.raises(FileNotFoundError):
+            with pytest.raises(KeyStoreUnavailableError):
                 manager.rotate_key()
             assert not signing_path.exists()
         finally:
