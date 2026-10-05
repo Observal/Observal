@@ -25,6 +25,7 @@ All notable changes to this project will be documented in this file.
 ### Security
 
 - coordinate shared JWT key startup across POSIX workers and enforce owner-only key permissions
+- keep JWT signing and verification consistent through managed key rotation across workers
 
 ### Maintenance
 

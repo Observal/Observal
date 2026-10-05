@@ -1,4 +1,5 @@
 <!-- SPDX-FileCopyrightText: 2026 Apoorv Garg <apoorvgarg.work@gmail.com> -->
+<!-- SPDX-FileCopyrightText: 2026 SrihariLegend <sriharilegend23@gmail.com> -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 # Authentication and SSO
@@ -76,13 +77,19 @@ Losing these keys invalidates **every** access and refresh token. All users must
 
 Back up the `apidata` volume every time you back up Postgres. See [Backup and restore](backup-and-restore.md).
 
-### Key rotation and algorithm changes
+### Normal key rotation and algorithm changes
 
-For a same-algorithm emergency rotation, stop the API, back up and remove `signing.pem`, then restart. New keys are generated and existing sessions must authenticate again.
+For managed keys, `KeyManager.rotate_key()` performs a **normal** rotation: it archives the actual active public key before publishing a replacement private key. Already-running workers sharing the same key directory discover the new key on their next operation, and eligible old tokens remain verifiable. There is no built-in rotation endpoint or scheduler. Back up the entire directory, including `retired_*.pem`; ordinary rotation does **not** revoke tokens issued by the former key. Configure key retention to cover the longest access, refresh, or hooks-token lifetime issued under the retiring key. The server does not remember past lifetime settings: lowering retention later can invalidate still-unexpired tokens.
 
-To move between ES256 and RS256, change `JWT_SIGNING_ALGORITHM` and restart. Observal archives the old public key, generates the selected key type, publishes both in JWKS, and continues verifying old tokens until they expire. New tokens use only the configured algorithm. Unsupported algorithms and token headers that do not match the resolved key type are rejected.
+Shared managed-key rotation requires compatible workers on one authoritative filesystem with POSIX advisory locking and atomic replacement. Roll workers out with a common configuration; Windows' unlocked fallback does not guarantee multi-worker coordination. `JWT_KEY_READ_ONLY=true` is for a pre-provisioned store and does not allow rotation or live external replacement.
 
-If the signing key is encrypted, use `JWT_KEY_PASSWORD_FILE` and rotate the password and key together during a planned restart.
+To move between ES256 and RS256, change `JWT_SIGNING_ALGORITHM` and perform a coordinated restart. Startup archives the old public key and generates the selected key type; old tokens remain verifiable until retention expires. A worker left running with a conflicting signing algorithm refuses to sign or rotate rather than changing the algorithm back. Unsupported algorithms and token headers that do not match the resolved key type are rejected.
+
+Adding `JWT_KEY_PASSWORD_FILE` to a previously unencrypted key encrypts it at startup. **Changing the password of an already encrypted `signing.pem` requires an offline key-file update**: stop all API and worker processes, back up the key directory, decrypt the existing private key with the old password, and re-encrypt that **same key** with the new password into an owner-only temporary file in `$JWT_KEY_DIR`. Replace `signing.pem` atomically, update `JWT_KEY_PASSWORD_FILE` to supply the matching new password, then restart all workers together. Changing only the password secret causes startup to fail; the server does not automatically migrate an encrypted key to a different password. Keep the retired public keys and verify that the active key ID and previously issued tokens are unchanged. Subsequent normal rotations remain encrypted.
+
+### Emergency key compromise
+
+Normal rotation retains the old public key and **does not revoke compromised tokens**. For an emergency in a **managed** store, stop all workers, back up the key store, remove the compromised `signing.pem` (and any matching `retired_<kid>.pem`), then restart with a newly generated key. In read-only mode, provision a replacement key before restarting; the server will not generate one. Tokens signed by the compromised key will no longer verify; users may need to log in again. This is a disruptive revocation procedure, not a substitute for normal rotation.
 
 ### File-backed SAML keys
 
