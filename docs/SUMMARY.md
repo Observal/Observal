@@ -42,6 +42,7 @@
 * [observal inbox](cli/inbox.md)
 * [observal agent pull](cli/pull.md)
 * [observal registry](cli/registry.md)
+* [observal registry mcp](cli/mcp.md)
 * [observal registry recommend](cli/recommend.md)
 * [observal registry version](cli/component.md)
 * [observal registry models](cli/models.md)
