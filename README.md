@@ -356,7 +356,7 @@ Produces a redacted diagnostic archive. Review before sharing: `observal doctor 
 For live debugging, Observal uses loguru-based dev logging (internally called "optic"). Stream logs with:
 
 ```bash
-observal logs
+observal ops logs
 ```
 
 Logs are written to `~/.observal/logs/dev.log` and include structured context for every request, background job, and telemetry event.
