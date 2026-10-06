@@ -19,6 +19,8 @@ Thank you for considering contributing to Observal. Contributions of all kinds a
 
 Please read our [Code of Conduct](https://github.com/Observal/Observal/blob/main/CODE_OF_CONDUCT.md) and [AI Policy](AI_POLICY.md) before contributing.
 
+Interested in how contributors are paid? See [Contributor Payments](docs/contributor-payments.md).
+
 > Parts of this guide were inspired by the contributing documentation from [AnkiDroid/Anki-Android](https://github.com/ankidroid/Anki-Android). They set a great standard for OSS contributor docs and were one of the first open-source projects some of our maintainers were part of. If you are looking for another welcoming OSS project, check them out.
 
 ***
@@ -116,7 +118,9 @@ fix/clickhouse-insert-timeout
 docs/update-setup-guide
 ```
 
-Never commit directly to `main`.
+Never commit directly to `main` or a protected `release/X.Y` branch.
+
+Normal changes target `main`. Release preparation and backport PRs target their matching `release/X.Y` line. Never merge a release line back into `main`. See the [release guide](docs/self-hosting/releasing.md) for beta, RC, stable, and backport workflows.
 
 ### Code Style
 

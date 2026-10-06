@@ -368,3 +368,8 @@ SPDX-License-Identifier = "Apache-2.0"
 path = ["observal-server/vendor/ard/spec/**", "observal-server/vendor/ard/conformance/**", "observal-server/vendor/ard/LICENSE"]
 SPDX-FileCopyrightText = "2026 Agentic Resource Discovery project"
 SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ".github/release-ruleset.json"
+SPDX-FileCopyrightText = "2026 Hari Srinivasan <harisrini21@gmail.com>"
+SPDX-License-Identifier = "Apache-2.0"

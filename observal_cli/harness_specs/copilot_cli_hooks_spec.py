@@ -64,8 +64,10 @@ def build_copilot_cli_hooks(agent_id: str = "") -> dict:
     """
     module = "observal_cli.hooks.session_push"
     bash_cmd = f"{_python_cmd()} -m {module} --harness copilot-cli"
-    # PowerShell command uses bare 'python' which must be on Windows PATH
-    ps_cmd = f"python -m {module} --harness copilot-cli"
+    # A PowerShell single-quoted literal does not expand $ or subexpressions;
+    # double apostrophes so even unusual interpreter paths stay literal.
+    ps_path = sys.executable.replace("'", "''")
+    ps_cmd = f"& '{ps_path}' -m {module} --harness copilot-cli"
 
     if agent_id:
         if sys.platform == "win32":

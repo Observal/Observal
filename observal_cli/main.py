@@ -79,6 +79,7 @@ app = typer.Typer(
 
 @app.callback()
 def main(
+    ctx: typer.Context,
     version: bool | None = typer.Option(
         None,
         "--version",
@@ -92,6 +93,13 @@ def main(
 ):
     """Observal: MCP Server & Agent Registry CLI"""
     from observal_cli.optic import setup_optic
+
+    # Scan must decide whether it is the strictly read-only inventory variant
+    # before any startup migration, skill synchronization, or file logging.
+    if ctx.invoked_subcommand == "scan":
+        ctx.meta["observal.scan.startup"] = (debug, verbose)
+        setup_optic(debug=False, verbose=debug or verbose)
+        return
 
     setup_optic(debug=debug, verbose=verbose)
     _check_package_conflict()

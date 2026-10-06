@@ -12,6 +12,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Features
+
+- add opt-in, local-only harness inventory to `observal scan`
+
+### Documentation
+
+- correct the live log viewer command to `observal ops logs`
+
+### Maintenance
+
+- publish from maintained `release/X.Y` branches with alpha, beta, RC, stable, and backport workflows; deploy and update Homebrew only after verifying the newest stable release
+
 ## [1.13.1] - 2026-09-05
 
 ### Features
@@ -129,6 +143,9 @@ All notable changes to this project will be documented in this file.
 - require explicit Kiro session identity and keep aged recovery non-final
 - keep intentional CLI downgrades pinned when targeting legacy releases ([#1672](https://github.com/Observal/Observal/pull/1672))
 - avoid duplicate bundled Observal skill conflicts when Codex and Pi are installed together ([#1601](https://github.com/Observal/Observal/issues/1601))
+- let `observal auth login` sign in with Google or GitHub through `--provider`, and ask which provider a bare `--sso` should use instead of always sending it to OIDC ([#1771](https://github.com/Observal/Observal/issues/1771))
+- run hooks in pulled Claude Code agents with the CLI's own interpreter instead of bare `python3`, which cannot import a `uv tool` install ([#1773](https://github.com/Observal/Observal/issues/1773))
+- say in `agent pull` output, and in JSON as `reports_sessions`, when the pulled agent sends its sessions to the server ([#1772](https://github.com/Observal/Observal/issues/1772))
 
 ## [1.11.0] - 2026-08-02
 

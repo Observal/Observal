@@ -118,7 +118,7 @@ def test_execute_selects_installer_then_verifies(
 
 @pytest.mark.parametrize(
     "method",
-    [InstallMethod.HOMEBREW, InstallMethod.SYSTEM_PACKAGE, InstallMethod.UNKNOWN],
+    [InstallMethod.SYSTEM_PACKAGE, InstallMethod.UNKNOWN],
 )
 def test_execute_rejects_unsupported_installations_without_verification(
     method: InstallMethod,

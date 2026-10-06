@@ -483,6 +483,9 @@ def test_login_with_credentials_routes_to_password_authentication(
         ("3", {"sso_enabled": True}, True, "oidc"),
         ("3", {"saml_enabled": True}, True, "saml"),
         ("4", {"sso_enabled": True, "saml_enabled": True}, True, "saml"),
+        ("3", {"google_sso_enabled": True}, True, "google"),
+        ("4", {"sso_enabled": True, "google_sso_enabled": True}, True, "google"),
+        ("5", {"sso_enabled": True, "github_sso_enabled": True, "saml_enabled": True}, True, "saml"),
     ],
 )
 def test_login_method_menu_routes_browser_flows(
@@ -509,22 +512,30 @@ def test_login_method_menu_routes_browser_flows(
 
 
 @pytest.mark.parametrize(
-    ("sso", "saml", "provider"),
-    [(True, False, None), (False, True, "saml")],
+    ("sso", "saml", "provider_option", "provider"),
+    [
+        (False, True, None, "saml"),
+        (False, False, "google", "google"),
+        (True, False, "GitHub", "github"),
+    ],
 )
-def test_login_sso_flags_bypass_method_prompt(
+def test_login_explicit_provider_bypasses_prompts(
     sso: bool,
     saml: bool,
-    provider: str | None,
+    provider_option: str | None,
+    provider: str,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _prepare_login(monkeypatch, public={"sso_enabled": True, "saml_enabled": True})
+    _prepare_login(
+        monkeypatch,
+        public={"sso_enabled": True, "google_sso_enabled": True, "github_sso_enabled": True, "saml_enabled": True},
+    )
     quick_choice = MagicMock()
     device_login = MagicMock()
     monkeypatch.setattr(auth, "quick_choice", quick_choice)
     monkeypatch.setattr(auth, "_do_device_flow_login", device_login)
 
-    auth.login(SERVER_URL, None, None, None, sso, saml)
+    auth.login(SERVER_URL, None, None, None, sso, saml, provider=provider_option)
 
     quick_choice.assert_not_called()
     device_login.assert_called_once_with(
@@ -546,10 +557,153 @@ def test_login_sso_only_server_forces_browser_flow(monkeypatch: pytest.MonkeyPat
     device_login.assert_called_once_with(
         SERVER_URL,
         direct_sso=True,
-        provider=None,
+        provider="oidc",
         output=auth.OutputMode.table,
         run_setup=True,
     )
+
+
+@pytest.mark.parametrize(
+    ("public", "answer", "expected_provider"),
+    [
+        ({"sso_enabled": True, "google_sso_enabled": True}, "2", "google"),
+        ({"sso_enabled": True, "google_sso_enabled": True, "saml_enabled": True}, "1", "oidc"),
+        ({"sso_only": True, "sso_enabled": True, "github_sso_enabled": True}, "2", "github"),
+    ],
+)
+def test_bare_sso_asks_which_provider_when_several_are_enabled(
+    public: dict[str, object],
+    answer: str,
+    expected_provider: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _prepare_login(monkeypatch, public=public)
+    quick_choice = MagicMock(return_value=answer)
+    device_login = MagicMock()
+    monkeypatch.setattr(auth, "quick_choice", quick_choice)
+    monkeypatch.setattr(auth, "_do_device_flow_login", device_login)
+    monkeypatch.setattr(auth.sys, "stdin", SimpleNamespace(isatty=lambda: True))
+
+    auth.login(SERVER_URL, None, None, None, not public.get("sso_only"), False)
+
+    prompt, valid = quick_choice.call_args.args
+    assert prompt == "SSO provider"
+    assert len(valid) == sum(1 for key, value in public.items() if key != "sso_only" and value)
+    device_login.assert_called_once_with(
+        SERVER_URL,
+        direct_sso=True,
+        provider=expected_provider,
+        output=auth.OutputMode.table,
+        run_setup=True,
+    )
+
+
+def test_bare_sso_uses_the_only_enabled_provider_without_asking(monkeypatch: pytest.MonkeyPatch) -> None:
+    _prepare_login(monkeypatch, public={"google_sso_enabled": True})
+    quick_choice = MagicMock()
+    device_login = MagicMock()
+    monkeypatch.setattr(auth, "quick_choice", quick_choice)
+    monkeypatch.setattr(auth, "_do_device_flow_login", device_login)
+
+    auth.login(SERVER_URL, None, None, None, True, False)
+
+    quick_choice.assert_not_called()
+    assert device_login.call_args.kwargs["provider"] == "google"
+
+
+def test_bare_sso_without_terminal_keeps_server_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    _prepare_login(monkeypatch, public={"sso_enabled": True, "google_sso_enabled": True})
+    quick_choice = MagicMock(side_effect=AssertionError("non-interactive stdin must not prompt"))
+    device_login = MagicMock()
+    monkeypatch.setattr(auth, "quick_choice", quick_choice)
+    monkeypatch.setattr(auth, "_do_device_flow_login", device_login)
+    monkeypatch.setattr(auth.sys, "stdin", SimpleNamespace(isatty=lambda: False))
+
+    auth.login(SERVER_URL, None, None, None, True, False)
+
+    assert device_login.call_args.kwargs["provider"] is None
+
+
+@pytest.mark.parametrize("provider", ["google", "okta"])
+def test_login_rejects_saml_with_a_different_provider(provider: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    _prepare_login(monkeypatch, public={"sso_enabled": True, "google_sso_enabled": True, "saml_enabled": True})
+    device_login = MagicMock()
+    monkeypatch.setattr(auth, "_do_device_flow_login", device_login)
+
+    with pytest.raises(CliError) as exc_info:
+        auth.login(SERVER_URL, None, None, None, False, True, provider=provider)
+
+    assert exc_info.value.category is ErrorCategory.VALIDATION
+    assert "--saml and --provider" in exc_info.value.message
+    device_login.assert_not_called()
+
+
+def test_login_accepts_saml_with_matching_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    _prepare_login(monkeypatch, public={"saml_enabled": True})
+    device_login = MagicMock()
+    monkeypatch.setattr(auth, "_do_device_flow_login", device_login)
+
+    auth.login(SERVER_URL, None, None, None, False, True, provider="SAML")
+
+    assert device_login.call_args.kwargs["provider"] == "saml"
+
+
+def test_json_bare_sso_keeps_server_default_without_prompting(monkeypatch: pytest.MonkeyPatch) -> None:
+    _prepare_login(monkeypatch, public={"sso_enabled": True, "google_sso_enabled": True})
+    quick_choice = MagicMock(side_effect=AssertionError("JSON mode must not prompt"))
+    device_login = MagicMock()
+    monkeypatch.setattr(auth, "quick_choice", quick_choice)
+    monkeypatch.setattr(auth, "_do_device_flow_login", device_login)
+
+    auth.login(SERVER_URL, None, None, None, True, False, output=auth.OutputMode.json)
+
+    device_login.assert_called_once_with(
+        SERVER_URL,
+        direct_sso=True,
+        provider=None,
+        output=auth.OutputMode.json,
+        run_setup=False,
+    )
+
+
+def test_json_provider_implies_sso(monkeypatch: pytest.MonkeyPatch) -> None:
+    _prepare_login(monkeypatch, public={"sso_enabled": True, "google_sso_enabled": True})
+    device_login = MagicMock()
+    monkeypatch.setattr(auth, "_do_device_flow_login", device_login)
+
+    auth.login(SERVER_URL, None, None, None, False, False, output=auth.OutputMode.json, provider="google")
+
+    device_login.assert_called_once_with(
+        SERVER_URL,
+        direct_sso=True,
+        provider="google",
+        output=auth.OutputMode.json,
+        run_setup=False,
+    )
+
+
+@pytest.mark.parametrize(
+    ("provider", "message"),
+    [
+        ("google", "Google is not configured"),
+        ("okta", "Unknown SSO provider: okta"),
+    ],
+)
+def test_login_rejects_unusable_explicit_provider(
+    provider: str,
+    message: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _prepare_login(monkeypatch, public={"sso_enabled": True})
+    device_login = MagicMock()
+    monkeypatch.setattr(auth, "_do_device_flow_login", device_login)
+
+    with pytest.raises(CliError) as exc_info:
+        auth.login(SERVER_URL, None, None, None, True, False, provider=provider)
+
+    assert exc_info.value.category is ErrorCategory.VALIDATION
+    assert message in exc_info.value.message
+    device_login.assert_not_called()
 
 
 def test_quick_choice_restores_terminal_before_printing_selection(monkeypatch: pytest.MonkeyPatch) -> None:
