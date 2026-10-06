@@ -626,14 +626,14 @@ class TestKeyPersistence:
         signing_path = Path(tmp_key_dir) / "signing.pem"
         existing_pem = b"existing but inaccessible key"
         signing_path.write_bytes(existing_pem)
-        real_lstat = os.lstat
+        real_lstat = Path.lstat
 
         def fail_signing_lstat(path, *args, **kwargs):
             if Path(path) == signing_path:
                 raise PermissionError("simulated key access denial")
             return real_lstat(path, *args, **kwargs)
 
-        monkeypatch.setattr(os, "lstat", fail_signing_lstat)
+        monkeypatch.setattr(Path, "lstat", fail_signing_lstat)
         with pytest.raises(PermissionError, match="simulated key access denial"):
             KeyManager(key_dir=tmp_key_dir).initialize()
 
