@@ -13,7 +13,7 @@ import hashlib
 import os
 import tempfile
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from threading import RLock
@@ -233,7 +233,7 @@ class KeyManager:
         with self._state_lock:
             self._require_active()
             try:
-                if self._read_only:
+                with nullcontext() if self._read_only else self._signing_lock(shared=True):
                     self._refresh_active_key()
                     active = self._require_active()
                     if include_retired or (kid is not None and kid != active.kid):
@@ -242,16 +242,6 @@ class KeyManager:
                             required_kid=kid,
                             require_complete_set=include_retired,
                         )
-                else:
-                    with self._signing_lock(shared=True):
-                        self._refresh_active_key()
-                        active = self._require_active()
-                        if include_retired or (kid is not None and kid != active.kid):
-                            self._load_retired_keys(
-                                prune=False,
-                                required_kid=kid,
-                                require_complete_set=include_retired,
-                            )
             except KeyStoreUnavailableError:
                 raise
             except (OSError, TypeError, ValueError, RuntimeError, UnsupportedAlgorithm):
