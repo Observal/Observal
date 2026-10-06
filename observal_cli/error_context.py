@@ -19,6 +19,7 @@ OPERATION_LABELS = {
     "_collect_mcp_headers": "Read MCP header requirements",
     "_emit": "List recommendations",
     "_emit_list": "List inbox items",
+    "_export_trace_impl": "Export traces",
     "_feedback_impl": "Show registry feedback",
     "_fetch_registry_items": "Fetch registry components",
     "_find_pending_request": "Find teamspace join request",
