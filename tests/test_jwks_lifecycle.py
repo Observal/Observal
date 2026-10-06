@@ -18,6 +18,8 @@ from cryptography.hazmat.primitives import serialization
 
 from services.crypto import KeyManager
 
+from .spawn_support import start_spawned_test_process
+
 if TYPE_CHECKING:
     from multiprocessing.queues import Queue
     from multiprocessing.synchronize import Barrier, Event
@@ -90,7 +92,7 @@ def test_expired_retired_key_is_excluded_after_another_worker_prunes_it(tmp_path
         args=(str(key_dir), ready_queue, start_event, barrier, retired_at + 2 * 86400),
     )
     try:
-        worker.start()
+        start_spawned_test_process(worker)
         assert ready_queue.get(timeout=30) is True
 
         expired_now = retired_at + 2 * 86400

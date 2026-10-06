@@ -6,11 +6,11 @@
 Run with the server environment, e.g.:
     observal-server/.venv/bin/python scripts/benchmark_jwt_keys.py
 
-The read-only, pre-provisioned manager is a cached-key baseline. The managed
-measurements include shared-file locking and disk refresh. Rotation times also
-include key generation, serialization and durable publication. Two spawned
-workers measure contention on the same temporary store. No keys or tokens are
-printed or persisted outside that store.
+The pre-provisioned read-only manager checks the active file on every
+operation. Managed measurements include shared-file locking and disk refresh.
+Rotation times also include key generation, serialization and durable
+publication. Two spawned workers measure contention on the same temporary
+store. No keys or tokens are printed or persisted outside that store.
 """
 
 from __future__ import annotations
@@ -142,20 +142,20 @@ def main() -> None:
         with tempfile.TemporaryDirectory(prefix="observal-jwt-bench-") as key_dir:
             managed = KeyManager(key_dir=key_dir, algorithm=algorithm)
             managed.initialize()
-            cached = KeyManager(key_dir=key_dir, algorithm=algorithm, read_only=True)
-            cached.initialize()
+            read_only = KeyManager(key_dir=key_dir, algorithm=algorithm, read_only=True)
+            read_only.initialize()
             payload = {"sub": "benchmark"}
-            token = cached.sign_token(payload)
-            unknown = jwt.encode(payload, cached.get_private_key(), algorithm=algorithm, headers={"kid": "0" * 16})
+            token = read_only.sign_token(payload)
+            unknown = jwt.encode(payload, read_only.get_private_key(), algorithm=algorithm, headers={"kid": "0" * 16})
             print(algorithm)
             print(
-                f"  cached sign (no refresh): {_format(_sample(partial(cached.sign_token, payload), args.iterations))}"
+                f"  read-only sign (disk check): {_format(_sample(partial(read_only.sign_token, payload), args.iterations))}"
             )
             print(
                 f"  managed sign:            {_format(_sample(partial(managed.sign_token, payload), args.iterations))}"
             )
             print(
-                f"  cached verify:           {_format(_sample(partial(cached.verify_token, token), args.iterations))}"
+                f"  read-only verify (disk check): {_format(_sample(partial(read_only.verify_token, token), args.iterations))}"
             )
             print(
                 f"  managed verify:          {_format(_sample(partial(managed.verify_token, token), args.iterations))}"

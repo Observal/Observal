@@ -20,7 +20,6 @@ import json
 import multiprocessing
 import os
 import stat
-import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -45,24 +44,14 @@ from services.crypto import (
     init_key_manager,
 )
 
+from .spawn_support import start_spawned_test_process
+
 if TYPE_CHECKING:
-    from multiprocessing.process import BaseProcess
     from multiprocessing.queues import Queue
     from multiprocessing.synchronize import Barrier
 
 _StartupReadyResult: TypeAlias = tuple[int, str | None, str | None, str | None]
 _StartupVerifiedResult: TypeAlias = tuple[int, list[str] | None, str | None]
-
-
-def _start_spawned_process(process: BaseProcess) -> None:
-    """Keep spawned test workers able to import this package-qualified module."""
-    repo_root = str(Path(__file__).resolve().parents[1])
-    original_path = sys.path.copy()
-    sys.path[:] = [repo_root, *(entry for entry in original_path if entry != repo_root)]
-    try:
-        process.start()
-    finally:
-        sys.path[:] = original_path
 
 
 def _concurrent_startup_worker(
@@ -115,7 +104,7 @@ def _run_concurrent_startup_workers(
 
     try:
         for worker in workers:
-            _start_spawned_process(worker)
+            start_spawned_test_process(worker)
         start_barrier.wait(timeout=20)
         ready_results = [ready_queue.get(timeout=45) for _ in workers]
         assert all(error is None for _, _, _, error in ready_results), ready_results
@@ -890,7 +879,7 @@ class TestKeyRotation:
         ]
         try:
             for worker in workers:
-                _start_spawned_process(worker)
+                start_spawned_test_process(worker)
             start_barrier.wait(timeout=20)
             rotated = [results.get(timeout=45) for _ in workers]
             assert all(error is None for _, _, error in rotated), rotated
@@ -1033,7 +1022,7 @@ class TestKeyRotation:
         results = context.Queue()
         worker = context.Process(target=_rotation_log_safety_worker, args=(tmp_key_dir, results))
         try:
-            _start_spawned_process(worker)
+            start_spawned_test_process(worker)
             rotation_failed, replacement_published, diagnostic_logged, leaked = results.get(timeout=20)
             worker.join(timeout=20)
             assert worker.exitcode == 0
@@ -1067,7 +1056,7 @@ class TestKeyRotation:
             target=_crash_during_rotation_worker, args=(tmp_key_dir, destination_name, after_replace)
         )
         try:
-            _start_spawned_process(worker)
+            start_spawned_test_process(worker)
             worker.join(timeout=30)
             assert not worker.is_alive(), "crashed rotation process did not exit"
             assert worker.exitcode == 73
