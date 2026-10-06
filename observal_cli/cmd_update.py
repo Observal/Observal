@@ -1,10 +1,11 @@
 # SPDX-FileCopyrightText: 2026 Observal Contributors
 # SPDX-License-Identifier: Apache-2.0
 
-"""Manual batch updates and guarded Pi/Claude startup runs using normal installers.
+"""Guarded Pi and Claude Code startup runs that use the normal installers.
 
-The manual path is explicit and broader; startup requires consent, verified
-owned files, exact release pins, and a durable outcome journal.
+Startup requires consent, verified owned files, exact release pins, and a
+durable outcome journal. The installers invoked here are the ordinary
+`agent pull` and `registry <type> install` commands; nothing writes a second way.
 """
 
 from __future__ import annotations
@@ -14,9 +15,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import typer
-from rich import print as rprint
-
 from observal_cli import (
     auto_update_policy,
     install_baseline,
@@ -25,9 +23,7 @@ from observal_cli import (
     lockfile,
     update_preflight,
 )
-from observal_cli.constants import VALID_HARNESSES
-from observal_cli.errors import CliError, ErrorCategory, fail
-from observal_cli.render import OutputMode, esc, output_json
+from observal_cli.errors import CliError
 
 
 def _entries(harness: str | None) -> list[dict]:
@@ -37,41 +33,23 @@ def _entries(harness: str | None) -> list[dict]:
     ]
 
 
-def _context(item: dict, *, project: Path | None) -> bool:
-    if project is None:
-        return item["scope"] == "user"
-    return (
-        item["scope"] == "project"
-        and isinstance(item["directory"], str)
-        and Path(item["directory"]).resolve() == project
-    )
+def _plan(item: dict) -> tuple[list[str] | None, str | None, Path | None]:
+    """Only local item identity and verified version become argv; no shell or secrets.
 
-
-def _plan(item: dict, *, project: Path | None) -> tuple[list[str] | None, str | None, Path | None]:
-    """Only local item identity and verified version become argv; no shell or secrets."""
-    if not _context(item, project=project):
+    The startup installers only act on user-scope agents and skills, so any other
+    scope or type has no installer here.
+    """
+    if item["scope"] != "user":
         return None, "The installation is outside this exact update scope.", None
     if not item.get("release_verified") or not item.get("latest_version"):
         return None, item.get("reason") or "The exact approved release could not be verified.", None
     if item.get("requested_version"):
         return None, "This version was explicitly pinned; use the manual install command to change the pin.", None
-    if item["type"] == "mcp":
-        return None, "MCP install generates a snippet; it does not write or track a managed installation.", None
-    if item["type"] == "agent" and project is not None:
-        return (
-            None,
-            "Project agent versions are pinned in observal.lock; review and pull with --upgrade manually.",
-            None,
-        )
-    root = Path(item["directory"]).resolve() if item.get("directory") else None
-    if item["type"] == "agent" and (root is None or not root.is_dir()):
-        return None, "The original agent installation directory is unavailable.", None
-    if project is not None:
-        root = project
-    if item["type"] == "skill" and project is None:
-        root = Path.cwd()
     argv = [sys.executable, "-m", "observal_cli"]
     if item["type"] == "agent":
+        root = Path(item["directory"]).resolve() if item.get("directory") else None
+        if root is None or not root.is_dir():
+            return None, "The original agent installation directory is unavailable.", None
         argv += [
             "agent",
             "pull",
@@ -89,10 +67,11 @@ def _plan(item: dict, *, project: Path | None) -> tuple[list[str] | None, str | 
             "--output",
             "json",
         ]
-    elif item["type"] in {"skill", "hook"}:
+    elif item["type"] == "skill":
+        root = Path.cwd()
         argv += [
             "registry",
-            item["type"],
+            "skill",
             "install",
             item["id"],
             "--harness",
@@ -101,13 +80,9 @@ def _plan(item: dict, *, project: Path | None) -> tuple[list[str] | None, str | 
             item["latest_version"],
             "--output",
             "json",
+            "--scope",
+            item["scope"],
         ]
-        if item["type"] == "skill":
-            argv += ["--scope", item["scope"]]
-        else:
-            if project is None:
-                return None, "Hooks require an explicit project root.", None
-            argv += ["--dir", str(project)]
     else:
         return None, "This item type has no managed install command.", None
     return argv, None, root
@@ -200,7 +175,7 @@ def apply_startup_pi_agent(
             return {"status": "skipped", "reason": "The approved release could not be checked; no installer started."}
         if verified.get("latest_version") != item["latest_version"]:
             return {"status": "skipped", "reason": "The approved target changed during the check."}
-        argv, reason, root = _plan(verified, project=None)
+        argv, reason, root = _plan(verified)
         if reason or not argv or root is None:
             return {"status": "skipped", "reason": reason or "No applicable agent installer."}
         try:
@@ -336,126 +311,6 @@ def apply_startup_pi_agent(
             "status": "failed",
             "reason": "The installer failed or its file/lock result could not be verified; inspect files and the private backup.",
         }
-
-
-def run_updates(*, harness: str | None, project: Path | None, apply: bool) -> list[dict]:
-    results: list[dict] = []
-    entries = [item for item in _entries(harness) if _context(item, project=project)]
-    for item in installed_updates.compare(entries, verify_releases=True):
-        if not item.get("outdated"):
-            continue
-        argv, reason, root = _plan(item, project=project)
-        result = {
-            "id": item["id"],
-            "name": item["qualified_name"],
-            "type": item["type"],
-            "harness": item["harness"],
-            "scope": item["scope"],
-            "current_version": item["current_version"],
-            "target_version": item["latest_version"],
-            "status": "skipped" if reason else "available",
-            "reason": reason,
-            "description": (item.get("release") or {}).get("description") if item.get("release_verified") else None,
-            "changelog": (item.get("release") or {}).get("changelog") if item.get("release_verified") else None,
-            "effective_in_current_session": "no" if apply else "unknown",
-        }
-        if argv and apply:
-            # A changed local record cannot authorize writing to a different
-            # installation. This is best effort, not a lock against editors.
-            if sum(_same_install(item, row) for row in _entries(item["harness"])) != 1:
-                result.update(status="skipped", reason="The installed version or scope changed during the check.")
-            else:
-                env = os.environ.copy()
-                # --version selects the exact batch target; it must not turn
-                # an unpinned install into an explicit user version pin.
-                env["OBSERVAL_UPDATE_EXACT_TARGET"] = "1"
-                try:
-                    completed = subprocess.run(
-                        argv,
-                        cwd=root,
-                        env=env,
-                        stdin=subprocess.DEVNULL,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        check=False,
-                    )
-                    if completed.returncode == 0 and _verify(item):
-                        result.update(
-                            status="updated", reason="Installed and recorded; reload the harness to activate it."
-                        )
-                    else:
-                        result.update(
-                            status="failed",
-                            reason="Install failed or the exact target could not be verified; inspect local files before retrying.",
-                        )
-                except (OSError, RuntimeError, ValueError):
-                    result.update(
-                        status="failed",
-                        reason="The installer or installed-state verification failed; inspect local files.",
-                    )
-        results.append(result)
-    return results
-
-
-def register_update(app: typer.Typer) -> None:
-    @app.command("update")
-    def update(
-        all_items: bool = typer.Option(False, "--all", help="Consider all tracked items in the selected scope"),
-        yes: bool = typer.Option(False, "--yes", "-y", help="Run eligible existing installers without prompts"),
-        harness: str | None = typer.Option(None, "--harness", "-i", help="Filter by harness"),
-        project: bool = typer.Option(
-            False, "--project", help="Select exactly one project root instead of user installs"
-        ),
-        directory: str | None = typer.Option(None, "--dir", help="Project root (requires --project)"),
-        output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
-    ) -> None:
-        """Preview or explicitly run tracked updates using existing installers.
-
-        This is an interactive user's explicit batch command, not an automatic
-        startup installer. Frozen policy does not prevent manual updates.
-        """
-        if not all_items or (directory and not project) or (harness and harness not in VALID_HARNESSES):
-            fail(
-                ErrorCategory.VALIDATION,
-                "Specify --all, a valid harness, and --project when using --dir.",
-                operation="Update tracked items",
-                remediation="Run `observal update --all` to preview.",
-            )
-        try:
-            root = Path(directory or ".").resolve(strict=True) if project else None
-            if root is not None and not root.is_dir():
-                raise ValueError("Project root is not a directory")
-            items = run_updates(harness=harness, project=root, apply=yes)
-        except (OSError, ValueError, RuntimeError) as error:
-            fail(
-                ErrorCategory.VALIDATION,
-                "The update inventory or project root is unavailable.",
-                operation="Update tracked items",
-                remediation="Check the active registry, lockfile, and project root.",
-                detail=repr(error),
-            )
-        payload = {
-            "applied": yes,
-            "items": items,
-            "summary": {
-                status: sum(item["status"] == status for item in items)
-                for status in ("available", "updated", "skipped", "failed")
-            },
-        }
-        if output == "json":
-            output_json(payload)
-            return
-        if not items:
-            rprint("[dim]No newer tracked items in this scope.[/dim]")
-        for item in items:
-            rprint(
-                f"{esc(item['name'])} {esc(str(item['current_version']))} → "
-                f"{esc(str(item['target_version']))}: {esc(item['status'])}"
-            )
-            if item["reason"]:
-                rprint(f"  {esc(item['reason'])}")
-        if not yes and items:
-            rprint("[dim]Run `observal update --all --yes` to attempt eligible updates.[/dim]")
 
 
 def apply_startup_pi_mcp(
@@ -767,7 +622,7 @@ def apply_startup_pi_skill(
             if verified.get("latest_version") != item["latest_version"]:
                 raise automatic_skill_plan.SkillPlanError("The approved target changed.")
             file = automatic_skill_plan.verified_path(verified, registry=registry)
-            argv, reason, root = _plan(verified, project=None)
+            argv, reason, root = _plan(verified)
             if reason or not argv or root is None or not verified.get("release_verified"):
                 raise automatic_skill_plan.SkillPlanError(reason or "The release could not be verified.")
         except (CliError, OSError, ValueError, TypeError, KeyError) as error:

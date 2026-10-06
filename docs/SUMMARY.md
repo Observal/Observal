@@ -38,7 +38,6 @@
 * [observal scan](cli/scan.md)
 * [observal share](cli/share.md)
 * [observal outdated](cli/outdated.md)
-* [observal update](cli/update.md)
 * [observal freeze and unfreeze](cli/freeze.md)
 * [observal reconcile](cli/reconcile.md)
 * [observal inbox](cli/inbox.md)

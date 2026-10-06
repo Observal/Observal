@@ -22,7 +22,6 @@ Complete reference for the `observal` CLI. Every subcommand has its own page; th
 | [`observal scan`](scan.md)                                                                 | Discover what's installed across your harnesses (read-only)                           |
 | [`observal share`](share.md)                                                               | Share and pull scoped, version-pinned repository Agent sets                           |
 | [`observal outdated`](outdated.md)                                                         | Compare installed agent and component versions with the active registry               |
-| [`observal update`](update.md)                                                             | Preview or explicitly run existing installers for tracked, eligible updates            |
 | [`observal freeze` / `unfreeze`](freeze.md)                                                 | Control local consent for future automatic registry updates                           |
 | [`observal reconcile`](reconcile.md)                                                       | Backfill sessions missed by automatic telemetry delivery                              |
 | [`observal inbox`](inbox.md)                                                               | Read and update the signed-in user's work and event feed                               |

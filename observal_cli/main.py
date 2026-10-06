@@ -232,7 +232,6 @@ from observal_cli.cmd_skill import skill_app
 from observal_cli.cmd_support import support_app
 from observal_cli.cmd_team import team_app
 from observal_cli.cmd_transfer import add_transfer_owner_command
-from observal_cli.cmd_update import register_update
 
 # ═══════════════════════════════════════════════════════════
 # registry_app: Component registry parent group
@@ -289,7 +288,6 @@ register_api(app)
 register_scan(app)
 register_outdated(app)
 register_freeze(app)
-register_update(app)
 
 
 @app.command("_startup-check", hidden=True)

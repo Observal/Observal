@@ -631,9 +631,11 @@ def test_claude_mcp_success_requires_the_planned_bookkeeping_not_just_a_newer_ve
         assert rows[0]["digest"] == "tampered"
     else:
         assert _record_entry(home) == {"command": "/my/recorded", "args": []}
-    assert json.loads(config.read_text())["mcpServers"][name] != {"command": "/my/own", "args": []}
+    live = json.loads(config.read_text())["mcpServers"][name]
     if fixed_command:
-        assert json.loads(config.read_text())["mcpServers"][name] == entry_before
+        assert live == entry_before
+    else:
+        assert live["command"] == "/bin/0-2.0.0", "recovery must not roll back over foreign bookkeeping"
     assert list((home / ".observal/update-backups").glob("*/*"))
 
 

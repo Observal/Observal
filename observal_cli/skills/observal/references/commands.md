@@ -19,7 +19,6 @@ Every command available in the installed CLI. This block is generated from the T
 - `observal reconcile`: Backfill local session records missed by automatic hook delivery
 - `observal scan`: Show a read-only inventory of your local harness setup.
 - `observal unfreeze`: Opt in to automatic updates of eligible managed installations.
-- `observal update`: Preview or explicitly run tracked updates using existing installers.
 
 **`observal admin`**: Core administration and submission review commands
 
@@ -173,7 +172,7 @@ Every command available in the installed CLI. This block is generated from the T
     - `observal registry mcp co-authors remove`: Remove a co-author.
   - `observal registry mcp submit`: Submit an MCP server to the registry.
   - `observal registry mcp show`: Show full details of an MCP server.
-  - `observal registry mcp install`: Generate an MCP snippet, or install a managed Pi user MCP reference.
+  - `observal registry mcp install`: Generate an MCP snippet, or install a managed user MCP (Pi or Claude Code).
   - `observal registry mcp archive`: Archive this component.
   - `observal registry mcp edit`: Edit an MCP server submission.
   - `observal registry mcp list`: List approved MCP servers in the registry.

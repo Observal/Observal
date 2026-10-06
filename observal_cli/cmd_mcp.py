@@ -1666,14 +1666,16 @@ def install(
     env_file: str | None = typer.Option(None, "--env-file", help="Path to .env file for environment variables"),
     no_prompt: bool = typer.Option(False, "--no-prompt", "-y", help="Skip interactive prompts"),
     output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
-    managed: bool = typer.Option(False, "--managed", help="Write and track a credential-free Pi user MCP entry"),
+    managed: bool = typer.Option(False, "--managed", help="Write and track a managed user MCP (Pi or Claude Code)"),
 ):
-    """Generate an MCP snippet, or install a managed Pi user MCP reference.
+    """Generate an MCP snippet, or install a managed user MCP (Pi or Claude Code).
 
     By default, prints harness-specific configuration to paste into your
-    editor. With --harness pi --managed, writes a credential-free user MCP
-    reference only when Observal can own the entire global Pi MCP file.
-    Existing pasted config is never adopted automatically. Other installs
+    editor. With --managed, Observal writes and tracks the entry itself:
+    for Pi it owns the whole global MCP file (credentials you supply are
+    kept private to that file); for Claude Code it adds one user entry with
+    `claude mcp add` and accepts no credentials. Existing pasted config or
+    an existing entry with the same name is never adopted. Other installs
     prompt for required environment variables and headers unless --raw or
     --no-prompt is used.
 
@@ -1689,6 +1691,7 @@ def install(
         observal registry mcp install my-server --harness claude-code --env-file .env --no-prompt
         observal registry mcp install my-server --harness cursor --raw > .cursor/mcp.json
         observal registry mcp install my-server --harness pi --managed
+        observal registry mcp install my-server --harness claude-code --managed
     """
     optic.trace("mcp_id={}, harness={}", mcp_id, harness)
     if raw and output == "json":
