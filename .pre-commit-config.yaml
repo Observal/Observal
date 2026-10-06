@@ -3,6 +3,7 @@
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-FileCopyrightText: 2026 ravichopra0107 <shivamchopra1234567890@gmail.com>
+# SPDX-FileCopyrightText: 2026 amogh-dongre <amoghdongre16@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 repos:
@@ -72,4 +73,6 @@ repos:
     rev: v2.12.0
     hooks:
       - id: hadolint-docker
-        args: [--ignore, DL3008, --ignore, DL3013]
+        # Package version pins are not required for apt (DL3008), pip (DL3013) or apk (DL3018):
+        # base images are pinned by digest, and Alpine drops old package versions, so exact apk pins break builds.
+        args: [--ignore, DL3008, --ignore, DL3013, --ignore, DL3018]
