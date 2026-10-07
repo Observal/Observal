@@ -207,6 +207,90 @@ Evidence is tied to the exact file that was verified. The verifier records a SHA
 
 Counts cover only verified-present skills. Pi and Claude Code record different evidence (see [Component insights](../cli/ops.md#component-insights)); other harnesses report skill evidence as `unsupported`. A confirmed load or an invocation shows that the skill's instructions entered the model's context. It does not show that the skill was followed or helped. Component reports for skills are deterministic and include no model-written findings.
 
+### Registry hooks
+
+Pi has no native command-hook settings: its extension event handlers are the
+only way code runs around a tool call. Registry hooks therefore run inside the
+Observal extension, which reads one Observal-owned file per agent profile.
+
+**Supported matrix.** Anything outside it is reported at pull time as not
+installed, never dropped silently, and is never counted.
+
+| Registry hook | Pi | Notes |
+|---|---|---|
+| `PreToolUse`, `command` | `tool_call` | Runs before every tool call, including nested calls. Exit `2` blocks the call. |
+| `PostToolUse`, `command` | `tool_result` | Runs after every tool result. It cannot block; exit `2` is a failure. |
+| Any other event (`Notification`, `Stop`, `SubagentStop`, `SessionStart`, `UserPromptSubmit`) | Not installed | Not recorded or proven on Pi yet. |
+| `http` handler | Not installed | No command to run or bind. |
+| Script hooks (`script_content`) | Not installed | Script delivery into profiles is not implemented yet. |
+| A `tool_filter` | Not installed | Registry tool names are not Pi tool names; matching every tool would run the hook where its author did not intend. |
+| Project scope | Not installed | `/agent` activates only user-scope profiles. |
+
+**Files.** A user-scope pull writes
+`~/.pi/agent/agents/{agent}/observal-hooks.json`; `/agent` activates it as
+`~/.pi/agent/observal-hooks.json` together with the rest of the profile, and
+removes it when the next profile has none. The extension reads the active file
+once per session start (including the reload after `/agent`). Hook commands can
+hold secrets, so both files are hash-only layer inputs: their bytes are never
+uploaded.
+
+```json
+{
+  "schema": "observal-pi-hooks/v1",
+  "agent": "reviewer",
+  "hooks": [
+    {"name": "lint-guard", "event": "tool_call", "type": "command", "command": "./guard.sh", "timeout": 60}
+  ]
+}
+```
+
+**Execution.** Each matching hook runs as `/bin/sh -c <command>` in the
+session's working directory, in file order, with Pi's environment and a JSON
+object on stdin (`hook_event_name`, `session_id`, `cwd`, `tool_name`,
+`tool_call_id`, `tool_input`, and for `PostToolUse` a `tool_response` with
+`is_error` and at most 64 KiB of text content). `timeout` is in seconds
+(1 to 600, default 60).
+
+| Outcome | Effect on Pi |
+|---|---|
+| Exit `0` | None. |
+| Exit `2` on `tool_call` | The tool is blocked. The model sees the hook's stderr (at most 1,000 characters) as the reason. Later hooks for that call do not run. |
+| Exit `2` on `tool_result`, any other non-zero exit, a timeout, or a failure to start | Reported as a failure. Pi continues (fail-open). |
+| An invalid or unreadable hooks file | No hook in it runs; the session shows a warning, and every hook in it is unverified. |
+| Windows | No hook runs; every hook is unverified. |
+
+**Run receipts.** After each run the extension appends a Pi custom entry
+(`customType: "observal-hook-run"`) holding only the SHA-256 of
+`event NUL command`, the Pi event, the tool-call id Pi assigned, the outcome
+(`ran`, `ran_with_output`, `failed`, `blocked`) and the exit code. Hook input,
+output, stderr, the command and its arguments are never written to the
+transcript or uploaded. If the extension is loaded twice in one Pi process,
+only one copy runs each hook for a given call.
+
+**Trust boundary.** A receipt is written by Observal's extension through
+`pi.appendEntry()`. Model output and user text cannot create a custom entry,
+so typed or pasted text cannot produce hook evidence. Any other extension in
+the same Pi process can, however, call the same API and write a receipt that
+looks identical. Observal does not claim stronger attestation than that:
+hook runs on Pi are as trustworthy as the extensions you load. The server
+further requires that the receipt's tool-call id is a tool call in the same
+transcript and that its digest names exactly one verified hook in the
+session's published layer.
+
+**Verification.** A pull records each written hook's event, command, agent
+and a fingerprint of its entry. A session snapshot reports the hook as
+verified only when the active `observal-hooks.json` is readable, names the
+same agent, contains that event and command exactly once, and the entry
+still matches its fingerprint. The extension additionally requires that it
+loaded exactly those bytes when the session started. An edited entry is
+`drifted`; a missing, duplicated, unreadable or inactive one is `unverified`
+and is never counted.
+
+**Eligibility.** A verified hook runs in every mode the extension loads in
+(interactive, print and RPC), so every session whose layer verifies it is
+eligible. A session without a verified layer (for example the one in which
+`/agent` switched profiles) has no candidates and is not in the denominator.
+
 ---
 
 ## Agent profiles and swapping
