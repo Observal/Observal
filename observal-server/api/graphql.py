@@ -11,7 +11,7 @@ from collections.abc import AsyncGenerator
 import jwt
 import strawberry
 import structlog
-from starlette.requests import Request
+from starlette.requests import HTTPConnection
 
 from observal_shared.migration.constants import DEFAULT_PROJECT_ID
 from services import dynamic_settings as ds
@@ -38,6 +38,8 @@ class SessionEvent:
 class ReviewEvent:
     listing_id: str
     action: str
+    number: int | None = None
+    state: str | None = None
 
 
 @strawberry.type
@@ -51,13 +53,52 @@ class Subscription:
                 yield SessionEvent(session_id=sid, event_name=data.get("event_name", ""))
 
     @strawberry.subscription
-    async def review_updated(self, listing_id: str | None = None) -> AsyncGenerator[ReviewEvent, None]:
-        channel = "reviews:updated"
+    async def review_updated(
+        self, info: strawberry.Info, listing_id: str | None = None, review_id: str | None = None
+    ) -> AsyncGenerator[ReviewEvent, None]:
+        if review_id:
+            import uuid
+
+            from database import async_session
+            from models.review import Review
+            from models.user import User
+            from services.review.decisions import _own_work, _target
+            from services.teamspace import can_review, review_scope
+
+            try:
+                uid, rid = uuid.UUID(info.context["user_id"]), uuid.UUID(review_id)
+            except (TypeError, ValueError, KeyError):
+                raise ValueError("Authentication and a valid review ID are required") from None
+            async with async_session() as db:
+                review, user = await db.get(Review, rid), await db.get(User, uid)
+                if review is None or user is None:
+                    raise ValueError("Review not found")
+                subject, version = await _target(db, review)
+                if not (can_review(review, await review_scope(db, user)) or _own_work(subject, version, uid)):
+                    raise ValueError("Review not found")
+            channel = f"review:{rid}:updated"
+        else:
+            channel = "reviews:updated"
         async for data in subscribe(channel):
+            if review_id:
+                # Recheck membership after each event: a removed team reviewer
+                # must not continue receiving private review updates.
+                async with async_session() as db:
+                    review, user = await db.get(Review, rid), await db.get(User, uid)
+                    if review is None or user is None:
+                        return
+                    subject, version = await _target(db, review)
+                    if not (can_review(review, await review_scope(db, user)) or _own_work(subject, version, uid)):
+                        return
             lid = data.get("listing_id", "")
             if listing_id and lid != listing_id:
                 continue
-            yield ReviewEvent(listing_id=lid, action=data.get("action", ""))
+            yield ReviewEvent(
+                listing_id=lid,
+                action=data.get("action", data.get("kind", "")),
+                number=data.get("number"),
+                state=data.get("state"),
+            )
 
 
 async def _resolve_user_context_from_request(request) -> dict:
@@ -122,7 +163,7 @@ def get_context(
     }
 
 
-async def get_context_dep(request: Request = None) -> dict:
+async def get_context_dep(request: HTTPConnection) -> dict:
     ctx = await _resolve_user_context_from_request(request)
     return get_context(user_id=ctx["user_id"], user_role=ctx["user_role"], trace_privacy=ctx["trace_privacy"])
 
