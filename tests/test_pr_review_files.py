@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from models.mcp import McpVersion
 from services.review.anchors import reanchor
 from services.review.checks import snapshot_checks
 from services.review.diff import diff_files
@@ -89,6 +90,21 @@ def test_anchors_move_and_become_outdated():
     assert reanchor([moved, outdated], old, new) == (1, 1)
     assert (moved.start_line, moved.end_line) == (3, 3)
     assert outdated.outdated
+
+
+def test_mcp_required_validation_and_provenance_warning():
+    version = McpVersion(
+        description="MCP", version="1.0.0", url="https://example.test/mcp", source_url="https://example.test/repo"
+    )
+    files = render_component("mcp", version)
+    checks = snapshot_checks(files, version, subject_type="mcp")
+    assert next(c for c in checks if c["id"] == "mcp_validation")["status"] == "fail"
+    assert next(c for c in checks if c["id"] == "provenance")["status"] == "warn"
+    version.mcp_validated = True
+    assert (
+        next(c for c in snapshot_checks(files, version, subject_type="mcp") if c["id"] == "mcp_validation")["status"]
+        == "pass"
+    )
 
 
 def test_secret_check_in_free_text():

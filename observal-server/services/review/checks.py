@@ -13,7 +13,7 @@ from services.agent_lock import VERSION_MODELS
 CREDENTIAL = re.compile(r"(?:sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{30,}|AKIA[A-Z0-9]{16})")
 
 
-def snapshot_checks(files: dict, version=None) -> list[dict]:
+def snapshot_checks(files: dict, version=None, *, subject_type=None, base_files=None) -> list[dict]:
     leaked = [path for path, file in files.items() if CREDENTIAL.search(file["content"])]
     if version is not None:
         for column in version.__table__.columns:
@@ -22,7 +22,7 @@ def snapshot_checks(files: dict, version=None) -> list[dict]:
                 value if isinstance(value, str) else json.dumps(value)
             ):
                 leaked.append(column.name)
-    return [
+    checks = [
         {
             "id": "secrets",
             "name": "Secret scan",
@@ -31,6 +31,83 @@ def snapshot_checks(files: dict, version=None) -> list[dict]:
             "details": leaked,
         }
     ]
+    if version is None or subject_type is None:
+        return checks
+    required = {
+        "agent": ("description", "prompt", "model_name"),
+        "mcp": ("description",),
+        "skill": ("description", "task_type"),
+        "hook": ("description", "event", "handler_type"),
+        "prompt": ("description", "template"),
+        "sandbox": ("description", "runtime_type", "image"),
+    }
+    missing = [name for name in required[subject_type] if not getattr(version, name, None)]
+    if subject_type == "mcp" and not (version.command or version.url or version.docker_image):
+        missing.append("command/url/docker_image")
+    checks.append(
+        {
+            "id": "schema",
+            "name": "Required fields",
+            "status": "fail" if missing else "pass",
+            "required": True,
+            "details": missing,
+        }
+    )
+    if subject_type == "mcp":
+        checks.append(
+            {
+                "id": "mcp_validation",
+                "name": "MCP validation",
+                "status": "pass" if version.mcp_validated else "fail",
+                "required": True,
+                "details": [] if version.mcp_validated else ["Validation has not passed"],
+            }
+        )
+    if subject_type == "agent" and version.gaming_flags:
+        checks.append(
+            {
+                "id": "prompt_safety",
+                "name": "Prompt safety",
+                "status": "warn",
+                "required": False,
+                "details": ["Review anti-gaming flags"],
+            }
+        )
+    source = getattr(version, "source_url", None) or getattr(version, "git_url", None)
+    if source:
+        checks.append(
+            {
+                "id": "provenance",
+                "name": "Source provenance",
+                "status": "pass" if getattr(version, "resolved_sha", None) else "warn",
+                "required": False,
+                "details": [] if getattr(version, "resolved_sha", None) else ["No resolved SHA"],
+            }
+        )
+    if base_files:
+        from services.review.diff import diff_files
+
+        sensitive = ("auto_approve", "tool_filter", "scope", "network_policy", "slash_command")
+        changed = [
+            d["path"]
+            for d in diff_files(base_files, files)
+            if d["status"] != "unchanged"
+            and any(
+                s in (base_files.get(d["path"], {}).get("content", "") + files.get(d["path"], {}).get("content", ""))
+                for s in sensitive
+            )
+        ]
+        if changed:
+            checks.append(
+                {
+                    "id": "permission_delta",
+                    "name": "Permission delta",
+                    "status": "warn",
+                    "required": False,
+                    "details": changed,
+                }
+            )
+    return checks
 
 
 async def pinned_component_blockers(db, version_id) -> list[dict]:

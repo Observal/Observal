@@ -93,6 +93,7 @@ async def open_or_push(db, subject_type: str, subject, version, actor_id, *, mes
     digest = _hash(files)
     if review:
         head = await _head(db, review)
+        base_files = head.files
         if head.content_hash == digest:
             raise HTTPException(409, "No content changes since the previous revision")
         next_number = head.number + 1
@@ -132,6 +133,7 @@ async def open_or_push(db, subject_type: str, subject, version, actor_id, *, mes
                 .all()
             )
             latest = latest_release(siblings)
+        base_files = await render_files(subject_type, latest, db) if latest else {}
         review = Review(
             subject_type=subject_type,
             subject_id=subject.id,
@@ -158,7 +160,7 @@ async def open_or_push(db, subject_type: str, subject, version, actor_id, *, mes
         number=next_number,
         files=files,
         content_hash=digest,
-        checks=snapshot_checks(files, version),
+        checks=snapshot_checks(files, version, subject_type=subject_type, base_files=base_files),
         message=message,
         created_by=actor_id,
     )
