@@ -1005,6 +1005,36 @@ def _valid_setup_command(command: object) -> bool:
     return isinstance(command, list) and bool(command) and all(isinstance(argument, str) for argument in command)
 
 
+# Setup-command flags whose value carries an MCP header or environment value.
+_SECRET_SETUP_FLAGS = {"-H": ": ", "--header": ": ", "-e": "=", "--env": "="}
+
+
+def _display_setup_command(command: list[str]) -> list[str]:
+    """Return a setup command with header and environment values masked for output."""
+    shown: list[str] = []
+    separator = None
+    for argument in command:
+        if argument == "--":
+            separator = None
+        elif separator is not None and separator in argument:
+            argument = f"{argument.split(separator, 1)[0]}{separator}<secret>"
+        else:
+            separator = _SECRET_SETUP_FLAGS.get(argument)
+        shown.append(argument)
+    return shown
+
+
+def _run_reset_commands(commands: list, *, cwd: Path | None) -> None:
+    """Best-effort cleanup before setup commands; a failure means nothing was there to reset."""
+    for command in commands:
+        if not _valid_setup_command(command):
+            continue
+        try:
+            subprocess.run(command, capture_output=True, text=True, timeout=60, cwd=cwd)
+        except (OSError, subprocess.SubprocessError):
+            continue
+
+
 def _parse_assignments(values: list[str] | None, label: str) -> dict[str, str]:
     parsed: dict[str, str] = {}
     for item in values or []:
@@ -2652,28 +2682,32 @@ def register_pull(app: typer.Typer):
         setup_results: list[dict] = []
         setup_failures: list[str] = []
         setup_cmds = snippet.get("mcp_setup_commands") or []
+        # Local-scope registrations (Claude Code) belong to the directory they run in.
+        setup_cwd = target_dir if target_dir.is_dir() else None
         if setup_cmds and not dry_run:
+            _run_reset_commands(snippet.get("mcp_reset_commands") or [], cwd=setup_cwd)
             for command in setup_cmds:
                 if not _valid_setup_command(command):
                     setup_results.append({"command": [], "status": "failed", "return_code": None})
                     setup_failures.append("invalid setup command")
                     continue
+                shown = _display_setup_command(command)
                 try:
-                    process = subprocess.run(command, capture_output=True, text=True, timeout=60)
+                    process = subprocess.run(command, capture_output=True, text=True, timeout=60, cwd=setup_cwd)
                 except FileNotFoundError:
-                    setup_results.append({"command": command, "status": "failed", "return_code": None})
+                    setup_results.append({"command": shown, "status": "failed", "return_code": None})
                     setup_failures.append(f"{command[0]} not found")
                     continue
                 except subprocess.TimeoutExpired:
-                    setup_results.append({"command": command, "status": "failed", "return_code": None})
+                    setup_results.append({"command": shown, "status": "failed", "return_code": None})
                     setup_failures.append(f"{command[0]} timed out")
                     continue
                 except OSError:
-                    setup_results.append({"command": command, "status": "failed", "return_code": None})
+                    setup_results.append({"command": shown, "status": "failed", "return_code": None})
                     setup_failures.append(f"{command[0]} could not start")
                     continue
                 status = "completed" if process.returncode == 0 else "failed"
-                setup_results.append({"command": command, "status": status, "return_code": process.returncode})
+                setup_results.append({"command": shown, "status": status, "return_code": process.returncode})
                 if process.returncode != 0:
                     setup_failures.append(f"{command[0]} exited with code {process.returncode}")
         elif setup_cmds:
@@ -2682,7 +2716,9 @@ def register_pull(app: typer.Typer):
                     setup_results.append({"command": [], "status": "failed", "return_code": None})
                     setup_failures.append("invalid setup command")
                 else:
-                    setup_results.append({"command": command, "status": "would_run", "return_code": None})
+                    setup_results.append(
+                        {"command": _display_setup_command(command), "status": "would_run", "return_code": None}
+                    )
 
         if setup_failures:
             recovery = _rollback_managed_agent_state(

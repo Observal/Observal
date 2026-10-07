@@ -1432,9 +1432,9 @@ def test_pull_full_project_flow_writes_every_shape_and_exact_side_effects(
         sensitivity="high",
     )
     assert run.call_args_list == [
-        call(["good", "mcp", "add", "new"], capture_output=True, text=True, timeout=60),
-        call(["missing", "mcp", "add", "manual"], capture_output=True, text=True, timeout=60),
-        call(["bad", "mcp", "add", "broken"], capture_output=True, text=True, timeout=60),
+        call(["good", "mcp", "add", "new"], capture_output=True, text=True, timeout=60, cwd=target.resolve()),
+        call(["missing", "mcp", "add", "manual"], capture_output=True, text=True, timeout=60, cwd=target.resolve()),
+        call(["bad", "mcp", "add", "broken"], capture_output=True, text=True, timeout=60, cwd=target.resolve()),
     ]
     for visible in (
         "Pulled claude-code config (10 files)",
@@ -2256,6 +2256,51 @@ def test_pull_setup_failure_does_not_record_installation(
     assert (target / "agent.md").is_file()
     boundaries.upsert.assert_not_called()
     boundaries.emit.assert_not_called()
+
+
+def test_pull_resets_then_registers_mcp_servers_in_target_without_echoing_values(
+    pull_app: typer.Typer,
+    boundaries: SimpleNamespace,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    target = tmp_path / "project"
+    remote = ["claude", "mcp", "add", "--transport", "http", "linear", "https://x.test/mcp", "-H", "Auth: tok-1"]
+    stdio = ["claude", "mcp", "add", "srv", "-e", "API_KEY=key-1", "--", "npx", "srv"]
+    boundaries.post.return_value = {
+        "config_snippet": {
+            "agent_profile": {"path": "agent.md", "content": "agent\n"},
+            "mcp_reset_commands": [["claude", "mcp", "remove", "linear"], ["missing-binary"]],
+            "mcp_setup_commands": [remote, stdio],
+        }
+    }
+    calls: list[tuple[list[str], object]] = []
+
+    def run(command, **kwargs):
+        calls.append((command, kwargs.get("cwd")))
+        if command[0] == "missing-binary":
+            raise FileNotFoundError(command[0])
+        # Nothing registered yet, so the reset fails; that must not fail the pull.
+        return subprocess.CompletedProcess(command, 1 if "remove" in command else 0, "", "")
+
+    monkeypatch.setattr(cmd_pull.subprocess, "run", run)
+
+    result = _invoke(pull_app, target, "--output", "json")
+
+    assert result.exit_code == 0, result.output
+    assert calls == [
+        (["claude", "mcp", "remove", "linear"], target.resolve()),
+        (["missing-binary"], target.resolve()),
+        (remote, target.resolve()),
+        (stdio, target.resolve()),
+    ]
+    shown = [setup["command"] for setup in json.loads(result.output)["setup_commands"]]
+    assert shown == [
+        [*remote[:-1], "Auth: <secret>"],
+        ["claude", "mcp", "add", "srv", "-e", "API_KEY=<secret>", "--", "npx", "srv"],
+    ]
+    assert "tok-1" not in result.output and "key-1" not in result.output
+    boundaries.upsert.assert_called_once()
 
 
 def test_pull_snapshot_failure_is_visible_warning(
