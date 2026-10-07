@@ -1,3 +1,4 @@
+# SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 """Migration and metadata smoke tests without Docker."""
 
@@ -30,6 +31,22 @@ def test_review_schema_upgrades_twice_from_legacy_sqlite():
         assert set(Base.metadata.tables) <= tables
         assert {"uq_reviews_subject_version"} <= {c["name"] for c in inspect(conn).get_unique_constraints("reviews")}
         assert {"uq_review_submission_draft"} <= {i["name"] for i in inspect(conn).get_indexes("review_submissions")}
+        migrated = inspect(conn)
+        for table in Base.metadata.sorted_tables:
+            if table.name != "reviews" and not table.name.startswith("review_"):
+                continue
+            expected = {
+                (tuple(fk.parent.name for fk in c.elements), c.elements[0].column.table.name, c.ondelete)
+                for c in table.foreign_key_constraints
+            }
+            actual = {
+                (tuple(fk["constrained_columns"]), fk["referred_table"], fk.get("options", {}).get("ondelete"))
+                for fk in migrated.get_foreign_keys(table.name)
+            }
+            assert actual == expected, table.name
+            assert {c.name: c.nullable for c in table.columns} == {
+                c["name"]: c["nullable"] for c in migrated.get_columns(table.name)
+            }, table.name
         module.downgrade()
         assert "reviews" not in inspect(conn).get_table_names()
     engine.dispose()

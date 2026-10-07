@@ -1,3 +1,4 @@
+# SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 """Additive PR review schema; legacy routes and bundles remain until the phase 2 cutover.
 
@@ -20,9 +21,13 @@ J = sa.JSON().with_variant(pg.JSONB, "postgresql")
 D = sa.DateTime(timezone=True)
 
 
-def uid(name, fk=None, *, nullable=False):
-    ondelete = "CASCADE" if fk and fk.startswith("reviews.") else "SET NULL" if nullable and fk else None
-    parts = [U, sa.ForeignKey(fk, ondelete=ondelete)] if fk else [U]
+# Must match models/review.py exactly: fresh installs build these tables from the
+# models (docker/entrypoint.sh), upgrades build them here.
+_ON_DELETE = {"reviews.id": "CASCADE", "review_threads.id": "CASCADE"}
+
+
+def uid(name, fk=None, *, nullable=False, ondelete=None):
+    parts = [U, sa.ForeignKey(fk, ondelete=ondelete or _ON_DELETE.get(fk))] if fk else [U]
     return sa.Column(name, *parts, nullable=nullable)
 
 
@@ -109,7 +114,7 @@ def upgrade():
         col("side", sa.String(4), nullable=True),
         col("start_line", sa.Integer(), nullable=True),
         col("end_line", sa.Integer(), nullable=True),
-        uid("revision_id", "review_revisions.id", nullable=True),
+        uid("revision_id", "review_revisions.id", nullable=True, ondelete="SET NULL"),
         col("anchor_text", sa.Text(), nullable=True),
         col("outdated", sa.Boolean()),
         col("resolved_at", D, nullable=True),
@@ -151,7 +156,7 @@ def upgrade():
         uid("id"),
         uid("thread_id", "review_threads.id"),
         uid("review_id", "reviews.id"),
-        uid("submission_id", "review_submissions.id", nullable=True),
+        uid("submission_id", "review_submissions.id", nullable=True, ondelete="SET NULL"),
         uid("author_id", "users.id"),
         col("body", sa.Text()),
         col("suggestion", sa.Text(), nullable=True),
