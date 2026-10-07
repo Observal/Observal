@@ -183,36 +183,37 @@ SPECS: dict[InboxKind, KindSpec] = {
         kind=InboxKind.review_requested,
         action_required=True,
         title=lambda s, c: f"Review requested: {_versioned(s)}",
-        dedupe=lambda s, c: f"review_requested:{s.type}:{s.id}:v{s.version or '-'}",
+        dedupe=lambda s, c: (
+            f"review_requested:{s.type}:{s.id}:v{s.version or '-'}"
+            + (f":r{c['revision']}:{c.get('request_id', '-')}" if c.get("review_number") else "")
+        ),
         url=_review_url,
         command=_review_show_command,
     ),
     InboxKind.review_approved: KindSpec(
         kind=InboxKind.review_approved,
         action_required=False,
-        title=lambda s, c: f"Approved: {_versioned(s)}",
+        title=lambda s, c: f"{'Published' if c.get('review_event') == 'published' else 'Approved'}: {_versioned(s)}",
         dedupe=lambda s, c: f"review_approved:{s.type}:{s.id}:v{s.version or '-'}",
         recheck_visibility=False,
     ),
     InboxKind.review_rejected: KindSpec(
         kind=InboxKind.review_rejected,
         action_required=True,
-        title=lambda s, c: f"Changes needed: {_versioned(s)}",
+        title=lambda s, c: (
+            f"{'Superseded' if c.get('review_event') == 'superseded' else 'Changes needed'}: {_versioned(s)}"
+        ),
         dedupe=lambda s, c: f"review_rejected:{s.type}:{s.id}:v{s.version or '-'}",
         recheck_visibility=False,
     ),
     InboxKind.review_comment: KindSpec(
         kind=InboxKind.review_comment,
-        # RESERVED - waits on review conversations; no comment model exists yet.
-        reserved=True,
         action_required=False,
         title=lambda s, c: f"New comment on {_label(s)}",
         dedupe=lambda s, c: f"review_comment:{s.type}:{s.id}:{c.get('comment_id', '-')}",
     ),
     InboxKind.review_approval: KindSpec(
         kind=InboxKind.review_approval,
-        # RESERVED - delivered once PR-style reviews replace the legacy decision routes.
-        reserved=True,
         action_required=False,
         title=lambda s, c: f"Approval recorded: {_versioned(s)}",
         dedupe=lambda s, c: f"review_approval:{s.type}:{s.id}:{c.get('submission_id', '-')}",
@@ -220,8 +221,6 @@ SPECS: dict[InboxKind, KindSpec] = {
     ),
     InboxKind.review_dismissed: KindSpec(
         kind=InboxKind.review_dismissed,
-        # RESERVED - delivered once PR-style reviews replace the legacy decision routes.
-        reserved=True,
         action_required=False,
         title=lambda s, c: f"Review dismissed: {_versioned(s)}",
         dedupe=lambda s, c: f"review_dismissed:{s.type}:{s.id}:{c.get('submission_id', '-')}",
@@ -229,18 +228,14 @@ SPECS: dict[InboxKind, KindSpec] = {
     ),
     InboxKind.review_ready: KindSpec(
         kind=InboxKind.review_ready,
-        # RESERVED - delivered once PR-style reviews replace the legacy decision routes.
-        reserved=True,
         action_required=True,
         title=lambda s, c: f"Ready to publish: {_versioned(s)}",
-        dedupe=lambda s, c: f"review_ready:{s.type}:{s.id}:v{s.version or '-'}",
+        dedupe=lambda s, c: f"review_ready:{s.type}:{s.id}:v{s.version or '-'}:r{c.get('revision', '-')}",
         url=_review_url,
         command=_review_show_command,
     ),
     InboxKind.change_requested: KindSpec(
         kind=InboxKind.change_requested,
-        # RESERVED - waits on review conversations; distinct from review_rejected.
-        reserved=True,
         action_required=True,
         title=lambda s, c: f"Changes requested on {_label(s)}",
         dedupe=lambda s, c: f"change_requested:{s.type}:{s.id}:{c.get('request_id', '-')}",

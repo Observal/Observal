@@ -40,6 +40,9 @@ from api.routes.prompt import router as prompt_router
 from api.routes.recommendations import router as recommendations_router
 from api.routes.registry import router as registry_router
 from api.routes.review import router as review_router
+from api.routes.reviews import policy_router as review_policy_router
+from api.routes.reviews import router as reviews_router
+from api.routes.reviews.queue import router as review_queue_router
 from api.routes.sandbox import router as sandbox_router
 from api.routes.scim import router as scim_router
 from api.routes.sessions import router as sessions_router
@@ -59,6 +62,9 @@ REST_ROUTERS = (
     mcp_router,
     registry_router,
     review_router,
+    review_queue_router,
+    reviews_router,
+    review_policy_router,
     agent_router,
     agent_shares_router,
     preview_router,

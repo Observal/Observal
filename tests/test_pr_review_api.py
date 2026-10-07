@@ -1,0 +1,262 @@
+# SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+"""Additive review endpoints: participant ACL, draft isolation and inbox fan-out."""
+
+import uuid
+from datetime import UTC, datetime
+
+import httpx
+import pytest
+from fastapi import FastAPI
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+from api.deps import get_current_user, get_db
+from api.routes.reviews import policy_router
+from api.routes.reviews import router as review_router
+from api.routes.reviews.queue import router as queue_router
+from models import Base
+from models.inbox import InboxItem, InboxKind
+from models.review import Review, ReviewComment, ReviewSubmission
+from models.skill import SkillListing, SkillVersion
+from models.user import User, UserRole
+from services.review.decisions import open_or_push
+
+
+@pytest.fixture
+async def api(monkeypatch):
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as db:
+        author = User(id=uuid.uuid4(), username="author", email="a@x.test", name="Author", role=UserRole.user)
+        reviewer = User(id=uuid.uuid4(), username="reviewer", email="r@x.test", name="Reviewer", role=UserRole.reviewer)
+        outsider = User(id=uuid.uuid4(), username="outsider", email="o@x.test", name="Outsider", role=UserRole.user)
+        second = User(id=uuid.uuid4(), username="second", email="s@x.test", name="Second", role=UserRole.reviewer)
+        listing = SkillListing(name="Skill", namespace="tests", slug="skill", owner="author", submitted_by=author.id)
+        db.add_all([author, reviewer, outsider, second, listing])
+        await db.flush()
+        version = SkillVersion(
+            listing_id=listing.id,
+            version="1.0.0",
+            description="ok",
+            released_by=author.id,
+            released_at=datetime.now(UTC),
+            task_type="other",
+            skill_md_content="# Hello\n",
+        )
+        db.add(version)
+        await db.flush()
+        review = await open_or_push(db, "skill", listing, version, author.id)
+        await db.commit()
+        rid, number = review.id, review.number
+    app = FastAPI()
+    app.include_router(queue_router)
+    app.include_router(review_router)
+    app.include_router(policy_router)
+    user_ref = [author]
+
+    async def db_dep():
+        async with factory() as db:
+            yield db
+
+    app.dependency_overrides[get_db] = db_dep
+    app.dependency_overrides[get_current_user] = lambda: user_ref[0]
+
+    async def silent(*args, **kwargs):
+        return []
+
+    monkeypatch.setattr("services.review.notifications.deliver", silent)
+    monkeypatch.setattr("api.routes.reviews.threads.notify_update", silent)
+    monkeypatch.setattr("api.routes.reviews.submissions.notify_update", silent)
+    monkeypatch.setattr("api.routes.reviews.detail.notify_update", silent)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        yield client, user_ref, (author, reviewer, outsider, second), (rid, number), factory
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_detail_and_raw_diff_never_leak_to_nonparticipants(api):
+    client, current, (author, reviewer, outsider, _), (rid, number), _ = api
+    current[0] = outsider
+    for url in (
+        f"/api/v1/reviews/{number}",
+        f"/api/v1/reviews/{rid}/diff",
+        f"/api/v1/reviews/{number}/threads",
+        f"/api/v1/reviews/{number}/revisions/1/files/SKILL.md",
+    ):
+        assert (await client.get(url)).status_code == 404, url
+    assert (await client.get("/api/v1/reviews")).status_code == 403
+    current[0] = author
+    response = await client.get(f"/api/v1/reviews/{number}")
+    assert response.status_code == 200
+    assert response.json()["number"] == number
+    assert (await client.get("/api/v1/reviews?author=me")).json()["items"][0]["number"] == number
+    current[0] = reviewer
+    assert (await client.get(f"/api/v1/reviews/{number}/diff")).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_private_review_excludes_global_reviewer_but_keeps_author(api):
+    client, current, (author, reviewer, _, _), (rid, number), factory = api
+    async with factory() as db:
+        review = await db.get(Review, rid)
+        review.is_private = True
+        await db.commit()
+    current[0] = reviewer
+    assert (await client.get(f"/api/v1/reviews/{number}")).status_code == 404
+    assert (await client.get("/api/v1/reviews")).json()["items"] == []
+    current[0] = author
+    assert (await client.get(f"/api/v1/reviews/{number}")).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_draft_private_until_submitted_and_invalid_anchor_rejected(api):
+    client, current, (author, reviewer, _, second), (_, number), factory = api
+    current[0] = reviewer
+    base = f"/api/v1/reviews/{number}"
+    assert (
+        await client.post(
+            base + "/threads", json={"path": "SKILL.md", "side": "head", "start_line": 4, "body": "not here"}
+        )
+    ).status_code == 422
+    created = await client.post(
+        base + "/threads",
+        json={"path": "SKILL.md", "side": "head", "start_line": 1, "body": "private feedback", "as_draft": True},
+    )
+    assert created.status_code == 201, created.text
+    thread_id = created.json()["thread_id"]
+    comment_id = created.json()["id"]
+    assert (await client.get(base + "/threads")).json()[0]["end_line"] == 1
+    assert (await client.post(base + f"/threads/{thread_id}/resolve")).status_code == 409
+    current[0] = second
+    assert (await client.patch(base + f"/comments/{comment_id}", json={"body": "guess"})).status_code == 404
+    assert (await client.get(base + "/threads")).json() == []
+    assert (await client.get(base + "/submissions/draft")).json()["comments"] == []
+    assert (await client.post(base + f"/threads/{thread_id}/comments", json={"body": "peek"})).status_code == 404
+    current[0] = author
+    assert (await client.get(base + "/threads")).json() == []
+    assert (await client.delete(base + f"/comments/{comment_id}")).status_code == 404
+    current[0] = reviewer
+    assert (await client.patch(base + f"/comments/{comment_id}", json={"body": "private feedback"})).status_code == 200
+    assert all(e["kind"] != "comment" for e in (await client.get(base + "/timeline")).json()["items"])
+    submitted = await client.post(base + "/submissions", json={"verdict": "comment", "body": "my review"})
+    assert submitted.status_code == 201, submitted.text
+    current[0] = author
+    assert (await client.get(base + "/threads")).json()[0]["comments"][0]["body"] == "private feedback"
+    async with factory() as db:
+        row = await db.get(ReviewSubmission, uuid.UUID(submitted.json()["id"]))
+        assert row.state == "submitted"
+        assert await db.scalar(select(ReviewComment).where(ReviewComment.submission_id == row.id))
+
+
+@pytest.mark.asyncio
+async def test_reviewer_request_and_subscription_authorization(api):
+    client, current, (author, reviewer, outsider, _), (_, number), _ = api
+    base = f"/api/v1/reviews/{number}"
+    current[0] = author
+    assert (await client.post(base + "/reviewers", json={"user_id": str(outsider.id)})).status_code == 422
+    assert (await client.put(base + "/subscription", json={"mode": "watching"})).status_code == 403
+    assert (await client.put(base + "/subscription", json={"mode": "muted"})).status_code == 200
+    assert (await client.post(base + "/reviewers", json={"user_id": str(reviewer.id)})).status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_org_policy_change_rechecks_approved_review(api, monkeypatch):
+    client, current, (_, reviewer, _, _), (rid, number), factory = api
+    from models.enterprise_config import EnterpriseConfig
+    from models.review import ReviewState
+
+    async def setting(key, default=""):
+        async with factory() as db:
+            row = await db.scalar(select(EnterpriseConfig).where(EnterpriseConfig.key == key))
+            return row.value if row else default
+
+    async def invalidate(_):
+        return None
+
+    monkeypatch.setattr("services.dynamic_settings.get", setting)
+    monkeypatch.setattr("services.dynamic_settings.invalidate", invalidate)
+    current[0] = reviewer
+    submitted = await client.post(f"/api/v1/reviews/{number}/submissions", json={"verdict": "approve"})
+    assert submitted.status_code == 201
+    async with factory() as db:
+        admin = User(id=uuid.uuid4(), username="admin", email="ad@x.test", name="Admin", role=UserRole.super_admin)
+        db.add(admin)
+        await db.commit()
+    current[0] = admin
+    response = await client.put("/api/v1/admin/review-policy", json={"required_approvals": {"skill": 2}})
+    assert response.status_code == 200, response.text
+    async with factory() as db:
+        review = await db.get(Review, rid)
+        assert review.state == ReviewState.open
+    assert (await client.get(f"/api/v1/reviews/{number}/gate")).json()["required"] == 2
+
+
+@pytest.mark.asyncio
+async def test_dismissal_requires_admin_or_team_owner(api):
+    client, current, (author, reviewer, _, _), (_, number), factory = api
+    current[0] = reviewer
+    base = f"/api/v1/reviews/{number}"
+    submitted = await client.post(base + "/submissions", json={"verdict": "approve"})
+    assert submitted.status_code == 201, submitted.text
+    submission_id = submitted.json()["id"]
+    current[0] = author
+    assert (
+        await client.post(base + f"/submissions/{submission_id}/dismiss", json={"reason": "obsolete"})
+    ).status_code == 403
+    async with factory() as db:
+        admin = User(id=uuid.uuid4(), username="admin", email="adm@x.test", name="Admin", role=UserRole.super_admin)
+        db.add(admin)
+        await db.commit()
+    current[0] = admin
+    response = await client.post(base + f"/submissions/{submission_id}/dismiss", json={"reason": "obsolete"})
+    assert response.status_code == 200, response.text
+    async with factory() as db:
+        row = await db.get(ReviewSubmission, uuid.UUID(submission_id))
+        assert row.state == "dismissed" and row.dismissed_by == admin.id
+
+
+@pytest.mark.asyncio
+async def test_inbox_delivery_is_transactional_and_uses_review_link(api, monkeypatch):
+    from services.inbox.delivery import deliver as real_deliver
+    from services.review.notifications import deliver_event
+
+    _, _, (author, reviewer, _, _), (rid, number), factory = api
+    monkeypatch.setattr("services.review.notifications.deliver", real_deliver)
+    async with factory() as db:
+        review = await db.get(Review, rid)
+        await deliver_event(db, review, "approve", reviewer.id, submission_id=uuid.uuid4())
+        await db.commit()
+    async with factory() as db:
+        items = (await db.scalars(select(InboxItem).where(InboxItem.user_id == author.id))).all()
+        assert len(items) == 1
+        assert items[0].kind == InboxKind.review_approval
+        assert items[0].action_url == f"/review/{number}"
+        assert items[0].action_command == f"observal review show {number}"
+        assert not (await db.scalars(select(InboxItem).where(InboxItem.user_id == reviewer.id))).all()
+
+
+@pytest.mark.asyncio
+async def test_notifications_skip_actor_and_mute_except_final(api, monkeypatch):
+    from services.review.notifications import deliver_event
+
+    client, current, (author, reviewer, _, second), (rid, _), factory = api
+    captured = []
+
+    async def capture(db, **kwargs):
+        captured.append(kwargs)
+        return []
+
+    monkeypatch.setattr("services.review.notifications.deliver", capture)
+    async with factory() as db:
+        review = await db.get(Review, rid)
+        from models.review import ReviewSubscription
+
+        db.add(ReviewSubscription(review_id=rid, user_id=author.id, mode="muted"))
+        await db.flush()
+        await deliver_event(db, review, "approve", reviewer.id, submission_id=uuid.uuid4())
+        assert author.id not in captured[-1]["recipients"]
+        await deliver_event(db, review, "published", reviewer.id)
+        assert author.id in captured[-1]["recipients"]

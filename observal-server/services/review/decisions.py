@@ -326,17 +326,26 @@ async def submit_verdict(db, review, user, verdict, body="", *, policy=None):
     own = _own_work(subject, version, user.id)
     if own and verdict == "request_changes":
         raise HTTPException(403, "Cannot request changes on your own work")
-    submission = ReviewSubmission(
-        review_id=review.id,
-        reviewer_id=user.id,
-        state="submitted",
-        verdict=verdict,
-        body=body,
-        revision_id=review.head_revision_id,
-        self_review=own,
-        submitted_at=_now(),
+    # Submitting a pending review publishes all of that user's draft comments
+    # atomically with their verdict, rather than stranding them in a draft row.
+    submission = await db.scalar(
+        select(ReviewSubmission)
+        .where(
+            ReviewSubmission.review_id == review.id,
+            ReviewSubmission.reviewer_id == user.id,
+            ReviewSubmission.state == "draft",
+        )
+        .with_for_update()
     )
-    db.add(submission)
+    if submission is None:
+        submission = ReviewSubmission(review_id=review.id, reviewer_id=user.id)
+        db.add(submission)
+    submission.state = "submitted"
+    submission.verdict = verdict
+    submission.body = body
+    submission.revision_id = review.head_revision_id
+    submission.self_review = own
+    submission.submitted_at = _now()
     if verdict == "request_changes":
         review.state = ReviewState.changes_requested
         version.status = (

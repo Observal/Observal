@@ -84,8 +84,12 @@ async def deliver_one(
         subject_id=subject.id,
         subject_namespace=subject.namespace,
         subject_slug=subject.slug,
-        action_url=_truncate(spec.url(subject), 500),
-        action_command=_truncate(spec.command(subject, ctx), 500),
+        action_url=(f"/review/{ctx['review_number']}" + (f"?thread={ctx['thread_id']}" if ctx.get("thread_id") else ""))
+        if ctx.get("review_number")
+        else _truncate(spec.url(subject), 500),
+        action_command=f"observal review show {ctx['review_number']}"
+        if ctx.get("review_number")
+        else _truncate(spec.command(subject, ctx), 500),
         actor_id=actor_id,
         team_id=subject.team_id,
         is_private_subject=bool(subject.is_private),

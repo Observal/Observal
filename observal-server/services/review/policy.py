@@ -44,11 +44,11 @@ def parse_policy(raw: str | dict | None, *, source="organization") -> ApprovalPo
     )
 
 
-async def policy_for(review) -> ApprovalPolicy:
-    org = parse_policy(await ds.get("review.policy", default="{}"))
+async def policy_for(review, *, org_raw=None, team_raw=None) -> ApprovalPolicy:
+    org = parse_policy(org_raw if org_raw is not None else await ds.get("review.policy", default="{}"))
     if not review.team_id:
         return org
-    raw = await ds.get(f"review.policy.team.{review.team_id}", default="")
+    raw = team_raw if team_raw is not None else await ds.get(f"review.policy.team.{review.team_id}", default="")
     if not raw:
         return org
     team = parse_policy(raw, source="teamspace")
