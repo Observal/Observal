@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user, get_db
 from api.routes.reviews.common import participant
+from models.agent_component import AgentComponent
 from models.review import Review, ReviewComment, ReviewReviewerRequest, ReviewState, ReviewSubmission, ReviewThread
 from models.user import User
 from services.review.decisions import _own_work, _target, gate
@@ -48,7 +49,21 @@ async def summary(db, review, user):
     checks = {
         status: sum(c.get("status") == status for c in latest.checks) for status in ("pass", "fail", "warn", "skipped")
     }
+    dependencies = []
+    if review.subject_type == "agent":
+        pins = (
+            await db.scalars(
+                select(AgentComponent.resolved_version_id).where(
+                    AgentComponent.agent_version_id == review.version_id,
+                    AgentComponent.resolved_version_id.is_not(None),
+                )
+            )
+        ).all()
+        if pins:
+            linked = (await db.scalars(select(Review).where(Review.version_id.in_(pins)))).all()
+            dependencies = [r.number for r in linked if await participant(db, r, user)]
     return {
+        "depends_on": dependencies,
         "threads": {
             "total": len(visible_threads),
             "unresolved": sum(resolved is None for resolved in visible_threads.values()),

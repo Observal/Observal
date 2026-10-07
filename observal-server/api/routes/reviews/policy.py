@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import services.dynamic_settings as ds
 from api.deps import get_current_user, get_db
+from api.routes.reviews.common import notify_update
 from models.enterprise_config import EnterpriseConfig
 from models.review import Review, ReviewState
 from models.team import Team, TeamMembership, TeamRole
@@ -73,6 +74,8 @@ async def _write(db, key, data, actor_id, *, team_id=None):
         await notifications.deliver_gate_change(db, review, before[review.id], actor_id, policy=effective)
     await db.commit()
     await ds.invalidate(key)
+    for review in reviews:
+        await notify_update(review, "gate")
     return value
 
 

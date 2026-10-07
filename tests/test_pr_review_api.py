@@ -72,6 +72,7 @@ async def api(monkeypatch):
     monkeypatch.setattr("api.routes.reviews.submissions.notify_update", silent)
     monkeypatch.setattr("api.routes.reviews.detail.notify_update", silent)
     monkeypatch.setattr("api.routes.reviews.actions.notify_update", silent)
+    monkeypatch.setattr("api.routes.reviews.policy.notify_update", silent)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         yield client, user_ref, (author, reviewer, outsider, second), (rid, number), factory
     await engine.dispose()
@@ -162,6 +163,26 @@ async def test_reviewer_request_and_subscription_authorization(api):
     assert (await client.put(base + "/subscription", json={"mode": "watching"})).status_code == 403
     assert (await client.put(base + "/subscription", json={"mode": "muted"})).status_code == 200
     assert (await client.post(base + "/reviewers", json={"user_id": str(reviewer.id)})).status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_draft_thread_never_blocks_resolved_thread_gate(api):
+    from services.review.decisions import gate, submit_verdict
+    from services.review.policy import ApprovalPolicy
+
+    client, current, (_, reviewer, _, _), (rid, number), factory = api
+    async with factory() as db:
+        review = await db.get(Review, rid)
+        await submit_verdict(db, review, reviewer, "approve", policy=ApprovalPolicy(require_resolved_threads=True))
+        await db.commit()
+    current[0] = reviewer
+    assert (
+        await client.post(f"/api/v1/reviews/{number}/threads", json={"body": "draft", "as_draft": True})
+    ).status_code == 201
+    async with factory() as db:
+        review = await db.get(Review, rid)
+        result = await gate(db, review, policy=ApprovalPolicy(require_resolved_threads=True))
+        assert result.ready and "unresolved_threads" not in result.requirements
 
 
 @pytest.mark.asyncio

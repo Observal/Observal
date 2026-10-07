@@ -15,7 +15,15 @@ from sqlalchemy import func, select, update
 from models.agent import Agent, AgentStatus, AgentVersion
 from models.agent_component import AgentComponent
 from models.mcp import ListingStatus
-from models.review import Review, ReviewEvent, ReviewRevision, ReviewState, ReviewSubmission, ReviewThread
+from models.review import (
+    Review,
+    ReviewComment,
+    ReviewEvent,
+    ReviewRevision,
+    ReviewState,
+    ReviewSubmission,
+    ReviewThread,
+)
 from models.user import UserRole
 from services.agent_lock import LISTING_MODELS, VERSION_MODELS, latest_release, lock_agent_version
 from services.editing_lock import is_actively_editing
@@ -259,11 +267,16 @@ async def gate(db, review, *, policy: ApprovalPolicy | None = None) -> Gate:
         threads = (
             (
                 await db.execute(
-                    select(ReviewThread).where(
+                    select(ReviewThread)
+                    .join(ReviewComment, ReviewComment.thread_id == ReviewThread.id)
+                    .outerjoin(ReviewSubmission, ReviewSubmission.id == ReviewComment.submission_id)
+                    .where(
                         ReviewThread.review_id == review.id,
                         ReviewThread.resolved_at.is_(None),
                         ReviewThread.outdated.is_(False),
+                        (ReviewComment.submission_id.is_(None) | (ReviewSubmission.state != "draft")),
                     )
+                    .limit(1)
                 )
             )
             .scalars()

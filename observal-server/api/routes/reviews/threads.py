@@ -146,6 +146,7 @@ async def create_thread(
         anchor_text = "\n".join(lines[data.start_line - 1 : end])
     elif data.suggestion:
         raise HTTPException(422, "Suggestions require a file anchor")
+    was_ready = (await gate(db, review)).ready if not data.as_draft else False
     draft = await _draft(db, review, user) if data.as_draft else None
     thread = ReviewThread(
         review_id=review.id,
@@ -173,6 +174,7 @@ async def create_thread(
         _event(db, review, "comment", user.id, thread_id=str(thread.id))
         await notifications.deliver_event(db, review, "comment", user.id, thread_id=thread.id, comment_id=comment.id)
         await sync_state(db, review, actor_id=user.id)
+        await notifications.deliver_gate_change(db, review, was_ready, user.id)
     await db.commit()
     if not draft:
         await notify_update(review, "thread")
