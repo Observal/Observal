@@ -65,6 +65,7 @@ async def _write(db, key, data, actor_id, *, team_id=None):
         await notifications.deliver_event(db, review, "policy_changed", actor_id)
         effective = await policy_for(
             review,
+            db=db,
             org_raw=value if team_id is None else None,
             team_raw=value if team_id is not None else None,
         )

@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Policy writes validate input, enforce ownership and refresh the review gate."""
 
+import uuid
+
 import httpx
 import pytest
 from fastapi import FastAPI
@@ -80,3 +82,23 @@ async def test_policy_for_explicit_override_does_not_read_stale_cache(monkeypatc
     review = SimpleNamespace(team_id=None, is_private=False)
     policy = await policy_for(review, org_raw={"required_approvals": {"skill": 3}})
     assert policy.required_approvals["skill"] == 3
+
+
+@pytest.mark.asyncio
+async def test_visibility_change_cannot_lower_public_approval_bar(monkeypatch):
+    from types import SimpleNamespace
+
+    from services.review.policy import policy_for
+
+    review = SimpleNamespace(team_id=uuid.uuid4(), is_private=True)
+    subject = SimpleNamespace(team_id=review.team_id, is_private=False)
+
+    async def target(db, row):
+        return subject, None
+
+    monkeypatch.setattr("services.review.decisions._target", target)
+    effective = await policy_for(
+        review, db=object(), org_raw={"required_approvals": {"skill": 3}}, team_raw={"required_approvals": {"skill": 1}}
+    )
+    assert effective.required_approvals["skill"] == 3
+    assert effective.source == "organization + teamspace"

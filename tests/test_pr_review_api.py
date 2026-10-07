@@ -71,6 +71,7 @@ async def api(monkeypatch):
     monkeypatch.setattr("api.routes.reviews.threads.notify_update", silent)
     monkeypatch.setattr("api.routes.reviews.submissions.notify_update", silent)
     monkeypatch.setattr("api.routes.reviews.detail.notify_update", silent)
+    monkeypatch.setattr("api.routes.reviews.actions.notify_update", silent)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         yield client, user_ref, (author, reviewer, outsider, second), (rid, number), factory
     await engine.dispose()
@@ -102,7 +103,8 @@ async def test_private_review_excludes_global_reviewer_but_keeps_author(api):
     client, current, (author, reviewer, _, _), (rid, number), factory = api
     async with factory() as db:
         review = await db.get(Review, rid)
-        review.is_private = True
+        listing = await db.get(SkillListing, review.subject_id)
+        listing.is_private = True  # The visibility may change after the review snapshot.
         await db.commit()
     current[0] = reviewer
     assert (await client.get(f"/api/v1/reviews/{number}")).status_code == 404

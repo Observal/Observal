@@ -18,9 +18,9 @@ from services.teamspace import can_review, review_scope
 async def participant(db: AsyncSession, review: Review, user: User, *, scope=None) -> bool:
     if scope is None:
         scope = await review_scope(db, user)
-    if can_review(review, scope):
-        return True
     subject, version = await _target(db, review)
+    if can_review(subject, scope):
+        return True
     return _own_work(subject, version, user.id)
 
 
@@ -75,8 +75,13 @@ async def notify_update(review: Review, kind: str) -> None:
     try:
         # Global legacy queue subscribers have no per-review authorization.
         # Never put private review metadata on that channel.
-        if not review.is_private:
-            await publish("reviews:updated", {"listing_id": str(review.subject_id), "action": kind})
+        from database import async_session
+        from services.review.decisions import _target
+
+        async with async_session() as db:
+            subject, _ = await _target(db, review)
+            if not subject.is_private:
+                await publish("reviews:updated", {"listing_id": str(review.subject_id), "action": kind})
         await publish(f"review:{review.id}:updated", payload)
     except Exception:
         optic.warning("Review {} live update unavailable", review.number)

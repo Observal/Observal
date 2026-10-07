@@ -74,7 +74,7 @@ class Subscription:
                 if review is None or user is None:
                     raise ValueError("Review not found")
                 subject, version = await _target(db, review)
-                if not (can_review(review, await review_scope(db, user)) or _own_work(subject, version, uid)):
+                if not (can_review(subject, await review_scope(db, user)) or _own_work(subject, version, uid)):
                     raise ValueError("Review not found")
             channel = f"review:{rid}:updated"
         else:
@@ -88,7 +88,7 @@ class Subscription:
                     if review is None or user is None:
                         return
                     subject, version = await _target(db, review)
-                    if not (can_review(review, await review_scope(db, user)) or _own_work(subject, version, uid)):
+                    if not (can_review(subject, await review_scope(db, user)) or _own_work(subject, version, uid)):
                         return
             lid = data.get("listing_id", "")
             if listing_id and lid != listing_id:

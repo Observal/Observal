@@ -62,7 +62,8 @@ def _own_work(subject, version, actor_id) -> bool:
 
 
 async def _require_reviewer(db, review, user):
-    if not can_review(review, await review_scope(db, user)):
+    subject, _ = await _target(db, review)
+    if not can_review(subject, await review_scope(db, user)):
         raise HTTPException(403, "Not a reviewer in scope")
 
 
@@ -198,7 +199,7 @@ class Gate:
 
 
 async def gate(db, review, *, policy: ApprovalPolicy | None = None) -> Gate:
-    policy = policy or await policy_for(review)
+    policy = policy or await policy_for(review, db=db)
     head = await _head(db, review)
     submissions = (
         (
@@ -289,9 +290,13 @@ async def sync_state(db, review, *, actor_id=None, policy=None):
         _, version = await _target(db, review)
         version.status = AgentStatus.pending if review.subject_type == "agent" else ListingStatus.pending
         _event(db, review, "gate_ready", actor_id)
-        if (policy or await policy_for(review)).auto_publish:
+        if (policy or await policy_for(review, db=db)).auto_publish:
             await publish(db, review, None, auto=True, policy=policy)
-    elif result.ready and review.state == ReviewState.approved and (policy or await policy_for(review)).auto_publish:
+    elif (
+        result.ready
+        and review.state == ReviewState.approved
+        and (policy or await policy_for(review, db=db)).auto_publish
+    ):
         await publish(db, review, None, auto=True, policy=policy)
     elif not result.ready and review.state == ReviewState.approved:
         review.state = ReviewState.changes_requested if result.outstanding_requests else ReviewState.open
@@ -315,7 +320,7 @@ async def submit_verdict(db, review, user, verdict, body="", *, policy=None):
     await _lock_review(db, review)
     subject, version = await _target(db, review)
     if verdict == "comment":
-        if not (can_review(review, await review_scope(db, user)) or _own_work(subject, version, user.id)):
+        if not (can_review(subject, await review_scope(db, user)) or _own_work(subject, version, user.id)):
             raise HTTPException(403, "Only participants may comment")
     else:
         await _require_reviewer(db, review, user)
@@ -366,9 +371,10 @@ async def dismiss(db, review, submission, user, reason, *, policy=None):
     if user.role not in (UserRole.admin, UserRole.super_admin):
         from models.team import TeamMembership, TeamRole
 
+        subject, _ = await _target(db, review)
         row = await db.scalar(
             select(TeamMembership).where(
-                TeamMembership.team_id == review.team_id,
+                TeamMembership.team_id == subject.team_id,
                 TeamMembership.user_id == user.id,
                 TeamMembership.role == TeamRole.owner,
             )
@@ -391,14 +397,14 @@ async def publish(db, review, user, *, category=None, override_reason=None, auto
     if review.state in (ReviewState.closed, ReviewState.published):
         raise HTTPException(409, "Review is closed")
     subject, version = await _target(db, review)
-    policy = policy or await policy_for(review)
+    policy = policy or await policy_for(review, db=db)
     if not auto:
         if user is None:
             raise HTTPException(403, "Publisher required")
         await _require_reviewer(db, review, user)
         if (
             _own_work(subject, version, user.id)
-            and not (review.is_private and policy.source == "teamspace" and policy.self_approval == "counted")
+            and not (subject.is_private and policy.source == "teamspace" and policy.self_approval == "counted")
             and not (user.role == UserRole.super_admin and override_reason)
         ):
             raise HTTPException(403, "Authors and co-authors cannot publish their own work")

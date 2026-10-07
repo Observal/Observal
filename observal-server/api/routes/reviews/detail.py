@@ -77,7 +77,7 @@ async def edit_detail(
     user: User = Depends(get_current_user),
 ):
     subject, version = await _target(db, review)
-    if not (_own_work(subject, version, user.id) or can_review(review, await review_scope(db, user))):
+    if not (_own_work(subject, version, user.id) or can_review(subject, await review_scope(db, user))):
         raise HTTPException(403, "Not allowed to edit review")
     if review.state.value in ("published", "closed"):
         raise HTTPException(409, "Review is closed")

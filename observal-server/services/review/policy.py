@@ -44,15 +44,24 @@ def parse_policy(raw: str | dict | None, *, source="organization") -> ApprovalPo
     )
 
 
-async def policy_for(review, *, org_raw=None, team_raw=None) -> ApprovalPolicy:
+async def policy_for(review, *, db=None, org_raw=None, team_raw=None) -> ApprovalPolicy:
     org = parse_policy(org_raw if org_raw is not None else await ds.get("review.policy", default="{}"))
-    if not review.team_id:
+    if db is not None:
+        # Visibility and team ownership may change after the review was opened.
+        # The public registry must never inherit a former private team's lower bar.
+        from services.review.decisions import _target
+
+        subject, _ = await _target(db, review)
+        team_id, is_private = subject.team_id, subject.is_private
+    else:
+        team_id, is_private = review.team_id, review.is_private
+    if not team_id:
         return org
-    raw = team_raw if team_raw is not None else await ds.get(f"review.policy.team.{review.team_id}", default="")
+    raw = team_raw if team_raw is not None else await ds.get(f"review.policy.team.{team_id}", default="")
     if not raw:
         return org
     team = parse_policy(raw, source="teamspace")
-    if review.is_private:
+    if is_private:
         return team
     return ApprovalPolicy(
         {key: max(org.required_approvals[key], team.required_approvals[key]) for key in SUBJECT_TYPES},

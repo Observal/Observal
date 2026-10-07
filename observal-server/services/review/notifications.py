@@ -147,7 +147,7 @@ async def deliver_event(
     allowed = []
     for uid in ids - muted - {None}:
         user = await db.get(User, uid)
-        if user and (uid in author_ids or can_review(review, await review_scope(db, user))):
+        if user and (uid in author_ids or can_review(subject, await review_scope(db, user))):
             allowed.append(uid)
     subject_info = Subject(
         type=review.subject_type,

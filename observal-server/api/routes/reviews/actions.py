@@ -14,7 +14,7 @@ from models.user import User
 from schemas.review import PublishRequest, Reason, ReviewerRequest, SubscriptionUpdate
 from services.audit import audit_detail
 from services.review import notifications
-from services.review.decisions import _event, close, publish, withdraw
+from services.review.decisions import _event, _target, close, publish, withdraw
 from services.teamspace import can_review, review_scope
 
 router = APIRouter()
@@ -29,7 +29,8 @@ async def request_reviewer(
 ):
     require_open(review)
     target = await db.get(User, data.user_id)
-    if target is None or not can_review(review, await review_scope(db, target)):
+    subject, _ = await _target(db, review)
+    if target is None or not can_review(subject, await review_scope(db, target)):
         raise HTTPException(422, "User is not a reviewer in scope")
     if await db.get(ReviewReviewerRequest, (review.id, target.id)):
         return {"user_id": target.id, "requested": True}
@@ -70,7 +71,8 @@ async def subscription(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if data.mode == "watching" and not can_review(review, await review_scope(db, user)):
+    subject, _ = await _target(db, review)
+    if data.mode == "watching" and not can_review(subject, await review_scope(db, user)):
         raise HTTPException(403, "Only reviewers may watch")
     row = await db.get(ReviewSubscription, (review.id, user.id))
     if row:
