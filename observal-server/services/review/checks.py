@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Review checks (deterministic snapshot checks and live pin readiness)."""
 
+import json
 import re
 
 from sqlalchemy import select
@@ -12,8 +13,15 @@ from services.agent_lock import VERSION_MODELS
 CREDENTIAL = re.compile(r"(?:sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{30,}|AKIA[A-Z0-9]{16})")
 
 
-def snapshot_checks(files: dict) -> list[dict]:
+def snapshot_checks(files: dict, version=None) -> list[dict]:
     leaked = [path for path, file in files.items() if CREDENTIAL.search(file["content"])]
+    if version is not None:
+        for column in version.__table__.columns:
+            value = getattr(version, column.name)
+            if isinstance(value, (str, dict, list)) and CREDENTIAL.search(
+                value if isinstance(value, str) else json.dumps(value)
+            ):
+                leaked.append(column.name)
     return [
         {
             "id": "secrets",

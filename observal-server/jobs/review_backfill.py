@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: Apache-2.0
+"""Idempotent pending-version review backfill for the phase 2 cutover.
+
+Do not schedule this during phase 1: legacy approve/reject routes do not update
+review aggregates. Run after replacing those routes, before serving new review
+traffic. Batches commit atomically; retrying is safe for already-open reviews.
+"""
+
+from sqlalchemy import select
+
+from database import async_session
+from models.agent import Agent, AgentStatus, AgentVersion
+from models.mcp import ListingStatus
+from services.agent_lock import LISTING_MODELS, VERSION_MODELS
+from services.review.decisions import open_or_push
+
+
+async def backfill_pending(*, batch_size: int = 100) -> int:
+    if batch_size < 1:
+        raise ValueError("batch_size must be positive")
+    created = 0
+    targets = {
+        "agent": (Agent, AgentVersion),
+        **{kind: (LISTING_MODELS[kind], model) for kind, model in VERSION_MODELS.items()},
+    }
+    for kind, (listing_model, version_model) in targets.items():
+        last_id = None
+        while True:
+            async with async_session() as db:
+                query = (
+                    select(version_model)
+                    .where(version_model.status == (AgentStatus.pending if kind == "agent" else ListingStatus.pending))
+                    .order_by(version_model.id)
+                    .limit(batch_size)
+                )
+                if last_id:
+                    query = query.where(version_model.id > last_id)
+                versions = (await db.execute(query)).scalars().all()
+                if not versions:
+                    break
+                for version in versions:
+                    subject_id = version.agent_id if kind == "agent" else version.listing_id
+                    subject = await db.get(listing_model, subject_id)
+                    if not subject:
+                        continue
+                    from models.review import Review
+
+                    existing = await db.scalar(
+                        select(Review.id).where(Review.subject_type == kind, Review.version_id == version.id)
+                    )
+                    if existing:
+                        continue
+                    await open_or_push(db, kind, subject, version, version.released_by, backfill=True)
+                    created += 1
+                last_id = versions[-1].id
+                await db.commit()
+    return created

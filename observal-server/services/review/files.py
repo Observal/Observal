@@ -12,6 +12,7 @@ from sqlalchemy import select
 
 from models.agent_component import AgentComponent
 from services.agent_lock import LISTING_MODELS, VERSION_MODELS
+from services.review.checks import CREDENTIAL
 
 SECRET = re.compile(r"secret|token|key|password|credential|authorization", re.I)
 FIELDS = {
@@ -104,7 +105,7 @@ def redact(value, *, key=""):
 
 
 def _file(content, lang, *, pinned=False, generated=False):
-    content = content or ""
+    content = CREDENTIAL.sub("<redacted>", content or "")
     return {
         "content": content.rstrip("\n") + "\n" if content else "",
         "lang": lang,

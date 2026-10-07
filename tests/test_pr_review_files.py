@@ -71,6 +71,8 @@ def test_diff_tracks_insertions_without_repainting_remaining_lines():
     ]
     assert diff_files({}, head)[0]["status"] == "added"
     assert diff_files(base, {})[0]["status"] == "removed"
+    renamed = diff_files(base, {"renamed.md": base["x.md"]})[0]
+    assert renamed["status"] == "renamed" and renamed["old_path"] == "x.md"
 
 
 def test_large_file_requires_explicit_load():
@@ -90,4 +92,8 @@ def test_anchors_move_and_become_outdated():
 
 
 def test_secret_check_in_free_text():
-    assert snapshot_checks({"x": {"content": "ghp_" + "a" * 36}})[0]["status"] == "fail"
+    token = "ghp_" + "a" * 36
+    assert snapshot_checks({"x": {"content": token}})[0]["status"] == "fail"
+    files = render_component("skill", version("skill", skill_md_content=f"# Secret: {token}"))
+    assert token not in str(files)
+    assert "<redacted>" in files["SKILL.md"]["content"]

@@ -66,4 +66,23 @@ def diff_files(base: dict, head: dict, *, context: int = 3, full: bool = False) 
                 "hunks": hunks,
             }
         )
+    # Pair unambiguous content-identical paths as renames rather than an add
+    # and a delete. Ambiguous duplicates stay separate so the UI never guesses.
+    removed = {}
+    for entry in result:
+        if entry["status"] == "removed":
+            content = base[entry["path"]]["content"]
+            removed.setdefault(content, []).append(entry)
+    for entry in result[:]:
+        if entry["status"] != "added":
+            continue
+        content = head[entry["path"]]["content"]
+        matches = removed.get(content, []) if content else []
+        if (
+            len(matches) == 1
+            and sum(r["status"] == "added" and head[r["path"]]["content"] == content for r in result) == 1
+        ):
+            original = matches[0]
+            entry.update(status="renamed", old_path=original["path"], additions=0, deletions=0, hunks=[])
+            result.remove(original)
     return result
