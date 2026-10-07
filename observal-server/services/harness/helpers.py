@@ -552,8 +552,18 @@ def _get_hook_scripts_dir(harness: str) -> str:
     return HARNESS_REGISTRY.get(harness, {}).get("hook_scripts_dir", "")
 
 
-def _merge_hook_components_into_config(hooks_content: dict, hook_configs: list[dict], harness: str) -> None:
-    """Merge user-submitted hook components into the harness hooks config dict (in-place)."""
+def _merge_hook_components_into_config(
+    hooks_content: dict,
+    hook_configs: list[dict],
+    harness: str,
+    script_command: str | None = None,
+) -> None:
+    """Merge user-submitted hook components into the harness hooks config dict (in-place).
+
+    ``script_command`` is a ``str.format`` template with a ``{filename}`` field for
+    harnesses that run a hook script from somewhere other than ``hook_scripts_dir``
+    relative to the working directory.
+    """
     from services.harness import ensure_loaded, get_adapter
 
     ensure_loaded()
@@ -562,6 +572,7 @@ def _merge_hook_components_into_config(hooks_content: dict, hook_configs: list[d
         raise ValueError(f"No adapter registered for harness: {harness!r}")
     events_map = _get_hook_events_map(harness)
     scripts_dir = _get_hook_scripts_dir(harness)
+    script_command = script_command or (f"{scripts_dir}/{{filename}}" if scripts_dir else None)
     hooks_dict = hooks_content.setdefault("hooks", {})
 
     for hc in hook_configs:
@@ -572,12 +583,12 @@ def _merge_hook_components_into_config(hooks_content: dict, hook_configs: list[d
         handler_config = hc.get("handler_config", {})
         command = handler_config.get("command", "")
         script_filename = hc.get("script_filename")
-        if not command and script_filename and scripts_dir:
-            command = f"{scripts_dir}/{script_filename}"
+        if not command and script_filename and script_command:
+            command = script_command.format(filename=script_filename)
         elif not command:
             continue
-        elif script_filename and scripts_dir:
-            command = f"{scripts_dir}/{script_filename}"
+        elif script_filename and script_command:
+            command = script_command.format(filename=script_filename)
 
         hooks_dict.setdefault(ide_event, []).append(adapter.format_hook_component(command))
 
