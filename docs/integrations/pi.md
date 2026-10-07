@@ -35,13 +35,15 @@ and is shared by every agent; agent pulls do not embed telemetry hooks.
 |---|---|
 | Agent profiles | Project and user scope, as `AGENTS.md` |
 | Hook bridge | Pi extension (no shell hooks) |
-| Extension events | `session_start`, `agent_end`, `session_shutdown` |
+| Extension events | `session_start`, `agent_end`, `session_shutdown`, `tool_call`, `tool_result` |
 | MCP servers | Active `.pi/mcp-adapter.json` / `~/.pi/agent/mcp-adapter.json` for adapter 3.x and 4.x; `mcp.json` for adapter 2.x or Pi built-in MCP |
 | Agent prompt | Registry rules are written into the generated `AGENTS.md` |
 | Guidance files | Scanned from `AGENTS.md`, `~/.pi/agent/AGENTS.md`, `.pi/SYSTEM.md`, `.pi/APPEND_SYSTEM.md` |
 | Skills | `.pi/skills/{name}/SKILL.md` and `~/.pi/agent/skills/{name}/SKILL.md` |
 | Session parsing | Pi JSONL parser, including result-linked MCP invocation extraction |
 | MCP component insights | Observed calls for verified, uniquely matched MCP servers with `pi-mcp-adapter`; otherwise coverage reports unavailable attribution, not zero use |
+| Registry hooks | Command hooks on `PreToolUse` / `PostToolUse`, user scope, run by the Observal extension (see [Registry hooks](#registry-hooks)) |
+| Hook component insights | Runs that printed output, failures and blocks, from the extension's receipts, for verified, uniquely matched hooks |
 | Telemetry | Pi session transcripts delivered through the extension; `observal reconcile --harness pi` is accepted but finds no sessions |
 | Model selection | Registry-backed Pi model catalog (`observal registry models list --harness pi`) |
 
@@ -355,7 +357,9 @@ seconds, and the layer-snapshot upload after ten.
 
 | Pi event | Observal use |
 |---|---|
-| `session_start` | Load config and cursors, upload the layer snapshot, recover stale sessions on startup, show `● observal` in the footer |
+| `session_start` | Load config and cursors, load the active registry hooks, upload the layer snapshot, recover stale sessions on startup, show `● observal` in the footer |
+| `tool_call` | Run registry `PreToolUse` hooks; exit `2` blocks the call |
+| `tool_result` | Run registry `PostToolUse` hooks |
 | `agent_end` | Push new session lines after each turn |
 | `session_shutdown` | Push remaining lines and finalize the session |
 

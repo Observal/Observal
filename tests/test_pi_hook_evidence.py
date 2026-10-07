@@ -211,3 +211,10 @@ def test_unverified_or_duplicate_candidates_never_receive_runs():
     collision = [_candidate("a", _binding("announce")), _candidate("b", _binding("announce"))]
     result = match_hook_evidence(copy.deepcopy(extraction), {"v2_layer": collision}, offsets)
     assert result.collision_count == 2 and result.attributed_count == 0
+
+
+def test_pi_opts_in_through_the_registry():
+    from services.session_parsers.hook_evidence import extract_hook_evidence, hook_extractor
+
+    assert isinstance(hook_extractor("pi"), PiHookEvidenceExtractor)
+    assert extract_hook_evidence("pi", []).status == "supported"

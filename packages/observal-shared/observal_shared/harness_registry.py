@@ -467,6 +467,9 @@ HARNESS_REGISTRY: dict[str, dict] = {
         # Skill availability and model loads (session_parsers/pi_skill_evidence.py). Pi records no
         # distinguishable /skill:name origin, so it never reports invocations.
         "skill_evidence_extractor": "pi",
+        # Registry command hooks run by the Observal extension, from its run receipts
+        # (session_parsers/pi_hook_evidence.py; docs/integrations/pi.md "Registry hooks").
+        "hook_evidence_extractor": "pi",
         "scopes": ["project", "user"],
         "default_scope": "user",
         "scope_labels": ("project (.pi/)", "user (~/.pi/agent/)"),
