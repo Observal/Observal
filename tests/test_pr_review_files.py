@@ -1,3 +1,4 @@
+# SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 """Virtual files, redaction, real hunks and comment re-anchoring."""
 
@@ -7,7 +8,7 @@ import pytest
 
 from models.mcp import McpVersion
 from services.review.anchors import reanchor
-from services.review.checks import snapshot_checks
+from services.review.checks import permission_delta, snapshot_checks
 from services.review.diff import diff_files
 from services.review.files import FIELDS, render_component
 
@@ -56,6 +57,11 @@ def test_redaction_nested_and_untrusted_script_path():
         ),
     )
     assert "secret" not in str(mcp)
+    env = render_component(
+        "sandbox", version("sandbox", runtime_config={"env": {"DB_PASS": "hunter2"}, "max_tokens": 5})
+    )
+    assert "hunter2" not in str(env)
+    assert "max_tokens: 5" in env["sandbox.yaml"]["content"]
     assert "API_KEY" in mcp["mcp.yaml"]["content"]
 
 
@@ -92,19 +98,31 @@ def test_anchors_move_and_become_outdated():
     assert outdated.outdated
 
 
-def test_mcp_required_validation_and_provenance_warning():
+def test_provenance_warning_and_required_fields():
     version = McpVersion(
         description="MCP", version="1.0.0", url="https://example.test/mcp", source_url="https://example.test/repo"
     )
-    files = render_component("mcp", version)
-    checks = snapshot_checks(files, version, subject_type="mcp")
-    assert next(c for c in checks if c["id"] == "mcp_validation")["status"] == "fail"
+    checks = snapshot_checks(render_component("mcp", version), version, subject_type="mcp")
     assert next(c for c in checks if c["id"] == "provenance")["status"] == "warn"
-    version.mcp_validated = True
-    assert (
-        next(c for c in snapshot_checks(files, version, subject_type="mcp") if c["id"] == "mcp_validation")["status"]
-        == "pass"
+    assert next(c for c in checks if c["id"] == "schema")["status"] == "pass"
+    assert not any(c["id"] == "mcp_validation" for c in checks)  # evaluated live by the gate
+
+
+def test_description_is_reviewed_and_benign_names_are_not_redacted():
+    files = render_component("skill", version("skill", description="Triage issues", activation_keywords=["gh"]))
+    assert "Triage issues" in files["skill.yaml"]["content"]
+    assert "gh" in files["skill.yaml"]["content"]
+    assert render_component("skill", version("skill", description="a")) != render_component(
+        "skill", version("skill", description="b")
     )
+
+
+def test_permission_delta_compares_values_not_key_names():
+    base = render_component("hook", version("hook", event="PreToolUse", scope="agent", description="a"))
+    renamed = render_component("hook", version("hook", event="PreToolUse", scope="agent", description="b"))
+    widened = render_component("hook", version("hook", event="PreToolUse", scope="global", description="a"))
+    assert permission_delta(base, renamed) == []
+    assert permission_delta(base, widened) == ["hook.yaml:scope"]
 
 
 def test_secret_check_in_free_text():

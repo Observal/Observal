@@ -1,3 +1,4 @@
+# SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 """Canonical, secret-redacted virtual file trees for review snapshots."""
 
@@ -14,9 +15,20 @@ from models.agent_component import AgentComponent
 from services.agent_lock import LISTING_MODELS, VERSION_MODELS
 from services.review.checks import CREDENTIAL
 
-SECRET = re.compile(r"secret|token|key|password|credential|authorization", re.I)
+_SECRET_PARTS = frozenset(
+    {"secret", "password", "passwd", "pwd", "credential", "credentials", "authorization", "token", "apikey"}
+)
+
+
+def _is_secret_key(key: str) -> bool:
+    """Match credential-like names without hiding fields such as max_tokens or activation_keywords."""
+    parts = [p.lower() for p in re.split(r"[^A-Za-z0-9]+|(?<=[a-z0-9])(?=[A-Z])", key) if p]
+    return bool(parts) and (bool(_SECRET_PARTS.intersection(parts)) or parts[-1] == "key")
+
+
 FIELDS = {
     "skill": (
+        "description",
         "task_type",
         "slash_command",
         "triggers",
@@ -32,8 +44,9 @@ FIELDS = {
         "has_scripts",
         "has_templates",
     ),
-    "prompt": ("category", "variables", "model_hints", "tags", "supported_harnesses"),
+    "prompt": ("description", "category", "variables", "model_hints", "tags", "supported_harnesses"),
     "hook": (
+        "description",
         "event",
         "execution_mode",
         "priority",
@@ -43,12 +56,14 @@ FIELDS = {
         "tool_filter",
         "file_pattern",
         "requirements",
+        "supported_harnesses",
         "source_url",
         "source_ref",
         "source_path",
         "resolved_sha",
     ),
     "mcp": (
+        "description",
         "transport",
         "framework",
         "command",
@@ -64,6 +79,7 @@ FIELDS = {
         "resolved_sha",
     ),
     "sandbox": (
+        "description",
         "runtime_type",
         "image",
         "dockerfile_url",
@@ -74,6 +90,7 @@ FIELDS = {
         "entrypoint",
         "runtime_config",
         "sandbox_path",
+        "supported_harnesses",
         "source_url",
         "source_ref",
         "resolved_sha",
@@ -93,9 +110,10 @@ FIELDS = {
 
 def redact(value, *, key=""):
     """Fail closed for credential-named keys, including nested config overrides."""
-    if key == "headers" and isinstance(value, dict):
+    # Header and environment maps hold values by name; every value may be a credential.
+    if key.lower() in ("headers", "env", "environment") and isinstance(value, dict):
         return {str(k): "<redacted>" for k in value}
-    if key == "value" or SECRET.search(key):
+    if key == "value" or _is_secret_key(key):
         return "<redacted>" if value is not None else None
     if isinstance(value, dict):
         return {str(k): redact(v, key=str(k)) for k, v in value.items()}

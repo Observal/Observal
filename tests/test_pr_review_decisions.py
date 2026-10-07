@@ -1,3 +1,4 @@
+# SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 """Gate/state transitions on real SQLite rows; no external services."""
 
@@ -17,7 +18,7 @@ from models.mcp import ListingStatus
 from models.skill import SkillListing, SkillVersion
 from models.team import Team, TeamMembership, TeamRole
 from models.user import User, UserRole
-from services.review.decisions import dismiss, gate, open_or_push, publish, submit_verdict, sync_state
+from services.review.decisions import close, dismiss, gate, open_or_push, publish, submit_verdict, sync_state
 from services.review.policy import ApprovalPolicy, parse_policy, policy_for
 
 
@@ -194,6 +195,73 @@ async def test_auto_publish_and_edit_lock(db):
     version.is_editing = False
     await submit_verdict(db, review, reviewer, "approve", policy=policy)
     assert review.state == ReviewState.published and review.published_by is None
+
+
+@pytest.mark.asyncio
+async def test_same_revision_approval_clears_own_change_request(db):
+    author, reviewer, admin, listing, version, review = await fixture_review(db)
+    policy = ApprovalPolicy()
+    await submit_verdict(db, review, reviewer, "request_changes", policy=policy)
+    await submit_verdict(db, review, reviewer, "approve", policy=policy)
+    result = await gate(db, review, policy=policy)
+    assert result.ready and result.outstanding_requests == 0
+    assert review.state == ReviewState.approved
+
+
+@pytest.mark.asyncio
+async def test_push_resyncs_with_counted_stale_approval_and_checks_use_base(db):
+    author, reviewer, admin, listing, version, review = await fixture_review(db)
+    policy = ApprovalPolicy(dismiss_stale_approvals=False)
+    await submit_verdict(db, review, reviewer, "approve", policy=policy)
+    version.slash_command = "/triage"
+    await open_or_push(db, "skill", listing, version, author.id, policy=policy)
+    assert review.state == ReviewState.approved
+    version.skill_md_content = "# Unrelated\n"
+    await open_or_push(db, "skill", listing, version, author.id, policy=policy)
+    head = await db.get(ReviewRevision, review.head_revision_id)
+    # The slash command is still new relative to the (empty) base, not just to revision 2.
+    assert any(c["id"] == "permission_delta" for c in head.checks)
+
+
+@pytest.mark.asyncio
+async def test_superseded_cannot_reopen_and_close_respects_edit_lock(db):
+    author, reviewer, admin, listing, version, review = await fixture_review(db)
+    version.is_editing, version.editing_by, version.editing_since = True, author.id, datetime.now(UTC)
+    with pytest.raises(HTTPException) as error:
+        await close(db, review, reviewer, "duplicate")
+    assert error.value.status_code == 409
+    version.is_editing = False
+    review.state, review.closed_reason = ReviewState.closed, "superseded"
+    version.skill_md_content = "# Changed\n"
+    with pytest.raises(HTTPException) as error:
+        await open_or_push(db, "skill", listing, version, author.id, policy=ApprovalPolicy())
+    assert error.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_mcp_gate_waits_for_live_validation(db):
+    from models.mcp import McpListing, McpVersion
+
+    author, reviewer, *_ = await fixture_review(db)
+    listing = McpListing(name="m", namespace="tests", slug="m", category="x", owner="a", submitted_by=author.id)
+    db.add(listing)
+    await db.flush()
+    version = McpVersion(
+        listing_id=listing.id,
+        version="1.0.0",
+        description="m",
+        url="https://x.test",
+        released_by=author.id,
+        released_at=datetime.now(UTC),
+        status=ListingStatus.pending,
+    )
+    db.add(version)
+    await db.flush()
+    review = await open_or_push(db, "mcp", listing, version, author.id, policy=ApprovalPolicy())
+    await submit_verdict(db, review, reviewer, "approve", policy=ApprovalPolicy())
+    assert "mcp_validation" in (await gate(db, review, policy=ApprovalPolicy())).requirements
+    version.mcp_validated = True
+    assert (await gate(db, review, policy=ApprovalPolicy())).ready
 
 
 def test_policy_input_rejects_bool_counts_and_invalid_values():

@@ -1,14 +1,15 @@
+# SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 """Review checks (deterministic snapshot checks and live pin readiness)."""
 
 import json
 import re
 
+import yaml
 from sqlalchemy import select
 
 from models.agent_component import AgentComponent
-from models.mcp import ListingStatus
-from services.agent_lock import VERSION_MODELS
+from services.agent_lock import pinned_component_blockers as legacy_pinned_component_blockers
 
 CREDENTIAL = re.compile(r"(?:sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{30,}|AKIA[A-Z0-9]{16})")
 
@@ -53,16 +54,6 @@ def snapshot_checks(files: dict, version=None, *, subject_type=None, base_files=
             "details": missing,
         }
     )
-    if subject_type == "mcp":
-        checks.append(
-            {
-                "id": "mcp_validation",
-                "name": "MCP validation",
-                "status": "pass" if version.mcp_validated else "fail",
-                "required": True,
-                "details": [] if version.mcp_validated else ["Validation has not passed"],
-            }
-        )
     if subject_type == "agent" and version.gaming_flags:
         checks.append(
             {
@@ -84,44 +75,49 @@ def snapshot_checks(files: dict, version=None, *, subject_type=None, base_files=
                 "details": [] if getattr(version, "resolved_sha", None) else ["No resolved SHA"],
             }
         )
-    if base_files:
-        from services.review.diff import diff_files
-
-        sensitive = ("auto_approve", "tool_filter", "scope", "network_policy", "slash_command")
-        changed = [
-            d["path"]
-            for d in diff_files(base_files, files)
-            if d["status"] != "unchanged"
-            and any(
-                s in (base_files.get(d["path"], {}).get("content", "") + files.get(d["path"], {}).get("content", ""))
-                for s in sensitive
-            )
-        ]
-        if changed:
-            checks.append(
-                {
-                    "id": "permission_delta",
-                    "name": "Permission delta",
-                    "status": "warn",
-                    "required": False,
-                    "details": changed,
-                }
-            )
+    changed = permission_delta(base_files or {}, files)
+    if changed:
+        checks.append(
+            {
+                "id": "permission_delta",
+                "name": "Permission delta",
+                "status": "warn",
+                "required": False,
+                "details": changed,
+            }
+        )
     return checks
 
 
+_SENSITIVE_FIELDS = ("auto_approve", "tool_filter", "scope", "network_policy", "slash_command")
+
+
+def _manifest_values(file: dict | None) -> dict:
+    try:
+        data = yaml.safe_load((file or {}).get("content") or "") or {}
+    except yaml.YAMLError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def permission_delta(base_files: dict, files: dict) -> list[str]:
+    """Sensitive manifest fields whose value differs from the review base."""
+    changed = []
+    for path in sorted(base_files.keys() | files.keys()):
+        if not path.endswith(".yaml") or path == "components.yaml":
+            continue
+        before, after = _manifest_values(base_files.get(path)), _manifest_values(files.get(path))
+        changed.extend(
+            f"{path}:{field}"
+            for field in _SENSITIVE_FIELDS
+            if (field in before or field in after) and before.get(field) != after.get(field)
+        )
+    return changed
+
+
 async def pinned_component_blockers(db, version_id) -> list[dict]:
+    """Same pin resolution the legacy review gate uses, including unlocked legacy pins."""
     rows = (
         (await db.execute(select(AgentComponent).where(AgentComponent.agent_version_id == version_id))).scalars().all()
     )
-    blockers = []
-    for row in rows:
-        model = VERSION_MODELS.get(row.component_type)
-        version = await db.get(model, row.resolved_version_id) if model and row.resolved_version_id else None
-        if (
-            not version
-            or version.listing_id != row.component_id
-            or version.status not in (ListingStatus.approved, ListingStatus.archived)
-        ):
-            blockers.append({"type": row.component_type, "id": str(row.component_id), "version": row.resolved_version})
-    return blockers
+    return await legacy_pinned_component_blockers(db, rows)

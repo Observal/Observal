@@ -1,3 +1,4 @@
+# SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 """Transactional review rules. Not called by legacy routes until the API/UI cutover."""
 
@@ -76,7 +77,15 @@ async def _head(db, review):
     return head
 
 
-async def open_or_push(db, subject_type: str, subject, version, actor_id, *, message=None, backfill=False):
+async def _base_files(db, subject_type, version, base_version_id) -> dict:
+    """Render the frozen review base; checks compare against it, never the previous revision."""
+    if base_version_id is None:
+        return {}
+    base = await db.get(type(version), base_version_id)
+    return await render_files(subject_type, base, db) if base is not None else {}
+
+
+async def open_or_push(db, subject_type: str, subject, version, actor_id, *, message=None, backfill=False, policy=None):
     """Create a review or push a revision. Caller owns commit; not wired to old submit endpoints."""
     if subject_type not in (*VERSION_MODELS, "agent"):
         raise ValueError("Unsupported review subject")
@@ -92,8 +101,10 @@ async def open_or_push(db, subject_type: str, subject, version, actor_id, *, mes
     files = await render_files(subject_type, version, db)
     digest = _hash(files)
     if review:
+        if review.state == ReviewState.closed and review.closed_reason == "superseded":
+            raise HTTPException(409, "Superseded reviews cannot be reopened; release a new version")
         head = await _head(db, review)
-        base_files = head.files
+        base_files = await _base_files(db, subject_type, version, review.base_version_id)
         if head.content_hash == digest:
             raise HTTPException(409, "No content changes since the previous revision")
         next_number = head.number + 1
@@ -133,7 +144,7 @@ async def open_or_push(db, subject_type: str, subject, version, actor_id, *, mes
                 .all()
             )
             latest = latest_release(siblings)
-        base_files = await render_files(subject_type, latest, db) if latest else {}
+        base_files = await _base_files(db, subject_type, version, latest.id if latest else None)
         review = Review(
             subject_type=subject_type,
             subject_id=subject.id,
@@ -170,6 +181,9 @@ async def open_or_push(db, subject_type: str, subject, version, actor_id, *, mes
     # The old routes are unchanged; backfill never changes version status.
     if not backfill:
         version.status = AgentStatus.pending if subject_type == "agent" else ListingStatus.pending
+        if next_number > 1:
+            # Approvals that still count under the policy can make the new head publishable.
+            await sync_state(db, review, actor_id=actor_id, policy=policy)
     return review
 
 
@@ -213,12 +227,16 @@ async def gate(db, review, *, policy: ApprovalPolicy | None = None) -> Gate:
         r.id: r.number
         for r in (await db.execute(select(ReviewRevision).where(ReviewRevision.review_id == review.id))).scalars().all()
     }
-    requests = {s.reviewer_id: s for s in submissions if s.verdict == "request_changes"}
+    # Submissions are chronological. A change request stays outstanding until the
+    # same reviewer later approves that revision or a newer one.
+    requests = {}
     for s in submissions:
-        if (
+        if s.verdict == "request_changes":
+            requests[s.reviewer_id] = s
+        elif (
             s.verdict == "approve"
             and s.reviewer_id in requests
-            and revisions[s.revision_id] > revisions[requests[s.reviewer_id].revision_id]
+            and revisions[s.revision_id] >= revisions[requests[s.reviewer_id].revision_id]
         ):
             del requests[s.reviewer_id]
     blockers = []
@@ -231,6 +249,9 @@ async def gate(db, review, *, policy: ApprovalPolicy | None = None) -> Gate:
     _, version = await _target(db, review)
     if is_actively_editing(version):
         blockers.append("edit_lock")
+    # Validation runs after submission, so this is evaluated live rather than snapshotted.
+    if review.subject_type == "mcp" and not version.mcp_validated:
+        blockers.append("mcp_validation")
     if review.subject_type == "agent" and await pinned_component_blockers(db, review.version_id):
         blockers.append("pinned_components")
     if policy.require_resolved_threads:
@@ -329,6 +350,8 @@ async def submit_verdict(db, review, user, verdict, body="", *, policy=None):
 
 async def dismiss(db, review, submission, user, reason, *, policy=None):
     await _lock_review(db, review)
+    if review.state in (ReviewState.closed, ReviewState.published):
+        raise HTTPException(409, "Review is closed")
     if not reason.strip():
         raise HTTPException(422, "A dismissal reason is required")
     if user.role not in (UserRole.admin, UserRole.super_admin):
@@ -490,6 +513,8 @@ async def close(db, review, user, reason):
         raise HTTPException(403, "Cannot close your own review")
     if not reason.strip() or review.state in (ReviewState.closed, ReviewState.published):
         raise HTTPException(409, "Review is closed or no reason was given")
+    if is_actively_editing(version):
+        raise HTTPException(409, "Version is being edited")
     review.state = ReviewState.closed
     review.closed_reason = "rejected"
     review.closed_at = _now()
