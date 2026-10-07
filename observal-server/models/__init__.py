@@ -34,6 +34,17 @@ from models.insight_session_meta import InsightSessionMeta
 from models.mcp import ListingStatus, McpDownload, McpListing, McpValidationResult
 from models.migration_job import MigrationJob, MigrationOperation, MigrationScope, MigrationStatus
 from models.prompt import PromptDownload, PromptListing
+from models.review import (
+    Review,
+    ReviewComment,
+    ReviewEvent,
+    ReviewReviewerRequest,
+    ReviewRevision,
+    ReviewState,
+    ReviewSubmission,
+    ReviewSubscription,
+    ReviewThread,
+)
 from models.saml_config import SamlConfig
 from models.sandbox import SandboxDownload, SandboxListing
 from models.scim_token import ScimToken
@@ -90,6 +101,15 @@ __all__ = [
     "PromptDownload",
     "PromptListing",
     "RecommendationFeedback",
+    "Review",
+    "ReviewComment",
+    "ReviewEvent",
+    "ReviewReviewerRequest",
+    "ReviewRevision",
+    "ReviewState",
+    "ReviewSubmission",
+    "ReviewSubscription",
+    "ReviewThread",
     "SamlConfig",
     "SandboxDownload",
     "SandboxListing",

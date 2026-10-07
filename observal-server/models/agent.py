@@ -21,6 +21,7 @@ from models.base import Base
 class AgentStatus(str, enum.Enum):
     draft = "draft"
     pending = "pending"
+    changes_requested = "changes_requested"
     approved = "approved"
     rejected = "rejected"
     archived = "archived"
