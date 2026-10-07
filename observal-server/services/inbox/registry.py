@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Lokesh Selvam <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """One declaration per inbox kind.
@@ -207,6 +208,34 @@ SPECS: dict[InboxKind, KindSpec] = {
         action_required=False,
         title=lambda s, c: f"New comment on {_label(s)}",
         dedupe=lambda s, c: f"review_comment:{s.type}:{s.id}:{c.get('comment_id', '-')}",
+    ),
+    InboxKind.review_approval: KindSpec(
+        kind=InboxKind.review_approval,
+        # RESERVED - delivered once PR-style reviews replace the legacy decision routes.
+        reserved=True,
+        action_required=False,
+        title=lambda s, c: f"Approval recorded: {_versioned(s)}",
+        dedupe=lambda s, c: f"review_approval:{s.type}:{s.id}:{c.get('submission_id', '-')}",
+        recheck_visibility=False,
+    ),
+    InboxKind.review_dismissed: KindSpec(
+        kind=InboxKind.review_dismissed,
+        # RESERVED - delivered once PR-style reviews replace the legacy decision routes.
+        reserved=True,
+        action_required=False,
+        title=lambda s, c: f"Review dismissed: {_versioned(s)}",
+        dedupe=lambda s, c: f"review_dismissed:{s.type}:{s.id}:{c.get('submission_id', '-')}",
+        recheck_visibility=False,
+    ),
+    InboxKind.review_ready: KindSpec(
+        kind=InboxKind.review_ready,
+        # RESERVED - delivered once PR-style reviews replace the legacy decision routes.
+        reserved=True,
+        action_required=True,
+        title=lambda s, c: f"Ready to publish: {_versioned(s)}",
+        dedupe=lambda s, c: f"review_ready:{s.type}:{s.id}:v{s.version or '-'}",
+        url=_review_url,
+        command=_review_show_command,
     ),
     InboxKind.change_requested: KindSpec(
         kind=InboxKind.change_requested,
