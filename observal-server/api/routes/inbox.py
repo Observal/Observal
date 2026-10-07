@@ -33,7 +33,7 @@ from schemas.inbox import (
     OutdatedReportResponse,
 )
 from services.inbox import delivery, visibility
-from services.inbox.registry import Subject
+from services.inbox.registry import Subject, spec_for
 
 router = APIRouter(prefix="/api/v1/inbox", tags=["inbox"])
 
@@ -44,6 +44,21 @@ _MAX_PAGE_SIZE = 100
 
 
 def _to_response(item: InboxItem) -> InboxItemResponse:
+    action_url, action_command = item.action_url, item.action_command
+    context = item.payload or {}
+    # Items delivered before the phase-2 compatibility fix already contain
+    # /review/{number}, a web route that won't exist until phase 3. Repair the
+    # response without rewriting an inbox user's stored event history.
+    if context.get("review_number") and action_url and action_url.startswith(f"/review/{context['review_number']}"):
+        subject = Subject(
+            type=item.subject_type,
+            id=item.subject_id,
+            namespace=item.subject_namespace,
+            slug=item.subject_slug,
+        )
+        author_ready = item.kind == InboxKind.review_ready and not item.action_required
+        spec = spec_for(InboxKind.review_approved if author_ready else item.kind)
+        action_url, action_command = spec.url(subject), spec.command(subject, context)
     return InboxItemResponse(
         id=item.id,
         kind=item.kind.value,
@@ -57,8 +72,8 @@ def _to_response(item: InboxItem) -> InboxItemResponse:
         subject_id=item.subject_id,
         subject_namespace=item.subject_namespace,
         subject_slug=item.subject_slug,
-        action_url=item.action_url,
-        action_command=item.action_command,
+        action_url=action_url,
+        action_command=action_command,
         actor_id=item.actor_id,
         team_id=item.team_id,
         payload=item.payload or {},

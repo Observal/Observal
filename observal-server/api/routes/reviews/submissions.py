@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user, get_db
 from api.routes.reviews.common import get_review, notify_update
+from models.inbox import InboxKind
 from models.review import Review, ReviewComment, ReviewSubmission, ReviewThread
 from models.user import User
 from schemas.review import CommentEdit, Reason, VerdictCreate
@@ -78,6 +79,11 @@ async def submit(
     was_ready = (await gate(db, review)).ready
     row = await submit_verdict(db, review, user, data.verdict, data.body)
     await db.flush()
+    await notifications.resolve_review_work(
+        db, review, user.id, kinds=(InboxKind.review_requested, InboxKind.review_ready), user_id=user.id
+    )
+    if data.verdict == "approve":
+        await notifications.resolve_change_requests(db, review, user.id, user.id)
     audit_detail(
         request,
         action=f"review.{data.verdict}",
@@ -127,6 +133,10 @@ async def dismiss_submission(
         raise HTTPException(404, "Submission not found")
     was_ready = (await gate(db, review)).ready
     await dismiss(db, review, row, user, data.reason)
+    if row.verdict == "request_changes":
+        await notifications.resolve_review_work(
+            db, review, user.id, kinds=(InboxKind.change_requested,), request_ids={str(row.id)}
+        )
     audit_detail(
         request,
         action="review.dismissed",

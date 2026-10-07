@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user, get_db
 from api.routes.reviews.common import get_review, notify_update, require_open
+from models.inbox import InboxKind
 from models.review import Review, ReviewReviewerRequest, ReviewSubscription
 from models.user import User
 from schemas.review import PublishRequest, Reason, ReviewerRequest, SubscriptionUpdate
@@ -58,6 +59,14 @@ async def remove_reviewer(
     if user.id not in (user_id, request.requested_by):
         raise HTTPException(403, "Only the requester or requested reviewer may remove the request")
     await db.delete(request)
+    await notifications.resolve_review_work(
+        db,
+        review,
+        user.id,
+        kinds=(InboxKind.review_requested,),
+        user_id=user_id,
+        request_ids={str(user_id)},
+    )
     _event(db, review, "reviewer_removed", user.id, user_id=str(user_id))
     await db.commit()
     await notify_update(review, "state")

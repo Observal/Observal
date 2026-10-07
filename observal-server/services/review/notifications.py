@@ -6,12 +6,49 @@ import uuid
 
 from sqlalchemy import select
 
-from models.inbox import InboxKind
+from models.inbox import InboxItem, InboxKind, InboxState
 from models.review import ReviewComment, ReviewReviewerRequest, ReviewSubmission, ReviewSubscription
 from services.inbox import recipients
-from services.inbox.delivery import deliver
+from services.inbox.delivery import deliver, resolve
 from services.inbox.registry import Subject
 from services.review.decisions import _target
+
+
+async def resolve_review_work(db, review, actor_id, *, kinds=None, user_id=None, request_ids=None):
+    """Resolve only this review's PR-style actionable items, in the decision transaction.
+
+    The legacy queue uses the same kinds but does not carry review_number, so it
+    must not be touched before cutover. All revision-specific keys are covered.
+    """
+    kinds = kinds or (InboxKind.review_requested, InboxKind.review_ready, InboxKind.change_requested)
+    stmt = select(InboxItem).where(
+        InboxItem.kind.in_(kinds),
+        InboxItem.state == InboxState.open,
+        InboxItem.payload["review_number"].as_integer() == review.number,
+    )
+    if user_id is not None:
+        stmt = stmt.where(InboxItem.user_id == user_id)
+    items = (await db.scalars(stmt.with_for_update())).all()
+    for item in items:
+        if request_ids is None or item.payload.get("request_id") in request_ids:
+            resolve(db, item, state=InboxState.done, actor_id=actor_id)
+
+
+async def resolve_change_requests(db, review, reviewer_id, actor_id):
+    ids = {
+        str(sid)
+        for sid in (
+            await db.scalars(
+                select(ReviewSubmission.id).where(
+                    ReviewSubmission.review_id == review.id,
+                    ReviewSubmission.reviewer_id == reviewer_id,
+                    ReviewSubmission.verdict == "request_changes",
+                )
+            )
+        ).all()
+    }
+    if ids:
+        await resolve_review_work(db, review, actor_id, kinds=(InboxKind.change_requested,), request_ids=ids)
 
 
 async def deliver_gate_change(db, review, was_ready: bool, actor_id, *, revision=None, policy=None):
@@ -23,6 +60,10 @@ async def deliver_gate_change(db, review, was_ready: bool, actor_id, *, revision
         await deliver_event(db, review, "published", actor_id, revision=revision)
         return
     is_ready = (await gate(db, review, policy=policy)).ready
+    if is_ready:
+        await resolve_review_work(db, review, actor_id, kinds=(InboxKind.review_requested, InboxKind.change_requested))
+    elif was_ready:
+        await resolve_review_work(db, review, actor_id, kinds=(InboxKind.review_ready,))
     if was_ready != is_ready:
         await deliver_event(db, review, "ready" if is_ready else "lost", actor_id, revision=revision)
 
@@ -40,6 +81,8 @@ async def deliver_event(
     revision=None,
 ):
     """Author and listing owner get every event except their own; mute exempts final outcomes."""
+    if event in ("published", "closed", "withdrawn", "superseded"):
+        await resolve_review_work(db, review, actor_id)
     subject, version = await _target(db, review)
     author_ids = {version.released_by, getattr(subject, "created_by", None), getattr(subject, "submitted_by", None)} - {
         None

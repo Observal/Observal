@@ -59,37 +59,44 @@ class Subscription:
         if review_id:
             import uuid
 
+            from api.deps import _authenticate_via_jwt
             from database import async_session
             from models.review import Review
-            from models.user import User
             from services.review.decisions import _own_work, _target
             from services.teamspace import can_review, review_scope
 
             try:
-                uid, rid = uuid.UUID(info.context["user_id"]), uuid.UUID(review_id)
-            except (TypeError, ValueError, KeyError):
-                raise ValueError("Authentication and a valid review ID are required") from None
-            async with async_session() as db:
-                review, user = await db.get(Review, rid), await db.get(User, uid)
-                if review is None or user is None:
-                    raise ValueError("Review not found")
-                subject, version = await _target(db, review)
-                if not (can_review(subject, await review_scope(db, user)) or _own_work(subject, version, uid)):
-                    raise ValueError("Review not found")
+                rid = uuid.UUID(review_id)
+            except (TypeError, ValueError):
+                raise ValueError("Valid review ID required") from None
+            # Browsers cannot put Authorization in WebSocket headers. graphql-ws
+            # sends it in connection_init; Strawberry attaches that payload to
+            # context *after* get_context_dep has run.
+            params = info.context.get("connection_params") or {}
+            authorization = params.get("authorization") if isinstance(params, dict) else None
+            authorization = authorization or info.context["request"].headers.get("authorization")
+            if not isinstance(authorization, str) or not authorization.startswith("Bearer "):
+                raise ValueError("Authentication required")
+            token = authorization.removeprefix("Bearer ").strip()
+
+            async def is_allowed() -> bool:
+                async with async_session() as db:
+                    user = await _authenticate_via_jwt(token, db)
+                    review = await db.get(Review, rid)
+                    if user is None or review is None:
+                        return False
+                    subject, version = await _target(db, review)
+                    return can_review(subject, await review_scope(db, user)) or _own_work(subject, version, user.id)
+
+            if not await is_allowed():
+                raise ValueError("Review not found")
             channel = f"review:{rid}:updated"
         else:
             channel = "reviews:updated"
         async for data in subscribe(channel):
-            if review_id:
-                # Recheck membership after each event: a removed team reviewer
-                # must not continue receiving private review updates.
-                async with async_session() as db:
-                    review, user = await db.get(Review, rid), await db.get(User, uid)
-                    if review is None or user is None:
-                        return
-                    subject, version = await _target(db, review)
-                    if not (can_review(subject, await review_scope(db, user)) or _own_work(subject, version, uid)):
-                        return
+            if review_id and not await is_allowed():
+                # Also stop delivering after revocation, expiry or loss of scope.
+                return
             lid = data.get("listing_id", "")
             if listing_id and lid != listing_id:
                 continue

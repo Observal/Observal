@@ -70,6 +70,36 @@ async def test_review_policy_admin_and_team_owner(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_generic_settings_cannot_bypass_review_policy_permissions():
+    from fastapi import HTTPException
+
+    from api.routes.admin.enterprise_settings import delete_setting, get_setting, upsert_setting
+    from schemas.admin import EnterpriseConfigUpdate
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as db:
+        admin = User(username="admin", name="Admin", email="a@x.test", role=UserRole.admin)
+        db.add(admin)
+        db.add(EnterpriseConfig(key="review.policy", value='{"required_approvals":{"skill":2}}'))
+        await db.flush()
+        for key in ("review.policy", f"review.policy.team.{uuid.uuid4()}"):
+            for op in (
+                get_setting(key, db=db, current_user=admin),
+                upsert_setting(key, EnterpriseConfigUpdate(value='{"auto_publish":true}'), db=db, current_user=admin),
+                delete_setting(key, db=db, current_user=admin),
+            ):
+                with pytest.raises(HTTPException) as error:
+                    await op
+                assert error.value.status_code == 409
+        row = await db.scalar(select(EnterpriseConfig).where(EnterpriseConfig.key == "review.policy"))
+        assert row.value == '{"required_approvals":{"skill":2}}'
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_policy_for_explicit_override_does_not_read_stale_cache(monkeypatch):
     from types import SimpleNamespace
 

@@ -16,7 +16,7 @@ from api.routes.reviews import policy_router
 from api.routes.reviews import router as review_router
 from api.routes.reviews.queue import router as queue_router
 from models import Base
-from models.inbox import InboxItem, InboxKind
+from models.inbox import InboxItem, InboxKind, InboxState
 from models.review import Review, ReviewComment, ReviewSubmission
 from models.skill import SkillListing, SkillVersion
 from models.user import User, UserRole
@@ -246,7 +246,7 @@ async def test_inbox_delivery_is_transactional_and_uses_review_link(api, monkeyp
     from services.inbox.delivery import deliver as real_deliver
     from services.review.notifications import deliver_event
 
-    _, _, (author, reviewer, _, _), (rid, number), factory = api
+    _, _, (author, reviewer, _, _), (rid, _), factory = api
     monkeypatch.setattr("services.review.notifications.deliver", real_deliver)
     async with factory() as db:
         review = await db.get(Review, rid)
@@ -256,9 +256,129 @@ async def test_inbox_delivery_is_transactional_and_uses_review_link(api, monkeyp
         items = (await db.scalars(select(InboxItem).where(InboxItem.user_id == author.id))).all()
         assert len(items) == 1
         assert items[0].kind == InboxKind.review_approval
-        assert items[0].action_url == f"/review/{number}"
-        assert items[0].action_command == f"observal review show {number}"
-        assert not (await db.scalars(select(InboxItem).where(InboxItem.user_id == reviewer.id))).all()
+        assert items[0].action_url == "/components/skills/tests/skill"
+        assert items[0].action_command is None
+        await deliver_event(db, review, "opened", author.id)
+        await db.commit()
+        request = await db.scalar(
+            select(InboxItem).where(InboxItem.user_id == reviewer.id, InboxItem.kind == InboxKind.review_requested)
+        )
+        assert request.action_url == "/review?tab=components"
+        assert request.action_command == f"observal admin review show {review.subject_id}"
+        from api.routes.inbox import _to_response
+
+        request.action_url = f"/review/{review.number}"
+        request.action_command = f"observal review show {review.number}"
+        repaired = _to_response(request)
+        assert repaired.action_url == "/review?tab=components"
+        assert repaired.action_command == f"observal admin review show {review.subject_id}"
+
+
+@pytest.mark.asyncio
+async def test_retracted_reviewer_request_no_longer_requires_action(api, monkeypatch):
+    from services.inbox.delivery import deliver as real_deliver
+
+    client, current, (author, _, _, second), (_, number), factory = api
+    monkeypatch.setattr("services.review.notifications.deliver", real_deliver)
+    current[0] = author
+    base = f"/api/v1/reviews/{number}/reviewers"
+    assert (await client.post(base, json={"user_id": str(second.id)})).status_code == 201
+    async with factory() as db:
+        notice = await db.scalar(select(InboxItem).where(InboxItem.user_id == second.id))
+        assert notice.state == InboxState.open
+    assert (await client.delete(base + f"/{second.id}")).status_code == 200
+    async with factory() as db:
+        notice = await db.scalar(select(InboxItem).where(InboxItem.user_id == second.id))
+        assert notice.state == InboxState.done
+
+
+@pytest.mark.asyncio
+async def test_review_action_items_resolve_on_verdict_and_publish(api, monkeypatch):
+    from services.inbox.delivery import deliver as real_deliver
+    from services.review.notifications import deliver_event
+
+    client, current, (author, reviewer, _, second), (rid, number), factory = api
+    monkeypatch.setattr("services.review.notifications.deliver", real_deliver)
+    base = f"/api/v1/reviews/{number}"
+    async with factory() as db:
+        review = await db.get(Review, rid)
+        await deliver_event(db, review, "opened", author.id)
+        await db.commit()
+    current[0] = author
+    assert (await client.post(base + "/reviewers", json={"user_id": str(second.id)})).status_code == 201
+    current[0] = reviewer
+    assert (
+        await client.post(base + "/submissions", json={"verdict": "request_changes", "body": "please fix"})
+    ).status_code == 201
+    async with factory() as db:
+        reviewer_items = (
+            await db.scalars(
+                select(InboxItem).where(InboxItem.user_id == reviewer.id, InboxItem.kind == InboxKind.review_requested)
+            )
+        ).all()
+        assert reviewer_items and all(i.state == InboxState.done for i in reviewer_items)
+        author_requests = (
+            await db.scalars(
+                select(InboxItem).where(InboxItem.user_id == author.id, InboxItem.kind == InboxKind.change_requested)
+            )
+        ).all()
+        assert author_requests and author_requests[0].state == InboxState.open
+    assert (await client.post(base + "/submissions", json={"verdict": "approve"})).status_code == 201
+    async with factory() as db:
+        request = await db.scalar(
+            select(InboxItem).where(InboxItem.user_id == author.id, InboxItem.kind == InboxKind.change_requested)
+        )
+        ready = await db.scalar(
+            select(InboxItem).where(InboxItem.user_id == second.id, InboxItem.kind == InboxKind.review_ready)
+        )
+        author_ready = await db.scalar(
+            select(InboxItem).where(InboxItem.user_id == author.id, InboxItem.kind == InboxKind.review_ready)
+        )
+        assert request.state == InboxState.done
+        assert ready.state == InboxState.open and ready.action_required
+        assert ready.action_url == "/review?tab=components"
+        assert author_ready.action_url == "/components/skills/tests/skill"
+        assert author_ready.action_required is False
+    assert (await client.post(base + "/publish", json={})).status_code == 200
+    async with factory() as db:
+        items = (await db.scalars(select(InboxItem).where(InboxItem.user_id == second.id))).all()
+        assert all(i.state == InboxState.done for i in items if i.action_required)
+
+
+@pytest.mark.asyncio
+async def test_review_websocket_uses_connection_init_bearer_and_rechecks_auth(api, monkeypatch):
+    from types import SimpleNamespace
+
+    from api.graphql import Subscription
+
+    _, _, (_, reviewer, _, _), (rid, number), factory = api
+    monkeypatch.setattr("database.async_session", factory)
+    calls = []
+
+    async def authenticate(token, db):
+        calls.append(token)
+        return reviewer if token == "valid" and len(calls) <= 2 else None
+
+    async def subscribe(channel):
+        assert channel == f"review:{rid}:updated"
+        yield {"number": number, "state": "open", "kind": "comment"}
+        yield {"number": number, "state": "open", "kind": "comment"}
+
+    monkeypatch.setattr("api.deps._authenticate_via_jwt", authenticate)
+    monkeypatch.setattr("api.graphql.subscribe", subscribe)
+    info = SimpleNamespace(
+        context={
+            "user_id": None,
+            "connection_params": {"authorization": "Bearer valid"},
+            "request": SimpleNamespace(headers={}),
+        }
+    )
+    events = [event async for event in Subscription().review_updated(info, review_id=str(rid))]
+    assert len(events) == 1 and events[0].number == number
+    assert calls == ["valid", "valid", "valid"]
+    info.context["connection_params"] = {}
+    with pytest.raises(ValueError, match="Authentication required"):
+        await anext(Subscription().review_updated(info, review_id=str(rid)))
 
 
 @pytest.mark.asyncio

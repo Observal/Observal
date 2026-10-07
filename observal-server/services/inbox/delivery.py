@@ -72,6 +72,10 @@ async def deliver_one(
     """
     ctx = context or {}
     spec = spec_for(kind)
+    # The review queue is reviewer-only until the new detail page ships. An
+    # author's review_ready FYI must link to their listing instead of a 403.
+    author_ready = kind == InboxKind.review_ready and ctx.get("review_number") and action_required is False
+    destination = spec_for(InboxKind.review_approved) if author_ready else spec
 
     item = InboxItem(
         user_id=user_id,
@@ -84,12 +88,10 @@ async def deliver_one(
         subject_id=subject.id,
         subject_namespace=subject.namespace,
         subject_slug=subject.slug,
-        action_url=(f"/review/{ctx['review_number']}" + (f"?thread={ctx['thread_id']}" if ctx.get("thread_id") else ""))
-        if ctx.get("review_number")
-        else _truncate(spec.url(subject), 500),
-        action_command=f"observal review show {ctx['review_number']}"
-        if ctx.get("review_number")
-        else _truncate(spec.command(subject, ctx), 500),
+        # Until the phase-3 web/CLI cutover, the only available review destinations
+        # are the legacy queue and command. Do not link to /review/{number} yet.
+        action_url=_truncate(destination.url(subject), 500),
+        action_command=_truncate(destination.command(subject, ctx), 500),
         actor_id=actor_id,
         team_id=subject.team_id,
         is_private_subject=bool(subject.is_private),
