@@ -33,7 +33,12 @@ test("review queue shows pinned dependencies in the Observal shell", async ({ pa
   await expect(page.getByText("Skill: verify source")).toBeVisible();
   await expect(page.getByText("Waits on #43")).toBeVisible();
   await expect(page.locator("[aria-label='1 unresolved conversations']:visible")).toHaveCount(2);
+  await expect(page.locator("[aria-label='1 unresolved conversations']:visible + span[aria-hidden='true']")).toHaveCount(2);
   await expect(page.getByTestId("review-list").locator(".lucide-shield-check")).toHaveCount(0);
+  const allOpen = page.getByRole("button", { name: "All open" });
+  await expect(allOpen).toHaveAttribute("aria-pressed", "true");
+  expect(await allOpen.evaluate(button => button.parentElement?.querySelector("button") === button)).toBe(true);
+  expect(queueRequests.some(url => new URL(url).searchParams.get("type") === "agent" && new URL(url).searchParams.has("needs"))).toBe(false);
   await expect(page.getByRole("button", { name: "Needs my review" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Search reviews" })).toBeVisible();
   await expect(page.getByRole("button", { name: "New review" })).toHaveCount(0);
@@ -46,8 +51,11 @@ test("review queue shows pinned dependencies in the Observal shell", async ({ pa
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByText("Skill: verify source")).toBeVisible();
   await expect(page.locator("[aria-label='1 unresolved conversations']:visible")).toHaveCount(2);
+  await expect(page.locator("[aria-label='1 unresolved conversations']:visible + span[aria-hidden='true']")).toHaveCount(2);
   await page.screenshot({ path: testInfo.outputPath("pr-review-queue-mobile.png"), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole("button", { name: "Needs my review" }).click();
+  await expect.poll(() => queueRequests.some(url => url.includes("needs=my_review"))).toBe(true);
   await page.getByRole("button", { name: "Ready to publish" }).click();
   await expect.poll(() => queueRequests.some(url => url.includes("needs=ready_to_publish"))).toBe(true);
   await page.getByRole("textbox", { name: "Search reviews" }).fill("verify source");

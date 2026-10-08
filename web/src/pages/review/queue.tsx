@@ -14,11 +14,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ReviewStatePill, ReviewTypeGlyph, reviewDate, reviewPerson } from "@/components/review/review-primitives";
 
 const filters = [
+  ["open", "All open"],
   ["my_review", "Needs my review"],
   ["ready_to_publish", "Ready to publish"],
   ["changes_requested", "Changes requested"],
   ["mine", "Mine"],
-  ["open", "All open"],
   ["closed", "Closed"],
 ] as const;
 const componentTypes = new Set(["mcp", "skill", "hook", "prompt", "sandbox"]);
@@ -52,7 +52,7 @@ function ReviewRow({ item, nested = false }: { item: ReviewSummary; nested?: boo
         {required > 0 && required <= 5 && <span className="flex gap-1" aria-hidden="true">{Array.from({ length: required }, (_, index) => <span key={index} className={`h-1.5 w-3.5 rounded-full ${index < approvals ? "bg-success" : "bg-border"}`} />)}</span>}
         {approvals}/{required} approvals
       </span>
-      <span className="flex items-center gap-2"><span className="inline-flex items-center gap-1" aria-label={`${item.threads.unresolved} unresolved conversations`}><MessageSquare className="size-3.5" aria-hidden="true" />{item.threads.unresolved}</span><span>{item.checks.fail ? "Checks failing" : "Checks passed"}</span></span>
+      <span className="flex items-center gap-2"><span className="inline-flex items-center gap-1" aria-label={`${item.threads.unresolved} unresolved conversations`}><MessageSquare className="size-3.5" aria-hidden="true" />{item.threads.unresolved}</span><span aria-hidden="true">·</span><span>{item.checks.fail ? "Checks failing" : "Checks passed"}</span></span>
     </div>
   </Link>;
 }
@@ -63,7 +63,7 @@ export default function ReviewQueue() {
   const { tab: tabFromUrl } = useSearch({ from: "/_authed/review" });
   const canReviewTeamspaces = ["reviewer", "admin", "super_admin"].includes(getUserRole() ?? "");
   const [tab, setTab] = useState(tabFromUrl === "teamspaces" && !canReviewTeamspaces ? "agents" : tabFromUrl ?? "agents");
-  const [filter, setFilter] = useState<string>(getUserRole() === "user" ? "open" : "my_review");
+  const [filter, setFilter] = useState<string>("open");
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [selection, setSelection] = useState(0);
