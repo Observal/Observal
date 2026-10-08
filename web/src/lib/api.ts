@@ -508,8 +508,8 @@ export const registry = {
 		put<RegistryItem>(`/${type ?? "agents"}/${id}/draft`, body),
 	updateAgent: (id: string, body: unknown) =>
 		put<RegistryItem>(`/agents/${id}`, body),
-	submitDraft: (id: string, type?: RegistryType) =>
-		post<RegistryItem>(`/${type ?? "agents"}/${id}/submit`),
+	submitDraft: (id: string, type?: RegistryType, message?: string) =>
+		post<RegistryItem>(`/${type ?? "agents"}/${id}/submit${message ? `?message=${encodeURIComponent(message)}` : ""}`),
 	submit: (type: RegistryType, body: unknown) =>
 		post<RegistryItem>(`/${type}/submit`, body),
 	updateVisibility: (type: RegistryType, id: string, visibility: "public" | "team") =>

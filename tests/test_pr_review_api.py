@@ -164,6 +164,52 @@ async def test_requested_changes_can_be_edited_and_resubmitted_as_revision(api):
 
 
 @pytest.mark.asyncio
+async def test_unsubmitted_draft_edit_cannot_be_published(api):
+    client, current, (author, reviewer, _, _), (rid, number), factory = api
+    current[0] = author
+    async with factory() as db:
+        review = await db.get(Review, rid)
+        listing_id = review.subject_id
+        listing = await db.get(SkillListing, listing_id)
+        listing.latest_version_id = review.version_id
+        await db.commit()
+    edited = await client.put(
+        f"/api/v1/skills/{listing_id}/draft", json={"skill_md_content": "# Unreviewed behavior\n"}
+    )
+    assert edited.status_code == 200, edited.text
+
+    current[0] = reviewer
+    assert (
+        await client.post(f"/api/v1/reviews/{number}/submissions", json={"verdict": "approve", "body": "ok"})
+    ).status_code == 201
+    gate = (await client.get(f"/api/v1/reviews/{number}/gate")).json()
+    assert "unsubmitted_changes" in gate["requirements"]
+    publish = await client.post(f"/api/v1/reviews/{number}/publish", json={})
+    assert publish.status_code == 409, publish.text
+    async with factory() as db:
+        review = await db.get(Review, rid)
+        version = await db.get(SkillVersion, review.version_id)
+        assert version.status == ListingStatus.pending
+        admin = User(id=uuid.uuid4(), username="admin", email="admin@x.test", name="Admin", role=UserRole.super_admin)
+        db.add(admin)
+        await db.commit()
+    current[0] = admin
+    override = await client.post(f"/api/v1/reviews/{number}/publish", json={"override_reason": "Emergency"})
+    assert override.status_code == 409, override.text
+
+    current[0] = author
+    submitted = await client.post(f"/api/v1/skills/{listing_id}/submit?message=Updated")
+    assert submitted.status_code == 200, submitted.text
+    current[0] = reviewer
+    assert (
+        await client.post(
+            f"/api/v1/reviews/{number}/submissions", json={"verdict": "approve", "body": "Reviewed update"}
+        )
+    ).status_code == 201
+    assert (await client.post(f"/api/v1/reviews/{number}/publish", json={})).status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_agent_create_opens_review_before_commit(api):
     client, current, (author, _, _, _), _, factory = api
     current[0] = author

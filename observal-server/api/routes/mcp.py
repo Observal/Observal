@@ -47,7 +47,7 @@ from services.config_generator import generate_config
 from services.editing_lock import _is_lock_expired, acquire_edit_lock, release_edit_lock
 from services.mcp_validator import analyze_repo, run_validation
 from services.registry_namespace import identity_exists
-from services.review.cutover import submit_for_review
+from services.review.cutover import lock_review_for_edit, submit_for_review
 from services.teamspace import resolve_publish_target
 
 router = APIRouter(prefix="/api/v1/mcps", tags=["mcp"])
@@ -470,18 +470,20 @@ async def update_mcp_draft(
         raise HTTPException(status_code=404, detail="Listing not found")
     if get_effective_component_permission(listing, current_user) != "owner":
         raise HTTPException(status_code=403, detail="Not the listing owner")
+    ver = listing.latest_version
+    if not ver:
+        raise HTTPException(status_code=400, detail="Listing has no version to update")
+    await lock_review_for_edit(db, "mcp", ver)
     if listing.status not in (
         ListingStatus.draft,
         ListingStatus.rejected,
         ListingStatus.pending,
         ListingStatus.changes_requested,
     ):
-        raise HTTPException(status_code=400, detail="Only draft, rejected, or pending listings can be edited")
+        raise HTTPException(
+            status_code=400, detail="Only draft, rejected, pending, or changes-requested listings can be edited"
+        )
     _reject_visibility_edits(listing, req)
-
-    ver = listing.latest_version
-    if not ver:
-        raise HTTPException(status_code=400, detail="Listing has no version to update")
 
     for field in (
         "version",

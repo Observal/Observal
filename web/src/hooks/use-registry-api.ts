@@ -105,6 +105,24 @@ export function useComponentSubmitDraft(type: RegistryType) {
   });
 }
 
+export function useComponentReviewRevision(type: RegistryType) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, body, message }: { id: string; body: Record<string, unknown>; message?: string }) => {
+      await registry.updateDraft(id, body, type);
+      return registry.submitDraft(id, type, message);
+    },
+    onSuccess: (result, variables) => {
+      qc.invalidateQueries({ queryKey: ["registry", type] });
+      qc.invalidateQueries({ queryKey: ["component-versions", type, variables.id] });
+      qc.invalidateQueries({ queryKey: ["pr-reviews"] });
+      qc.invalidateQueries({ queryKey: ["pr-review", "subject", variables.id] });
+      reviewToast("Revision submitted for review", result);
+    },
+    onError: (err: Error) => toast.error(err.message || "Could not submit revision; your draft may have been saved"),
+  });
+}
+
 export function useStartEdit(type: RegistryType) {
   const qc = useQueryClient();
   return useMutation({

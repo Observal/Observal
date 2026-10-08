@@ -180,6 +180,8 @@ def _result(*, scalar=None, scalar_rows: list | None = None, rows: list | None =
 def _db(*results):
     db = MagicMock()
     db.execute = AsyncMock(side_effect=list(results))
+    db.scalar = AsyncMock(return_value=None)
+    db.refresh = AsyncMock()
     db.add = MagicMock()
     db.delete = AsyncMock()
     db.flush = AsyncMock()

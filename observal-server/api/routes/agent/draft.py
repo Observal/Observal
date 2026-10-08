@@ -21,7 +21,7 @@ from services.editing_lock import _is_lock_expired, acquire_edit_lock, release_e
 from services.harness_capability_inference import compute_supported_harnesses, infer_required_features
 from services.inbox import sources as inbox
 from services.registry_telemetry import emit_registry_event
-from services.review.cutover import submit_for_review
+from services.review.cutover import lock_review_for_edit, submit_for_review
 from services.teamspace import (
     is_admin,
     resolve_publish_target,
@@ -221,17 +221,19 @@ async def update_draft(
     perm = get_effective_agent_permission(agent, current_user)
     if perm not in ("owner", "edit"):
         raise HTTPException(status_code=403, detail="Not the agent owner or editor")
+    version = agent.latest_version
+    if not version:
+        raise HTTPException(status_code=400, detail="Agent has no version to update")
+    await lock_review_for_edit(db, "agent", version)
     if agent.status not in (
         AgentStatus.draft,
         AgentStatus.rejected,
         AgentStatus.pending,
         AgentStatus.changes_requested,
     ):
-        raise HTTPException(status_code=400, detail="Only draft, rejected, or pending agents can be edited")
-
-    version = agent.latest_version
-    if not version:
-        raise HTTPException(status_code=400, detail="Agent has no version to update")
+        raise HTTPException(
+            status_code=400, detail="Only draft, rejected, pending, or changes-requested agents can be edited"
+        )
 
     # Moving an item between teamspaces is a separate operation and must never
     # ride along on a draft save.

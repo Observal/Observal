@@ -53,7 +53,7 @@ def _db():
         flush=AsyncMock(),
         refresh=AsyncMock(),
         execute=AsyncMock(),
-        scalar=AsyncMock(),
+        scalar=AsyncMock(return_value=None),
         commit=AsyncMock(),
         rollback=AsyncMock(),
     )
@@ -1361,7 +1361,11 @@ class TestDraftCreationAndUpdates:
         [
             ("missing", ListingStatus.draft, "Listing not found"),
             ("nonowner", ListingStatus.draft, "Not the listing owner"),
-            ("approved", ListingStatus.approved, "Only draft, rejected, or pending listings can be edited"),
+            (
+                "approved",
+                ListingStatus.approved,
+                "Only draft, rejected, pending, or changes-requested listings can be edited",
+            ),
             ("noversion", ListingStatus.draft, "Listing has no version to update"),
         ],
     )

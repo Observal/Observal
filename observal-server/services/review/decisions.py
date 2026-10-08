@@ -94,7 +94,18 @@ async def _base_files(db, subject_type, version, base_version_id) -> dict:
     return await render_files(subject_type, base, db) if base is not None else {}
 
 
-async def open_or_push(db, subject_type: str, subject, version, actor_id, *, message=None, backfill=False, policy=None):
+async def open_or_push(
+    db,
+    subject_type: str,
+    subject,
+    version,
+    actor_id,
+    *,
+    message=None,
+    backfill=False,
+    policy=None,
+    visibility_requeue=False,
+):
     """Create a review or push a revision in the caller's transaction."""
     if subject_type not in (*VERSION_MODELS, "agent"):
         raise ValueError("Unsupported review subject")
@@ -105,8 +116,10 @@ async def open_or_push(db, subject_type: str, subject, version, actor_id, *, mes
     ).scalar_one_or_none()
     if review and backfill:
         return review  # Never rewrite an active review from a stale legacy version.
-    if review and review.state == ReviewState.published:
+    if review and review.state == ReviewState.published and not visibility_requeue:
         raise HTTPException(409, "Published versions require a new version and review")
+    if visibility_requeue and review and review.state != ReviewState.published:
+        raise HTTPException(409, "Only published reviews can be requeued for public visibility")
     files = await render_files(subject_type, version, db)
     digest = _hash(files)
     if review:
@@ -114,8 +127,26 @@ async def open_or_push(db, subject_type: str, subject, version, actor_id, *, mes
             raise HTTPException(409, "Superseded reviews cannot be reopened; release a new version")
         head = await _head(db, review)
         base_files = await _base_files(db, subject_type, version, review.base_version_id)
-        if head.content_hash == digest:
+        if head.content_hash == digest and not visibility_requeue:
             raise HTTPException(409, "No content changes since the previous revision")
+        if visibility_requeue:
+            # Team-private approvals must not count toward a public decision,
+            # including when policy permits approvals from earlier revisions.
+            await db.execute(
+                update(ReviewSubmission)
+                .where(ReviewSubmission.review_id == review.id, ReviewSubmission.state == "submitted")
+                .values(
+                    state="dismissed",
+                    dismissed_by=actor_id,
+                    dismissed_at=_now(),
+                    dismissed_reason="Visibility changed to public",
+                )
+            )
+            review.published_at = None
+            review.published_by = None
+            review.is_private = subject.is_private
+            review.team_id = subject.team_id
+            _event(db, review, "visibility_requeued", actor_id)
         next_number = head.number + 1
         threads = (await db.execute(select(ReviewThread).where(ReviewThread.review_id == review.id))).scalars().all()
         moved, outdated = reanchor(threads, head.files, files)
@@ -163,7 +194,7 @@ async def open_or_push(db, subject_type: str, subject, version, actor_id, *, mes
             state=ReviewState.open,
             title=f"{subject.name} v{version.version}",
             body=getattr(version, "changelog", None) or "",
-            opened_by=actor_id if backfill else version.released_by,
+            opened_by=actor_id if backfill or visibility_requeue else version.released_by,
             opened_at=version.released_at if backfill else _now(),
             team_id=subject.team_id,
             is_private=subject.is_private,
@@ -256,6 +287,10 @@ async def gate(db, review, *, policy: ApprovalPolicy | None = None) -> Gate:
     if any(check.get("required") and check.get("status") != "pass" for check in head.checks):
         blockers.append("required_checks")
     _, version = await _target(db, review)
+    # Saving a draft does not create a revision. Never approve/publish mutable
+    # version content that differs from the frozen head reviewers inspected.
+    if _hash(await render_files(review.subject_type, version, db)) != head.content_hash:
+        blockers.append("unsubmitted_changes")
     if is_actively_editing(version):
         blockers.append("edit_lock")
     # Validation runs after submission, so this is evaluated live rather than snapshotted.
@@ -426,6 +461,10 @@ async def publish(db, review, user, *, category=None, override_reason=None, auto
     if review.subject_type == "agent" and await pinned_component_blockers(db, version.id):
         raise HTTPException(422, "Pinned components must be published first")
     result = await gate(db, review, policy=policy)
+    # An administrative policy override cannot approve bytes that have never
+    # been submitted as a revision; this is a snapshot-integrity invariant.
+    if "unsubmitted_changes" in result.requirements:
+        raise HTTPException(409, "Review gate blocked: unsubmitted_changes")
     if not result.ready and not (
         user and user.role == UserRole.super_admin and override_reason and override_reason.strip()
     ):

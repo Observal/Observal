@@ -42,7 +42,7 @@ from services.config_generator import validate_mcp_command
 from services.harness_capability_inference import compute_supported_harnesses, infer_required_features
 from services.registry_namespace import identity_exists, slugify
 from services.registry_telemetry import emit_registry_event
-from services.review.cutover import submit_for_review
+from services.review.cutover import lock_review_for_edit, submit_for_review
 from services.teamspace import resolve_publish_target
 
 from ._router import router
@@ -670,6 +670,8 @@ async def update_agent(
     edits_version = "success_criteria" in req.model_fields_set or any(
         getattr(req, field) is not None for field in _VERSION_OWNED_FIELDS
     )
+    if edits_version and latest is not None:
+        await lock_review_for_edit(db, "agent", latest)
     if edits_version and latest is not None and latest.status not in _EDITABLE_VERSION_STATUSES:
         raise HTTPException(
             status_code=409,
