@@ -16,6 +16,7 @@ import tempfile
 from contextlib import nullcontext, redirect_stdout
 from io import StringIO
 from pathlib import Path
+from urllib.parse import quote
 
 import typer
 from packaging.version import InvalidVersion, Version
@@ -39,6 +40,7 @@ from observal_cli.render import (
     spinner,
     status_badge,
 )
+from observal_cli.review_display import print_review_link
 from observal_cli.shared.utils import sanitize_name as _sanitize_name
 
 skill_app = typer.Typer(
@@ -150,6 +152,7 @@ def skill_submit(
     supported_harnesses: list[str] | None = typer.Option(None, "--harness", help="Supported harness (repeatable)"),
     draft: bool = typer.Option(False, "--draft", help="Save as draft instead of submitting for review"),
     submit_draft: str | None = typer.Option(None, "--submit", help="Submit a draft for review (skill ID)"),
+    message: str | None = typer.Option(None, "--message", help="Revision note when submitting a draft"),
     team: str | None = typer.Option(None, "--team", help="Teamspace UUID or handle"),
     visibility: str | None = typer.Option(None, "--visibility", help="Visibility: public or team"),
     output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
@@ -192,11 +195,14 @@ def skill_submit(
         resolved = client.resolve_registry_reference("skill", submit_draft)
         submit_context = nullcontext() if output == "json" else spinner("Submitting draft for review...")
         with submit_context:
-            result = client.post(f"/api/v1/skills/{resolved}/submit")
+            result = client.post(
+                f"/api/v1/skills/{resolved}/submit" + (f"?message={quote(message)}" if message else "")
+            )
         if output == "json":
             output_json(result)
         else:
             rprint(f"[green]✓ Draft submitted for review![/green] ID: [bold]{esc(result['id'])}[/bold]")
+            print_review_link(result)
         return
 
     if from_file:
@@ -362,6 +368,8 @@ def skill_submit(
     validated_tag = "[green]✓ validated[/green]" if validated else "[yellow]unvalidated[/yellow]"
     rprint(f"[green]✓ {label.capitalize()} submitted![/green] ID: [bold]{esc(result['id'])}[/bold]  {validated_tag}")
     rprint(f"  Install: [cyan]observal registry skill install {esc(client.canonical_name(result))}[/cyan]")
+    if not draft:
+        print_review_link(result)
 
 
 # ── List / My ─────────────────────────────────────────────────────────────────

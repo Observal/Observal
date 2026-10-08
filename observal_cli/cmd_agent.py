@@ -16,6 +16,7 @@ import re
 from contextlib import nullcontext
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from urllib.parse import quote
 from uuid import UUID
 
 import typer
@@ -45,6 +46,7 @@ from observal_cli.render import (
     spinner,
     status_badge,
 )
+from observal_cli.review_display import print_review_link
 
 # ── Agent authoring constants ──────────────────────────────
 YAML_FILE = "observal-agent.yaml"
@@ -387,7 +389,8 @@ def agent_create(
             return
         status = result.get("status", "pending")
         rprint(f"[green]✓ Agent submitted for review![/green] ID: [bold]{esc(result['id'])}[/bold]")
-        rprint(f"[yellow]Status: {esc(status)} - an admin must approve it before it becomes visible.[/yellow]")
+        print_review_link(result)
+        rprint(f"[yellow]Status: {esc(status)} - review is required before publication.[/yellow]")
         return
 
     # ── Path B: From flags (non-interactive) ─────────────────
@@ -595,7 +598,8 @@ def agent_create(
         result = client.post("/api/v1/agents", payload)
     status = result.get("status", "pending")
     rprint(f"\n[green]✓ Agent submitted for review![/green] ID: [bold]{esc(result['id'])}[/bold]")
-    rprint(f"[yellow]Status: {esc(status)} - an admin must approve it before it becomes visible.[/yellow]")
+    print_review_link(result)
+    rprint(f"[yellow]Status: {esc(status)} - review is required before publication.[/yellow]")
 
 
 @agent_app.command(name="bulk-create")
@@ -1710,6 +1714,7 @@ def agent_publish(
     update: bool = typer.Option(False, "--update", "-u", help="Update existing agent instead of creating"),
     draft: bool = typer.Option(False, "--draft", help="Save as draft instead of submitting for review"),
     submit: str | None = typer.Option(None, "--submit", help="Submit a draft agent for review (agent ID)"),
+    message: str | None = typer.Option(None, "--message", help="Revision note when submitting a draft"),
     bump: str | None = typer.Option(None, "--bump", help="Version bump type: patch, minor, or major (skips prompt)"),
     team: str | None = typer.Option(None, "--team", help="Teamspace UUID or handle"),
     visibility: str | None = typer.Option(None, "--visibility", help="Visibility: public or team"),
@@ -1745,11 +1750,14 @@ def agent_publish(
     if submit:
         resolved = client.resolve_registry_reference("agent", submit)
         with _progress(output, "Submitting draft for review..."):
-            result = client.post(f"/api/v1/agents/{resolved}/submit")
+            result = client.post(
+                f"/api/v1/agents/{resolved}/submit" + (f"?message={quote(message)}" if message else "")
+            )
         if output == "json":
             output_json(result)
             return
         rprint(f"[green]✓ Draft submitted for review![/green] ID: [bold]{esc(result['id'])}[/bold]")
+        print_review_link(result)
         return
 
     dir_path = Path(directory)
@@ -1857,9 +1865,10 @@ def agent_publish(
             return
         status = result.get("status", "pending")
         rprint(f"[green]✓ Agent submitted![/green] ID: [bold]{esc(result['id'])}[/bold]")
+        print_review_link(result)
         rprint(f"  Pull: [cyan]observal agent pull {esc(client.canonical_name(result))}[/cyan]")
         if status != "approved":
-            rprint(f"[yellow]Status: {esc(status)} - an admin must approve it before it becomes visible.[/yellow]")
+            rprint(f"[yellow]Status: {esc(status)} - review is required before publication.[/yellow]")
 
 
 @agent_app.command(name="release")
@@ -1872,6 +1881,7 @@ def agent_release(
         "--refresh-components",
         help="Move every component without a version in the YAML to its latest approved release",
     ),
+    message: str | None = typer.Option(None, "--message", help="Review revision note"),
     output: OutputMode = typer.Option("table", "--output", "-o", help="Output format: table or json"),
 ):
     """Bump version and push a versioned release to the registry.
@@ -1947,6 +1957,8 @@ def agent_release(
         "success_criteria": data.get("success_criteria"),
         "refresh_components": refresh_components,
     }
+    if message:
+        payload["message"] = message
 
     if output != "json":
         rprint("[dim]→[/dim] Pushing definition to registry...")
@@ -1960,6 +1972,7 @@ def agent_release(
         return
 
     rprint(f"[green]✓ Version {esc(new_version)} submitted for review[/green]")
+    print_review_link(result)
     for warning in result.get("warnings", []):
         rprint(f"[yellow]⚠ {esc(warning)}[/yellow]")
 
