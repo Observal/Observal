@@ -54,11 +54,16 @@ test("review detail exposes the gate, revision diff, and a separate verdict", as
     hunks: [{ base_start: 0, base_lines: 0, head_start: 1, head_lines: 1, lines: [{ t: "add", h: 1, s: "# Verify source" }] }],
   }];
   const verdicts: unknown[] = [];
+  const reviewerRequests: unknown[] = [];
   await page.route("**/api/v1/**", route => route.fulfill({ json: { items: [], unread: 0, action_required: 0 } }));
   await page.route("**/api/v1/auth/whoami", route => route.fulfill({ json: { id: "other-reviewer", username: "reviewer", name: "Review Tester", role: "reviewer" } }));
   await page.route("**/api/v1/reviews/42**", route => {
     const url = new URL(route.request().url());
     const suffix = url.pathname.replace("/api/v1/reviews/42", "");
+    if (suffix === "/reviewers" && route.request().method() === "POST") {
+      reviewerRequests.push(route.request().postDataJSON());
+      return route.fulfill({ status: 201, json: { requested: true } });
+    }
     if (suffix === "/submissions" && route.request().method() === "POST") {
       verdicts.push(route.request().postDataJSON());
       return route.fulfill({ json: { state: "approved" } });
@@ -70,6 +75,10 @@ test("review detail exposes the gate, revision diff, and a separate verdict", as
   await page.goto("/review/42");
   await expect(page.getByRole("heading", { name: "Skill: verify source" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Publication gate" })).toBeVisible();
+  await page.getByRole("textbox", { name: "Reviewer user ID" }).fill(id);
+  await page.getByRole("button", { name: "Request reviewer" }).click();
+  await expect.poll(() => reviewerRequests.length).toBe(1);
+  expect(reviewerRequests[0]).toEqual({ user_id: id });
   await page.getByRole("button", { name: "Files changed" }).click();
   await expect(page.getByRole("table", { name: "Diff for SKILL.md" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("pr-review-detail-desktop.png"), fullPage: true });

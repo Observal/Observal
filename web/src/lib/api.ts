@@ -597,6 +597,9 @@ export const prReviews = {
   subscribe: (ref: string, mode: "watching" | "muted") => put(
     `/reviews/${encodeURIComponent(ref)}/subscription`, { mode },
   ),
+  requestReviewer: (ref: string, userId: string) => post(
+    `/reviews/${encodeURIComponent(ref)}/reviewers`, { user_id: userId },
+  ),
   orgPolicy: () => get<ReviewPolicy>("/admin/review-policy"),
   setOrgPolicy: (value: ReviewPolicy) => put<ReviewPolicy>("/admin/review-policy", value),
   teamPolicy: (id: string) => get<ReviewPolicy | null>(`/teams/${id}/review-policy`),
