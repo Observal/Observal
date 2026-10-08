@@ -95,7 +95,7 @@ async def _base_files(db, subject_type, version, base_version_id) -> dict:
 
 
 async def open_or_push(db, subject_type: str, subject, version, actor_id, *, message=None, backfill=False, policy=None):
-    """Create a review or push a revision. Caller owns commit; not wired to old submit endpoints."""
+    """Create a review or push a revision in the caller's transaction."""
     if subject_type not in (*VERSION_MODELS, "agent"):
         raise ValueError("Unsupported review subject")
     review = (
@@ -163,7 +163,7 @@ async def open_or_push(db, subject_type: str, subject, version, actor_id, *, mes
             state=ReviewState.open,
             title=f"{subject.name} v{version.version}",
             body=getattr(version, "changelog", None) or "",
-            opened_by=version.released_by,
+            opened_by=actor_id if backfill else version.released_by,
             opened_at=version.released_at if backfill else _now(),
             team_id=subject.team_id,
             is_private=subject.is_private,
@@ -187,7 +187,7 @@ async def open_or_push(db, subject_type: str, subject, version, actor_id, *, mes
     db.add(revision)
     await db.flush()
     review.head_revision_id = revision.id
-    # The old routes are unchanged; backfill never changes version status.
+    # Historical backfill never changes version status.
     if not backfill:
         version.status = AgentStatus.pending if subject_type == "agent" else ListingStatus.pending
         if next_number > 1:

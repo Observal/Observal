@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 
 class VersionPublishRequest(BaseModel):
+    message: str | None = None
     version: str
     description: str
     changelog: str | None = None

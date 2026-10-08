@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from jobs import review_backfill
-from models import Base, ReviewRevision, ReviewState, ReviewSubmission
+from models import Base, Review, ReviewRevision, ReviewState, ReviewSubmission
 from models.agent import Agent, AgentVersion
 from models.agent_component import AgentComponent
 from models.mcp import ListingStatus
@@ -309,3 +309,32 @@ async def test_backfill_idempotent_and_does_not_change_legacy_status(db, monkeyp
     assert await review_backfill.backfill_pending(batch_size=1) == 0
     assert (await db.scalar(select(ReviewRevision).where(ReviewRevision.review_id != _.id))).number == 1
     assert ver.status == ListingStatus.pending
+
+
+@pytest.mark.asyncio
+async def test_backfill_preserves_orphaned_versions_with_attribution_note(db, monkeypatch):
+    author, _, _, listing, _, existing = await fixture_review(db)
+    await db.commit()
+    orphan_id = uuid.uuid4()
+    newer = SkillVersion(
+        listing_id=listing.id,
+        version="1.2.0",
+        description="legacy orphan",
+        released_by=orphan_id,
+        released_at=datetime.now(UTC),
+        task_type="other",
+        skill_md_content="# Historical content\n",
+        status=ListingStatus.pending,
+    )
+    db.add(newer)
+    await db.commit()
+    monkeypatch.setattr(review_backfill, "async_session", async_sessionmaker(db.bind, expire_on_commit=False))
+    assert await review_backfill.backfill_pending(batch_size=10) == 1
+    review = await db.scalar(select(Review).where(Review.version_id == newer.id))
+    revision = await db.get(ReviewRevision, review.head_revision_id)
+    assert review.opened_by == author.id
+    assert revision.created_by == author.id
+    assert str(orphan_id) in revision.message
+    assert await review_backfill.backfill_pending(batch_size=10) == 0
+    assert newer.status == ListingStatus.pending
+    assert existing.id != review.id

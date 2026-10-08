@@ -61,7 +61,7 @@ class Review(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False, default="")
     head_revision_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    opened_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    opened_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
     opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -87,7 +87,7 @@ class ReviewRevision(Base):
     checks: Mapped[list] = mapped_column(_JSON, nullable=False, default=list)
     message: Mapped[str | None] = mapped_column(Text)
     pruned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

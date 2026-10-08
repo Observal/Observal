@@ -207,6 +207,8 @@ class ComponentLinkResponse(BaseModel):
 
 
 class AgentResponse(BaseModel):
+    review_number: int | None = None
+    review_url: str | None = None
     id: uuid.UUID
     name: str
     namespace: str
@@ -322,6 +324,7 @@ class AgentInstallResponse(BaseModel):
 
 
 class AgentVersionCreateRequest(BaseModel):
+    message: str | None = None
     version: str
     description: str = ""
     prompt: str = ""

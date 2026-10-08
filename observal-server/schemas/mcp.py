@@ -52,6 +52,7 @@ class McpSubmitRequest(BaseModel):
     git_url: str | None = None
     name: str
     version: str
+    message: str | None = None
     description: str = Field(min_length=1)
     category: str
     owner: str
@@ -154,6 +155,8 @@ class McpValidationResultResponse(BaseModel):
 
 
 class McpListingResponse(BaseModel):
+    review_number: int | None = None
+    review_url: str | None = None
     id: uuid.UUID
     name: str
     namespace: str

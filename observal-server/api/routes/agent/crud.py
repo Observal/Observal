@@ -42,6 +42,7 @@ from services.config_generator import validate_mcp_command
 from services.harness_capability_inference import compute_supported_harnesses, infer_required_features
 from services.registry_namespace import identity_exists, slugify
 from services.registry_telemetry import emit_registry_event
+from services.review.cutover import submit_for_review
 from services.teamspace import resolve_publish_target
 
 from ._router import router
@@ -167,10 +168,8 @@ async def create_agent(
         models_by_harness=req.models_by_harness,
         external_mcps=[m.model_dump() for m in req.external_mcps],
         supported_harnesses=req.supported_harnesses,
-        status=AgentStatus.approved if target.auto_approve else AgentStatus.pending,
+        status=AgentStatus.pending,
         released_by=current_user.id,
-        reviewed_by=current_user.id if target.auto_approve else None,
-        reviewed_at=datetime.now(UTC) if target.auto_approve else None,
         success_criteria=req.success_criteria.model_dump() if req.success_criteria else None,
     )
     db.add(version)
@@ -216,6 +215,7 @@ async def create_agent(
 
     await lock_agent_version(db, agent, version)
     version.yaml_snapshot = await build_yaml_snapshot(version, db)
+    review = await submit_for_review(db, "agent", agent, version, current_user.id)
 
     try:
         await db.commit()
@@ -243,7 +243,7 @@ async def create_agent(
 
     return _agent_to_response(
         agent, name_map, created_by_email=current_user.email, created_by_username=current_user.username
-    )
+    ).model_copy(update={"review_number": review.number, "review_url": f"/review/{review.number}"})
 
 
 @router.get("", response_model=list[AgentSummary])

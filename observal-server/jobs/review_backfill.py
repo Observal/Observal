@@ -1,17 +1,17 @@
 # SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
-"""Idempotent pending-version review backfill for the phase 2 cutover.
+"""Idempotent pending-version backfill, run after migrations before API traffic.
 
-Do not schedule this during phase 1: legacy approve/reject routes do not update
-review aggregates. Run after replacing those routes, before serving new review
-traffic. Batches commit atomically; retrying is safe for already-open reviews.
+Batches commit atomically; retrying skips versions with an existing review.
 """
 
+from loguru import logger as optic
 from sqlalchemy import select
 
 from database import async_session
 from models.agent import Agent, AgentStatus, AgentVersion
 from models.mcp import ListingStatus
+from models.user import User
 from services.agent_lock import LISTING_MODELS, VERSION_MODELS
 from services.review.decisions import open_or_push
 
@@ -51,8 +51,27 @@ async def backfill_pending(*, batch_size: int = 100) -> int:
                     )
                     if existing:
                         continue
-                    await open_or_push(db, kind, subject, version, version.released_by, backfill=True)
+                    actor = version.released_by
+                    message = None
+                    if actor is None or await db.get(User, actor) is None:
+                        original = actor
+                        owner = getattr(subject, "created_by", None) or getattr(subject, "submitted_by", None)
+                        actor = owner if owner and await db.get(User, owner) is not None else None
+                        message = f"Historical review: original submitter {original} no longer exists."
+                        optic.warning(
+                            "Review backfill: missing submitter for {} version {}; attributed to {}",
+                            kind,
+                            version.id,
+                            actor,
+                        )
+                    await open_or_push(db, kind, subject, version, actor, backfill=True, message=message)
                     created += 1
                 last_id = versions[-1].id
                 await db.commit()
     return created
+
+
+if __name__ == "__main__":
+    import asyncio
+
+    print(f"Backfilled {asyncio.run(backfill_pending())} pending review(s)")

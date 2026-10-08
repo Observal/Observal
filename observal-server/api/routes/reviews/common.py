@@ -39,7 +39,29 @@ async def get_review(
         try:
             uid = uuid.UUID(ref)
         except ValueError:
-            raise HTTPException(404, "Review not found") from None
+            if "/" not in ref:
+                raise HTTPException(404, "Review not found") from None
+            from models.agent import Agent
+            from services.agent_lock import LISTING_MODELS
+
+            identity, _, version = ref.partition("@")
+            namespace, slug = identity.split("/", 1)
+            if not namespace or not slug:
+                raise HTTPException(404, "Review not found") from None
+            matches = []
+            for subject_type, model in (("agent", Agent), *LISTING_MODELS.items()):
+                subject_ids = select(model.id).where(model.namespace == namespace, model.slug == slug)
+                statement = select(Review).where(Review.subject_type == subject_type, Review.subject_id.in_(subject_ids))
+                if version:
+                    statement = statement.where(Review.version == version)
+                else:
+                    statement = statement.where(Review.state.in_(("open", "changes_requested", "approved")))
+                for candidate in (await db.scalars(statement)).all():
+                    if await participant(db, candidate, user):
+                        matches.append(candidate)
+            if len(matches) != 1:
+                raise HTTPException(409 if matches else 404, "Ambiguous review" if matches else "Review not found") from None
+            return matches[0]
         review = await db.scalar(select(Review).where(Review.id == uid))
         if review is None:
             review = await db.scalar(

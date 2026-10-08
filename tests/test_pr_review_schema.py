@@ -24,9 +24,17 @@ def test_review_schema_upgrades_twice_from_legacy_sqlite():
     spec = importlib.util.spec_from_file_location("review_migration", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    cutover_spec = importlib.util.spec_from_file_location("cutover_migration", path.with_name("032_review_cutover.py"))
+    cutover = importlib.util.module_from_spec(cutover_spec)
+    cutover_spec.loader.exec_module(cutover)
+    orphan_spec = importlib.util.spec_from_file_location("orphan_migration", path.with_name("033_review_orphan_authors.py"))
+    orphan = importlib.util.module_from_spec(orphan_spec)
+    orphan_spec.loader.exec_module(orphan)
     with engine.begin() as conn, Operations.context(MigrationContext.configure(conn)):
         module.upgrade()
         module.upgrade()
+        cutover.upgrade()
+        orphan.upgrade()
         tables = set(inspect(conn).get_table_names())
         assert set(Base.metadata.tables) <= tables
         assert {"uq_reviews_subject_version"} <= {c["name"] for c in inspect(conn).get_unique_constraints("reviews")}
@@ -47,6 +55,8 @@ def test_review_schema_upgrades_twice_from_legacy_sqlite():
             assert {c.name: c.nullable for c in table.columns} == {
                 c["name"]: c["nullable"] for c in migrated.get_columns(table.name)
             }, table.name
+        orphan.downgrade()
+        cutover.downgrade()
         module.downgrade()
         assert "reviews" not in inspect(conn).get_table_names()
     engine.dispose()

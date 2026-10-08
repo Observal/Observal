@@ -12,7 +12,6 @@ from models.agent_share import AgentShareItem, AgentShareManifest
 from models.alert import AlertRule
 from models.alert_history import AlertHistory
 from models.base import Base
-from models.component_bundle import ComponentBundle
 from models.component_source import ComponentSource
 from models.discovery_entry import (
     DiscoveryEntry,
@@ -50,7 +49,6 @@ from models.saml_config import SamlConfig
 from models.sandbox import SandboxDownload, SandboxListing
 from models.scim_token import ScimToken
 from models.skill import SkillDownload, SkillListing
-from models.submission import Submission
 from models.team import Team, TeamJoinRequestStatus, TeamMembership, TeamMembershipRequest, TeamRole
 from models.team_invite import TeamInvite
 from models.usage_ping import UsagePingState
@@ -68,7 +66,6 @@ __all__ = [
     "AlertHistory",
     "AlertRule",
     "Base",
-    "ComponentBundle",
     "ComponentDownloadRecord",
     "ComponentSource",
     "DiscoveryEntry",
@@ -117,7 +114,6 @@ __all__ = [
     "ScimToken",
     "SkillDownload",
     "SkillListing",
-    "Submission",
     "Team",
     "TeamInvite",
     "TeamJoinRequestStatus",

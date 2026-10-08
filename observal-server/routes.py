@@ -39,7 +39,6 @@ from api.routes.preview import router as preview_router
 from api.routes.prompt import router as prompt_router
 from api.routes.recommendations import router as recommendations_router
 from api.routes.registry import router as registry_router
-from api.routes.review import router as review_router
 from api.routes.reviews import policy_router as review_policy_router
 from api.routes.reviews import router as reviews_router
 from api.routes.reviews.queue import router as review_queue_router
@@ -61,7 +60,6 @@ REST_ROUTERS = (
     jwks_router,
     mcp_router,
     registry_router,
-    review_router,
     review_queue_router,
     reviews_router,
     review_policy_router,

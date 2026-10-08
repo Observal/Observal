@@ -88,14 +88,8 @@ def _registry_url(subject: Subject) -> str | None:
 
 
 def _review_url(subject: Subject) -> str:
-    """Reviewers act in the queue, not on the public listing page.
-
-    The tab is named explicitly. The review page opens on "agents" by default,
-    so a link that omitted it dropped a reviewer on a tab that does not contain
-    the component they were sent to look at.
-    """
-    tab = "agents" if subject.type == "agent" else "components"
-    return f"/review?tab={tab}"
+    """Legacy notifications link to the participant-scoped review queue."""
+    return "/review"
 
 
 def _no_command(subject: Subject, ctx: dict[str, Any]) -> str | None:
@@ -105,8 +99,7 @@ def _no_command(subject: Subject, ctx: dict[str, Any]) -> str | None:
 def _review_show_command(subject: Subject, ctx: dict[str, Any]) -> str | None:
     if subject.id is None:
         return None
-    suffix = " --agent" if subject.type == "agent" else ""
-    return f"observal admin review show {subject.id}{suffix}"
+    return f"observal review show {subject.id}"
 
 
 # An upgrade target is a namespace/slug pair or a UUID; a harness is a registry key.

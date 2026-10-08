@@ -80,9 +80,8 @@ async def subscription(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    subject, _ = await _target(db, review)
-    if data.mode == "watching" and not can_review(subject, await review_scope(db, user)):
-        raise HTTPException(403, "Only reviewers may watch")
+    # get_review already restricts this endpoint to participants, including authors.
+    # Authors may unmute after muting their default activity notifications.
     row = await db.get(ReviewSubscription, (review.id, user.id))
     if row:
         row.mode = data.mode

@@ -274,8 +274,10 @@ def boundaries(monkeypatch):
     statuses = AsyncMock(return_value={})
     validate_mcps = AsyncMock(return_value=[])
     identity_exists = AsyncMock(return_value=False)
+    submit = AsyncMock(return_value=SimpleNamespace(number=42))
 
     monkeypatch.setattr(crud, "datetime", _FixedDateTime)
+    monkeypatch.setattr(crud, "submit_for_review", submit)
     monkeypatch.setattr(crud, "resolve_publish_target", publish_target)
     monkeypatch.setattr(crud, "emit_registry_event", emit)
     monkeypatch.setattr(crud, "invalidate_namespace", invalidate)
@@ -310,6 +312,7 @@ def boundaries(monkeypatch):
         statuses=statuses,
         validate_mcps=validate_mcps,
         identity_exists=identity_exists,
+        submit=submit,
     )
 
 
@@ -421,9 +424,11 @@ async def test_create_team_agent_with_typed_components_maps_response_and_audit(b
         TEAM_ID,
         True,
     )
-    assert version.status == AgentStatus.approved
-    assert version.reviewed_by == USER_ID
-    assert version.reviewed_at == NOW
+    assert version.status == AgentStatus.pending
+    assert version.reviewed_by is None
+    assert version.reviewed_at is None
+    assert response.review_number == 42 and response.review_url == "/review/42"
+    boundaries.submit.assert_awaited_once_with(db, "agent", new_agent, version, USER_ID)
     assert version.success_criteria == criteria.model_dump()
     assert version.required_capabilities == ["mcp_servers"]
     assert version.inferred_supported_harnesses == ["kiro"]

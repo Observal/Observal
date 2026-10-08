@@ -23,9 +23,19 @@ from models.user import User
 from schemas.review import ReviewEdit
 from services.review.decisions import _own_work, _target, gate
 from services.review.diff import diff_files
+from services.review.policy import policy_for
 from services.teamspace import can_review, review_scope
 
 router = APIRouter()
+
+
+@router.get("/resolve")
+async def resolve_identity(
+    ref: str, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)
+):
+    """Resolve namespace/slug[@version] without putting a slash in a path parameter."""
+    review = await get_review(ref, db, user)
+    return {"number": review.number, "id": review.id}
 
 
 @router.get("/{ref}")
@@ -43,6 +53,9 @@ async def detail(
     requested = (
         await db.scalars(select(ReviewReviewerRequest.user_id).where(ReviewReviewerRequest.review_id == review.id))
     ).all()
+    subject, _ = await _target(db, review)
+    policy = await policy_for(review, db=db)
+    self_approval_allowed = subject.is_private and policy.source == "teamspace" and policy.self_approval == "counted"
     return {
         **await summary(db, review, user),
         "body": review.body,
@@ -66,6 +79,7 @@ async def detail(
         ],
         "requested_reviewers": requested,
         "my_subscription": subscription.mode if subscription else None,
+        "self_approval_allowed": self_approval_allowed,
     }
 
 

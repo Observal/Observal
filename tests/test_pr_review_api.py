@@ -12,11 +12,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from api.deps import get_current_user, get_db
+from api.routes.agent import router as agent_router
 from api.routes.reviews import policy_router
 from api.routes.reviews import router as review_router
 from api.routes.reviews.queue import router as queue_router
+from api.routes.skill import router as skill_router
 from models import Base
+from models.agent import AgentStatus, AgentVersion
 from models.inbox import InboxItem, InboxKind, InboxState
+from models.mcp import ListingStatus
 from models.review import Review, ReviewComment, ReviewSubmission
 from models.skill import SkillListing, SkillVersion
 from models.user import User, UserRole
@@ -55,6 +59,8 @@ async def api(monkeypatch):
     app.include_router(queue_router)
     app.include_router(review_router)
     app.include_router(policy_router)
+    app.include_router(skill_router)
+    app.include_router(agent_router)
     user_ref = [author]
 
     async def db_dep():
@@ -79,6 +85,84 @@ async def api(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_skill_submit_creates_review_and_old_version_action_is_gone(api):
+    client, current, (author, reviewer, _, _), _, factory = api
+    current[0] = author
+    response = await client.post("/api/v1/skills/submit", json={
+        "name": "Cutover skill", "owner": "author", "version": "1.0.0",
+        "description": "First version", "task_type": "code-review",
+        "delivery_mode": "registry_direct",
+        "skill_md_content": "---\nname: cutover-skill\ndescription: First version\n---\n# Cutover skill\n",
+    })
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["review_number"] and data["review_url"] == f"/review/{data['review_number']}"
+    detail = await client.get(f"/api/v1/reviews/{data['review_number']}")
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["subject_type"] == "skill"
+    current[0] = reviewer
+    assert (await client.post(f"/api/v1/skills/{data['id']}/versions/1.0.0/review", json={"action": "approve"})).status_code == 404
+    async with factory() as db:
+        review = await db.scalar(select(Review).where(Review.number == data["review_number"]))
+        assert review is not None
+        version = await db.get(SkillVersion, review.version_id)
+        assert version.status.value == "pending"
+
+
+@pytest.mark.asyncio
+async def test_requested_changes_can_be_edited_and_resubmitted_as_revision(api):
+    client, current, (author, reviewer, _, _), _, factory = api
+    current[0] = author
+    created = await client.post("/api/v1/skills/submit", json={
+        "name": "Revision skill", "owner": "author", "version": "1.0.0",
+        "description": "Revisable", "task_type": "code-review",
+        "delivery_mode": "registry_direct",
+        "skill_md_content": "---\nname: revision-skill\ndescription: Revisable\n---\n# Before\n",
+    })
+    assert created.status_code == 200, created.text
+    listing_id, number = created.json()["id"], created.json()["review_number"]
+    current[0] = reviewer
+    verdict = await client.post(f"/api/v1/reviews/{number}/submissions", json={
+        "verdict": "request_changes", "body": "Clarify the purpose",
+    })
+    assert verdict.status_code == 201, verdict.text
+    current[0] = author
+    edited = await client.put(f"/api/v1/skills/{listing_id}/draft", json={
+        "skill_md_content": "---\nname: revision-skill\ndescription: Revisable\n---\n# Clarified\n",
+    })
+    assert edited.status_code == 200, edited.text
+    pushed = await client.post(f"/api/v1/skills/{listing_id}/submit?message=Clarified")
+    assert pushed.status_code == 200, pushed.text
+    assert pushed.json()["review_number"] == number
+    detail = (await client.get(f"/api/v1/reviews/{number}")).json()
+    assert detail["head_revision"] == 2 and detail["revisions"][-1]["message"] == "Clarified"
+    async with factory() as db:
+        review = await db.scalar(select(Review).where(Review.number == number))
+        version = await db.get(SkillVersion, review.version_id)
+        assert version.status == ListingStatus.pending
+
+
+@pytest.mark.asyncio
+async def test_agent_create_opens_review_before_commit(api):
+    client, current, (author, _, _, _), _, factory = api
+    current[0] = author
+    response = await client.post("/api/v1/agents", json={
+        "name": "review-agent", "version": "1.0.0", "description": "A reviewable agent",
+        "prompt": "Read files carefully.", "model_name": "claude-sonnet-4", "owner": "author",
+    })
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["review_number"] and data["review_url"] == f"/review/{data['review_number']}"
+    detail = await client.get(f"/api/v1/reviews/{data['review_number']}")
+    assert detail.status_code == 200 and detail.json()["subject_type"] == "agent"
+    async with factory() as db:
+        review = await db.scalar(select(Review).where(Review.number == data["review_number"]))
+        assert review is not None
+        version = await db.get(AgentVersion, review.version_id)
+        assert version.status == AgentStatus.pending
+
+
+@pytest.mark.asyncio
 async def test_detail_and_raw_diff_never_leak_to_nonparticipants(api):
     client, current, (author, reviewer, outsider, _), (rid, number), _ = api
     current[0] = outsider
@@ -94,6 +178,7 @@ async def test_detail_and_raw_diff_never_leak_to_nonparticipants(api):
     response = await client.get(f"/api/v1/reviews/{number}")
     assert response.status_code == 200
     assert response.json()["number"] == number
+    assert response.json()["self_approval_allowed"] is False
     assert (await client.get("/api/v1/reviews?author=me")).json()["items"][0]["number"] == number
     current[0] = reviewer
     assert (await client.get(f"/api/v1/reviews/{number}/diff")).status_code == 200
@@ -160,8 +245,8 @@ async def test_reviewer_request_and_subscription_authorization(api):
     base = f"/api/v1/reviews/{number}"
     current[0] = author
     assert (await client.post(base + "/reviewers", json={"user_id": str(outsider.id)})).status_code == 422
-    assert (await client.put(base + "/subscription", json={"mode": "watching"})).status_code == 403
     assert (await client.put(base + "/subscription", json={"mode": "muted"})).status_code == 200
+    assert (await client.put(base + "/subscription", json={"mode": "watching"})).status_code == 200
     assert (await client.post(base + "/reviewers", json={"user_id": str(reviewer.id)})).status_code == 201
 
 
@@ -263,15 +348,15 @@ async def test_inbox_delivery_is_transactional_and_uses_review_link(api, monkeyp
         request = await db.scalar(
             select(InboxItem).where(InboxItem.user_id == reviewer.id, InboxItem.kind == InboxKind.review_requested)
         )
-        assert request.action_url == "/review?tab=components"
-        assert request.action_command == f"observal admin review show {review.subject_id}"
+        assert request.action_url == "/review"
+        assert request.action_command == f"observal review show {review.subject_id}"
         from api.routes.inbox import _to_response
 
         request.action_url = f"/review/{review.number}"
         request.action_command = f"observal review show {review.number}"
         repaired = _to_response(request)
-        assert repaired.action_url == "/review?tab=components"
-        assert repaired.action_command == f"observal admin review show {review.subject_id}"
+        assert repaired.action_url == "/review"
+        assert repaired.action_command == f"observal review show {review.subject_id}"
 
 
 @pytest.mark.asyncio
@@ -336,7 +421,7 @@ async def test_review_action_items_resolve_on_verdict_and_publish(api, monkeypat
         )
         assert request.state == InboxState.done
         assert ready.state == InboxState.open and ready.action_required
-        assert ready.action_url == "/review?tab=components"
+        assert ready.action_url == "/review"
         assert author_ready.action_url == "/components/skills/tests/skill"
         assert author_ready.action_required is False
     assert (await client.post(base + "/publish", json={})).status_code == 200
