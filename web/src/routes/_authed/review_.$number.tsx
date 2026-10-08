@@ -6,4 +6,4 @@ import { lazy } from "react";
 
 const ReviewDetail = lazy(() => import("@/pages/review/detail"));
 
-export const Route = createFileRoute("/_authed/review/$number")({ component: ReviewDetail });
+export const Route = createFileRoute("/_authed/review_/$number")({ component: ReviewDetail });

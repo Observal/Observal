@@ -64,7 +64,7 @@ function FragmentHunk({ hunk, file, line, setLine, threads, draft, setDraft, bod
 
 export default function ReviewDetailPage() {
   useAuthGuard();
-  const { number } = useParams({ from: "/_authed/review/$number" });
+  const { number } = useParams({ from: "/_authed/review_/$number" });
   const qc = useQueryClient();
   const [tab, setTab] = useState<"conversation" | "files" | "revisions" | "checks">("conversation");
   const [from, setFrom] = useState("base");

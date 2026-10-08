@@ -5,18 +5,67 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import String, and_, cast, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user, get_db
 from api.routes.reviews.common import participant
+from models.agent import Agent, AgentVersion
 from models.agent_component import AgentComponent
 from models.review import Review, ReviewComment, ReviewReviewerRequest, ReviewState, ReviewSubmission, ReviewThread
 from models.user import User
-from services.review.decisions import _own_work, _target, gate
+from services.agent_lock import LISTING_MODELS, VERSION_MODELS
+from services.review.decisions import gate
 from services.teamspace import review_scope
 
 router = APIRouter(prefix="/api/v1/reviews", tags=["reviews"])
+
+
+def visible_review_predicate(user, scope, *, author_only=False):
+    """Filter candidates in SQL before LIMIT, using the subject's current ACL.
+
+    Review visibility columns are a historical snapshot; a team can become
+    public after opening a review. Match participant() against live subjects.
+    The final per-row check remains a defense against an ACL change mid-request.
+    """
+    predicates = []
+    for kind, model, version_model, owner_field, version_field in (
+        ("agent", Agent, AgentVersion, Agent.created_by, AgentVersion.agent_id),
+        *(
+            (kind, model, VERSION_MODELS[kind], model.submitted_by, VERSION_MODELS[kind].listing_id)
+            for kind, model in LISTING_MODELS.items()
+        ),
+    ):
+        own = or_(
+            owner_field == user.id,
+            version_model.released_by == user.id,
+            cast(model.co_authors, String).like(f'%"{user.id}"%'),
+        )
+        if author_only:
+            allowed = own
+        elif scope.is_admin:
+            allowed = True
+        else:
+            reviewer = []
+            if scope.is_global_reviewer:
+                reviewer.append(model.is_private.is_(False))
+            if scope.team_ids:
+                reviewer.append(and_(model.is_private.is_(True), model.team_id.in_(scope.team_ids)))
+            if scope.public_team_ids:
+                reviewer.append(and_(model.is_private.is_(False), model.team_id.in_(scope.public_team_ids)))
+            allowed = or_(own, *reviewer)
+        predicates.append(
+            and_(
+                Review.subject_type == kind,
+                exists(
+                    select(1)
+                    .select_from(model)
+                    .join(version_model, version_field == model.id)
+                    .where(model.id == Review.subject_id, version_model.id == Review.version_id, allowed)
+                ),
+            )
+        )
+    return or_(*predicates)
 
 
 async def summary(db, review, user):
@@ -106,9 +155,9 @@ async def list_reviews(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if state not in {"open", "changes_requested", "approved", "published", "closed", "all"}:
+    if state not in {"open", "changes_requested", "approved", "published", "closed", "completed", "all"}:
         raise HTTPException(422, "Unknown state")
-    if type and type not in {"agent", "mcp", "skill", "hook", "prompt", "sandbox"}:
+    if type and type not in {"agent", "component", "mcp", "skill", "hook", "prompt", "sandbox"}:
         raise HTTPException(422, "Unknown subject type")
     if (
         author not in (None, "me")
@@ -117,14 +166,16 @@ async def list_reviews(
     ):
         raise HTTPException(422, "Invalid queue filter")
     scope = await review_scope(db, user)
-    if scope.is_empty and author != "me":
-        raise HTTPException(403, "Review queue requires reviewer scope; use author=me")
-    stmt = select(Review)
+    stmt = select(Review).where(visible_review_predicate(user, scope, author_only=author == "me"))
     if state == "open":
         stmt = stmt.where(Review.state.in_((ReviewState.open, ReviewState.changes_requested, ReviewState.approved)))
+    elif state == "completed":
+        stmt = stmt.where(Review.state.in_((ReviewState.published, ReviewState.closed)))
     elif state != "all":
         stmt = stmt.where(Review.state == ReviewState(state))
-    if type:
+    if type == "component":
+        stmt = stmt.where(Review.subject_type.in_(tuple(LISTING_MODELS)))
+    elif type:
         stmt = stmt.where(Review.subject_type == type)
     if team_id:
         stmt = stmt.where(Review.team_id == team_id)
@@ -134,33 +185,36 @@ async def list_reviews(
         )
     if cursor is not None:
         stmt = stmt.where(Review.number < cursor)
+    if needs == "my_review":
+        stmt = stmt.where(
+            ~exists(
+                select(1).where(
+                    ReviewSubmission.review_id == Review.id,
+                    ReviewSubmission.reviewer_id == user.id,
+                    ReviewSubmission.revision_id == Review.head_revision_id,
+                    ReviewSubmission.state == "submitted",
+                )
+            )
+        )
+    if needs == "ready_to_publish":
+        stmt = stmt.where(Review.state == ReviewState.approved)
     if q:
         from api.sanitize import escape_like
 
         stmt = stmt.where(Review.title.ilike(f"%{escape_like(q.strip())}%", escape="\\"))
-    # ACL is evaluated on every candidate BEFORE a page is taken. Phase 2 has no
-    # active submit path; phase 3 can move this into a SQL visibility predicate.
-    reviews = (await db.execute(stmt.order_by(Review.number.desc()))).scalars().all()
-    visible = []
-    for review in reviews:
+    # The database, not Python, bounds the ACL-filtered page. Gate-dependent
+    # filters are checked after loading at most limit+1 candidates; a sparse
+    # ready page may be empty but still have a cursor to continue from.
+    candidates = (await db.scalars(stmt.order_by(Review.number.desc()).limit(limit + 1))).all()
+    rows = []
+    for review in candidates[:limit]:
         if not await participant(db, review, user, scope=scope):
             continue
-        if author == "me":
-            subject, version = await _target(db, review)
-            if not _own_work(subject, version, user.id):
-                continue
-        visible.append(review)
-    rows = []
-    for review in visible:
         item = await summary(db, review, user)
         if needs == "ready_to_publish" and not item["gate"]["ready"]:
             continue
-        if needs == "my_review" and (
-            item["my_last_submission"] is not None
-            and item["my_last_submission"]["revision_id"] == review.head_revision_id
-        ):
-            continue
         rows.append(item)
-        if len(rows) == limit + 1:
-            break
-    return {"items": rows[:limit], "next_cursor": rows[limit - 1]["number"] if len(rows) > limit else None}
+    return {
+        "items": rows,
+        "next_cursor": candidates[limit - 1].number if len(candidates) > limit else None,
+    }

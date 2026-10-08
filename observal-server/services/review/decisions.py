@@ -355,6 +355,12 @@ async def sync_state(db, review, *, actor_id=None, policy=None):
             else (AgentStatus.pending if review.subject_type == "agent" else ListingStatus.pending)
         )
         _event(db, review, "gate_lost", actor_id, requirements=result.requirements)
+    elif not result.ready and result.outstanding_requests and review.state != ReviewState.changes_requested:
+        review.state = ReviewState.changes_requested
+        _, version = await _target(db, review)
+        version.status = (
+            AgentStatus.changes_requested if review.subject_type == "agent" else ListingStatus.changes_requested
+        )
     elif not result.outstanding_requests and review.state == ReviewState.changes_requested:
         review.state = ReviewState.open
         _, version = await _target(db, review)

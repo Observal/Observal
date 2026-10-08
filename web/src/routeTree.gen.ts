@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as AuthedIndexRouteImport } from './routes/_authed/index'
 import { Route as AuthedTeamspacesRouteImport } from './routes/_authed/teamspaces'
+import { Route as AuthedReviewRouteImport } from './routes/_authed/review'
 import { Route as AuthedLeaderboardRouteImport } from './routes/_authed/leaderboard'
 import { Route as AuthedDiscoverRouteImport } from './routes/_authed/discover'
 import { Route as AuthedUserRouteImport } from './routes/_authed/_user'
@@ -24,7 +25,7 @@ import { Route as AuthedComponentsIndexRouteImport } from './routes/_authed/comp
 import { Route as AuthedAgentsIndexRouteImport } from './routes/_authed/agents/index'
 import { Route as AuthedTeamspacesHandleRouteImport } from './routes/_authed/teamspaces.$handle'
 import { Route as AuthedTeamInvitesTokenRouteImport } from './routes/_authed/team-invites.$token'
-import { Route as AuthedReviewNumberRouteImport } from './routes/_authed/review.$number'
+import { Route as AuthedReviewNumberRouteImport } from './routes/_authed/review_.$number'
 import { Route as AuthedInsightsReportIdRouteImport } from './routes/_authed/insights/$reportId'
 import { Route as AuthedComponentsComponentIdRouteImport } from './routes/_authed/components/$componentId'
 import { Route as AuthedAgentsBuilderRouteImport } from './routes/_authed/agents/builder'
@@ -36,7 +37,6 @@ import { Route as AuthedAdminSsoRouteImport } from './routes/_authed/_admin/sso'
 import { Route as AuthedAdminSettingsRouteImport } from './routes/_authed/_admin/settings'
 import { Route as AuthedAdminSecurityEventsRouteImport } from './routes/_authed/_admin/security-events'
 import { Route as AuthedAdminReviewPolicyRouteImport } from './routes/_authed/_admin/review-policy'
-import { Route as AuthedAdminReviewRouteImport } from './routes/_authed/_admin/review'
 import { Route as AuthedAdminDiagnosticsRouteImport } from './routes/_authed/_admin/diagnostics'
 import { Route as AuthedAdminDashboardRouteImport } from './routes/_authed/_admin/dashboard'
 import { Route as AuthedAdminAuditLogRouteImport } from './routes/_authed/_admin/audit-log'
@@ -60,6 +60,11 @@ const AuthedIndexRoute = AuthedIndexRouteImport.update({
 const AuthedTeamspacesRoute = AuthedTeamspacesRouteImport.update({
   id: '/teamspaces',
   path: '/teamspaces',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedReviewRoute = AuthedReviewRouteImport.update({
+  id: '/review',
+  path: '/review',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedLeaderboardRoute = AuthedLeaderboardRouteImport.update({
@@ -121,7 +126,7 @@ const AuthedTeamInvitesTokenRoute = AuthedTeamInvitesTokenRouteImport.update({
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedReviewNumberRoute = AuthedReviewNumberRouteImport.update({
-  id: '/review/$number',
+  id: '/review_/$number',
   path: '/review/$number',
   getParentRoute: () => AuthedRoute,
 } as any)
@@ -182,11 +187,6 @@ const AuthedAdminReviewPolicyRoute = AuthedAdminReviewPolicyRouteImport.update({
   path: '/review-policy',
   getParentRoute: () => AuthedAdminRoute,
 } as any)
-const AuthedAdminReviewRoute = AuthedAdminReviewRouteImport.update({
-  id: '/review',
-  path: '/review',
-  getParentRoute: () => AuthedAdminRoute,
-} as any)
 const AuthedAdminDiagnosticsRoute = AuthedAdminDiagnosticsRouteImport.update({
   id: '/diagnostics',
   path: '/diagnostics',
@@ -238,9 +238,9 @@ const AuthedAgentsAgentIdInsightsReportIdRoute =
   } as any)
 const AuthedAdminReviewTeamspaceTeamIdRoute =
   AuthedAdminReviewTeamspaceTeamIdRouteImport.update({
-    id: '/teamspace/$teamId',
-    path: '/teamspace/$teamId',
-    getParentRoute: () => AuthedAdminReviewRoute,
+    id: '/review/teamspace/$teamId',
+    path: '/review/teamspace/$teamId',
+    getParentRoute: () => AuthedAdminRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -250,11 +250,11 @@ export interface FileRoutesByFullPath {
   '/register': typeof authRegisterRoute
   '/discover': typeof AuthedDiscoverRoute
   '/leaderboard': typeof AuthedLeaderboardRoute
+  '/review': typeof AuthedReviewRoute
   '/teamspaces': typeof AuthedTeamspacesRouteWithChildren
   '/audit-log': typeof AuthedAdminAuditLogRoute
   '/dashboard': typeof AuthedAdminDashboardRoute
   '/diagnostics': typeof AuthedAdminDiagnosticsRoute
-  '/review': typeof AuthedAdminReviewRouteWithChildren
   '/review-policy': typeof AuthedAdminReviewPolicyRoute
   '/security-events': typeof AuthedAdminSecurityEventsRoute
   '/settings': typeof AuthedAdminSettingsRoute
@@ -287,11 +287,11 @@ export interface FileRoutesByTo {
   '/': typeof AuthedIndexRoute
   '/discover': typeof AuthedDiscoverRoute
   '/leaderboard': typeof AuthedLeaderboardRoute
+  '/review': typeof AuthedReviewRoute
   '/teamspaces': typeof AuthedTeamspacesRouteWithChildren
   '/audit-log': typeof AuthedAdminAuditLogRoute
   '/dashboard': typeof AuthedAdminDashboardRoute
   '/diagnostics': typeof AuthedAdminDiagnosticsRoute
-  '/review': typeof AuthedAdminReviewRouteWithChildren
   '/review-policy': typeof AuthedAdminReviewPolicyRoute
   '/security-events': typeof AuthedAdminSecurityEventsRoute
   '/settings': typeof AuthedAdminSettingsRoute
@@ -327,12 +327,12 @@ export interface FileRoutesById {
   '/_authed/_user': typeof AuthedUserRouteWithChildren
   '/_authed/discover': typeof AuthedDiscoverRoute
   '/_authed/leaderboard': typeof AuthedLeaderboardRoute
+  '/_authed/review': typeof AuthedReviewRoute
   '/_authed/teamspaces': typeof AuthedTeamspacesRouteWithChildren
   '/_authed/': typeof AuthedIndexRoute
   '/_authed/_admin/audit-log': typeof AuthedAdminAuditLogRoute
   '/_authed/_admin/dashboard': typeof AuthedAdminDashboardRoute
   '/_authed/_admin/diagnostics': typeof AuthedAdminDiagnosticsRoute
-  '/_authed/_admin/review': typeof AuthedAdminReviewRouteWithChildren
   '/_authed/_admin/review-policy': typeof AuthedAdminReviewPolicyRoute
   '/_authed/_admin/security-events': typeof AuthedAdminSecurityEventsRoute
   '/_authed/_admin/settings': typeof AuthedAdminSettingsRoute
@@ -344,7 +344,7 @@ export interface FileRoutesById {
   '/_authed/agents/builder': typeof AuthedAgentsBuilderRoute
   '/_authed/components/$componentId': typeof AuthedComponentsComponentIdRoute
   '/_authed/insights/$reportId': typeof AuthedInsightsReportIdRoute
-  '/_authed/review/$number': typeof AuthedReviewNumberRoute
+  '/_authed/review_/$number': typeof AuthedReviewNumberRoute
   '/_authed/team-invites/$token': typeof AuthedTeamInvitesTokenRoute
   '/_authed/teamspaces/$handle': typeof AuthedTeamspacesHandleRoute
   '/_authed/agents/': typeof AuthedAgentsIndexRoute
@@ -367,11 +367,11 @@ export interface FileRouteTypes {
     | '/register'
     | '/discover'
     | '/leaderboard'
+    | '/review'
     | '/teamspaces'
     | '/audit-log'
     | '/dashboard'
     | '/diagnostics'
-    | '/review'
     | '/review-policy'
     | '/security-events'
     | '/settings'
@@ -404,11 +404,11 @@ export interface FileRouteTypes {
     | '/'
     | '/discover'
     | '/leaderboard'
+    | '/review'
     | '/teamspaces'
     | '/audit-log'
     | '/dashboard'
     | '/diagnostics'
-    | '/review'
     | '/review-policy'
     | '/security-events'
     | '/settings'
@@ -443,12 +443,12 @@ export interface FileRouteTypes {
     | '/_authed/_user'
     | '/_authed/discover'
     | '/_authed/leaderboard'
+    | '/_authed/review'
     | '/_authed/teamspaces'
     | '/_authed/'
     | '/_authed/_admin/audit-log'
     | '/_authed/_admin/dashboard'
     | '/_authed/_admin/diagnostics'
-    | '/_authed/_admin/review'
     | '/_authed/_admin/review-policy'
     | '/_authed/_admin/security-events'
     | '/_authed/_admin/settings'
@@ -460,7 +460,7 @@ export interface FileRouteTypes {
     | '/_authed/agents/builder'
     | '/_authed/components/$componentId'
     | '/_authed/insights/$reportId'
-    | '/_authed/review/$number'
+    | '/_authed/review_/$number'
     | '/_authed/team-invites/$token'
     | '/_authed/teamspaces/$handle'
     | '/_authed/agents/'
@@ -503,6 +503,13 @@ declare module '@tanstack/react-router' {
       path: '/teamspaces'
       fullPath: '/teamspaces'
       preLoaderRoute: typeof AuthedTeamspacesRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/review': {
+      id: '/_authed/review'
+      path: '/review'
+      fullPath: '/review'
+      preLoaderRoute: typeof AuthedReviewRouteImport
       parentRoute: typeof AuthedRoute
     }
     '/_authed/leaderboard': {
@@ -589,8 +596,8 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedTeamInvitesTokenRouteImport
       parentRoute: typeof AuthedRoute
     }
-    '/_authed/review/$number': {
-      id: '/_authed/review/$number'
+    '/_authed/review_/$number': {
+      id: '/_authed/review_/$number'
       path: '/review/$number'
       fullPath: '/review/$number'
       preLoaderRoute: typeof AuthedReviewNumberRouteImport
@@ -673,13 +680,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedAdminReviewPolicyRouteImport
       parentRoute: typeof AuthedAdminRoute
     }
-    '/_authed/_admin/review': {
-      id: '/_authed/_admin/review'
-      path: '/review'
-      fullPath: '/review'
-      preLoaderRoute: typeof AuthedAdminReviewRouteImport
-      parentRoute: typeof AuthedAdminRoute
-    }
     '/_authed/_admin/diagnostics': {
       id: '/_authed/_admin/diagnostics'
       path: '/diagnostics'
@@ -745,47 +745,36 @@ declare module '@tanstack/react-router' {
     }
     '/_authed/_admin/review/teamspace/$teamId': {
       id: '/_authed/_admin/review/teamspace/$teamId'
-      path: '/teamspace/$teamId'
+      path: '/review/teamspace/$teamId'
       fullPath: '/review/teamspace/$teamId'
       preLoaderRoute: typeof AuthedAdminReviewTeamspaceTeamIdRouteImport
-      parentRoute: typeof AuthedAdminReviewRoute
+      parentRoute: typeof AuthedAdminRoute
     }
   }
 }
-
-interface AuthedAdminReviewRouteChildren {
-  AuthedAdminReviewTeamspaceTeamIdRoute: typeof AuthedAdminReviewTeamspaceTeamIdRoute
-}
-
-const AuthedAdminReviewRouteChildren: AuthedAdminReviewRouteChildren = {
-  AuthedAdminReviewTeamspaceTeamIdRoute: AuthedAdminReviewTeamspaceTeamIdRoute,
-}
-
-const AuthedAdminReviewRouteWithChildren =
-  AuthedAdminReviewRoute._addFileChildren(AuthedAdminReviewRouteChildren)
 
 interface AuthedAdminRouteChildren {
   AuthedAdminAuditLogRoute: typeof AuthedAdminAuditLogRoute
   AuthedAdminDashboardRoute: typeof AuthedAdminDashboardRoute
   AuthedAdminDiagnosticsRoute: typeof AuthedAdminDiagnosticsRoute
-  AuthedAdminReviewRoute: typeof AuthedAdminReviewRouteWithChildren
   AuthedAdminReviewPolicyRoute: typeof AuthedAdminReviewPolicyRoute
   AuthedAdminSecurityEventsRoute: typeof AuthedAdminSecurityEventsRoute
   AuthedAdminSettingsRoute: typeof AuthedAdminSettingsRoute
   AuthedAdminSsoRoute: typeof AuthedAdminSsoRoute
   AuthedAdminUsersRoute: typeof AuthedAdminUsersRoute
+  AuthedAdminReviewTeamspaceTeamIdRoute: typeof AuthedAdminReviewTeamspaceTeamIdRoute
 }
 
 const AuthedAdminRouteChildren: AuthedAdminRouteChildren = {
   AuthedAdminAuditLogRoute: AuthedAdminAuditLogRoute,
   AuthedAdminDashboardRoute: AuthedAdminDashboardRoute,
   AuthedAdminDiagnosticsRoute: AuthedAdminDiagnosticsRoute,
-  AuthedAdminReviewRoute: AuthedAdminReviewRouteWithChildren,
   AuthedAdminReviewPolicyRoute: AuthedAdminReviewPolicyRoute,
   AuthedAdminSecurityEventsRoute: AuthedAdminSecurityEventsRoute,
   AuthedAdminSettingsRoute: AuthedAdminSettingsRoute,
   AuthedAdminSsoRoute: AuthedAdminSsoRoute,
   AuthedAdminUsersRoute: AuthedAdminUsersRoute,
+  AuthedAdminReviewTeamspaceTeamIdRoute: AuthedAdminReviewTeamspaceTeamIdRoute,
 }
 
 const AuthedAdminRouteWithChildren = AuthedAdminRoute._addFileChildren(
@@ -838,6 +827,7 @@ interface AuthedRouteChildren {
   AuthedUserRoute: typeof AuthedUserRouteWithChildren
   AuthedDiscoverRoute: typeof AuthedDiscoverRoute
   AuthedLeaderboardRoute: typeof AuthedLeaderboardRoute
+  AuthedReviewRoute: typeof AuthedReviewRoute
   AuthedTeamspacesRoute: typeof AuthedTeamspacesRouteWithChildren
   AuthedIndexRoute: typeof AuthedIndexRoute
   AuthedAgentsAgentIdRoute: typeof AuthedAgentsAgentIdRouteWithChildren
@@ -859,6 +849,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedUserRoute: AuthedUserRouteWithChildren,
   AuthedDiscoverRoute: AuthedDiscoverRoute,
   AuthedLeaderboardRoute: AuthedLeaderboardRoute,
+  AuthedReviewRoute: AuthedReviewRoute,
   AuthedTeamspacesRoute: AuthedTeamspacesRouteWithChildren,
   AuthedIndexRoute: AuthedIndexRoute,
   AuthedAgentsAgentIdRoute: AuthedAgentsAgentIdRouteWithChildren,

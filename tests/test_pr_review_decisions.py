@@ -79,7 +79,8 @@ async def test_version_rounds_gate_publish_and_author_denial(db):
     assert ver.status == ListingStatus.changes_requested
     ver.skill_md_content = "# Fixed\n"
     await open_or_push(db, "skill", listing, ver, author.id, message="fixed")
-    assert review.state == ReviewState.open
+    assert review.state == ReviewState.changes_requested
+    assert ver.status == ListingStatus.changes_requested
     assert (await gate(db, review, policy=policy)).outstanding_requests == 1
     await submit_verdict(db, review, reviewer, "approve", policy=policy)
     assert review.state == ReviewState.approved and ver.status == ListingStatus.pending
@@ -92,6 +93,23 @@ async def test_version_rounds_gate_publish_and_author_denial(db):
         len((await db.execute(select(ReviewRevision).where(ReviewRevision.review_id == review.id))).scalars().all())
         == 2
     )
+
+
+@pytest.mark.asyncio
+async def test_unresolved_change_request_remains_visible_after_other_reviewer_approves(db):
+    author, reviewer, _, listing, version, review = await fixture_review(db)
+    second = User(id=uuid.uuid4(), username="second", email="second@x.test", name="Second", role=UserRole.reviewer)
+    db.add(second)
+    await db.flush()
+    await submit_verdict(db, review, reviewer, "request_changes", policy=ApprovalPolicy())
+    version.skill_md_content = "# New revision\n"
+    await open_or_push(db, "skill", listing, version, author.id)
+    assert review.state == ReviewState.changes_requested
+    await submit_verdict(db, review, second, "approve", policy=ApprovalPolicy())
+    assert review.state == ReviewState.changes_requested
+    assert version.status == ListingStatus.changes_requested
+    await submit_verdict(db, review, reviewer, "approve", policy=ApprovalPolicy())
+    assert review.state == ReviewState.approved
 
 
 @pytest.mark.asyncio

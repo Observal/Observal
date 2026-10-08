@@ -23,6 +23,7 @@ from models.inbox import InboxItem, InboxKind, InboxState
 from models.mcp import ListingStatus
 from models.review import Review, ReviewComment, ReviewSubmission
 from models.skill import SkillListing, SkillVersion
+from models.team import Team, TeamMembership, TeamRole
 from models.user import User, UserRole
 from services.review.decisions import open_or_push
 
@@ -247,8 +248,9 @@ async def test_detail_and_raw_diff_never_leak_to_nonparticipants(api):
         f"/api/v1/reviews/{number}/revisions/1/files/SKILL.md",
     ):
         assert (await client.get(url)).status_code == 404, url
-    assert (await client.get("/api/v1/reviews")).status_code == 403
+    assert (await client.get("/api/v1/reviews")).json()["items"] == []
     current[0] = author
+    assert (await client.get("/api/v1/reviews")).json()["items"][0]["number"] == number
     response = await client.get(f"/api/v1/reviews/{number}")
     assert response.status_code == 200
     assert response.json()["number"] == number
@@ -256,6 +258,73 @@ async def test_detail_and_raw_diff_never_leak_to_nonparticipants(api):
     assert (await client.get("/api/v1/reviews?author=me")).json()["items"][0]["number"] == number
     current[0] = reviewer
     assert (await client.get(f"/api/v1/reviews/{number}/diff")).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_queue_filters_before_page_and_pages_visible_reviews(api):
+    client, current, (author, reviewer, outsider, _), (_, first_number), factory = api
+    async with factory() as db:
+        listing = await db.get(
+            SkillListing, (await db.scalar(select(Review).where(Review.number == first_number))).subject_id
+        )
+        for index in range(8):
+            version = SkillVersion(
+                listing_id=listing.id,
+                version=f"1.{index + 1}.0",
+                description="ok",
+                released_by=author.id,
+                released_at=datetime.now(UTC),
+                task_type="other",
+                skill_md_content=f"# Step {index}\n",
+            )
+            db.add(version)
+            await db.flush()
+            await open_or_push(db, "skill", listing, version, author.id)
+        private = SkillListing(
+            name="Private",
+            namespace="tests",
+            slug="private",
+            owner="outsider",
+            submitted_by=outsider.id,
+            is_private=True,
+        )
+        db.add(private)
+        await db.flush()
+        version = SkillVersion(
+            listing_id=private.id,
+            version="1.0.0",
+            description="ok",
+            released_by=outsider.id,
+            released_at=datetime.now(UTC),
+            task_type="other",
+            skill_md_content="# Private\n",
+        )
+        db.add(version)
+        await db.flush()
+        private_review = await open_or_push(db, "skill", private, version, outsider.id)
+        await db.commit()
+    current[0] = reviewer
+    cursor = None
+    pages = []
+    for _ in range(5):
+        params = {"limit": "3", "state": "all"}
+        if cursor is not None:
+            params["cursor"] = str(cursor)
+        response = await client.get("/api/v1/reviews", params=params)
+        assert response.status_code == 200, response.text
+        page = response.json()
+        assert len(page["items"]) <= 3
+        pages.extend(row["number"] for row in page["items"])
+        cursor = page["next_cursor"]
+        if cursor is None:
+            break
+    assert len(pages) == 9 and pages == sorted(pages, reverse=True)
+    assert private_review.number not in pages
+    current[0] = author
+    mine = (await client.get("/api/v1/reviews", params={"limit": 3, "author": "me"})).json()
+    assert len(mine["items"]) == 3 and mine["next_cursor"] is not None
+    current[0] = outsider
+    assert [row["number"] for row in (await client.get("/api/v1/reviews")).json()["items"]] == [private_review.number]
 
 
 @pytest.mark.asyncio
@@ -271,6 +340,87 @@ async def test_private_review_excludes_global_reviewer_but_keeps_author(api):
     assert (await client.get("/api/v1/reviews")).json()["items"] == []
     current[0] = author
     assert (await client.get(f"/api/v1/reviews/{number}")).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_coauthor_with_no_reviewer_role_sees_review_in_queue(api):
+    client, current, (_, _, coauthor, _), (rid, number), factory = api
+    async with factory() as db:
+        review = await db.get(Review, rid)
+        listing = await db.get(SkillListing, review.subject_id)
+        listing.co_authors = [str(coauthor.id)]
+        await db.commit()
+    current[0] = coauthor
+    assert [item["number"] for item in (await client.get("/api/v1/reviews")).json()["items"]] == [number]
+    assert [item["number"] for item in (await client.get("/api/v1/reviews?author=me")).json()["items"]] == [number]
+
+
+@pytest.mark.asyncio
+async def test_ready_queue_keeps_cursor_when_candidate_gate_is_blocked(api):
+    from services.review.decisions import submit_verdict
+
+    client, current, (author, reviewer, _, _), (rid, number), factory = api
+    async with factory() as db:
+        first = await db.get(Review, rid)
+        await submit_verdict(db, first, reviewer, "approve")
+        listing = await db.get(SkillListing, first.subject_id)
+        later = SkillVersion(
+            listing_id=listing.id,
+            version="2.0.0",
+            description="ok",
+            released_by=author.id,
+            released_at=datetime.now(UTC),
+            task_type="other",
+            skill_md_content="# Submitted\n",
+        )
+        db.add(later)
+        await db.flush()
+        blocked = await open_or_push(db, "skill", listing, later, author.id)
+        blocked.state = "approved"  # A saved draft can leave a previously green state stale.
+        later.skill_md_content = "# Not submitted\n"
+        await db.commit()
+    current[0] = reviewer
+    first_page = (await client.get("/api/v1/reviews", params={"needs": "ready_to_publish", "limit": 1})).json()
+    assert first_page["items"] == [] and first_page["next_cursor"] == blocked.number
+    next_page = (
+        await client.get(
+            "/api/v1/reviews",
+            params={
+                "needs": "ready_to_publish",
+                "limit": 1,
+                "cursor": first_page["next_cursor"],
+            },
+        )
+    ).json()
+    assert [row["number"] for row in next_page["items"]] == [number]
+
+
+@pytest.mark.asyncio
+async def test_team_reviewer_queue_uses_live_visibility_not_review_snapshot(api):
+    client, current, (author, reviewer, outsider, _), (rid, number), factory = api
+    async with factory() as db:
+        team = Team(name="QA", handle="qa", created_by=author.id, is_private=True)
+        db.add(team)
+        await db.flush()
+        db.add(TeamMembership(team_id=team.id, user_id=outsider.id, role=TeamRole.reviewer))
+        review = await db.get(Review, rid)
+        listing = await db.get(SkillListing, review.subject_id)
+        listing.team_id = team.id
+        listing.is_private = True
+        review.team_id = team.id
+        review.is_private = True
+        await db.commit()
+    current[0] = outsider
+    assert [r["number"] for r in (await client.get("/api/v1/reviews")).json()["items"]] == [number]
+    current[0] = reviewer
+    assert (await client.get("/api/v1/reviews")).json()["items"] == []
+    async with factory() as db:
+        listing = await db.get(SkillListing, review.subject_id)
+        listing.is_private = False
+        team = await db.get(Team, team.id)
+        team.is_private = False
+        await db.commit()
+    assert [r["number"] for r in (await client.get("/api/v1/reviews")).json()["items"]] == [number]
 
 
 @pytest.mark.asyncio
@@ -415,21 +565,20 @@ async def test_inbox_delivery_is_transactional_and_uses_review_link(api, monkeyp
         items = (await db.scalars(select(InboxItem).where(InboxItem.user_id == author.id))).all()
         assert len(items) == 1
         assert items[0].kind == InboxKind.review_approval
-        assert items[0].action_url == "/components/skills/tests/skill"
+        assert items[0].action_url == f"/review/{review.number}"
         assert items[0].action_command is None
         await deliver_event(db, review, "opened", author.id)
         await db.commit()
         request = await db.scalar(
             select(InboxItem).where(InboxItem.user_id == reviewer.id, InboxItem.kind == InboxKind.review_requested)
         )
-        assert request.action_url == "/review"
+        assert request.action_url == f"/review/{review.number}"
         assert request.action_command == f"observal review show {review.subject_id}"
         from api.routes.inbox import _to_response
 
-        request.action_url = f"/review/{review.number}"
-        request.action_command = f"observal review show {review.number}"
+        request.action_url = "/review"  # An older delivered notice is upgraded at read time.
         repaired = _to_response(request)
-        assert repaired.action_url == "/review"
+        assert repaired.action_url == f"/review/{review.number}"
         assert repaired.action_command == f"observal review show {review.subject_id}"
 
 
@@ -495,8 +644,8 @@ async def test_review_action_items_resolve_on_verdict_and_publish(api, monkeypat
         )
         assert request.state == InboxState.done
         assert ready.state == InboxState.open and ready.action_required
-        assert ready.action_url == "/review"
-        assert author_ready.action_url == "/components/skills/tests/skill"
+        assert ready.action_url == f"/review/{number}"
+        assert author_ready.action_url == f"/review/{number}"
         assert author_ready.action_required is False
     assert (await client.post(base + "/publish", json={})).status_code == 200
     async with factory() as db:

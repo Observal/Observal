@@ -36,6 +36,29 @@ test("review queue shows pinned dependencies in the Observal shell", async ({ pa
   await page.screenshot({ path: testInfo.outputPath("pr-review-queue-mobile.png"), fullPage: true });
 });
 
+test("ordinary authors can open the review queue and paginate", async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem("observal_access_token", "review-ui-test");
+    localStorage.setItem("observal_user_role", "user");
+  });
+  await page.route("**/api/v1/**", route => route.fulfill({ json: { items: [], unread: 0, action_required: 0, by_kind: {} } }));
+  await page.route("**/api/v1/auth/whoami", route => route.fulfill({ json: { id, username: "author", name: "Author", role: "user" } }));
+  await page.route("**/api/v1/reviews?*", route => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.get("type") === "component") return route.fulfill({ json: { items: [], next_cursor: null } });
+    return route.fulfill({ json: url.searchParams.has("cursor")
+      ? { items: [summary(40, "Second page agent", "agent")], next_cursor: null }
+      : { items: [summary(42, "My pending agent", "agent")], next_cursor: 41 } });
+  });
+  await page.goto("/review");
+  await expect(page.getByRole("heading", { name: "Review", exact: true })).toBeVisible();
+  await expect(page.getByText("My pending agent")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Teamspaces" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Load more reviews" }).click();
+  await expect(page.getByText("Second page agent")).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("author-review-queue.png"), fullPage: true });
+});
+
 test("review detail exposes the gate, revision diff, and a separate verdict", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.addInitScript(() => {

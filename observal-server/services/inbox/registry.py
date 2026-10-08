@@ -88,8 +88,20 @@ def _registry_url(subject: Subject) -> str | None:
 
 
 def _review_url(subject: Subject) -> str:
-    """Legacy notifications link to the participant-scoped review queue."""
+    """Fallback destination for older review notices without a review number."""
     return "/review"
+
+
+def review_action_url(kind: InboxKind, context: dict[str, Any]) -> str | None:
+    """Route numbered review events directly to their scoped conversation."""
+    number = context.get("review_number")
+    if (
+        isinstance(number, int)
+        and number > 0
+        and (kind.value.startswith("review_") or kind == InboxKind.change_requested)
+    ):
+        return f"/review/{number}"
+    return None
 
 
 def _no_command(subject: Subject, ctx: dict[str, Any]) -> str | None:

@@ -3,7 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearch } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { ArrowUpRight, GitPullRequest, MessageSquare, Search, ShieldCheck } from "lucide-react";
 import { auth, getUserRole, prReviews, teams } from "@/lib/api";
 import type { ReviewSummary } from "@/lib/types";
@@ -61,22 +61,32 @@ function ReviewRow({ item, nested = false }: { item: ReviewSummary; nested?: boo
 export default function ReviewQueue() {
   useAuthGuard();
   useReviewSubscription();
-  const { tab: tabFromUrl } = useSearch({ from: "/_authed/_admin/review" });
-  const [tab, setTab] = useState(tabFromUrl ?? "agents");
-  const [filter, setFilter] = useState<string>("my_review");
+  const { tab: tabFromUrl } = useSearch({ from: "/_authed/review" });
+  const canReviewTeamspaces = ["reviewer", "admin", "super_admin"].includes(getUserRole() ?? "");
+  const [tab, setTab] = useState(tabFromUrl === "teamspaces" && !canReviewTeamspaces ? "agents" : tabFromUrl ?? "agents");
+  const [filter, setFilter] = useState<string>(getUserRole() === "user" ? "open" : "my_review");
   const [search, setSearch] = useState("");
   const [selection, setSelection] = useState(0);
-  useEffect(() => { if (tabFromUrl) setTab(tabFromUrl); }, [tabFromUrl]);
+  useEffect(() => { if (tabFromUrl) setTab(tabFromUrl === "teamspaces" && !canReviewTeamspaces ? "agents" : tabFromUrl); }, [tabFromUrl, canReviewTeamspaces]);
   const { data: me } = useQuery({ queryKey: ["auth", "whoami"], queryFn: auth.whoami });
-  const params: Record<string, string> = { state: filter === "closed" ? "all" : filter === "changes_requested" ? "changes_requested" : "open", limit: "100" };
+  const params: Record<string, string> = {
+    state: filter === "closed" ? "completed" : filter === "changes_requested" ? "changes_requested" : "open",
+    type: tab === "agents" ? "agent" : "component", limit: "25",
+  };
   if (filter === "my_review" || filter === "ready_to_publish") params.needs = filter;
   if (filter === "mine") params.author = "me";
   if (search.trim()) params.q = search.trim();
-  const { data, isPending, isError, refetch } = useQuery({ queryKey: ["pr-reviews", params], queryFn: () => prReviews.list(params), enabled: tab !== "teamspaces" });
-  const { data: dependencies } = useQuery({ queryKey: ["pr-reviews", "open-dependencies"], queryFn: () => prReviews.list({ state: "open", limit: "100" }), enabled: tab === "agents" });
+  const { data, isPending, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
+    queryKey: ["pr-reviews", params],
+    queryFn: ({ pageParam }) => prReviews.list({ ...params, ...(pageParam ? { cursor: String(pageParam) } : {}) }),
+    initialPageParam: null as number | null,
+    getNextPageParam: last => last.next_cursor,
+    enabled: tab !== "teamspaces",
+  });
+  const { data: dependencies } = useQuery({ queryKey: ["pr-reviews", "open-dependencies"], queryFn: () => prReviews.list({ state: "open", type: "component", limit: "100" }), enabled: tab === "agents" });
   const { data: requests, isPending: teamPending, isError: teamError } = useQuery({ queryKey: ["review", "teamspaces"], queryFn: teams.visibilityRequests, enabled: tab === "teamspaces" });
   const rows = useMemo(() => {
-    const primary = data?.items ?? [];
+    const primary = data?.pages.flatMap(page => page.items) ?? [];
     const pinned = new Set(primary.filter(item => item.subject_type === "agent").flatMap(item => item.depends_on));
     const all = [...primary, ...(dependencies?.items ?? []).filter(item => pinned.has(item.number) && !primary.some(row => row.id === item.id))];
     const filtered = all.filter(item => (tab === "components" ? componentTypes.has(item.subject_type) : item.subject_type === "agent" || pinned.has(item.number)) && (filter !== "closed" || ["published", "closed"].includes(item.state)));
@@ -95,7 +105,7 @@ export default function ReviewQueue() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [ordered, selection]);
-  const tabs = ["agents", "components", "teamspaces"] as const;
+  const tabs = canReviewTeamspaces ? ["agents", "components", "teamspaces"] as const : ["agents", "components"] as const;
   return <div className="mx-auto max-w-7xl space-y-5 px-4 py-6 sm:px-6">
     <header className="flex flex-wrap items-center justify-between gap-3"><div><h1 className="text-2xl font-semibold tracking-tight">Review</h1><p className="mt-1 text-sm text-muted-foreground">Review and publish registry changes.</p></div><GitPullRequest className="size-6 text-muted-foreground" aria-hidden="true" /></header>
     <nav aria-label="Review type" className="flex gap-1 border-b border-border">{tabs.map(name => <button key={name} type="button" onClick={() => { setTab(name); setSelection(0); }} className={`border-b-2 px-3 py-2 text-sm capitalize transition-colors ${tab === name ? "border-foreground font-semibold text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{name}</button>)}</nav>
@@ -105,8 +115,8 @@ export default function ReviewQueue() {
       : isPending ? <div className="space-y-2 p-4"><Skeleton className="h-16" /><Skeleton className="h-16" /><Skeleton className="h-16" /></div>
       : isError ? <div className="p-8 text-center text-sm">Could not load reviews. <button className="underline" type="button" onClick={() => refetch()}>Try again</button></div>
       : ordered.length ? <>{ordered.map((item, index) => <div key={item.id} className={index === selection ? "bg-muted/30" : ""}><ReviewRow item={item} nested={children.has(item.number) && item.subject_type !== "agent"} /></div>)}</>
-      : <div className="p-12 text-center"><GitPullRequest className="mx-auto size-6 text-muted-foreground" /><p className="mt-3 text-sm font-medium">Nothing to review here</p><p className="mt-1 text-xs text-muted-foreground">Try another filter or come back after the next submission.</p></div>}
+      : <div className="p-12 text-center"><GitPullRequest className="mx-auto size-6 text-muted-foreground" /><p className="mt-3 text-sm font-medium">{hasNextPage ? "No matches on this page" : "Nothing to review here"}</p><p className="mt-1 text-xs text-muted-foreground">{hasNextPage ? "Load more reviews to keep searching." : "Try another filter or come back after the next submission."}</p></div>}
     </div>
-    {tab !== "teamspaces" && <p className="text-xs text-muted-foreground">{ordered.length} reviews · j/k to select · Enter to open · o for new tab{me && getUserRole() === "super_admin" ? " · Policy in Settings" : ""}</p>}
+    {tab !== "teamspaces" && <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground"><p>{ordered.length} reviews · j/k to select · Enter to open · o for new tab{me && getUserRole() === "super_admin" ? " · Policy in Settings" : ""}</p>{hasNextPage && <button type="button" onClick={() => fetchNextPage()} disabled={isFetchingNextPage} className="rounded-md border border-border px-3 py-2 text-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50">{isFetchingNextPage ? "Loading reviews…" : "Load more reviews"}</button>}</div>}
   </div>;
 }
