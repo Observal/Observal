@@ -27,11 +27,13 @@ async def lock_review_for_edit(db, subject_type, version):
 
 async def submit_for_review(db, subject_type, subject, version, actor_id, *, message=None):
     review = await open_or_push(db, subject_type, subject, version, actor_id, message=message)
-    # New releases of an approved listing leave its published version visible.
-    # A draft/rejected listing, however, must enter the pending queue when its
-    # first review opens (or when changes are resubmitted).
-    if subject.status in (ListingStatus.draft, ListingStatus.rejected, ListingStatus.changes_requested):
-        subject.status = AgentStatus.pending if subject_type == "agent" else ListingStatus.pending
+    # open_or_push starts the revision and may then mark an outstanding change
+    # request as blocking. A resubmitted version remains pending until review;
+    # the review gate still tracks those outstanding requests separately.
+    # Write through the version, not the listing's latest_version relationship:
+    # a newly created listing may not have that relationship loaded yet.
+    if version.status in (ListingStatus.draft, ListingStatus.rejected, ListingStatus.changes_requested):
+        version.status = AgentStatus.pending if subject_type == "agent" else ListingStatus.pending
     revision = await _head(db, review)
     if revision.number == 1:
         await sync_state(db, review, actor_id=actor_id)

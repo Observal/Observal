@@ -100,7 +100,7 @@ def list_reviews(
 
 
 @review_app.command("show")
-def show(ref: str, output: OutputMode = typer.Option("table", "--output", "-o")):
+def show_review(ref: str, output: OutputMode = typer.Option("table", "--output", "-o")):
     """Show a review and its publication gate."""
     detail = client.get(_url(ref))
     if output == "json":
@@ -274,7 +274,7 @@ def unresolve(ref: str, thread_id: str, output: OutputMode = typer.Option("table
 
 
 @review_app.command("submit")
-def submit(
+def submit_review(
     ref: str,
     approve: bool = typer.Option(False, "--approve"),
     request_changes: bool = typer.Option(False, "--request-changes"),
@@ -300,7 +300,7 @@ def approve(
     ref: str, body: str = typer.Option("", "--body"), output: OutputMode = typer.Option("table", "--output", "-o")
 ):
     """Submit an approval, without publishing the version."""
-    submit(ref, approve=True, request_changes=False, comment_only=False, body=body, output=output)
+    submit_review(ref, approve=True, request_changes=False, comment_only=False, body=body, output=output)
 
 
 @review_app.command("request-changes")
@@ -308,7 +308,7 @@ def request_changes(
     ref: str, body: str = typer.Option(..., "--body"), output: OutputMode = typer.Option("table", "--output", "-o")
 ):
     """Request changes on a review."""
-    submit(ref, approve=False, request_changes=True, comment_only=False, body=body, output=output)
+    submit_review(ref, approve=False, request_changes=True, comment_only=False, body=body, output=output)
 
 
 @review_app.command("draft")
