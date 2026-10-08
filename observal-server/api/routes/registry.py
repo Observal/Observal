@@ -35,7 +35,6 @@ from models.sandbox import SandboxListing, SandboxVersion
 from models.skill import SkillListing, SkillVersion
 from models.team import Team, TeamMembership, TeamRole
 from models.user import User, UserRole
-from services.inbox import sources as inbox
 from services.registry_namespace import identity_exists
 from services.teamspace import review_publication_to_public, team_membership
 
@@ -292,18 +291,6 @@ async def update_registry_visibility(
         listing.owner = destination_team.handle
     listing.is_private = req.visibility == "team"
     returned_to_review = await review_publication_to_public(listing, current_user, db, was_private=was_private)
-    if returned_to_review:
-        # Going team-private → public re-queues every approved version, so the
-        # reviewers who now own that decision need to hear about it. The listing
-        # is public by this point, which is what decides the recipient set.
-        await inbox.on_review_requested(
-            db,
-            listing,
-            subject_type=item_type,
-            actor_id=current_user.id,
-            version=getattr(listing.latest_version, "version", None),
-        )
-
     request.state.audit_action = "registry.visibility.update"
     request.state.audit_resource_type = item_type
     request.state.audit_resource_id = str(listing.id)

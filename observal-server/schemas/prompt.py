@@ -20,6 +20,7 @@ from schemas.constants import (
 class PromptSubmitRequest(BaseModel):
     name: str
     version: str
+    message: str | None = None
     description: str
     owner: str
     team_id: uuid.UUID | None = None
@@ -68,6 +69,8 @@ class PromptUpdateRequest(BaseModel):
 
 
 class PromptListingResponse(BaseModel):
+    review_number: int | None = None
+    review_url: str | None = None
     id: uuid.UUID
     name: str
     namespace: str

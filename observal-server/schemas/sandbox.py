@@ -41,6 +41,7 @@ def _validate_runtime_config(runtime_type: str | None, image: str | None, runtim
 class SandboxSubmitRequest(BaseModel):
     name: str
     version: str
+    message: str | None = None
     description: str
     owner: str
     team_id: uuid.UUID | None = None
@@ -125,6 +126,8 @@ class SandboxUpdateRequest(BaseModel):
 
 
 class SandboxListingResponse(BaseModel):
+    review_number: int | None = None
+    review_url: str | None = None
     id: uuid.UUID
     name: str
     namespace: str

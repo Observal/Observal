@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useState } from "react";
@@ -32,8 +31,7 @@ import { PageHeader } from "@/components/layouts/page-header";
 import { AgentCard } from "@/components/registry/agent-card";
 import { ComponentCard } from "@/components/registry/component-card";
 import { SubmitComponentDialog } from "@/components/registry/submit-component-dialog";
-import { StatusBadge } from "@/components/registry/status-badge";
-import { ReviewDetailSheet } from "@/components/review/review-detail-sheet";
+import { TeamReviewLinks } from "@/components/review/team-review-links";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ErrorState } from "@/components/shared/error-state";
 import { CardSkeleton, DetailSkeleton, TableSkeleton } from "@/components/shared/skeleton-layouts";
@@ -71,7 +69,6 @@ import {
 	useRegistryList,
 	useRemoveTeamMember,
 	useRequestJoin,
-	useReviewAction,
 	useRevokeTeamInvite,
 	useTeamByHandle,
 	useTeamInviteRequests,
@@ -85,7 +82,6 @@ import { hasMinRole } from "@/hooks/use-role-guard";
 import { getUserRole, type RegistryType } from "@/lib/api";
 import type {
 	RegistryItem,
-	ReviewItem,
 	Team,
 	TeamInvite,
 	TeamInviteCreated,
@@ -394,157 +390,6 @@ function MembersTab({ team }: { team: Team }) {
 				</div>
 			)}
 		</div>
-	);
-}
-
-function ReviewTab({
-	items,
-	isLoading,
-	isError,
-	errorMessage,
-	onRetry,
-}: {
-	items: ReviewItem[];
-	isLoading: boolean;
-	isError: boolean;
-	errorMessage?: string;
-	onRetry: () => void;
-}) {
-	const reviewAction = useReviewAction();
-	const queryClient = useQueryClient();
-	const [rejectTarget, setRejectTarget] = useState<ReviewItem | null>(null);
-	const [reason, setReason] = useState("");
-	const [inspecting, setInspecting] = useState<ReviewItem | null>(null);
-
-	function runAction(vars: { id: string; type?: string; action: "approve" | "reject"; reason?: string }) {
-		reviewAction.mutate(vars, {
-			// An approval publishes the item, so the Agents and Components tabs
-			// on this same page are now stale.
-			onSuccess: () => queryClient.invalidateQueries({ queryKey: ["registry"] }),
-		});
-	}
-
-	if (isLoading) return <TableSkeleton rows={3} cols={3} />;
-	if (isError) return <ErrorState message={errorMessage} onRetry={onRetry} />;
-	if (items.length === 0) {
-		return (
-			<EmptyState
-				icon={ClipboardCheck}
-				title="Nothing waiting on you"
-				description="This teamspace's pending submissions appear here for its owners and reviewers. Public submissions also appear for global reviewers."
-			/>
-		);
-	}
-
-	return (
-		<>
-			<div className="divide-y divide-border/70 overflow-hidden rounded-lg border border-border/80">
-				{items.map((item) => (
-					<div key={`${item.type}-${item.id}`} className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start">
-						<div className="min-w-0 flex-1">
-							<div className="flex flex-wrap items-center gap-2">
-								<p className="truncate text-sm font-medium">{item.name ?? "Unnamed"}</p>
-								{item.type && (
-									<Badge variant="outline" className="px-1.5 py-0 text-[10px] capitalize">
-										{item.type}
-									</Badge>
-								)}
-								{item.version && <span className="font-mono text-xs text-muted-foreground">v{item.version}</span>}
-								{item.status && <StatusBadge status={item.status} />}
-							</div>
-							{item.description && (
-								<p className="mt-1 line-clamp-2 max-w-2xl text-xs leading-5 text-muted-foreground">{item.description}</p>
-							)}
-							<div className="mt-1.5 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
-								{item.submitted_by && <span>by {item.submitted_by}</span>}
-								{(item.submitted_at || item.created_at) && (
-									<span>{new Date((item.submitted_at ?? item.created_at)!).toLocaleDateString()}</span>
-								)}
-								{item.components_ready === false && (
-									<span className="text-warning">Blocked: components still pending</span>
-								)}
-							</div>
-						</div>
-						<div className="flex shrink-0 items-center gap-2">
-							{/* Approving from summary text alone means approving a prompt, command or
-							    script you have not read. Open the same sheet the global queue uses so a
-							    team reviewer inspects the real payload before deciding. */}
-							<Button
-								size="sm"
-								variant="outline"
-								className="h-8 text-xs"
-								onClick={() => setInspecting(item)}
-							>
-								Review
-							</Button>
-						</div>
-					</div>
-				))}
-			</div>
-
-			<ReviewDetailSheet
-				item={inspecting}
-				open={!!inspecting}
-				onOpenChange={(open) => {
-					if (!open) setInspecting(null);
-				}}
-				onApprove={(id, type) => {
-					runAction({ id, type, action: "approve" });
-					setInspecting(null);
-				}}
-				onReject={(id, rejectReason, type) => {
-					runAction({ id, type, action: "reject", reason: rejectReason });
-					setInspecting(null);
-				}}
-			/>
-
-			<Dialog
-				open={!!rejectTarget}
-				onOpenChange={(open) => {
-					if (!open) setRejectTarget(null);
-				}}
-			>
-				<DialogContent>
-					<DialogHeader>
-						<DialogTitle>Reject {rejectTarget?.name ?? "submission"}?</DialogTitle>
-					</DialogHeader>
-					<div className="space-y-2">
-						<Label htmlFor="team-review-reason">Reason</Label>
-						<Textarea
-							id="team-review-reason"
-							value={reason}
-							onChange={(event) => setReason(event.target.value)}
-							rows={4}
-							placeholder="Tell the submitter what to change before resubmitting"
-						/>
-						<p className="text-xs text-muted-foreground">
-							The reason is shown to the submitter, so a rejection without one is not accepted.
-						</p>
-					</div>
-					<DialogFooter>
-						<Button variant="outline" onClick={() => setRejectTarget(null)}>
-							Cancel
-						</Button>
-						<Button
-							variant="destructive"
-							disabled={!reason.trim() || reviewAction.isPending}
-							onClick={() => {
-								if (!rejectTarget) return;
-								runAction({
-									id: rejectTarget.id,
-									type: rejectTarget.type,
-									action: "reject",
-									reason: reason.trim(),
-								});
-								setRejectTarget(null);
-							}}
-						>
-							Reject submission
-						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
-		</>
 	);
 }
 
@@ -1303,12 +1148,14 @@ export default function TeamspaceDetailPage() {
 						</TabsContent>
 						{canReview && (
 							<TabsContent value="review" className="mt-5">
-								<ReviewTab
+								<TeamReviewLinks
 									items={reviewItems}
 									isLoading={reviewQueue.isLoading}
 									isError={reviewQueue.isError}
 									errorMessage={reviewQueue.error?.message}
 									onRetry={() => reviewQueue.refetch()}
+                                    teamId={team?.id ?? ""}
+                                    canEditPolicy={team?.role === "owner" || isAdmin}
 								/>
 							</TabsContent>
 						)}

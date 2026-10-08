@@ -30,9 +30,9 @@ from api.deps import (
 )
 from models.mcp import ListingStatus
 from models.user import User, UserRole
-from schemas.component_version import VersionPublishRequest, VersionReviewRequest  # noqa: TC001
+from schemas.component_version import VersionPublishRequest  # noqa: TC001
 from services.component_version_extras import ALLOWED_FIELDS, REQUIRED_FIELDS, validate_and_extract
-from services.inbox import sources as inbox
+from services.review.cutover import submit_for_review
 
 # Semver pattern: X.Y.Z or X.Y.Z-prerelease
 SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$")
@@ -59,13 +59,6 @@ _VERSION_MANAGED_FIELDS = {
 
 async def audit(*_args, **_kwargs):
     return None
-
-
-def _parse_semver(v: str) -> tuple[int, ...]:
-    """Parse 'X.Y.Z' or 'X.Y.Z-pre' into (X, Y, Z) for comparison."""
-    optic.trace("v={}", v)
-    base = v.split("-", 1)[0]
-    return tuple(int(p) for p in base.split("."))
 
 
 def _version_to_dict(v, component_type: str) -> dict:
@@ -233,18 +226,14 @@ async def _publish_version(
 
     db.add(ver)
     await db.flush()
-    # This route always creates a pending version, so a review is always owed.
-    await inbox.on_publish(
-        db,
-        listing,
-        subject_type=component_type,
-        actor_id=current_user.id,
-        auto_approved=False,
-        version=ver.version,
-    )
+    review = await submit_for_review(db, component_type, listing, ver, current_user.id, message=req.message)
     await db.commit()
 
-    return _version_to_dict(ver, component_type)
+    return {
+        **_version_to_dict(ver, component_type),
+        "review_number": review.number,
+        "review_url": f"/review/{review.number}",
+    }
 
 
 async def _version_suggestions(
@@ -279,72 +268,6 @@ async def _version_suggestions(
     return {"current": highest, "suggestions": suggest_versions(highest)}
 
 
-async def _review_version(
-    listing_id: str,
-    version: str,
-    req: VersionReviewRequest,
-    listing_model,
-    version_model,
-    component_type: str,
-    db: AsyncSession,
-    current_user: User,
-) -> dict:
-    optic.trace("listing_id={}, version={}", listing_id, version)
-    listing = await resolve_visible_listing(listing_model, listing_id, db, current_user)
-    if not listing:
-        raise HTTPException(status_code=404, detail="Listing not found")
-
-    version_filters = [version_model.listing_id == listing.id, version_model.version == version]
-    if not may_view_unapproved(get_effective_component_permission(listing, current_user), current_user):
-        version_filters.append(version_model.status == ListingStatus.approved)
-    stmt = select(version_model).where(*version_filters)
-    result = await db.execute(stmt)
-    ver = result.scalar_one_or_none()
-    if not ver:
-        raise HTTPException(status_code=404, detail="Version not found")
-
-    if ver.status != ListingStatus.pending:
-        raise HTTPException(
-            status_code=422, detail=f"Version is {ver.status.value!r}, only pending versions can be reviewed"
-        )
-
-    if req.action == "approve":
-        ver.status = ListingStatus.approved
-        ver.rejection_reason = None
-        # Only update latest if this version is newer than current latest
-        current_latest = listing.latest_version
-        if not current_latest or _parse_semver(ver.version) >= _parse_semver(current_latest.version):
-            listing.latest_version_id = ver.id
-    else:
-        ver.status = ListingStatus.rejected
-        ver.rejection_reason = req.reason
-
-    ver.reviewed_by = current_user.id
-    ver.reviewed_at = datetime.now(UTC)
-
-    # Same fact as a decision made through api/routes/review.py: the version's
-    # author hears the outcome, and every reviewer's open request item for this
-    # version is cleared. Delivered before the commit, in this transaction.
-    await inbox.on_review_decided(
-        db,
-        listing,
-        subject_type=component_type,
-        approved=req.action == "approve",
-        actor_id=current_user.id,
-        version=ver.version,
-        reason=req.reason if req.action != "approve" else None,
-        submitter_id=ver.released_by,
-    )
-
-    await db.commit()
-
-    return {
-        "version": version,
-        "new_status": ver.status.value,
-        "reason": ver.rejection_reason,
-    }
-
-
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
@@ -355,7 +278,7 @@ def create_version_router(
     listing_model,
     version_model,
 ) -> APIRouter:
-    """Return an APIRouter with 4 version endpoints for the given component type."""
+    """Return the version listing, publishing and suggestions endpoints."""
 
     optic.trace("component_type={}, listing_model={}", component_type, listing_model)
     router = APIRouter(tags=[f"{component_type}-versions"])
@@ -408,26 +331,6 @@ def create_version_router(
         optic.trace("listing_id={}", listing_id)
         return await _publish_version(
             listing_id=listing_id,
-            req=req,
-            listing_model=listing_model,
-            version_model=version_model,
-            component_type=component_type,
-            db=db,
-            current_user=current_user,
-        )
-
-    @router.post("/{listing_id}/versions/{version}/review")
-    async def review_version(
-        listing_id: str,
-        version: str,
-        req: VersionReviewRequest,
-        db: AsyncSession = Depends(get_db),
-        current_user: User = Depends(require_role(UserRole.reviewer)),
-    ):
-        optic.trace("listing_id={}, version={}", listing_id, version)
-        return await _review_version(
-            listing_id=listing_id,
-            version=version,
             req=req,
             listing_model=listing_model,
             version_model=version_model,

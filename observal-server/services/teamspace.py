@@ -261,34 +261,50 @@ async def review_publication_to_public(entity, user: User, db: AsyncSession, *, 
     if not was_private or entity.is_private or is_global_reviewer(user):
         return False
 
-    version = getattr(entity, "latest_version", None)
-    if version is None:
+    if getattr(entity, "latest_version", None) is None:
         raise RuntimeError(f"{type(entity).__name__} has no latest_version; cannot re-enter review")
-    if version.status != _approved_status(entity):
-        # A draft, pending, or rejected listing has not been approved for anything
-        # yet, so becoming public changes nothing about its review state.
+
+    # An older approved release remains installable even when the latest release
+    # is pending. Requeue every approved release, not just the latest version.
+    version_model, listing_column = _version_model_for(entity)
+    rows = (
+        (
+            await db.execute(
+                select(version_model).where(
+                    listing_column == entity.id, version_model.status == _approved_status(entity)
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if not rows:
         return False
 
-    # EVERY approved version returns to the queue, not just the latest. Older
-    # versions were approved by a team role for a team-only audience, and installs
-    # can pin any approved version, so leaving them approved would publish content
-    # no global reviewer ever saw.
-    version_model, listing_column = _version_model_for(entity)
-    approved = _approved_status(entity)
-    pending = _pending_status(entity)
-    rows = (
-        await db.execute(select(version_model).where(listing_column == entity.id, version_model.status == approved))
-    ).scalars()
+    from models.agent import Agent
+    from services.agent_lock import LISTING_MODELS
+    from services.review.decisions import _head, open_or_push
+    from services.review.notifications import deliver_event
+
+    subject_type = (
+        "agent"
+        if isinstance(entity, Agent)
+        else next(kind for kind, model in LISTING_MODELS.items() if isinstance(entity, model))
+    )
     for row in rows:
-        row.status = pending
+        row.status = _pending_status(entity)
         row.reviewed_by = None
         row.reviewed_at = None
-
-    # The listing's own status mirrors its latest version, so set it explicitly in
-    # case the latest version was not among the rows above.
-    entity.status = pending
-    version.reviewed_by = None
-    version.reviewed_at = None
+        review = await open_or_push(
+            db,
+            subject_type,
+            entity,
+            row,
+            user.id,
+            message="Re-review for public visibility",
+            visibility_requeue=True,
+        )
+        await deliver_event(db, review, "opened", user.id, revision=(await _head(db, review)).number)
     return True
 
 

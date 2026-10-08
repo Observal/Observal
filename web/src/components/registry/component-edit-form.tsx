@@ -5,13 +5,12 @@
 
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { ArrowRight, Loader2, RotateCcw, Construction } from "lucide-react";
+import { ArrowRight, Loader2, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
 	CodeEditor,
@@ -29,11 +28,21 @@ import {
 } from "@/components/ui/dialog";
 import {
 	usePublishComponentVersion,
+	useComponentReviewRevision,
 	useComponentVersionSuggestions,
 } from "@/hooks/use-api";
 import { VersionBumpDialog } from "@/components/registry/version-bump-dialog";
 import type { RegistryType } from "@/lib/api";
 import type { RegistryItem } from "@/lib/types";
+
+function isReviewableDraft(item: RegistryItem) {
+	return ["draft", "pending", "changes_requested", "rejected"].includes(item.status ?? "");
+}
+
+function revisionBody(body: Record<string, unknown>): Record<string, unknown> {
+	const { extra, ...fields } = body;
+	return { ...fields, ...(extra && typeof extra === "object" && !Array.isArray(extra) ? extra : {}) };
+}
 
 // ── Constants ──────────────────────────────────────────────────────
 
@@ -183,6 +192,8 @@ function McpEditForm({
 	const [publishing, setPublishing] = useState(false);
 
 	const publishVersion = usePublishComponentVersion();
+	const reviewRevision = useComponentReviewRevision(type);
+	const isRevision = isReviewableDraft(item);
 	const { data: versionSuggestions } = useComponentVersionSuggestions(
 		type,
 		listingId,
@@ -257,6 +268,21 @@ function McpEditForm({
 		if (envVars.length > 0) extra.environment_variables = envVars;
 		if (Object.keys(extra).length > 0) body.extra = extra;
 		return body;
+	}
+
+	async function handleRevision() {
+		setPublishing(true);
+		try {
+			await reviewRevision.mutateAsync({
+				id: listingId, body: revisionBody(buildBody(currentVersion)), message: changelog.trim() || undefined,
+			});
+			setChangelog("");
+			onSuccess?.();
+		} catch {
+			// The mutation preserves the form and reports any API error.
+		} finally {
+			setPublishing(false);
+		}
 	}
 
 	async function handleRelease(selectedVersion: string) {
@@ -393,8 +419,8 @@ function McpEditForm({
 
 			<div className="flex items-center gap-3">
 				<Button
-					onClick={() => setShowVersionDialog(true)}
-					disabled={publishing || !isDirty}
+					onClick={isRevision ? handleRevision : () => setShowVersionDialog(true)}
+					disabled={publishing || !isDirty || !!jsonError}
 					className="min-w-[160px]"
 				>
 					{publishing ? (
@@ -402,7 +428,7 @@ function McpEditForm({
 					) : (
 						<ArrowRight className="mr-2 h-4 w-4" />
 					)}
-					Save &amp; Release
+					{isRevision ? "Submit revision" : "Save & Release"}
 				</Button>
 
 				<Button
@@ -487,6 +513,8 @@ function SandboxEditForm({
 	const [showVersionDialog, setShowVersionDialog] = useState(false);
 	const [publishing, setPublishing] = useState(false);
 	const publishVersion = usePublishComponentVersion();
+	const reviewRevision = useComponentReviewRevision(type);
+	const isRevision = isReviewableDraft(item);
 	const { data: versionSuggestions } = useComponentVersionSuggestions(type, listingId);
 	const isDirty = true;
 
@@ -501,6 +529,21 @@ function SandboxEditForm({
 		if (sourceRef) extra.source_ref = sourceRef;
 		if (sandboxPath) extra.sandbox_path = sandboxPath;
 		return { version, description: description.trim() || undefined, changelog: changelog.trim() || undefined, extra };
+	}
+
+	async function handleRevision() {
+		setPublishing(true);
+		try {
+			await reviewRevision.mutateAsync({
+				id: listingId, body: revisionBody(buildBody(currentVersion)), message: changelog.trim() || undefined,
+			});
+			setChangelog("");
+			onSuccess?.();
+		} catch {
+			// The mutation preserves the form and reports any API error.
+		} finally {
+			setPublishing(false);
+		}
 	}
 
 	async function handleRelease(selectedVersion: string) {
@@ -581,9 +624,9 @@ function SandboxEditForm({
 				</div>
 			</section>
 			<div className="flex items-center gap-3">
-				<Button onClick={() => setShowVersionDialog(true)} disabled={publishing || !isDirty} className="min-w-[160px]">
+				<Button onClick={isRevision ? handleRevision : () => setShowVersionDialog(true)} disabled={publishing || !isDirty} className="min-w-[160px]">
 					{publishing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ArrowRight className="mr-2 h-4 w-4" />}
-					Save &amp; Release
+					{isRevision ? "Submit revision" : "Save & Release"}
 				</Button>
 			</div>
 			<VersionBumpDialog open={showVersionDialog} onOpenChange={setShowVersionDialog} currentVersion={currentVersion} suggestions={versionSuggestions} onConfirm={handleRelease} publishing={publishing} />
@@ -1080,6 +1123,8 @@ function EditFormInner({
 
 	// ── API ───────────────────────────────────────────────────────
 	const publishVersion = usePublishComponentVersion();
+	const reviewRevision = useComponentReviewRevision(type);
+	const isRevision = isReviewableDraft(item);
 	const { data: versionSuggestions } = useComponentVersionSuggestions(
 		type,
 		listingId,
@@ -1152,6 +1197,25 @@ function EditFormInner({
 	}
 
 	// ── Handlers ─────────────────────────────────────────────────
+
+	async function handleRevision() {
+		setPublishing(true);
+		try {
+			await reviewRevision.mutateAsync({
+				id: listingId, body: revisionBody(buildBody(currentVersion)), message: changelog.trim() || undefined,
+			});
+			initialRef.current = {
+				description, changelog: "", hook: hookState, skill: skillState, prompt: promptState,
+			};
+			setChangelog("");
+			setIsDirty(false);
+			onSuccess?.();
+		} catch {
+			// The mutation preserves the form and reports any API error.
+		} finally {
+			setPublishing(false);
+		}
+	}
 
 	async function handleRelease(selectedVersion: string) {
 		setPublishing(true);
@@ -1294,7 +1358,7 @@ function EditFormInner({
 			{/* Actions */}
 			<div className="flex items-center gap-3">
 				<Button
-					onClick={() => setShowVersionDialog(true)}
+					onClick={isRevision ? handleRevision : () => setShowVersionDialog(true)}
 					disabled={publishing || !isDirty}
 					className="min-w-[160px]"
 				>
@@ -1303,7 +1367,7 @@ function EditFormInner({
 					) : (
 						<ArrowRight className="mr-2 h-4 w-4" />
 					)}
-					Save &amp; Release
+					{isRevision ? "Submit revision" : "Save & Release"}
 				</Button>
 
 				<Button
@@ -1364,24 +1428,6 @@ export function ComponentEditForm({
 }: ComponentEditFormProps) {
 	const singularType =
 		type === "sandboxes" ? "sandbox" : type.replace(/s$/, "");
-
-	if (item.status === "pending") {
-		return (
-			<div className="rounded-md border border-dashed border-border p-8 text-center space-y-3">
-				<Construction className="h-8 w-8 mx-auto text-muted-foreground" />
-				<h3 className="text-sm font-semibold font-[family-name:var(--font-display)]">
-					Pending Review
-				</h3>
-				<p className="text-xs text-muted-foreground max-w-md mx-auto">
-					This component is currently pending review and cannot be edited. You
-					can edit it once it has been approved or rejected.
-				</p>
-				<Badge variant="secondary" className="text-[10px]">
-					Pending
-				</Badge>
-			</div>
-		);
-	}
 
 	if (singularType === "mcp") {
 		return (

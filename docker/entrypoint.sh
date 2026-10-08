@@ -59,6 +59,9 @@ finally:
     fi
 fi
 
+echo "Backfilling pending version reviews before serving traffic..."
+/app/.venv/bin/python -m jobs.review_backfill
+
 echo "Running ClickHouse migrations..."
 /app/.venv/bin/python -m services.clickhouse.migrations
 
