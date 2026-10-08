@@ -107,14 +107,14 @@ export default function ReviewQueue() {
     return () => window.removeEventListener("keydown", onKey);
   }, [ordered, selection]);
   const tabs = canReviewTeamspaces ? ["agents", "components", "teamspaces"] as const : ["agents", "components"] as const;
-  return <div className="mx-auto w-full max-w-7xl space-y-5 px-4 py-6 sm:px-6">
-    <header><h1 className="text-2xl font-semibold tracking-tight">Review</h1><p className="mt-1 text-sm text-muted-foreground">Review and publish registry changes.</p></header>
+  return <div className="w-full space-y-5 px-4 py-6 sm:px-6">
+    <h1 className="sr-only">Review</h1>
     <nav aria-label="Review type" className="flex gap-1 border-b border-border">{tabs.map(name => <button key={name} type="button" onClick={() => { setTab(name); setSelection(0); }} aria-current={tab === name ? "page" : undefined} className={`border-b-2 px-3 py-2.5 text-sm capitalize transition-colors focus-visible:outline-2 focus-visible:outline-ring ${tab === name ? "border-foreground font-semibold text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{name}</button>)}</nav>
     {tab !== "teamspaces" && <div className="flex flex-wrap items-center gap-2">
       {filters.map(([key, label]) => <button type="button" key={key} onClick={() => { setFilter(key); setSelection(0); }} aria-pressed={filter === key} className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-ring ${filter === key ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"}`}>{label}</button>)}
       <label className="relative ml-auto w-full sm:w-60"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-2 size-4 text-muted-foreground" /><Input aria-label="Search reviews" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search reviews" className="h-8 bg-card pl-9" /></label>
     </div>}
-    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+    <div data-testid="review-list" className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
       <div className="flex flex-wrap items-center gap-2 border-b border-border bg-muted/40 px-4 py-2.5 text-xs text-muted-foreground">
         <span className="font-semibold text-foreground">{tab === "teamspaces" ? `${requests?.length ?? 0} visibility requests` : `${ordered.length} reviews${hasNextPage ? " loaded" : ""}`}</span>
         <span className="ml-auto">{tab === "teamspaces" ? "Public visibility decisions" : "Newest first"}</span>
