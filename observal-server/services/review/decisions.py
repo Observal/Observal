@@ -204,6 +204,10 @@ async def open_or_push(
             review.number = (await db.scalar(select(func.coalesce(func.max(Review.number), 0)))) + 1
         db.add(review)
         await db.flush()
+        # PostgreSQL assigns the non-PK sequence value, but SQLAlchemy may
+        # leave it unloaded after INSERT; async lazy loading then fails in
+        # notifications and the create response.
+        await db.refresh(review, attribute_names=["number"])
         next_number = 1
         _event(db, review, "opened", actor_id, at=review.opened_at, revision=1)
     revision = ReviewRevision(
