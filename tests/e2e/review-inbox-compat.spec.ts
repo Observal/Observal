@@ -3,7 +3,7 @@
 
 import { expect, test } from "@playwright/test";
 
-/** Phase 2 sends these kinds before the PR review page exists. */
+/** Review activity remains visible in the existing inbox after the cutover. */
 test("new review notices render in the existing inbox", async ({ page }, testInfo) => {
   const id = "e2d6c522-969d-4725-81ab-ed87c17af09c";
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -24,7 +24,7 @@ test("new review notices render in the existing inbox", async ({ page }, testInf
     subject_id: id,
     subject_namespace: "tests",
     subject_slug: "test-skill",
-    action_url: "/review?tab=components",
+    action_url: "/review/42",
     action_command: null,
     actor_id: null,
     team_id: null,

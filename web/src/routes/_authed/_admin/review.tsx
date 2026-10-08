@@ -3,7 +3,7 @@
 
 import { createFileRoute } from "@tanstack/react-router";
 import { lazy } from "react";
-const ReviewPage = lazy(() => import("@/pages/admin/review"));
+const ReviewPage = lazy(() => import("@/pages/review/queue"));
 
 export type ReviewSearch = {
   tab?: "agents" | "components" | "teamspaces";
