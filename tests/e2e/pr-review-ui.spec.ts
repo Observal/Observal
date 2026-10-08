@@ -32,6 +32,7 @@ test("review queue shows pinned dependencies in the Observal shell", async ({ pa
   await expect(page.getByText("Agent: repository assistant")).toBeVisible();
   await expect(page.getByText("Skill: verify source")).toBeVisible();
   await expect(page.getByText("Waits on #43")).toBeVisible();
+  await expect(page.getByText("Checks have warnings", { exact: true }).filter({ visible: true })).toHaveCount(2);
   await expect(page.locator("[aria-label='1 unresolved conversations']:visible")).toHaveCount(2);
   await expect(page.locator("[aria-label='1 unresolved conversations']:visible + span[aria-hidden='true']")).toHaveCount(2);
   await expect(page.getByTestId("review-list").locator(".lucide-shield-check")).toHaveCount(0);
@@ -50,6 +51,7 @@ test("review queue shows pinned dependencies in the Observal shell", async ({ pa
   await page.screenshot({ path: testInfo.outputPath("pr-review-queue-wide.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByText("Skill: verify source")).toBeVisible();
+  await expect(page.getByText("Checks have warnings", { exact: true }).filter({ visible: true })).toHaveCount(2);
   await expect(page.locator("[aria-label='1 unresolved conversations']:visible")).toHaveCount(2);
   await expect(page.locator("[aria-label='1 unresolved conversations']:visible + span[aria-hidden='true']")).toHaveCount(2);
   await page.screenshot({ path: testInfo.outputPath("pr-review-queue-mobile.png"), fullPage: true });
@@ -60,6 +62,36 @@ test("review queue shows pinned dependencies in the Observal shell", async ({ pa
   await expect.poll(() => queueRequests.some(url => url.includes("needs=ready_to_publish"))).toBe(true);
   await page.getByRole("textbox", { name: "Search reviews" }).fill("verify source");
   await expect.poll(() => queueRequests.some(url => url.includes("q=verify+source"))).toBe(true);
+});
+
+test("review queue distinguishes failures, warnings, skipped, and absent checks", async ({ page }) => {
+  const cases = [
+    { title: "Failed checks", checks: { pass: 2, fail: 1, warn: 1, skipped: 0 }, label: "Checks failing" },
+    { title: "Warnings", checks: { pass: 2, fail: 0, warn: 1, skipped: 0 }, label: "Checks have warnings" },
+    { title: "Partially skipped", checks: { pass: 2, fail: 0, warn: 0, skipped: 1 }, label: "Checks passed · 1 skipped" },
+    { title: "All skipped", checks: { pass: 0, fail: 0, warn: 0, skipped: 2 }, label: "Checks skipped" },
+    { title: "All passed", checks: { pass: 2, fail: 0, warn: 0, skipped: 0 }, label: "Checks passed" },
+    { title: "No checks", checks: { pass: 0, fail: 0, warn: 0, skipped: 0 }, label: "No checks recorded" },
+  ];
+  await page.addInitScript(() => {
+    sessionStorage.setItem("observal_access_token", "review-ui-test");
+    localStorage.setItem("observal_user_role", "reviewer");
+  });
+  await page.route("**/api/v1/**", route => route.fulfill({ json: { items: [], unread: 0, action_required: 0 } }));
+  await page.route("**/api/v1/auth/whoami", route => route.fulfill({ json: { id, username: "reviewer", role: "reviewer" } }));
+  await page.route("**/api/v1/reviews?*", route => route.fulfill({ json: {
+    items: new URL(route.request().url()).searchParams.get("type") === "component" ? []
+      : cases.map((item, index) => ({ ...summary(index + 51, item.title, "agent"), checks: item.checks })),
+    next_cursor: null,
+  } }));
+  await page.goto("/review");
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const item of cases) {
+      const row = page.getByRole("link", { name: new RegExp(item.title) });
+      await expect(row.getByText(item.label, { exact: true }).filter({ visible: true })).toHaveCount(1);
+    }
+  }
 });
 
 test("ordinary authors can open the review queue and paginate", async ({ page }, testInfo) => {
