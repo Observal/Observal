@@ -7,7 +7,7 @@ const id = "e2d6c522-969d-4725-81ab-ed87c17af09c";
 const now = new Date().toISOString();
 const summary = (number: number, title: string, subject_type: "agent" | "skill", depends_on: number[] = []) => ({
   id: `${number}0000000-0000-4000-8000-000000000000`, number, title, subject_type, subject_id: id,
-  version: "1.0.0", team_id: null, state: "open", author_id: id, head_revision: 1, updated_at: now,
+  version: "1.0.0", team_id: null, state: "open", author_id: id, author_name: "harish", head_revision: 1, updated_at: now,
   gate: { ready: false, approvals: 0, required: 2, policy_source: "organization", requirements: [] },
   threads: { total: 1, unresolved: 1 }, checks: { pass: 2, fail: 0, warn: 1, skipped: 0 },
   depends_on, requested_from_me: true, my_last_submission: null,
@@ -21,19 +21,28 @@ test("review queue shows pinned dependencies in the Observal shell", async ({ pa
   });
   await page.route("**/api/v1/**", route => route.fulfill({ json: { items: [], unread: 0, action_required: 0, by_kind: {}, by_subject_type: {} } }));
   await page.route("**/api/v1/auth/whoami", route => route.fulfill({ json: { id, username: "reviewer", name: "Review Tester", role: "reviewer" } }));
-  await page.route("**/api/v1/reviews?*", route => route.fulfill({ json: {
+  const queueRequests: string[] = [];
+  await page.route("**/api/v1/reviews?*", route => { queueRequests.push(route.request().url()); return route.fulfill({ json: {
     items: [summary(42, "Agent: repository assistant", "agent", [43]), summary(43, "Skill: verify source", "skill")],
     total: 2, limit: 100, offset: 0,
-  } }));
+  } }); });
   await page.goto("/review");
   await expect(page.getByRole("heading", { name: "Review", exact: true })).toBeVisible();
   await expect(page.getByText("Agent: repository assistant")).toBeVisible();
   await expect(page.getByText("Skill: verify source")).toBeVisible();
   await expect(page.getByText("Waits on #43")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Needs my review" })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Search reviews" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "New review" })).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath("pr-review-queue-desktop.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByText("Skill: verify source")).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("pr-review-queue-mobile.png"), fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole("button", { name: "Ready to publish" }).click();
+  await expect.poll(() => queueRequests.some(url => url.includes("needs=ready_to_publish"))).toBe(true);
+  await page.getByRole("textbox", { name: "Search reviews" }).fill("verify source");
+  await expect.poll(() => queueRequests.some(url => url.includes("q=verify+source"))).toBe(true);
 });
 
 test("ordinary authors can open the review queue and paginate", async ({ page }, testInfo) => {
@@ -70,7 +79,7 @@ test("review detail exposes the gate, revision diff, and a separate verdict", as
     opened_at: now, closed_at: null, closed_reason: null, published_at: null, published_by: null,
     base_version_id: null, head_revision_id: id, my_subscription: null, self_approval_allowed: false,
     revisions: [{ id, number: 1, message: "Initial release", created_by: id, created_at: now, pruned: false }],
-    requested_reviewers: [id],
+    requested_reviewers: [id], reviewer_names: { [id]: "harish" },
   };
   const diff = [{ path: "SKILL.md", status: "added", lang: "markdown", pinned: false, generated: false,
     additions: 1, deletions: 0, too_large: false,
@@ -91,13 +100,21 @@ test("review detail exposes the gate, revision diff, and a separate verdict", as
       verdicts.push(route.request().postDataJSON());
       return route.fulfill({ json: { state: "approved" } });
     }
-    const value = suffix === "/gate" ? detail.gate : suffix === "/timeline" ? { items: [], next_cursor: null }
-      : suffix === "/threads" || suffix === "/checks" ? [] : suffix === "/diff" ? diff : detail;
+    const value = suffix === "/gate" ? detail.gate : suffix === "/timeline" ? { items: [
+      { id, kind: "opened", actor_id: id, actor_name: "harish", created_at: now },
+      { id: "10000000-0000-4000-8000-000000000001", kind: "verdict", actor_id: id, actor_name: "harish", created_at: now, verdict: "comment", body: "Please verify permissions.", state: "submitted" },
+      { id: "10000000-0000-4000-8000-000000000002", kind: "comment", actor_id: id, actor_name: "harish", created_at: now, payload: { thread_id: "20000000-0000-4000-8000-000000000001" } },
+    ], next_cursor: null }
+      : suffix === "/threads" ? [{ id: "20000000-0000-4000-8000-000000000001", path: "SKILL.md", side: "head", start_line: 1, end_line: 1, outdated: false, resolved_at: null, revision_id: id, comments: [{ id, thread_id: "20000000-0000-4000-8000-000000000001", author_id: id, body: "The command needs a permission check.", suggestion: null, created_at: now, pending: false }] }]
+      : suffix === "/checks" ? [] : suffix === "/diff" || suffix === "/files" ? diff : detail;
     return route.fulfill({ json: value });
   });
   await page.goto("/review/42");
   await expect(page.getByRole("heading", { name: "Skill: verify source" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Publication gate" })).toBeVisible();
+  await expect(page.getByText("Please verify permissions.")).toBeVisible();
+  await expect(page.getByText("The command needs a permission check.")).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("pr-review-conversation-desktop.png"), fullPage: true });
   await page.getByRole("textbox", { name: "Reviewer user ID" }).fill(id);
   await page.getByRole("button", { name: "Request reviewer" }).click();
   await expect.poll(() => reviewerRequests.length).toBe(1);
@@ -105,6 +122,13 @@ test("review detail exposes the gate, revision diff, and a separate verdict", as
   await page.getByRole("button", { name: "Files changed" }).click();
   await expect(page.getByRole("table", { name: "Diff for SKILL.md" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("pr-review-detail-desktop.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("table", { name: "Diff for SKILL.md" })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("pr-review-detail-mobile.png"), fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole("navigation", { name: "Review sections" }).getByRole("button", { name: "Conversation" }).click();
+  await expect(page.getByRole("heading", { name: "Publication gate" })).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("pr-review-conversation-mobile.png"), fullPage: true });
   await page.getByRole("button", { name: "Review changes" }).click();
   await page.getByRole("radio", { name: "Approve" }).check();
   await page.getByRole("button", { name: "Submit review" }).click();

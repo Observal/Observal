@@ -23,6 +23,7 @@ export interface ReviewSummary {
   team_id: string | null;
   state: ReviewState;
   author_id: string | null;
+  author_name?: string | null;
   head_revision: number;
   updated_at: string;
   gate: ReviewGate;
@@ -36,6 +37,7 @@ export interface ReviewSummary {
 export interface ReviewDetail extends ReviewSummary {
   body: string;
   base_version_id: string | null;
+  base_version?: string | null;
   head_revision_id: string;
   opened_at: string;
   closed_at: string | null;
@@ -44,6 +46,7 @@ export interface ReviewDetail extends ReviewSummary {
   published_by: string | null;
   revisions: Array<{ id: string; number: number; message: string | null; created_by: string | null; created_at: string; pruned: boolean }>;
   requested_reviewers: string[];
+  reviewer_names?: Record<string, string>;
   my_subscription: "watching" | "muted" | null;
   self_approval_allowed: boolean;
 }
@@ -76,6 +79,7 @@ export interface ReviewTimelineEntry {
   id: string;
   kind: string;
   actor_id: string | null;
+  actor_name?: string | null;
   created_at: string;
   payload?: Record<string, unknown>;
   verdict?: ReviewVerdict;
