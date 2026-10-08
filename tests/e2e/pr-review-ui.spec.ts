@@ -32,6 +32,8 @@ test("review queue shows pinned dependencies in the Observal shell", async ({ pa
   await expect(page.getByText("Agent: repository assistant")).toBeVisible();
   await expect(page.getByText("Skill: verify source")).toBeVisible();
   await expect(page.getByText("Waits on #43")).toBeVisible();
+  await expect(page.locator("[aria-label='1 unresolved conversations']:visible")).toHaveCount(2);
+  await expect(page.getByTestId("review-list").locator(".lucide-shield-check")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Needs my review" })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Search reviews" })).toBeVisible();
   await expect(page.getByRole("button", { name: "New review" })).toHaveCount(0);
@@ -43,6 +45,7 @@ test("review queue shows pinned dependencies in the Observal shell", async ({ pa
   await page.screenshot({ path: testInfo.outputPath("pr-review-queue-wide.png"), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByText("Skill: verify source")).toBeVisible();
+  await expect(page.locator("[aria-label='1 unresolved conversations']:visible")).toHaveCount(2);
   await page.screenshot({ path: testInfo.outputPath("pr-review-queue-mobile.png"), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.getByRole("button", { name: "Ready to publish" }).click();

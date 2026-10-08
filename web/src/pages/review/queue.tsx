@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearch } from "@tanstack/react-router";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { ArrowUpRight, Check, MessageSquare, Search, ShieldCheck } from "lucide-react";
+import { ArrowUpRight, Check, MessageSquare, Search } from "lucide-react";
 import { auth, getUserRole, prReviews, teams } from "@/lib/api";
 import type { ReviewSummary } from "@/lib/types";
 import { useAuthGuard } from "@/hooks/use-auth";
@@ -45,14 +45,14 @@ function ReviewRow({ item, nested = false }: { item: ReviewSummary; nested?: boo
       {item.depends_on.length > 0 && <p className="text-xs text-muted-foreground">Waits on {item.depends_on.map(n => `#${n}`).join(", ")}</p>}
       {item.state === "approved" && <p className="text-xs font-medium text-success">Gate is green · awaiting publication</p>}
       {item.state === "changes_requested" && <p className="text-xs font-medium text-foreground">Changes requested · waiting for the author</p>}
-      <p className="text-xs text-muted-foreground sm:hidden">{approvals}/{required} approvals · {item.threads.unresolved} open conversations · {item.checks.fail ? "Checks failing" : "Checks passed"}</p>
+      <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground sm:hidden"><span>{approvals}/{required} approvals</span><span aria-hidden="true">·</span><span className="inline-flex items-center gap-1" aria-label={`${item.threads.unresolved} unresolved conversations`}><MessageSquare className="size-3.5" aria-hidden="true" />{item.threads.unresolved}</span><span aria-hidden="true">·</span><span>{item.checks.fail ? "Checks failing" : "Checks passed"}</span></p>
     </div>
     <div className="hidden min-w-36 flex-col items-end gap-1.5 text-xs text-muted-foreground sm:flex">
       <span className="flex items-center gap-2" aria-label={`${approvals} of ${required} approvals`}>
         {required > 0 && required <= 5 && <span className="flex gap-1" aria-hidden="true">{Array.from({ length: required }, (_, index) => <span key={index} className={`h-1.5 w-3.5 rounded-full ${index < approvals ? "bg-success" : "bg-border"}`} />)}</span>}
         {approvals}/{required} approvals
       </span>
-      <span className="flex items-center gap-2"><MessageSquare className="size-3.5" aria-hidden="true" />{item.threads.unresolved} open <ShieldCheck className="size-3.5" aria-hidden="true" />{item.checks.fail ? "Checks failing" : "Checks passed"}</span>
+      <span className="flex items-center gap-2"><span className="inline-flex items-center gap-1" aria-label={`${item.threads.unresolved} unresolved conversations`}><MessageSquare className="size-3.5" aria-hidden="true" />{item.threads.unresolved}</span><span>{item.checks.fail ? "Checks failing" : "Checks passed"}</span></span>
     </div>
   </Link>;
 }
