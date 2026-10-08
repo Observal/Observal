@@ -27,7 +27,9 @@ def test_review_schema_upgrades_twice_from_legacy_sqlite():
     cutover_spec = importlib.util.spec_from_file_location("cutover_migration", path.with_name("032_review_cutover.py"))
     cutover = importlib.util.module_from_spec(cutover_spec)
     cutover_spec.loader.exec_module(cutover)
-    orphan_spec = importlib.util.spec_from_file_location("orphan_migration", path.with_name("033_review_orphan_authors.py"))
+    orphan_spec = importlib.util.spec_from_file_location(
+        "orphan_migration", path.with_name("033_review_orphan_authors.py")
+    )
     orphan = importlib.util.module_from_spec(orphan_spec)
     orphan_spec.loader.exec_module(orphan)
     with engine.begin() as conn, Operations.context(MigrationContext.configure(conn)):

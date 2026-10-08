@@ -229,7 +229,11 @@ async def _publish_version(
     review = await submit_for_review(db, component_type, listing, ver, current_user.id, message=req.message)
     await db.commit()
 
-    return {**_version_to_dict(ver, component_type), "review_number": review.number, "review_url": f"/review/{review.number}"}
+    return {
+        **_version_to_dict(ver, component_type),
+        "review_number": review.number,
+        "review_url": f"/review/{review.number}",
+    }
 
 
 async def _version_suggestions(

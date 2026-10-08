@@ -65,4 +65,6 @@ def downgrade():
     )
     for table in _TABLES:
         with op.batch_alter_table(table) as batch:
-            batch.add_column(sa.Column("bundle_id", uuid, sa.ForeignKey("component_bundles.id", name=f"fk_{table}_bundle_id")))
+            batch.add_column(
+                sa.Column("bundle_id", uuid, sa.ForeignKey("component_bundles.id", name=f"fk_{table}_bundle_id"))
+            )

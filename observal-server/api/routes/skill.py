@@ -455,7 +455,12 @@ async def update_skill_draft(
         raise HTTPException(status_code=404, detail="Listing not found")
     if get_effective_component_permission(listing, current_user) != "owner":
         raise HTTPException(status_code=403, detail="Not the listing owner")
-    if listing.status not in (ListingStatus.draft, ListingStatus.rejected, ListingStatus.pending, ListingStatus.changes_requested):
+    if listing.status not in (
+        ListingStatus.draft,
+        ListingStatus.rejected,
+        ListingStatus.pending,
+        ListingStatus.changes_requested,
+    ):
         raise HTTPException(status_code=400, detail="Only draft, rejected, or pending listings can be edited")
     _reject_visibility_edits(listing, req)
 
@@ -531,7 +536,12 @@ async def start_edit_skill(
     ver = listing.latest_version
     if not ver:
         raise HTTPException(status_code=400, detail="Listing has no version")
-    if ver.status not in (ListingStatus.pending, ListingStatus.draft, ListingStatus.rejected, ListingStatus.changes_requested):
+    if ver.status not in (
+        ListingStatus.pending,
+        ListingStatus.draft,
+        ListingStatus.rejected,
+        ListingStatus.changes_requested,
+    ):
         raise HTTPException(status_code=400, detail=f"Cannot edit: listing is '{ver.status.value}'")
     # Re-fetch with row-level lock to prevent TOCTOU race
     ver = (await db.execute(select(SkillVersion).where(SkillVersion.id == ver.id).with_for_update())).scalar_one()
@@ -573,7 +583,12 @@ async def submit_skill_draft(
         raise HTTPException(status_code=404, detail="Listing not found")
     if get_effective_component_permission(listing, current_user) != "owner":
         raise HTTPException(status_code=403, detail="Not the listing owner")
-    if listing.status not in (ListingStatus.draft, ListingStatus.rejected, ListingStatus.pending, ListingStatus.changes_requested):
+    if listing.status not in (
+        ListingStatus.draft,
+        ListingStatus.rejected,
+        ListingStatus.pending,
+        ListingStatus.changes_requested,
+    ):
         raise HTTPException(status_code=400, detail="Listing is not a draft")
 
     ver = listing.latest_version

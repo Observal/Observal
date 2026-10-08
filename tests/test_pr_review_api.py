@@ -88,12 +88,18 @@ async def api(monkeypatch):
 async def test_skill_submit_creates_review_and_old_version_action_is_gone(api):
     client, current, (author, reviewer, _, _), _, factory = api
     current[0] = author
-    response = await client.post("/api/v1/skills/submit", json={
-        "name": "Cutover skill", "owner": "author", "version": "1.0.0",
-        "description": "First version", "task_type": "code-review",
-        "delivery_mode": "registry_direct",
-        "skill_md_content": "---\nname: cutover-skill\ndescription: First version\n---\n# Cutover skill\n",
-    })
+    response = await client.post(
+        "/api/v1/skills/submit",
+        json={
+            "name": "Cutover skill",
+            "owner": "author",
+            "version": "1.0.0",
+            "description": "First version",
+            "task_type": "code-review",
+            "delivery_mode": "registry_direct",
+            "skill_md_content": "---\nname: cutover-skill\ndescription: First version\n---\n# Cutover skill\n",
+        },
+    )
     assert response.status_code == 200, response.text
     data = response.json()
     assert data["review_number"] and data["review_url"] == f"/review/{data['review_number']}"
@@ -101,7 +107,9 @@ async def test_skill_submit_creates_review_and_old_version_action_is_gone(api):
     assert detail.status_code == 200, detail.text
     assert detail.json()["subject_type"] == "skill"
     current[0] = reviewer
-    assert (await client.post(f"/api/v1/skills/{data['id']}/versions/1.0.0/review", json={"action": "approve"})).status_code == 404
+    assert (
+        await client.post(f"/api/v1/skills/{data['id']}/versions/1.0.0/review", json={"action": "approve"})
+    ).status_code == 404
     async with factory() as db:
         review = await db.scalar(select(Review).where(Review.number == data["review_number"]))
         assert review is not None
@@ -113,23 +121,36 @@ async def test_skill_submit_creates_review_and_old_version_action_is_gone(api):
 async def test_requested_changes_can_be_edited_and_resubmitted_as_revision(api):
     client, current, (author, reviewer, _, _), _, factory = api
     current[0] = author
-    created = await client.post("/api/v1/skills/submit", json={
-        "name": "Revision skill", "owner": "author", "version": "1.0.0",
-        "description": "Revisable", "task_type": "code-review",
-        "delivery_mode": "registry_direct",
-        "skill_md_content": "---\nname: revision-skill\ndescription: Revisable\n---\n# Before\n",
-    })
+    created = await client.post(
+        "/api/v1/skills/submit",
+        json={
+            "name": "Revision skill",
+            "owner": "author",
+            "version": "1.0.0",
+            "description": "Revisable",
+            "task_type": "code-review",
+            "delivery_mode": "registry_direct",
+            "skill_md_content": "---\nname: revision-skill\ndescription: Revisable\n---\n# Before\n",
+        },
+    )
     assert created.status_code == 200, created.text
     listing_id, number = created.json()["id"], created.json()["review_number"]
     current[0] = reviewer
-    verdict = await client.post(f"/api/v1/reviews/{number}/submissions", json={
-        "verdict": "request_changes", "body": "Clarify the purpose",
-    })
+    verdict = await client.post(
+        f"/api/v1/reviews/{number}/submissions",
+        json={
+            "verdict": "request_changes",
+            "body": "Clarify the purpose",
+        },
+    )
     assert verdict.status_code == 201, verdict.text
     current[0] = author
-    edited = await client.put(f"/api/v1/skills/{listing_id}/draft", json={
-        "skill_md_content": "---\nname: revision-skill\ndescription: Revisable\n---\n# Clarified\n",
-    })
+    edited = await client.put(
+        f"/api/v1/skills/{listing_id}/draft",
+        json={
+            "skill_md_content": "---\nname: revision-skill\ndescription: Revisable\n---\n# Clarified\n",
+        },
+    )
     assert edited.status_code == 200, edited.text
     pushed = await client.post(f"/api/v1/skills/{listing_id}/submit?message=Clarified")
     assert pushed.status_code == 200, pushed.text
@@ -146,10 +167,17 @@ async def test_requested_changes_can_be_edited_and_resubmitted_as_revision(api):
 async def test_agent_create_opens_review_before_commit(api):
     client, current, (author, _, _, _), _, factory = api
     current[0] = author
-    response = await client.post("/api/v1/agents", json={
-        "name": "review-agent", "version": "1.0.0", "description": "A reviewable agent",
-        "prompt": "Read files carefully.", "model_name": "claude-sonnet-4", "owner": "author",
-    })
+    response = await client.post(
+        "/api/v1/agents",
+        json={
+            "name": "review-agent",
+            "version": "1.0.0",
+            "description": "A reviewable agent",
+            "prompt": "Read files carefully.",
+            "model_name": "claude-sonnet-4",
+            "owner": "author",
+        },
+    )
     assert response.status_code == 200, response.text
     data = response.json()
     assert data["review_number"] and data["review_url"] == f"/review/{data['review_number']}"

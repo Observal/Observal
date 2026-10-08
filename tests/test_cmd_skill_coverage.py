@@ -102,9 +102,18 @@ def test_submit_existing_draft(monkeypatch):
     post.assert_called_once_with("/api/v1/skills/resolved-draft/submit")
     assert "Review #42: /review/42" in submitted.output
     post.reset_mock()
-    resubmitted = runner.invoke(app, [
-        "registry", "skill", "submit", "--submit", "alice/draft", "--message", "Clarified & fixed",
-    ])
+    resubmitted = runner.invoke(
+        app,
+        [
+            "registry",
+            "skill",
+            "submit",
+            "--submit",
+            "alice/draft",
+            "--message",
+            "Clarified & fixed",
+        ],
+    )
     assert resubmitted.exit_code == 0, resubmitted.output
     post.assert_called_once_with("/api/v1/skills/resolved-draft/submit?message=Clarified%20%26%20fixed")
 

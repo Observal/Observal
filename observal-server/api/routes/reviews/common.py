@@ -51,7 +51,9 @@ async def get_review(
             matches = []
             for subject_type, model in (("agent", Agent), *LISTING_MODELS.items()):
                 subject_ids = select(model.id).where(model.namespace == namespace, model.slug == slug)
-                statement = select(Review).where(Review.subject_type == subject_type, Review.subject_id.in_(subject_ids))
+                statement = select(Review).where(
+                    Review.subject_type == subject_type, Review.subject_id.in_(subject_ids)
+                )
                 if version:
                     statement = statement.where(Review.version == version)
                 else:
@@ -60,7 +62,9 @@ async def get_review(
                     if await participant(db, candidate, user):
                         matches.append(candidate)
             if len(matches) != 1:
-                raise HTTPException(409 if matches else 404, "Ambiguous review" if matches else "Review not found") from None
+                raise HTTPException(
+                    409 if matches else 404, "Ambiguous review" if matches else "Review not found"
+                ) from None
             return matches[0]
         review = await db.scalar(select(Review).where(Review.id == uid))
         if review is None:

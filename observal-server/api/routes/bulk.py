@@ -166,7 +166,9 @@ async def bulk_create_agents(
             # clears that state and lets the remaining items proceed.
             async with db.begin_nested():
                 agent, review_number = await _create_single_agent(item, current_user, db)
-            results.append(BulkResultItem(name=item.name, status="created", agent_id=agent.id, review_number=review_number))
+            results.append(
+                BulkResultItem(name=item.name, status="created", agent_id=agent.id, review_number=review_number)
+            )
             created += 1
         except Exception as exc:
             optic.warning("bulk create failed for agent '{}': error_type={}", item.name, type(exc).__name__)

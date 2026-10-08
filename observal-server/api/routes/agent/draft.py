@@ -221,7 +221,12 @@ async def update_draft(
     perm = get_effective_agent_permission(agent, current_user)
     if perm not in ("owner", "edit"):
         raise HTTPException(status_code=403, detail="Not the agent owner or editor")
-    if agent.status not in (AgentStatus.draft, AgentStatus.rejected, AgentStatus.pending, AgentStatus.changes_requested):
+    if agent.status not in (
+        AgentStatus.draft,
+        AgentStatus.rejected,
+        AgentStatus.pending,
+        AgentStatus.changes_requested,
+    ):
         raise HTTPException(status_code=400, detail="Only draft, rejected, or pending agents can be edited")
 
     version = agent.latest_version
@@ -401,7 +406,12 @@ async def start_edit_agent(
     version = agent.latest_version
     if not version:
         raise HTTPException(status_code=400, detail="Agent has no version")
-    if version.status not in (AgentStatus.pending, AgentStatus.draft, AgentStatus.rejected, AgentStatus.changes_requested):
+    if version.status not in (
+        AgentStatus.pending,
+        AgentStatus.draft,
+        AgentStatus.rejected,
+        AgentStatus.changes_requested,
+    ):
         raise HTTPException(status_code=400, detail=f"Cannot edit: agent version is '{version.status.value}'")
     # Re-fetch with row-level lock to prevent TOCTOU race
     version = (
@@ -448,7 +458,12 @@ async def submit_draft(
     perm = get_effective_agent_permission(agent, current_user)
     if perm not in ("owner", "edit"):
         raise HTTPException(status_code=403, detail="Not the agent owner or editor")
-    if agent.status not in (AgentStatus.draft, AgentStatus.rejected, AgentStatus.pending, AgentStatus.changes_requested):
+    if agent.status not in (
+        AgentStatus.draft,
+        AgentStatus.rejected,
+        AgentStatus.pending,
+        AgentStatus.changes_requested,
+    ):
         raise HTTPException(status_code=400, detail="Agent is not a draft")
     if not agent.description:
         raise HTTPException(status_code=400, detail="Description is required before submitting")

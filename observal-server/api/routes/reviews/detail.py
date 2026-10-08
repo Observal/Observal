@@ -30,9 +30,7 @@ router = APIRouter()
 
 
 @router.get("/resolve")
-async def resolve_identity(
-    ref: str, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)
-):
+async def resolve_identity(ref: str, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     """Resolve namespace/slug[@version] without putting a slash in a path parameter."""
     review = await get_review(ref, db, user)
     return {"number": review.number, "id": review.id}

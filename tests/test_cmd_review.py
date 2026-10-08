@@ -15,11 +15,18 @@ runner = CliRunner()
 def test_review_list_caches_review_ids_and_renders_queue(monkeypatch):
     calls, cache = [], []
     row = {
-        "id": "1f1c41e5-9dd4-409f-a356-000000000001", "number": 42,
-        "title": "Test skill", "subject_type": "skill", "version": "1.0.0",
-        "state": "open", "gate": {"approvals": 0, "required": 1}, "threads": {"unresolved": 0},
+        "id": "1f1c41e5-9dd4-409f-a356-000000000001",
+        "number": 42,
+        "title": "Test skill",
+        "subject_type": "skill",
+        "version": "1.0.0",
+        "state": "open",
+        "gate": {"approvals": 0, "required": 1},
+        "threads": {"unresolved": 0},
     }
-    monkeypatch.setattr(cmd_review.client, "get", lambda url, params=None: calls.append((url, params)) or {"items": [row]})
+    monkeypatch.setattr(
+        cmd_review.client, "get", lambda url, params=None: calls.append((url, params)) or {"items": [row]}
+    )
     monkeypatch.setattr(cmd_review.config, "save_last_results", lambda items, kind: cache.append((items, kind)))
     result = runner.invoke(app, ["review", "list", "--type", "skill", "--output", "json"])
     assert result.exit_code == 0, result.output
@@ -30,7 +37,9 @@ def test_review_list_caches_review_ids_and_renders_queue(monkeypatch):
 
 def test_review_verdict_does_not_call_publish_and_legacy_admin_group_is_absent(monkeypatch):
     posted = []
-    monkeypatch.setattr(cmd_review.client, "post", lambda url, body=None: posted.append((url, body)) or {"state": "approved"})
+    monkeypatch.setattr(
+        cmd_review.client, "post", lambda url, body=None: posted.append((url, body)) or {"state": "approved"}
+    )
     approved = runner.invoke(app, ["review", "approve", "#42", "--output", "json"])
     assert approved.exit_code == 0, approved.output
     assert posted == [("/api/v1/reviews/%2342/submissions", {"verdict": "approve", "body": ""})]
