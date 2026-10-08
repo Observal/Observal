@@ -129,6 +129,7 @@ config:
   logFormat: json
   jwtSigningAlgorithm: ES256
   jwtKeyDir: /data/keys
+  jwtKeyReadOnly: false
   seedDemoAccounts: false
 
 apidata:

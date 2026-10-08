@@ -22,6 +22,13 @@ All notable changes to this project will be documented in this file.
 
 - correct the live log viewer command to `observal ops logs`
 
+### Security
+
+- coordinate shared JWT key startup across POSIX workers and enforce owner-only key permissions
+- keep JWT signing and verification consistent through managed key rotation across workers
+- require JWKS revalidation and exclude expired retired keys across workers
+- report runtime JWT key-store failures, including loss or corruption of a previously validated retained verification key, as service unavailability without regenerating keys
+
 ### Maintenance
 
 - publish from maintained `release/X.Y` branches with alpha, beta, RC, stable, and backport workflows; deploy and update Homebrew only after verifying the newest stable release
