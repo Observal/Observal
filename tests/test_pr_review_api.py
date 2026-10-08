@@ -254,10 +254,14 @@ async def test_detail_and_raw_diff_never_leak_to_nonparticipants(api):
     response = await client.get(f"/api/v1/reviews/{number}")
     assert response.status_code == 200
     assert response.json()["number"] == number
+    assert response.json()["author_name"] == "author"
+    assert response.json()["base_version"] is None
     assert response.json()["self_approval_allowed"] is False
     assert (await client.get("/api/v1/reviews?author=me")).json()["items"][0]["number"] == number
     current[0] = reviewer
     assert (await client.get(f"/api/v1/reviews/{number}/diff")).status_code == 200
+    timeline = (await client.get(f"/api/v1/reviews/{number}/timeline")).json()["items"]
+    assert any(event["actor_name"] == "author" for event in timeline if event["actor_id"] == str(author.id))
 
 
 @pytest.mark.asyncio

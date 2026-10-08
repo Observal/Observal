@@ -51,13 +51,27 @@ async def detail(
     requested = (
         await db.scalars(select(ReviewReviewerRequest.user_id).where(ReviewReviewerRequest.review_id == review.id))
     ).all()
-    subject, _ = await _target(db, review)
+    submitted_by = (
+        await db.scalars(select(ReviewSubmission.reviewer_id).where(ReviewSubmission.review_id == review.id))
+    ).all()
+    reviewer_ids = set(requested) | set(submitted_by)
+    reviewer_names = {
+        str(uid): username
+        for uid, username in (
+            (await db.execute(select(User.id, User.username).where(User.id.in_(reviewer_ids)))).all()
+            if reviewer_ids
+            else []
+        )
+    }
+    subject, version = await _target(db, review)
+    base = await db.get(type(version), review.base_version_id) if review.base_version_id else None
     policy = await policy_for(review, db=db)
     self_approval_allowed = subject.is_private and policy.source == "teamspace" and policy.self_approval == "counted"
     return {
         **await summary(db, review, user),
         "body": review.body,
         "base_version_id": review.base_version_id,
+        "base_version": base.version if base else None,
         "head_revision_id": review.head_revision_id,
         "opened_at": review.opened_at,
         "closed_at": review.closed_at,
@@ -76,6 +90,7 @@ async def detail(
             for r in revisions
         ],
         "requested_reviewers": requested,
+        "reviewer_names": reviewer_names,
         "my_subscription": subscription.mode if subscription else None,
         "self_approval_allowed": self_approval_allowed,
     }
@@ -224,7 +239,16 @@ async def timeline(
         if not positions:
             raise HTTPException(404, "Cursor not found")
         entries = entries[positions[0] + 1 :]
-    return {"items": entries[:limit], "next_cursor": entries[limit - 1]["id"] if len(entries) > limit else None}
+    page = entries[:limit]
+    actor_ids = {entry["actor_id"] for entry in page if entry["actor_id"]}
+    actors = (
+        dict((await db.execute(select(User.id, User.username).where(User.id.in_(actor_ids)))).all())
+        if actor_ids
+        else {}
+    )
+    for entry in page:
+        entry["actor_name"] = actors.get(entry["actor_id"])
+    return {"items": page, "next_cursor": entries[limit - 1]["id"] if len(entries) > limit else None}
 
 
 @router.get("/{ref}/related")

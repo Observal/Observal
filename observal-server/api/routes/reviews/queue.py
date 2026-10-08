@@ -111,6 +111,7 @@ async def summary(db, review, user):
         if pins:
             linked = (await db.scalars(select(Review).where(Review.version_id.in_(pins)))).all()
             dependencies = [r.number for r in linked if await participant(db, r, user)]
+    author = await db.get(User, review.opened_by) if review.opened_by else None
     return {
         "depends_on": dependencies,
         "threads": {
@@ -127,6 +128,7 @@ async def summary(db, review, user):
         "team_id": review.team_id,
         "state": review.state.value,
         "author_id": review.opened_by,
+        "author_name": author.username if author else None,
         "head_revision": latest.number,
         "updated_at": review.updated_at,
         "gate": {
