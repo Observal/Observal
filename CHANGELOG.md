@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+- add revision-based, participant-scoped reviews with publication gates, conversations, inbox notifications, web review pages, and `observal review` commands
 - add opt-in, local-only harness inventory to `observal scan`
 
 ### Documentation
