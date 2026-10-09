@@ -2777,6 +2777,7 @@ def register_pull(app: typer.Typer):
                     settings_display=hook_request.display if hook_request is not None else "",
                 )
             )
+            warnings_list.extend(adapter.bind_pulled_hooks(snippet, lock_components, target_dir, is_user_scope))
 
             # The MCP file this pull wrote (a Pi profile's mcp.json, for example).
             mcp_cfg = snippet.get("mcp_config")
