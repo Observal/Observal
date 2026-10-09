@@ -18,6 +18,14 @@ All notable changes to this project will be documented in this file.
 
 - add opt-in, local-only harness inventory to `observal scan`
 
+### Documentation
+
+- correct the live log viewer command to `observal ops logs`
+
+### Maintenance
+
+- publish from maintained `release/X.Y` branches with alpha, beta, RC, stable, and backport workflows; deploy and update Homebrew only after verifying the newest stable release
+
 ## [1.13.1] - 2026-09-05
 
 ### Features
