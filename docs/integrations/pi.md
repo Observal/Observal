@@ -43,7 +43,7 @@ and is shared by every agent; agent pulls do not embed telemetry hooks.
 | Session parsing | Pi JSONL parser, including result-linked MCP invocation extraction |
 | MCP component insights | Observed calls for verified, uniquely matched MCP servers with `pi-mcp-adapter`; otherwise coverage reports unavailable attribution, not zero use |
 | Registry hooks | Command hooks on `PreToolUse` / `PostToolUse`, user scope, run by the Observal extension (see [Registry hooks](#registry-hooks)) |
-| Hook component insights | Runs that printed output, failures and blocks, from the extension's receipts, for verified, uniquely matched hooks |
+| Hook component insights | Every run (with output, silent, failed, blocked), from the extension's receipts, for verified, uniquely matched hooks |
 | Telemetry | Pi session transcripts delivered through the extension; `observal reconcile --harness pi` is accepted but finds no sessions |
 | Model selection | Registry-backed Pi model catalog (`observal registry models list --harness pi`) |
 
@@ -187,7 +187,7 @@ attribution are separate; the latter is visible in the MCP's activity summary
 and session list for authorized owners. Other component types do not gain
 observed-call reports from this integration.
 
-This is fixture-verified for `pi-mcp-adapter` 2.38.0 and 4.0.0 (proxy calls),
+This is fixture-verified for `pi-mcp-adapter` 2.38.0 and 4.0.0 (proxy and direct-tool calls),
 with relevant result shapes checked against the 3.2.0 and 4.0.0 sources. A
 later major version is not recognised until it has been checked the same way. An adapter that changes its result details or
 config resolution needs new sanitized fixtures and extractor verification
@@ -287,6 +287,12 @@ still matches its fingerprint. The extension additionally requires that it
 loaded exactly those bytes when the session started. An edited entry is
 `drifted`; a missing, duplicated, unreadable or inactive one is `unverified`
 and is never counted.
+
+**Counts.** The extension writes a receipt for every run, silent successes
+included, so Pi hook reports count them and do not carry the silent-run
+lower-bound caveat. Receipts are best-effort: a run whose receipt Pi fails to
+append is missing, which is a fault, not a class of runs that is never
+recorded.
 
 **Eligibility.** A verified hook runs in every mode the extension loads in
 (interactive, print and RPC), so every session whose layer verifies it is

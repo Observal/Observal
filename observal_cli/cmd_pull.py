@@ -1856,9 +1856,9 @@ def _resolve_hook_placement(
     found in settings.json itself (``existing``: the policy of gated hooks this
     agent already owns there), so a teammate's committed settings or a failed
     lockfile write never silently moves the hooks back. The opt-in is offered
-    only on POSIX and on tested Claude Code versions. A pull that keeps an
-    earlier opt-in only warns after an untested upgrade, so an installed agent
-    can still be re-pulled.
+    only on POSIX. On an untested Claude Code version it is allowed with a
+    warning: hook evidence from that version is reported as unverified, so a
+    Claude Code update never blocks a pull.
     """
     from observal_cli import agent_hooks
 
@@ -1897,23 +1897,17 @@ def _resolve_hook_placement(
     version = agent_hooks.claude_code_version()
     if agent_hooks.is_tested_version(version):
         return "settings", policy, found
+    # Never blocks: hook evidence from an untested version is reported as unverified
+    # by the server instead, so the opt-in keeps working when Claude Code updates.
     seen = f"Claude Code {version}" if version else "no Claude Code version (is `claude` on PATH?)"
-    if hooks == "settings":
-        fail(
-            ErrorCategory.VALIDATION,
-            f"Agent hooks in settings.json are offered only on tested Claude Code versions "
-            f"({agent_hooks.tested_range()}); found {seen}.",
-            operation="Pull agent",
-            resource="agent hook placement",
-            remediation="Pull without --hooks=settings, or use a tested Claude Code version.",
-        )
     return (
         "settings",
         policy,
         [
             *found,
             f"Gated agent hooks were tested only with Claude Code {agent_hooks.tested_range()}; found {seen}. "
-            "They may not run as expected; pull with --hooks=frontmatter to move them back.",
+            "They may not run as expected, and their Component Insights evidence is reported as unverified "
+            "until this version is tested; pull with --hooks=frontmatter to move them back.",
         ],
     )
 
@@ -2006,25 +2000,24 @@ def _plan_agent_hooks(request, *, remembered: bool, dry_run: bool):
             resource=str(request.path),
             remediation="Fix settings.json (it must be a JSON object), then pull again. Nothing was written.",
         )
-    if plan.conflicts and not dry_run:
-        _fail_agent_hook_conflicts(request, plan)
     return plan
 
 
-def _fail_agent_hook_conflicts(request, plan, result: dict | None = None) -> None:
+def _agent_hook_conflict_warnings(request, plan) -> list[str]:
+    """Edited Observal-owned groups are left exactly as the user made them; the rest of the pull continues.
+
+    Each stays in settings.json and keeps running as edited, but is not updated
+    and verifies as drifted, so Component Insights does not count it.
+    """
+    if plan is None or not plan.conflicts:
+        return []
     edited = ", ".join(f"{item['event']} ({item['component_id'] or 'unknown component'})" for item in plan.conflicts)
-    fail(
-        ErrorCategory.CONFLICT,
-        f"{len(plan.conflicts)} Observal-owned agent hook(s) in {request.path} were edited locally.",
-        operation="Pull agent",
-        resource=str(request.path),
-        remediation=(
-            'Pass --force-hooks to replace them with the agent\'s hooks, or delete their "_observal" key '
-            "to keep them as your own hooks."
-        ),
-        detail=f"Edited: {edited}",
-        result=result,
-    )
+    return [
+        f"{len(plan.conflicts)} Observal-owned agent hook(s) in {request.path} were edited locally and were left "
+        f"as they are: {edited}. They were not updated, and Component Insights does not count them. Pass "
+        '--force-hooks to replace them with the agent\'s hooks, or delete their "_observal" key to keep them '
+        "as your own hooks."
+    ]
 
 
 def _apply_agent_hooks(
@@ -2057,8 +2050,6 @@ def _apply_agent_hooks(
             remediation="Fix settings.json (it must be a JSON object), then pull again.",
             result=failure("write_agent_hooks"),
         )
-    if plan.conflicts:
-        _fail_agent_hook_conflicts(request, plan, failure("write_agent_hooks"))
     if plan.changed:
         try:
             agent_hooks.write_settings(request.path, plan.data)
@@ -2259,8 +2250,9 @@ def register_pull(app: typer.Typer):
         Claude Code runs hooks from an agent file only in interactive
         sessions. --hooks=settings moves the agent's command hooks into
         settings.json, each wrapped by a gate that runs it only while that
-        agent is active, headless included (POSIX, tested Claude Code versions
-        only). Preview with --dry-run first; --hooks=frontmatter moves them back.
+        agent is active, headless included (POSIX only; untested Claude Code
+        versions warn). Preview with --dry-run first; --hooks=frontmatter moves
+        them back.
 
         Examples:
           observal agent pull my-agent --harness claude-code --no-prompt
@@ -2688,6 +2680,8 @@ def register_pull(app: typer.Typer):
             + list(result.get("warnings") or [])
             + (snippet.get("_warnings") or [])
         )
+        if dry_run and hook_request is not None:
+            warnings_list.extend(_agent_hook_conflict_warnings(hook_request, hook_plan))
 
         # Run required harness registration before recording the pull as installed.
         setup_results: list[dict] = []
@@ -2765,6 +2759,7 @@ def register_pull(app: typer.Typer):
 
             if hook_request is not None and hook_plan is not None:
                 hook_plan = _apply_agent_hooks(hook_request, written, setup_results, reports_sessions=reports_sessions)
+                warnings_list.extend(_agent_hook_conflict_warnings(hook_request, hook_plan))
 
             warnings_list.extend(_fingerprint_written_skills(snippet, lock_components, target_dir, is_user_scope))
             warnings_list.extend(
