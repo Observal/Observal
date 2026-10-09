@@ -290,8 +290,8 @@ HOOK_EFFECT_LIMITATION = (
     "effect_not_observed: a recorded run shows the hook executed, not what it changed or whether it helped"
 )
 HOOK_SILENT_LIMITATION = (
-    "silent_success_unrecorded: a hook that succeeds without printing output is not counted as a recorded "
-    "run, so recorded runs are a lower bound and no recorded run is not proof the hook did not run"
+    "silent_success_unrecorded: a harness in this cohort leaves no record of a hook that succeeds without "
+    "printing output, so recorded runs are a lower bound and no recorded run is not proof the hook did not run"
 )
 
 
@@ -335,7 +335,9 @@ class HookActivityCoverage(BaseModel):
         0, description="Processed present sessions where the hook could run (eligible)"
     )
     observed_sessions: int = Field(0, description="Eligible sessions with at least one recorded run")
-    usage_rate: float | None = Field(None, description="A lower bound when silent successes are unrecorded")
+    usage_rate: float | None = Field(
+        None, description="A lower bound where a harness leaves silent successes unrecorded"
+    )
     attribution_state: HookAttributionState
     reasons: list[str] = Field(default_factory=list)
     limitations: list[str] = Field(
@@ -353,7 +355,10 @@ class HookActivitySummaryResponse(BaseModel):
     present_users: int
     eligible_sessions: int = Field(description="Processed present sessions where the hook could run")
     sessions_with_recorded_run: int
-    runs_with_output: int = Field(description="Successful runs that printed output (silent successes are unrecorded)")
+    runs_with_output: int = Field(description="Successful runs that printed output")
+    silent_runs: int | None = Field(
+        description="Successful runs without output; null when no harness in the cohort records them"
+    )
     failures: int
     blocks: int
     harness_distribution: dict[str, int]
@@ -371,6 +376,7 @@ class HookActivitySession(BaseModel):
     source_state: SourceAvailabilityState
     eligibility: HookEligibilityState
     runs_with_output: int
+    silent_runs: int | None = Field(description="Null when this session's harness does not record silent runs")
     failures: int
     blocks: int
 

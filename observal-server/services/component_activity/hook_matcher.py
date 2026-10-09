@@ -52,8 +52,10 @@ if TYPE_CHECKING:
 # no gated placement existed before, so earlier publications stay correct.
 # 3: a gated hook in a subagent's own transcript is eligible or inactive when the
 # parent session recorded which agent the subagent was; 'agent_unknown' otherwise.
-HOOK_MATCHER_VERSION = 3
-_RESULT = {"ran_with_output": "success", "failed": "error", "blocked": "error"}
+# 4: silent successes (``ran_silently``) are attributed runs where the harness records
+# them (Pi); other harnesses never emit the kind, so their publications are unchanged.
+HOOK_MATCHER_VERSION = 4
+_RESULT = {"ran_with_output": "success", "ran_silently": "success", "failed": "error", "blocked": "error"}
 
 
 @dataclass(frozen=True)

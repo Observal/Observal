@@ -218,9 +218,11 @@ export interface HookInsightMetrics {
 	present_users: number;
 	/** Processed present sessions where the hook could run. */
 	eligible_sessions: number;
-	/** A lower bound where silent successes leave no record. */
+	/** A lower bound where a harness in the cohort leaves silent successes unrecorded. */
 	sessions_with_recorded_run: number;
 	runs_with_output: number;
+	/** Successful runs without output; null when no harness in the cohort records them. Absent on older reports. */
+	silent_runs?: number | null;
 	failures: number;
 	blocks: number;
 	harness_distribution: Record<string, number>;

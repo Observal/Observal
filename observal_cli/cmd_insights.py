@@ -539,10 +539,19 @@ def _render_hook_report(data: dict) -> None:
     rprint(f"  Present sessions: {metrics.get('present_sessions', 0)}")
     rprint(f"  Sessions where it could run: {metrics.get('eligible_sessions', 0)}")
     if measured:
-        rprint(f"  Sessions with a recorded run: {metrics.get('sessions_with_recorded_run', 0)} (a lower bound)")
+        # A lower bound only where some harness in the cohort leaves silent runs unrecorded.
+        lower_bound = any(
+            str(item).startswith("silent_success_unrecorded") for item in coverage.get("limitations") or []
+        )
+        rprint(
+            f"  Sessions with a recorded run: {metrics.get('sessions_with_recorded_run', 0)}"
+            + (" (a lower bound)" if lower_bound else "")
+        )
+        silent = metrics.get("silent_runs")
         rprint(
             f"  Recorded runs: {metrics.get('runs_with_output', 0)} with output, "
-            f"{metrics.get('failures', 0)} failed, {metrics.get('blocks', 0)} blocked"
+            + (f"{silent} silent, " if silent is not None else "")
+            + f"{metrics.get('failures', 0)} failed, {metrics.get('blocks', 0)} blocked"
         )
     else:
         rprint("  Recorded runs: not measured (no processed session where it could run)")
