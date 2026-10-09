@@ -19,6 +19,7 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.pool import NullPool
 
 import services.dynamic_settings as ds
@@ -27,6 +28,8 @@ from api.ratelimit import limiter
 from api.routes import ard, artifacts
 from models.discovery_entry import DiscoveryKind
 from models.mcp import ListingStatus
+from models.team import TeamMembership
+from models.user import UserRole
 from services.discovery.projection import reproject_all
 from tests import discovery_support as fx
 
@@ -286,6 +289,108 @@ async def test_search_owner_sees_own_pending_and_private(sessions, settings):
 
 
 @pytest.mark.asyncio
+async def test_discovery_scopes_all_reads_to_personal_and_joined_teamspaces(sessions, settings):
+    async with sessions() as db:
+        alice = await fx.user(db)
+        bob = await fx.user(db)
+        admin = await fx.user(db, role=UserRole.admin)
+        reviewer = await fx.user(db, role=UserRole.reviewer)
+        first_team = await fx.team_with_member(db, alice)
+        second_team = await fx.team_with_member(db, alice)
+        foreign_team = await fx.team_with_member(db, bob)
+        db.add_all(
+            [
+                TeamMembership(team_id=first_team.id, user_id=bob.id),
+                TeamMembership(team_id=second_team.id, user_id=bob.id),
+            ]
+        )
+
+        async def add(name, owner, *, team=None, private=False, status=ListingStatus.approved):
+            listing = await fx.skill(
+                db, owner, name=name, team_id=team.id if team else None, is_private=private, status=status
+            )
+            listing.namespace = team.handle if team else owner.username
+            return listing
+
+        own = await add("Scope Personal", alice)
+        own_pending = await add("Scope Personal Pending", alice, status=ListingStatus.pending)
+        joined_public = await add("Scope Joined Public", bob, team=first_team)
+        joined_private = await add("Scope Joined Private", bob, team=first_team, private=True)
+        joined_own = await add("Scope Joined Submitted", alice, team=first_team, private=True)
+        second_public = await add("Scope Second Public", bob, team=second_team)
+        second_private = await add("Scope Second Private", bob, team=second_team, private=True)
+        foreign_public = await add("Scope Foreign Public", bob, team=foreign_team)
+        foreign_private = await add("Scope Foreign Private", bob, team=foreign_team, private=True)
+        other_personal = await add("Scope Other Personal", bob)
+        await reproject_all(db, ctx=fx.CTX)
+
+    allowed = {
+        own.name,
+        joined_public.name,
+        joined_private.name,
+        joined_own.name,
+        second_public.name,
+        second_private.name,
+    }
+    urn = f"urn:air:observal.example.com:skill:{foreign_public.id}"
+    foreign_artifact = f"/api/v1/artifacts/skill/{foreign_public.id}/1.2.0"
+    joined_artifact = f"/api/v1/artifacts/skill/{joined_public.id}/1.2.0"
+    async with _client(_app(sessions, alice)) as client:
+        results = await client.post("/api/v1/ard/search", json={"query": {"text": "scope"}, "pageSize": 30})
+        assert {r["displayName"] for r in results.json()["results"]} == allowed | {own_pending.name}
+        listed = await client.get("/api/v1/ard/agents", params={"pageSize": 30})
+        assert {r["displayName"] for r in listed.json()["items"]} == allowed | {own_pending.name}
+        assert (await client.get(f"/api/v1/ard/entries/{urn}")).status_code == 404
+        assert (await client.get(foreign_artifact)).status_code == 404
+        assert (await client.get(joined_artifact)).status_code == 200
+        assert (
+            await client.get(f"/api/v1/ard/entries/urn:air:observal.example.com:skill:{joined_private.id}")
+        ).status_code == 200
+
+    # Revocation must take effect on the next request, even for a public team listing.
+    async with sessions() as db:
+        membership = (
+            await db.execute(
+                select(TeamMembership).where(
+                    TeamMembership.user_id == alice.id, TeamMembership.team_id == first_team.id
+                )
+            )
+        ).scalar_one()
+        await db.delete(membership)
+        await db.commit()
+    async with _client(_app(sessions, alice)) as client:
+        results = await client.post("/api/v1/ard/search", json={"query": {"text": "scope"}, "pageSize": 30})
+        assert {r["displayName"] for r in results.json()["results"]} == {
+            own.name,
+            own_pending.name,
+            second_public.name,
+            second_private.name,
+        }
+        assert (await client.get(joined_artifact)).status_code == 404
+
+    settings["public"] = True
+    async with _client(_app(sessions, alice)) as client:
+        assert (await client.get(foreign_artifact)).status_code == 404
+        assert (await client.get(f"/api/v1/ard/entries/{urn}")).status_code == 404
+        results = await client.post("/api/v1/ard/search", json={"query": {"text": "scope"}, "pageSize": 30})
+        assert foreign_public.name not in {r["displayName"] for r in results.json()["results"]}
+    async with _client(_app(sessions, None)) as client:
+        results = await client.post("/api/v1/ard/search", json={"query": {"text": "scope"}, "pageSize": 30})
+        names = {r["displayName"] for r in results.json()["results"]}
+        assert {foreign_public.name, other_personal.name} <= names
+        assert foreign_private.name not in names
+    async with _client(_app(sessions, reviewer)) as client:
+        assert (await client.get(f"/api/v1/ard/entries/{urn}")).status_code == 200
+        assert (
+            await client.get(f"/api/v1/ard/entries/urn:air:observal.example.com:skill:{foreign_private.id}")
+        ).status_code == 404
+    async with _client(_app(sessions, admin)) as client:
+        assert (
+            await client.get(f"/api/v1/ard/entries/urn:air:observal.example.com:skill:{foreign_private.id}")
+        ).status_code == 200
+
+
+@pytest.mark.asyncio
 async def test_search_harness_filter_marks_availability(sessions, settings):
     owner, _, _ = await _seed(sessions)
     async with _client(_app(sessions, owner)) as client:
@@ -466,9 +571,13 @@ async def test_artifact_is_publicly_cacheable_only_when_public_registry_is_enabl
 async def test_artifact_hides_unapproved_versions_from_non_owners(sessions, settings):
     owner, stranger, skill = await _seed(sessions)
     async with sessions() as db:
+        team = await fx.team_with_member(db, owner)
+        db.add(TeamMembership(team_id=team.id, user_id=stranger.id))
         row = await db.get(type(skill), skill.id)
+        row.team_id = team.id
+        row.namespace = team.handle
         await fx.add_skill_version(db, row, owner, version="1.3.0", status=ListingStatus.pending, set_latest=False)
-        await db.commit()
+        await reproject_all(db, ctx=fx.CTX)
     async with _client(_app(sessions, stranger)) as client:
         assert (await client.get(f"/api/v1/artifacts/skill/{skill.id}/1.3.0")).status_code == 404
         assert (await client.get(f"/api/v1/artifacts/skill/{skill.id}/1.2.0")).status_code == 200

@@ -21,6 +21,10 @@ from services.versioning import validate_semver
 
 VALID_COMPONENT_TYPES = {"mcp", "skill", "hook", "prompt", "sandbox"}
 
+SUCCESS_METRIC_MAX_LENGTH = 200
+SUCCESS_CRITERIA_TEXT_MAX_LENGTH = 2000
+SUCCESS_METRICS_MAX_COUNT = 10
+
 
 class ExternalMcp(BaseModel):
     name: str
@@ -40,7 +44,7 @@ class SuccessMetric(BaseModel):
     def _not_blank_and_bounded(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("Must not be blank")
-        if len(v) > 200:
+        if len(v) > SUCCESS_METRIC_MAX_LENGTH:
             raise ValueError("Must be at most 200 characters")
         return v.strip()
 
@@ -55,21 +59,21 @@ class SuccessCriteria(BaseModel):
     def _purpose_not_blank(cls, v: str) -> str:
         if not v.strip():
             raise ValueError("Intended purpose must not be blank")
-        if len(v) > 2000:
+        if len(v) > SUCCESS_CRITERIA_TEXT_MAX_LENGTH:
             raise ValueError("Intended purpose must be at most 2000 characters")
         return v.strip()
 
     @field_validator("success_metrics")
     @classmethod
     def _max_metrics(cls, v: list[SuccessMetric]) -> list[SuccessMetric]:
-        if len(v) > 10:
+        if len(v) > SUCCESS_METRICS_MAX_COUNT:
             raise ValueError("At most 10 success metrics allowed")
         return v
 
     @field_validator("evaluation_notes")
     @classmethod
     def _notes_bounded(cls, v: str) -> str:
-        if len(v) > 2000:
+        if len(v) > SUCCESS_CRITERIA_TEXT_MAX_LENGTH:
             raise ValueError("Evaluation notes must be at most 2000 characters")
         return v.strip()
 

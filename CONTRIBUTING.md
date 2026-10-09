@@ -118,7 +118,9 @@ fix/clickhouse-insert-timeout
 docs/update-setup-guide
 ```
 
-Never commit directly to `main`.
+Never commit directly to `main` or a protected `release/X.Y` branch.
+
+Normal changes target `main`. Release preparation and backport PRs target their matching `release/X.Y` line. Never merge a release line back into `main`. See the [release guide](docs/self-hosting/releasing.md) for beta, RC, stable, and backport workflows.
 
 ### Code Style
 

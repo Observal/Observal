@@ -1818,7 +1818,7 @@ def _do_install(install_info, target_version: str, direction: str, output: Outpu
 def _managed_install(install, operation: str) -> None:
     from observal_cli.install_detector import InstallMethod
 
-    if install.method not in (InstallMethod.HOMEBREW, InstallMethod.SYSTEM_PACKAGE):
+    if install.method != InstallMethod.SYSTEM_PACKAGE:
         return
     manager = install.managed_by or "the system package manager"
     fail(

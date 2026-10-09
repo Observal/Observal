@@ -208,6 +208,12 @@ Session delivery uses a local outbox and resumes after transient network failure
 - Redis fail-closed: if Redis is down, auth fails (prevents stale token usage).
 - Fresh servers auto-bootstrap admin on first `observal auth login` (localhost-only).
 
+## Release branches
+
+For maintainer release tasks, use the repository-local [release skill](.agents/skills/release/SKILL.md). It is not part of the bundled end-user skills.
+
+Forward development targets `main`; publishing runs only from protected `release/X.Y` branches. Alpha, beta, RC, stable, and patches share one minor-line branch. Use `tools/release.py` (or `make release ARGS="..."`) for cutting lines, preparation, backports, and status. Never merge a release branch back into `main`. Only the newest verified stable release triggers hosted deployment. Terraform validation remains independent and never applies infrastructure during release. See `docs/self-hosting/releasing.md` for the workflow and production rollout gates.
+
 ## Commands
 
 ```bash

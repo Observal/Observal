@@ -23,7 +23,6 @@ class InstallMethod(Enum):
     PIPX = "pipx"
     PIP = "pip"
     BINARY = "binary"
-    HOMEBREW = "homebrew"
     SYSTEM_PACKAGE = "system"
     UNKNOWN = "unknown"
 
@@ -68,8 +67,6 @@ def upgrade_command(target_version: str, install_info: InstallInfo | None = None
         return f"{shlex.quote(sys.executable)} -m pip install {shlex.quote(package)}"
     if info.method == InstallMethod.BINARY and info.managed_by == "curl":
         return f"curl -fsSL {INSTALLER_URL} | bash -s -- --version {_release_tag(target_version)}"
-    if info.method == InstallMethod.HOMEBREW:
-        return "brew upgrade observal"
     if info.method == InstallMethod.SYSTEM_PACKAGE and info.managed_by:
         return f"{info.managed_by} upgrade observal"
     return f"observal self upgrade --version {target_version} --force"
@@ -82,14 +79,6 @@ def downgrade_command(target_version: str) -> str:
 
 def _detect_from_path(binary_path: Path, path_str: str) -> InstallInfo:
     """Internal detection logic, separated for testability."""
-
-    if "/homebrew/" in path_str or "/linuxbrew/" in path_str or "linuxbrew" in path_str:
-        return InstallInfo(
-            method=InstallMethod.HOMEBREW,
-            path=binary_path,
-            writable=False,
-            managed_by="brew",
-        )
 
     if path_str.startswith(("/usr/bin/", "/usr/sbin/")):
         return InstallInfo(
