@@ -257,11 +257,6 @@ jobs:
     name: pi-extension
     runs-on: ubuntu-latest
     needs: changes
-    env:
-      # The parity tests run `uv run python` with a temporary HOME; keep uv's
-      # cache and managed Pythons where that cannot move them.
-      UV_CACHE_DIR: ${{ runner.temp }}/uv-cache
-      UV_PYTHON_INSTALL_DIR: ${{ runner.temp }}/uv-python
     steps:
       - name: Skip if no Pi extension changes
         if: needs.changes.outputs.pi_extension != 'true'
@@ -276,6 +271,14 @@ jobs:
         if: needs.changes.outputs.pi_extension == 'true'
         with:
           node-version: 24
+
+      # The parity tests run `uv run python` with a temporary HOME; keep uv's
+      # cache and managed Pythons where that cannot move them.
+      - name: Pin uv directories
+        if: needs.changes.outputs.pi_extension == 'true'
+        run: |
+          echo "UV_CACHE_DIR=$RUNNER_TEMP/uv-cache" >> "$GITHUB_ENV"
+          echo "UV_PYTHON_INSTALL_DIR=$RUNNER_TEMP/uv-python" >> "$GITHUB_ENV"
 
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         if: needs.changes.outputs.pi_extension == 'true'
