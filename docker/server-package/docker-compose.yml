@@ -100,7 +100,7 @@ services:
       - observal-net
 
   observal-clickhouse:
-    image: clickhouse/clickhouse-server:26.6
+    image: clickhouse/clickhouse-server:26.9@sha256:b32b9a19fadc2750880ff059dcf074907b1506922b5480fb40abd65efc48fb29
     group_add:
       - "${OBSERVAL_SECRET_GID:-1000}"
     ports:
