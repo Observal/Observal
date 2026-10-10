@@ -431,3 +431,10 @@ def test_server_config_runs_hook_scripts_from_the_plugin_root(scope: str, plugin
 
 def test_server_config_omits_mcp_section_when_agent_has_no_servers():
     assert "mcp_config" not in _generate(scope="user")
+
+
+def test_hook_script_filename_with_path_segments_is_rejected():
+    from services.harness.helpers import _collect_hook_script_files
+
+    with pytest.raises(ValueError):
+        _collect_hook_script_files([{"script_content": "x", "script_filename": "../../.ssh/k"}], None, "goose")

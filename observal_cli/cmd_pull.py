@@ -23,6 +23,7 @@ from contextlib import nullcontext, redirect_stdout
 from io import StringIO
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+from urllib.parse import urlsplit, urlunsplit
 
 import typer
 import yaml
@@ -1009,8 +1010,17 @@ def _valid_setup_command(command: object) -> bool:
 _SECRET_SETUP_FLAGS = {"-H": ": ", "--header": ": ", "-e": "=", "--env": "="}
 
 
+def _redact_url(argument: str) -> str:
+    """Drop userinfo and query string from a URL argument; they can carry credentials."""
+    parts = urlsplit(argument)
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        return argument
+    host = parts.netloc.rpartition("@")[2]
+    return urlunsplit((parts.scheme, host, parts.path, "<redacted>" if parts.query else "", ""))
+
+
 def _display_setup_command(command: list[str]) -> list[str]:
-    """Return a setup command with header and environment values masked for output."""
+    """Return a setup command with header, environment and URL credentials masked for output."""
     shown: list[str] = []
     separator = None
     for argument in command:
@@ -1020,6 +1030,7 @@ def _display_setup_command(command: list[str]) -> list[str]:
             argument = f"{argument.split(separator, 1)[0]}{separator}<secret>"
         else:
             separator = _SECRET_SETUP_FLAGS.get(argument)
+            argument = _redact_url(argument)
         shown.append(argument)
     return shown
 

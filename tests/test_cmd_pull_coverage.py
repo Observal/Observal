@@ -2903,3 +2903,10 @@ def test_committed_folder_failure_reports_a_partial_pull_and_rolls_nothing_back(
     assert "partially applied" in error["message"]
     assert error["result"]["installation_tracked"] is True
     assert error["result"]["committed_folders"] == [str(target / "f")]
+
+
+def test_display_setup_command_redacts_url_credentials():
+    from observal_cli.cmd_pull import _display_setup_command
+
+    shown = _display_setup_command(["claude", "mcp", "add", "x", "https://u:p@h.example/mcp?token=abc"])
+    assert shown[-1] == "https://h.example/mcp?<redacted>"

@@ -604,6 +604,8 @@ def _collect_hook_script_files(hook_configs: list[dict], hook_listings: dict | N
         script_content = hc.get("script_content")
         script_filename = hc.get("script_filename")
         if script_content and script_filename:
+            if script_filename in (".", "..") or "/" in script_filename or "\\" in script_filename:
+                raise ValueError(f"Hook script filename must not contain path segments: {script_filename!r}")
             files.append(
                 {
                     "path": f"{scripts_dir}/{script_filename}",
