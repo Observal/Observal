@@ -242,17 +242,19 @@ def test_the_choice_is_remembered_and_restore_removes_only_owned_groups(env):
     assert "restored to the agent file" in _shown(result)
 
 
-def test_a_locally_edited_owned_group_refuses_the_pull_until_forced(env):
+def test_a_locally_edited_owned_group_is_kept_and_skipped_without_failing_the_pull(env):
+    """Regression: one edited hook failed the whole pull (exit 6), blocking every other update."""
     assert _pull(env, "--hooks=settings").exit_code == 0
     edited = _settings(env)
     edited["hooks"]["PostToolUse"][0]["hooks"][0]["timeout"] = 5
     _settings_path(env).write_text(json.dumps(edited))
     _agent_file(env).unlink()
     result = _pull(env, "--hooks=settings", json_output=True)
-    assert result.exit_code != 0
-    assert "edited locally" in _error(result)["message"]
-    assert _settings(env) == edited, "the edited group is kept"
-    assert not _agent_file(env).exists(), "nothing was written"
+    assert result.exit_code == 0, result.stderr
+    (warning,) = [w for w in json.loads(result.stdout)["warnings"] if "edited locally" in w]
+    assert "left as they are" in warning and "does not count them" in warning and "--force-hooks" in warning
+    assert _settings(env) == edited, "the edited group is kept exactly as the user left it"
+    assert _agent_file(env).exists(), "the rest of the pull is written"
     preview = _pull(env, "--hooks=settings", "--dry-run")
     assert preview.exit_code == 0 and "edited locally" in _shown(preview), "a dry run reports the conflict"
     forced = _pull(env, "--hooks=settings", "--force-hooks")

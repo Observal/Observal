@@ -2000,25 +2000,24 @@ def _plan_agent_hooks(request, *, remembered: bool, dry_run: bool):
             resource=str(request.path),
             remediation="Fix settings.json (it must be a JSON object), then pull again. Nothing was written.",
         )
-    if plan.conflicts and not dry_run:
-        _fail_agent_hook_conflicts(request, plan)
     return plan
 
 
-def _fail_agent_hook_conflicts(request, plan, result: dict | None = None) -> None:
+def _agent_hook_conflict_warnings(request, plan) -> list[str]:
+    """Edited Observal-owned groups are left exactly as the user made them; the rest of the pull continues.
+
+    Each stays in settings.json and keeps running as edited, but is not updated
+    and verifies as drifted, so Component Insights does not count it.
+    """
+    if plan is None or not plan.conflicts:
+        return []
     edited = ", ".join(f"{item['event']} ({item['component_id'] or 'unknown component'})" for item in plan.conflicts)
-    fail(
-        ErrorCategory.CONFLICT,
-        f"{len(plan.conflicts)} Observal-owned agent hook(s) in {request.path} were edited locally.",
-        operation="Pull agent",
-        resource=str(request.path),
-        remediation=(
-            'Pass --force-hooks to replace them with the agent\'s hooks, or delete their "_observal" key '
-            "to keep them as your own hooks."
-        ),
-        detail=f"Edited: {edited}",
-        result=result,
-    )
+    return [
+        f"{len(plan.conflicts)} Observal-owned agent hook(s) in {request.path} were edited locally and were left "
+        f"as they are: {edited}. They were not updated, and Component Insights does not count them. Pass "
+        '--force-hooks to replace them with the agent\'s hooks, or delete their "_observal" key to keep them '
+        "as your own hooks."
+    ]
 
 
 def _apply_agent_hooks(
@@ -2051,8 +2050,6 @@ def _apply_agent_hooks(
             remediation="Fix settings.json (it must be a JSON object), then pull again.",
             result=failure("write_agent_hooks"),
         )
-    if plan.conflicts:
-        _fail_agent_hook_conflicts(request, plan, failure("write_agent_hooks"))
     if plan.changed:
         try:
             agent_hooks.write_settings(request.path, plan.data)
@@ -2683,6 +2680,8 @@ def register_pull(app: typer.Typer):
             + list(result.get("warnings") or [])
             + (snippet.get("_warnings") or [])
         )
+        if dry_run and hook_request is not None:
+            warnings_list.extend(_agent_hook_conflict_warnings(hook_request, hook_plan))
 
         # Run required harness registration before recording the pull as installed.
         setup_results: list[dict] = []
@@ -2760,6 +2759,7 @@ def register_pull(app: typer.Typer):
 
             if hook_request is not None and hook_plan is not None:
                 hook_plan = _apply_agent_hooks(hook_request, written, setup_results, reports_sessions=reports_sessions)
+                warnings_list.extend(_agent_hook_conflict_warnings(hook_request, hook_plan))
 
             warnings_list.extend(_fingerprint_written_skills(snippet, lock_components, target_dir, is_user_scope))
             warnings_list.extend(
