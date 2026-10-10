@@ -1007,7 +1007,7 @@ def _valid_setup_command(command: object) -> bool:
 
 
 # Setup-command flags whose value carries an MCP header or environment value.
-_SECRET_SETUP_FLAGS = {"-H": ": ", "--header": ": ", "-e": "=", "--env": "="}
+_MASKED_SETUP_FLAGS = {"-H": ": ", "--header": ": ", "-e": "=", "--env": "="}
 
 
 def _redact_url(argument: str) -> str:
@@ -1029,7 +1029,7 @@ def _display_setup_command(command: list[str]) -> list[str]:
         elif separator is not None and separator in argument:
             argument = f"{argument.split(separator, 1)[0]}{separator}<secret>"
         else:
-            separator = _SECRET_SETUP_FLAGS.get(argument)
+            separator = _MASKED_SETUP_FLAGS.get(argument)
             argument = _redact_url(argument)
         shown.append(argument)
     return shown
