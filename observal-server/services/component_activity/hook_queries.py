@@ -62,7 +62,8 @@ _HOOK_EVIDENCE = (
            countIf(a.evidence_kind = 'hook_context_headless') AS ctx_headless,
            countIf(a.evidence_kind = 'hook_context_agent_inactive') AS ctx_agent_inactive,
            countIf(a.evidence_kind = 'hook_context_mode_unknown') AS ctx_mode_unknown,
-           countIf(a.evidence_kind = 'hook_context_agent_unknown') AS ctx_agent_unknown
+           countIf(a.evidence_kind = 'hook_context_agent_unknown') AS ctx_agent_unknown,
+           countIf(a.evidence_kind = 'hook_context_version_unverified') AS ctx_version_unverified
     FROM component_activity AS a FINAL
     INNER JOIN ("""
     + _LATEST
@@ -91,6 +92,7 @@ _HOOK_SESSIONS = (
            e.runs_with_output AS runs_with_output, e.silent_runs AS silent_runs,
            e.failures AS failures, e.blocks AS blocks,
            multiIf(e.ctx_eligible > 0 OR e.runs_with_output + e.silent_runs + e.failures + e.blocks > 0, 'eligible',
+                   e.ctx_version_unverified > 0, 'version_unverified',
                    e.ctx_headless > 0, 'headless',
                    e.ctx_mode_unknown > 0, 'mode_unknown',
                    e.ctx_agent_unknown > 0, 'agent_unknown',
@@ -133,6 +135,7 @@ _HOOK_SUMMARY = (
            countIf(projection_state = 'complete' AND eligibility = 'agent_inactive') AS agent_inactive_sessions,
            countIf(projection_state = 'complete' AND eligibility = 'mode_unknown') AS mode_unknown_sessions,
            countIf(projection_state = 'complete' AND eligibility = 'agent_unknown') AS agent_unknown_sessions,
+           countIf(projection_state = 'complete' AND eligibility = 'version_unverified') AS version_unverified_sessions,
            countIf(projection_state = 'complete' AND runs_with_output + silent_runs + failures + blocks > 0)
                AS observed_sessions,
            sumIf(runs_with_output, projection_state = 'complete') AS total_runs_with_output,
@@ -202,6 +205,8 @@ def build_hook_coverage(presence: dict, aggregate: dict, version: int) -> HookAc
         reasons.append("session_mode_unknown")
     if eligibility.agent_unknown_sessions:
         reasons.append("subagent_agent_unknown")
+    if eligibility.version_unverified_sessions:
+        reasons.append("harness_version_unverified")
     if evidence.collision_runs or evidence.unmatched_runs:
         reasons.append("unattributed_hook_runs")
     state = "observed" if observed else "no_recorded_runs" if denominator else "attribution_not_possible"

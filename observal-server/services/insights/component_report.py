@@ -222,6 +222,13 @@ def generate_hook_sections(summary: dict, coverage: dict) -> dict:
             "session recorded which agent ran, so whether the hook could run there is unknown; "
             f"{'it is' if count == 1 else 'they are'} excluded."
         )
+    if eligibility.get("version_unverified_sessions"):
+        count = eligibility["version_unverified_sessions"]
+        conclusion += (
+            f" {count} {'session was' if count == 1 else 'sessions were'} recorded by a harness version whose hook "
+            f"records have not been verified yet, so whether the hook ran there is unknown; "
+            f"{'it is' if count == 1 else 'they are'} excluded."
+        )
     return {
         "summary": conclusion,
         "evidence": {

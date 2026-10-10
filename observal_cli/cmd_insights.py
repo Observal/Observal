@@ -568,6 +568,11 @@ def _render_hook_report(data: dict) -> None:
             f"  Not known whether it could run: {eligibility['agent_unknown_sessions']} subagent session(s) "
             "where neither the subagent nor its parent session recorded which agent ran"
         )
+    if eligibility.get("version_unverified_sessions"):
+        rprint(
+            f"  Not known whether it could run: {eligibility['version_unverified_sessions']} session(s) recorded by "
+            "a harness version whose hook records are not verified yet"
+        )
     for label, values in (
         ("Versions", metrics.get("version_distribution") or {}),
         ("Harnesses", metrics.get("harness_distribution") or {}),

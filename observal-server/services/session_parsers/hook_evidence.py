@@ -153,6 +153,10 @@ class HookSession:
     # The subagent's agent, resolved from the parent session's own record of the
     # spawn (never from this transcript). Empty while unresolved.
     subagent_agent: str = ""
+    # True when the harness version that wrote the session is outside the range whose
+    # hook records were recorded and proven (or not recorded): its evidence cannot be
+    # trusted to be complete, so hooks without a recorded run are not counted as eligible.
+    harness_version_unverified: bool = False
 
 
 @dataclass(frozen=True)

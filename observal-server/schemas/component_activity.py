@@ -284,7 +284,7 @@ class SkillActivitySessionsResponse(BaseModel):
 
 HookAttributionState = Literal["observed", "no_recorded_runs", "attribution_not_possible"]
 HookEligibilityState = Literal[
-    "eligible", "headless", "agent_inactive", "mode_unknown", "agent_unknown", "not_processed"
+    "eligible", "headless", "agent_inactive", "mode_unknown", "agent_unknown", "version_unverified", "not_processed"
 ]
 HOOK_EFFECT_LIMITATION = (
     "effect_not_observed: a recorded run shows the hook executed, not what it changed or whether it helped"
@@ -322,6 +322,13 @@ class HookEligibility(BaseModel):
         description=(
             "Gated agent hooks in a subagent's own transcript whose agent its parent session did not record "
             "(not uploaded yet, unreadable, or disagreeing)"
+        ),
+    )
+    version_unverified_sessions: int = Field(
+        0,
+        description=(
+            "Sessions written by a harness version whose hook records were not proven; a missing run there "
+            "shows nothing"
         ),
     )
 

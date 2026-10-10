@@ -278,11 +278,13 @@ def test_a_server_that_ignores_the_request_is_refused_before_writing(env):
     assert not (env.target / ".claude").exists()
 
 
-def test_untested_claude_code_refuses_a_new_opt_in_and_warns_on_a_remembered_one(env):
+def test_untested_claude_code_never_blocks_the_opt_in_and_says_evidence_is_unverified(env):
+    """Regression: a new opt-in on any untested version failed, and Claude Code ships several releases a week."""
     env.version.return_value = "2.1.300"
     result = _pull(env, "--hooks=settings", json_output=True)
-    assert result.exit_code != 0 and "tested Claude Code versions (2.1.286)" in _error(result)["message"]
-    env.post.assert_not_called()
+    assert result.exit_code == 0, result.stderr
+    (warning,) = [w for w in json.loads(result.stdout)["warnings"] if "tested only with Claude Code" in w]
+    assert "found Claude Code 2.1.300" in warning and "reported as unverified" in warning
     env.installed.return_value = {"hook_placement": "settings", "hook_gate_agent": "reviewer"}
     remembered = _pull(env, json_output=True)
     assert remembered.exit_code == 0, remembered.stderr

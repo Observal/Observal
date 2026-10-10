@@ -115,7 +115,7 @@ observal agent pull alice/reviewer --harness claude-code --hooks=frontmatter    
 ```
 
 * **Opt-in and remembered.** The default stays `frontmatter`. The choice is recorded per Agent in the local lockfile, so a later plain pull keeps it; `--hooks=frontmatter` removes the Observal-owned groups and writes the hooks back into the Agent file.
-* **Where it is offered.** POSIX only, and only on Claude Code versions whose hook behaviour was recorded (currently 2.1.286). A new opt-in on another version fails with exit code 7; a re-pull of an existing opt-in only warns, and `observal doctor` warns after an untested upgrade. A warning is not proof the gate still behaves.
+* **Where it is offered.** POSIX only. Its hook behaviour was recorded on Claude Code 2.1.286 (the tested range). On any other version the pull still succeeds but warns, and `observal doctor` warns after an untested upgrade. A warning is not proof the gate still behaves. Component Insights reports hook evidence from sessions written by an untested version as `version_unverified`: excluded from the denominator and shown as unknown, never as zero, until that version is recorded and added to the tested range.
 * **What the gate decides.** Hook input naming this Agent runs the hook. Another Agent, or a plain session (no `agent_type`), skips it silently. Unrecognized input skips it with a short diagnostic unless `--on-unknown run` was chosen, which then runs it in every session. No policy keeps both Agent isolation and blocking on unrecognized input, so decide explicitly for a hook that guards an action.
 * **Cost and timeouts.** Each gated hook starts a Python interpreter on every matching event, even when its Agent is not active (about 40 ms on an Apple M1). The dry run shows the measured cost on your machine. Timeouts are not changed; the gate's startup counts against them.
 * **Ownership.** Each group carries `"_observal": {"kind": "agent-hook", "agent", "component_id", "digest"}`. A pull adds, keeps or removes only the groups owned by the Agent being pulled. Your own groups, other Agents' groups and Observal's telemetry hooks are never touched, and `observal doctor patch` and `cleanup` leave Agent groups alone. A group you edited (any change: command, matcher, timeout or option) is kept and the pull fails with conflict exit code 6 before writing anything; `--force-hooks` replaces it, and deleting its `_observal` key makes it yours.
@@ -231,7 +231,7 @@ Human mode lists every created, updated, merged, installed, cloned, or planned p
 | 4 | Agent or component access denied |
 | 5 | Agent or component not found |
 | 6 | Existing config cannot be merged safely, an Observal-owned agent hook was edited locally, or a strict install does not match its lock |
-| 7 | Invalid harness, scope, version, path, assignment, or option combination, including `--hooks=settings` on Windows or an untested Claude Code version |
+| 7 | Invalid harness, scope, version, path, assignment, or option combination, including `--hooks=settings` on Windows |
 | 8 | Rate limit reached |
 | 9 | Server, filesystem, skill source, lockfile, or setup command unavailable |
 | 10 | CLI and server version mismatch, including a strict pull against a server without component locks, or `--hooks=settings` against a server that cannot place hooks |

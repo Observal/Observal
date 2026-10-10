@@ -1856,9 +1856,9 @@ def _resolve_hook_placement(
     found in settings.json itself (``existing``: the policy of gated hooks this
     agent already owns there), so a teammate's committed settings or a failed
     lockfile write never silently moves the hooks back. The opt-in is offered
-    only on POSIX and on tested Claude Code versions. A pull that keeps an
-    earlier opt-in only warns after an untested upgrade, so an installed agent
-    can still be re-pulled.
+    only on POSIX. On an untested Claude Code version it is allowed with a
+    warning: hook evidence from that version is reported as unverified, so a
+    Claude Code update never blocks a pull.
     """
     from observal_cli import agent_hooks
 
@@ -1897,23 +1897,17 @@ def _resolve_hook_placement(
     version = agent_hooks.claude_code_version()
     if agent_hooks.is_tested_version(version):
         return "settings", policy, found
+    # Never blocks: hook evidence from an untested version is reported as unverified
+    # by the server instead, so the opt-in keeps working when Claude Code updates.
     seen = f"Claude Code {version}" if version else "no Claude Code version (is `claude` on PATH?)"
-    if hooks == "settings":
-        fail(
-            ErrorCategory.VALIDATION,
-            f"Agent hooks in settings.json are offered only on tested Claude Code versions "
-            f"({agent_hooks.tested_range()}); found {seen}.",
-            operation="Pull agent",
-            resource="agent hook placement",
-            remediation="Pull without --hooks=settings, or use a tested Claude Code version.",
-        )
     return (
         "settings",
         policy,
         [
             *found,
             f"Gated agent hooks were tested only with Claude Code {agent_hooks.tested_range()}; found {seen}. "
-            "They may not run as expected; pull with --hooks=frontmatter to move them back.",
+            "They may not run as expected, and their Component Insights evidence is reported as unverified "
+            "until this version is tested; pull with --hooks=frontmatter to move them back.",
         ],
     )
 
@@ -2259,8 +2253,9 @@ def register_pull(app: typer.Typer):
         Claude Code runs hooks from an agent file only in interactive
         sessions. --hooks=settings moves the agent's command hooks into
         settings.json, each wrapped by a gate that runs it only while that
-        agent is active, headless included (POSIX, tested Claude Code versions
-        only). Preview with --dry-run first; --hooks=frontmatter moves them back.
+        agent is active, headless included (POSIX only; untested Claude Code
+        versions warn). Preview with --dry-run first; --hooks=frontmatter moves
+        them back.
 
         Examples:
           observal agent pull my-agent --harness claude-code --no-prompt

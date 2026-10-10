@@ -146,6 +146,7 @@ function HookReport({ report }: { report: InsightReport }) {
           {measured && metrics && <p className="text-sm text-muted-foreground">Recorded runs: {metrics.runs_with_output} succeeded with output, {silentRuns !== null && <>{silentRuns} succeeded silently, </>}{metrics.failures} failed, {metrics.blocks} blocked an action.</p>}
           {couldNotRun.length > 0 && <p className="text-sm text-muted-foreground">Excluded because the hook could not run: {couldNotRun.join("; ")}.</p>}
           {eligibility?.agent_unknown_sessions ? <p className="text-sm text-muted-foreground">Excluded because it is not known whether the hook could run: {eligibility.agent_unknown_sessions} subagent {eligibility.agent_unknown_sessions === 1 ? "session" : "sessions"} where neither the subagent nor its parent session recorded which agent ran.</p> : null}
+          {eligibility?.version_unverified_sessions ? <p className="text-sm text-muted-foreground">Excluded because it is not known whether the hook could run: {eligibility.version_unverified_sessions} {eligibility.version_unverified_sessions === 1 ? "session was" : "sessions were"} recorded by a harness version whose hook records are not verified yet.</p> : null}
           {!measured && <p className="text-sm text-muted-foreground">There were no processed sessions where this hook could run; missing measurements do not imply no use.</p>}
         </section>
         <DistributionSection versions={metrics?.version_distribution} harnesses={metrics?.harness_distribution} />
