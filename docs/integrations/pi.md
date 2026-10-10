@@ -187,7 +187,7 @@ attribution are separate; the latter is visible in the MCP's activity summary
 and session list for authorized owners. Other component types do not gain
 observed-call reports from this integration.
 
-This is fixture-verified for `pi-mcp-adapter` 2.38.0 and 4.0.0 (proxy calls),
+This is fixture-verified for `pi-mcp-adapter` 2.38.0 and 4.0.0 (proxy and direct-tool calls),
 with relevant result shapes checked against the 3.2.0 and 4.0.0 sources. A
 later major version is not recognised until it has been checked the same way. An adapter that changes its result details or
 config resolution needs new sanitized fixtures and extractor verification
