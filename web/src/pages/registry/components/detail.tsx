@@ -25,6 +25,7 @@ import {
   useWhoami,
 } from "@/hooks/use-api";
 import { getUserRole } from "@/lib/api";
+import { useComponentInsightReports, useGenerateComponentInsight } from "@/hooks/use-insights-api";
 import { useOptionalAuth } from "@/hooks/use-auth";
 import { hasMinRole } from "@/hooks/use-role-guard";
 import type { RegistryType } from "@/lib/api";
@@ -136,6 +137,12 @@ export default function ComponentDetailPage({
   const { data: teams = [] } = useTeams(isAuthenticated);
   const updateVisibility = useUpdateRegistryVisibility();
   const canEdit = isAuthenticated && (item?.user_permission === "owner");
+  // Component Insights exist for MCPs (observed calls), skills (loads and invocations) and hooks (recorded runs).
+  const insightType = type === "mcps" ? "mcp" : type === "skills" ? "skill" : type === "hooks" ? "hook" : null;
+  const showInsights = insightType !== null && canEdit;
+  const { data: reportPages, isLoading: reportsLoading, isError: reportsError, hasNextPage, fetchNextPage, isFetchingNextPage } = useComponentInsightReports(insightType ?? "mcp", id, showInsights);
+  const componentReports = reportPages?.pages.flat() ?? [];
+  const generateComponentInsight = useGenerateComponentInsight();
   const isAdmin = isAuthenticated && hasMinRole(getUserRole(), "admin");
   const owningTeam = item?.team_id ? teams.find((team) => team.id === String(item.team_id)) : undefined;
   const personalTeam = teams.find((team) => team.is_personal && team.visibility === "private");
@@ -188,6 +195,7 @@ export default function ComponentDetailPage({
   const versionsForDropdown = versions.filter((v) => v.status === "approved") as unknown as import("@/lib/types").AgentVersionSummary[];
   const latestApprovedVersion = versions.find((v) => v.status === "approved")?.version;
   const effectiveVersion = selectedVersion ?? latestApprovedVersion ?? (item?.version as string | undefined);
+  const selectedInsightVersion = selectedVersion ? versions.find((version) => version.version === selectedVersion) : undefined;
   // Overlay version-specific description when a version is selected
   const effectiveItem: RegistryItem | undefined = item
     ? versionDetail
@@ -406,8 +414,41 @@ export default function ComponentDetailPage({
                     </span>
                   )}
                 </TabsTrigger>
+                {showInsights && <TabsTrigger value="insights">Insights</TabsTrigger>}
                 {canEdit && <TabsTrigger value="edit">Edit</TabsTrigger>}
               </TabsList>
+
+              {showInsights && <TabsContent value="insights" className="mt-6 space-y-6">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <h2 className="text-lg font-semibold">Component Insights</h2>
+                    <p className="max-w-[65ch] text-sm text-muted-foreground">{insightType === "skill"
+                      ? "Confirmed loads and invocations of this verified skill, and their coverage. A load shows the instructions entered context, not that they helped."
+                      : insightType === "hook"
+                        ? "Recorded runs of this verified hook in sessions where it could run. Silent successes leave no record, so runs are a lower bound."
+                        : "Observed MCP calls and attribution coverage across verified present sessions. Partial activity never proves no use."}</p>
+                  </div>
+                  <Button type="button" disabled={generateComponentInsight.isPending || (!!selectedVersion && !selectedInsightVersion)}
+                    onClick={() => insightType && generateComponentInsight.mutate({ type: insightType, id, versionId: selectedInsightVersion?.id })}>
+                    {generateComponentInsight.isPending ? "Queueing…" : selectedVersion ? `Generate v${selectedVersion} report` : "Generate all-versions report"}
+                  </Button>
+                </div>
+                {reportsLoading ? <p role="status" className="text-sm text-muted-foreground">Loading reports…</p> :
+                 reportsError ? <ErrorState message="Could not load component reports" /> :
+                 !componentReports?.length ? <p className="text-sm text-muted-foreground">No reports yet. Generate one to see observed activity and its coverage.</p> :
+                 <ul className="divide-y divide-border border-y border-border">
+                   {componentReports.map((report) => <li key={report.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+                     <Link to="/insights/$reportId" params={{ reportId: report.id }} className="font-medium text-foreground underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+                       {new Date(report.created_at).toLocaleDateString()} report
+                     </Link>
+                     <span className="text-muted-foreground">{report.status}</span>
+                   </li>)}
+                 </ul>}
+                {hasNextPage && <Button type="button" variant="outline" disabled={isFetchingNextPage}
+                  onClick={() => void fetchNextPage()}>
+                  {isFetchingNextPage ? "Loading older reports…" : "Load older reports"}
+                </Button>}
+              </TabsContent>}
 
               <TabsContent value="overview" forceMount className="mt-6 data-[state=inactive]:hidden">
                 <div className="space-y-6 w-full min-h-[400px]">

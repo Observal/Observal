@@ -94,7 +94,26 @@ def _safe_detail(response: httpx.Response) -> str | None:
         return None
     # FastAPI errors use ``detail``; ARD routes use ``{"errorCode", "message"}``.
     detail = (data.get("detail") or data.get("message")) if isinstance(data, dict) else None
+    if isinstance(detail, list):
+        detail = _validation_detail(detail)
     return detail.strip()[:500] if isinstance(detail, str) and detail.strip() else None
+
+
+def _validation_detail(items: list) -> str | None:
+    """FastAPI's 422 ``detail`` list as ``field: message`` lines.
+
+    Only ``loc`` and ``msg`` are used; ``input`` (an echo of the submitted value)
+    and ``ctx`` are never shown.
+    """
+    lines = []
+    for item in items[:3]:
+        if not isinstance(item, dict) or not isinstance(item.get("msg"), str):
+            continue
+        location = [str(part) for part in item.get("loc") or [] if part != "body"]
+        lines.append(f"{'.'.join(location)}: {item['msg']}" if location else item["msg"])
+    if len(items) > 3 and lines:
+        lines.append(f"(and {len(items) - 3} more)")
+    return "; ".join(lines) or None
 
 
 def _browse_remediation(path: str) -> str:

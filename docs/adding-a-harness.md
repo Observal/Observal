@@ -561,6 +561,36 @@ observal doctor patch --harness my-harness --dry-run
 observal reconcile --harness my-harness --dry-run
 ```
 
+## Component evidence (skills and hooks)
+
+Component Insights count skill and hook evidence only where it is proven for the harness. Setting `skill_evidence_extractor` or `hook_evidence_extractor` in the registry establishes nothing on its own: the id must resolve to an implementation in `services/session_parsers/`, and each (type × harness) cell needs all of the following, from recorded, sanitized sessions in `tests/fixtures/component_insights/<harness>/`:
+
+1. **A verified binding.** The CLI adapter verifies the installed component against the file the harness actually loads (`skill_manifest_path`, `skill_shadow_paths`, `skill_location` for skills; `verify_hook_binding` for hooks). Anything it cannot rule out, such as an unreadable config, a duplicate entry or a same-named copy elsewhere, must leave the component unverified. Add the harness to `SKILL_VERIFICATION_HARNESSES` or `HOOK_VERIFICATION_HARNESSES` in `observal_cli/layer.py` so the result is bound into the layer identity.
+2. **An observable identity.** The transcript must name the same identity the verifier recorded: the exact `SKILL.md` location for skills, the exact event and command for hooks. Typed or pasted text must not be able to produce it; rely on harness-written fields.
+3. **Declared limits.** The extractor declares which kinds it can observe (`observed_kinds`). For hooks it also declares whether silent successes are recorded (`records_silent_success`) and whether agent-scoped hooks run headless (`agent_hooks_run_headless`). Unknown is reported as not recorded or not eligible, never as zero.
+4. **When it could run.** For hooks, prove from recordings when an installed hook can run at all (settings versus agent placement, interactive versus headless) before counting a session in the denominator. The verifier reports each agent hook's placement (`hook_placement`, stored as `layer_components.binding_placement`): `frontmatter` hooks follow `agent_hooks_run_headless`, while Claude Code's opt-in `gated_settings` hooks (`agent pull --hooks=settings`) can run whenever their agent is active. If a subagent's own transcript doesn't name its agent, set `HookSession.subagent` and, when every record carries the same harness-written parent session and subagent ids, `parent_session_id` and `subagent_id`. The hook projector then names the agent from the parent session's record of the spawn, but only if the extractor also implements `subagent_results`, `agent_tool_calls` and `resolve_agent` (see `claude_code_hook_evidence.py`). Otherwise those sessions stay `agent_unknown`. Pi has no native command hooks: its registry hooks run inside the Observal extension, whose run receipts are the identity (`pi_hook_evidence.py`). They carry no `hook_agent`, because the verifier only reports them verified while the active profile's hooks file names that agent, so every session that verifies one is eligible.
+
+Without all four the cell stays `unsupported`.
+
+### Changing an evidence rule on existing data
+
+Sessions are projected once per publication version. Changing an extractor or matcher does not touch sessions that were already projected unless you bump a version, and each version does something different:
+
+| Constant | Where | What a bump does |
+|---|---|---|
+| `PROJECTION_VERSION`, `MATCHER_VERSION` | `services/component_activity/projector.py` | Changes the publication key. Every older publication is hidden (reported as stale) until `replay_activity_revision`, which runs every 5 minutes, has republished **all** historical sessions. |
+| `CURRENT_EXTRACTOR_VERSION` | `services/layer_components/__init__.py` | Every layer snapshot is re-extracted by `backfill_layer_components` (daily, resumable). Presence is reported as stale until it is. |
+| `HOOK_MATCHER_VERSION` and other per-evidence matcher versions | `services/component_activity/hook_matcher.py` and friends | Stamped on each row for auditing only. Triggers nothing. |
+
+Bump `PROJECTION_VERSION` (or `CURRENT_EXTRACTOR_VERSION` for layer rules) when the change would make **already published** numbers wrong in a way that matters, for example a rule that wrongly counted evidence (a false positive). The replay costs a scan of every stored session, and reports show stale coverage until it finishes, so do not bump for:
+
+* changes that only add evidence kinds or recognise more of it: older sessions keep their smaller, still-true numbers;
+* changes that only make older results more conservative than the new rule would.
+
+Say which case applies in the constant's comment either way. Sessions recorded with a legacy layer hash can never be attributed, so a replay does not help them.
+
+---
+
 ## Architecture Notes
 
 **Skills are mostly universal.** All harnesses that support skills use the same

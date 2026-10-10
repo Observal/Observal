@@ -139,9 +139,119 @@ export interface UsagePingAdminResponse {
 
 // ── Insights ───────────────────────────────────────────────────────
 
+export interface ComponentInsightMetrics {
+	present_sessions: number;
+	present_users: number;
+	observed_sessions: number;
+	observed_calls: number;
+	result_states: { success: number; error: number; unknown: number };
+	harness_distribution: Record<string, number>;
+	version_distribution: Record<string, number>;
+	cohort_collision_calls: number;
+	cohort_unmatched_calls: number;
+}
+
+export interface ComponentInsightFinding {
+	kind: "workflow" | "friction";
+	insight: string;
+	confidence: "low" | "medium";
+	evidence_refs: string[];
+}
+
+export interface ComponentInsightNarrative {
+	summary?: string;
+	component_analysis?: {
+		version: number;
+		state: "assessed" | "unknown";
+		findings: ComponentInsightFinding[];
+		evidence?: Record<string, string>;
+		sampled_sessions: number;
+		truncated: boolean;
+	};
+}
+
+export interface ComponentInsightCoverage {
+	attribution_state: "observed" | "no_observed_calls" | "attribution_not_possible";
+	presence: { present_sessions: number; present_users: number; eligible_sessions: number };
+	projection: { projection_complete_sessions: number; projection_pending_sessions: number; projection_failed_sessions: number; unsupported_present_sessions: number };
+	calls: { collision_calls: number; unmatched_calls: number; unknown_result_calls: number };
+	usage_rate_denominator_sessions: number;
+	observed_sessions: number;
+	usage_rate: number | null;
+	reasons: string[];
+	limitations: string[];
+}
+
+export interface SkillInsightMetrics {
+	present_sessions: number;
+	present_users: number;
+	/** Null when no harness in the cohort records which skill file it advertised. */
+	available_sessions: number | null;
+	loaded_sessions: number;
+	confirmed_loads: number;
+	load_attempts: number;
+	/** Null when no harness in the cohort records a distinguishable invocation. */
+	invoked_sessions: number | null;
+	invocations: number | null;
+	harness_distribution: Record<string, number>;
+	version_distribution: Record<string, number>;
+}
+
+export interface SkillInsightNarrative {
+	summary?: string;
+}
+
+export interface SkillInsightCoverage {
+	attribution_state: "observed" | "no_observed_skill_use" | "attribution_not_possible";
+	presence: { present_sessions: number; present_users: number; eligible_sessions: number };
+	projection: { projection_complete_sessions: number; projection_pending_sessions: number; projection_failed_sessions: number; unsupported_present_sessions: number };
+	evidence: { candidate_facts: number; attributed_facts: number; collision_facts: number; unmatched_facts: number; unknown_load_results: number };
+	usage_rate_denominator_sessions: number;
+	observed_sessions: number;
+	usage_rate: number | null;
+	reasons: string[];
+	limitations: string[];
+}
+
+export interface HookInsightMetrics {
+	present_sessions: number;
+	present_users: number;
+	/** Processed present sessions where the hook could run. */
+	eligible_sessions: number;
+	/** A lower bound where a harness in the cohort leaves silent successes unrecorded. */
+	sessions_with_recorded_run: number;
+	runs_with_output: number;
+	/** Successful runs without output; null when no harness in the cohort records them. Absent on older reports. */
+	silent_runs?: number | null;
+	failures: number;
+	blocks: number;
+	harness_distribution: Record<string, number>;
+	version_distribution: Record<string, number>;
+}
+
+export interface HookInsightCoverage {
+	attribution_state: "observed" | "no_recorded_runs" | "attribution_not_possible";
+	presence: { present_sessions: number; present_users: number; eligible_sessions: number };
+	projection: { projection_complete_sessions: number; projection_pending_sessions: number; projection_failed_sessions: number; unsupported_present_sessions: number };
+	eligibility: { eligible_sessions: number; headless_sessions: number; agent_inactive_sessions: number; mode_unknown_sessions: number; agent_unknown_sessions?: number; version_unverified_sessions?: number };
+	evidence: { candidate_runs: number; attributed_runs: number; collision_runs: number; unmatched_runs: number };
+	usage_rate_denominator_sessions: number;
+	observed_sessions: number;
+	usage_rate: number | null;
+	reasons: string[];
+	limitations: string[];
+}
+
 export interface InsightReportListItem {
 	id: string;
-	agent_id: string;
+	agent_id: string | null;
+	subject_type?: "agent" | "component";
+	component_type?: string | null;
+	component_id?: string | null;
+	component_name?: string | null;
+	component_version_id?: string | null;
+	component_version?: string | null;
+	coverage?: ComponentInsightCoverage | SkillInsightCoverage | HookInsightCoverage | null;
 	agent_version_id?: string | null;
 	agent_version?: string | null;
 	version_scope?: string | null;
@@ -313,7 +423,14 @@ export interface InsightRegression {
 
 export interface InsightReport {
 	id: string;
-	agent_id: string;
+	agent_id: string | null;
+	subject_type?: "agent" | "component";
+	component_type?: string | null;
+	component_id?: string | null;
+	component_name?: string | null;
+	component_version_id?: string | null;
+	component_version?: string | null;
+	coverage?: ComponentInsightCoverage | SkillInsightCoverage | HookInsightCoverage | null;
 	agent_version_id?: string | null;
 	agent_version?: string | null;
 	version_scope?: string | null;

@@ -23,6 +23,17 @@ observal ops insights show NAMESPACE/AGENT_SLUG latest --output json
 
 Use the full report for broad questions. Cite report period, session count, Agent version, and comparison baseline when present.
 
+For an owned MCP, skill or hook, list and inspect component reports separately (use `--component skill` or `--component hook`):
+
+```bash
+observal ops insights list --component mcp NAMESPACE/SLUG --output json
+observal ops insights list --component mcp NAMESPACE/SLUG --all --output json  # all pages
+observal ops insights show --component mcp NAMESPACE/SLUG --output json
+observal ops insights show latest --component mcp NAMESPACE/SLUG
+```
+
+Component reports contain verified presence, published observed calls and attribution coverage. New reports may also contain `narrative.component_analysis`: bounded interpretations citing published call names and result states, never user prompts or tool arguments. Older prompt-backed analysis is removed. Installation or activation alone never proves use. An `unknown` analysis means insufficient or invalid evidence, not no use. For reports beyond the recent list, use `--all` and open a report by its full ID.
+
 ## Generate only when needed
 
 Generate when no completed report covers the requested period or version:
@@ -32,7 +43,15 @@ observal ops insights generate NAMESPACE/AGENT_SLUG --period 14 --wait --output 
 observal ops insights generate NAMESPACE/AGENT_SLUG --version 1.2.0 --compare 1.1.0 --period 30 --wait --output json
 ```
 
-Generation can take longer than normal CLI calls. Verify final status before reading the report.
+Generate a component report (1–90 days; the deterministic block works without a model, but interpretations require a configured model):
+
+```bash
+observal ops insights generate --component mcp NAMESPACE/SLUG --period 14 --wait --output json
+```
+
+Skill reports use the same commands with `--component skill NAMESPACE/SLUG`. They are deterministic (no model findings) and report present sessions, sessions with a confirmed load (a successful read or `Skill` call that put the file's text into context), sessions with an invocation (an explicit `/name`, only where the harness records its origin), and sessions where the skill was offered. A `null` count means no harness in the cohort records that kind, which is unknown, not zero; `*_not_recorded_on_some_harnesses` in `coverage.reasons` means the count covers only the harnesses that record it. Load attempts that failed are not loads. Skill evidence counts only for a verified install at the exact file location the session named. Never say a skill helped, was followed, or improved an outcome: the evidence shows only that its instructions entered context. Hook reports (`--component hook`, Claude Code and Pi) are deterministic. They report present sessions, `eligible_sessions` (sessions where the hook could run), `sessions_with_recorded_run`, and runs that printed output, ran silently, failed or blocked. Pi records silent runs; Claude Code does not, so there `silent_runs` is null, recorded runs are a lower bound, and "no recorded runs" never means the hook did not run. On Claude Code, hooks installed by `agent pull` run only while their agent is active and never in headless `claude -p` sessions; on Pi, a verified hook can run in every session, headless included; `coverage.eligibility` counts those sessions separately, outside the denominator. Never say a hook helped or changed an outcome.
+
+Generation can take longer than normal CLI calls. Verify final status before reading the report. If the component presence cohort is empty, the server returns 422 with coverage rather than a zero-use report.
 
 ## Choose a section
 
@@ -47,7 +66,7 @@ observal ops insights show NAMESPACE/AGENT_SLUG latest --section version_compari
 observal ops insights show NAMESPACE/AGENT_SLUG latest --section regression_detection --output json
 ```
 
-Other sections include `what_they_work_on`, `interaction_style`, `usage_patterns`, `what_works`, `on_the_horizon`, and `fun_ending`.
+Other sections include `what_they_work_on`, `interaction_style`, `usage_patterns`, `what_works`, `on_the_horizon`, and `fun_ending`. For MCPs, `--section component_analysis --output json` exposes sampled interpretations and cited call names, without user prompts.
 
 ## Analyze evidence
 
@@ -60,7 +79,7 @@ For a broad answer, report:
 5. Version improvements or regressions.
 6. Two or three concrete next actions.
 
-Say when a section is absent, evidence is thin, or the report predates a feature. Do not infer certainty from narrative prose alone.
+Say when a section is absent, evidence is thin, or the report predates a feature. Do not infer certainty from narrative prose alone. For component reports, read `coverage`: pending, stale, failed, unsupported or missing-source sessions are unknown, not unused. `observed_calls` counts only attributed calls from published generations; activation actions never count as use, and are a best-effort count from delivered sessions, not a complete install history. Never claim per-tool cost or a causal effect from these counts. Interpretive findings are from a small, possibly truncated sample: cite their evidence refs, distinguish inference from observed calls, and do not generalize them to all users or sessions.
 
 ## Reuse Registry components safely
 
