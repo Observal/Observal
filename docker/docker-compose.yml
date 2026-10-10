@@ -102,7 +102,7 @@ services:
       - observal-net
 
   observal-db:
-    image: postgres:18
+    image: postgres:18@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
     ports:
       - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     env_file:
@@ -132,7 +132,7 @@ services:
       - observal-net
 
   observal-clickhouse:
-    image: clickhouse/clickhouse-server:26.6
+    image: clickhouse/clickhouse-server:26.6@sha256:2c870d77ea76e955fb1c8dad536ad40a1236b6093db0c4966e22d21d4428982b
     ports:
       - "127.0.0.1:${CLICKHOUSE_HOST_PORT:-8123}:8123"
     env_file:
@@ -161,7 +161,7 @@ services:
       - observal-net
 
   observal-redis:
-    image: redis:8-alpine
+    image: redis:8-alpine@sha256:3811787313eba226a2ef38658c6ccb91cd5e110edc89c37767de373120a0e5a0
     ports:
       - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"
     command: redis-server --maxmemory 200mb --maxmemory-policy volatile-lru
@@ -247,7 +247,7 @@ services:
       - observal-net
 
   observal-lb:
-    image: nginx:alpine
+    image: nginx:alpine@sha256:df221db836e1754089190208cee7eeda94f233197056426eda74a43ab1abeac2
     ports:
       - "${LB_HOST_PORT:-80}:80"
     volumes:
