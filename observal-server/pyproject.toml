@@ -34,7 +34,7 @@ dependencies = [
     "google-cloud-aiplatform>=1.60.0",
     "redis[hiredis]>=5.0",
     "arq",
-    "strawberry-graphql[fastapi]>=0.315.4",
+    "strawberry-graphql[fastapi]>=0.327.2",
     "authlib>=1.6.11",
     "itsdangerous",
     # >=50.0.0: PYSEC-2026-3552 (PKCS#7 decrypt Bleichenbacher oracle).
