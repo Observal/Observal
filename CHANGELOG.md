@@ -21,6 +21,7 @@ All notable changes to this project will be documented in this file.
 ### Documentation
 
 - correct the live log viewer command to `observal ops logs`
+- align documented Postgres, ClickHouse, Redis, and Grafana versions with the pinned images
 
 ### Maintenance
 
