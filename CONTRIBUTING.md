@@ -83,7 +83,7 @@ The stack starts at `http://localhost` (nginx LB on port 80). The `.env.example`
 cd web && pnpm install && pnpm dev
 ```
 
-Set `NEXT_PUBLIC_API_URL=http://localhost` in `web/.env.local` if the backend is on a different host.
+The Vite dev server proxies `/api` to `http://localhost:8000` (see `web/vite.config.ts`); change the proxy target there if the backend is on a different host.
 
 > [!NOTE]
 > See the [Development Guide](docs/DEVELOPMENT_GUIDE.md) for the full environment setup and troubleshooting steps.
