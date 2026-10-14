@@ -116,6 +116,15 @@ def _validation_detail(items: list) -> str | None:
     return "; ".join(lines) or None
 
 
+def _install_command(response: httpx.Response) -> str | None:
+    """The fix command a 426 response carries, if any."""
+    try:
+        command = response.json().get("install_command")
+    except (ValueError, UnicodeDecodeError, AttributeError):
+        return None
+    return command if isinstance(command, str) and command else None
+
+
 def _browse_remediation(path: str) -> str:
     parts = path.strip("/").split("/")
     type_plural = (
@@ -188,7 +197,11 @@ def _handle_error(
         fail(
             ErrorCategory.VERSION,
             detail or "The CLI and server versions are incompatible.",
-            remediation="Install the CLI version required by the server.",
+            remediation=(
+                f"Run {_install_command(response)}, then retry."
+                if _install_command(response)
+                else "Run observal self upgrade --force --output json, then retry."
+            ),
             **context,
         )
     if code == 429:
@@ -578,6 +591,36 @@ def get_text(
             http_status=response.status_code,
         )
     return response.text
+
+
+def get_bytes_with_headers(
+    path: str,
+    params: _QueryParams | None = None,
+    *,
+    operation: str | None = None,
+    resource: str | None = None,
+) -> tuple[bytes, dict[str, str]]:
+    """Read an authenticated file response without assuming it is JSON.
+
+    Used by skill-folder previews: UTF-8 files are JSON, binary files are raw
+    octet-stream attachments. The ordinary ``get`` API intentionally rejects
+    non-JSON responses.
+    """
+    operation, resource = _error_context(
+        operation,
+        resource,
+        default_operation=f"Fetch {path}",
+        default_resource=path,
+    )
+    response = _request(
+        "get",
+        path,
+        operation=operation,
+        resource=resource,
+        params=params,
+        auth_required=False,
+    )
+    return response.content, {key.lower(): value for key, value in response.headers.items()}
 
 
 def get_with_headers(

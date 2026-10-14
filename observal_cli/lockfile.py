@@ -1,6 +1,7 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 # SPDX-FileCopyrightText: 2026 Lokesh <lokeshselvam7025@gmail.com>
+# SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Lock file management for Observal CLI.
@@ -19,6 +20,8 @@ from __future__ import annotations
 import functools
 import hashlib
 import json
+import os
+import tempfile
 import threading
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -57,33 +60,36 @@ _lock_state = threading.local()
 
 
 @contextmanager
-def _exclusive_lock() -> Iterator[None]:
-    """Hold the cross-process lockfile lock; re-entrant within one thread.
+def _exclusive_lock(path: Path | None = None) -> Iterator[None]:
+    """Hold a cross-process lock, re-entrant for the same path in one thread.
 
-    flock locks are per open file description, so a nested acquisition through a
-    second descriptor would deadlock. Mutations hold the lock across their whole
-    read-modify-write so concurrent installs cannot drop each other's entries.
+    Different managed-folder locks must still be acquired independently; skipping
+    them just because the lockfile lock is held would bypass folder ownership.
     """
-    depth = getattr(_lock_state, "depth", 0)
-    if depth:
-        _lock_state.depth = depth + 1
+    path = (path or _LOCKFILE_LOCK).absolute()
+    held = getattr(_lock_state, "held", None)
+    if held is None:
+        held = {}
+        _lock_state.held = held
+    if held.get(path):
+        held[path] += 1
         try:
             yield
         finally:
-            _lock_state.depth -= 1
+            held[path] -= 1
         return
-    _LOCKFILE_LOCK.parent.mkdir(parents=True, exist_ok=True)
-    with open(_LOCKFILE_LOCK, "w") as lock_fd:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as lock_fd:
         if fcntl is not None:
             fcntl.flock(lock_fd, fcntl.LOCK_EX)
         else:
             lock_fd.seek(0)
             msvcrt.locking(lock_fd.fileno(), msvcrt.LK_LOCK, 1)
-        _lock_state.depth = 1
+        held[path] = 1
         try:
             yield
         finally:
-            _lock_state.depth = 0
+            del held[path]
             if fcntl is not None:
                 fcntl.flock(lock_fd, fcntl.LOCK_UN)
             else:
@@ -128,7 +134,7 @@ def migrate_lockfile_v1(server_url: str | None = None) -> bool:
         return False
     try:
         data = json.loads(LOCKFILE_PATH.read_text())
-    except (json.JSONDecodeError, OSError) as exc:
+    except (json.JSONDecodeError, OSError, UnicodeError) as exc:
         raise RuntimeError(f"Cannot read {LOCKFILE_PATH}: {exc}") from exc
     if not isinstance(data, dict):
         raise RuntimeError(f"Invalid lockfile structure in {LOCKFILE_PATH}")
@@ -157,7 +163,7 @@ def read_lockfile() -> dict:
         return _empty_lockfile()
     try:
         data = json.loads(LOCKFILE_PATH.read_text())
-    except (json.JSONDecodeError, OSError) as exc:
+    except (json.JSONDecodeError, OSError, UnicodeError) as exc:
         raise RuntimeError(f"Cannot read {LOCKFILE_PATH}: {exc}") from exc
     if not isinstance(data, dict):
         raise RuntimeError(f"Invalid lockfile structure in {LOCKFILE_PATH}")
@@ -166,22 +172,61 @@ def read_lockfile() -> dict:
     return data
 
 
-def write_lockfile(data: dict) -> None:
-    """Write the complete lockfile atomically with file locking."""
+def _write_locked(data: dict) -> None:
+    """Replace the lockfile while its cross-process lock is held."""
     data["updated_at"] = datetime.now(UTC).isoformat()
     data["lock_version"] = LOCK_VERSION
+    descriptor, name = tempfile.mkstemp(prefix=".lockfile.", suffix=".tmp", dir=LOCKFILE_PATH.parent)
+    tmp_path = Path(name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            output.write(json.dumps(data, indent=2) + "\n")
+            output.flush()
+            os.fsync(output.fileno())
+        os.chmod(tmp_path, 0o600)
+        tmp_path.replace(LOCKFILE_PATH)
+        if os.name == "posix":
+            directory = os.open(LOCKFILE_PATH.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+    finally:
+        tmp_path.unlink(missing_ok=True)
 
+
+def write_lockfile(data: dict) -> None:
+    """Write the complete lockfile atomically with file locking."""
     LOCKFILE_PATH.parent.mkdir(parents=True, exist_ok=True)
     with _exclusive_lock():
-        tmp_path = LOCKFILE_PATH.with_suffix(".tmp")
-        try:
-            tmp_path.write_text(json.dumps(data, indent=2) + "\n")
-            tmp_path.replace(LOCKFILE_PATH)
-        finally:
-            if tmp_path.exists():
-                tmp_path.unlink(missing_ok=True)
-
+        _write_locked(data)
     optic.debug("lockfile written: {}", LOCKFILE_PATH)
+
+
+def update_lockfile(mutate: Any) -> Any:
+    """Serialize the entire read/modify/write, including across different targets."""
+    LOCKFILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with _exclusive_lock(_LOCKFILE_LOCK):
+        if LOCKFILE_PATH.exists():
+            try:
+                data = json.loads(LOCKFILE_PATH.read_text())
+            except (json.JSONDecodeError, OSError, UnicodeError) as exc:
+                raise RuntimeError(f"Cannot read {LOCKFILE_PATH}: {exc}") from exc
+            if not isinstance(data, dict):
+                raise RuntimeError(f"Invalid lockfile structure in {LOCKFILE_PATH}")
+            if data.get("lock_version") == 1:
+                url = current_registry_url()
+                data = {
+                    "lock_version": LOCK_VERSION,
+                    "registries": {url: {"server_url": url, "harnesses": data.get("harnesses", {})}},
+                }
+            if data.get("lock_version") != LOCK_VERSION or not isinstance(data.get("registries"), dict):
+                raise RuntimeError(f"Unsupported lockfile version in {LOCKFILE_PATH}")
+        else:
+            data = _empty_lockfile()
+        result = mutate(data)
+        _write_locked(data)
+        return result
 
 
 def read_registry_lockfile(*, create: bool = False) -> tuple[dict, dict]:
@@ -323,10 +368,6 @@ def upsert_agent(
     groups are owned under) are remembered so a later pull keeps the choice.
     """
     optic.debug("upsert_agent: harness={}, name={}, version={}", harness, name, version)
-    data, registry = read_registry_lockfile(create=True)
-    harness_section = _ensure_harness(registry, harness)
-    agents = harness_section["agents"]
-
     entry = {
         "name": name,
         "id": agent_id,
@@ -357,14 +398,19 @@ def upsert_agent(
         if hook_gate_agent:
             entry["hook_gate_agent"] = hook_gate_agent
 
-    # Find existing entry to update
-    existing_idx = _find_agent_idx(agents, agent_id, scope, directory)
-    if existing_idx is not None:
-        agents[existing_idx] = entry
-    else:
-        agents.append(entry)
+    def update(data: dict) -> None:
+        url = current_registry_url()
+        registry = data["registries"].setdefault(url, {"server_url": url, "harnesses": {}})
+        agents = _ensure_harness(registry, harness)["agents"]
+        existing_idx = _find_agent_idx(agents, agent_id, scope, directory)
+        if existing_idx is not None:
+            if any(c.get("folder_receipt") for c in agents[existing_idx].get("components", [])):
+                raise RuntimeError("Pinned Agent owns verified skill folders; legacy pull cannot replace receipts")
+            agents[existing_idx] = entry
+        else:
+            agents.append(entry)
 
-    write_lockfile(data)
+    update_lockfile(update)
     _record_capability_use(
         kind="agent",
         source="pull",
@@ -439,10 +485,6 @@ def upsert_standalone(
     installed; ``requested_version`` is set when the user pinned it explicitly.
     """
     optic.debug("upsert_standalone: harness={}, type={}, name={}", harness, component_type, name)
-    data, registry = read_registry_lockfile(create=True)
-    harness_section = _ensure_harness(registry, harness)
-    standalone = harness_section["standalone"]
-
     entry: dict[str, Any] = {
         "type": component_type,
         "name": name,
@@ -475,14 +517,21 @@ def upsert_standalone(
         # Where the hook was written (hook_event, hook_command, hook_config, ...), for verification.
         entry.update({key: value for key, value in hook_binding.items() if key.startswith("hook_")})
 
-    # Find existing entry to update (match on type + id + scope + directory)
-    existing_idx = _find_standalone_idx(standalone, component_type, component_id, scope, directory)
-    if existing_idx is not None:
-        standalone[existing_idx] = entry
-    else:
-        standalone.append(entry)
+    def update(data: dict) -> None:
+        url = current_registry_url()
+        registry = data["registries"].setdefault(url, {"server_url": url, "harnesses": {}})
+        standalone = _ensure_harness(registry, harness)["standalone"]
+        existing_idx = _find_standalone_idx(standalone, component_type, component_id, scope, directory)
+        if existing_idx is not None:
+            if component_type == "skill" and standalone[existing_idx].get("folder_receipt"):
+                raise RuntimeError(
+                    "A verified skill folder owns this installation; legacy delivery cannot replace its receipt"
+                )
+            standalone[existing_idx] = entry
+        else:
+            standalone.append(entry)
 
-    write_lockfile(data)
+    update_lockfile(update)
     _record_capability_use(
         kind=component_type,
         source="install",
@@ -721,7 +770,7 @@ def migrate_agent_markers() -> int:
                 try:
                     marker_data = json.loads(marker.read_text())
                     markers_found.append((marker.parent.parent, marker_data))
-                except (json.JSONDecodeError, OSError):
+                except (json.JSONDecodeError, OSError, UnicodeError):
                     continue
         except (OSError, PermissionError):
             continue
