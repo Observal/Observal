@@ -32,7 +32,10 @@ for (const [name, width, height] of [["desktop", 1440, 900], ["mobile", 390, 844
     await page.goto("/settings");
 
     const search = page.getByRole("searchbox", { name: "Find a setting" });
-    await expect(page.getByRole("button", { name: /Identity & access/ })).toBeVisible();
+    const identityCard = page.getByRole("button", { name: /Identity & access/ });
+    await expect(identityCard).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Sections in this area" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Appearance" })).toHaveCount(0);
     await expect(page.getByRole("link", { name: /Review policy/ })).toBeVisible();
     await expect(search).toHaveValue("");
     await expect(search).toHaveAttribute("readonly", "");
@@ -43,7 +46,8 @@ for (const [name, width, height] of [["desktop", 1440, 900], ["mobile", 390, 844
     await expect(page.locator("#settings-retention")).toHaveCSS("border-top-width", "1px");
 
     await page.getByRole("button", { name: "All settings" }).click();
-    await page.getByRole("button", { name: /Identity & access/ }).click();
+    await identityCard.click();
+    await expect(page.getByRole("navigation", { name: "Sections in this area" }).getByRole("button", { name: "Appearance" })).toBeVisible();
     await expect(page.locator("#settings-appearance")).toBeVisible();
     await expect(page.locator("#settings-access")).toBeVisible();
     await expect(page.locator("#settings-experimental")).toBeVisible();

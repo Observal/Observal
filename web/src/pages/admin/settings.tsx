@@ -848,21 +848,15 @@ export default function SettingsPage() {
 					</div>
 				</div>
 				{activeCategory === "home" ? (
-					<div className="grid gap-x-10 gap-y-9 lg:grid-cols-2">
+					<div className="grid gap-4 lg:grid-cols-2">
 						{CATEGORIES.map((category) => {
 							const Icon = category.icon;
-							const sections = searchableSections.filter((section) => categoryForSection(section.id) === category.id);
 							return (
-							<section key={category.id} className="min-w-0 overflow-hidden rounded-lg border border-border bg-card">
-								<button type="button" onClick={() => goToCategory(category.id)} className="group flex w-full items-start gap-3 border-b border-border p-4 text-left focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-ring">
+								<button key={category.id} type="button" onClick={() => goToCategory(category.id)} className="group flex min-w-0 items-start gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:border-foreground/40 hover:bg-muted/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
 									<span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-foreground"><Icon className="size-4" /></span>
-									<span className="min-w-0 flex-1"><span className="block text-base font-semibold group-hover:underline group-hover:underline-offset-4">{category.label}</span><span className="mt-1 block text-xs leading-5 text-muted-foreground">{category.description}</span></span>
-									<ArrowUpRight className="mt-1 size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
+									<span className="min-w-0 flex-1"><span className="block text-base font-semibold">{category.label}</span><span className="mt-1 block text-xs leading-5 text-muted-foreground">{category.description}</span></span>
+									<ArrowUpRight className="mt-1 size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-foreground" />
 								</button>
-								<div className="grid grid-cols-2 gap-x-4 gap-y-1 px-4 py-3">
-									{sections.map((section) => <button key={section.id} type="button" onClick={() => goToSection(section.id)} className="min-w-0 rounded-sm py-1.5 text-left text-sm text-muted-foreground hover:text-foreground hover:underline hover:underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring">{section.label}</button>)}
-								</div>
-							</section>
 							);
 						})}
 					</div>
