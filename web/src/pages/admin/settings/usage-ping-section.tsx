@@ -74,10 +74,10 @@ export function UsagePingSection({ settings, onChanged }: { settings: AdminSetti
 
   return (
     <section className="animate-in">
-      <h3 className="mb-3 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+      <h3 className="flex items-center gap-2 border-b border-border px-5 py-4 text-lg font-medium tracking-tight">
         <Activity className="h-3.5 w-3.5" /> Usage reporting
       </h3>
-      <div className="rounded-md border border-border bg-card px-4 py-4 space-y-4">
+      <div className="space-y-4 px-5 py-4">
         <div className="flex items-start justify-between gap-6">
           <div className="max-w-2xl">
             <p className="text-sm font-medium">Share aggregate product usage with Observal</p>

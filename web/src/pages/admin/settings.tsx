@@ -30,6 +30,9 @@ import {
 	ArrowLeftRight,
 	Power,
 	PanelLeft,
+	ArrowLeft,
+	ArrowUpRight,
+	Search,
 } from "lucide-react";
 import { InsightsSection } from "./settings/insights-section";
 import { UsagePingSection } from "./settings/usage-ping-section";
@@ -203,7 +206,7 @@ function BoolSettingCard({ def, value, onToggle, helpClass, openHelp }: { def: A
 function RestartRequiredMark() {
 	return (
 		<span
-			className="inline-flex items-center gap-1 text-[11px] font-normal text-amber-700 dark:text-amber-300"
+			className="inline-flex items-center gap-1 text-[11px] font-normal text-muted-foreground"
 			title="Changing this setting requires an API restart"
 		>
 			<Power className="h-3 w-3" aria-hidden="true" />
@@ -254,6 +257,9 @@ export default function SettingsPage() {
 		brandingAppName,
 		brandingWordmark,
 	} = useDeploymentConfig();
+	const [navQuery, setNavQuery] = useState("");
+	const [searchFocused, setSearchFocused] = useState(false);
+	const [activeCategory, setActiveCategory] = useState("home");
 	const [editingKey, setEditingKey] = useState<string | null>(null);
 	const [editingValue, setEditingValue] = useState("");
 	const [revokeConfirmKey, setRevokeConfirmKey] = useState<string | null>(null);
@@ -307,9 +313,6 @@ export default function SettingsPage() {
 
 	// Help mode: modifier key + click opens contextual docs (provided by HelpProvider)
 	const { helpActive, openHelp: openHelpCtx } = useHelp();
-	const [helpBannerDismissed, setHelpBannerDismissed] = useState(() =>
-		sessionStorage.getItem("observal_help_banner_dismissed") === "1"
-	);
 
 	const logoPreview = logoOverride !== undefined ? logoOverride : brandingLogo;
 
@@ -671,6 +674,47 @@ export default function SettingsPage() {
 	).filter((e) => !e.key.startsWith("branding."));
 
 	const settingSections = settingsSchema.filter((section) => section.id !== "sso" && section.id !== "usage_ping" && section.id !== "experimental");
+	const categories = [
+		{ id: "general", label: "Identity & access", description: "Branding, public access, trace visibility and usage reporting", icon: Palette },
+		{ id: "insights", label: "Agent Insights", description: "Provider, models and report generation", icon: Activity },
+		{ id: "data", label: "Data & runtime", description: "Retention, migration and resource limits", icon: Database },
+		{ id: "platform", label: "Platform", description: "Discovery, registry, tokens and observability", icon: Settings },
+		{ id: "security", label: "Security & deployment", description: "Authentication, deployment and destructive actions", icon: ShieldAlert },
+	];
+	const sectionCategory: Record<string, string> = {
+		appearance: "general", experimental: "general", access: "general", usage: "general", insights: "insights",
+		migration: "data", retention: "data", data: "data", resource: "data", observability: "data",
+		discovery: "platform", registry: "platform", jwt: "platform", misc: "platform",
+		auth: "security", deployment: "security", security: "security", danger: "security",
+	};
+	const searchableSections = [
+		{ id: "appearance", label: "Appearance", terms: "icon wordmark app name branding" },
+		{ id: "experimental", label: "Experimental", terms: "review checks" },
+		{ id: "access", label: "Access & privacy", terms: "public registry trace visibility registered agents sso saml" },
+		{ id: "usage", label: "Usage reporting", terms: "company name reporting frequency send payload" },
+		{ id: "insights", label: "Agent Insights", terms: "provider api key models batch processing" },
+		{ id: "migration", label: "Data migration", terms: "export import validate" },
+		{ id: "retention", label: "Data retention", terms: "trace retention score retention max trace count" },
+		...settingSections.filter((section) => section.id !== "insights" && section.settings.some((setting) => setting.key !== "deployment.public_registry_enabled"))
+			.map((section) => ({ id: section.id, label: section.title, terms: section.settings.map((setting) => `${setting.label} ${setting.key}`).join(" ") })),
+	];
+	const searchResults = navQuery.trim() ? searchableSections.filter((section) =>
+		`${section.label} ${section.terms}`.toLowerCase().includes(navQuery.trim().toLowerCase())
+	) : [];
+	const goToCategory = (id: string) => {
+		setActiveCategory(id);
+		setNavQuery("");
+		document.getElementById("settings-page")?.closest("main")?.scrollTo({ top: 0 });
+	};
+	const goToSection = (id: string) => {
+		setActiveCategory(sectionCategory[id] ?? "general");
+		setNavQuery("");
+		requestAnimationFrame(() => {
+			const target = document.getElementById(`settings-${id}`);
+			if (target instanceof HTMLDetailsElement) target.open = true;
+			target?.scrollIntoView({ behavior: "smooth", block: "start" });
+		});
+	};
 	const settingByKey = useMemo(() => {
 		const map = new Map<string, AdminSettingDef>();
 		for (const section of settingSections) {
@@ -771,108 +815,109 @@ export default function SettingsPage() {
 					{ label: "Dashboard", href: "/dashboard" },
 					{ label: "Settings" },
 				]}
-				actionButtonsRight={
-					<div className="flex items-center gap-2">
-						<span
-							className={`rounded-full border px-2.5 py-1 text-xs font-medium ${
-								restartStatus?.required
-									? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-									: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-							}`}
-						>
-							{restartStatus?.required ? "Saved, API restart required" : "Settings live"}
-						</span>
-						{restartStatus?.required && (
-							<Button size="sm" variant="outline" onClick={restartApi} disabled={restarting}>
-								{restarting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Power className="mr-1.5 h-3.5 w-3.5" />}
-								{restarting ? "Restarting" : "Restart API"}
-							</Button>
+				actionButtonsRight={restartStatus?.required ? (
+					<Button size="sm" variant="outline" onClick={restartApi} disabled={restarting}>
+						{restarting ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Power className="mr-1.5 h-3.5 w-3.5" />}
+						{restarting ? "Restarting" : "Restart API"}
+					</Button>
+				) : null}
+			/>
+			<div id="settings-page" className="page-body mx-auto w-full max-w-5xl space-y-8 pb-20">
+				<div className="flex flex-col gap-6 border-b border-border pb-7 md:flex-row md:items-end md:justify-between">
+					<div className="min-w-0">
+						{activeCategory !== "home" && <button type="button" onClick={() => goToCategory("home")} className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-ring"><ArrowLeft className="size-4" /> All settings</button>}
+						<h2 className="text-3xl font-semibold tracking-tight">{activeCategory === "home" ? "Settings" : categories.find((category) => category.id === activeCategory)?.label}</h2>
+						<p className="mt-2 max-w-xl text-sm text-muted-foreground">{activeCategory === "home" ? "Manage your instance by task. Choose an area below or find a specific setting." : categories.find((category) => category.id === activeCategory)?.description}</p>
+					</div>
+					<div className="relative w-full shrink-0 md:w-72">
+						<label htmlFor="settings-search" className="sr-only">Find a setting</label>
+						<Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+						<Input id="settings-search" name="observal-settings-filter" type="search" value={navQuery}
+							readOnly={!searchFocused} onFocus={() => setSearchFocused(true)} onBlur={() => setSearchFocused(false)}
+							onChange={(event) => setNavQuery(event.target.value)}
+							onKeyDown={(event) => { if (event.key === "Escape") setNavQuery(""); if (event.key === "Enter" && searchResults[0]) goToSection(searchResults[0].id); }}
+							placeholder="Find a setting..." autoComplete="off" className="bg-card pl-9" />
+						{navQuery.trim() && (
+							<div className="absolute inset-x-0 top-full z-40 mt-1 max-h-72 overflow-auto rounded-lg border border-border bg-popover p-1 shadow-md" role="region" aria-label="Matching settings">
+								{searchResults.length ? searchResults.map((result) => (
+									<button key={result.id} type="button" onClick={() => goToSection(result.id)} className="flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring">
+										<span>{result.label}</span><span className="text-xs text-muted-foreground">{categories.find((category) => category.id === sectionCategory[result.id])?.label}</span>
+									</button>
+								)) : <p className="px-3 py-2 text-sm text-muted-foreground">No matching settings</p>}
+							</div>
 						)}
 					</div>
-				}
-			/>
-			<div className="page-body w-full mx-auto space-y-5">
-				{getUserRole() === "super_admin" && <Link to="/review-policy" className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3 text-sm font-medium hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring"><span className="flex items-center gap-2"><Shield className="size-4" /> Review policy</span><span className="text-xs font-normal text-muted-foreground">Approval counts and publication rules →</span></Link>}
+				</div>
+				{activeCategory === "home" ? (
+					<div className="grid gap-x-10 gap-y-9 lg:grid-cols-2">
+						{categories.map((category) => {
+							const Icon = category.icon;
+							const sections = searchableSections.filter((section) => sectionCategory[section.id] === category.id);
+							return (
+							<section key={category.id} className="min-w-0 overflow-hidden rounded-lg border border-border bg-card">
+								<button type="button" onClick={() => goToCategory(category.id)} className="group flex w-full items-start gap-3 border-b border-border p-4 text-left focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-ring">
+									<span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md bg-muted text-foreground"><Icon className="size-4" /></span>
+									<span className="min-w-0 flex-1"><span className="block text-base font-semibold group-hover:underline group-hover:underline-offset-4">{category.label}</span><span className="mt-1 block text-xs leading-5 text-muted-foreground">{category.description}</span></span>
+									<ArrowUpRight className="mt-1 size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
+								</button>
+								<div className="grid grid-cols-2 gap-x-4 gap-y-1 px-4 py-3">
+									{sections.map((section) => <button key={section.id} type="button" onClick={() => goToSection(section.id)} className="min-w-0 rounded-sm py-1.5 text-left text-sm text-muted-foreground hover:text-foreground hover:underline hover:underline-offset-4 focus-visible:outline-2 focus-visible:outline-ring">{section.label}</button>)}
+								</div>
+							</section>
+							);
+						})}
+					</div>
+				) : (
+					<nav aria-label="Sections in this area" className="flex flex-wrap gap-2">
+						{searchableSections.filter((section) => sectionCategory[section.id] === activeCategory).map((section) => (
+							<button key={section.id} type="button" onClick={() => goToSection(section.id)} className="rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">{section.label}</button>
+						))}
+					</nav>
+				)}
+				{activeCategory === "home" && <Link to="/review-policy" className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3 text-sm font-medium hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring"><span className="flex items-center gap-2"><Shield className="size-4" /> Review policy</span><span className="text-xs font-normal text-muted-foreground">Approval counts and publication rules →</span></Link>}
+				{restartStatus?.required && <p role="status" className="rounded-lg border border-border bg-card px-4 py-3 text-sm">Saved changes require an API restart to take effect.</p>}
 				{/* Security warnings */}
 				{systemWarnings && systemWarnings.length > 0 && (
-					<section className="animate-in">
-						<div className="space-y-2">
-							{systemWarnings.map((w: SystemWarning) => (
-								<div
-									key={w.code}
-									className={`rounded-md border px-4 py-3 flex items-start gap-3 ${
-										w.level === "critical"
-											? "border-destructive/40 bg-destructive/10"
-											: "border-warning/40 bg-warning/10"
-									}`}
-								>
-									{w.level === "critical" ? (
-										<ShieldAlert className="h-4 w-4 mt-0.5 shrink-0 text-destructive" />
-									) : (
-										<AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-warning" />
-									)}
-									<div>
-										<p
-											className={`text-sm font-medium ${w.level === "critical" ? "text-destructive" : "text-warning"}`}
-										>
-											{w.level === "critical" ? "Critical" : "Warning"}
-										</p>
-										<p className="text-xs text-muted-foreground mt-0.5">
-											{w.message}
-										</p>
-									</div>
-								</div>
-							))}
-						</div>
+					<section aria-label="Deployment notices" className="divide-y divide-border rounded-lg border border-border bg-card">
+						{systemWarnings.map((w: SystemWarning) => (
+							<div key={w.code} role={w.level === "critical" ? "alert" : "status"} className="flex items-start gap-3 px-4 py-3">
+								{w.level === "critical" ? <ShieldAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-destructive" /> : <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-warning" />}
+								<p className="text-sm leading-5"><strong className="mr-2 font-semibold">{w.level === "critical" ? "Action required" : "Deployment notice"}</strong><span className="text-muted-foreground">{w.message}</span></p>
+							</div>
+						))}
 					</section>
 				)}
-				{/* System Overview */}
-				<section className="animate-in">
-					<h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-						System Overview
-					</h3>
-					<div className="rounded-md border border-border bg-card px-4 py-3 space-y-2">
-						<div className="flex items-center justify-between py-1">
-							<span className="text-xs text-muted-foreground">
-								SSO (OAuth/OIDC)
-							</span>
-							<span
-								className={`text-xs font-medium ${ssoEnabled ? "text-success" : "text-muted-foreground"}`}
-							>
-								{ssoEnabled ? "Enabled" : "Disabled"}
-							</span>
-						</div>
-						<div className="flex items-center justify-between py-1 border-t border-border">
-							<span className="text-xs text-muted-foreground">SAML SSO</span>
-							<span
-								className={`text-xs font-medium ${samlEnabled ? "text-success" : "text-muted-foreground"}`}
-							>
-								{samlEnabled ? "Configured" : "Not configured"}
-							</span>
-						</div>
-					</div>
-				</section>
-
-				<UsagePingSection settings={entries as AdminSetting[]} onChanged={() => { void refetch(); }} />
-
+				<div className={activeCategory === "general" ? "space-y-8" : "hidden"}>
 				{/* Appearance */}
-				<section className="animate-in">
-					<h3 className={`text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5 ${sectionHelpHeadingClass("Appearance")}`} onClick={(event) => { if ((event.ctrlKey || event.metaKey) && openHelp(undefined, "Appearance")) event.preventDefault(); }}>
+				<section id="settings-appearance" data-settings-section className="scroll-mt-6 overflow-hidden rounded-lg border border-border bg-card">
+					<h2 className={`flex items-center gap-2 border-b border-border px-5 py-4 text-lg font-medium tracking-tight ${sectionHelpHeadingClass("Appearance")}`} onClick={(event) => { if ((event.ctrlKey || event.metaKey) && openHelp(undefined, "Appearance")) event.preventDefault(); }}>
 						<Palette className="h-3.5 w-3.5" />
 						Appearance
 						<button type="button" className="text-muted-foreground hover:text-primary" onClick={(event) => { event.preventDefault(); event.stopPropagation(); openHelp(undefined, "Appearance"); }} aria-label="Open Appearance documentation">
 							<HelpCircle className="h-3.5 w-3.5" />
 						</button>
-					</h3>
-					<div className="rounded-md border border-border bg-card px-4 py-3 space-y-3">
-						<p className="text-xs text-muted-foreground">
-							PNG, SVG, ICO, JPEG, or WEBP. Max 2MB. Transparent images
-							recommended for theme compatibility.
-						</p>
-						<div className="flex flex-wrap gap-4">
+					</h2>
+					<div>
+						<div className="grid lg:grid-cols-[minmax(200px,0.8fr)_minmax(0,1.2fr)]">
+							<div className="flex flex-col justify-between gap-4 border-b border-border bg-muted/30 p-4 lg:border-b-0 lg:border-r lg:p-6">
+								<div>
+									<p className="mb-4 text-xs font-medium text-muted-foreground">Navigation preview</p>
+									<div className="inline-flex items-center gap-3 rounded-lg border border-border bg-sidebar px-4 py-3">
+										<img src={logoPreview || "/observal-logo.svg"} alt="" width={28} height={28} className="size-7 object-contain" />
+										{wordmarkPreview ? (
+											<img src={wordmarkPreview} alt={appNameDraft.trim() || "Observal"} className="h-5 max-w-40 object-contain" />
+										) : (
+											<span className="font-display text-base font-semibold text-sidebar-foreground">{appNameDraft.trim() || "Observal"}</span>
+										)}
+									</div>
+								</div>
+								<p className="max-w-xs text-xs leading-5 text-muted-foreground">PNG, SVG, ICO, JPEG, or WEBP. Max 2MB. Transparent images recommended for theme compatibility.</p>
+							</div>
+							<div className="grid gap-5 p-5 sm:grid-cols-2">
 							{/* Logo icon */}
-							<div className="space-y-1.5">
+							<div className="space-y-2">
 								<p className="text-xs font-medium">Icon</p>
+								<div className="flex items-center gap-3">
 								<div
 									className="w-12 h-12 rounded border-2 border-dashed border-border flex items-center justify-center cursor-pointer hover:border-primary/50 transition-colors bg-muted/30"
 									onClick={() => fileInputRef.current?.click()}
@@ -906,25 +951,26 @@ export default function SettingsPage() {
 										e.target.value = "";
 									}}
 								/>
-								<div className="flex gap-1">
+								<div className="flex flex-wrap gap-1">
 									<Button
-										variant="ghost"
+										variant="outline"
 										size="sm"
-										className="h-6 text-[11px] px-1.5"
+										className="h-9"
 										onClick={() => fileInputRef.current?.click()}
 									>
-										Upload
+										Upload icon
 									</Button>
 									{logoPreview && (
 										<Button
 											variant="ghost"
 											size="sm"
-											className="h-6 text-[11px] px-1.5 text-muted-foreground"
+											className="h-9 text-muted-foreground"
 											onClick={() => setLogoOverride(null)}
 										>
 											Remove
 										</Button>
 									)}
+								</div>
 								</div>
 							</div>
 							{/* Wordmark */}
@@ -935,6 +981,7 @@ export default function SettingsPage() {
 										(optional, replaces text)
 									</span>
 								</p>
+								<div className="flex items-center gap-3">
 								<div
 									className="w-28 h-12 rounded border-2 border-dashed border-border flex items-center justify-center cursor-pointer hover:border-primary/50 transition-colors bg-muted/30"
 									onClick={() => wordmarkInputRef.current?.click()}
@@ -968,88 +1015,56 @@ export default function SettingsPage() {
 										e.target.value = "";
 									}}
 								/>
-								<div className="flex gap-1">
+								<div className="flex flex-wrap gap-1">
 									<Button
-										variant="ghost"
+										variant="outline"
 										size="sm"
-										className="h-6 text-[11px] px-1.5"
+										className="h-9"
 										onClick={() => wordmarkInputRef.current?.click()}
 									>
-										Upload
+										Upload wordmark
 									</Button>
 									{wordmarkPreview && (
 										<Button
 											variant="ghost"
 											size="sm"
-											className="h-6 text-[11px] px-1.5 text-muted-foreground"
+											className="h-9 text-muted-foreground"
 											onClick={() => setWordmarkOverride(null)}
 										>
 											Remove
 										</Button>
 									)}
 								</div>
+								</div>
 							</div>
 							{/* App name (text fallback) */}
-							<div className="space-y-1.5">
-								<p className="text-xs font-medium">
+							<div className="space-y-1.5 sm:col-span-2">
+								<label htmlFor="branding-app-name" className="block text-xs font-medium">
 									App Name{" "}
 									<span className="text-muted-foreground font-normal">
 										(used when no wordmark)
 									</span>
-								</p>
+								</label>
 								<Input
+									id="branding-app-name"
 									value={appNameDraft}
 									onChange={(e) => setAppNameOverride(e.target.value)}
 									placeholder="Observal"
 									autoComplete="off"
 									maxLength={30}
-									className="h-8 text-sm w-48"
+									className="h-9 w-full max-w-sm text-sm"
 								/>
 								<p className="text-[11px] text-muted-foreground">
 									{appNameDraft.length}/30
 								</p>
 							</div>
 						</div>
-						{/* Preview + actions */}
-						<div className="flex items-center gap-4 pt-1 border-t border-border">
-							<div className="rounded bg-sidebar px-3 py-2 inline-flex items-center gap-2">
-								<div className="flex size-8 shrink-0 items-center justify-center">
-									{logoPreview ? (
-										<img
-											src={logoPreview}
-											alt=""
-											width={20}
-											height={20}
-											className="object-contain"
-										/>
-									) : (
-										<img
-											src="/observal-logo.svg"
-											alt=""
-											width={20}
-											height={20}
-											className="object-contain"
-										/>
-									)}
-								</div>
-								{wordmarkPreview ? (
-									<img
-										src={wordmarkPreview}
-										alt=""
-										width={140}
-										height={16}
-										className="h-4 max-w-35 object-contain object-left"
-									/>
-								) : (
-									<span className="text-sm font-semibold tracking-tight font-display text-sidebar-foreground truncate max-w-35">
-										{appNameDraft.trim() || "Observal"}
-									</span>
-								)}
-							</div>
+						</div>
+						<div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3">
 							<div className="flex items-center gap-2">
 								<Button
 									size="sm"
-									className="h-7 text-xs"
+									className="h-9"
 									onClick={handleSaveBranding}
 									disabled={brandingSaving || !hasBrandingChanges}
 								>
@@ -1064,7 +1079,7 @@ export default function SettingsPage() {
 									<Button
 										size="sm"
 										variant="outline"
-										className="h-7 text-xs"
+										className="h-9"
 										onClick={handleResetBranding}
 										disabled={brandingSaving}
 									>
@@ -1078,37 +1093,27 @@ export default function SettingsPage() {
 				</section>
 
 				{/* Experimental features */}
-				<section className="animate-in">
-					<h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1.5">
-						<FlaskConical className="h-3.5 w-3.5" />
-						Experimental
-					</h3>
-					<p className="text-xs text-muted-foreground mb-3">Features that are not ready for general use. Off by default, and hidden everywhere while off.</p>
-					<div className="rounded-md border border-border bg-card px-4 py-3">
-						<div className="flex items-center justify-between gap-4">
-							<div className="flex-1">
-								<p className="text-sm font-medium">Review checks</p>
-								<p className="text-xs text-muted-foreground mt-0.5">
-									Automated checks on review revisions, with per-organization and per-teamspace settings. Behavior and APIs may change or be removed.
-								</p>
-							</div>
-							<Switch
-								checked={experimentalReviewChecks}
-								onCheckedChange={handleReviewChecksToggle}
-								disabled={reviewChecksToggling}
-								aria-label="Enable experimental review checks"
-							/>
+				<section id="settings-experimental" data-settings-section className="scroll-mt-6 overflow-hidden rounded-lg border border-border bg-card">
+					<div className="border-b border-border px-5 py-4">
+						<h2 className="flex items-center gap-2 text-lg font-medium tracking-tight"><FlaskConical className="size-4" />Experimental</h2>
+						<p className="mt-1 text-xs text-muted-foreground">Features that are not ready for general use. Off by default, and hidden everywhere while off.</p>
+					</div>
+					<div className="flex items-center justify-between gap-4 px-5 py-4">
+						<div className="flex-1">
+							<p className="text-sm font-medium">Review checks</p>
+							<p className="mt-0.5 text-xs text-muted-foreground">Automated checks on review revisions, with per-organization and per-teamspace settings. Behavior and APIs may change or be removed.</p>
 						</div>
+						<Switch checked={experimentalReviewChecks} onCheckedChange={handleReviewChecksToggle} disabled={reviewChecksToggling} aria-label="Enable experimental review checks" />
 					</div>
 				</section>
 
+				<div id="settings-access" data-settings-section className="scroll-mt-6 overflow-hidden rounded-lg border border-border bg-card">
+				<div className="border-b border-border px-5 py-4"><h2 className="text-lg font-medium tracking-tight">Access & privacy</h2>
+				<p className="mt-1 text-xs text-muted-foreground">Control public access and trace visibility.</p></div>
+				<div className="divide-y divide-border">
 				{/* Public registry access */}
-				<section className="animate-in">
-					<h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
-						<Eye className="h-3.5 w-3.5" />
-						Public Registry
-					</h3>
-					<div className="rounded-md border border-border bg-card px-4 py-3">
+				<section className="px-5 py-4">
+										<div>
 						<div className="flex items-center justify-between gap-4">
 							<div className="flex-1">
 								<p className="text-sm font-medium">Allow public browsing and installs</p>
@@ -1127,18 +1132,17 @@ export default function SettingsPage() {
 				</section>
 
 				{/* Trace Privacy */}
-				<section className="animate-in">
-					<h3 className={`text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5 ${sectionHelpHeadingClass("Trace Privacy")}`} onClick={(event) => { if ((event.ctrlKey || event.metaKey) && openHelp(undefined, "Trace Privacy")) event.preventDefault(); }}>
+				<section className="px-5 py-4">
+					<h3 className={`mb-2 flex items-center gap-2 text-sm font-medium ${sectionHelpHeadingClass("Trace Privacy")}`} onClick={(event) => { if ((event.ctrlKey || event.metaKey) && openHelp(undefined, "Trace Privacy")) event.preventDefault(); }}>
 						<Eye className="h-3.5 w-3.5" />
-						Trace Privacy
+						Restrict trace visibility
 						<button type="button" className="text-muted-foreground hover:text-primary" onClick={(event) => { event.preventDefault(); event.stopPropagation(); openHelp(undefined, "Trace Privacy"); }} aria-label="Open Trace Privacy documentation">
 							<HelpCircle className="h-3.5 w-3.5" />
 						</button>
 					</h3>
-					<div className="rounded-md border border-border bg-card px-4 py-3">
+					<div>
 						<div className="flex items-center justify-between">
 							<div className="flex-1">
-								<p className="text-sm font-medium">Restrict trace visibility</p>
 								<p className="text-xs text-muted-foreground mt-0.5">
 									When enabled, all users (including admins) can only see their
 									own traces. Super-admins always retain full visibility across
@@ -1213,20 +1217,18 @@ export default function SettingsPage() {
 
 				{/* Registered Agents Only, super_admin only */}
 				{hasMinRole(getUserRole(), "super_admin") && (
-					<section className="animate-in">
-						<h3 className={`text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5 ${sectionHelpHeadingClass("Registered Agent Files Only")}`} onClick={(event) => { if ((event.ctrlKey || event.metaKey) && openHelp(undefined, "Registered Agent Files Only")) event.preventDefault(); }}>
+					<section className="px-5 py-4">
+						<h3 className={`mb-2 flex items-center gap-2 text-sm font-medium ${sectionHelpHeadingClass("Registered Agent Files Only")}`} onClick={(event) => { if ((event.ctrlKey || event.metaKey) && openHelp(undefined, "Registered Agent Files Only")) event.preventDefault(); }}>
 							<Shield className="h-3.5 w-3.5" />
-							Registered Agent Files Only
+							Only trace registered Agent Files
 							<button type="button" className="text-muted-foreground hover:text-primary" onClick={(event) => { event.preventDefault(); event.stopPropagation(); openHelp(undefined, "Registered Agent Files Only"); }} aria-label="Open Registered Agent Files Only documentation">
 								<HelpCircle className="h-3.5 w-3.5" />
 							</button>
 						</h3>
-						<div className="rounded-md border border-border bg-card px-4 py-3">
+						<div>
 							<div className="flex items-center justify-between">
 								<div className="flex-1">
-									<p className="text-sm font-medium">
-										Only trace registered Agent Files
-									</p>
+
 									<p className="text-xs text-muted-foreground mt-0.5">
 										Unstable. When enabled, only registered Agent Files are traced.
 										Unregistered Agent File activity may be missing from traces.
@@ -1243,18 +1245,38 @@ export default function SettingsPage() {
 						</div>
 					</section>
 				)}
-
+				<div className="flex flex-wrap gap-x-8 gap-y-2 px-5 py-4 text-xs text-muted-foreground">
+					<span>SSO (OAuth/OIDC): <strong className="font-medium text-foreground">{ssoEnabled ? "Enabled" : "Disabled"}</strong></span>
+					<span>SAML SSO: <strong className="font-medium text-foreground">{samlEnabled ? "Configured" : "Not configured"}</strong></span>
+				</div>
+				</div>
+				</div>
+				<div id="settings-usage" data-settings-section className="scroll-mt-6 overflow-hidden rounded-lg border border-border bg-card"><UsagePingSection settings={entries as AdminSetting[]} onChanged={() => { void refetch(); }} /></div>
+				</div>
+				<div className={activeCategory === "insights" ? "" : "hidden"}>
+				{settingSections.some((section) => section.id === "insights" && section.settings.length > 0) && (
+					<div id="settings-insights" data-settings-section className="scroll-mt-6 overflow-hidden rounded-lg border border-border bg-card">
+						<InsightsSection
+							entries={entries as { key: string; value: string; is_sensitive?: boolean; is_set?: boolean }[]}
+							onSave={async (key, value) => { await admin.updateSetting(key, { value }); refetch(); }}
+							onRevoke={(key) => setRevokeConfirmKey(key)}
+							refetch={refetch}
+						/>
+					</div>
+				)}
+				</div>
+				<div className={activeCategory === "data" ? "space-y-8" : "hidden"}>
 				{/* Data Migration, super_admin only */}
 				{hasMinRole(getUserRole(), "super_admin") && (
-					<section className="animate-in">
-						<h3 className={`text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5 ${sectionHelpHeadingClass("Data Migration")}`} onClick={(event) => { if ((event.ctrlKey || event.metaKey) && openHelp(undefined, "Data Migration")) event.preventDefault(); }}>
+					<section id="settings-migration" data-settings-section className="scroll-mt-6 overflow-hidden rounded-lg border border-border bg-card">
+						<h3 className={`flex items-center gap-2 border-b border-border px-5 py-4 text-lg font-medium tracking-tight ${sectionHelpHeadingClass("Data Migration")}`} onClick={(event) => { if ((event.ctrlKey || event.metaKey) && openHelp(undefined, "Data Migration")) event.preventDefault(); }}>
 							<ArrowLeftRight className="h-3.5 w-3.5" />
 							Data Migration
 							<button type="button" className="text-muted-foreground hover:text-primary" onClick={(event) => { event.preventDefault(); event.stopPropagation(); openHelp(undefined, "Data Migration"); }} aria-label="Open Data Migration documentation">
 								<HelpCircle className="h-3.5 w-3.5" />
 							</button>
 						</h3>
-						<div className="rounded-md border border-border bg-card px-4 py-3">
+						<div className="px-5 py-4">
 							<div className="flex items-center justify-between gap-4">
 								<div className="flex-1">
 									<p className="text-sm font-medium">
@@ -1282,15 +1304,15 @@ export default function SettingsPage() {
 
 				{/* Data Retention, super_admin only */}
 				{hasMinRole(getUserRole(), "super_admin") && (
-					<section className="animate-in">
-						<h3 className={`text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5 ${sectionHelpHeadingClass("Data Retention")}`} onClick={(event) => { if ((event.ctrlKey || event.metaKey) && openHelp(undefined, "Data Retention")) event.preventDefault(); }}>
+					<section id="settings-retention" data-settings-section className="scroll-mt-6 overflow-hidden rounded-lg border border-border bg-card">
+						<h3 className={`flex items-center gap-2 border-b border-border px-5 py-4 text-lg font-medium tracking-tight ${sectionHelpHeadingClass("Data Retention")}`} onClick={(event) => { if ((event.ctrlKey || event.metaKey) && openHelp(undefined, "Data Retention")) event.preventDefault(); }}>
 							<Database className="h-3.5 w-3.5" />
 							Data Retention
 							<button type="button" className="text-muted-foreground hover:text-primary" onClick={(event) => { event.preventDefault(); event.stopPropagation(); openHelp(undefined, "Data Retention"); }} aria-label="Open Data Retention documentation">
 								<HelpCircle className="h-3.5 w-3.5" />
 							</button>
 						</h3>
-						<div className="rounded-md border border-border bg-card p-4 space-y-4">
+						<div className="space-y-4 p-5">
 							<div className="flex items-center justify-between">
 								<div className="flex-1">
 									<p className="text-sm font-medium">Enable data retention</p>
@@ -1464,58 +1486,27 @@ export default function SettingsPage() {
 						</Dialog>
 					</section>
 				)}
+				</div>
 
 				{isLoading ? (
-					<TableSkeleton rows={5} cols={2} />
+					["data", "platform", "security"].includes(activeCategory) ? <TableSkeleton rows={5} cols={2} /> : null
 				) : isError ? (
 					<ErrorState message={error?.message} onRetry={() => refetch()} />
 				) : (
 					<div className="animate-in space-y-6">
-						{/* Help mode hint banner */}
-						{!helpBannerDismissed && (
-							<div className="flex items-center gap-3 rounded-md border border-primary/30 bg-primary/5 px-4 py-2.5">
-								<HelpCircle className="h-3.5 w-3.5 shrink-0 text-primary" />
-								<span className="text-sm text-foreground/80">Use guide icons for docs. Hold {navigator.platform?.includes("Mac") ? "Command" : "Ctrl"} and click highlighted settings for field-level help.</span>
-								<button
-									type="button"
-									className="ml-auto text-muted-foreground hover:text-foreground transition-colors"
-									onClick={() => { setHelpBannerDismissed(true); sessionStorage.setItem("observal_help_banner_dismissed", "1"); }}
-								>
-									<X className="h-3.5 w-3.5" />
-								</button>
-							</div>
-						)}
-						{/* Add new setting form */}
-						{/* Unified sections, each setting stays in its section */}
-						{settingSections.filter((s) => !s.danger).map((section) => {
+						{settingSections.filter((s) => !s.danger && s.id !== "insights").sort((a, b) => {
+							const order = ["data", "resource", "discovery", "registry", "jwt", "observability", "misc"];
+							return order.indexOf(a.id) - order.indexOf(b.id);
+						}).map((section) => {
 								const visibleSettings = section.settings.filter(
 									(setting) => !DEDICATED_TOGGLE_KEYS.has(setting.key),
 								);
 								if (visibleSettings.length === 0) return null;
 
-								if (section.title === "Agent Insights") {
-									return (
-										<InsightsSection
-											key={section.title}
-											entries={entries as { key: string; value: string; is_sensitive?: boolean; is_set?: boolean }[]}
-											onSave={async (key, value) => {
-												await admin.updateSetting(key, { value });
-												refetch();
-											}}
-											onRevoke={(key) => setRevokeConfirmKey(key)}
-											refetch={refetch}
-										/>
-									);
-								}
-
-								// Check for deprecated AWS settings that are still configured
-								const deprecatedAwsKeys = ["insights.aws_region", "insights.aws_access_key_id", "insights.aws_secret_access_key", "insights.aws_session_token", "insights.model_url", "insights.model_api_key"];
-								const hasNewApiKey = entries.some((e) => e.key === "insights.api_key" && e.value && e.value !== "");
-								const hasDeprecatedSettings = section.title === "Agent Insights" && !hasNewApiKey && entries.some((e) => deprecatedAwsKeys.includes(e.key) && e.value && e.value !== "");
 								return (
-								<section key={section.title} className="mb-6">
+								<section key={section.title} id={`settings-${section.id}`} data-settings-section className={activeCategory === (sectionCategory[section.id] ?? "platform") ? "scroll-mt-6 overflow-hidden rounded-lg border border-border bg-card" : "hidden"}>
 									<h3
-										className={`text-sm font-semibold uppercase tracking-wider text-foreground/80 mb-1 flex items-center gap-1.5 ${helpActive && SECTION_DOCS[section.title] ? "cursor-help ring-2 ring-primary/60 ring-offset-2 ring-offset-background rounded-sm" : ""}`}
+										className={`flex items-center gap-2 px-5 pt-4 text-lg font-medium tracking-tight ${helpActive && SECTION_DOCS[section.title] ? "cursor-help ring-2 ring-primary/60 ring-offset-2 ring-offset-background rounded-sm" : ""}`}
 										onClick={(event) => {
 											if ((event.ctrlKey || event.metaKey) && openHelp(undefined, section.title)) {
 												event.preventDefault();
@@ -1531,18 +1522,9 @@ export default function SettingsPage() {
 										)}
 									</h3>
 									{section.description && (
-										<p className="text-xs text-foreground/60 mb-3">{section.description}</p>
+										<p className="px-5 pb-4 pt-1 text-xs text-muted-foreground">{section.description}</p>
 									)}
-									{hasDeprecatedSettings && (
-										<div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-900 dark:text-amber-200">
-											<strong>Deprecated settings detected.</strong> AWS-specific credential fields are no longer used. Please configure the API Key field above with your provider key (or a{" "}
-											<a href="https://docs.aws.amazon.com/bedrock/latest/userguide/api-keys.html" target="_blank" rel="noopener noreferrer" className="underline text-amber-950 hover:text-amber-800 dark:text-amber-300 dark:hover:text-amber-100">Bedrock API key</a>
-											) and use{" "}
-											<a href="https://docs.litellm.ai/docs/providers" target="_blank" rel="noopener noreferrer" className="underline text-amber-950 hover:text-amber-800 dark:text-amber-300 dark:hover:text-amber-100">LiteLLM provider format</a>
-											{" "}for model IDs. You can safely delete the old AWS settings.
-										</div>
-									)}
-									<div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+									<div className="divide-y divide-border border-t border-border">
 									{visibleSettings.map((d) => {
 										const existing = entries.find((e) => e.key === d.key);
 										const isEditing = editingKey === d.key;
@@ -1552,12 +1534,12 @@ export default function SettingsPage() {
 										}
 										if (isEditing) {
 											return (
-												<div key={d.key} className={`rounded-md border-2 border-primary/50 bg-card p-3 ${helpTargetClass(d.key)}`} onClick={(e) => { if ((e.ctrlKey || e.metaKey) && openHelp(d.key)) { e.preventDefault(); e.stopPropagation(); } }}>
+												<div key={d.key} className={`grid gap-3 bg-primary/5 px-5 py-4 md:grid-cols-[minmax(0,1fr)_minmax(220px,1fr)] md:items-center ${helpTargetClass(d.key)}`} onClick={(e) => { if ((e.ctrlKey || e.metaKey) && openHelp(d.key)) { e.preventDefault(); e.stopPropagation(); } }}>
 													<div className="mb-2 flex items-center gap-2"><span className="text-sm font-semibold text-foreground">{d.label}</span>{d.restart_required && <RestartRequiredMark />}</div>
 													<div className="flex items-center gap-2">
 														{renderSettingEditor(d.key)}
-														<Button size="sm" className="h-8" onClick={handleInlineSave} disabled={saving}>{saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}</Button>
-														<Button size="sm" variant="ghost" className="h-8" onClick={() => { setEditingKey(null); setEditingValue(""); }}><X className="h-3.5 w-3.5" /></Button>
+														<Button size="sm" className="h-9 gap-1.5" onClick={handleInlineSave} disabled={saving}>{saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />} Save</Button>
+														<Button size="sm" variant="ghost" className="h-9" onClick={() => { setEditingKey(null); setEditingValue(""); }}>Cancel</Button>
 													</div>
 												</div>
 											);
@@ -1566,16 +1548,16 @@ export default function SettingsPage() {
 											const isSensitive = (existing as AdminSetting).is_sensitive || SENSITIVE_KEYS.has(d.key);
 											const isSet = (existing as AdminSetting).is_set ?? !!existing.value;
 											return (
-												<div key={d.key} className={`rounded-md border-2 border-border bg-card p-3 relative ${helpTargetClass(d.key)}`} onClick={(e) => { if ((e.ctrlKey || e.metaKey) && openHelp(d.key)) { e.preventDefault(); e.stopPropagation(); } }}>
+												<div key={d.key} className={`relative grid gap-2 px-5 py-4 md:grid-cols-[minmax(0,1fr)_minmax(220px,1fr)] md:items-center ${helpTargetClass(d.key)}`}  onClick={(e) => { if ((e.ctrlKey || e.metaKey) && openHelp(d.key)) { e.preventDefault(); e.stopPropagation(); } }}>
 													<SettingHelpIcon settingKey={d.key} openHelp={openHelp} />
-													<div className="flex items-center gap-2 pr-6"><span className="text-sm font-semibold text-foreground">{d.label}</span>{d.restart_required && <RestartRequiredMark />}</div>
-													<div className="flex items-center gap-2 mt-1.5">
+													<div className="pr-6"><div className="flex items-center gap-2"><span className="text-sm font-medium text-foreground">{d.label}</span>{d.restart_required && <RestartRequiredMark />}</div>{d.subtitle && <p className="mt-1 text-xs text-muted-foreground">{d.subtitle}</p>}</div>
+													<div className="flex min-w-0 items-center gap-2">
 														{isSensitive ? (
 															<span className="text-xs text-foreground/70 font-[family-name:var(--font-mono)] truncate flex-1">{isSet ? REDACTED_VALUE : "Not set"}</span>
 														) : (
 															<span className="text-xs text-foreground/70 font-[family-name:var(--font-mono)] truncate flex-1">{existing.value}</span>
 														)}
-														<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => { setEditingKey(d.key); setEditingValue(isSensitive ? "" : (existing?.value ?? "")); }}><Pencil className="h-3 w-3 text-muted-foreground" /></Button>
+														<Button variant="outline" size="sm" className="h-8" onClick={() => { setEditingKey(d.key); setEditingValue(isSensitive ? "" : (existing?.value ?? "")); }}>Edit</Button>
 														{isSensitive && isSet ? (
 															<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setRevokeConfirmKey(d.key)}><Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" /></Button>
 														) : (
@@ -1586,10 +1568,11 @@ export default function SettingsPage() {
 											);
 										}
 										return (
-											<button key={d.key} type="button" onClick={(e) => { if ((e.ctrlKey || e.metaKey) && openHelp(d.key)) { e.preventDefault(); return; } setEditingKey(d.key); setEditingValue(""); }} className={`text-left rounded-md border-2 border-dashed border-border/80 p-3 hover:border-primary/40 hover:bg-background transition-colors relative ${helpTargetClass(d.key)}`}>
+											<div key={d.key} className={`relative grid gap-2 px-5 py-4 md:grid-cols-[minmax(0,1fr)_minmax(220px,1fr)] md:items-center ${helpTargetClass(d.key)}`}>
 												<SettingHelpIcon settingKey={d.key} openHelp={openHelp} />
-												<div className="flex items-center gap-2 pr-6"><span className="text-sm font-semibold text-foreground/60">+ {d.label}</span>{d.restart_required && <RestartRequiredMark />}</div>
-											</button>
+												<div className="flex items-center gap-2 pr-6"><span className="text-sm font-medium">{d.label}</span>{d.restart_required && <RestartRequiredMark />}</div>
+												<div className="flex items-center justify-between gap-3"><span className="text-xs text-muted-foreground">Not set</span><Button variant="outline" size="sm" className="h-8" onClick={() => { setEditingKey(d.key); setEditingValue(""); }}>Configure</Button></div>
+											</div>
 										);
 									})}
 									</div>
@@ -1599,21 +1582,21 @@ export default function SettingsPage() {
 
 							{/* Danger Zone */}
 							{settingSections.some((s) => s.danger) && (
-								<section className="mt-8">
-									<div className="border-t-2 border-amber-500/30 pt-6">
-										<h2 className="text-sm font-semibold text-amber-600 dark:text-amber-400 flex items-center gap-2 mb-1">
-											<AlertTriangle className="h-4 w-4" />
-											Danger Zone
-										</h2>
-										<p className="text-xs text-foreground/60 mb-4">These settings can affect authentication, security, and data integrity.</p>
+								<section className={activeCategory === "security" ? "" : "hidden"}>
+									<div>
+										<h2 className="mb-1 text-lg font-medium tracking-tight">Security & deployment</h2>
+										<p className="mb-4 text-xs text-muted-foreground">Authentication, deployment, and destructive actions.</p>
 										<div className="space-y-4">
-											{settingSections.filter((s) => s.danger).map((section) => {
+											{settingSections.filter((s) => s.danger).sort((a, b) => {
+											const order = ["auth", "deployment", "security", "danger"];
+											return order.indexOf(a.id) - order.indexOf(b.id);
+										}).map((section) => {
 												const visibleDangerSettings = section.settings.filter(
 													(setting) => !DEDICATED_TOGGLE_KEYS.has(setting.key),
 												);
 												if (visibleDangerSettings.length === 0) return null;
 												return (
-												<details key={section.title} className="group rounded-md border border-amber-500/40 bg-card">
+												<details key={section.title} id={`settings-${section.id}`} data-settings-section open={section.id !== "danger"} className="group scroll-mt-6 rounded-xl border border-border bg-card">
 													<summary className="flex items-center gap-2 px-4 py-3 cursor-pointer select-none hover:bg-muted/30 transition-colors">
 														{sectionIcon(section)}
 														<span className="text-sm font-semibold text-foreground/80 flex-1">{section.title}</span>
@@ -1622,21 +1605,21 @@ export default function SettingsPage() {
 																<HelpCircle className="h-3.5 w-3.5" />
 															</button>
 														)}
-														<span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">CAUTION</span>
+														{section.id === "danger" && <span className="text-xs text-muted-foreground">Destructive</span>}
 													</summary>
-													<div className="px-4 pb-4 pt-1">
+													<div className="border-t border-border">
 														{section.description && (
-															<p className="text-xs text-foreground/60 mb-3">{section.description}</p>
+															<p className="px-5 py-3 text-xs text-muted-foreground">{section.description}</p>
 														)}
-														<div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+														<div className="divide-y divide-border border-t border-border">
 															{visibleDangerSettings.map((d) => {
 														if (d.key === "danger.purge_traces_insights") {
 															return (
-																<div key={d.key} className={`rounded-md border-2 border-destructive/40 bg-destructive/5 p-3 relative ${helpTargetClass(d.key)}`}>
+																<div key={d.key} className={`relative grid gap-3 px-5 py-4 md:grid-cols-[minmax(0,1fr)_minmax(220px,1fr)] md:items-center ${helpTargetClass(d.key)}`}>
 																	<SettingHelpIcon settingKey={d.key} openHelp={openHelp} />
-																	<span className="text-sm font-semibold text-destructive">{d.label}</span>
-																	<p className="text-xs text-foreground/60 mt-1 pr-6">{d.subtitle}</p>
-																	<Button variant="destructive" size="sm" className="mt-3 h-8" onClick={handlePurgeTracesInsights} disabled={purgingTracesInsights}>
+																	<div><span className="text-sm font-semibold text-foreground">{d.label}</span>
+																	<p className="mt-1 text-xs text-muted-foreground">{d.subtitle}</p></div>
+																	<Button variant="destructive" size="sm" className="h-8 justify-self-start md:justify-self-end" onClick={handlePurgeTracesInsights} disabled={purgingTracesInsights}>
 																		{purgingTracesInsights ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Trash2 className="mr-1 h-3.5 w-3.5" />}
 																		Purge traces & insights
 																	</Button>
@@ -1651,7 +1634,7 @@ export default function SettingsPage() {
 										}
 														if (isEditing) {
 															return (
-																<div key={d.key} className="rounded-md border-2 border-primary/50 bg-card p-3">
+																<div key={d.key} className="grid gap-3 bg-primary/5 px-5 py-4 md:grid-cols-[minmax(0,1fr)_minmax(220px,1fr)] md:items-center">
 																	<div className="mb-2 flex items-center gap-2"><span className="text-sm font-semibold text-foreground">{d.label}</span>{d.restart_required && <RestartRequiredMark />}</div>
 																	<div className="flex items-center gap-2">
 																		{renderSettingEditor(d.key)}
@@ -1665,7 +1648,7 @@ export default function SettingsPage() {
 															const isSensitive = (existing as AdminSetting).is_sensitive || SENSITIVE_KEYS.has(d.key);
 															const isSet = (existing as AdminSetting).is_set ?? !!existing.value;
 															return (
-																<div key={d.key} className={`rounded-md border-2 border-border bg-card p-3 relative ${helpTargetClass(d.key)}`} onClick={(e) => { if ((e.ctrlKey || e.metaKey) && openHelp(d.key)) { e.preventDefault(); e.stopPropagation(); } }}>
+																<div key={d.key} className={`relative grid gap-2 px-5 py-4 md:grid-cols-[minmax(0,1fr)_minmax(220px,1fr)] md:items-center ${helpTargetClass(d.key)}`} onClick={(e) => { if ((e.ctrlKey || e.metaKey) && openHelp(d.key)) { e.preventDefault(); e.stopPropagation(); } }}>
 																	<SettingHelpIcon settingKey={d.key} openHelp={openHelp} />
 																	<div className="flex items-center gap-2 pr-6"><span className="text-sm font-semibold text-foreground">{d.label}</span>{d.restart_required && <RestartRequiredMark />}</div>
 																	<div className="flex items-center gap-2 mt-1.5">
@@ -1676,16 +1659,16 @@ export default function SettingsPage() {
 																		)}
 																		<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => { setEditingKey(d.key); setEditingValue(isSensitive ? "" : existing.value); }}><Pencil className="h-3 w-3 text-muted-foreground" /></Button>
 																		{isSensitive && isSet ? (
-																			<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setRevokeConfirmKey(d.key)}><Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" /></Button>
+																			<Button variant="ghost" size="sm" className="h-8 text-destructive" onClick={() => setRevokeConfirmKey(d.key)}>Revoke</Button>
 																		) : (
-																			<Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={async () => { await admin.updateSetting(d.key, { value: "" }); refetch(); refetchRestartStatus(); toast.success(`Cleared ${d.label}`); }}><Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" /></Button>
+																			<Button variant="ghost" size="sm" className="h-8" onClick={async () => { await admin.updateSetting(d.key, { value: "" }); refetch(); refetchRestartStatus(); toast.success(`Cleared ${d.label}`); }}>Clear</Button>
 																		)}
 																	</div>
 																</div>
 															);
 														}
 														return (
-															<button key={d.key} type="button" onClick={(e) => { if ((e.ctrlKey || e.metaKey) && openHelp(d.key)) { e.preventDefault(); return; } setEditingKey(d.key); setEditingValue(""); }} className={`text-left rounded-md border-2 border-dashed border-border/80 p-3 hover:border-primary/40 hover:bg-background transition-colors relative ${helpTargetClass(d.key)}`}>
+															<button key={d.key} type="button" onClick={(e) => { if ((e.ctrlKey || e.metaKey) && openHelp(d.key)) { e.preventDefault(); return; } setEditingKey(d.key); setEditingValue(""); }} className={`relative flex w-full items-center gap-2 px-5 py-4 text-left transition-colors hover:bg-muted/40 ${helpTargetClass(d.key)}`}>
 																<SettingHelpIcon settingKey={d.key} openHelp={openHelp} />
 																<div className="flex items-center gap-2 pr-6"><span className="text-sm font-semibold text-foreground/60">+ {d.label}</span>{d.restart_required && <RestartRequiredMark />}</div>
 															</button>

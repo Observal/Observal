@@ -294,10 +294,10 @@ export function InsightsSection({ entries, onSave, onRevoke, refetch }: Insights
 	};
 
 	return (
-		<section className="mb-6 mt-2">
+		<section>
 			{/* Header */}
-			<div className="flex items-center justify-between mb-1">
-				<h3 className={cn("text-sm font-semibold uppercase tracking-wider text-foreground/80 flex items-center gap-1.5", helpCtx.helpActive && "cursor-help ring-2 ring-primary/60 ring-offset-2 ring-offset-background rounded-sm")} onClick={(event) => { if ((event.ctrlKey || event.metaKey) && helpCtx.openHelp({ sectionTitle: "Agent File Insights" })) event.preventDefault(); }}>
+			<div className="flex flex-wrap items-center justify-between gap-2 px-5 pt-4">
+				<h3 className={cn("flex items-center gap-2 text-lg font-medium tracking-tight", helpCtx.helpActive && "cursor-help ring-2 ring-primary/60 ring-offset-2 ring-offset-background rounded-sm")} onClick={(event) => { if ((event.ctrlKey || event.metaKey) && helpCtx.openHelp({ sectionTitle: "Agent File Insights" })) event.preventDefault(); }}>
 					<Activity className="h-3.5 w-3.5" />
 					Agent File Insights
 					<button type="button" className="text-muted-foreground hover:text-primary" onClick={(event) => { event.preventDefault(); event.stopPropagation(); helpCtx.openHelp({ sectionTitle: "Agent File Insights" }); }} aria-label="Open Agent File Insights documentation">
@@ -311,12 +311,12 @@ export function InsightsSection({ entries, onSave, onRevoke, refetch }: Insights
 					</span>
 				</div>
 			</div>
-			<p className="text-xs text-foreground/60 mb-3">
+			<p className="border-b border-border px-5 pb-4 pt-1 text-xs text-muted-foreground">
 				Configure LLM provider for the insights engine. Supports any LiteLLM-compatible provider.
 			</p>
 
 			{/* Main card */}
-			<div className="rounded-lg border border-border bg-card p-5 space-y-5">
+			<div className="space-y-5 p-5">
 				{/* Provider selector */}
 				<div>
 					<label className="text-sm font-medium text-foreground block mb-2">Provider</label>
@@ -568,7 +568,7 @@ export function InsightsSection({ entries, onSave, onRevoke, refetch }: Insights
 				)}
 
 				{/* Advanced settings */}
-				<details className="group rounded-md border border-border/70">
+				<details className="group rounded-lg border border-border/70">
 					<summary className="flex items-center gap-2 px-4 py-2.5 cursor-pointer select-none hover:bg-muted/30 transition-colors text-sm font-medium text-foreground/70">
 						Advanced
 					</summary>
