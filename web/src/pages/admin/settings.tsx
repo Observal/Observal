@@ -9,13 +9,11 @@ import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { Link } from "@tanstack/react-router";
 import {
 	Settings,
-	Plus,
 	Pencil,
 	Trash2,
 	Save,
 	X,
 	Loader2,
-	Info,
 	Database,
 	Activity,
 	Shield,
@@ -92,6 +90,21 @@ const ALLOWED_LOGO_TYPES = [
 	"image/webp",
 ];
 const MAX_LOGO_SIZE = 2 * 1024 * 1024;
+
+const CATEGORIES = [
+	{ id: "general", label: "Identity & access", description: "Branding, public access, trace visibility and usage reporting", icon: Palette },
+	{ id: "insights", label: "Agent Insights", description: "Provider, models and report generation", icon: Activity },
+	{ id: "data", label: "Data & runtime", description: "Retention, migration and resource limits", icon: Database },
+	{ id: "platform", label: "Platform", description: "Discovery, registry, tokens and observability", icon: Settings },
+	{ id: "security", label: "Security & deployment", description: "Authentication, deployment and destructive actions", icon: ShieldAlert },
+];
+
+const SECTION_CATEGORY: Record<string, string> = {
+	appearance: "general", experimental: "general", access: "general", usage: "general", insights: "insights",
+	migration: "data", retention: "data", data: "data", resource: "data", observability: "data",
+	discovery: "platform", registry: "platform", jwt: "platform", misc: "platform",
+	auth: "security", deployment: "security", security: "security", danger: "security",
+};
 
 const SECTION_ICONS: Record<string, React.ReactNode> = {
 	insights: <Activity className="h-3.5 w-3.5" />,
@@ -243,7 +256,7 @@ export default function SettingsPage() {
 		error,
 		refetch,
 	} = useAdminSettings();
-	const { data: settingsSchema = [] } = useAdminSettingsSchema();
+	const { data: settingsSchema } = useAdminSettingsSchema();
 	const { data: restartStatus, refetch: refetchRestartStatus } = useRestartStatus();
 	const { data: systemWarnings } = useSystemWarnings();
 	const { data: harnesses = [] } = useHarnesses();
@@ -274,8 +287,7 @@ export default function SettingsPage() {
 	const [leaderboardToggling, setLeaderboardToggling] = useState(false);
 	const [showLeaderboardConfirm, setShowLeaderboardConfirm] = useState(false);
 	const [registeredAgentsOnly, setRegisteredAgentsOnly] = useState(false);
-	const [registeredAgentsOnlyLoading, setRegisteredAgentsOnlyLoading] =
-		useState(() => hasMinRole(getUserRole(), "super_admin"));
+	const [registeredAgentsOnlyLoading, setRegisteredAgentsOnlyLoading] = useState(true);
 	const [registeredAgentsOnlyToggling, setRegisteredAgentsOnlyToggling] =
 		useState(false);
 	const [retentionEnabled, setRetentionEnabled] = useState(false);
@@ -336,18 +348,17 @@ export default function SettingsPage() {
 		appNameOverride !== undefined ? appNameOverride : brandingAppName || "";
 
 	useEffect(() => {
+		if (!ready) return;
 		admin
 			.getTracePrivacy()
 			.then((res) => setTracePrivacy(res.trace_privacy))
 			.catch(() => { toast.error("Failed to load trace privacy setting"); })
 			.finally(() => setTracePrivacyLoading(false));
-		if (hasMinRole(getUserRole(), "super_admin")) {
-			admin
-				.getRegisteredAgentsOnly()
-				.then((res) => setRegisteredAgentsOnly(res.registered_agents_only))
-				.catch(() => { toast.error("Failed to load registered-agents-only setting"); })
-				.finally(() => setRegisteredAgentsOnlyLoading(false));
-		}
+		admin
+			.getRegisteredAgentsOnly()
+			.then((res) => setRegisteredAgentsOnly(res.registered_agents_only))
+			.catch(() => { toast.error("Failed to load registered-agents-only setting"); })
+			.finally(() => setRegisteredAgentsOnlyLoading(false));
 		admin
 			.getRetention()
 			.then((res) => {
@@ -360,7 +371,7 @@ export default function SettingsPage() {
 			})
 			.catch(() => { toast.error("Failed to load retention settings"); })
 			.finally(() => setRetentionLoading(false));
-	}, []);
+	}, [ready]);
 
 	const handlePurgeTracesInsights = useCallback(async () => {
 		if (!window.confirm("Permanently delete all traces/session telemetry and insight reports for this deployment? This cannot be undone.")) {
@@ -664,29 +675,17 @@ export default function SettingsPage() {
 		wordmarkPreview !== brandingWordmark ||
 		appNameDraft.trim() !== (brandingAppName || "");
 
-	const entries: { key: string; value: string }[] = (
+	const entries = useMemo<AdminSetting[]>(() => (
 		Array.isArray(settings)
-			? settings.map((s: AdminSetting) => ({ key: s.key, value: s.value }))
-			: Object.entries(settings ?? {}).map(([k, v]) => ({
-					key: k,
-					value: String(v),
-				}))
-	).filter((e) => !e.key.startsWith("branding."));
+			? settings
+			: Object.entries(settings ?? {}).map(([key, value]) => ({ key, value: String(value) }))
+	).filter((entry) => !entry.key.startsWith("branding.")), [settings]);
 
-	const settingSections = settingsSchema.filter((section) => section.id !== "sso" && section.id !== "usage_ping" && section.id !== "experimental");
-	const categories = [
-		{ id: "general", label: "Identity & access", description: "Branding, public access, trace visibility and usage reporting", icon: Palette },
-		{ id: "insights", label: "Agent Insights", description: "Provider, models and report generation", icon: Activity },
-		{ id: "data", label: "Data & runtime", description: "Retention, migration and resource limits", icon: Database },
-		{ id: "platform", label: "Platform", description: "Discovery, registry, tokens and observability", icon: Settings },
-		{ id: "security", label: "Security & deployment", description: "Authentication, deployment and destructive actions", icon: ShieldAlert },
-	];
-	const sectionCategory: Record<string, string> = {
-		appearance: "general", experimental: "general", access: "general", usage: "general", insights: "insights",
-		migration: "data", retention: "data", data: "data", resource: "data", observability: "data",
-		discovery: "platform", registry: "platform", jwt: "platform", misc: "platform",
-		auth: "security", deployment: "security", security: "security", danger: "security",
-	};
+	const settingSections = useMemo(() => (settingsSchema ?? []).filter(
+		(section) => section.id !== "sso" && section.id !== "usage_ping" && section.id !== "experimental",
+	), [settingsSchema]);
+	const categoryForSection = (id: string) => SECTION_CATEGORY[id] ??
+		(settingSections.find((section) => section.id === id)?.danger ? "security" : "platform");
 	const searchableSections = [
 		{ id: "appearance", label: "Appearance", terms: "icon wordmark app name branding" },
 		{ id: "experimental", label: "Experimental", terms: "review checks" },
@@ -707,7 +706,7 @@ export default function SettingsPage() {
 		document.getElementById("settings-page")?.closest("main")?.scrollTo({ top: 0 });
 	};
 	const goToSection = (id: string) => {
-		setActiveCategory(sectionCategory[id] ?? "general");
+		setActiveCategory(categoryForSection(id));
 		setNavQuery("");
 		requestAnimationFrame(() => {
 			const target = document.getElementById(`settings-${id}`);
@@ -826,8 +825,8 @@ export default function SettingsPage() {
 				<div className="flex flex-col gap-6 border-b border-border pb-7 md:flex-row md:items-end md:justify-between">
 					<div className="min-w-0">
 						{activeCategory !== "home" && <button type="button" onClick={() => goToCategory("home")} className="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-ring"><ArrowLeft className="size-4" /> All settings</button>}
-						<h2 className="text-3xl font-semibold tracking-tight">{activeCategory === "home" ? "Settings" : categories.find((category) => category.id === activeCategory)?.label}</h2>
-						<p className="mt-2 max-w-xl text-sm text-muted-foreground">{activeCategory === "home" ? "Manage your instance by task. Choose an area below or find a specific setting." : categories.find((category) => category.id === activeCategory)?.description}</p>
+						<h2 className="text-3xl font-semibold tracking-tight">{activeCategory === "home" ? "Settings" : CATEGORIES.find((category) => category.id === activeCategory)?.label}</h2>
+						<p className="mt-2 max-w-xl text-sm text-muted-foreground">{activeCategory === "home" ? "Manage your instance by task. Choose an area below or find a specific setting." : CATEGORIES.find((category) => category.id === activeCategory)?.description}</p>
 					</div>
 					<div className="relative w-full shrink-0 md:w-72">
 						<label htmlFor="settings-search" className="sr-only">Find a setting</label>
@@ -841,7 +840,7 @@ export default function SettingsPage() {
 							<div className="absolute inset-x-0 top-full z-40 mt-1 max-h-72 overflow-auto rounded-lg border border-border bg-popover p-1 shadow-md" role="region" aria-label="Matching settings">
 								{searchResults.length ? searchResults.map((result) => (
 									<button key={result.id} type="button" onClick={() => goToSection(result.id)} className="flex w-full items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring">
-										<span>{result.label}</span><span className="text-xs text-muted-foreground">{categories.find((category) => category.id === sectionCategory[result.id])?.label}</span>
+										<span>{result.label}</span><span className="text-xs text-muted-foreground">{CATEGORIES.find((category) => category.id === categoryForSection(result.id))?.label}</span>
 									</button>
 								)) : <p className="px-3 py-2 text-sm text-muted-foreground">No matching settings</p>}
 							</div>
@@ -850,9 +849,9 @@ export default function SettingsPage() {
 				</div>
 				{activeCategory === "home" ? (
 					<div className="grid gap-x-10 gap-y-9 lg:grid-cols-2">
-						{categories.map((category) => {
+						{CATEGORIES.map((category) => {
 							const Icon = category.icon;
-							const sections = searchableSections.filter((section) => sectionCategory[section.id] === category.id);
+							const sections = searchableSections.filter((section) => categoryForSection(section.id) === category.id);
 							return (
 							<section key={category.id} className="min-w-0 overflow-hidden rounded-lg border border-border bg-card">
 								<button type="button" onClick={() => goToCategory(category.id)} className="group flex w-full items-start gap-3 border-b border-border p-4 text-left focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-ring">
@@ -869,12 +868,12 @@ export default function SettingsPage() {
 					</div>
 				) : (
 					<nav aria-label="Sections in this area" className="flex flex-wrap gap-2">
-						{searchableSections.filter((section) => sectionCategory[section.id] === activeCategory).map((section) => (
+						{searchableSections.filter((section) => categoryForSection(section.id) === activeCategory).map((section) => (
 							<button key={section.id} type="button" onClick={() => goToSection(section.id)} className="rounded-md border border-border bg-card px-3 py-1.5 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring">{section.label}</button>
 						))}
 					</nav>
 				)}
-				{activeCategory === "home" && <Link to="/review-policy" className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3 text-sm font-medium hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring"><span className="flex items-center gap-2"><Shield className="size-4" /> Review policy</span><span className="text-xs font-normal text-muted-foreground">Approval counts and publication rules →</span></Link>}
+				{activeCategory === "home" && getUserRole() === "super_admin" && <Link to="/review-policy" className="flex items-center justify-between rounded-lg border border-border bg-card px-4 py-3 text-sm font-medium hover:bg-muted/50 focus-visible:outline-2 focus-visible:outline-ring"><span className="flex items-center gap-2"><Shield className="size-4" /> Review policy</span><span className="text-xs font-normal text-muted-foreground">Approval counts and publication rules →</span></Link>}
 				{restartStatus?.required && <p role="status" className="rounded-lg border border-border bg-card px-4 py-3 text-sm">Saved changes require an API restart to take effect.</p>}
 				{/* Security warnings */}
 				{systemWarnings && systemWarnings.length > 0 && (
@@ -1159,12 +1158,12 @@ export default function SettingsPage() {
 				</section>
 
 				{/* Interface: Leaderboard tab visibility */}
-				<section className="animate-in">
-					<h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
+				<section className="px-5 py-4">
+					<h3 className="mb-2 flex items-center gap-1.5 text-sm font-medium">
 						<PanelLeft className="h-3.5 w-3.5" />
 						Interface
 					</h3>
-					<div className="rounded-md border border-border bg-card px-4 py-3">
+					<div>
 						<div className="flex items-center justify-between gap-4">
 							<div className="flex-1">
 								<p className="text-sm font-medium">Show the Leaderboard</p>
@@ -1251,13 +1250,13 @@ export default function SettingsPage() {
 				</div>
 				</div>
 				</div>
-				<div id="settings-usage" data-settings-section className="scroll-mt-6 overflow-hidden rounded-lg border border-border bg-card"><UsagePingSection settings={entries as AdminSetting[]} onChanged={() => { void refetch(); }} /></div>
+				<div id="settings-usage" data-settings-section className="scroll-mt-6 overflow-hidden rounded-lg border border-border bg-card"><UsagePingSection settings={entries} onChanged={() => { void refetch(); }} /></div>
 				</div>
 				<div className={activeCategory === "insights" ? "" : "hidden"}>
 				{settingSections.some((section) => section.id === "insights" && section.settings.length > 0) && (
 					<div id="settings-insights" data-settings-section className="scroll-mt-6 overflow-hidden rounded-lg border border-border bg-card">
 						<InsightsSection
-							entries={entries as { key: string; value: string; is_sensitive?: boolean; is_set?: boolean }[]}
+							entries={entries}
 							onSave={async (key, value) => { await admin.updateSetting(key, { value }); refetch(); }}
 							onRevoke={(key) => setRevokeConfirmKey(key)}
 							refetch={refetch}
@@ -1504,7 +1503,7 @@ export default function SettingsPage() {
 								if (visibleSettings.length === 0) return null;
 
 								return (
-								<section key={section.title} id={`settings-${section.id}`} data-settings-section className={activeCategory === (sectionCategory[section.id] ?? "platform") ? "scroll-mt-6 overflow-hidden rounded-lg border border-border bg-card" : "hidden"}>
+								<section key={section.title} id={`settings-${section.id}`} data-settings-section className={activeCategory === categoryForSection(section.id) ? "scroll-mt-6 overflow-hidden rounded-lg border border-border bg-card" : "hidden"}>
 									<h3
 										className={`flex items-center gap-2 px-5 pt-4 text-lg font-medium tracking-tight ${helpActive && SECTION_DOCS[section.title] ? "cursor-help ring-2 ring-primary/60 ring-offset-2 ring-offset-background rounded-sm" : ""}`}
 										onClick={(event) => {
@@ -1568,7 +1567,7 @@ export default function SettingsPage() {
 											);
 										}
 										return (
-											<div key={d.key} className={`relative grid gap-2 px-5 py-4 md:grid-cols-[minmax(0,1fr)_minmax(220px,1fr)] md:items-center ${helpTargetClass(d.key)}`}>
+											<div key={d.key} className={`relative grid gap-2 py-4 pl-5 pr-12 md:grid-cols-[minmax(0,1fr)_minmax(220px,1fr)] md:items-center ${helpTargetClass(d.key)}`}>
 												<SettingHelpIcon settingKey={d.key} openHelp={openHelp} />
 												<div className="flex items-center gap-2 pr-6"><span className="text-sm font-medium">{d.label}</span>{d.restart_required && <RestartRequiredMark />}</div>
 												<div className="flex items-center justify-between gap-3"><span className="text-xs text-muted-foreground">Not set</span><Button variant="outline" size="sm" className="h-8" onClick={() => { setEditingKey(d.key); setEditingValue(""); }}>Configure</Button></div>
@@ -1583,10 +1582,7 @@ export default function SettingsPage() {
 							{/* Danger Zone */}
 							{settingSections.some((s) => s.danger) && (
 								<section className={activeCategory === "security" ? "" : "hidden"}>
-									<div>
-										<h2 className="mb-1 text-lg font-medium tracking-tight">Security & deployment</h2>
-										<p className="mb-4 text-xs text-muted-foreground">Authentication, deployment, and destructive actions.</p>
-										<div className="space-y-4">
+									<div className="space-y-4">
 											{settingSections.filter((s) => s.danger).sort((a, b) => {
 											const order = ["auth", "deployment", "security", "danger"];
 											return order.indexOf(a.id) - order.indexOf(b.id);
@@ -1668,10 +1664,11 @@ export default function SettingsPage() {
 															);
 														}
 														return (
-															<button key={d.key} type="button" onClick={(e) => { if ((e.ctrlKey || e.metaKey) && openHelp(d.key)) { e.preventDefault(); return; } setEditingKey(d.key); setEditingValue(""); }} className={`relative flex w-full items-center gap-2 px-5 py-4 text-left transition-colors hover:bg-muted/40 ${helpTargetClass(d.key)}`}>
+															<div key={d.key} className={`relative flex flex-wrap items-center justify-between gap-3 py-4 pl-5 pr-12 ${helpTargetClass(d.key)}`}>
 																<SettingHelpIcon settingKey={d.key} openHelp={openHelp} />
-																<div className="flex items-center gap-2 pr-6"><span className="text-sm font-semibold text-foreground/60">+ {d.label}</span>{d.restart_required && <RestartRequiredMark />}</div>
-															</button>
+																<div className="flex items-center gap-2 pr-6"><span className="text-sm font-medium">{d.label}</span>{d.restart_required && <RestartRequiredMark />}</div>
+																<Button variant="outline" size="sm" onClick={() => { setEditingKey(d.key); setEditingValue(""); }}>Configure</Button>
+															</div>
 														);
 															})}
 														</div>
@@ -1679,7 +1676,6 @@ export default function SettingsPage() {
 												</details>
 											); })}
 										</div>
-									</div>
 								</section>
 							)}
 					</div>
