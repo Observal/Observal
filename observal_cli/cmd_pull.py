@@ -1148,13 +1148,14 @@ def _display_setup_command(command: list[str]) -> list[str]:
     return shown
 
 
-def _run_reset_commands(commands: list, *, cwd: Path | None) -> None:
+def _run_reset_commands(commands: list, *, cwd: Path | None, adapter, scope: str) -> None:
     """Best-effort cleanup before setup commands; a failure means nothing was there to reset."""
     for command in commands:
         if not _valid_setup_command(command):
             continue
         try:
-            subprocess.run(command, capture_output=True, text=True, timeout=60, cwd=cwd)
+            native_command = adapter.prepare_mcp_setup_command(command, scope)
+            subprocess.run(native_command, capture_output=True, text=True, timeout=60, cwd=cwd)
         except (OSError, subprocess.SubprocessError):
             continue
 
@@ -3514,7 +3515,12 @@ def register_pull(app: typer.Typer):
                     detail=repr(error),
                 )
             setup_cwd = target_dir.resolve()
-            _run_reset_commands(snippet.get("mcp_reset_commands") or [], cwd=setup_cwd)
+            _run_reset_commands(
+                snippet.get("mcp_reset_commands") or [],
+                cwd=setup_cwd,
+                adapter=adapter,
+                scope=options.get("scope", "project"),
+            )
             for command in setup_cmds:
                 # Never expose command arguments: MCP setup may carry secrets.
                 if not _valid_setup_command(command):

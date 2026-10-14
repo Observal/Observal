@@ -195,6 +195,8 @@ export default function ComponentDetailPage({
   const [forkOpen, setForkOpen] = useState(false);
   const [forkPage, setForkPage] = useState(1);
   const [activeTab, setActiveTab] = useState(search.tab === "edit" ? "edit" : "overview");
+  // The router reuses this detail page when the resolved listing changes.
+  useEffect(() => { setActiveTab("overview"); setForkPage(1); }, [id, type]);
   useEffect(() => { if (search.tab === "edit") setActiveTab("edit"); }, [id, search.tab]);
   const forkComponent = useForkComponent(type);
   const updateDraft = useComponentUpdateDraft(type);
@@ -213,9 +215,10 @@ export default function ComponentDetailPage({
   const isEditableDraft = item?.status === "draft" || item?.status === "rejected";
   // Legacy draft dialogs also edit saved skill revisions. They must observe
   // the exact version, not silently retry a stale listing-level update.
-  const skillDraftVersionId = type === "skills" && isEditableDraft
-    ? versionsData?.items.find((v) => v.version === item?.version && ["draft", "rejected"].includes(v.status))?.id
+  const skillDraftVersion = type === "skills" && isEditableDraft
+    ? versionsData?.items.find((v) => v.version === item?.version && ["draft", "rejected"].includes(v.status))
     : undefined;
+  const skillDraftVersionId = skillDraftVersion?.id;
   async function saveDialogDraft(body: Record<string, unknown>): Promise<string | undefined> {
     if (type !== "skills") {
       await updateDraft.mutateAsync({ id, body });
@@ -224,6 +227,10 @@ export default function ComponentDetailPage({
     if (!skillDraftVersionId) {
       toast.error("Skill version is still loading; refresh before saving");
       throw new Error("Skill version is still loading");
+    }
+    if (skillDraftVersion?.delivery_mode !== "registry_direct") {
+      await updateDraft.mutateAsync({ id, body });
+      return undefined;
     }
     const manifest = await registry.getSkillVersionManifest(id, skillDraftVersionId);
     if ((Array.isArray(body.extra_files) && body.extra_files.length > 0) ||
@@ -980,7 +987,7 @@ export default function ComponentDetailPage({
             void (async () => {
               try {
                 const revision = await saveDialogDraft(body);
-                if (type === "skills") {
+                if (type === "skills" && skillDraftVersion?.delivery_mode === "registry_direct") {
                   await submitFolderDraft.mutateAsync({ listingId: id, versionId: skillDraftVersionId!, observedRevision: revision! });
                 } else {
                   await submitDraft.mutateAsync(id);

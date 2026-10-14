@@ -16,7 +16,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from observal_cli.shared.launcher import isolation_flag, windows_module_command
+from observal_cli.shared.launcher import isolation_flag, windows_module_command, windows_powershell_module_command
 
 COPILOT_CLI_HOOK_EVENTS = (
     "sessionStart",
@@ -69,14 +69,7 @@ def build_copilot_cli_hooks(agent_id: str = "") -> dict:
         bash_cmd = f"{_python_cmd()} {isolation_flag()} -m {module} --harness copilot-cli"
         if agent_id:
             bash_cmd = f"OBSERVAL_AGENT_ID={agent_id} {bash_cmd}"
-    # A PowerShell single-quoted literal does not expand $ or subexpressions;
-    # double apostrophes so even unusual interpreter paths stay literal.
-    ps_path = sys.executable.replace("'", "''")
-    ps_cmd = f"& '{ps_path}' -m {module} --harness copilot-cli"
-
-    if agent_id:
-        # PowerShell (used on Windows) sets the env var in-process for the child.
-        ps_cmd = f"$env:OBSERVAL_AGENT_ID='{agent_id}'; {ps_cmd}"
+    ps_cmd = f"{windows_powershell_module_command(module, env)} --harness copilot-cli"
 
     hooks: dict[str, list[dict]] = {}
     for event in COPILOT_CLI_HOOK_EVENTS:

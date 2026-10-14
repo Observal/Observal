@@ -150,7 +150,17 @@ class ClaudeCodeAdapter(BaseAdapter):
         return self._scan_claude_dir(claude_dir)
 
     def prepare_mcp_setup_command(self, command: list[str], scope: str) -> list[str]:
-        if command[:3] == ["claude", "mcp", "add"]:
+        if not command or command[0] != "claude":
+            return command
+        # npm installs a .cmd launcher on Windows. CreateProcess cannot execute
+        # its extensionless POSIX shim, even though `where claude` finds it.
+        if sys.platform == "win32":
+            import shutil
+
+            native = shutil.which("claude.cmd")
+            if native:
+                command = [native, *command[1:]]
+        if command[1:3] == ["mcp", "add"]:
             return [*command[:3], "--scope", scope, *command[3:]]
         return command
 
