@@ -31,6 +31,7 @@ All notable changes to this project will be documented in this file.
 ### Maintenance
 
 - publish from maintained `release/X.Y` branches with alpha, beta, RC, stable, and backport workflows; deploy and update Homebrew only after verifying the newest stable release
+- remove the unused NEXT_PUBLIC_API_URL variable from the AWS and GCP modules
 
 ## [1.13.1] - 2026-09-05
 
