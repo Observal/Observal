@@ -156,12 +156,23 @@ def quick_choice(message: str, valid_keys: list[str]) -> str:
 
         return typer.prompt(message, default=valid_keys[0])
 
-    import termios
-    import tty
-
     from rich import print as rprint
 
     rprint(f"  {message}: ", end="", flush=True)
+    if sys.platform == "win32":
+        import msvcrt
+
+        while True:
+            ch = msvcrt.getwch()
+            if ch == "\x03":  # Ctrl+C
+                raise KeyboardInterrupt
+            if ch in valid_keys:
+                rprint(ch)
+                return ch
+
+    import termios
+    import tty
+
     fd = sys.stdin.fileno()
     old_settings = termios.tcgetattr(fd)
     selected = ""

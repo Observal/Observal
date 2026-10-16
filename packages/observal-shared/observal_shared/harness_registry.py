@@ -142,6 +142,19 @@ HARNESS_REGISTRY: dict[str, dict] = {
         "display_name": "Claude Code",
         "capabilities": {"skills", "hooks", "mcp_servers"},
         "session_parser": "claude-code",
+        "invocation_extractor": "claude-code",
+        # Skill loads (Skill tool + linked expansion) and /name invocations (harness-written
+        # isMeta expansion); the skill listing has no locations, so never availability.
+        # Verified against Claude Code 2.1.286 (session_parsers/claude_code_skill_evidence.py).
+        "skill_evidence_extractor": "claude-code",
+        # Hook runs that printed output, failed, or blocked a tool; silent successes leave no
+        # record (session_parsers/claude_code_hook_evidence.py, Claude Code 2.1.286).
+        "hook_evidence_extractor": "claude-code",
+        # Claude Code versions whose hook records and hook inputs were recorded end to end
+        # (tests/fixtures/component_insights/claude_code). Hook evidence from a session on
+        # any other version is "version_unverified", and gated agent hooks warn there.
+        # Raise it only after re-recording those fixtures on the newer version.
+        "hook_evidence_tested_versions": ((2, 1, 286), (2, 1, 286)),
         "scopes": ["project", "user"],
         "default_scope": "project",
         "scope_labels": ("project (.claude/agents/)", "user (~/.claude/agents/)"),
@@ -453,6 +466,15 @@ HARNESS_REGISTRY: dict[str, dict] = {
         "display_name": "Pi",
         "capabilities": {"skills", "hooks", "mcp_servers"},
         "session_parser": "pi",
+        # MCP call identity comes from pi-mcp-adapter's tool-result details
+        # (fixture-verified against pi-mcp-adapter 2.38.0 and 3.2.0 sources).
+        "invocation_extractor": "pi",
+        # Skill availability and model loads (session_parsers/pi_skill_evidence.py). Pi records no
+        # distinguishable /skill:name origin, so it never reports invocations.
+        "skill_evidence_extractor": "pi",
+        # Registry command hooks run by the Observal extension, from its run receipts
+        # (session_parsers/pi_hook_evidence.py; docs/integrations/pi.md "Registry hooks").
+        "hook_evidence_extractor": "pi",
         "scopes": ["project", "user"],
         "default_scope": "user",
         "scope_labels": ("project (.pi/)", "user (~/.pi/agent/)"),
@@ -476,7 +498,9 @@ HARNESS_REGISTRY: dict[str, dict] = {
             "user": "~/.pi/agent/settings.json",
         },
         "hook_scripts_dir": None,
-        "hook_events_map": {},
+        # Registry command hooks run inside the Observal extension (``observal-hooks.json``,
+        # docs/integrations/pi.md "Registry hooks"). Other events are not installed on Pi.
+        "hook_events_map": {"PreToolUse": "tool_call", "PostToolUse": "tool_result"},
         "config_dir": ".pi",
         # Pi has no native MCP; ~/.pi/agent/mcp.json is read by the third-party
         # pi-mcp-adapter. A Pi extension's before_agent_start handler can

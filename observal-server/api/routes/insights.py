@@ -6,26 +6,32 @@
 """Agent Insights API endpoints."""
 
 from datetime import UTC, datetime, timedelta
+from html import escape
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from loguru import logger as optic
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import check_listing_visibility_async, get_db, get_effective_agent_permission, require_role
 from api.routes.agent.helpers import _load_agent
+from api.routes.component_activity import _authorize as _authorize_component
 from models.agent import Agent, AgentStatus, AgentVersion
 from models.insight_meta_cache import InsightMetaCache
 from models.insight_report import InsightReport, InsightReportStatus
 from models.insight_session_facets import InsightSessionFacets
 from models.user import User, UserRole
+from observal_shared.migration.constants import DEFAULT_PROJECT_ID
 from schemas.insights import (
     ApplySuggestionsRequest,
+    GenerateComponentInsightRequest,
     GenerateInsightRequest,
     InsightReportListItem,
     InsightReportResponse,
 )
+from services.component_activity.queries import activity_summary
 from services.insight_version_filters import agent_version_filter
 from services.insights import INSIGHTS_AVAILABLE, render_report_html
 from services.redis import _get_arq_pool
@@ -77,6 +83,8 @@ async def _authorize_report_agent(report: InsightReport, db: AsyncSession, curre
     missing agent row means the report is unreachable. That is reported as 404
     rather than silently skipping the authorization checks.
     """
+    if getattr(report, "subject_type", "agent") != "agent":
+        raise HTTPException(status_code=404, detail="Report not found")
     agent_result = await db.execute(select(Agent).where(Agent.id == report.agent_id))
     agent = agent_result.scalar_one_or_none()
     if not agent or not await check_listing_visibility_async(agent, current_user, db):
@@ -179,7 +187,9 @@ async def _count_insight_sessions(
     if agent_version:
         fallback_where += f"AND {agent_version_filter(nullable=True)} "
     fallback_sql = (
-        "SELECT count(DISTINCT session_id) AS cnt FROM session_events FINAL " + fallback_where + "FORMAT JSON"
+        "SELECT count(DISTINCT (project_id, user_id, harness, session_id)) AS cnt FROM session_events FINAL "
+        + fallback_where
+        + "FORMAT JSON"
     )
     try:
         r = await _query(fallback_sql, params)
@@ -381,6 +391,147 @@ async def list_reports(
     return [InsightReportListItem.model_validate(r) for r in reports]
 
 
+def _safe_component_narrative(report: InsightReport) -> dict | None:
+    """Deliver call-only evidence (v3/v4); suppress legacy prompt-bearing versions."""
+    # Explicit allowlist: a future prompt version needs its own privacy review.
+    safe_versions = (3, 4)
+    narrative = report.narrative
+    if not isinstance(narrative, dict):
+        return None
+    analysis = narrative.get("component_analysis")
+    if isinstance(analysis, dict) and type(analysis.get("version")) is int and analysis["version"] in safe_versions:
+        return narrative
+    return {key: value for key, value in narrative.items() if key != "component_analysis"}
+
+
+async def _authorize_report(report: InsightReport, db: AsyncSession, user: User) -> None:
+    if getattr(report, "subject_type", "agent") == "component":
+        # Resolve current visibility and ownership again, never trust a saved name.
+        await _authorize_component(
+            report.component_type, str(report.component_id), report.component_version_id, db, user
+        )
+    else:
+        await _authorize_report_agent(report, db, user)
+
+
+@router.post("/components/{component_type}/{identifier:path}/generate", response_model=InsightReportListItem)
+async def generate_component_insight(
+    component_type: str,
+    identifier: str,
+    req: GenerateComponentInsightRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+):
+    request = req or GenerateComponentInsightRequest()
+    if not 1 <= request.period_days <= 90:
+        raise HTTPException(status_code=422, detail="period_days must be between 1 and 90")
+    listing, ref, version_label = await _authorize_component(
+        component_type,
+        identifier,
+        request.component_version_id,
+        db,
+        current_user,
+    )
+    now = datetime.now(UTC)
+    start = now - timedelta(days=request.period_days)
+    if component_type in ("skill", "hook"):
+        from services.component_activity import hook_queries, skill_queries
+
+        read = skill_queries.skill_activity_summary if component_type == "skill" else hook_queries.hook_activity_summary
+        summary = await read(
+            DEFAULT_PROJECT_ID, str(listing.id), ref.component_version_id, (start, now), component_version=version_label
+        )
+    else:
+        summary = await activity_summary(
+            DEFAULT_PROJECT_ID,
+            component_type,
+            str(listing.id),
+            ref.component_version_id,
+            (start, now),
+            component_version=version_label,
+        )
+    coverage = summary["coverage"].model_dump(mode="json")
+    if summary["present_sessions"] == 0:
+        raise HTTPException(status_code=422, detail={"message": "No verified present sessions", "coverage": coverage})
+    report = InsightReport(
+        subject_type="component",
+        agent_id=None,
+        project_id=DEFAULT_PROJECT_ID,
+        component_type=component_type,
+        component_id=listing.id,
+        component_version_id=request.component_version_id,
+        component_version=version_label,
+        component_name=ref.qualified_name,
+        coverage=coverage,
+        triggered_by=current_user.id,
+        status=InsightReportStatus.pending,
+        period_start=start,
+        period_end=now,
+        started_at=now,
+        progress_phase="queued",
+        progress_message="Queued for generation",
+        progress_updated_at=now,
+    )
+    db.add(report)
+    await db.flush()
+    pool = await _get_arq_pool()
+    await pool.enqueue_job("generate_insight_report", str(report.id))
+    await db.commit()
+    return InsightReportListItem.model_validate(report)
+
+
+@router.get("/components/{component_type}/{identifier:path}/reports", response_model=list[InsightReportListItem])
+async def list_component_reports(
+    component_type: str,
+    identifier: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.user)),
+    before_created_at: datetime | None = Query(None),
+    before_id: UUID | None = Query(None),
+    limit: int = Query(20, ge=1, le=100),
+):
+    listing, _, _ = await _authorize_component(component_type, identifier, None, db, current_user)
+    if (before_created_at is None) != (before_id is None) or (
+        before_created_at is not None and before_created_at.tzinfo is None
+    ):
+        raise HTTPException(status_code=422, detail="A report cursor needs a timezone-aware date and report ID")
+    stmt = select(InsightReport).where(
+        InsightReport.subject_type == "component",
+        InsightReport.project_id == DEFAULT_PROJECT_ID,
+        InsightReport.component_type == component_type,
+        InsightReport.component_id == listing.id,
+    )
+    if before_created_at is not None:
+        stmt = stmt.where(
+            or_(
+                InsightReport.created_at < before_created_at,
+                and_(InsightReport.created_at == before_created_at, InsightReport.id < before_id),
+            )
+        )
+    rows = await db.execute(stmt.order_by(InsightReport.created_at.desc(), InsightReport.id.desc()).limit(limit))
+    return [InsightReportListItem.model_validate(row) for row in rows.scalars().all()]
+
+
+@router.delete("/components/{component_type}/{identifier:path}/reports")
+async def clear_component_reports(
+    component_type: str,
+    identifier: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.admin)),
+):
+    listing, _, _ = await _authorize_component(component_type, identifier, None, db, current_user)
+    result = await db.execute(
+        delete(InsightReport).where(
+            InsightReport.subject_type == "component",
+            InsightReport.project_id == DEFAULT_PROJECT_ID,
+            InsightReport.component_type == component_type,
+            InsightReport.component_id == listing.id,
+        )
+    )
+    await db.commit()
+    return {"deleted_reports": result.rowcount}
+
+
 @router.get("/reports/{report_id}", response_model=InsightReportResponse)
 async def get_report(
     report_id: str,
@@ -389,7 +540,6 @@ async def get_report(
 ):
     """Get a single insight report by ID."""
     optic.trace("report_id={}", report_id)
-    _require_insights()
     stmt = select(InsightReport).where(InsightReport.id == report_id)
     result = await db.execute(stmt)
     report = result.scalar_one_or_none()
@@ -397,9 +547,12 @@ async def get_report(
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    await _authorize_report_agent(report, db, current_user)
+    await _authorize_report(report, db, current_user)
 
-    return InsightReportResponse.model_validate(report)
+    response = InsightReportResponse.model_validate(report)
+    if response.subject_type == "component":
+        response.narrative = _safe_component_narrative(report)
+    return response
 
 
 @router.get("/reports/{report_id}/export/html", response_class=HTMLResponse)
@@ -410,7 +563,6 @@ async def export_report_html(
 ):
     """Export an insight report as a self-contained HTML document."""
     optic.trace("report_id={}", report_id)
-    _require_insights()
     stmt = select(InsightReport).where(InsightReport.id == report_id)
     result = await db.execute(stmt)
     report = result.scalar_one_or_none()
@@ -418,10 +570,30 @@ async def export_report_html(
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
+    await _authorize_report(report, db, current_user)
+
     if report.status != InsightReportStatus.completed:
         raise HTTPException(status_code=400, detail="Report is not yet completed")
+    if getattr(report, "subject_type", "agent") == "component":
+        import json
 
-    await _authorize_report_agent(report, db, current_user)
+        title = escape(report.component_name or "Component")
+        payload = escape(
+            json.dumps(
+                {
+                    "metrics": report.metrics,
+                    "coverage": report.coverage,
+                    "summary": (_safe_component_narrative(report) or {}).get("summary"),
+                    "component_analysis": (_safe_component_narrative(report) or {}).get("component_analysis"),
+                },
+                indent=2,
+            )
+        )
+        return HTMLResponse(
+            content=f'<!doctype html><html lang="en"><meta charset="utf-8">'
+            f"<title>{title} · Insights</title><body><h1>{title}</h1><pre>{payload}</pre></body></html>",
+            headers={"Content-Disposition": f'attachment; filename="insight-report-{report_id[:8]}.html"'},
+        )
 
     # Build report dict for the renderer
     report_data = {
@@ -483,7 +655,6 @@ async def delete_report(
 ):
     """Delete a single insight report."""
     optic.trace("report_id={}", report_id)
-    _require_insights()
     stmt = select(InsightReport).where(InsightReport.id == report_id)
     result = await db.execute(stmt)
     report = result.scalar_one_or_none()
@@ -491,7 +662,7 @@ async def delete_report(
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    await _authorize_report_agent(report, db, current_user)
+    await _authorize_report(report, db, current_user)
 
     await db.delete(report)
     await db.commit()
@@ -512,9 +683,18 @@ async def apply_report_suggestions(
     to skip a category entirely. Pass an empty body to apply all.
     """
     optic.trace("report_id={}", report_id)
-    _require_insights()
 
-    # Check feature toggle
+    stmt = select(InsightReport).where(InsightReport.id == report_id)
+    result = await db.execute(stmt)
+    report = result.scalar_one_or_none()
+    if not report:
+        raise HTTPException(status_code=404, detail="Report not found")
+
+    await _authorize_report(report, db, current_user)
+    if getattr(report, "subject_type", "agent") == "component":
+        raise HTTPException(status_code=409, detail="Suggestions are unavailable for component reports")
+
+    _require_insights()
     import services.dynamic_settings as ds
 
     enabled = await ds.get_bool("insights.self_learn_enabled", default=True)
@@ -523,14 +703,6 @@ async def apply_report_suggestions(
             status_code=403,
             detail="Self-learning is disabled. Enable via settings: insights.self_learn_enabled",
         )
-
-    stmt = select(InsightReport).where(InsightReport.id == report_id)
-    result = await db.execute(stmt)
-    report = result.scalar_one_or_none()
-    if not report:
-        raise HTTPException(status_code=404, detail="Report not found")
-
-    await _authorize_report_agent(report, db, current_user)
 
     # Run the self-learn pipeline
     from services.insights.self_learn import apply_insight_suggestions
