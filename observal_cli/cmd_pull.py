@@ -3628,7 +3628,7 @@ def register_pull(app: typer.Typer):
                 )
                 if status == "verified" and fingerprint:
                     component["mcp_integrity"] = fingerprint
-                elif status in {"missing", "drifted"}:
+                else:
                     warnings_list.append("Installed MCP entry could not be verified; attribution will be unavailable.")
 
             from observal_cli.lockfile import upsert_agent

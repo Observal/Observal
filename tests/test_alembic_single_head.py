@@ -33,7 +33,7 @@ def test_repository_migration_checker_accepts_the_joined_graph():
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "045_component_insights_merge" in result.stdout
+    assert "046_component_insights_merge" in result.stdout
 
 
 def test_component_insights_head_preserves_both_migration_histories():
@@ -41,9 +41,9 @@ def test_component_insights_head_preserves_both_migration_histories():
     config = Config()
     config.set_main_option("script_location", str(server / "alembic"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_current_head() == "045_component_insights_merge"
+    assert scripts.get_current_head() == "046_component_insights_merge"
     merge = scripts.get_revision(scripts.get_current_head())
-    assert set(merge.down_revision) == {"034_hook_component_reports", "044_review_orphan_authors"}
+    assert set(merge.down_revision) == {"034_hook_component_reports", "045_usage_ping_default_on"}
     history = {revision.revision for revision in scripts.iterate_revisions(merge.revision, "030_agent_share_manifests")}
     assert {
         "029_projection_generation",

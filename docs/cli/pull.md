@@ -157,7 +157,7 @@ Pull performs these steps:
 6. Resolve and validate every generated path.
 7. Write or preview files and install bundled skills.
 8. Run required harness MCP registration commands.
-9. With `--hooks=settings` (or a restore with `--hooks=frontmatter`), atomically reconcile the Agent's gated hooks in `settings.json`. Invalid settings are detected before step 6, so they refuse the pull before anything is written. Locally edited Observal groups are left as they are, with a warning.
+9. With `--hooks=settings` (or a restore with `--hooks=frontmatter`), atomically write the reconciled `settings.json`. The settings plan is validated before step 7, so an invalid settings file refuses the pull before installation files are written. The **whole pull is not one atomic transaction**: later setup or lockfile failures can leave partial state (reported under `error.result`). Locally edited Observal groups are left as they are, with a warning.
 10. Record the installed Agent and component versions in the Registry-scoped lockfile and, for project-scope installs, in `observal.lock`.
 11. Refresh the local layer snapshot and active-Agent state.
 

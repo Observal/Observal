@@ -3,8 +3,8 @@
 
 """Join Component Insights and registry review migration histories.
 
-Revision ID: 045_component_insights_merge
-Revises: 044_review_orphan_authors, 034_hook_component_reports
+Revision ID: 046_component_insights_merge
+Revises: 045_usage_ping_default_on, 034_hook_component_reports
 
 Keep both already-published revision chains intact: upgrades from either head
 must apply the other chain before the combined schema is considered current.
@@ -14,8 +14,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "045_component_insights_merge"
-down_revision = ("044_review_orphan_authors", "034_hook_component_reports")
+revision = "046_component_insights_merge"
+down_revision = ("045_usage_ping_default_on", "034_hook_component_reports")
 branch_labels = None
 depends_on = None
 

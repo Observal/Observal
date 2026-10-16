@@ -160,12 +160,71 @@ class ClaudeCodeAdapter(BaseAdapter):
             native = shutil.which("claude.cmd")
             if native:
                 command = [native, *command[1:]]
-        if command[1:3] == ["mcp", "add"]:
-            return [*command[:3], "--scope", scope, *command[3:]]
+        flags = command[: command.index("--")] if "--" in command else command
+        if command[1:3] == ["mcp", "add"] and "--scope" not in flags:
+            # Server-generated commands already select Claude's native local/user
+            # scope. Ignore flags after `--` (they belong to the MCP process).
+            return [*command[:3], "--scope", "local" if scope == "project" else scope, *command[3:]]
         return command
 
     def mcp_manifest_path(self, scope: str) -> str | None:
         return {"project": "project:.mcp.json", "user": "user:.claude.json"}.get(scope)
+
+    def _installed_mcp_entry(
+        self, scope: str, directory: str | None, alias: str
+    ) -> tuple[str, dict | None, str | None]:
+        """Claude local scope lives under projects[realpath] in ~/.claude.json.
+
+        A separate project-wide .mcp.json can also exist; local takes precedence.
+        Never fall through a malformed local registration to a different entry.
+        """
+        if scope not in {"project", "user"} or (scope == "project" and not directory):
+            return "unverified", None, None
+        user_path = Path.home() / ".claude.json"
+        try:
+            user_data = json.loads(user_path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            user_data = None
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            return "unverified", None, "user:.claude.json"
+        if user_data is not None and not isinstance(user_data, dict):
+            return "unverified", None, "user:.claude.json"
+        if scope == "user":
+            data, display = user_data, "user:.claude.json"
+        else:
+            projects = user_data.get("projects", {}) if user_data else {}
+            if not isinstance(projects, dict):
+                return "unverified", None, "user:.claude.json"
+            project = projects.get(str(Path(directory).resolve()))
+            if project is not None:
+                if not isinstance(project, dict):
+                    return "unverified", None, "user:.claude.json"
+                local_servers = project.get("mcpServers", {})
+                if not isinstance(local_servers, dict):
+                    return "unverified", None, "user:.claude.json"
+                if alias in local_servers:
+                    entry = local_servers[alias]
+                    return (
+                        ("verified", entry, "user:.claude.json")
+                        if isinstance(entry, dict)
+                        else ("unverified", None, "user:.claude.json")
+                    )
+            display = "project:.mcp.json"
+            try:
+                data = json.loads((Path(directory) / ".mcp.json").read_text(encoding="utf-8"))
+            except FileNotFoundError:
+                return "missing", None, display
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                return "unverified", None, display
+        if not isinstance(data, dict) or not isinstance(data.get("mcpServers"), dict):
+            return "unverified", None, display
+        entry = data["mcpServers"].get(alias)
+        if entry is None:
+            return "missing", None, display
+        return ("verified", entry, display) if isinstance(entry, dict) else ("unverified", None, display)
+
+    def installed_mcp_manifest_path(self, scope: str, directory: str | None, alias: str) -> str | None:
+        return self._installed_mcp_entry(scope, directory, alias)[2]
 
     def redact_layer_content(self, display_path: str) -> bool:
         return display_path in {"user:.claude.json", "project:.mcp.json"}
@@ -378,22 +437,8 @@ class ClaudeCodeAdapter(BaseAdapter):
 
     def read_installed_mcp(self, scope: str, directory: str | None, alias: str) -> tuple[str, dict | None]:
         """Read the effective MCP key without exporting the shared settings document."""
-        if scope == "project" and directory:
-            path = Path(directory) / ".mcp.json"
-        elif scope == "user":
-            path = Path.home() / ".claude.json"
-        else:
-            return "unverified", None
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError):
-            return "unverified", None
-        if not isinstance(data, dict) or not isinstance(data.get("mcpServers"), dict):
-            return "unverified", None
-        entry = data["mcpServers"].get(alias)
-        if entry is None:
-            return "missing", None
-        return ("verified", entry) if isinstance(entry, dict) else ("unverified", None)
+        status, entry, _ = self._installed_mcp_entry(scope, directory, alias)
+        return status, entry
 
     def scan_project(self, project_dir: Path) -> ScanResult:
         # Claude Code uses .mcp.json at project root
