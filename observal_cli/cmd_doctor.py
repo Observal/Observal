@@ -18,6 +18,7 @@ push session JSONL incrementally to the server.
 
 import hashlib
 import json
+import shutil
 import sys
 from contextlib import nullcontext, redirect_stdout
 from io import StringIO
@@ -251,33 +252,60 @@ def _check_observal_config(issues: list, warnings: list):
             issues.append(f"Cannot reach Observal server at {server_url}: {e}")
 
 
+def _valid_claude_hook_entries(hooks: dict) -> bool:
+    """Validate traversed groups; leave unrelated non-list events untouched."""
+    for event, groups in hooks.items():
+        if not isinstance(groups, list):
+            if event in ("UserPromptSubmit", "Stop"):
+                return False
+            continue
+        for group in groups:
+            if not isinstance(group, dict):
+                return False
+            handlers = group.get("hooks", [])
+            if not isinstance(handlers, list):
+                return False
+            for handler in handlers:
+                if (
+                    not isinstance(handler, dict)
+                    or not isinstance(handler.get("command", ""), str)
+                    or not isinstance(handler.get("url", ""), str)
+                ):
+                    return False
+    return True
+
+
 def _check_claude_code(issues: list, warnings: list):
     optic.trace("issues={}, warnings={}", issues, warnings)
     settings_path = Path.home() / ".claude" / "settings.json"
     if not settings_path.exists():
         rprint("  [dim]No ~/.claude/settings.json found[/dim]")
+        if shutil.which("claude") or (settings_path.parent / "projects").is_dir():
+            warnings.append(
+                "Claude Code session push hooks not installed. "
+                "Run `observal doctor patch --harness claude-code` to inject them."
+            )
         return
 
     data = _load_json(settings_path)
     if data is None:
         issues.append(f"{settings_path}: not valid JSON.")
         return
+    if not isinstance(data.get("hooks", {}), dict) or not isinstance(data.get("env", {}), dict):
+        issues.append(f"{settings_path}: hooks and env must be JSON objects.")
+        return
+    if not _valid_claude_hook_entries(data.get("hooks", {})):
+        issues.append(f"{settings_path}: hooks contain malformed event entries.")
+        return
 
     if data.get("disableAllHooks"):
         issues.append(f"{settings_path}: `disableAllHooks` is true. Observal hooks will not fire.")
 
-    # Check if session push hooks are installed
-    hooks = data.get("hooks", {})
-    has_session_push = False
-    for event in ("UserPromptSubmit", "Stop"):
-        groups = hooks.get(event, [])
-        for g in groups:
-            for h in g.get("hooks", []):
-                if "observal_cli.hooks.session_push" in h.get("command", ""):
-                    has_session_push = True
-                    break
+    # Require both session delivery events, not merely one installed hook.
+    from observal_cli.harness.claude_code import ClaudeCodeAdapter
 
-    if not has_session_push:
+    hooks = data.get("hooks", {})
+    if ClaudeCodeAdapter().detect_hooks(settings_path.parent) != "installed":
         warnings.append(
             "Claude Code session push hooks not installed. "
             "Run `observal doctor patch --harness claude-code` to inject them."
@@ -1263,7 +1291,16 @@ def _patch_claude_code(dry_run: bool) -> bool:
     rprint("[cyan]Claude Code - session push hooks[/cyan]")
 
     settings_path = Path.home() / ".claude" / "settings.json"
-    if not settings_path.exists():
+    if settings_path.exists():
+        current = _load_json(settings_path)
+        if (
+            current is None
+            or not isinstance(current.get("hooks", {}), dict)
+            or not isinstance(current.get("env", {}), dict)
+            or not _valid_claude_hook_entries(current.get("hooks", {}))
+        ):
+            raise ValueError(f"Cannot patch invalid Claude Code settings: {settings_path}")
+    else:
         settings_path.parent.mkdir(parents=True, exist_ok=True)
 
     desired_hooks = get_desired_hooks()
