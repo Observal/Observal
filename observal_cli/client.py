@@ -165,6 +165,38 @@ def _handle_error(
         "detail": repr(error),
     }
 
+    if code == 422 and path.startswith("/api/v1/insights/components/") and path.endswith("/generate"):
+        try:
+            payload = response.json()
+            problem = payload.get("detail") if isinstance(payload, dict) else None
+        except (ValueError, UnicodeDecodeError):
+            problem = None
+        if isinstance(problem, dict) and problem.get("message") == "No verified present sessions":
+            coverage = problem.get("coverage")
+            presence = coverage.get("presence") if isinstance(coverage, dict) else None
+            presence = presence if isinstance(presence, dict) else {}
+            counts = ", ".join(
+                f"{label}: {presence[key]}"
+                for key, label in (
+                    ("eligible_sessions", "eligible"),
+                    ("legacy_hash_sessions", "legacy hashes"),
+                    ("snapshot_missing_sessions", "missing snapshots"),
+                    ("mapping_pending_sessions", "mapping pending"),
+                    ("mapping_failed_sessions", "mapping failed"),
+                )
+                if type(presence.get(key)) is int and presence[key] > 0
+            )
+            fail(
+                ErrorCategory.VALIDATION,
+                "No verified-present sessions for this component" + (f" ({counts})." if counts else "."),
+                remediation=(
+                    "Check component activity and coverage; run a new session with the exact verified install. "
+                    "Legacy Agent traces alone do not prove component presence."
+                ),
+                result={"coverage": coverage} if isinstance(coverage, dict) else None,
+                **context,
+            )
+
     if code == 401:
         fail(
             ErrorCategory.AUTH,
