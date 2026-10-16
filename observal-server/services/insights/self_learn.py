@@ -468,7 +468,7 @@ async def _create_agent_version_with_additions(
     latest_version = latest_result.scalar_one_or_none()
 
     if not latest_version:
-        optic.warning("self_learn_no_approved_version", agent=agent.name)
+        optic.warning("self_learn_no_approved_version: agent={}", agent.name)
         return None
 
     # Build the new prompt with additions, skipping exact duplicates already present.
@@ -511,7 +511,7 @@ async def _create_agent_version_with_additions(
             if not (await db.execute(dup_stmt)).scalar_one_or_none():
                 break
         else:
-            optic.error("self_learn_version_exhaustion", agent=agent.name)
+            optic.error("self_learn_version_exhaustion: agent={}", agent.name)
             return None
 
     total_linked = len(new_components) + len(linked_existing)
@@ -673,7 +673,7 @@ async def _refresh_capability_inference(version: AgentVersion, db: AsyncSession)
         version.required_capabilities = infer_required_features(_VersionProxy(), skill_listings=skill_listings)
         version.inferred_supported_harnesses = compute_supported_harnesses(version.required_capabilities)
     except Exception as e:  # pragma: no cover - inference must never block the apply
-        optic.warning("self_learn_capability_inference_failed", version=version.version, error=str(e))
+        optic.warning("self_learn_capability_inference_failed: version={}, error={}", version.version, str(e))
 
 
 def _build_additions_text(config_additions: list[dict]) -> str:
@@ -953,7 +953,7 @@ async def _create_skill_listing(
             supported_harnesses=["claude-code", "kiro", "pi"],
         )
     except (SkillValidationError, ValidationError) as e:
-        optic.warning("self_learn_skill_validation_failed", name=name, errors=str(e))
+        optic.warning("self_learn_skill_validation_failed: name={}, errors={}", name, str(e))
         return None
 
     # Check for existing
@@ -1086,7 +1086,7 @@ async def _create_hook_listing(
             supported_harnesses=["claude-code", "kiro", "pi"],
         )
     except ValidationError as e:
-        optic.warning("self_learn_hook_validation_failed", name=name, errors=str(e))
+        optic.warning("self_learn_hook_validation_failed: name={}, errors={}", name, str(e))
         return None
 
     # Check for existing
@@ -1271,7 +1271,7 @@ async def _create_prompt_listing(
             supported_harnesses=[],
         )
     except ValidationError as e:
-        optic.warning("self_learn_prompt_validation_failed", name=name, errors=str(e))
+        optic.warning("self_learn_prompt_validation_failed: name={}, errors={}", name, str(e))
         return None
 
     # Check for existing
