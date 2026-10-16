@@ -232,6 +232,22 @@ def choose_harness(supported: list[str], preferred: str | None, *, required: str
     )
 
 
+def check_ready(harness: str) -> None:
+    """Refuse a harness that would fail before doing any work, such as one with no login.
+
+    Run as a delegated task, its own login error would come back as the task's
+    answer and read as an Observal failure (OBS-1407).
+    """
+    from observal_cli.harness import ensure_loaded, get_adapter
+
+    ensure_loaded()
+    problem = get_adapter(harness).headless_not_ready()
+    if problem:
+        raise DelegationError(
+            f"{harness} cannot run the delegated agent: {problem} To use another harness, pass --harness."
+        )
+
+
 # ── Worker ───────────────────────────────────────────────────────────────
 
 
@@ -369,6 +385,7 @@ def start(
         observal["harness"] = choose_harness(
             list(entry.get("obs:supportedHarnesses") or []), parent_harness, required=harness
         )
+        check_ready(observal["harness"])
     else:
         observal["remoteUrl"] = (entry.get("obs:a2aInterface") or {}).get("url")
 
