@@ -3,16 +3,15 @@
 // SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
-import { Link, useRouter } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Puzzle, FileEdit, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { PickerSelect } from "@/components/ui/picker-select";
 import {
-  useRegistryList,
-  useMyComponents,
+  useResourcePage,
   useComponentSubmit,
   useComponentSaveDraft,
   useComponentSubmitDraft,
@@ -52,6 +51,7 @@ import {
   ResourceList,
   ResourceRow,
   ResourceToolbar,
+  ResourcePager,
   SubmissionRow,
   StatusBadges,
   SubmissionsPanel,
@@ -127,14 +127,18 @@ function ComponentCatalogCard({
 function ComponentListRow({
   item,
   registryType,
-  onClick,
 }: {
   item: RegistryItem;
   registryType: RegistryType;
-  onClick: () => void;
 }) {
+  const canonical = canonicalRouteParts(item.namespace, item.slug);
   return (
-    <ResourceRow item={item} glyph={registryType} columns={LIST_COLUMNS} onClick={onClick}>
+    <ResourceRow item={item} glyph={registryType} columns={LIST_COLUMNS}
+      renderLink={(content) => canonical ? (
+        <Link to="/components/$type/$namespace/$slug" params={{ type: registryType, ...canonical }} className="flex min-w-0 items-center gap-[11px] rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring hover:underline">{content}</Link>
+      ) : (
+        <Link to="/components/$componentId" params={{ componentId: item.id }} search={{ type: registryType }} className="flex min-w-0 items-center gap-[11px] rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring hover:underline">{content}</Link>
+      )}>
       <span className={monoCell}>{(item.version as string | undefined) ?? "-"}</span>
       <span className="text-[10px] text-muted-foreground">{usageLabel(item) ?? "-"}</span>
       <StatusBadges item={item} />
@@ -143,7 +147,6 @@ function ComponentListRow({
 }
 
 export default function ComponentsView({ type: activeType }: { type: RegistryType }) {
-  const router = useRouter();
   const f = useResourceFilters();
   const { ready: authReady, role } = useOptionalAuth();
   const { isAuthenticated } = f;
@@ -177,6 +180,7 @@ export default function ComponentsView({ type: activeType }: { type: RegistryTyp
 
   const typeFilters = TYPE_FILTERS[activeType] ?? [];
   const noun = NOUNS[activeType] ?? activeType;
+  const singular = activeType === "sandboxes" ? "Sandbox" : noun.slice(0, -1);
   const registryFilters: Record<string, string> = {
     ...(f.debouncedSearch ? { search: f.debouncedSearch } : {}),
     ...(f.searchParams.namespace ? { namespace: f.searchParams.namespace } : {}),
@@ -187,20 +191,18 @@ export default function ComponentsView({ type: activeType }: { type: RegistryTyp
     if (value) registryFilters[filter.key] = value;
   }
 
-  const { data, isLoading, isError, error, refetch } = useRegistryList(activeType, registryFilters);
-
-  const { data: myItems } = useMyComponents(activeType, isAuthenticated);
-  const myDrafts = useMemo(
-    () =>
-      isAuthenticated
-        ? (myItems ?? []).filter((i) => activeType === "skills" || ["draft", "pending", "rejected", "archived"].includes(i.status ?? ""))
-        : [],
-    [isAuthenticated, myItems, activeType],
+  const page = (f.searchParams.page ?? 1) - 1;
+  const publicPage = useResourcePage(activeType, false, registryFilters, page, discoveryTab === "discover" && !f.unresolvedTeam);
+  const ownerPage = useResourcePage(
+    activeType, true,
+    { ...registryFilters, ...(discoveryTab === "pending" ? { status: "pending" } : {}) },
+    page, isAuthenticated && discoveryTab !== "discover" && !f.unresolvedTeam,
   );
-  const pendingItems = useMemo(
-    () => (isAuthenticated ? (myItems ?? []).filter((i) => i.status === "pending") : []),
-    [isAuthenticated, myItems],
-  );
+  const activePage = discoveryTab === "discover" ? publicPage : ownerPage;
+  const { isLoading, isError, error, refetch } = activePage;
+  const myItems = ownerPage.data?.items ?? [];
+  const myDrafts = myItems.filter((item) => ["draft", "pending", "rejected"].includes(item.status ?? "") ||
+    (activeType === "skills" && item.status === "approved"));
 
   const submitMutation = useComponentSubmit(activeType);
   const saveDraftMutation = useComponentSaveDraft(activeType);
@@ -264,13 +266,14 @@ export default function ComponentsView({ type: activeType }: { type: RegistryTyp
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [activeType]);
 
-  const visibleItems = { discover: data ?? [], my: myDrafts, pending: pendingItems }[discoveryTab];
+  const visibleItems = activePage.data?.items ?? [];
+  const total = activePage.data?.total ?? 0;
 
   const fields: FilterField[] = [
     ...commonFields(f, [
       { value: "discover", label: "Discover" },
-      { value: "my", label: "My submissions", count: myDrafts.length },
-      { value: "pending", label: "Pending review", count: pendingItems.length },
+      { value: "my", label: "My submissions", count: discoveryTab === "my" ? total : undefined },
+      { value: "pending", label: "Pending review", count: discoveryTab === "pending" ? total : undefined },
     ]),
     ...typeFilters.map((filter) => ({
       key: filter.key,
@@ -280,10 +283,6 @@ export default function ComponentsView({ type: activeType }: { type: RegistryTyp
     })),
   ];
 
-  const handleRowClick = useCallback(
-    (id: string) => router.navigate({ to: "/components/$componentId", params: { componentId: id }, search: { type: activeType } }),
-    [router, activeType],
-  );
 
   async function openSubmission(item: RegistryItem, action: "edit" | "submit") {
     if (activeType === "skills") {
@@ -388,15 +387,19 @@ export default function ComponentsView({ type: activeType }: { type: RegistryTyp
                 setSubmitOpen(true);
               }}
             >
-              Create
+              Create {singular}
             </Button>
           )
         }
       />
 
-      {discoveryTab === "discover" && isLoading ? (
+      {f.unresolvedTeam ? (
+        <EmptyState icon={Puzzle} title="Teamspace unavailable"
+          description="This teamspace is still loading or is no longer accessible to your account. Clear the team filter to browse other resources."
+          actionLabel="Clear team filter" onAction={() => f.update({ team: undefined })} />
+      ) : isLoading ? (
         <ListSkeleton view={layout} />
-      ) : discoveryTab === "discover" && isError ? (
+      ) : isError ? (
         <ErrorState message={error?.message} onRetry={() => refetch()} />
       ) : visibleItems.length === 0 ? (
         <EmptyState
@@ -407,8 +410,9 @@ export default function ComponentsView({ type: activeType }: { type: RegistryTyp
               ? `No ${noun.toLowerCase()} match the active search and filters.`
               : `No ${noun.toLowerCase()} have been registered yet.`
           }
-          actionLabel="Back to Registry"
-          actionHref="/"
+          actionLabel={hasFilters ? "Clear filters" : authReady && role ? undefined : "Browse Agent Files"}
+          actionHref={!hasFilters && !(authReady && role) ? "/resources/agents" : undefined}
+          onAction={hasFilters ? f.clear : undefined}
         />
       ) : layout === "grid" ? (
         <CatalogGrid className="animate-in">
@@ -425,15 +429,17 @@ export default function ComponentsView({ type: activeType }: { type: RegistryTyp
         <ResourceList
           title="Component catalogue"
           subtitle="Reusable building blocks matching the current type and filters"
-          count={`${compactNumber(visibleItems.length)} ${noun.toLowerCase()}`}
+          count={`${compactNumber(total)} ${noun.toLowerCase()}`}
           columns={LIST_COLUMNS}
           headers={["Component", "Version", "Installs", "Status"]}
         >
           {visibleItems.map((item) => (
-            <ComponentListRow key={item.id} item={item} registryType={activeType} onClick={() => handleRowClick(item.id)} />
+            <ComponentListRow key={item.id} item={item} registryType={activeType} />
           ))}
         </ResourceList>
       )}
+
+      {!f.unresolvedTeam && !isLoading && !isError && <ResourcePager page={page} total={total} onPageChange={(next) => f.update({ page: next + 1 > 1 ? next + 1 : undefined })} />}
 
       {discoveryTab === "my" && myDrafts.length > 0 && (
         <SubmissionsPanel title="Drafts &amp; submissions">
