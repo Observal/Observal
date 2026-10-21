@@ -1,4 +1,5 @@
 // SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
+// SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
 import { expect, test } from "@playwright/test";
@@ -138,6 +139,7 @@ test("review detail exposes the gate, revision diff, and a separate verdict", as
     base_version_id: null, head_revision_id: id, my_subscription: null, self_approval_allowed: false,
     revisions: [{ id, number: 1, message: "Initial release", created_by: id, created_at: now, pruned: false }],
     requested_reviewers: [id], reviewer_names: { [id]: "harish" },
+    reviewer_decisions: { [id]: { verdict: "approve", status: "submitted", revision_id: "10000000-0000-4000-8000-000000000009" } },
   };
   const diff = [{ path: "SKILL.md", status: "added", lang: "markdown", pinned: false, generated: false,
     additions: 1, deletions: 0, too_large: false,
@@ -172,6 +174,7 @@ test("review detail exposes the gate, revision diff, and a separate verdict", as
   await expect(page.getByRole("heading", { name: "Publication gate" })).toBeVisible();
   await expect(page.getByText("Please verify permissions.")).toBeVisible();
   await expect(page.getByText("The command needs a permission check.")).toBeVisible();
+  await expect(page.getByText("Approval outdated", { exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("pr-review-conversation-desktop.png"), fullPage: true });
   await page.getByRole("textbox", { name: "Reviewer user ID" }).fill(id);
   await page.getByRole("button", { name: "Request reviewer" }).click();
@@ -188,7 +191,7 @@ test("review detail exposes the gate, revision diff, and a separate verdict", as
   await expect(page.getByRole("heading", { name: "Publication gate" })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("pr-review-conversation-mobile.png"), fullPage: true });
   await page.getByRole("button", { name: "Review changes" }).click();
-  await page.getByRole("radio", { name: "Approve" }).check();
+  await page.getByRole("radio", { name: /^Approve\b/ }).check();
   await page.getByRole("button", { name: "Submit review" }).click();
   await expect.poll(() => verdicts.length).toBe(1);
   expect(verdicts[0]).toEqual({ verdict: "approve", body: "" });
@@ -265,6 +268,36 @@ for (const override of [false, true]) test(`publish confirmation ${override ? "e
   await expect(dialog).toHaveCount(0);
 });
 
+test("super admin cannot override a reviewer's change request", async ({ page }, testInfo) => {
+  await page.addInitScript(() => {
+    sessionStorage.setItem("observal_access_token", "review-ui-test");
+    localStorage.setItem("observal_user_role", "super_admin");
+  });
+  const gate = {
+    ready: false, approvals: 1, required: 1, policy_source: "organization",
+    requirements: ["changes_requested"], blockers: ["changes_requested"], hard_blockers: ["changes_requested"],
+  };
+  const detail = {
+    ...summary(42, "Skill: verify source", "skill"), state: "changes_requested", gate,
+    opened_at: now, closed_at: null, closed_reason: null, published_at: null, published_by: null,
+    base_version_id: null, head_revision_id: id, my_subscription: null, self_approval_allowed: false,
+    revisions: [{ id, number: 1, message: "First release", created_by: id, created_at: now, pruned: false }],
+    requested_reviewers: [], reviewer_names: {},
+  };
+  await page.route("**/api/v1/**", route => route.fulfill({ json: { items: [], unread: 0, action_required: 0 } }));
+  await page.route("**/api/v1/auth/whoami", route => route.fulfill({ json: { id: "admin", username: "admin", role: "super_admin" } }));
+  await page.route("**/api/v1/reviews/42**", route => {
+    const suffix = new URL(route.request().url()).pathname.replace("/api/v1/reviews/42", "");
+    return route.fulfill({ json: suffix === "/gate" ? gate : suffix === "/timeline" ? { items: [], next_cursor: null }
+      : suffix === "/threads" || suffix === "/files" ? [] : detail });
+  });
+  await page.goto("/review/42");
+  await expect(page.getByRole("button", { name: "Publish with override" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Publish v1.0.0" })).toBeDisabled();
+  await expect(page.getByText("Resolve these before publishing: no override skips them.")).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("change-request-no-override.png"), fullPage: true });
+});
+
 test("close review asks for a reason in a dialog", async ({ page }) => {
   await page.addInitScript(() => {
     sessionStorage.setItem("observal_access_token", "review-ui-test");
@@ -301,3 +334,94 @@ test("close review asks for a reason in a dialog", async ({ page }) => {
   expect(closed[0]).toEqual({ reason: "Duplicate of #41" });
   await expect(dialog).toHaveCount(0);
 });
+
+for (const subject_type of ["agent", "mcp"] as const) {
+  for (const author of [true, false]) test(`${subject_type} ${author ? "author" : "reviewer"} sees linked change request`, async ({ page }) => {
+    await page.addInitScript(role => {
+      sessionStorage.setItem("observal_access_token", "review-ui-test");
+      localStorage.setItem("observal_user_role", role);
+    }, author ? "user" : "reviewer");
+    const reviewerId = "22222222-2222-4222-8222-222222222222";
+    const requestId = "33333333-3333-4333-8333-333333333333";
+    const secondId = "44444444-4444-4444-8444-444444444444";
+    const threadId = "55555555-5555-4555-8555-555555555555";
+    const generalId = "77777777-7777-4777-8777-777777777777";
+    const commenterId = "88888888-8888-4888-8888-888888888888";
+    let withdrawn = false;
+    const posts: unknown[] = [];
+    const detail = { ...summary(42, "Disputed review", "agent"), subject_type, author_id: id,
+      state: "changes_requested", body: "Please review", opened_at: now, closed_at: null, closed_reason: null,
+      published_at: null, published_by: null, base_version_id: null, head_revision_id: id, my_subscription: null,
+      self_approval_allowed: false, revisions: [{ id, number: 1, message: null, created_by: id, created_at: now, pruned: false }],
+      requested_reviewers: [commenterId], reviewer_names: { [reviewerId]: "reviewer", [commenterId]: "commenter" },
+      commented_reviewers: [commenterId],
+      reviewer_decisions: { [reviewerId]: { verdict: "request_changes", status: withdrawn ? "withdrawn" : "blocking" }, [secondId]: { verdict: "request_changes", status: "blocking" } },
+      threads: { total: 3, unresolved: 3 },
+      gate: { ready: false, approvals: 0, required: 1, policy_source: "organization", requirements: ["changes_requested", "required_approvals"], outstanding_requests: 2 },
+    };
+    const thread = (submissionId: string, threadKey: string, reviewerKey: string, status: string, can_withdraw: boolean) => ({
+      id: threadKey, path: null, side: null, start_line: null, end_line: null, outdated: false,
+      resolved_at: status === "blocking" ? null : now, revision_id: null,
+      change_request: { submission_id: submissionId, reviewer_id: reviewerKey, status, can_withdraw, dismissed_by: status === "blocking" ? null : reviewerKey, dismissed_reason: status === "blocking" ? null : "Question answered" },
+      comments: [
+        { id: submissionId, thread_id: threadKey, author_id: reviewerKey, body: "Is this change required?", created_at: now },
+        ...(threadKey === threadId ? [{ id: "99999999-9999-4999-8999-999999999999", thread_id: threadKey, author_id: id, body: "I replied to this request", created_at: now }] : []),
+      ],
+    });
+    await page.route("**/api/v1/**", route => route.fulfill({ json: { items: [], unread: 0, action_required: 0 } }));
+    await page.route("**/api/v1/config/public", route => route.fulfill({ json: { experimental_review_checks: false } }));
+    await page.route("**/api/v1/auth/whoami", route => route.fulfill({ json: { id: author ? id : reviewerId, username: author ? "author" : "reviewer", role: author ? "user" : "reviewer" } }));
+    await page.route("**/api/v1/reviews/42**", route => {
+      const suffix = new URL(route.request().url()).pathname.replace("/api/v1/reviews/42", "");
+      if (suffix === `/submissions/${requestId}/withdraw-request` && route.request().method() === "POST") {
+        posts.push(route.request().postDataJSON());
+        withdrawn = true;
+        return route.fulfill({ json: { state: "changes_requested", withdrawn: true } });
+      }
+      const data = suffix === "/timeline" ? route.request().url().includes("cursor=")
+        ? { items: [...[requestId, secondId].map((key, index) => ({ id: key, kind: "verdict", actor_id: index ? secondId : reviewerId, created_at: now, verdict: "request_changes", body: "Is this change required?", state: "submitted" })), { id: commenterId, kind: "comment", actor_id: commenterId, created_at: now, payload: { thread_id: generalId } }], next_cursor: null }
+        : { items: [{ id: "66666666-6666-4666-8666-666666666666", kind: "comment", actor_id: id, created_at: now, payload: { thread_id: threadId } }], next_cursor: "page-2" }
+        : suffix === "/threads" ? [thread(requestId, threadId, reviewerId, withdrawn ? "withdrawn" : "blocking", !author && !withdrawn), thread(secondId, secondId, secondId, "blocking", false), {
+          id: generalId, path: null, side: null, start_line: null, end_line: null, outdated: false, resolved_at: null, revision_id: null,
+          change_request: null, comments: [{ id: commenterId, thread_id: generalId, author_id: commenterId, body: "General note", created_at: now }],
+        }]
+        : suffix === "/gate" ? { ...detail.gate, outstanding_requests: withdrawn ? 1 : 2 }
+        : suffix === "/files" || suffix === "/diff" ? []
+        : { ...detail, reviewer_decisions: { ...detail.reviewer_decisions, [reviewerId]: { verdict: "request_changes", status: withdrawn ? "withdrawn" : "blocking" } } };
+      return route.fulfill({ json: data });
+    });
+    await page.goto("/review/42");
+    const request = page.locator(`#thread-${threadId}`);
+    await expect(request.getByText("Changes requested · blocks publication")).toBeVisible();
+    await expect(request.getByText("I replied to this request")).toBeVisible();
+    await expect(request.getByText("harish", { exact: true })).toBeVisible();
+    await expect(request).toHaveCount(1);
+    await expect(page.getByText("Commented", { exact: true })).toBeVisible();
+    const general = page.locator(`#thread-${generalId}`);
+    await general.getByRole("textbox", { name: "Reply" }).fill("Unsent general reply");
+    await request.getByRole("textbox", { name: "Reply" }).fill("Unsent answer stays here");
+    await page.getByRole("button", { name: "Load more activity" }).click();
+    await expect(page.getByRole("button", { name: "Load more activity" })).toHaveCount(0);
+    await expect(request).toHaveCount(1);
+    await expect(request.getByRole("textbox", { name: "Reply" })).toHaveValue("Unsent answer stays here");
+    await expect(general).toHaveCount(1);
+    await expect(general.getByRole("textbox", { name: "Reply" })).toHaveValue("Unsent general reply");
+    await expect(page.getByRole("link", { name: "View conversation", exact: true })).toBeVisible();
+    await expect(request.getByRole("button", { name: "Resolve conversation" })).toHaveCount(0);
+    if (author) {
+      await expect(request.getByText("Awaiting the reviewer or a moderator.", { exact: false })).toBeVisible();
+      await expect(request.getByRole("button", { name: "Withdraw change request" })).toHaveCount(0);
+    } else {
+      await request.getByRole("button", { name: "Withdraw change request" }).click();
+      await request.getByRole("textbox", { name: "Withdrawal reason" }).fill("Question answered");
+      page.once("dialog", dialog => dialog.accept());
+      await request.getByRole("button", { name: "Confirm withdrawal" }).click();
+      await expect(request.getByText("Change request withdrawn · no longer blocks publication")).toBeVisible();
+      await expect(page.getByText("Request withdrawn", { exact: true })).toBeVisible();
+      await expect(page.getByText("Changes requested · blocks publication")).toHaveCount(1);
+      expect(posts).toEqual([{ reason: "Question answered" }]);
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  });
+}

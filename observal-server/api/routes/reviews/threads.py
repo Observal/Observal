@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
+# SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 """Inline conversations with server-side drafts and line validation."""
 
@@ -17,7 +18,13 @@ from models.user import User, UserRole
 from schemas.review import CommentCreate, CommentEdit, ThreadCreate
 from services.audit import audit_detail
 from services.review import notifications
-from services.review.decisions import _event, gate, sync_state
+from services.review.decisions import _event, _lock_review, gate, may_withdraw_request, sync_state
+from services.review.requests import (
+    ensure_request_threads,
+    request_lifecycle_status,
+    request_threads_need_repair,
+    review_decisions,
+)
 
 router = APIRouter()
 
@@ -62,6 +69,22 @@ async def _comments(db, review, threads, user):
     return [c for c in rows if c.submission_id not in drafts or drafts[c.submission_id].reviewer_id == user.id]
 
 
+async def _public_request(db, review, thread):
+    if thread.change_request_id is None:
+        return False
+    return (
+        await db.scalar(
+            select(ReviewSubmission.id).where(
+                ReviewSubmission.id == thread.change_request_id,
+                ReviewSubmission.review_id == review.id,
+                ReviewSubmission.verdict == "request_changes",
+                ReviewSubmission.state != "draft",
+            )
+        )
+        is not None
+    )
+
+
 def _render_comment(comment):
     return {
         "id": comment.id,
@@ -85,6 +108,10 @@ async def threads(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    if await request_threads_need_repair(db, review):
+        await _lock_review(db, review)
+        if await ensure_request_threads(db, review):
+            await notify_update(review, "gate")
     stmt = select(ReviewThread).where(ReviewThread.review_id == review.id)
     if resolved is not None:
         stmt = stmt.where(ReviewThread.resolved_at.is_not(None) if resolved else ReviewThread.resolved_at.is_(None))
@@ -94,9 +121,26 @@ async def threads(
         stmt = stmt.where(ReviewThread.outdated == outdated)
     rows = (await db.scalars(stmt.order_by(ReviewThread.created_at, ReviewThread.id))).all()
     comments = await _comments(db, review, rows, user)
+    _, _, statuses = await review_decisions(db, review)
+    requests = {
+        s.id: s
+        for s in (
+            await db.scalars(
+                select(ReviewSubmission).where(
+                    ReviewSubmission.review_id == review.id,
+                    ReviewSubmission.verdict == "request_changes",
+                    ReviewSubmission.state != "draft",
+                )
+            )
+        ).all()
+    }
     by_thread = {row.id: [] for row in rows}
     for comment in comments:
         by_thread[comment.thread_id].append(_render_comment(comment))
+
+    def request_status(request_id):
+        return request_lifecycle_status(review, requests[request_id], statuses)
+
     return [
         {
             "id": row.id,
@@ -107,10 +151,25 @@ async def threads(
             "outdated": row.outdated,
             "resolved_at": row.resolved_at,
             "revision_id": row.revision_id,
+            "change_request": (
+                {
+                    "submission_id": row.change_request_id,
+                    "reviewer_id": requests[row.change_request_id].reviewer_id,
+                    "status": request_status(row.change_request_id),
+                    "can_withdraw": (
+                        request_status(row.change_request_id) == "blocking"
+                        and await may_withdraw_request(db, review, requests[row.change_request_id], user)
+                    ),
+                    "dismissed_by": requests[row.change_request_id].dismissed_by,
+                    "dismissed_reason": requests[row.change_request_id].dismissed_reason,
+                }
+                if row.change_request_id in requests
+                else None
+            ),
             "comments": by_thread[row.id],
         }
         for row in rows
-        if by_thread[row.id]
+        if by_thread[row.id] or row.change_request_id in requests
     ]
 
 
@@ -119,7 +178,7 @@ async def _thread(db, review, thread_id, user):
     if row is None or row.review_id != review.id:
         raise HTTPException(404, "Thread not found")
     visible = await _comments(db, review, [row], user)
-    if not visible:
+    if not visible and not await _public_request(db, review, row):
         raise HTTPException(404, "Thread not found")
     return row
 
@@ -205,7 +264,7 @@ async def reply(
             )
             .limit(1)
         )
-        if public is None:
+        if public is None and not await _public_request(db, review, thread):
             raise HTTPException(409, "Submit your draft before replying publicly")
     comment = ReviewComment(
         thread_id=thread_id,
@@ -237,6 +296,9 @@ async def edit_comment(
     comment = await db.get(ReviewComment, comment_id)
     if not comment or comment.review_id != review.id:
         raise HTTPException(404, "Comment not found")
+    thread = await db.get(ReviewThread, comment.thread_id)
+    if thread.change_request_id and comment.submission_id == thread.change_request_id:
+        raise HTTPException(409, "Change request text is immutable; reply to the conversation")
     if comment.author_id != user.id:
         if comment.submission_id:
             draft = await db.get(ReviewSubmission, comment.submission_id)
@@ -264,6 +326,9 @@ async def delete_comment(
     comment = await db.get(ReviewComment, comment_id)
     if not comment or comment.review_id != review.id:
         raise HTTPException(404, "Comment not found")
+    thread = await db.get(ReviewThread, comment.thread_id)
+    if thread.change_request_id and comment.submission_id == thread.change_request_id:
+        raise HTTPException(409, "Change request text is immutable; reply to the conversation")
     draft = await db.get(ReviewSubmission, comment.submission_id) if comment.submission_id else None
     if draft and draft.state == "draft" and draft.reviewer_id != user.id:
         raise HTTPException(404, "Comment not found")
@@ -287,8 +352,11 @@ async def delete_comment(
 
 
 async def _resolve(db, review, thread_id, user, *, resolved):
+    await _lock_review(db, review)
     require_open(review)
     thread = await _thread(db, review, thread_id, user)
+    if thread.change_request_id:
+        raise HTTPException(409, "A change request cannot be resolved here; its reviewer must withdraw it")
     public_comment = await db.scalar(
         select(ReviewComment.id)
         .outerjoin(ReviewSubmission, ReviewComment.submission_id == ReviewSubmission.id)

@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
+# SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 """Verdicts, private drafts and dismissal permissions."""
 
@@ -16,7 +17,7 @@ from models.user import User
 from schemas.review import CommentEdit, Reason, VerdictCreate
 from services.audit import audit_detail
 from services.review import notifications
-from services.review.decisions import dismiss, gate, submit_verdict
+from services.review.decisions import _lock_review, dismiss, gate, submit_verdict
 
 router = APIRouter()
 
@@ -76,12 +77,14 @@ async def submit(
 ):
     if data.verdict == "request_changes" and not data.body.strip():
         raise HTTPException(422, "Explain what needs changing")
+    await _lock_review(db, review)
     was_ready = (await gate(db, review)).ready
-    row = await submit_verdict(db, review, user, data.verdict, data.body)
+    row = await submit_verdict(db, review, user, data.verdict, data.body, review_locked=True)
     await db.flush()
-    await notifications.resolve_review_work(
-        db, review, user.id, kinds=(InboxKind.review_requested, InboxKind.review_ready), user_id=user.id
-    )
+    if data.verdict != "comment":
+        await notifications.resolve_review_work(
+            db, review, user.id, kinds=(InboxKind.review_requested, InboxKind.review_ready), user_id=user.id
+        )
     if data.verdict == "approve":
         await notifications.resolve_change_requests(db, review, user.id, user.id)
     audit_detail(
@@ -113,6 +116,8 @@ async def edit_submission(
         raise HTTPException(404, "Submission not found")
     if row.reviewer_id != user.id:
         raise HTTPException(403, "Not your submission")
+    if row.verdict == "request_changes" and row.state != "draft":
+        raise HTTPException(409, "Submitted change request text cannot be edited; reply in its conversation")
     row.body = data.body
     await db.commit()
     await notify_update(review, "submission")
@@ -131,8 +136,9 @@ async def dismiss_submission(
     row = await db.get(ReviewSubmission, submission_id)
     if not row or row.review_id != review.id:
         raise HTTPException(404, "Submission not found")
+    await _lock_review(db, review)
     was_ready = (await gate(db, review)).ready
-    await dismiss(db, review, row, user, data.reason)
+    await dismiss(db, review, row, user, data.reason, review_locked=True)
     if row.verdict == "request_changes":
         await notifications.resolve_review_work(
             db, review, user.id, kinds=(InboxKind.change_requested,), request_ids={str(row.id)}
@@ -151,3 +157,38 @@ async def dismiss_submission(
     await db.commit()
     await notify_update(review, "submission")
     return {"state": review.state.value, "dismissed": True}
+
+
+@router.post("/{ref}/submissions/{submission_id}/withdraw-request")
+async def withdraw_request(
+    submission_id: uuid.UUID,
+    data: Reason,
+    request: Request,
+    review: Review = Depends(get_review),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    row = await db.get(ReviewSubmission, submission_id)
+    if not row or row.review_id != review.id:
+        raise HTTPException(404, "Submission not found")
+    await _lock_review(db, review)
+    was_ready = (await gate(db, review)).ready
+    await dismiss(db, review, row, user, data.reason, withdraw_request=True, review_locked=True)
+    await notifications.resolve_review_work(
+        db, review, user.id, kinds=(InboxKind.change_requested,), request_ids={str(row.id)}
+    )
+    audit_detail(
+        request,
+        action="review.request_withdrawn",
+        resource_type="review",
+        resource_id=review.id,
+        resource_name=f"#{review.number}",
+        detail=f"submission_id={row.id}",
+    )
+    await notifications.deliver_event(
+        db, review, "dismissed", user.id, submission_id=row.id, reviewer_id=row.reviewer_id
+    )
+    await notifications.deliver_gate_change(db, review, was_ready, user.id)
+    await db.commit()
+    await notify_update(review, "submission")
+    return {"state": review.state.value, "withdrawn": True}
