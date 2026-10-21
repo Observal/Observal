@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 # SPDX-FileCopyrightText: 2026 Shaan Narendran <shaannaren06@gmail.com>
+# SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 """Generic Python harness hook entry point for durable session delivery."""
@@ -51,6 +52,7 @@ def _run_hook(event: dict, *, harness: str, home: Path | None = None) -> None:
     source = adapter.resolve_session_source(event, home=home)
     if source is None:
         optic.debug("{} hook did not resolve a session source", harness)
+        _spawn_worker("--recover", harness=harness)
         return
     config = load_config(home=home)
     if config is None:
@@ -111,14 +113,17 @@ def _run_hook(event: dict, *, harness: str, home: Path | None = None) -> None:
 
 def _spawn_worker(*args: str, harness: str) -> None:
     try:
-        worker_env = get_adapter(harness).session_worker_environment()
+        env = {**os.environ, **get_adapter(harness).session_worker_environment()}
+        if any(arg in args for arg in ("--recover", "--drain-outbox", "--finalize-session")):
+            env.pop("OBSERVAL_AGENT_ID", None)
+            env.pop("OBSERVAL_AGENT_NAME", None)
         subprocess.Popen(
             [sys.executable, "-m", "observal_cli.hooks.session_push", "--harness", harness, *args],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             start_new_session=True,
-            env={**os.environ, **worker_env} if worker_env else None,
+            env=env,
         )
     except Exception as exc:
         optic.trace("could not spawn {} session worker: {}", harness, exc)
@@ -161,6 +166,7 @@ def _finalize_session(harness: str, session_id: str, cwd: str, home: Path | None
             extra_fields=adapter.session_extra_fields(source, event, True, home=home),
             recover_from_server=True,
             home=home,
+            identity_scope="recovery",
         )
     for related in adapter.related_session_sources(source, home=home):
         if not adapter.should_capture_session(related, home=home):
@@ -176,6 +182,7 @@ def _finalize_session(harness: str, session_id: str, cwd: str, home: Path | None
             extra_records=adapter.session_extra_records(related, event, True, home=home),
             recover_from_server=True,
             home=home,
+            identity_scope="recovery",
         )
 
 
@@ -218,6 +225,7 @@ def _recover_sessions(harness: str, exclude_session: str = "", home: Path | None
                 extra_fields=adapter.session_extra_fields(source, event, recovery_final, home=home),
                 recover_from_server=True,
                 home=home,
+                identity_scope="recovery",
             )
         # Recover separately stored delegated work alongside the parent.
         for related in adapter.related_session_sources(source, home=home):
@@ -232,6 +240,7 @@ def _recover_sessions(harness: str, exclude_session: str = "", home: Path | None
                 extra_records=adapter.session_extra_records(related, event, recovery_final, home=home),
                 recover_from_server=True,
                 home=home,
+                identity_scope="recovery",
             )
 
 
