@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
+# SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 """Transactional review rules. Not called by legacy routes until the API/UI cutover."""
 
@@ -104,14 +105,22 @@ def _own_work(subject, version, actor_id) -> bool:
     return actor_id in (version.released_by, owner_id) or str(actor_id) in (subject.co_authors or [])
 
 
+def _can_self_publish(subject, policy: ApprovalPolicy) -> bool:
+    """Only a private teamspace with counted self-approval permits owner publication."""
+    return subject.is_private and policy.source == "teamspace" and policy.self_approval == "counted"
+
+
+async def _reviewer_in_scope(db, subject, version, user):
+    scope = await review_scope(db, user)
+    return can_review(subject, scope) and (
+        not getattr(version, "requires_global_review", False) or scope.is_global_reviewer
+    )
+
+
 async def _require_reviewer(db, review, user):
     subject, version = await _target(db, review)
-    scope = await review_scope(db, user)
-    if not can_review(subject, scope):
-        raise HTTPException(403, "Not a reviewer in scope")
-    # A skill made public after team review needs a global decision, not a team one.
-    if getattr(version, "requires_global_review", False) and not scope.is_global_reviewer:
-        raise HTTPException(403, "This release needs a global reviewer")
+    if not await _reviewer_in_scope(db, subject, version, user):
+        raise HTTPException(403, "Not a reviewer in scope for this release")
 
 
 async def _lock_review(db, review):
@@ -560,6 +569,8 @@ async def submit_verdict(db, review, user, verdict, body="", *, policy=None):
     own = _own_work(subject, version, user.id)
     if own and verdict == "request_changes":
         raise HTTPException(403, "Cannot request changes on your own work")
+    if own and verdict == "approve" and (policy or await policy_for(review, db=db)).self_approval != "counted":
+        raise HTTPException(403, "Self-approval is not permitted by the review policy")
     # Submitting a pending review publishes all of that user's draft comments
     # atomically with their verdict, rather than stranding them in a draft row.
     submission = await db.scalar(
@@ -637,11 +648,7 @@ async def publish(db, review, user, *, category=None, override_reason=None, auto
         if user is None:
             raise HTTPException(403, "Publisher required")
         await _require_reviewer(db, review, user)
-        if (
-            _own_work(subject, version, user.id)
-            and not (subject.is_private and policy.source == "teamspace" and policy.self_approval == "counted")
-            and not override
-        ):
+        if _own_work(subject, version, user.id) and not _can_self_publish(subject, policy) and not override:
             raise HTTPException(403, "Authors and co-authors cannot publish their own work")
     if review.subject_type == "agent":
         # Confidentiality, not review quality: a public agent must never expose a team-private

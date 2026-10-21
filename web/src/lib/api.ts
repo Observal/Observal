@@ -39,6 +39,7 @@ import type {
 	SkillBinaryContents,
 	ReviewSummary,
 	ReviewDetail,
+	ReviewDraft,
 	ReviewGate,
 	ReviewFile,
 	ReviewThread,
@@ -646,6 +647,8 @@ export const prReviews = {
   submit: (ref: string, verdict: string, body: string) => post(
     `/reviews/${encodeURIComponent(ref)}/submissions`, { verdict, body },
   ),
+  draft: (ref: string) => get<ReviewDraft>(`/reviews/${encodeURIComponent(ref)}/submissions/draft`),
+  discardDraft: (ref: string) => del(`/reviews/${encodeURIComponent(ref)}/submissions/draft`),
   comment: (ref: string, body: string, path?: string, line?: number, asDraft = false) => post(
     `/reviews/${encodeURIComponent(ref)}/threads`,
     path ? { path, side: "head", start_line: line, body, as_draft: asDraft } : { body, as_draft: asDraft },

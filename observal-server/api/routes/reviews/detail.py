@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
+# SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 """Participant-only review snapshots, timeline and structured file diffs."""
 
@@ -8,22 +9,28 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import get_current_user, get_db
+from api.deps import (
+    get_current_user,
+    get_db,
+    get_effective_agent_permission,
+    get_effective_component_permission,
+)
 from api.routes.reviews.common import get_review, head, notify_update, participant
 from api.routes.reviews.queue import summary
 from models.review import (
     Review,
+    ReviewComment,
     ReviewEvent,
     ReviewReviewerRequest,
     ReviewRevision,
     ReviewSubmission,
     ReviewSubscription,
 )
-from models.user import User
+from models.user import User, UserRole
 from schemas.review import ReviewEdit
 from services.registry_fork import provenance_for
 from services.review import check_config, ci
-from services.review.decisions import _own_work, _target, gate
+from services.review.decisions import _can_self_publish, _own_work, _reviewer_in_scope, _target, gate
 from services.review.diff import diff_files
 from services.review.policy import policy_for
 from services.teamspace import can_review, review_scope
@@ -54,9 +61,29 @@ async def detail(
         await db.scalars(select(ReviewReviewerRequest.user_id).where(ReviewReviewerRequest.review_id == review.id))
     ).all()
     submitted_by = (
-        await db.scalars(select(ReviewSubmission.reviewer_id).where(ReviewSubmission.review_id == review.id))
+        await db.scalars(
+            select(ReviewSubmission.reviewer_id).where(
+                ReviewSubmission.review_id == review.id,
+                (ReviewSubmission.state != "draft") | (ReviewSubmission.reviewer_id == user.id),
+            )
+        )
     ).all()
-    reviewer_ids = set(requested) | set(submitted_by)
+    # Names for visible conversation authors, not just people who submitted a verdict.
+    # Draft comments stay private until their owner submits them.
+    comment_authors = (
+        await db.scalars(
+            select(ReviewComment.author_id)
+            .distinct()
+            .outerjoin(ReviewSubmission, ReviewComment.submission_id == ReviewSubmission.id)
+            .where(
+                ReviewComment.review_id == review.id,
+                ReviewComment.submission_id.is_(None)
+                | (ReviewSubmission.state != "draft")
+                | (ReviewComment.author_id == user.id),
+            )
+        )
+    ).all()
+    reviewer_ids = set(requested) | set(submitted_by) | set(comment_authors)
     reviewer_names = {
         str(uid): username
         for uid, username in (
@@ -68,7 +95,26 @@ async def detail(
     subject, version = await _target(db, review)
     base = await db.get(type(version), review.base_version_id) if review.base_version_id else None
     policy = await policy_for(review, db=db)
-    self_approval_allowed = subject.is_private and policy.source == "teamspace" and policy.self_approval == "counted"
+    own = _own_work(subject, version, user.id)
+    eligible = await _reviewer_in_scope(db, subject, version, user)
+    active = review.state.value not in ("published", "closed")
+    self_approval_allowed = eligible and policy.self_approval == "counted"
+    # An eligible owner may record a counted approval without necessarily being
+    # allowed to publish; public releases still require a separate reviewer.
+    can_self_publish = eligible and _can_self_publish(subject, policy)
+    if review.subject_type == "agent":
+        can_edit = get_effective_agent_permission(subject, user) in ("owner", "edit")
+        can_withdraw = user.id in (version.released_by, subject.created_by)
+    else:
+        permission = get_effective_component_permission(subject, user)
+        can_edit = permission == "owner" and not (review.subject_type == "skill" and version.status.value == "pending")
+        can_withdraw = (
+            permission == "owner"
+            if review.subject_type == "skill"
+            else user.id in (version.released_by, subject.submitted_by)
+        )
+    if review.subject_type == "skill" and version.pre_public_status is not None:
+        can_withdraw = False
     return {
         **await summary(db, review, user),
         "body": review.body,
@@ -95,6 +141,15 @@ async def detail(
         "reviewer_names": reviewer_names,
         "my_subscription": subscription.mode if subscription else None,
         "self_approval_allowed": self_approval_allowed,
+        "is_own_work": own,
+        "can_approve": active and eligible and (not own or self_approval_allowed),
+        "can_request_changes": active and eligible and not own,
+        "can_comment": active,
+        "can_publish": active and eligible and (not own or can_self_publish),
+        "can_override_publish": active and eligible and user.role == UserRole.super_admin,
+        "can_close": active and eligible and not own,
+        "can_withdraw": active and can_withdraw,
+        "can_edit": active and can_edit,
         "forked_from": await provenance_for(subject, user, db) if getattr(subject, "is_fork", True) else None,
     }
 

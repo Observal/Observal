@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
+# SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 """Additive review endpoints: participant ACL, draft isolation and inbox fan-out."""
 
@@ -9,6 +10,7 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from sqlalchemy import select
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from api.deps import get_current_user, get_db, get_registry_user
@@ -259,6 +261,25 @@ async def test_agent_create_opens_review_before_commit(api):
 
 
 @pytest.mark.asyncio
+async def test_comment_only_author_is_named_without_exposing_draft_participation(api):
+    client, current, (author, _, _, second), (_, number), _ = api
+    base = f"/api/v1/reviews/{number}"
+    current[0] = second
+    pending = await client.post(base + "/threads", json={"body": "Private note", "as_draft": True})
+    assert pending.status_code == 201, pending.text
+    current[0] = author
+    private_detail = (await client.get(base)).json()
+    assert str(second.id) not in private_detail["reviewer_names"]
+    current[0] = second
+    visible = await client.post(base + "/threads", json={"body": "Visible note"})
+    assert visible.status_code == 201, visible.text
+    current[0] = author
+    public_detail = (await client.get(base)).json()
+    assert public_detail["reviewer_names"][str(second.id)] == second.username
+    assert public_detail["gate"]["approvals"] == 0
+
+
+@pytest.mark.asyncio
 async def test_detail_and_raw_diff_never_leak_to_nonparticipants(api):
     client, current, (author, reviewer, outsider, _), (rid, number), _ = api
     current[0] = outsider
@@ -486,6 +507,82 @@ async def test_draft_private_until_submitted_and_invalid_anchor_rejected(api):
         row = await db.get(ReviewSubmission, uuid.UUID(submitted.json()["id"]))
         assert row.state == "submitted"
         assert await db.scalar(select(ReviewComment).where(ReviewComment.submission_id == row.id))
+
+
+@pytest.mark.asyncio
+async def test_discard_draft_removes_only_pending_comments(api):
+    client, current, (_, reviewer, _, _), (_, number), factory = api
+    current[0] = reviewer
+    base = f"/api/v1/reviews/{number}"
+    created = await client.post(base + "/threads", json={"body": "private", "as_draft": True})
+    assert created.status_code == 201, created.text
+    draft_id = (await client.get(base + "/submissions/draft")).json()["submission_id"]
+    discarded = await client.delete(base + "/submissions/draft")
+    assert discarded.status_code == 200 and discarded.json() == {"discarded": True}
+    assert (await client.get(base + "/submissions/draft")).json() == {"submission_id": None, "comments": []}
+    async with factory() as db:
+        assert await db.get(ReviewSubmission, uuid.UUID(draft_id)) is None
+        assert await db.get(ReviewComment, uuid.UUID(created.json()["id"])) is None
+
+    created = await client.post(base + "/threads", json={"body": "published", "as_draft": True})
+    assert created.status_code == 201, created.text
+    submitted = await client.post(base + "/submissions", json={"verdict": "approve"})
+    assert submitted.status_code == 201, submitted.text
+    assert (await client.delete(base + "/submissions/draft")).json() == {"discarded": True}
+    async with factory() as db:
+        assert (await db.get(ReviewSubmission, uuid.UUID(submitted.json()["id"]))).state == "submitted"
+        assert await db.get(ReviewComment, uuid.UUID(created.json()["id"])) is not None
+    assert (await client.get(base + "/gate")).json()["approvals"] == 1
+
+
+@pytest.mark.asyncio
+async def test_discard_waits_for_submit_and_rechecks_draft_state():
+    from api.routes.reviews.submissions import discard
+
+    review = Review(id=uuid.uuid4())
+    user = User(id=uuid.uuid4())
+
+    class SubmitWinsRace:
+        """Model READ COMMITTED: submit commits while SELECT FOR UPDATE waits."""
+
+        def __init__(self):
+            self.state = "draft"
+            self.deleted = False
+
+        async def scalar(self, statement):
+            sql = str(statement.compile(dialect=postgresql.dialect()))
+            assert "FROM review_submissions" in sql
+            assert "review_submissions.state =" in sql
+            assert "review_submissions.review_id =" in sql
+            assert "review_submissions.reviewer_id =" in sql
+            # An unlocked lookup returns the old draft; a locking lookup waits for
+            # submit and PostgreSQL rechecks the draft predicate against the new state.
+            if statement._for_update_arg is not None:
+                assert sql.endswith("FOR UPDATE")
+                self.state = "submitted"
+                return None
+            self.state = "submitted"
+            return ReviewSubmission(id=uuid.uuid4(), review_id=review.id, reviewer_id=user.id, state="draft")
+
+        async def scalars(self, statement):
+            self.deleted = True
+            raise AssertionError("Discard read comments after the draft was submitted")
+
+        async def execute(self, statement):
+            self.deleted = True
+            raise AssertionError("Discard deleted a submitted review")
+
+        async def delete(self, row):
+            self.deleted = True
+            raise AssertionError("Discard deleted a submitted review")
+
+        async def commit(self):
+            self.deleted = True
+            raise AssertionError("Discard committed a deletion")
+
+    db = SubmitWinsRace()
+    assert await discard(review=review, db=db, user=user) == {"discarded": True}
+    assert db.state == "submitted" and not db.deleted
 
 
 @pytest.mark.asyncio
@@ -961,3 +1058,97 @@ async def test_withdrawn_successor_of_an_approved_mcp_can_be_edited_and_reopened
         assert successor.status == ListingStatus.pending and successor.description == "Fixed successor"
         assert (await db.get(McpVersion, stable_id)).description == "Stable"
         assert (await db.get(McpListing, listing_id)).latest_version_id == stable_id
+
+
+@pytest.mark.asyncio
+async def test_review_detail_distinguishes_self_approval_from_change_requests(api, monkeypatch):
+    from services.review.policy import ApprovalPolicy
+
+    client, current, (author, reviewer, outsider, _), (_, number), _ = api
+    current[0] = author
+    base = f"/api/v1/reviews/{number}"
+    mine = (await client.get(base)).json()
+    assert mine["is_own_work"] and mine["can_comment"]
+    assert not mine["can_approve"] and not mine["can_request_changes"]
+    assert mine["can_withdraw"] and not mine["can_close"]
+    assert (await client.post(base + "/submissions", json={"verdict": "approve", "body": ""})).status_code == 403
+    current[0] = reviewer
+    other = (await client.get(base)).json()
+    assert other["can_approve"] and other["can_request_changes"] and other["can_comment"]
+    current[0] = outsider
+    assert (await client.get(base)).status_code == 404
+
+    async def counted(*_args, **_kwargs):
+        return ApprovalPolicy(self_approval="counted")
+
+    monkeypatch.setattr("api.routes.reviews.detail.policy_for", counted)
+    current[0] = author
+    # An owner without reviewer scope still cannot approve even with counted policy.
+    assert not (await client.get(base)).json()["can_approve"]
+
+
+@pytest.mark.asyncio
+async def test_counted_public_self_approval_does_not_grant_normal_publish(api, monkeypatch):
+    from services.review.policy import ApprovalPolicy
+
+    client, current, (author, _, _, _), (_, number), factory = api
+    async with factory() as db:
+        author.role = UserRole.super_admin
+        db.add(author)
+        await db.commit()
+
+    async def counted(*_args, **_kwargs):
+        return ApprovalPolicy(self_approval="counted")
+
+    monkeypatch.setattr("api.routes.reviews.detail.policy_for", counted)
+    monkeypatch.setattr("services.review.decisions.policy_for", counted)
+    current[0] = author
+    detail = await client.get(f"/api/v1/reviews/{number}")
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["can_approve"] is True
+    assert detail.json()["can_publish"] is False
+    assert detail.json()["can_override_publish"] is True
+    assert (await client.post(f"/api/v1/reviews/{number}/publish", json={})).status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_comment_only_keeps_review_work_and_draft_visibility(api, monkeypatch):
+    from services.inbox.delivery import deliver as real_deliver
+    from services.review.notifications import deliver_event
+    from services.review.policy import ApprovalPolicy
+
+    monkeypatch.setattr("services.review.notifications.deliver", real_deliver)
+    client, current, (author, reviewer, _, _), (rid, number), factory = api
+    base = f"/api/v1/reviews/{number}"
+    current[0] = author
+    assert (await client.post(base + "/reviewers", json={"user_id": str(reviewer.id)})).status_code == 201
+    async with factory() as db:
+        review = await db.get(Review, rid)
+        await deliver_event(db, review, "requested", author.id, reviewer_id=reviewer.id)
+        await db.commit()
+
+    async def zero(*_args, **_kwargs):
+        return ApprovalPolicy(
+            required_approvals={kind: 0 for kind in ("agent", "mcp", "skill", "hook", "prompt", "sandbox")}
+        )
+
+    monkeypatch.setattr("services.review.decisions.policy_for", zero)
+    current[0] = reviewer
+    draft = await client.post(base + "/threads", json={"body": "Pending feedback", "as_draft": True})
+    assert draft.status_code == 201, draft.text
+    thread = (await client.get(base + "/threads")).json()[0]
+    assert thread["comments"][0]["pending"] is True
+    current[0] = author
+    assert (await client.get(base + "/threads")).json() == []
+    current[0] = reviewer
+    assert (await client.post(base + "/submissions", json={"verdict": "comment", "body": ""})).status_code == 201
+    assert (await client.get(base + "/threads")).json()[0]["comments"][0]["pending"] is False
+    queue = await client.get("/api/v1/reviews?needs=my_review&state=all")
+    assert number in [row["number"] for row in queue.json()["items"]]
+    async with factory() as db:
+        inbox = (
+            await db.scalars(
+                select(InboxItem).where(InboxItem.user_id == reviewer.id, InboxItem.kind == InboxKind.review_requested)
+            )
+        ).all()
+        assert inbox and any(item.state == InboxState.open for item in inbox)

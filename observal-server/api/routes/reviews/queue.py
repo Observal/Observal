@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
+# SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 """Visible review queue. Always filter before paginating to avoid leaking metadata."""
 
@@ -201,6 +202,7 @@ async def list_reviews(
                     ReviewSubmission.reviewer_id == user.id,
                     ReviewSubmission.revision_id == Review.head_revision_id,
                     ReviewSubmission.state == "submitted",
+                    ReviewSubmission.verdict.in_(("approve", "request_changes")),
                 )
             )
         )

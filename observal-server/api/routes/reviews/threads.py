@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
+# SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 """Inline conversations with server-side drafts and line validation."""
 
@@ -94,9 +95,22 @@ async def threads(
         stmt = stmt.where(ReviewThread.outdated == outdated)
     rows = (await db.scalars(stmt.order_by(ReviewThread.created_at, ReviewThread.id))).all()
     comments = await _comments(db, review, rows, user)
+    my_draft_ids = set(
+        (
+            await db.scalars(
+                select(ReviewSubmission.id).where(
+                    ReviewSubmission.review_id == review.id,
+                    ReviewSubmission.reviewer_id == user.id,
+                    ReviewSubmission.state == "draft",
+                )
+            )
+        ).all()
+    )
     by_thread = {row.id: [] for row in rows}
     for comment in comments:
-        by_thread[comment.thread_id].append(_render_comment(comment))
+        by_thread[comment.thread_id].append(
+            {**_render_comment(comment), "pending": comment.submission_id in my_draft_ids}
+        )
     return [
         {
             "id": row.id,

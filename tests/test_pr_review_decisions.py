@@ -1,4 +1,5 @@
 # SPDX-FileCopyrightText: 2026 Naraen Rammoorthi <naraen13@gmail.com>
+# SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 """Gate/state transitions on real SQLite rows; no external services."""
 
@@ -133,8 +134,10 @@ async def test_unresolved_change_request_stays_visible_but_only_approvals_block(
 @pytest.mark.asyncio
 async def test_self_approval_not_counted_override_audited_and_stale(db):
     author, reviewer, admin, listing, ver, review = await fixture_review(db)
-    # super-admin is a co-author; self-approval is recorded but doesn't count.
-    await submit_verdict(db, review, admin, "approve", policy=ApprovalPolicy())
+    # super-admin is a co-author; a non-counting self-approval is refused.
+    with pytest.raises(HTTPException) as exc:
+        await submit_verdict(db, review, admin, "approve", policy=ApprovalPolicy())
+    assert exc.value.status_code == 403
     assert (await gate(db, review, policy=ApprovalPolicy())).approvals == 0
     with pytest.raises(HTTPException):
         await publish(db, review, admin, policy=ApprovalPolicy())
