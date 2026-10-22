@@ -50,6 +50,7 @@ from schemas.auth import (
 )
 from schemas.sso_health import make_check
 from services import sso_diagnostics
+from services.auth_header import bearer_token
 from services.jwt_service import create_access_token, create_refresh_token, decode_access_token, decode_refresh_token
 from services.redis import get_redis
 from services.registry_namespace import is_valid_namespace, rename_namespace, user_has_listings
@@ -1598,7 +1599,7 @@ async def logout(
     # Extract the raw token from the Authorization header so we can get jti/exp
     optic.debug("auth logout")
     auth_header = request.headers.get("authorization", "")
-    token = auth_header.removeprefix("Bearer ").strip() if auth_header.startswith("Bearer ") else ""
+    token = bearer_token(auth_header) or ""
 
     try:
         payload = decode_access_token(token)
@@ -1767,7 +1768,13 @@ async def refresh_token(request: Request, req: RefreshRequest, db: AsyncSession 
 @router.post("/token/revoke")
 @limiter.limit(ds.get_sync("security.rate_limit_auth", "10/minute"))
 async def revoke_token(request: Request, req: RevokeRequest):
-    """Revoke a refresh token so it can no longer be used."""
+    """Revoke a refresh token so it can no longer be used.
+
+    An access token carries no link to the refresh token that minted it (each has its
+    own random jti), so one already issued stays valid until it expires. /auth/logout is the
+    call that ends a session at once: it blacklists the presented access token and
+    every token issued to the user so far.
+    """
     optic.debug("revoke_token called")
     try:
         payload = decode_refresh_token(req.refresh_token)

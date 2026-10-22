@@ -5,6 +5,7 @@
 
 """Agent Insights API endpoints."""
 
+import uuid
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -453,7 +454,7 @@ async def list_reports(
 
 @router.get("/reports/{report_id}", response_model=InsightReportResponse)
 async def get_report(
-    report_id: str,
+    report_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
@@ -474,7 +475,7 @@ async def get_report(
 
 @router.get("/reports/{report_id}/export/html", response_class=HTMLResponse)
 async def export_report_html(
-    report_id: str,
+    report_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.user)),
 ):
@@ -512,7 +513,7 @@ async def export_report_html(
     return HTMLResponse(
         content=html_content,
         headers={
-            "Content-Disposition": f'attachment; filename="insight-report-{report_id[:8]}.html"',
+            "Content-Disposition": f'attachment; filename="insight-report-{str(report_id)[:8]}.html"',
         },
     )
 
@@ -547,7 +548,7 @@ async def clear_agent_reports(
 
 @router.delete("/reports/{report_id}")
 async def delete_report(
-    report_id: str,
+    report_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),
 ):
@@ -571,7 +572,7 @@ async def delete_report(
 
 @router.post("/reports/{report_id}/apply")
 async def apply_report_suggestions(
-    report_id: str,
+    report_id: uuid.UUID,
     body: ApplySuggestionsRequest | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.admin)),

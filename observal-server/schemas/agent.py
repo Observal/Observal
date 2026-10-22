@@ -9,7 +9,6 @@
 # SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-import re
 import uuid
 from datetime import datetime
 from typing import Literal
@@ -18,7 +17,16 @@ from pydantic import BaseModel, field_validator, model_serializer
 
 from models.agent import AgentStatus
 from observal_shared.agent_model import AUTO_MODEL, normalize_model_name
-from schemas.constants import AGENT_NAME_REGEX, RecommendedFlag, Visibility, make_name_validator
+from schemas.constants import (
+    AGENT_NAME_REGEX,
+    ListingOwner,
+    ListingVersion,
+    ModelName,
+    RecommendedFlag,
+    Visibility,
+    make_harness_list_validator,
+    make_name_validator,
+)
 from schemas.fork import ForkProvenance
 from schemas.skill_resources import SkillInstallFolder
 from services.versioning import validate_semver
@@ -85,9 +93,6 @@ class SuccessCriteria(BaseModel):
 ComponentType = Literal["mcp", "skill", "hook", "prompt", "sandbox"]
 
 
-_COMPONENT_VERSION_RE = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z.-]+)?$")
-
-
 class ComponentRef(BaseModel):
     """Reference to a registry component to include in an agent.
 
@@ -98,27 +103,20 @@ class ComponentRef(BaseModel):
 
     component_type: ComponentType
     component_id: uuid.UUID
-    version: str | None = None
+    version: ListingVersion | None = None
     config_override: dict | None = None
-
-    @field_validator("version")
-    @classmethod
-    def _validate_version(cls, v: str | None) -> str | None:
-        if v is not None and (len(v) > 50 or not _COMPONENT_VERSION_RE.match(v)):
-            raise ValueError(f"Invalid component version '{v}'. Use an exact version such as 1.2.0")
-        return v
 
 
 class AgentCreateRequest(BaseModel):
     name: str
-    version: str
+    version: ListingVersion
     description: str = ""
     category: str | None = None
-    owner: str
+    owner: ListingOwner
     team_id: uuid.UUID | None = None
     visibility: Visibility = "public"
     prompt: str = ""
-    model_name: str = AUTO_MODEL
+    model_name: ModelName = AUTO_MODEL
     model_config_json: dict = {}
     models_by_harness: dict[str, str] = {}
     supported_harnesses: list[str] = []
@@ -130,6 +128,7 @@ class AgentCreateRequest(BaseModel):
     _validate_name = field_validator("name")(make_name_validator("name"))
     # Every Agent has a model: a missing or blank one becomes "auto" (each harness's default).
     _normalize_model = field_validator("model_name", mode="before")(lambda v: normalize_model_name(v))
+    _validate_harnesses = field_validator("supported_harnesses")(make_harness_list_validator())
 
     @field_validator("components")
     @classmethod
@@ -158,15 +157,15 @@ class AgentCreateRequest(BaseModel):
 
 class AgentUpdateRequest(BaseModel):
     name: str | None = None
-    version: str | None = None
+    version: ListingVersion | None = None
     version_bump_type: Literal["patch", "minor", "major"] | None = None
     description: str | None = None
     category: str | None = None
-    owner: str | None = None
+    owner: ListingOwner | None = None
     team_id: uuid.UUID | None = None
     visibility: Visibility | None = None
     prompt: str | None = None
-    model_name: str | None = None
+    model_name: ModelName | None = None
     model_config_json: dict | None = None
     models_by_harness: dict[str, str] | None = None
     supported_harnesses: list[str] | None = None
@@ -175,13 +174,15 @@ class AgentUpdateRequest(BaseModel):
     external_mcps: list[ExternalMcp] | None = None
     success_criteria: SuccessCriteria | None = None
 
+    _validate_harnesses = field_validator("supported_harnesses")(make_harness_list_validator())
+
     @field_validator("model_name", mode="before")
     @classmethod
     def _normalize_model(cls, v: object) -> object:
         # Omitted keeps the current model; an explicit blank resets it to "auto".
         return v if v is None else normalize_model_name(v)
 
-    @field_validator("name", mode="before")
+    @field_validator("name")
     @classmethod
     def _validate_name(cls, v: str | None) -> str | None:
         if v is None:
@@ -195,7 +196,7 @@ class AgentUpdateRequest(BaseModel):
             )
         return v
 
-    @field_validator("version", mode="before")
+    @field_validator("version")
     @classmethod
     def _validate_version(cls, v: str | None) -> str | None:
         if v is not None and not validate_semver(v):
@@ -361,10 +362,10 @@ class AgentInstallResponse(BaseModel):
 
 class AgentVersionCreateRequest(BaseModel):
     message: str | None = None
-    version: str
+    version: ListingVersion
     description: str = ""
     prompt: str = ""
-    model_name: str = AUTO_MODEL
+    model_name: ModelName = AUTO_MODEL
     model_config_json: dict = {}
     models_by_harness: dict[str, str] = {}
     external_mcps: list[ExternalMcp] = []
@@ -380,6 +381,7 @@ class AgentVersionCreateRequest(BaseModel):
     refresh_components: bool = False
 
     _normalize_model = field_validator("model_name", mode="before")(lambda v: normalize_model_name(v))
+    _validate_harnesses = field_validator("supported_harnesses")(make_harness_list_validator())
 
     @field_validator("version")
     @classmethod
@@ -392,7 +394,7 @@ class AgentVersionCreateRequest(BaseModel):
 class AgentRestoreRequest(BaseModel):
     name: str | None = None
 
-    @field_validator("name", mode="before")
+    @field_validator("name")
     @classmethod
     def _validate_name(cls, v: str | None) -> str | None:
         if v is None:
