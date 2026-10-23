@@ -25,6 +25,9 @@ dependencies = [
     "email-validator",
     "alembic",
     "httpx",
+    # Transitive through LiteLLM; 3.14.4 fixes request resource exhaustion,
+    # keepalive handling, and Secure-cookie enforcement vulnerabilities.
+    "aiohttp>=3.14.4",
     "gitpython>=3.1.59",
     "boto3",
     "litellm>=1.88.6,<1.90.0",
@@ -82,6 +85,7 @@ dev = [
     "pyyaml",
     "typer",
     "rich",
+    "tomlkit>=0.13.3",  # CLI install snippets are exercised by the shared test suite
 ]
 
 [tool.coverage.run]

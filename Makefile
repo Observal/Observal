@@ -4,6 +4,7 @@
 # SPDX-FileCopyrightText: 2026 Swathi Saravanan <ss4522@cornell.edu>
 # SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
 # SPDX-FileCopyrightText: 2026 RAWx18 <rawx18.dev@gmail.com>
+# SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
 .PHONY: lint format check test test-adversarial test-eval-completeness test-fuzz test-all hooks clean migrate migrate-clickhouse check-migrations new-migration reset rebuild rebuild-fast rebuild-prometheus rebuild-observability rebuild-local reset-prometheus reset-observability up-prometheus up-observability down-prometheus down-observability logs-prometheus logs-observability release release-preview sync-skill ensure-host-dirs
@@ -23,10 +24,10 @@ check:  ## Full pre-commit check on all files
 # ── Testing ──────────────────────────────────────────────
 
 test:  ## Run Python tests (parallel across cores)
-	cd observal-server && uv run --with pytest --with pytest-asyncio --with pytest-xdist --with pyyaml --with typer --with rich --with hypothesis --with pyarrow pytest ../tests/ -q -n auto
+	cd observal-server && uv run --with pytest --with pytest-asyncio --with pytest-xdist --with pyyaml --with typer --with rich --with hypothesis --with pyarrow --with tomlkit pytest ../tests/ -q -n auto
 
 test-v:  ## Run Python tests (verbose, parallel across cores)
-	cd observal-server && uv run --with pytest --with pytest-asyncio --with pytest-xdist --with pyyaml --with typer --with rich --with hypothesis --with pyarrow pytest ../tests/ -v -n auto
+	cd observal-server && uv run --with pytest --with pytest-asyncio --with pytest-xdist --with pyyaml --with typer --with rich --with hypothesis --with pyarrow --with tomlkit pytest ../tests/ -v -n auto
 
 test-adversarial:  ## Run BenchJack self-test suite
 	cd observal-server && uv run --with pytest --with pytest-asyncio --with pyyaml --with typer --with rich pytest ../tests/test_adversarial_self.py -v --tb=short
