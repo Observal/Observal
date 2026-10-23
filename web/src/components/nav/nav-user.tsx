@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 Harishankar <harishankar0301@gmail.com>
 // SPDX-FileCopyrightText: 2026 Hari Srinivasan <harisrini21@gmail.com>
 // SPDX-FileCopyrightText: 2026 Vishnu Muthiah <vishnu.muthiah04@gmail.com>
+// SPDX-FileCopyrightText: 2026 Kaushik <kaushikrjpm10@gmail.com>
 // SPDX-License-Identifier: Apache-2.0
 
 
@@ -17,7 +18,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { SidebarMenuButton } from "@/components/ui/sidebar";
-import { clearSession, getUserAvatar } from "@/lib/api";
+import { clearSession, clearTabSession, getTabActor, getUserAvatar, tokenSubject } from "@/lib/api";
 import { useSyncExternalStore } from "react";
 
 function initials(name: string) {
@@ -92,25 +93,30 @@ export function NavUser({ user }: NavUserProps) {
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={async () => {
+            const actor = getTabActor();
+            const token = sessionStorage.getItem("observal_access_token");
+            const refreshToken = localStorage.getItem("observal_refresh_token");
+            const ownsRefresh = !!actor && tokenSubject(token) === actor &&
+              tokenSubject(refreshToken) === actor;
             try {
-              const token = sessionStorage.getItem("observal_access_token");
-              const refreshToken = localStorage.getItem("observal_refresh_token");
-              if (token) {
+              // Never send B's refresh JTI with A's bearer, even before a storage event arrives.
+              if (ownsRefresh && token && refreshToken) {
                 await fetch("/api/v1/auth/logout", {
                   method: "POST",
                   headers: {
                     Authorization: `Bearer ${token}`,
                     "Content-Type": "application/json",
                   },
-                  body: JSON.stringify({
-                    refresh_token: refreshToken || undefined,
-                  }),
+                  body: JSON.stringify({ refresh_token: refreshToken }),
                 });
               }
             } catch {
               // Best-effort — proceed with client-side cleanup regardless
             }
-            clearSession();
+            if (getTabActor() === actor) {
+              if (ownsRefresh && localStorage.getItem("observal_refresh_token") === refreshToken) clearSession();
+              else clearTabSession();
+            }
             router.navigate({ to: "/login" });
           }}
         >
