@@ -298,7 +298,7 @@ def _record_capability_use(
             version=version,
         )
     except Exception as exc:
-        optic.debug("capability lock not updated for {} {}: {}", kind, component_id, exc)
+        optic.debug("capability lock not updated (type={})", type(exc).__name__)
 
 
 def upsert_agent(
@@ -323,7 +323,7 @@ def upsert_agent(
     the server installed; ``lock_digest`` and ``lock_status`` describe the
     agent version's lock they were installed from.
     """
-    optic.debug("upsert_agent: harness={}, name={}, version={}", harness, name, version)
+    optic.debug("upsert_agent: recording agent installation")
     entry = {
         "name": name,
         "id": agent_id,
