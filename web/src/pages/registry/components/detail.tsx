@@ -33,7 +33,7 @@ import {
   useComponentUpdateDraft,
   useComponentSubmitDraft,
 } from "@/hooks/use-api";
-import { getUserRole, registry } from "@/lib/api";
+import { getUserRole, getAccessToken, registry } from "@/lib/api";
 import { useOptionalAuth } from "@/hooks/use-auth";
 import { useDeploymentConfig } from "@/hooks/use-deployment-config";
 import { hasMinRole } from "@/hooks/use-role-guard";
@@ -266,7 +266,7 @@ export default function ComponentDetailPage({
       return;
     }
     const controller = new AbortController();
-    const token = sessionStorage.getItem("observal_access_token");
+    const token = getAccessToken();
     const headers: Record<string, string> = {};
     if (token) headers["Authorization"] = `Bearer ${token}`;
     fetch(`/api/v1/${type}/${id}/co-authors`, { headers, signal: controller.signal })
