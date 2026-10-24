@@ -102,7 +102,7 @@ services:
 
   observal-clickhouse:
     restart: unless-stopped
-    image: clickhouse/clickhouse-server:26.6
+    image: clickhouse/clickhouse-server:26.10@sha256:b2bfa4d8399ee9973868cc5c1754cb506a6f4b86fbddc41010cc090beb55c85e
     group_add:
       - "${OBSERVAL_SECRET_GID:-1000}"
     ports:
